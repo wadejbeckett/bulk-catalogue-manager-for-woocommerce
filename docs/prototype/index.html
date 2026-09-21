@@ -1,0 +1,3334 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bulk Catalogue Manager</title>
+<style>
+/* ================================================================
+   Bulk Catalogue Manager for WooCommerce — clickable prototype
+   WordPress 7 admin, exactly: system stack, 13px, #2271b1 accent.
+   Single light theme on purpose. wp-admin is a light surface.
+   ================================================================ */
+:root{
+  color-scheme:light;
+
+  --menu:#1d2327;
+  --menu-2:#2c3338;
+  --menu-3:#3c434a;
+  --menu-text:#f0f0f1;
+  --menu-dim:#c3c4c7;
+
+  --ground:#f0f0f1;
+  --panel:#ffffff;
+  --sunk:#f6f7f7;
+  --sunk-2:#fbfbfc;
+
+  --rule:#dcdcde;
+  --rule-strong:#c3c4c7;
+  --rule-soft:#f0f0f1;
+
+  --ink:#1d2327;
+  --ink-2:#50575e;
+  --ink-3:#646970;          /* AA on white, the meta-text floor */
+
+  --blue:#2271b1;
+  --blue-dark:#135e96;
+  --blue-darker:#0a4b78;
+  --blue-tint:#f0f6fc;
+  --blue-line:#a7c8e8;
+
+  --good:#00a32a;
+  --good-ink:#125c2a;
+  --good-tint:#edfaef;
+  --good-line:#b8e6c3;
+  --warn:#dba617;
+  --warn-ink:#6b5209;
+  --warn-tint:#fcf9e8;
+  --warn-line:#f0e0a8;
+  --bad:#d63638;
+  --bad-ink:#8a2424;
+  --bad-tint:#fcf0f1;
+  --bad-line:#f3c3c4;
+
+  --r:3px;
+  --bar:32px;
+  --menu-w:160px;
+  --tree-w:236px;
+  --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen-Sans,Ubuntu,Cantarell,"Helvetica Neue",sans-serif;
+}
+
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;background:var(--ground);color:var(--ink);
+  font-family:var(--font);font-size:13px;line-height:1.5;
+  -webkit-font-smoothing:antialiased;overflow:hidden;
+}
+h1,h2,h3,h4,p,dl,dd,figure{margin:0}
+ul{margin:0;padding:0;list-style:none}
+button,input,select,textarea{font:inherit;color:inherit}
+img{max-width:100%}
+[hidden]{display:none !important}
+:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
+#adminbar :focus-visible,#adminmenu :focus-visible{outline:2px solid #fff;outline-offset:-2px}
+.sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.num{font-variant-numeric:tabular-nums}
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.001ms !important;animation-iteration-count:1 !important;transition-duration:.001ms !important}
+}
+
+/* ---------------- admin bar ---------------- */
+#adminbar{
+  position:fixed;inset:0 0 auto 0;height:var(--bar);z-index:120;
+  background:var(--menu);color:var(--menu-dim);display:flex;align-items:center;padding-right:8px;
+}
+#adminbar .ab{display:flex;align-items:center;gap:6px;height:var(--bar);padding:0 10px;background:none;border:0;color:var(--menu-dim);cursor:default;white-space:nowrap}
+#adminbar .ab:hover{color:#72aee6}
+#adminbar .right{margin-left:auto;display:flex}
+.ab-avatar{width:16px;height:16px;border-radius:50%;background:#50575e;display:inline-block}
+.ab-logo{width:15px;height:15px;border:2px solid currentColor;border-radius:50%;display:inline-block}
+
+/* ---------------- admin menu ---------------- */
+#adminmenu{
+  position:fixed;top:var(--bar);left:0;bottom:0;width:var(--menu-w);z-index:110;
+  background:var(--menu);color:var(--menu-dim);overflow:auto;scrollbar-width:thin;
+}
+#adminmenu .mi{display:flex;align-items:center;gap:8px;width:100%;padding:8px 10px;background:none;border:0;text-align:left;color:var(--menu-text);cursor:default;white-space:nowrap}
+#adminmenu .mi .ico{width:18px;flex:none;text-align:center;opacity:.72}
+#adminmenu .mi:hover{background:var(--menu-2);color:#72aee6}
+#adminmenu .mi.current{background:var(--blue);color:#fff;font-weight:600}
+#adminmenu .mi.open{background:var(--menu-2);color:#fff}
+#adminmenu .sub{background:var(--menu-2);padding:4px 0}
+#adminmenu .sub button{display:block;width:100%;text-align:left;background:none;border:0;padding:5px 10px 5px 36px;color:var(--menu-dim);cursor:default}
+#adminmenu .sub button:hover{color:#72aee6}
+#adminmenu .sub button.current{color:#fff;font-weight:600}
+#adminmenu .sep{height:1px;background:var(--menu-3);margin:6px 0}
+
+/* ---------------- page shell ---------------- */
+#wpbody{
+  position:fixed;top:var(--bar);left:var(--menu-w);right:0;bottom:0;
+  display:flex;flex-direction:column;gap:10px;padding:14px 20px 50px;min-width:0;
+}
+.crumb{color:var(--ink-3);font-size:12px}
+.pagehead{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap}
+.pagehead h1{font-size:23px;font-weight:400;line-height:1.3}
+.pagehead .lede{color:var(--ink-2);margin-top:2px;max-width:66ch}
+.pagehead .acts{margin-left:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+
+.screennav{display:flex;border:1px solid var(--rule-strong);border-radius:var(--r);overflow:hidden;background:var(--panel)}
+.screennav button{border:0;background:var(--panel);padding:0 12px;height:30px;color:var(--ink-2);cursor:pointer;white-space:nowrap;font-weight:600}
+.screennav button+button{border-left:1px solid var(--rule)}
+.screennav button:hover{background:var(--sunk);color:var(--ink)}
+.screennav button[aria-current="true"]{background:var(--blue-tint);color:var(--blue-darker);box-shadow:inset 0 -2px 0 var(--blue)}
+
+/* ---------------- controls ---------------- */
+.btn{
+  display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 11px;
+  border:1px solid var(--blue);border-radius:var(--r);background:var(--sunk);color:var(--blue-dark);
+  cursor:pointer;white-space:nowrap;
+}
+.btn:hover{background:var(--blue-tint);border-color:var(--blue-dark);color:var(--blue-darker)}
+.btn-primary{background:var(--blue);border-color:var(--blue);color:#fff}
+.btn-primary:hover{background:var(--blue-dark);border-color:var(--blue-dark);color:#fff}
+.btn-quiet{border-color:var(--rule-strong);background:var(--panel);color:var(--ink-2)}
+.btn-quiet:hover{border-color:#8c8f94;background:var(--sunk);color:var(--ink)}
+.btn-danger{border-color:var(--bad);color:var(--bad);background:var(--panel)}
+.btn-danger:hover{background:var(--bad-tint);color:var(--bad-ink);border-color:var(--bad)}
+.btn-sm{height:26px;padding:0 8px;font-size:12px}
+.btn[disabled]{opacity:.5;cursor:not-allowed}
+.btn-link{background:none;border:0;padding:0;color:var(--blue);text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+.btn-link:hover{color:var(--blue-darker)}
+.field{height:30px;padding:0 8px;border:1px solid #8c8f94;border-radius:var(--r);background:var(--panel);max-width:100%;min-width:0}
+select.field{padding-right:22px}
+.field:focus{border-color:var(--blue);box-shadow:0 0 0 2px var(--blue);outline:none}
+.lbl{display:block;font-size:12px;font-weight:600;color:var(--ink-2);margin-bottom:4px}
+.hint{color:var(--ink-3);font-size:12px;line-height:1.45}
+input[type=checkbox],input[type=radio]{accent-color:var(--blue);width:15px;height:15px;margin:0}
+
+/* ---------------- the workspace ---------------- */
+.slab{
+  flex:1;min-height:0;display:grid;grid-template-columns:var(--tree-w) minmax(0,1fr);
+  background:var(--panel);border:1px solid var(--rule);border-radius:4px;overflow:hidden;position:relative;
+}
+.slab.solo{grid-template-columns:minmax(0,1fr)}
+
+/* ---------------- category tree ---------------- */
+.tree-pane{border-right:1px solid var(--rule);background:var(--sunk);display:flex;flex-direction:column;min-height:0;min-width:0}
+.tree-head{padding:10px 11px 9px;border-bottom:1px solid var(--rule);display:flex;flex-direction:column;gap:8px}
+.tree-head h2{font-size:13px;font-weight:600}
+.tree-head .row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.tree-scroll{flex:1;overflow-y:auto;overflow-x:hidden;position:relative;padding:6px 5px 48px}
+.tree-foot{border-top:1px solid var(--rule);padding:8px 10px}
+.tnode{position:relative}
+.trow{display:flex;align-items:center;gap:1px;border-radius:var(--r);position:relative}
+.trow:hover{background:#eceef0}
+.trow.sel{background:var(--blue-tint);box-shadow:inset 2px 0 0 var(--blue)}
+.trow.drag{opacity:.45}
+.trow.dz-before::before,.trow.dz-after::after{content:"";position:absolute;left:4px;right:4px;height:2px;background:var(--blue)}
+.trow.dz-before::before{top:-1px}
+.trow.dz-after::after{bottom:-1px}
+.trow.dz-in{box-shadow:inset 0 0 0 2px var(--blue);background:var(--blue-tint)}
+/* the drag handle is the only affordance for re-parenting, so it has to clear
+   the 3:1 non-text contrast bar at rest, not just on hover */
+.grip{width:14px;height:24px;flex:none;display:grid;place-items:center;color:var(--ink-3);cursor:grab;border:0;background:none;padding:0;border-radius:2px}
+.grip:hover{color:var(--ink)}
+.twist{width:18px;height:24px;flex:none;border:0;background:none;cursor:pointer;color:var(--ink-3);display:grid;place-items:center;border-radius:2px;padding:0}
+.twist:hover{color:var(--ink)}
+.twist svg{transition:transform .12s ease}
+.tnode.open > .trow .twist svg{transform:rotate(90deg)}
+.tname{flex:1;min-width:0;display:flex;align-items:center;gap:6px;background:none;border:0;padding:4px 4px 4px 0;text-align:left;color:var(--ink);cursor:pointer;border-radius:2px}
+.trow.sel .tname{color:var(--blue-darker);font-weight:600}
+.tname .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tct{margin-left:auto;color:var(--ink-3);font-size:11px;padding-left:6px}
+.trow.sel .tct{color:var(--blue-dark)}
+.kebab{width:22px;height:22px;flex:none;border:0;background:none;color:var(--ink-3);border-radius:2px;cursor:pointer;opacity:0;line-height:1}
+.trow:hover .kebab,.kebab:focus-visible,.trow.menu-open .kebab{opacity:1}
+.kebab:hover{background:#e2e4e7;color:var(--ink)}
+.tkids{margin-left:13px;border-left:1px solid var(--rule);padding-left:3px}
+/* The menu lives inside the scrolling tree, so it must open INWARD: anchored
+   to the node's right edge, and upward for the last nodes in the pane. */
+.tmenu{position:absolute;z-index:70;right:6px;left:auto;top:24px;background:var(--panel);border:1px solid var(--rule-strong);border-radius:var(--r);box-shadow:0 6px 18px rgba(16,24,40,.16);padding:5px;min-width:150px;max-width:calc(100% - 12px)}
+.tree-scroll > .tnode:nth-last-child(-n+2) > .trow ~ .tmenu{top:auto;bottom:24px}
+.tmenu > button{display:block;width:100%;text-align:left;background:none;border:0;padding:6px 8px;border-radius:2px;cursor:pointer;color:var(--ink)}
+.tmenu > button:hover{background:var(--blue-tint)}
+.tmenu > button.danger{color:var(--bad)}
+.tmenu .mv{padding:6px 8px;display:flex;flex-direction:column;gap:6px}
+.tmenu .mv .field{width:100%;min-width:0}
+.trename{height:24px;font-size:13px;flex:1;min-width:0;border:1px solid var(--blue);box-shadow:0 0 0 1px var(--blue);border-radius:2px;padding:0 5px}
+
+/* ---------------- grid pane ---------------- */
+.grid-pane{display:flex;flex-direction:column;min-width:0;min-height:0}
+.toolbar{display:flex;align-items:center;gap:8px;padding:9px 11px;border-bottom:1px solid var(--rule);flex-wrap:wrap}
+.chips{display:flex;gap:2px;background:#e9eaec;border-radius:4px;padding:2px}
+.chips button{border:0;background:none;padding:0 10px;height:26px;border-radius:3px;color:var(--ink-2);cursor:pointer;white-space:nowrap}
+.chips button:hover{color:var(--ink)}
+.chips button[aria-pressed="true"]{background:var(--panel);color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(16,24,40,.12)}
+.chips .save{color:var(--blue-dark)}
+.search{position:relative;flex:0 1 210px;min-width:140px;display:flex}
+.search .field{width:100%;padding-left:26px}
+.search .mag{position:absolute;left:8px;top:50%;transform:translateY(-50%);color:var(--ink-3);pointer-events:none;display:grid}
+.tb-right{margin-left:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.seg{display:flex;border:1px solid var(--rule-strong);border-radius:var(--r);overflow:hidden;background:var(--panel)}
+.seg button{border:0;background:var(--panel);height:28px;padding:0 10px;color:var(--ink-2);cursor:pointer;font-size:12px}
+.seg button+button{border-left:1px solid var(--rule)}
+.seg button[aria-pressed="true"]{background:var(--blue-tint);color:var(--blue-darker);font-weight:600;box-shadow:inset 0 -2px 0 var(--blue)}
+/* Both groups clip their children, so the global outline-offset:1px ring is
+   cut away. Draw the ring inside the button instead. */
+.screennav button:focus-visible,.seg button:focus-visible{outline:2px solid var(--blue);outline-offset:-2px}
+.popwrap{position:relative}
+.pop{position:absolute;right:0;top:calc(100% + 5px);z-index:60;min-width:215px;background:var(--panel);border:1px solid var(--rule-strong);border-radius:var(--r);box-shadow:0 8px 24px rgba(16,24,40,.16);padding:8px}
+.pop.left{right:auto;left:0}
+.pop h3{font-size:12px;font-weight:600;color:var(--ink-2);padding:2px 6px 6px}
+.pop .prow{display:flex;align-items:center;gap:8px;width:100%;padding:5px 6px;border:0;background:none;border-radius:2px;text-align:left;cursor:pointer;color:var(--ink)}
+.pop .prow:hover{background:var(--blue-tint)}
+.pop .frow{display:flex;flex-direction:column;gap:4px;padding:5px 6px}
+.pop hr{border:0;border-top:1px solid var(--rule-soft);margin:6px 2px}
+.pop .note{padding:4px 6px 2px;color:var(--ink-3);font-size:11px}
+.filternote{display:flex;align-items:center;gap:10px;padding:6px 11px;background:var(--blue-tint);border-bottom:1px solid var(--blue-line);color:var(--ink-2);font-size:12px}
+
+/* selection bar, top of table */
+.selbar{display:flex;align-items:center;gap:10px;padding:9px 11px;background:var(--blue-tint);border-bottom:1px solid var(--blue-line);flex-wrap:wrap}
+.selbar .c{font-weight:600}
+.selbar .grow{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+.selbar.idle{background:var(--sunk);border-bottom-color:var(--rule);color:var(--ink-3)}
+
+/* ---------------- table ---------------- */
+.tscroll{flex:1;min-height:0;overflow:auto}
+table.grid{width:100%;border-collapse:separate;border-spacing:0;min-width:620px}
+table.grid thead th{
+  position:sticky;top:0;z-index:5;background:var(--sunk);border-bottom:1px solid var(--rule-strong);
+  text-align:left;font-size:12px;font-weight:600;color:var(--ink-2);padding:8px;white-space:nowrap;
+}
+table.grid td{border-bottom:1px solid var(--rule-soft);padding:7px 8px;vertical-align:middle}
+table.grid tbody tr:hover td{background:var(--sunk-2)}
+table.grid tbody tr.sel td{background:var(--blue-tint)}
+table.grid tbody tr.sel:hover td{background:#e6f1fa}
+.c-check{width:32px;padding-left:10px !important}
+.c-price{width:120px}
+.c-stock{width:112px}
+.c-status{width:98px}
+.c-vis{width:114px}
+.c-sku{width:96px}
+.c-cats{width:132px}
+/* the sticky thead rule above sets text-align:left, so the right-aligned
+   columns have to name it again or the Price header sits off its numbers */
+table.grid thead th.r,th.r,td.r{text-align:right}
+.pcell{display:flex;align-items:center;gap:8px;min-width:0}
+.thumb{width:26px;height:26px;flex:none;border-radius:2px;display:grid;place-items:center;font-size:10px;font-weight:600;color:#fff;letter-spacing:.02em}
+.pname{min-width:0;display:flex;flex-direction:column;gap:1px}
+.pname .n{background:none;border:0;padding:0;text-align:left;font-weight:600;color:var(--blue-dark);cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pname .n:hover{text-decoration:underline;color:var(--blue-darker)}
+/* Under the 1300px fold this span carries the product code and the category as
+   well, so it is allowed to wrap onto a second line. Nothing is clipped: the
+   narrow media query gives every row the same height instead. */
+/* width:0 + min-width:100% keeps this line from widening the Product column:
+   it renders at the cell's width but asks the table for nothing. */
+.pname .m{color:var(--ink-3);font-size:11px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;
+  width:0;min-width:100%}
+.pname .m > *{flex:none}
+.pname .m .narrowonly{overflow:hidden;text-overflow:ellipsis;min-width:0;flex:0 1 auto}
+/* the product name under an option row: too long to fit ends in an ellipsis
+   and keeps its tooltip, rather than being cut off mid-letter */
+.pname .m .pn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:0 1 auto}
+.narrowonly{display:none}
+.expander{width:20px;height:20px;flex:none;border:1px solid var(--rule);border-radius:2px;background:var(--panel);display:grid;place-items:center;cursor:pointer;color:var(--ink-2);padding:0}
+.expander:hover{border-color:#8c8f94;background:var(--sunk)}
+.expander svg{transition:transform .12s ease}
+.expander[aria-expanded="true"] svg{transform:rotate(90deg)}
+.pill{display:inline-flex;align-items:center;gap:5px;height:20px;padding:0 7px;border-radius:10px;font-size:11px;border:1px solid transparent;white-space:nowrap}
+.pill.good{background:var(--good-tint);color:var(--good-ink);border-color:var(--good-line)}
+.pill.warn{background:var(--warn-tint);color:var(--warn-ink);border-color:var(--warn-line)}
+.pill.bad{background:var(--bad-tint);color:var(--bad-ink);border-color:var(--bad-line)}
+.pill.grey{background:var(--sunk);color:var(--ink-2);border-color:var(--rule)}
+.pill.opt{background:var(--sunk);color:var(--ink-2);border-color:var(--rule)}
+.chip{display:inline-block;padding:1px 7px;border-radius:10px;background:var(--sunk);border:1px solid var(--rule);color:var(--ink-2);font-size:11px;white-space:nowrap}
+.money{font-variant-numeric:tabular-nums}
+.sale{color:var(--good-ink);font-size:11px;display:block;font-variant-numeric:tabular-nums;white-space:nowrap}
+.was{color:var(--ink-3);text-decoration:line-through}
+.cellbtn{display:inline-block;min-width:60px;padding:2px 5px;border:1px solid transparent;border-radius:2px;background:none;cursor:text;text-align:right;color:inherit;font-variant-numeric:tabular-nums}
+.cellbtn:hover{border-color:var(--rule);background:var(--panel)}
+.cellin{width:80px;height:26px;text-align:right;border:1px solid var(--blue);box-shadow:0 0 0 1px var(--blue);border-radius:2px;padding:0 6px;font-variant-numeric:tabular-nums}
+.mini{width:78px;height:26px;padding:0 6px;border:1px solid var(--rule-strong);border-radius:2px;background:var(--panel);font-variant-numeric:tabular-nums;text-align:right}
+.mini:hover{border-color:#8c8f94}
+.mini:focus{border-color:var(--blue);box-shadow:0 0 0 2px var(--blue);outline:none}
+.mini.qty{width:66px}
+
+/* visible-on-site switch */
+.switch{display:inline-flex;align-items:center;gap:7px;background:none;border:0;padding:2px;cursor:pointer}
+.track{width:34px;height:18px;flex:none;border-radius:9px;background:#8c8f94;position:relative;transition:background .13s ease}
+.knob{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;transition:transform .13s ease;box-shadow:0 1px 2px rgba(0,0,0,.3)}
+.switch[aria-checked="true"] .track{background:var(--good)}
+.switch[aria-checked="true"] .knob{transform:translateX(16px)}
+.switch .sl{font-size:11px;color:var(--ink-3);width:50px;text-align:left}
+.switch[aria-checked="true"] .sl{color:var(--good-ink)}
+
+/* variation rows */
+tr.vrow td{background:var(--sunk-2)}
+tr.vrow:hover td{background:#f4f6f8}
+tr.vrow td.first{box-shadow:inset 3px 0 0 var(--blue-line)}
+.vattrs{display:flex;gap:5px;align-items:center;flex-wrap:wrap;padding-left:28px}
+tr.vfoot td{background:var(--sunk-2);color:var(--ink-2);font-size:12px;padding:7px 8px 10px 40px;box-shadow:inset 3px 0 0 var(--blue-line)}
+tr.vfoot .dot{color:var(--ink-3);padding:0 4px}
+
+/* table footer */
+.tfoot{display:flex;align-items:center;gap:10px;padding:8px 11px;border-top:1px solid var(--rule);color:var(--ink-2);font-size:12px;flex-wrap:wrap}
+.tfoot .right{margin-left:auto;display:flex;align-items:center;gap:6px}
+.pbtn{width:26px;height:26px;border:1px solid var(--rule-strong);background:var(--panel);border-radius:2px;color:var(--ink-2);cursor:pointer;display:grid;place-items:center;padding:0}
+.pbtn[disabled]{opacity:.45;cursor:not-allowed}
+
+/* ---------------- notices ---------------- */
+.notice{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;background:var(--panel);border:1px solid var(--rule);border-left:4px solid var(--blue);border-radius:var(--r)}
+.notice.ok{border-left-color:var(--good)}
+.notice.warn{border-left-color:var(--warn);background:var(--warn-tint);border-color:var(--warn-line);border-left-color:var(--warn)}
+.notice.err{border-left-color:var(--bad);background:var(--bad-tint);border-color:var(--bad-line);border-left-color:var(--bad)}
+.notice .body{min-width:0;flex:1}
+.notice b{display:block;margin-bottom:2px}
+.notice .acts{margin-top:9px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.notice .x{margin-left:auto;background:none;border:0;color:var(--ink-3);cursor:pointer;font-size:15px;line-height:1;padding:2px 4px;border-radius:2px}
+.notice .x:hover{color:var(--ink);background:var(--sunk)}
+
+/* ---------------- states ---------------- */
+.statewrap{flex:1;display:grid;place-items:center;padding:44px 20px}
+.state{max-width:420px;text-align:center}
+.state .glyph{width:46px;height:46px;border-radius:50%;margin:0 auto 12px;display:grid;place-items:center;background:var(--blue-tint);color:var(--blue)}
+.state .glyph.bad{background:var(--bad-tint);color:var(--bad)}
+.state h3{font-size:16px;font-weight:600;margin-bottom:6px}
+.state p{color:var(--ink-2);margin-bottom:14px}
+.state .acts{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.skel{height:12px;border-radius:2px;background:linear-gradient(90deg,#eceef0 25%,#f6f7f7 37%,#eceef0 63%);background-size:400% 100%;animation:sh 1.3s ease infinite;display:block}
+@keyframes sh{0%{background-position:100% 50%}100%{background-position:0 50%}}
+.spin{width:15px;height:15px;border-radius:50%;border:2px solid var(--blue-line);border-top-color:var(--blue);animation:spin .8s linear infinite;flex:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ---------------- details drawer (overlay, closed by default) ---------------- */
+#scrim{position:fixed;inset:var(--bar) 0 0 0;background:rgba(29,35,39,.28);z-index:130;opacity:0;transition:opacity .16s ease}
+#drawer{
+  position:fixed;top:var(--bar);right:0;bottom:0;width:368px;max-width:92vw;z-index:140;
+  background:var(--panel);border-left:1px solid var(--rule-strong);box-shadow:-8px 0 26px rgba(16,24,40,.18);
+  display:flex;flex-direction:column;transform:translateX(102%);transition:transform .18s ease;
+}
+#drawer.open{transform:none}
+.dhead{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--rule)}
+.dhead h2{font-size:13px;font-weight:600;flex:1}
+.dclose{width:26px;height:26px;border:1px solid var(--rule-strong);background:var(--panel);border-radius:2px;color:var(--ink-2);cursor:pointer;display:grid;place-items:center;padding:0}
+.dclose:hover{border-color:#8c8f94;background:var(--sunk);color:var(--ink)}
+.dbody{flex:1;overflow:auto;padding:14px 14px 60px}
+.dtitle{display:flex;gap:10px;align-items:flex-start;margin-bottom:14px}
+.dtitle h3{font-size:15px;font-weight:600;line-height:1.35}
+.dsec{border-top:1px solid var(--rule-soft);margin-top:14px;padding-top:12px}
+.dsec h4{font-size:12px;font-weight:600;color:var(--ink-2);margin-bottom:8px}
+.stack{display:flex;flex-direction:column;gap:10px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.fwrap{position:relative;min-width:0}
+/* a value the product does not own: reported, not edited */
+.ro{font-weight:600;padding:5px 0;font-variant-numeric:tabular-nums}
+.fwrap .field{width:100%}
+.tick{color:var(--good-ink);font-size:11px;display:inline-flex;align-items:center;gap:3px;margin-left:6px}
+.optline{display:grid;grid-template-columns:minmax(0,1fr) 82px 70px;gap:8px;align-items:center;font-size:12px}
+.optline .on{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-2)}
+
+/* ---------------- bulk change screen ---------------- */
+.flow{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 300px;overflow:hidden}
+.flow-main{overflow:auto;padding:0;min-width:0}
+.flow-side{border-left:1px solid var(--rule);background:var(--sunk);overflow:auto;padding:16px 14px 26px;display:flex;flex-direction:column;gap:12px}
+.steps{display:flex;align-items:center;gap:2px;padding:10px 20px 0;border-bottom:1px solid var(--rule);flex-wrap:wrap}
+.step{display:flex;align-items:center;gap:8px;padding:8px 14px 10px;color:var(--ink-3);border-bottom:2px solid transparent;margin-bottom:-1px}
+.step .n{width:21px;height:21px;border-radius:50%;border:1px solid var(--rule-strong);flex:none;display:grid;place-items:center;font-size:11px;font-weight:600;background:var(--panel)}
+.step.now{color:var(--ink);font-weight:600;border-bottom-color:var(--blue)}
+.step.now .n{background:var(--blue);border-color:var(--blue);color:#fff}
+.step.done .n{background:var(--good-tint);border-color:var(--good-line);color:var(--good-ink)}
+.step .arr{color:var(--rule-strong)}
+.flowbody{padding:18px 20px 0;max-width:840px}
+.flowbody h2{font-size:17px;font-weight:600;margin-bottom:4px}
+.flowbody .sub{color:var(--ink-2);margin-bottom:16px;max-width:70ch}
+/* max-width matches the flowbody's CONTENT box (840 - 2*20), so the rule and
+   the step note line up with the cards above them. */
+.flowfoot{position:sticky;bottom:0;z-index:4;background:var(--panel);display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:20px 20px 0;padding:14px 0;border-top:1px solid var(--rule);max-width:800px;box-shadow:0 -6px 12px -6px rgba(16,24,40,.12)}
+.flowfoot .note{margin-left:auto;color:var(--ink-3);font-size:12px}
+
+.choices{display:grid;gap:8px}
+.choice{border:1px solid var(--rule);border-radius:4px;background:var(--panel);overflow:hidden}
+.choice:hover{border-color:var(--blue-line)}
+.choice.on{border-color:var(--blue);box-shadow:inset 0 0 0 1px var(--blue)}
+.choice > label{display:flex;gap:10px;align-items:flex-start;padding:11px 12px;cursor:pointer}
+.choice .ct{display:block;font-weight:600}
+.choice .cd{display:block;color:var(--ink-2);font-size:12px;margin-top:1px}
+.choice .cbody{border-top:1px dashed var(--rule);background:var(--sunk);padding:12px 12px 13px 40px;display:flex;gap:12px 16px;flex-wrap:wrap;align-items:flex-end}
+.choice .cbody .fg{display:flex;flex-direction:column;min-width:0}
+.choice .cbody .full{flex-basis:100%}
+.caveat{color:var(--ink-3);font-size:12px;margin-top:9px}
+
+.setgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:7px;flex-basis:100%}
+.setcard{display:flex;gap:8px;align-items:flex-start;padding:8px 10px;border:1px solid var(--rule);border-radius:3px;background:var(--panel);cursor:pointer}
+.setcard:hover{border-color:var(--blue-line)}
+.setcard.on{border-color:var(--blue);background:var(--blue-tint);box-shadow:inset 0 0 0 1px var(--blue)}
+.setcard span{font-size:12px}
+.setvalue{flex-basis:100%;display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;padding-top:4px}
+
+.card{background:var(--panel);border:1px solid var(--rule);border-radius:4px;padding:12px}
+.card h3{font-size:12px;font-weight:600;color:var(--ink-2);margin-bottom:8px}
+.big{font-size:26px;font-weight:600;line-height:1.1;font-variant-numeric:tabular-nums}
+.kv{display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-bottom:1px solid var(--rule-soft)}
+.kv:last-of-type{border-bottom:0}
+/* the label never shrinks or wraps; only the value wraps, and it stays right-aligned */
+.kv dt{color:var(--ink-2);flex:none;white-space:nowrap}
+.kv dd{font-weight:600;font-variant-numeric:tabular-nums;flex:1;min-width:0;text-align:right}
+
+table.preview{width:100%;border-collapse:separate;border-spacing:0;border:1px solid var(--rule);border-radius:4px;overflow:hidden;min-width:520px}
+table.preview th{background:var(--sunk);text-align:left;font-size:12px;font-weight:600;color:var(--ink-2);padding:8px 10px;border-bottom:1px solid var(--rule)}
+table.preview td{padding:7px 10px;border-bottom:1px solid var(--rule-soft)}
+table.preview tr:last-child td{border-bottom:0}
+table.preview .from{color:var(--ink-2);font-variant-numeric:tabular-nums}
+table.preview .to{font-weight:600;color:var(--good-ink);font-variant-numeric:tabular-nums}
+table.preview .to.down{color:var(--bad-ink)}
+table.preview tr.vline td:first-child{padding-left:26px;color:var(--ink-2)}
+/* a product the change cannot touch is listed too, so the table matches the
+   amber notice instead of quietly leaving it out */
+table.preview tr.skip td{background:var(--sunk);color:var(--ink-3)}
+table.preview td.nochange{color:var(--ink-3)}
+.varbox{margin-top:16px;border:1px solid var(--rule);border-radius:4px;background:var(--sunk);padding:12px 13px}
+.varbox .why{margin:6px 0 0 24px;color:var(--ink-2);font-size:12px;max-width:66ch}
+.check{display:flex;gap:9px;align-items:flex-start;cursor:pointer}
+.progress{height:9px;border-radius:5px;background:#e5e7e9;overflow:hidden;max-width:520px;border:1px solid var(--rule)}
+.progress > i{display:block;height:100%;width:0;background:var(--blue);transition:width .25s linear}
+
+/* ---------------- history ---------------- */
+.hist{flex:1;min-height:0;overflow:auto;padding:16px 20px 26px}
+.hist .bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.hist .bar .right{margin-left:auto;display:flex;gap:8px}
+.batch{border:1px solid var(--rule);border-radius:4px;background:var(--panel);margin-bottom:10px;overflow:hidden}
+.batch.undone{background:var(--sunk-2)}
+.btop{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;flex-wrap:wrap}
+.btop .what{min-width:220px;flex:1}
+.btop h3{font-size:14px;font-weight:600;margin-bottom:3px}
+.btop .meta{color:var(--ink-2);font-size:12px}
+.btop .meta .who{color:var(--ink);font-weight:600}
+.btags{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:0 14px 12px}
+.bacts{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-left:auto}
+.conflict{border-top:1px solid var(--warn-line);background:var(--warn-tint);padding:12px 14px;display:flex;gap:10px;align-items:flex-start}
+.conflict .body{flex:1;min-width:0}
+.conflict h4{font-size:13px;font-weight:600;margin-bottom:3px}
+.conflict p{color:var(--warn-ink);font-size:12px;max-width:74ch;margin-bottom:10px}
+.audit{border-top:1px solid var(--rule);background:var(--sunk-2)}
+.audit .cap{padding:8px 14px;color:var(--ink-2);font-size:12px;border-bottom:1px solid var(--rule-soft)}
+.audit .scroll{overflow-x:auto}
+.audit table{width:100%;border-collapse:collapse;min-width:560px}
+.audit th{text-align:left;font-size:11px;font-weight:600;color:var(--ink-2);padding:6px 14px;border-bottom:1px solid var(--rule-soft);white-space:nowrap}
+.audit td{padding:6px 14px;border-bottom:1px solid var(--rule-soft);font-size:12px;font-variant-numeric:tabular-nums}
+.audit tr:last-child td{border-bottom:0}
+.audit .more{padding:9px 14px;color:var(--ink-3);font-size:12px;border-top:1px solid var(--rule-soft)}
+.retain{color:var(--ink-3);font-size:12px;margin-top:14px}
+
+/* ---------------- modal ---------------- */
+#modalscrim{position:fixed;inset:0;background:rgba(29,35,39,.4);z-index:200;display:grid;place-items:center;padding:20px}
+.modal{background:var(--panel);border-radius:4px;box-shadow:0 20px 50px rgba(16,24,40,.32);width:min(460px,100%);max-height:86vh;display:flex;flex-direction:column}
+.modal header{display:flex;align-items:center;gap:8px;padding:13px 16px;border-bottom:1px solid var(--rule)}
+.modal header h2{font-size:15px;font-weight:600;flex:1}
+.modal .mbody{padding:16px;overflow:auto;display:flex;flex-direction:column;gap:16px}
+.modal footer{display:flex;gap:8px;align-items:center;padding:12px 16px;border-top:1px solid var(--rule);background:var(--sunk);flex-wrap:wrap}
+.modal footer .grow{margin-left:auto;display:flex;gap:8px}
+fieldset{border:0;padding:0;margin:0}
+legend{font-size:12px;font-weight:600;color:var(--ink-2);margin-bottom:6px;padding:0}
+
+/* ---------------- prototype switcher ---------------- */
+#proto{
+  position:fixed;right:12px;bottom:10px;z-index:300;background:var(--menu);color:var(--menu-text);
+  border-radius:6px;padding:5px 8px;box-shadow:0 10px 28px rgba(0,0,0,.3);
+  display:flex;align-items:center;gap:8px;font-size:12px;max-width:calc(100vw - 24px);flex-wrap:wrap;
+}
+#proto .div{width:1px;align-self:stretch;background:var(--menu-3)}
+#proto .lab{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#a7aaad}
+#proto .row{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
+#proto button{line-height:18px}
+#proto button{border:1px solid var(--menu-3);background:var(--menu-2);color:#e5e7e9;border-radius:3px;padding:3px 8px;cursor:pointer;font-size:12px}
+#proto button:hover{background:var(--menu-3);color:#fff}
+#proto button[aria-pressed="true"]{background:var(--blue);border-color:var(--blue);color:#fff;font-weight:600}
+
+/* ---------------- responsive ---------------- */
+@media (max-width:1300px){
+  /* drop the two low-value columns before the flagship switch could fall into a scroll region */
+  .c-sku,.c-cats{display:none}
+  .narrowonly{display:inline}
+  /* The code and the category move under the product name here, so the meta
+     line runs to two lines on any row that also carries an options pill or a
+     Featured chip. Every row is given the height of the tallest, so the grid
+     still scans evenly and nothing is cut off. */
+  table.grid tbody tr{height:80px}
+  /* a little of the spacing goes back into the Product column, so the folded
+     code and category still settle on two lines rather than three */
+  table.grid td .pcell{gap:6px}
+  .pname .m{gap:4px}
+}
+@media (max-width:1180px){
+  :root{--tree-w:168px}
+  .flow{grid-template-columns:minmax(0,1fr) 262px}
+  /* the three columns with room to spare give the Product column its width
+     back before the admin menu folds, so the grid still fits at 1024 */
+  .c-status{width:86px}
+  .c-stock{width:100px}
+  .c-vis{width:104px}
+  .switch .sl{width:46px}
+}
+@media (max-width:1024px){
+  /* the page itself tightens up here, as it always did; only the admin menu
+     waits for 960 */
+  /* the admin menu is still at full width here, so the tree gives up a little
+     more: it keeps the Product column wide enough for the folded code and
+     category to sit on one line under the name, two lines in all */
+  :root{--tree-w:152px}
+  #wpbody{padding:12px 14px 48px}
+  .pagehead h1{font-size:20px}
+  .pagehead .lede{display:none}
+  .flowbody{padding-inline:16px;margin-inline:16px}
+  .flowfoot{margin-inline:32px;padding-inline:0;margin-top:18px}
+  .steps{padding-inline:16px}
+}
+/* wp-admin folds its own menu to icons at 960px, so this screen folds with it
+   rather than a step early. The width that used to buy is taken back above,
+   from the category tree and from the columns with room to spare. */
+@media (max-width:960px){
+  :root{--menu-w:36px}
+  #adminmenu .mi .t,#adminmenu .sub{display:none}
+  #adminmenu .mi{justify-content:center;padding:9px 0}
+}
+@media (max-width:880px){
+  .slab{grid-template-columns:minmax(0,1fr)}
+  .tree-pane{display:none}
+  #proto{right:8px;bottom:8px}
+}
+@media (max-width:860px){
+  .flow{grid-template-columns:minmax(0,1fr)}
+  .flow-side{border-left:0;border-top:1px solid var(--rule)}
+}
+</style>
+</head>
+<body>
+
+<!-- ===================== WordPress admin bar ===================== -->
+<div id="adminbar" role="navigation" aria-label="Toolbar">
+  <button class="ab" type="button" tabindex="-1" aria-hidden="true"><span class="ab-logo"></span></button>
+  <button class="ab" type="button" tabindex="-1" aria-hidden="true">Bright Fold Promotions</button>
+  <button class="ab" type="button" tabindex="-1" aria-hidden="true">+ New</button>
+  <div class="right"><button class="ab" type="button" tabindex="-1" aria-hidden="true">Howdy, Mia <span class="ab-avatar"></span></button></div>
+</div>
+
+<!-- ===================== WordPress admin menu ===================== -->
+<nav id="adminmenu" aria-label="Main menu">
+  <button class="mi" type="button" tabindex="-1" aria-hidden="true"><span class="ico">&#9635;</span><span class="t">Dashboard</span></button>
+  <div class="sep"></div>
+  <button class="mi" type="button" tabindex="-1" aria-hidden="true"><span class="ico">&#9998;</span><span class="t">Posts</span></button>
+  <button class="mi" type="button" tabindex="-1" aria-hidden="true"><span class="ico">&#9638;</span><span class="t">Media</span></button>
+  <button class="mi" type="button" tabindex="-1" aria-hidden="true"><span class="ico">&#9707;</span><span class="t">Pages</span></button>
+  <button class="mi" type="button" tabindex="-1" aria-hidden="true"><span class="ico">&#9993;</span><span class="t">Comments</span></button>
+  <div class="sep"></div>
+  <button class="mi" type="button" tabindex="-1" aria-hidden="true"><span class="ico">&#9679;</span><span class="t">WooCommerce</span></button>
+  <button class="mi open" type="button" tabindex="-1" aria-hidden="true"><span class="ico">&#9744;</span><span class="t">Products</span></button>
+  <div class="sub">
+    <button type="button" tabindex="-1" aria-hidden="true">All Products</button>
+    <button type="button" tabindex="-1" aria-hidden="true">Add New</button>
+    <button type="button" tabindex="-1" aria-hidden="true">Categories</button>
+    <button type="button" tabindex="-1" aria-hidden="true">Tags</button>
+    <button type="button" tabindex="-1" aria-hidden="true">Attributes</button>
+    <button type="button" class="current" aria-current="page" tabindex="-1" aria-hidden="true">Bulk Catalogue Manager</button>
+  </div>
+  <button class="mi" type="button" tabindex="-1" aria-hidden="true"><span class="ico">&#9650;</span><span class="t">Analytics</span></button>
+  <button class="mi" type="button" tabindex="-1" aria-hidden="true"><span class="ico">&#9671;</span><span class="t">Marketing</span></button>
+  <div class="sep"></div>
+  <button class="mi" type="button" tabindex="-1" aria-hidden="true"><span class="ico">&#9678;</span><span class="t">Appearance</span></button>
+  <button class="mi" type="button" tabindex="-1" aria-hidden="true"><span class="ico">&#9735;</span><span class="t">Plugins</span></button>
+  <button class="mi" type="button" tabindex="-1" aria-hidden="true"><span class="ico">&#9787;</span><span class="t">Users</span></button>
+  <button class="mi" type="button" tabindex="-1" aria-hidden="true"><span class="ico">&#9874;</span><span class="t">Tools</span></button>
+  <button class="mi" type="button" tabindex="-1" aria-hidden="true"><span class="ico">&#9881;</span><span class="t">Settings</span></button>
+</nav>
+
+<!-- ===================== plugin screen ===================== -->
+<main id="wpbody">
+  <div>
+    <p class="crumb">Products &rsaquo; Bulk Catalogue Manager</p>
+    <div class="pagehead">
+      <div>
+        <h1>Bulk Catalogue Manager</h1>
+        <p class="lede">Change prices, stock, categories and what shows in your shop &mdash; for one product or a thousand.</p>
+      </div>
+      <div class="acts">
+        <div class="screennav" role="group" aria-label="Sections">
+          <button type="button" data-screen="grid" aria-current="true">Products</button>
+          <button type="button" data-screen="flow">Bulk change</button>
+          <button type="button" data-screen="history">History and undo</button>
+        </div>
+        <button class="btn btn-quiet" type="button" id="exportBtn">Export CSV</button>
+        <button class="btn-link" type="button" id="settingsBtn">Settings</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="notices" aria-live="polite"></div>
+
+  <section class="slab" id="slab" aria-label="Catalogue workspace">
+    <aside class="tree-pane" id="treePane" aria-label="Product categories">
+      <div class="tree-head">
+        <div class="row">
+          <h2>Categories</h2>
+          <button class="btn-link" type="button" id="catShowAll" style="font-size:12px">Show all</button>
+        </div>
+        <label class="sr" for="catSearch">Search categories</label>
+        <input class="field" id="catSearch" type="search" placeholder="Search categories">
+      </div>
+      <div class="tree-scroll" id="tree"></div>
+      <div class="tree-foot">
+        <button class="btn btn-quiet btn-sm" type="button" id="addCat">+ Add category</button>
+      </div>
+    </aside>
+    <div class="grid-pane" id="pane"></div>
+  </section>
+</main>
+
+<!-- ===================== details drawer ===================== -->
+<div id="scrim" hidden></div>
+<aside id="drawer" role="dialog" aria-modal="true" aria-label="Product details" aria-hidden="true"></aside>
+
+<!-- ===================== modal host ===================== -->
+<div id="modalHost"></div>
+
+<!-- ===================== prototype switcher ===================== -->
+<div id="proto" role="group" aria-label="Prototype controls">
+  <span class="lab">Prototype</span>
+  <div class="row">
+    <button type="button" data-proto="1" aria-pressed="true">1 Grid</button>
+    <button type="button" data-proto="2" aria-pressed="false">2 Options</button>
+    <button type="button" data-proto="3" aria-pressed="false">3 Change</button>
+    <button type="button" data-proto="4" aria-pressed="false">4 History</button>
+  </div>
+  <span class="div" aria-hidden="true"></span>
+  <div class="row">
+    <button type="button" data-state="normal" aria-pressed="true">Normal</button>
+    <button type="button" data-state="loading" aria-pressed="false">Loading</button>
+    <button type="button" data-state="empty" aria-pressed="false">Empty</button>
+    <button type="button" data-state="error" aria-pressed="false">Error</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* =====================================================================
+   1. Sample catalogue. A fictional promotional-merchandise shop.
+   ===================================================================== */
+var CAT_ROWS = [
+  ["clothing","Clothing",null],
+    ["tees","T-Shirts","clothing"],
+      ["tees-short","Short sleeve","tees"],
+      ["tees-long","Long sleeve","tees"],
+    ["golf","Golf Shirts","clothing"],
+    ["caps","Caps and Hats","clothing"],
+      ["caps-cap","Caps","caps"],
+      ["caps-beanie","Beanies","caps"],
+  ["drink","Drinkware",null],
+    ["mugs","Mugs","drink"],
+      ["mugs-ceramic","Ceramic","mugs"],
+      ["mugs-travel","Travel","mugs"],
+    ["bottles","Bottles","drink"],
+  ["writing","Writing",null],
+    ["pens","Pens","writing"],
+      ["pens-ball","Ballpoint","pens"],
+      ["pens-metal","Metal","pens"],
+    ["pencils","Pencils","writing"],
+  ["paper","Paper",null],
+    ["notebooks","Notebooks","paper"],
+      ["nb-a5","A5","notebooks"],
+      ["nb-a4","A4","notebooks"],
+    ["notepads","Notepads","paper"],
+  ["bags","Bags",null],
+    ["totes","Tote Bags","bags"],
+    ["backpacks","Backpacks","bags"],
+  ["tech","Technology",null],
+    ["usb","USB Drives","tech"],
+    ["power","Power Banks","tech"],
+  ["event","Event",null],
+    ["lanyards","Lanyards","event"],
+    ["badges","Badge Holders","event"],
+  /* A permanent home for products whose category is deleted, so nothing is
+     ever left pointing at an id that no longer exists. */
+  ["uncategorised","Uncategorised",null]
+];
+
+var CATS = {};
+var ROOTS = [];
+CAT_ROWS.forEach(function (r) { CATS[r[0]] = { id:r[0], name:r[1], parent:r[2], kids:[] }; });
+CAT_ROWS.forEach(function (r) { if (r[2]) { CATS[r[2]].kids.push(r[0]); } else { ROOTS.push(r[0]); } });
+
+/* name, code, category, regular, sale (0 = none), stock status, qty, status, visible, has options */
+var RAW = [
+  ["Classic Cotton T-Shirt","TSH-100","tees-short",12.50,9.95,"instock",420,"publish",true,true],
+  ["Premium Combed Tee","TSH-110","tees-short",16.00,0,"instock",180,"publish",true,false],
+  ["Performance Sports Tee","TSH-120","tees-short",18.50,0,"instock",14,"publish",true,false],
+  ["Long Sleeve Cotton Tee","TSH-200","tees-long",16.50,0,"instock",96,"publish",true,true],
+  ["Raglan Long Sleeve Tee","TSH-210","tees-long",18.00,0,"outofstock",0,"publish",false,false],
+  ["Classic Golf Shirt","GLF-100","golf",24.00,21.00,"instock",240,"publish",true,true],
+  ["Performance Golf Shirt","GLF-110","golf",28.50,0,"instock",110,"publish",true,false],
+  ["Ladies Golf Shirt","GLF-120","golf",26.00,0,"instock",9,"draft",false,false],
+  ["Five Panel Cap","CAP-100","caps-cap",8.50,0,"instock",310,"publish",true,true],
+  ["Trucker Cap","CAP-110","caps-cap",9.00,7.20,"instock",145,"publish",true,false],
+  ["Bucket Hat","CAP-120","caps-cap",11.50,0,"instock",64,"publish",true,false],
+  ["Ribbed Knit Beanie","BEA-100","caps-beanie",7.50,0,"instock",220,"publish",true,false],
+  ["Fleece Lined Beanie","BEA-110","caps-beanie",9.50,0,"instock",18,"publish",true,false],
+  ["White Ceramic Mug","MUG-100","mugs-ceramic",4.50,0,"instock",900,"publish",true,false],
+  ["Two Tone Ceramic Mug","MUG-110","mugs-ceramic",5.90,4.90,"instock",430,"publish",true,false],
+  ["Enamel Camp Mug","MUG-120","mugs-ceramic",8.00,0,"instock",120,"publish",true,false],
+  ["Travel Mug 350ml","MUG-200","mugs-travel",12.90,0,"instock",260,"publish",true,true],
+  ["Vacuum Travel Tumbler","MUG-210","mugs-travel",17.90,0,"instock",12,"publish",true,false],
+  ["Aluminium Water Bottle","BOT-100","bottles",6.90,0,"instock",540,"publish",true,false],
+  ["Stainless Steel Bottle 750ml","BOT-110","bottles",15.90,13.90,"instock",210,"publish",true,false],
+  ["Tritan Sports Bottle","BOT-120","bottles",7.90,0,"instock",320,"publish",true,false],
+  ["Glass Bottle with Sleeve","BOT-130","bottles",11.90,0,"outofstock",0,"publish",false,false],
+  ["Budget Ballpoint Pen","PEN-100","pens-ball",0.45,0,"instock",12500,"publish",true,false],
+  ["Grip Ballpoint Pen","PEN-110","pens-ball",0.69,0,"instock",8400,"publish",true,false],
+  ["Recycled Paper Pen","PEN-120","pens-ball",0.85,0,"instock",3600,"publish",true,false],
+  ["Brushed Metal Pen","MET-100","pens-metal",3.40,0,"instock",760,"publish",true,false],
+  ["Metal Pen and Stylus","MET-110","pens-metal",4.20,3.50,"instock",410,"publish",true,false],
+  ["Twist Action Metal Pen","MET-120","pens-metal",3.90,0,"instock",22,"publish",true,false],
+  ["HB Pencil Pack of 10","PCL-100","pencils",2.40,0,"instock",1500,"publish",true,false],
+  ["Wooden Pencil Set","PCL-110","pencils",3.20,0,"instock",640,"draft",false,false],
+  ["A5 Hardcover Notebook","NB5-100","nb-a5",7.90,0,"instock",380,"publish",true,false],
+  ["A5 Recycled Notebook","NB5-110","nb-a5",6.50,5.50,"instock",290,"publish",true,false],
+  ["A5 Wire Bound Notebook","NB5-120","nb-a5",7.20,0,"instock",340,"publish",true,false],
+  ["A4 Hardcover Notebook","NB4-100","nb-a4",11.90,0,"instock",16,"publish",true,false],
+  ["A4 Executive Folder","NB4-110","nb-a4",14.50,0,"instock",120,"publish",true,false],
+  ["A6 Notepad","NPD-100","notepads",2.90,0,"instock",1900,"publish",true,false],
+  ["Cotton Tote Bag","TOT-100","totes",6.90,0,"instock",700,"publish",true,true],
+  ["Canvas Shopper Tote","TOT-110","totes",9.90,0,"instock",260,"publish",true,false],
+  ["Jute Shopping Bag","TOT-120","totes",8.90,7.50,"instock",180,"publish",true,false],
+  ["Laptop Backpack 15 inch","BKP-100","backpacks",44.90,0,"instock",11,"publish",true,false],
+  ["Drawstring Backpack","BKP-110","backpacks",8.90,0,"instock",520,"publish",true,false],
+  ["Roll Top Backpack","BKP-120","backpacks",52.90,0,"outofstock",0,"draft",false,false],
+  ["USB Flash Drive 16GB","USB-100","usb",9.50,0,"instock",480,"publish",true,false],
+  ["Metal USB Drive 32GB","USB-110","usb",13.90,11.90,"instock",240,"publish",true,false],
+  ["Power Bank 10000mAh","PWR-100","power",28.90,0,"instock",19,"publish",true,false],
+  ["Printed Lanyard","LAN-100","lanyards",1.25,0,"instock",4200,"publish",true,false],
+  ["Metal Keyring Badge","BDG-100","badges",1.10,0,"instock",2600,"publish",true,false],
+  ["Bottle Opener Badge","BDG-110","badges",1.40,0,"instock",1400,"publish",true,false]
+];
+
+var VAR_SPEC = {
+  "TSH-100": { Size:["S","M","L","XL"], Colour:["Navy","White"] },
+  "TSH-200": { Size:["S","M","L"], Colour:["Charcoal"] },
+  "GLF-100": { Size:["M","L","XL"], Colour:["Black","Sky"] },
+  "CAP-100": { Colour:["Black","Navy","Stone"] },
+  "MUG-200": { Colour:["Silver","Black","Blue"] },
+  "TOT-100": { Colour:["Natural","Black"], Size:["Standard","Large"] }
+};
+
+var PRODUCTS = [], byId = {}, rowById = {};
+(function build() {
+  var vid = 5000;
+  RAW.forEach(function (r, i) {
+    var p = {
+      id:i + 1, name:r[0], sku:r[1], cat:r[2], price:r[3], sale:r[4],
+      stockStatus:r[5], qty:r[6], status:r[7], visible:r[8],
+      catvis:r[8] ? "shop-search" : "hidden", featured:i % 11 === 0,
+      manageStock:true, weight:0.25, dims:"30 x 20 x 4", shipClass:"standard",
+      taxStatus:"taxable", taxClass:"standard", soldIndividually:false, reviews:true,
+      tags:i % 4 === 0 ? ["Best seller"] : (i % 7 === 0 ? ["Eco range"] : []),
+      vars:[]
+    };
+    if (r[9]) {
+      var spec = VAR_SPEC[p.sku];
+      var sizes = spec.Size || [null], colours = spec.Colour || [null], n = 0;
+      sizes.forEach(function (s) {
+        colours.forEach(function (c) {
+          n++;
+          var attrs = [];
+          if (s) attrs.push(["Size", s]);
+          if (c) attrs.push(["Colour", c]);
+          var qty = [64,120,38,9,210,76,0,142][n % 8];
+          p.vars.push({
+            id:++vid, parent:p.id, attrs:attrs, sku:p.sku + "-" + n,
+            price:Math.round((p.price + (s === "XL" || s === "Large" ? 1 : 0)) * 100) / 100,
+            sale:0, qty:qty, stockStatus:qty === 0 ? "outofstock" : "instock",
+            /* an option carries its own Published-or-draft, seeded from the
+               product, so a bulk status change can really reach it */
+            status:p.status, visible:true
+          });
+        });
+      });
+      /* The parent's figures are derived from the options, never invented:
+         the drawer shows the total and the grid shows the range. */
+      p.qty = p.vars.reduce(function (s2, v) { return s2 + v.qty; }, 0);
+      p.stockStatus = p.qty === 0 ? "outofstock" : p.stockStatus;
+      p.sale = 0;
+    }
+    PRODUCTS.push(p);
+  });
+  PRODUCTS.forEach(function (p) {
+    byId[p.id] = p; rowById[p.id] = p;
+    p.vars.forEach(function (v) { rowById[v.id] = v; });
+  });
+})();
+
+var SCALE = 26;
+var CAT_COUNT = {};
+function countCats() {
+  Object.keys(CATS).forEach(function (id) { CAT_COUNT[id] = 0; });
+  PRODUCTS.forEach(function (p) {
+    var c = p.cat;
+    while (c && CATS[c]) { CAT_COUNT[c] += 1; c = CATS[c].parent; }
+  });
+}
+countCats();
+/* The shop total is the tree's own total, scaled: the header, the footer and
+   the tree read one number, so deleting or moving a category cannot make them
+   disagree. */
+function shopTotal() {
+  return ROOTS.reduce(function (s, id) { return s + (CAT_COUNT[id] || 0); }, 0) * SCALE;
+}
+
+/* =====================================================================
+   2. State
+   ===================================================================== */
+var state = {
+  screen:"grid",
+  forced:"normal",
+  cat:null, catSearch:"", search:"",
+  filters:{ status:"any", stock:"any", visible:"any" },
+  view:"all",
+  mode:"products",
+  cols:{ sku:true, cats:true, stock:true, status:true },
+  expanded:{}, selected:{}, selectedVars:{}, allMatching:false,
+  pop:null, treeMenu:null, treeRename:null, treeMove:null,
+  drawer:null, savedField:null, drawerNote:null,
+  flow:{ step:1, action:"change_price", setField:"status", otherOpen:false, applyToVars:false, progress:0, running:false, done:false, batch:null },
+  histWho:"Everyone", histWhen:"Last 30 days", auditOpen:{}, conflictOpen:null, conflictAuditOpen:null,
+  notice:null, modal:null
+};
+
+var SAVED_VIEWS = [
+  { id:"all", label:"All products" },
+  { id:"onsale", label:"On sale" },
+  { id:"hidden", label:"Hidden from site" },
+  { id:"lowstock", label:"Low stock" }
+];
+
+/* =====================================================================
+   3. Helpers
+   ===================================================================== */
+function $(sel, root) { return (root || document).querySelector(sel); }
+function $$(sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, function (c) {
+    return { "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c];
+  });
+}
+function money(n) {
+  if (n === null || n === undefined || n === "" || n === 0) return "—";
+  return "R" + Number(n).toFixed(2);
+}
+/* WooCommerce derives a variable product's shop price from its options, so the
+   parent row shows the range rather than a figure nothing carries. */
+function priceRange(p) {
+  var ps = p.vars.map(function (v) { return v.price; }).filter(function (v) { return v > 0; });
+  if (!ps.length) return "—";
+  var min = Math.min.apply(null, ps), max = Math.max.apply(null, ps);
+  return min === max ? money(min) : money(min) + " – " + money(max);
+}
+function nf(n) { return Number(n).toLocaleString("en-GB"); }
+function plural(n, one, many) { return nf(n) + " " + (n === 1 ? one : many); }
+/* The verb has to follow the count as well as the noun, or a selection of one
+   reads "1 product change nothing". */
+function noChangePhrase(n) {
+  return plural(n, "product", "products") + (n === 1 ? " changes nothing." : " change nothing.");
+}
+function catPath(id) {
+  /* A product can outlive the category it was in, so a missing id reads as the
+     home it was moved to rather than as "undefined". */
+  if (!CATS[id]) return ["Uncategorised"];
+  var out = [], c = CATS[id];
+  while (c) { out.unshift(c.name); c = c.parent ? CATS[c.parent] : null; }
+  return out;
+}
+function descendants(id) {
+  var out = [id];
+  (CATS[id].kids || []).forEach(function (k) { out = out.concat(descendants(k)); });
+  return out;
+}
+function initials(name) {
+  return name.replace(/[^A-Za-z ]/g, "").split(/\s+/).slice(0, 2).map(function (w) { return w[0]; }).join("").toUpperCase();
+}
+function thumbColour(id) {
+  /* One hue at three lightnesses: the thumbnails stay distinguishable without
+     adding seven more accent colours to the palette. */
+  var lights = [26, 34, 42];
+  return "hsl(206,22%," + lights[id % lights.length] + "%)";   /* white 10px text stays above 4.5:1 */
+}
+function stockPill(row) {
+  if (row.stockStatus === "outofstock") return '<span class="pill bad">Out of stock</span>';
+  if (row.stockStatus === "onbackorder") return '<span class="pill warn">On backorder</span>';
+  if (row.qty <= 25) return '<span class="pill warn num">Low &middot; ' + nf(row.qty) + '</span>';
+  return '<span class="pill good num">In stock &middot; ' + nf(row.qty) + '</span>';
+}
+var CATVIS = {
+  "shop-search":"Shop and search results",
+  "shop":"Shop only",
+  "search":"Search results only",
+  "hidden":"Hidden"
+};
+
+function filtered() {
+  var set = state.cat ? descendants(state.cat) : null;
+  var q = state.search.trim().toLowerCase();
+  var f = state.filters;
+  return PRODUCTS.filter(function (p) {
+    if (set && set.indexOf(p.cat) === -1) return false;
+    if (q && p.name.toLowerCase().indexOf(q) === -1 && p.sku.toLowerCase().indexOf(q) === -1) return false;
+    if (f.status !== "any" && p.status !== f.status) return false;
+    if (f.stock === "low" && !(p.stockStatus === "instock" && p.qty <= 25)) return false;
+    if (f.stock === "instock" && p.stockStatus !== "instock") return false;
+    if (f.stock === "outofstock" && p.stockStatus !== "outofstock") return false;
+    if (f.visible === "yes" && !p.visible) return false;
+    if (f.visible === "no" && p.visible) return false;
+    if (state.view === "onsale" && !(p.sale > 0)) return false;
+    return true;
+  });
+}
+function filtersActive() {
+  var f = state.filters;
+  return !!(state.cat || state.search.trim() || f.status !== "any" || f.stock !== "any" || f.visible !== "any" || state.view !== "all");
+}
+function matchingTotal() {
+  var rows = filtered();
+  if (!filtersActive()) return shopTotal();
+  if (state.cat && !state.search.trim() && state.filters.status === "any" &&
+      state.filters.stock === "any" && state.filters.visible === "any" && state.view === "all") {
+    return rows.length * SCALE;
+  }
+  return rows.length;
+}
+function selectedIds() { return Object.keys(state.selected).filter(function (k) { return state.selected[k]; }).map(Number); }
+function selectedVarIds() { return Object.keys(state.selectedVars).filter(function (k) { return state.selectedVars[k]; }).map(Number); }
+function selectionCount() { return state.allMatching ? matchingTotal() : selectedIds().length; }
+function targetProducts() {
+  if (state.allMatching) return filtered();
+  var ids = selectedIds();
+  if (!ids.length) return [];
+  return PRODUCTS.filter(function (p) { return ids.indexOf(p.id) !== -1; });
+}
+/* Options ticked in Variations mode are a selection in their own right: the
+   flow carries them rather than substituting a set of products for them. */
+function targetVars() {
+  if (state.allMatching || selectedIds().length) return [];
+  return selectedVarIds().map(function (id) { return rowById[id]; }).filter(Boolean);
+}
+function flowOnOptions() { return targetVars().length > 0; }
+/* What the flow is about to change, counted the way the user ticked it. */
+function flowTargetCount() {
+  var n = selectionCount();
+  return n || targetVars().length;
+}
+
+/* =====================================================================
+   4. History, journalled with before values
+   ===================================================================== */
+var HISTORY = [];
+var batchSeq = 400;
+
+/* The prototype runs on a pinned clock so seeded and new batches stay in one
+   order. Real wall-clock time would put a new batch above older-looking rows. */
+var NOW = new Date(2026, 8, 21, 16, 40);
+var clockOffset = 0;
+function pad2(n) { return String(n).length < 2 ? "0" + n : String(n); }
+function stamp() {
+  clockOffset += 1;
+  var d = new Date(NOW.getTime() + clockOffset * 60000);
+  return pad2(d.getHours()) + ":" + pad2(d.getMinutes());
+}
+
+function batchFor(opts) {
+  return {
+    id:"b" + (++batchSeq), when:opts.when, time:opts.time, ago:opts.ago,
+    days:opts.days || 0,
+    who:opts.who, what:opts.what, scope:opts.scope,
+    count:opts.count, unit:opts.unit || "product", withVars:!!opts.withVars, undone:!!opts.undone,
+    undoneBy:opts.undoneBy || null, conflict:opts.conflict || 0,
+    conflictIds:opts.conflictIds || [], conflictEdits:opts.conflictEdits || {},
+    partialUndone:false, undoneCount:0,
+    kind:opts.kind || "values", changes:opts.changes || []
+  };
+}
+function record(opts) { var b = batchFor(opts); HISTORY.unshift(b); return b; }
+
+function applyChange(c) { var r = rowById[c.rid]; if (r) r[c.field] = c.after; }
+function revertChange(c) { var r = rowById[c.rid]; if (r) r[c.field] = c.before; }
+
+function seedHistory() {
+  var r2 = function (n) { return Math.round(n * 100) / 100; };
+
+  /* Audit rows are drawn from the scope printed on the batch, never at random. */
+  var idsIn = function (root, n, simpleOnly) {
+    var set = descendants(root);
+    return PRODUCTS.filter(function (p) {
+      /* A price batch can only list products that carry a price of their own:
+         a variable product's price lives on its options. */
+      if (simpleOnly && p.vars.length) return false;
+      return set.indexOf(p.cat) !== -1;
+    }).slice(0, n).map(function (p) { return p.id; });
+  };
+
+  var priceIds = [31, 32, 33, 34, 35, 36];
+  HISTORY.push(batchFor({
+    when:"Today", time:"14:32", ago:"2 hours ago", days:0, who:"Mia Fourie",
+    what:"Increased the regular price by 8%", scope:"All products",
+    count:shopTotal(), withVars:true, kind:"price",
+    /* The batch is chipped "Variations included", so its sample carries option
+       rows too: the chip and the change list say the same thing. */
+    changes:priceIds.map(function (id) {
+      return { rid:id, field:"price", label:"Regular price", before:r2(byId[id].price / 1.08), after:byId[id].price };
+    }).concat(byId[1].vars.slice(0, 2).map(function (v) {
+      return { rid:v.id, field:"price", label:"Regular price", before:r2(v.price / 1.08), after:v.price };
+    }))
+  }));
+
+  var saleIds = idsIn("clothing", 8, true);
+  HISTORY.push(batchFor({
+    when:"Today", time:"11:05", ago:"5 hours ago", days:0, who:"Sam Naidoo",
+    what:"Copied regular price to sale price, then took 15% off",
+    scope:"Filter: Clothing", count:120, conflict:3, kind:"price",
+    conflictIds:saleIds.slice(0, 3),
+    conflictEdits:(function () {
+      var m = {}, at = ["today 15:12", "today 15:20", "today 15:41"], by = ["Sam Naidoo", "Sam Naidoo", "Mia Fourie"];
+      saleIds.slice(0, 3).forEach(function (id, i) { m[id] = by[i] + " · " + at[i]; });
+      return m;
+    })(),
+    changes:saleIds.map(function (id) {
+      /* Every row is computed from the rule the batch title states, so the log
+         and the grid cannot disagree about what 15% off came to. */
+      return { rid:id, field:"sale", label:"Sale price", before:0, after:r2(byId[id].price * 0.85) };
+    })
+  }));
+  saleIds.forEach(function (id) { byId[id].sale = r2(byId[id].price * 0.85); });
+
+  var stockIds = idsIn("writing", 6);
+  HISTORY.push(batchFor({
+    when:"19 September 2026", time:"16:20", ago:"2 days ago", days:2, who:"Sam Naidoo",
+    what:"Set stock status to In stock", scope:"Category: Writing", count:48, kind:"stock",
+    changes:stockIds.map(function (id) {
+      return { rid:id, field:"stockStatus", label:"Stock status", before:"outofstock", after:"instock" };
+    })
+  }));
+
+  HISTORY.push(batchFor({
+    when:"18 September 2026", time:"09:14", ago:"3 days ago", days:3, who:"Mia Fourie",
+    what:"Hid products from the site", scope:"Filter: Out of stock",
+    count:26, undone:true, undoneBy:"Sam", kind:"visibility",
+    changes:[5, 22, 42].map(function (id) {
+      return { rid:id, field:"visible", label:"Visible on site", before:true, after:false };
+    })
+  }));
+
+  /* A batch chipped "Undone" must leave the catalogue in the put-back state. */
+  HISTORY.forEach(function (b) {
+    if (!b.undone) return;
+    b.changes.forEach(function (c) {
+      revertChange(c);
+      var r = rowById[c.rid];
+      if (c.field === "visible" && r && !r.parent) r.catvis = r.visible ? "shop-search" : "hidden";
+    });
+  });
+  countCats();
+}
+seedHistory();
+
+function fmtValue(field, v) {
+  if (field === "price" || field === "sale") return money(v);
+  if (field === "visible") return v ? "On site" : "Hidden";
+  if (field === "status") return v === "publish" ? "Published" : "Draft";
+  if (field === "catvis") return CATVIS[v] || String(v);
+  if (field === "cat") return catPath(v).join(" › ");
+  if (field === "tags") return v && v.length ? v.join(", ") : "None";
+  if (field === "stockStatus") return { instock:"In stock", outofstock:"Out of stock", onbackorder:"On backorder" }[v] || String(v);
+  if (field === "qty") return nf(v);
+  if (field === "featured" || field === "manageStock" || field === "soldIndividually") return v ? "Yes" : "No";
+  if (field === "reviews") return v ? "On" : "Off";
+  if (v === null || v === undefined || v === "") return "—";
+  /* Anything else chosen from a menu is read back through that menu, so the
+     preview shows "Standard rate", never the value behind it. */
+  var spec = SET_FIELDS && SET_FIELDS[field];
+  if (spec && spec[1] === "select") {
+    for (var i = 0; i < spec[2].length; i++) {
+      if (spec[2][i][0] === String(v)) return spec[2][i][1];
+    }
+  }
+  return String(v);
+}
+function rowName(c) {
+  var r = rowById[c.rid];
+  if (!r) return "Product " + c.rid;
+  if (r.parent) return byId[r.parent].name + " — " + r.attrs.map(function (a) { return a[1]; }).join(" / ");
+  return r.name;
+}
+
+function notify(kind, text, undoId) {
+  state.notice = { kind:kind, text:text, undo:undoId || null };
+}
+
+function doUndo(batch, partial) {
+  /* A partial undo must actually leave the changed-since products alone. */
+  var skip = partial ? (batch.conflictIds || []) : [];
+  batch.changes.forEach(function (c) {
+    if (skip.indexOf(c.rid) !== -1) return;
+    revertChange(c);
+    var r = rowById[c.rid];
+    if (c.field === "visible" && r && !r.parent) r.catvis = r.visible ? "shop-search" : "hidden";
+  });
+  var n = partial ? batch.count - batch.conflict : batch.count;
+  batch.undone = !partial;
+  batch.partialUndone = !!partial;
+  batch.undoneCount = n;
+  batch.undoneBy = "Mia";
+  state.conflictOpen = null;
+  state.conflictAuditOpen = null;
+  countCats();
+  notify("ok", "Undone: " + batch.what.charAt(0).toLowerCase() + batch.what.slice(1) + ". " +
+    plural(n, "product", "products") + " put back" +
+    (partial ? ", and the " + batch.conflict + " that changed since were left alone." : "."));
+  render();
+}
+function undoWording(batch) {
+  var one = batch.unit === "option" ? "option" : "product";
+  var what = plural(batch.count, one, one + "s");
+  var solo = batch.count === 1;
+  if (batch.kind === "price") return "This puts " + what + " back to " + (solo ? "its old price" : "their old prices") + ". Continue?";
+  if (batch.kind === "stock") return "This puts " + what + " back to " + (solo ? "its" : "their") + " old stock status. Continue?";
+  if (batch.kind === "visibility") return "This puts " + what + " back to how " + (solo ? "it showed" : "they showed") + " on the site. Continue?";
+  return "This puts " + what + " back to " + (solo ? "its old values" : "their old values") + ". Continue?";
+}
+
+/* =====================================================================
+   5. Notices
+   ===================================================================== */
+function renderNotices() {
+  var host = $("#notices");
+  if (!state.notice) { host.innerHTML = ""; return; }
+  var n = state.notice;
+  host.innerHTML =
+    '<div class="notice ' + n.kind + '"' + (n.kind === "err" ? ' role="alert" aria-live="assertive"' : ' role="status"') + ">" +
+      '<div class="body">' + esc(n.text) + "</div>" +
+      (n.undo ? '<button class="btn btn-sm" type="button" data-undoid="' + n.undo + '">Undo</button>' : "") +
+      '<button class="x" type="button" data-dismiss="1" aria-label="Dismiss this notice">&times;</button>' +
+    "</div>";
+}
+
+/* =====================================================================
+   6. Category tree: filter, rename, move, delete, drag to re-parent
+   ===================================================================== */
+var openCats = { clothing:true, tees:true, drink:true };
+var CHEV = '<svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true"><path d="M3 1l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+var GRIP = '<svg width="8" height="12" viewBox="0 0 8 12" aria-hidden="true"><circle cx="2" cy="2" r="1"/><circle cx="6" cy="2" r="1"/><circle cx="2" cy="6" r="1"/><circle cx="6" cy="6" r="1"/><circle cx="2" cy="10" r="1"/><circle cx="6" cy="10" r="1"/></svg>';
+
+function isAncestor(a, b) {
+  var c = CATS[b];
+  while (c && c.parent) { if (c.parent === a) return true; c = CATS[c.parent]; }
+  return false;
+}
+function siblingsOf(id) { return CATS[id].parent ? CATS[CATS[id].parent].kids : ROOTS; }
+function detach(id) {
+  var list = siblingsOf(id), i = list.indexOf(id);
+  if (i !== -1) list.splice(i, 1);
+}
+function moveCat(dragId, targetId, mode) {
+  if (dragId === targetId || isAncestor(dragId, targetId)) return false;
+  detach(dragId);
+  if (mode === "in") {
+    CATS[dragId].parent = targetId;
+    CATS[targetId].kids.push(dragId);
+    openCats[targetId] = true;
+  } else {
+    var parent = CATS[targetId].parent;
+    CATS[dragId].parent = parent;
+    var list = parent ? CATS[parent].kids : ROOTS;
+    var i = list.indexOf(targetId);
+    list.splice(mode === "after" ? i + 1 : i, 0, dragId);
+  }
+  countCats();
+  return true;
+}
+
+function renderTree() {
+  var q = state.catSearch.trim().toLowerCase();
+  function matches(id) {
+    if (!q) return true;
+    if (CATS[id].name.toLowerCase().indexOf(q) !== -1) return true;
+    return CATS[id].kids.some(matches);
+  }
+  function node(id, depth) {
+    if (!matches(id)) return "";
+    var c = CATS[id];
+    var hasKids = c.kids.length > 0;
+    var open = q ? true : !!openCats[id];
+    var sel = state.cat === id;
+    var renaming = state.treeRename === id;
+    var menu = state.treeMenu === id;
+    var inner = renaming
+      ? '<input class="trename" id="rn_' + id + '" value="' + esc(c.name) + '" aria-label="New name for ' + esc(c.name) + '">'
+      : '<button class="tname" type="button" title="' + esc(c.name) + '" data-cat="' + id + '">' +
+          '<span class="t">' + esc(c.name) + "</span>" +
+          '<span class="tct num">' + nf(CAT_COUNT[id] * SCALE) + "</span></button>" +
+        '<button class="kebab" type="button" data-kebab="' + id + '" aria-haspopup="true" aria-expanded="' + menu +
+          '" aria-label="More actions for ' + esc(c.name) + '">&#8942;</button>';
+    return (
+      '<div class="tnode' + (open ? " open" : "") + '" data-node="' + id + '">' +
+        '<div class="trow' + (sel ? " sel" : "") + (menu ? " menu-open" : "") + '" data-trow="' + id + '" draggable="true">' +
+          '<span class="grip" role="img" aria-label="Drag to move ' + esc(c.name) + '">' + GRIP + "</span>" +
+          (hasKids
+            ? '<button class="twist" type="button" data-twist="' + id + '" aria-label="' + (open ? "Collapse " : "Expand ") + esc(c.name) + '">' + CHEV + "</button>"
+            : '<span class="twist" aria-hidden="true"></span>') +
+          inner +
+        "</div>" +
+        (menu ? treeMenuHTML(id) : "") +
+        (hasKids ? '<div class="tkids"' + (open ? "" : " hidden") + ">" +
+          c.kids.map(function (k) { return node(k, depth + 1); }).join("") + "</div>" : "") +
+      "</div>"
+    );
+  }
+  function treeMenuHTML(id) {
+    if (state.treeMove === id) {
+      var opts = Object.keys(CATS)
+        .filter(function (k) { return k !== id && !isAncestor(id, k); })
+        .map(function (k) { return '<option value="' + k + '">' + esc(catPath(k).join(" › ")) + "</option>"; }).join("");
+      return '<div class="tmenu"><div class="mv">' +
+        '<label class="lbl" for="mv_' + id + '">Move under</label>' +
+        '<select class="field" id="mv_' + id + '"><option value="">Top level</option>' + opts + "</select>" +
+        '<div style="display:flex;gap:6px"><button class="btn btn-primary btn-sm" type="button" data-movego="' + id + '">Move</button>' +
+        '<button class="btn btn-quiet btn-sm" type="button" data-treeclose="1">Cancel</button></div></div></div>';
+    }
+    return '<div class="tmenu">' +
+      '<button type="button" data-rename="' + id + '">Rename</button>' +
+      '<button type="button" data-move="' + id + '">Move…</button>' +
+      '<button type="button" class="danger" data-delcat="' + id + '">Delete</button></div>';
+  }
+  var all =
+    '<div class="tnode"><div class="trow' + (state.cat === null ? " sel" : "") + '">' +
+      '<span class="grip" aria-hidden="true" style="visibility:hidden">' + GRIP + "</span>" +
+      '<span class="twist" aria-hidden="true"></span>' +
+      '<button class="tname" type="button" data-cat="all"><span class="t">All products</span>' +
+      '<span class="tct num">' + nf(shopTotal()) + "</span></button></div></div>";
+  $("#tree").innerHTML = all + ROOTS.map(function (id) { return node(id, 1); }).join("");
+  if (state.treeRename) {
+    var el = $("#rn_" + state.treeRename);
+    if (el) { el.focus(); el.select(); }
+  }
+}
+
+/* drag and drop on the tree */
+var dragId = null;
+document.addEventListener("dragstart", function (e) {
+  var row = e.target.closest ? e.target.closest("[data-trow]") : null;
+  if (!row) return;
+  dragId = row.getAttribute("data-trow");
+  row.classList.add("drag");
+  try { e.dataTransfer.setData("text/plain", dragId); e.dataTransfer.effectAllowed = "move"; } catch (err) {}
+});
+document.addEventListener("dragend", function () {
+  dragId = null;
+  $$(".trow").forEach(function (r) { r.classList.remove("drag", "dz-before", "dz-after", "dz-in"); });
+});
+document.addEventListener("dragover", function (e) {
+  var row = e.target.closest ? e.target.closest("[data-trow]") : null;
+  if (!row || !dragId) return;
+  e.preventDefault();
+  var id = row.getAttribute("data-trow");
+  $$(".trow").forEach(function (r) { if (r !== row) r.classList.remove("dz-before", "dz-after", "dz-in"); });
+  row.classList.remove("dz-before", "dz-after", "dz-in");
+  if (id === dragId || isAncestor(dragId, id)) return;
+  var box = row.getBoundingClientRect();
+  var pos = (e.clientY - box.top) / box.height;
+  row.classList.add(pos < 0.28 ? "dz-before" : pos > 0.72 ? "dz-after" : "dz-in");
+});
+document.addEventListener("drop", function (e) {
+  var row = e.target.closest ? e.target.closest("[data-trow]") : null;
+  if (!row || !dragId) return;
+  e.preventDefault();
+  var id = row.getAttribute("data-trow");
+  var mode = row.classList.contains("dz-before") ? "before" : row.classList.contains("dz-after") ? "after" : "in";
+  var name = CATS[dragId] ? CATS[dragId].name : "";
+  if (moveCat(dragId, id, mode)) {
+    notify("ok", name + " moved " + (mode === "in" ? "under " : mode === "before" ? "above " : "below ") + CATS[id].name + ".");
+  }
+  dragId = null;
+  render();
+});
+
+/* =====================================================================
+   7. The products grid
+   ===================================================================== */
+function toolbarHTML() {
+  var f = state.filters;
+  var nFilters = (f.status !== "any" ? 1 : 0) + (f.stock !== "any" ? 1 : 0) + (f.visible !== "any" ? 1 : 0);
+  /* The button toggles, so the label has to follow the state — otherwise it
+     still invites an expand it no longer performs. */
+  var anyClosed = PRODUCTS.some(function (p) { return p.vars.length && !state.expanded[p.id]; });
+  return (
+    '<div class="toolbar">' +
+      '<div class="chips" role="group" aria-label="Saved views">' +
+        SAVED_VIEWS.map(function (v) {
+          return '<button type="button" data-view="' + v.id + '" aria-pressed="' + (state.view === v.id) + '">' + v.label + "</button>";
+        }).join("") +
+        '<button type="button" class="save" data-saveview="1">+ Save this view</button>' +
+      "</div>" +
+      '<div class="search">' +
+        '<span class="mag" aria-hidden="true"><svg width="13" height="13" viewBox="0 0 14 14"><circle cx="6" cy="6" r="4.2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M9.2 9.2L13 13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>' +
+        '<label class="sr" for="q">Search products by name or code</label>' +
+        '<input class="field" id="q" type="search" placeholder="Search products" value="' + esc(state.search) + '">' +
+      "</div>" +
+      '<div class="popwrap">' +
+        '<button class="btn btn-quiet btn-sm" type="button" data-pop="filters" aria-expanded="' + (state.pop === "filters") +
+          '">Filters' + (nFilters ? " (" + nFilters + ")" : "") + "</button>" +
+        (state.pop === "filters" ? filterPopHTML() : "") +
+      "</div>" +
+      '<div class="tb-right">' +
+        '<div class="seg" role="group" aria-label="What the list shows">' +
+          '<button type="button" data-mode="products" aria-pressed="' + (state.mode === "products") + '">Products</button>' +
+          '<button type="button" data-mode="variations" aria-pressed="' + (state.mode === "variations") + '">Variations</button>' +
+        "</div>" +
+        (state.mode === "products"
+          ? '<button class="btn btn-quiet btn-sm" type="button" id="expandAll">' + (anyClosed ? "Open all with variations" : "Close all options") + "</button>"
+          : "") +
+        '<div class="popwrap">' +
+          '<button class="btn btn-quiet btn-sm" type="button" data-pop="cols" aria-expanded="' + (state.pop === "cols") + '">Columns</button>' +
+          (state.pop === "cols" ? colsPopHTML() : "") +
+        "</div>" +
+      "</div>" +
+    "</div>" +
+    (filtersActive() ? filterNoteHTML() : "")
+  );
+}
+function filterPopHTML() {
+  var f = state.filters;
+  var sel = function (id, label, value, opts) {
+    return '<div class="frow"><label class="lbl" for="' + id + '">' + label + "</label>" +
+      '<select class="field" id="' + id + '">' + opts.map(function (o) {
+        return '<option value="' + o[0] + '"' + (value === o[0] ? " selected" : "") + ">" + o[1] + "</option>";
+      }).join("") + "</select></div>";
+  };
+  return '<div class="pop left"><h3>Narrow the list</h3>' +
+    sel("fStatus", "Published or draft", f.status, [["any","Published and draft"],["publish","Published"],["draft","Draft"]]) +
+    sel("fStock", "Stock", f.stock, [["any","Any stock"],["instock","In stock"],["low","Low stock"],["outofstock","Out of stock"]]) +
+    sel("fVis", "Visible on site", f.visible, [["any","Shown and hidden"],["yes","On site"],["no","Hidden from site"]]) +
+    "<hr><button class=\"prow\" type=\"button\" data-clearfilters=\"1\">Clear all filters</button></div>";
+}
+function colsPopHTML() {
+  var c = state.cols;
+  var box = function (k, label) {
+    return '<label class="prow"><input type="checkbox" data-col="' + k + '"' + (c[k] ? " checked" : "") + "> " + label + "</label>";
+  };
+  /* Under the fold the Code and Category columns are hidden by the stylesheet
+     whatever the tick says. The values are not lost — they move under the
+     product name — so the control reads as on, but not as a column. */
+  var narrow = window.matchMedia && window.matchMedia("(max-width:1300px)").matches;
+  var folded = function (k, label) {
+    return '<label class="prow" style="color:var(--ink-3)"><input type="checkbox"' +
+      (c[k] ? " checked" : "") + " disabled> " + label + "</label>";
+  };
+  /* The note names only the ones actually folded in, so it cannot promise a
+     value the row does not carry. */
+  var foldedIn = (c.sku ? ["Product code"] : []).concat(c.cats ? ["Category"] : []);
+  return '<div class="pop"><h3>Show these columns</h3>' +
+    '<label class="prow"><input type="checkbox" checked disabled> Product</label>' +
+    (narrow ? folded("sku", "Product code") + folded("cats", "Category") : box("sku", "Product code") + box("cats", "Category")) +
+    box("stock", "Stock") + box("status", "Published or draft") +
+    '<label class="prow"><input type="checkbox" checked disabled> Visible on site</label>' +
+    (narrow
+      ? '<p class="note">This window is too narrow for a Product code or a Category column. ' +
+        (foldedIn.length
+          ? foldedIn.join(" and ") + (foldedIn.length > 1 ? " are" : " is") + " shown under the product name instead.</p>"
+          : "Both are switched off.</p>")
+      : "") +
+    '<p class="note">Saved for you.</p></div>';
+}
+function filterNoteHTML() {
+  var label = state.cat
+    ? "Showing <strong>" + esc(catPath(state.cat).join(" › ")) + "</strong>"
+    : "Showing a filtered list";
+  return '<div class="filternote"><span>' + label + " &mdash; " + nf(matchingTotal()) + " matching.</span>" +
+    '<button class="btn-link" type="button" data-clearfilters="1">Clear filters</button></div>';
+}
+
+function switchHTML(on, id, label) {
+  return '<button class="switch" type="button" role="switch" aria-checked="' + (on ? "true" : "false") +
+    '" data-vis="' + id + '" aria-label="Visible on site: ' + esc(label) + '">' +
+    '<span class="track"><span class="knob"></span></span>' +
+    '<span class="sl">' + (on ? "On site" : "Hidden") + "</span></button>";
+}
+/* An option has no catalogue visibility of its own: what this switch carries is
+   WooCommerce's Enabled flag, so it must not borrow the product's wording. */
+function varSwitchHTML(on, id, label) {
+  return '<button class="switch" type="button" role="switch" aria-checked="' + (on ? "true" : "false") +
+    '" data-vis="' + id + '" aria-label="Enabled: ' + esc(label) + '"' +
+    ' title="For an option this means Enabled, not catalogue visibility">' +
+    '<span class="track"><span class="knob"></span></span>' +
+    '<span class="sl">' + (on ? "Enabled" : "Not sold") + "</span></button>";
+}
+
+function headHTML() {
+  var c = state.cols;
+  return "<thead><tr>" +
+    '<th class="c-check" scope="col"><label class="sr" for="cbAll">' +
+      (state.mode === "variations" ? "Select every option on this page" : "Select every product on this page") + "</label>" +
+      '<input type="checkbox" id="cbAll" data-checkall="1"></th>' +
+    '<th scope="col">Product</th>' +
+    (c.sku ? '<th class="c-sku" scope="col">Code</th>' : "") +
+    (c.cats ? '<th class="c-cats" scope="col">Category</th>' : "") +
+    '<th class="c-price r" scope="col">Price</th>' +
+    (c.stock ? '<th class="c-stock" scope="col">Stock</th>' : "") +
+    (c.status ? '<th class="c-status" scope="col">Status</th>' : "") +
+    (state.mode === "variations"
+      ? '<th class="c-vis" scope="col" title="An option is enabled or not sold; catalogue visibility belongs to the product">Enabled</th>'
+      : '<th class="c-vis" scope="col" title="Whether the product shows in the shop and search results. Options carry Enabled instead.">Visible on site</th>') +
+  "</tr></thead>";
+}
+function colCount() {
+  var c = state.cols;
+  return 4 + (c.sku ? 1 : 0) + (c.cats ? 1 : 0) + (c.stock ? 1 : 0) + (c.status ? 1 : 0);
+}
+
+function productRowHTML(p) {
+  var c = state.cols;
+  var sel = !!state.selected[p.id];
+  var open = !!state.expanded[p.id];
+  var path = catPath(p.cat);
+  return (
+    '<tr class="' + (sel ? "sel" : "") + '" data-row="' + p.id + '">' +
+      '<td class="c-check"><label class="sr" for="cb' + p.id + '">Select ' + esc(p.name) + "</label>" +
+        '<input type="checkbox" id="cb' + p.id + '" data-check="' + p.id + '"' + (sel ? " checked" : "") + "></td>" +
+      '<td><div class="pcell">' +
+        (p.vars.length
+          ? '<button class="expander" type="button" data-expand="' + p.id + '" aria-expanded="' + open +
+            '" aria-label="' + (open ? "Hide" : "Show") + " the " + p.vars.length + " options for " + esc(p.name) + '">' + CHEV + "</button>"
+          : '<span style="width:20px;flex:none" aria-hidden="true"></span>') +
+        '<span class="thumb" aria-hidden="true" style="background:' + thumbColour(p.id) + '">' + initials(p.name) + "</span>" +
+        '<span class="pname"><button class="n" type="button" title="' + esc(p.name) + '" data-open="' + p.id + '">' + esc(p.name) + "</button>" +
+          '<span class="m">' +
+            /* Unticking a column has to remove the value, not move it here:
+               the folded meta line stands in for the column, it does not
+               outlive it. */
+            /* Folded columns first: under the 1300px fold the code and the
+               category have no column of their own, so they lead the line and
+               read in the same order as the header. The markers follow and
+               wrap with it — nothing is cut off. */
+            (c.sku ? '<span class="narrowonly">' + esc(p.sku) + "</span>" : "") +
+            (c.cats ? '<span class="narrowonly">' + esc(path[path.length - 1]) + "</span>" : "") +
+            (p.vars.length ? '<span class="pill opt">' + p.vars.length + " options</span>" : "") +
+            (p.featured ? '<span class="chip">Featured</span>' : "") +
+          "</span></span>" +
+      "</div></td>" +
+      (c.sku ? '<td class="c-sku" style="color:var(--ink-2)">' + esc(p.sku) + "</td>" : "") +
+      (c.cats ? '<td class="c-cats"><span class="chip">' + esc(path[path.length - 1]) + "</span></td>" : "") +
+      '<td class="c-price r">' + (p.vars.length
+        /* A variable product has no price of its own: the shop shows the range
+           its options cover, so the parent row must not look editable. */
+        ? '<span class="money" title="Set on each size or colour">' + priceRange(p) + "</span>" +
+          /* No parent sale line: a variable product has no sale price of its
+             own either, only the ones its options carry. */
+          (p.vars.some(function (v) { return v.sale > 0; }) ? '<span class="sale">Some on sale</span>' : "")
+        : '<button class="cellbtn money" type="button" data-edit="price:' + p.id +
+          '" aria-label="Regular price for ' + esc(p.name) + '">' + money(p.price) + "</button>" +
+          (p.sale > 0 ? '<span class="sale">' + money(p.sale) + " on sale</span>" : "")) + "</td>" +
+      (c.stock ? '<td class="c-stock">' + stockPill(p) + "</td>" : "") +
+      (c.status ? '<td class="c-status">' + (p.status === "publish"
+        ? '<span class="pill good">Published</span>'
+        : '<span class="pill grey">Draft</span>') + "</td>" : "") +
+      '<td class="c-vis">' + switchHTML(p.visible, p.id, p.name) + "</td>" +
+    "</tr>" +
+    (open ? p.vars.map(function (v) { return varRowHTML(p, v, false); }).join("") + varFootHTML(p) : "")
+  );
+}
+
+function varRowHTML(p, v, flat) {
+  var c = state.cols;
+  var sel = !!state.selectedVars[v.id];
+  var label = p.name + " " + v.attrs.map(function (a) { return a[1]; }).join(" / ");
+  var chips = v.attrs.map(function (a) { return '<span class="chip">' + esc(a[0]) + ": " + esc(a[1]) + "</span>"; }).join(" ");
+  return (
+    '<tr class="vrow' + (sel ? " sel" : "") + '" data-vrow="' + v.id + '">' +
+      '<td class="c-check' + (flat ? "" : " first") + '"><label class="sr" for="vcb' + v.id + '">Select option ' + esc(v.sku) + "</label>" +
+        '<input type="checkbox" id="vcb' + v.id + '" data-vcheck="' + v.id + '"' + (sel ? " checked" : "") + "></td>" +
+      "<td>" + (flat
+        ? '<div class="pcell"><span class="thumb" aria-hidden="true" style="background:' + thumbColour(p.id) + '">' + initials(p.name) + "</span>" +
+          '<span class="pname"><span style="font-weight:600">' + chips + "</span>" +
+          '<span class="m"><span class="pn" title="' + esc(p.name) + '">' + esc(p.name) + "</span></span></span></div>"
+        : '<div class="vattrs">' + chips + "</div>") + "</td>" +
+      (c.sku ? '<td class="c-sku" style="color:var(--ink-3)">' + esc(v.sku) + "</td>" : "") +
+      (c.cats ? '<td class="c-cats" style="color:var(--ink-3);font-size:12px">' + (flat ? esc(catPath(p.cat).slice(-1)[0]) : "Same as product") + "</td>" : "") +
+      '<td class="c-price r"><label class="sr" for="vp' + v.id + '">Regular price for ' + esc(label) + "</label>" +
+        '<input class="mini" id="vp' + v.id + '" type="number" min="0" step="0.01" data-vprice="' + v.id + '" value="' + v.price.toFixed(2) + '"></td>' +
+      (c.stock ? '<td class="c-stock"><label class="sr" for="vq' + v.id + '">Stock quantity for ' + esc(label) + "</label>" +
+        '<input class="mini qty" id="vq' + v.id + '" type="number" min="0" step="1" data-vqty="' + v.id + '" value="' + v.qty + '">' +
+        (v.qty === 0 ? ' <span class="pill bad">Out</span>' : "") + "</td>" : "") +
+      (c.status
+        ? '<td class="c-status" style="font-size:12px;white-space:nowrap">' +
+          (v.status === p.status
+            ? '<span style="color:var(--ink-3)">Follows product</span>'
+            : (v.status === "publish" ? '<span class="pill good">Published</span>' : '<span class="pill grey">Draft</span>')) +
+          "</td>"
+        : "") +
+      '<td class="c-vis">' + varSwitchHTML(v.visible, v.id, label) + "</td>" +
+    "</tr>"
+  );
+}
+
+function varFootHTML(p) {
+  return '<tr class="vfoot"><td colspan="' + colCount() + '">' +
+    plural(p.vars.length, "option", "options") + " under " + esc(p.name) +
+    '<span class="dot" aria-hidden="true">&middot;</span>' +
+    '<button class="btn-link" type="button" data-selvars="' + p.id + '">Select all options</button>' +
+    '<span class="dot" aria-hidden="true">&middot;</span>' +
+    '<button class="btn-link" type="button" data-expand="' + p.id + '">Hide options</button>' +
+  "</td></tr>";
+}
+
+function flatVars() {
+  var out = [];
+  filtered().forEach(function (p) {
+    p.vars.forEach(function (v) { out.push([p, v]); });
+  });
+  return out;
+}
+
+function selbarHTML() {
+  var n = selectionCount();
+  var vn = selectedVarIds().length;
+  if (!n && !vn) {
+    /* Every row in Variations mode is an option, and no option opens a
+       drawer, so the idle bar must not promise either. */
+    return '<div class="selbar idle">' + (state.mode === "variations"
+      ? "Tick the options you want to change."
+      : "Tick the products you want to change, or open one to edit it on its own.") + "</div>";
+  }
+  var total = matchingTotal();
+  var label = n
+    ? plural(n, "product", "products") + " selected" + (vn ? " · " + plural(vn, "option", "options") : "")
+    : plural(vn, "option", "options") + " selected";
+  /* An option has no catalogue visibility — it is sold or it is not. The
+     buttons have to use the same verb as the switch and the notice. */
+  var optScope = state.mode === "variations" || (!n && vn);
+  var qShow = optScope ? "Start selling" : "Show on site";
+  var qHide = optScope ? "Stop selling" : "Hide from site";
+  return '<div class="selbar">' +
+    '<span class="c num">' + label + "</span>" +
+    (!n
+      ? ""
+      : state.allMatching
+      ? '<span>Every product that matches is selected.</span><button class="btn-link" type="button" data-allmatching="off">Select only this page</button>'
+      : '<button class="btn-link" type="button" data-allmatching="on"><strong>Select all ' + nf(total) + " products that match</strong></button>") +
+    '<span class="grow">' +
+      '<button class="btn btn-quiet btn-sm" type="button" data-quick="show">' + qShow + "</button>" +
+      '<button class="btn btn-quiet btn-sm" type="button" data-quick="hide">' + qHide + "</button>" +
+      '<button class="btn btn-primary" type="button" data-goto="flow">Make a change to these</button>' +
+      '<button class="btn-link" type="button" data-clearsel="1">Clear</button>' +
+    "</span></div>";
+}
+
+function tfootHTML() {
+  var flat = state.mode === "variations";
+  var total = flat ? flatVars().length : matchingTotal();
+  /* The range is worked out from the same total as the count and the page
+     numbers, so page 1 of a 48-per-page list cannot claim to show three rows.
+     Both pager buttons are inert in a one-page prototype, so both are disabled. */
+  var perPage = 48;
+  /* ...and it cannot claim more rows than are actually drawn either: under a
+     category the scaled total is the shop's, the range is what is on screen. */
+  var drawn = flat ? flatVars().length : filtered().length;
+  var shown = Math.min(perPage, total, drawn);
+  var pages = Math.max(1, Math.ceil(total / perPage));
+  return '<div class="tfoot"><span class="num">Showing 1&ndash;' + nf(shown) + " of " + nf(total) + " " +
+    (flat ? "options" : "products") + "</span>" +
+    '<div class="right"><label for="perPage">Per page</label>' +
+    '<select class="field" id="perPage" style="height:26px"><option>48</option><option>96</option><option>200</option></select>' +
+    '<button class="pbtn" type="button" disabled aria-label="Previous page">&lsaquo;</button>' +
+    '<span class="num">Page 1 of ' + pages + "</span>" +
+    '<button class="pbtn" type="button" disabled aria-label="Next page">&rsaquo;</button></div></div>';
+}
+
+function loadingHTML() {
+  var rows = "";
+  for (var i = 0; i < 9; i++) {
+    rows += '<tr><td class="c-check"><span class="skel" style="width:15px;height:15px"></span></td>' +
+      '<td><div class="pcell"><span class="skel" style="width:26px;height:26px;border-radius:2px;flex:none"></span>' +
+      '<span class="skel" style="width:' + (140 + (i % 4) * 36) + 'px"></span></div></td>';
+    /* Skeleton cells carry the same column classes as the headers, so the
+       responsive display:none rules hide header and body together. */
+    var c = state.cols;
+    if (c.sku) rows += '<td class="c-sku"><span class="skel" style="width:62px"></span></td>';
+    if (c.cats) rows += '<td class="c-cats"><span class="skel" style="width:84px"></span></td>';
+    rows += '<td class="c-price r"><span class="skel" style="width:52px;margin-left:auto"></span></td>';
+    if (c.stock) rows += '<td class="c-stock"><span class="skel" style="width:70px"></span></td>';
+    if (c.status) rows += '<td class="c-status"><span class="skel" style="width:62px"></span></td>';
+    rows += '<td class="c-vis"><span class="skel" style="width:54px"></span></td>';
+    rows += "</tr>";
+  }
+  /* The placeholder rows carry no information, so they are hidden from a
+     screen reader and the state is announced once, by the live region. */
+  return '<h2 class="sr">Products</h2>' +
+    '<div class="tscroll"><table class="grid" aria-label="Products" aria-busy="true">' + headHTML() +
+    '<tbody aria-hidden="true">' + rows + "</tbody></table></div>" +
+    '<div class="tfoot" role="status"><span class="spin" aria-hidden="true"></span><span>Loading products…</span></div>';
+}
+function emptyHTML() {
+  return '<div class="statewrap"><div class="state">' +
+    '<div class="glyph"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="11" cy="11" r="7"/><path d="M16 16l5 5"/></svg></div>' +
+    "<h3>No products match these filters</h3>" +
+    "<p>Nothing in " + (state.cat ? "<strong>" + esc(catPath(state.cat).join(" › ")) + "</strong>" : "this selection") +
+    " fits what you have chosen. Widen the filters, or start from the whole catalogue again.</p>" +
+    '<div class="acts"><button class="btn btn-primary" type="button" data-clearfilters="1">Clear filters</button>' +
+    '<button class="btn btn-quiet" type="button" data-goto="history">See recent changes</button></div>' +
+  "</div></div>";
+}
+function errorNoticeHTML() {
+  var names = ["Brushed Metal Pen", "Metal Pen and Stylus", "Twist Action Metal Pen", "HB Pencil Pack of 10"];
+  return '<div style="padding:12px 12px 0"><div class="notice err" role="alert" aria-live="assertive">' +
+    '<div class="body"><b>4 products were not saved</b>' +
+    "<p>The shop was busy and four products timed out: " + names.join(", ") + ". " +
+    "Everything else in this batch saved normally, and nothing was left half-changed.</p>" +
+    '<div class="acts"><button class="btn btn-primary btn-sm" type="button" data-retry4="1">Try those 4 again</button>' +
+    '<button class="btn btn-quiet btn-sm" type="button" data-goto="history">See what saved</button>' +
+    '<button class="btn btn-quiet btn-sm" type="button" data-copyerr="1">Copy error details</button></div>' +
+    '<p class="hint" style="margin-top:9px">Reference: bcm_batch_7f3a2c &middot; 504 gateway timeout &middot; 21 September 2026, 10:42</p>' +
+    "</div></div></div>";
+}
+
+function renderGrid() {
+  var pane = $("#pane");
+  if (state.forced === "loading") { pane.innerHTML = toolbarHTML() + loadingHTML(); return; }
+  var flat = state.mode === "variations";
+  var rows = flat ? flatVars() : filtered();
+  if (state.forced === "empty" || !rows.length) { pane.innerHTML = toolbarHTML() + emptyHTML(); return; }
+  var body = flat
+    ? rows.map(function (pair) { return varRowHTML(pair[0], pair[1], true); }).join("")
+    : rows.map(productRowHTML).join("");
+  pane.innerHTML =
+    toolbarHTML() +
+    (state.forced === "error" ? errorNoticeHTML() : "") +
+    selbarHTML() +
+    '<h2 class="sr">Products</h2>' +
+    '<div class="tscroll"><table class="grid" aria-label="Products">' + headHTML() + "<tbody>" + body + "</tbody></table></div>" +
+    tfootHTML();
+  var cbAll = $("#cbAll");
+  if (cbAll) {
+    cbAll.checked = rows.length > 0 && (flat
+      ? rows.every(function (pair) { return !!state.selectedVars[pair[1].id]; })
+      : rows.every(function (p) { return !!state.selected[p.id]; }));
+  }
+}
+
+/* =====================================================================
+   8. Details drawer
+   ===================================================================== */
+function tickFor(field) {
+  return state.savedField === field
+    ? '<span class="tick"><svg width="11" height="11" viewBox="0 0 12 12" aria-hidden="true"><path d="M1.5 6.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Saved</span>'
+    : "";
+}
+/* Read the newest real batch that touched this product or one of its options,
+   so the line agrees with the History screen it links to. */
+function lastChangeFor(p) {
+  var ids = {};
+  ids[p.id] = true;
+  p.vars.forEach(function (v) { ids[v.id] = true; });
+  for (var i = 0; i < HISTORY.length; i++) {
+    var b = HISTORY[i];
+    var hit = b.changes.some(function (c) { return ids[c.rid]; });
+    if (hit) {
+      var when = /^[A-Z][a-z]+$/.test(b.when) ? b.when.toLowerCase() : b.when;
+      return b.what + " by " + b.who + ", " + when + " " + b.time + ".";
+    }
+  }
+  return "No changes recorded yet.";
+}
+function drawerHTML(p) {
+  var path = catPath(p.cat);
+  return (
+    '<div class="dhead"><h2>Details</h2>' +
+      '<button class="dclose" type="button" id="drawerClose" aria-label="Close details">&times;</button></div>' +
+    '<div class="dbody">' +
+      '<div class="dtitle">' +
+        '<span class="thumb" style="width:36px;height:36px;font-size:12px;background:' + thumbColour(p.id) + '" aria-hidden="true">' + initials(p.name) + "</span>" +
+        "<div><h3>" + esc(p.name) + "</h3>" +
+        '<p class="hint">' + esc(p.sku) + (p.vars.length ? " · " + plural(p.vars.length, "option", "options") : "") + "</p></div>" +
+      "</div>" +
+
+      '<div class="stack">' +
+        '<div class="fwrap"><label class="lbl" for="dStatus">Published or draft' + tickFor("status") + "</label>" +
+          '<select class="field" id="dStatus" data-dfield="status">' +
+            '<option value="publish"' + (p.status === "publish" ? " selected" : "") + ">Published</option>" +
+            '<option value="draft"' + (p.status === "draft" ? " selected" : "") + ">Draft</option></select></div>" +
+        '<div class="fwrap"><label class="lbl" for="dCatvis">Catalogue visibility' + tickFor("catvis") + "</label>" +
+          '<select class="field" id="dCatvis" data-dfield="catvis">' +
+            Object.keys(CATVIS).map(function (k) {
+              return '<option value="' + k + '"' + (p.catvis === k ? " selected" : "") + ">" + CATVIS[k] + "</option>";
+            }).join("") + "</select>" +
+          '<p class="hint" style="margin-top:4px">The row switch flips between Shop and search results and Hidden.</p></div>' +
+        /* A variable product carries neither price nor stock of its own: the
+           options below are the only editable source, and these two lines just
+           report what they add up to. */
+        (p.vars.length
+          ? '<div class="two">' +
+              '<div class="fwrap"><span class="lbl">Price</span>' +
+                '<p class="ro money">' + priceRange(p) + "</p>" +
+                '<p class="hint" style="margin-top:4px">Set on each option below.</p></div>' +
+              '<div class="fwrap"><span class="lbl">In stock</span>' +
+                '<p class="ro num">' + nf(p.vars.reduce(function (s, v) { return s + v.qty; }, 0)) + " in total</p>" +
+                '<p class="hint" style="margin-top:4px">Added up from the options below.</p></div>' +
+            "</div>"
+          : '<div class="two">' +
+              '<div class="fwrap"><label class="lbl" for="dPrice">Regular price' + tickFor("price") + "</label>" +
+                '<input class="field" id="dPrice" data-dfield="price" type="number" min="0" step="0.01" value="' + p.price.toFixed(2) + '"></div>' +
+              '<div class="fwrap"><label class="lbl" for="dSale">Sale price' + tickFor("sale") + "</label>" +
+                '<input class="field" id="dSale" data-dfield="sale" type="number" min="0" step="0.01" placeholder="None" value="' + (p.sale > 0 ? p.sale.toFixed(2) : "") + '"></div>' +
+            "</div>" +
+            '<div class="two">' +
+              '<div class="fwrap"><label class="lbl" for="dStock">Stock status' + tickFor("stockStatus") + "</label>" +
+                '<select class="field" id="dStock" data-dfield="stockStatus">' +
+                  ["instock","outofstock","onbackorder"].map(function (k) {
+                    return '<option value="' + k + '"' + (p.stockStatus === k ? " selected" : "") + ">" + fmtValue("stockStatus", k) + "</option>";
+                  }).join("") + "</select></div>" +
+              '<div class="fwrap"><label class="lbl" for="dQty">Stock quantity' + tickFor("qty") + "</label>" +
+                '<input class="field" id="dQty" data-dfield="qty" type="number" min="0" step="1" value="' + p.qty + '"></div>' +
+            "</div>") +
+      "</div>" +
+
+      '<div class="dsec"><h4>Categories</h4><p style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:9px">' +
+        path.map(function (n, i) {
+          return '<span class="chip"' + (i < path.length - 1 ? ' style="background:transparent"' : "") + ">" + esc(n) + "</span>";
+        }).join("") +
+        (p.tags.length ? p.tags.map(function (t) { return '<span class="chip">' + esc(t) + "</span>"; }).join("") : "") +
+      "</p><button class=\"btn btn-quiet btn-sm\" type=\"button\" data-changecats=\"1\">Change categories</button>" +
+        /* Feedback raised inside the drawer stays inside it: a toast in the
+           page behind sits under the scrim and outside the modal. */
+        (state.drawerNote
+          ? '<p class="hint" role="status" style="margin-top:8px;color:var(--blue-darker)">' + esc(state.drawerNote) + "</p>"
+          : "") +
+      "</div>" +
+
+      (p.vars.length
+        ? '<div class="dsec"><h4>Options</h4><div class="stack" style="gap:7px">' +
+            '<div class="optline hint"><span class="on">Option</span><span>Price</span><span>In stock</span></div>' +
+            p.vars.map(function (v) {
+              var label = v.attrs.map(function (a) { return a[1]; }).join(" / ");
+              return '<div class="optline">' +
+                '<span class="on">' + esc(label) + tickFor("opt:" + v.id) + "</span>" +
+                '<label class="sr" for="dvp' + v.id + '">Price for ' + esc(label) + "</label>" +
+                '<input class="mini" id="dvp' + v.id + '" type="number" min="0" step="0.01" data-vprice="' + v.id + '" value="' + v.price.toFixed(2) + '">' +
+                '<label class="sr" for="dvq' + v.id + '">Stock for ' + esc(label) + "</label>" +
+                '<input class="mini qty" id="dvq' + v.id + '" type="number" min="0" step="1" data-vqty="' + v.id + '" value="' + v.qty + '"></div>';
+            }).join("") +
+          "</div></div>"
+        : "") +
+
+      '<div class="dsec"><h4>Recent changes</h4>' +
+        '<p class="hint">' + esc(lastChangeFor(p)) + " " +
+        '<button class="btn-link" type="button" data-goto="history">See history</button></p></div>' +
+    "</div>"
+  );
+}
+function renderDrawer() {
+  var el = $("#drawer"), scrim = $("#scrim");
+  var p = state.drawer ? byId[state.drawer] : null;
+  var page = $("#wpbody");
+  if (!p) {
+    el.classList.remove("open");
+    el.setAttribute("aria-hidden", "true");
+    el.innerHTML = "";
+    scrim.hidden = true; scrim.style.opacity = "0";
+    if (page) page.inert = false;
+    return;
+  }
+  el.innerHTML = drawerHTML(p);
+  el.classList.add("open");
+  el.setAttribute("aria-hidden", "false");
+  scrim.hidden = false;
+  /* The catalogue behind the scrim is dimmed and unusable, so keep focus and
+     the screen reader out of it while the drawer is open. */
+  if (page) page.inert = true;
+  requestAnimationFrame(function () { scrim.style.opacity = "1"; });
+}
+function openDrawer(id) {
+  state.drawer = id;
+  state.drawerNote = null;
+  renderDrawer();
+  var first = $("#drawerClose");
+  if (first) first.focus();
+}
+function closeDrawer() {
+  var id = state.drawer;
+  state.drawer = null;
+  state.drawerNote = null;
+  renderDrawer();
+  var back = document.querySelector('[data-open="' + id + '"]');
+  if (back) back.focus();
+}
+
+/* =====================================================================
+   9. Bulk change: three steps
+   ===================================================================== */
+var SET_FIELDS = {
+  status:["Published or draft", "select", [["publish","Published"],["draft","Draft"]]],
+  visible:["Visible on site", "select", [["1","On site"],["0","Hidden from site"]]],
+  price:["Regular price", "number", "9.99"],
+  sale:["Sale price", "number", "7.99"],
+  stockStatus:["Stock status", "select", [["instock","In stock"],["outofstock","Out of stock"],["onbackorder","On backorder"]]],
+  qty:["Stock quantity", "number", "100"],
+  cats:["Categories", "text", "Clearance"],
+  catvis:["Catalogue visibility", "select", [["shop","Shop only"],["shop-search","Shop and search results"],["search","Search results only"],["hidden","Hidden"]]],
+  featured:["Featured", "select", [["1","Yes"],["0","No"]]],
+  tags:["Tags", "text", "summer-promo"],
+  manageStock:["Manage stock", "select", [["0","No"],["1","Yes, track quantity"]]],
+  sku:["Product code (SKU)", "text", "-2026"],
+  weight:["Weight (kg)", "number", "0.30"],
+  dims:["Dimensions (cm)", "text", "32 x 22 x 5"],
+  shipClass:["Shipping class", "select", [["bulky","Bulky"],["standard","Standard"],["free","Free shipping"]]],
+  taxStatus:["Tax status", "select", [["none","None"],["taxable","Taxable"],["shipping","Shipping only"]]],
+  taxClass:["Tax class", "select", [["reduced","Reduced rate"],["standard","Standard rate"],["zero","Zero rate"]]],
+  soldIndividually:["Sold individually", "select", [["1","Yes, one per order"],["0","No"]]],
+  reviews:["Reviews", "select", [["0","Off"],["1","On"]]]
+};
+/* Every default above is deliberately not what the catalogue already holds, so
+   picking a field and pressing on shows a real preview rather than an empty
+   one. The seeded products carry 0.25 kg, 30 x 20 x 4, Standard shipping,
+   Taxable, Standard rate, reviews on and stock tracked. */
+var SET_COMMON = ["status", "visible", "price", "sale", "stockStatus", "qty", "cats"];
+var SET_OTHER = ["catvis", "featured", "tags", "manageStock", "sku", "weight", "dims", "shipClass", "taxStatus", "taxClass", "soldIndividually", "reviews"];
+
+function setValueControlHTML() {
+  var f = state.flow.setField;
+  var spec = SET_FIELDS[f];
+  var ctrl;
+  if (f === "cats") {
+    /* A real category, chosen from the live tree, so the preview can show the
+       category the product is in now and the one it moves to. */
+    ctrl = '<select class="field" id="setVal">' + Object.keys(CATS).map(function (k) {
+      return '<option value="' + k + '">' + esc(catPath(k).join(" › ")) + "</option>";
+    }).join("") + "</select>";
+  } else if (spec[1] === "select") {
+    ctrl = '<select class="field" id="setVal">' + spec[2].map(function (o) {
+      return '<option value="' + o[0] + '">' + o[1] + "</option>";
+    }).join("") + "</select>";
+  } else if (spec[1] === "number") {
+    ctrl = '<input class="field" id="setVal" type="number" min="0" step="0.01" value="' + spec[2] + '" style="width:120px">';
+  } else {
+    ctrl = '<input class="field" id="setVal" type="text" value="' + spec[2] + '" style="width:190px">';
+  }
+  var note = f === "sku"
+    ? "Product codes must stay unique, so this is added to the end of each code."
+    : f === "cats"
+      ? "Moves each chosen product into this category. The tree counts move with it."
+      : f === "tags"
+        ? "Adds to what is already there instead of replacing it."
+        : "Replaces whatever each chosen product has now.";
+  return '<div class="setvalue"><div class="fg"><label class="lbl" for="setVal">Set ' + spec[0].toLowerCase() + " to</label>" + ctrl + "</div>" +
+    '<p class="hint" style="flex-basis:100%;margin:0">' + note + "</p></div>";
+}
+function setFieldPickerHTML() {
+  var f = state.flow.setField;
+  var otherPicked = SET_OTHER.indexOf(f) !== -1;
+  return '<div class="setgrid" role="radiogroup" aria-label="Which field to set">' +
+    SET_COMMON.map(function (k) {
+      return '<label class="setcard' + (f === k ? " on" : "") + '">' +
+        '<input type="radio" name="setfield" value="' + k + '"' + (f === k ? " checked" : "") + ">" +
+        "<span>" + SET_FIELDS[k][0] + "</span></label>";
+    }).join("") +
+    '<label class="setcard' + (otherPicked || state.flow.otherOpen ? " on" : "") + '">' +
+      '<input type="radio" name="setfield" value="__other"' + (otherPicked || state.flow.otherOpen ? " checked" : "") + ">" +
+      "<span>Something else…</span></label>" +
+    "</div>" +
+    ((otherPicked || state.flow.otherOpen)
+      ? '<div class="fg" style="flex-basis:100%;max-width:320px"><label class="lbl" for="otherField">Choose a field</label>' +
+        '<select class="field" id="otherField">' + SET_OTHER.map(function (k) {
+          return '<option value="' + k + '"' + (f === k ? " selected" : "") + ">" + SET_FIELDS[k][0] + "</option>";
+        }).join("") + "</select></div>"
+      : "") +
+    setValueControlHTML();
+}
+
+var ACTIONS = [
+  { id:"set", t:"Set a value", d:"Give every chosen product the same value.",
+    consequence:"Replaces what is there now, one field at a time." },
+  { id:"change_price", t:"Increase or decrease the price", d:"By an amount of money or a percentage.",
+    consequence:"Works out each product's new price from its own current price." },
+  { id:"round", t:"Round prices to a neat ending", d:"Keeps the price close and tidies the last two digits.",
+    consequence:"Moves each price to the nearest tidy ending, up or down." },
+  { id:"copy_sale", t:"Put products on sale", d:"Copies the regular price into the sale price, less a discount.",
+    consequence:"Leaves the regular price alone so you can end the sale later." },
+  { id:"replace", t:"Find and replace words", d:"Swap a word in product names or codes.",
+    consequence:"Changes only the products that contain the word you typed." },
+  { id:"cats", t:"Add or remove categories", d:"Put products into a category, or take them out of one.",
+    consequence:"Moves each product into the category you pick. Taking it out moves it one level up." },
+  { id:"tags", t:"Add or remove tags", d:"Put a tag on products, or take one off.",
+    consequence:"Adds to what is already there instead of replacing it." }
+];
+function actionById(id) { return ACTIONS.filter(function (a) { return a.id === id; })[0]; }
+/* Whether "also change the sizes and colours" starts ticked depends on the
+   FIELD, not the action: status and visibility should reach every option;
+   prices and stock should not, because options carry their own. Categories
+   and tags never reach options at all, so they never offer the choice. */
+function varsDefaultOn(o) {
+  if (!o) return false;
+  if (o.action === "set") return ["status", "visible"].indexOf(o.field) !== -1;
+  return false;
+}
+/* The single list of fields that live on the product and never on its options.
+   computeChanges() skips these for option rows, and the Check-it step reads the
+   same list so its wording can never promise a change it will not make.
+   Published or draft is NOT in this list: an option carries its own, seeded
+   from the product, so the tick box can be offered and honoured. */
+var PRODUCT_ONLY_FIELDS = ["cats","tags","catvis","featured","sku","weight",
+  "dims","shipClass","taxStatus","taxClass","soldIndividually","reviews","manageStock"];
+function varsReach(o) {
+  if (!o) return false;
+  if (o.action === "cats" || o.action === "tags" || o.action === "replace") return false;
+  if (o.action === "set") return PRODUCT_ONLY_FIELDS.indexOf(o.field) === -1;
+  return true;
+}
+function productOnlyWhy(o) {
+  if (!o) return "This belongs to the product, not to each size or colour.";
+  if (o.action === "cats" || o.action === "tags") return "Categories and tags belong to the product, not to each size or colour.";
+  if (o.action === "replace") return "This changes the product itself. Sizes and colours are left alone.";
+  if (o.action === "set" && SET_FIELDS[o.field]) return SET_FIELDS[o.field][0] + " belongs to the product, not to each size or colour.";
+  return "This belongs to the product, not to each size or colour.";
+}
+function varsOffered(action) { return action !== "cats" && action !== "tags"; }
+/* The default can only ever be on for a change that really reaches the options.
+   Otherwise the Done screen and History would claim a scope computeChanges()
+   never touched. */
+function flowVarsDefault() {
+  var o = { action:state.flow.action, field:state.flow.setField };
+  return varsReach(o) && varsDefaultOn(o);
+}
+
+function actionBodyHTML(id) {
+  var fg = function (label, ctrl) { return '<div class="fg">' + label + ctrl + "</div>"; };
+  if (id === "set") return setFieldPickerHTML();
+  if (id === "change_price") {
+    return fg('<label class="lbl" for="fDir">Direction</label>',
+        '<select class="field" id="fDir"><option value="up">Increase</option><option value="down">Decrease</option></select>') +
+      fg('<label class="lbl" for="fAmt">Amount</label>',
+        '<input class="field" id="fAmt" type="number" min="0" step="0.01" value="10" style="width:96px">') +
+      fg('<label class="lbl" for="fUnit">Percent or amount</label>',
+        '<select class="field" id="fUnit"><option value="pct">percent</option><option value="abs">rand</option></select>') +
+      fg('<label class="lbl" for="fWhich">Which price</label>',
+        '<select class="field" id="fWhich"><option value="price">Regular price</option><option value="sale">Sale price</option></select>') +
+      '<p class="caveat" style="flex-basis:100%">Prices already on sale keep their sale price unless you change that too.</p>';
+  }
+  if (id === "round") {
+    return fg('<label class="lbl" for="fEnd">Round to the nearest</label>',
+        '<select class="field" id="fEnd"><option value="0.99">price ending in .99</option><option value="0.95">price ending in .95</option>' +
+        '<option value="0.50">price ending in .50</option><option value="0">whole rand</option></select>') +
+      fg('<label class="lbl" for="fWhich">Which price</label>',
+        '<select class="field" id="fWhich"><option value="price">Regular price</option><option value="sale">Sale price</option></select>') +
+      '<p class="caveat" style="flex-basis:100%">Prices already on sale keep their sale price unless you change that too.</p>';
+  }
+  if (id === "copy_sale") {
+    return fg('<label class="lbl" for="fDisc">Take off</label>',
+        '<input class="field" id="fDisc" type="number" min="0" max="90" step="1" value="15" style="width:90px">') +
+      '<p class="hint" style="padding-bottom:7px">percent of the regular price</p>' +
+      '<p class="caveat" style="flex-basis:100%">Products already on sale get the new sale price instead of keeping the old one.</p>';
+  }
+  if (id === "replace") {
+    return fg('<label class="lbl" for="fIn">Where</label>',
+        '<select class="field" id="fIn"><option value="name">Product name</option><option value="sku">Product code</option></select>') +
+      fg('<label class="lbl" for="fFind">Find</label>', '<input class="field" id="fFind" type="text" value="Cotton" style="width:150px">') +
+      fg('<label class="lbl" for="fRepl">Replace with</label>', '<input class="field" id="fRepl" type="text" value="Organic Cotton" style="width:170px">');
+  }
+  if (id === "cats" || id === "tags") {
+    var word = id === "cats" ? "category" : "tag";
+    var ctrl = id === "cats"
+      ? '<select class="field" id="fTerm">' + Object.keys(CATS).map(function (k) {
+          return '<option value="' + k + '">' + esc(catPath(k).join(" › ")) + "</option>";
+        }).join("") + "</select>"
+      : '<input class="field" id="fTerm" type="text" value="Clearance" style="width:170px">';
+    return fg('<label class="lbl" for="fOp">Do this</label>',
+        '<select class="field" id="fOp">' +
+        (id === "cats"
+          ? '<option value="add">Put them in this category</option><option value="remove">Take them out of this category</option>'
+          : '<option value="add">Add the ' + word + '</option><option value="remove">Remove the ' + word + "</option>") +
+        "</select>") +
+      fg('<label class="lbl" for="fTerm">' + (id === "cats" ? "Category" : "Tag") + "</label>", ctrl);
+  }
+  return "";
+}
+
+/* -------- working out what the change does -------- */
+function fval(id, fallback) { var el = $("#" + id); return el ? el.value : fallback; }
+var pendingOpts = {};
+function captureOpts() {
+  var a = state.flow.action;
+  var o = { action:a };
+  if (a === "set") { o.field = state.flow.setField; o.value = fval("setVal", ""); }
+  if (a === "change_price") { o.dir = fval("fDir", "up"); o.amt = Number(fval("fAmt", 10)); o.unit = fval("fUnit", "pct"); o.which = fval("fWhich", "price"); }
+  if (a === "round") { o.end = fval("fEnd", "0.99"); o.which = fval("fWhich", "price"); }
+  if (a === "copy_sale") { o.disc = Number(fval("fDisc", 15)); }
+  if (a === "replace") { o.where = fval("fIn", "name"); o.find = fval("fFind", "Cotton"); o.repl = fval("fRepl", "Organic Cotton"); }
+  if (a === "cats" || a === "tags") { o.op = fval("fOp", "add"); o.term = fval("fTerm", a === "cats" ? "clothing" : "Clearance"); }
+  pendingOpts = o;
+  return o;
+}
+function roundTo(price, ending) {
+  var e = Number(ending), base = Math.floor(price);
+  var opts = [base - 1 + e, base + e, base + 1 + e].filter(function (v) { return v > 0; });
+  return opts.reduce(function (best, v) { return Math.abs(v - price) < Math.abs(best - price) ? v : best; }, opts[0]);
+}
+function computeChanges(o) {
+  var out = [], rows = targetProducts(), vrows = targetVars();
+  var push = function (row, field, after, label) {
+    var before = row[field];
+    if (before === after) return;
+    /* Belt and braces: an option that does not carry the field at all has no
+       "before", and a preview row reading "Draft → Draft" helps nobody. */
+    if (before === undefined && row.parent) return;
+    out.push({ rid:row.id, field:field, label:label, before:before, after:after });
+  };
+  /* Parent first, then its options, so a sample off the top of the list is
+     representative of the selection rather than one product's options. */
+  /* A variable product has no price or stock of its own — the shop reads those
+     off its options — so a price change must never be written to the parent.
+     It reaches the options, or it reaches nothing. */
+  var priceTargets = [];
+  rows.forEach(function (p) {
+    if (!p.vars.length) { priceTargets.push(p); return; }
+    if (state.flow.applyToVars) { p.vars.forEach(function (v) { priceTargets.push(v); }); }
+  });
+  vrows.forEach(function (v) { priceTargets.push(v); });
+  var allTargets = [];
+  rows.forEach(function (p) {
+    allTargets.push(p);
+    if (state.flow.applyToVars) p.vars.forEach(function (v) { allTargets.push(v); });
+  });
+  vrows.forEach(function (v) { allTargets.push(v); });
+
+  if (o.action === "change_price") {
+    var sign = o.dir === "up" ? 1 : -1;
+    priceTargets.forEach(function (r) {
+      var cur = r[o.which];
+      if (!cur || cur <= 0) return;
+      var next = o.unit === "pct" ? cur * (1 + sign * o.amt / 100) : cur + sign * o.amt;
+      push(r, o.which, Math.max(0, Math.round(next * 100) / 100), o.which === "price" ? "Regular price" : "Sale price");
+    });
+  } else if (o.action === "round") {
+    priceTargets.forEach(function (r) {
+      var cur = r[o.which];
+      if (!cur || cur <= 0) return;
+      push(r, o.which, Math.round(roundTo(cur, o.end) * 100) / 100, o.which === "price" ? "Regular price" : "Sale price");
+    });
+  } else if (o.action === "copy_sale") {
+    priceTargets.forEach(function (r) {
+      if (!r.price) return;
+      push(r, "sale", Math.round(r.price * (1 - o.disc / 100) * 100) / 100, "Sale price");
+    });
+  } else if (o.action === "set") {
+    var f = o.field, spec = SET_FIELDS[f];
+    var targets = (f === "price" || f === "sale" || f === "qty" || f === "stockStatus") ? priceTargets : allTargets;
+    targets.forEach(function (r) {
+      if (r.parent && PRODUCT_ONLY_FIELDS.indexOf(f) !== -1) return;
+      var v = o.value;
+      if (spec[1] === "number") v = Number(v);
+      if (f === "visible") { push(r, "visible", v === "1", "Visible on site"); return; }
+      if (["featured","manageStock","soldIndividually","reviews"].indexOf(f) !== -1) { push(r, f, v === "1", spec[0]); return; }
+      /* Real fields, so the Now column reads the category the product is in
+         today and the grid, the drawer chips and the tree counts all move
+         when the batch is applied. */
+      if (f === "cats") { push(r, "cat", String(v), "Category"); return; }
+      if (f === "tags") {
+        if (r.tags.indexOf(String(v)) !== -1) return;
+        push(r, "tags", r.tags.concat([String(v)]), "Tags");
+        return;
+      }
+      if (f === "sku") { push(r, "sku", r.sku + String(v), "Product code"); return; }
+      push(r, f, v, spec[0]);
+    });
+  } else if (o.action === "replace") {
+    rows.forEach(function (p) {
+      if (!o.find) return;
+      var src = p[o.where] || "";
+      if (src.indexOf(o.find) === -1) return;
+      push(p, o.where, src.split(o.find).join(o.repl), o.where === "name" ? "Product name" : "Product code");
+    });
+  } else if (o.action === "cats") {
+    var reach = CATS[o.term] ? descendants(o.term) : [];
+    rows.forEach(function (p) {
+      if (o.op === "add") { push(p, "cat", o.term, "Category"); return; }
+      /* Taking a product out of a category has to put it somewhere: the
+         category above it, or Uncategorised at the top. */
+      if (reach.indexOf(p.cat) === -1) return;
+      push(p, "cat", (CATS[o.term] && CATS[o.term].parent) || "uncategorised", "Category");
+    });
+  } else if (o.action === "tags") {
+    rows.forEach(function (p) {
+      var has = p.tags.indexOf(o.term) !== -1;
+      if (o.op === "add") {
+        if (has) return;
+        push(p, "tags", p.tags.concat([o.term]), "Tags");
+        return;
+      }
+      if (!has) return;
+      push(p, "tags", p.tags.filter(function (t) { return t !== o.term; }), "Tags");
+    });
+  }
+  return out;
+}
+/* A sample that stands for the whole selection: lead with one row per product,
+   then fill with option rows, so the table is never eight slices of one product. */
+function sampleChanges(changes, max) {
+  if (changes.length <= max) return changes;
+  var seen = {}, lead = [], rest = [];
+  changes.forEach(function (c) {
+    var r = rowById[c.rid];
+    var key = "p" + (r && r.parent ? r.parent : c.rid);
+    if (seen[key]) { rest.push(c); } else { seen[key] = true; lead.push(c); }
+  });
+  var take = Math.min(lead.length, Math.max(1, max - 3));
+  return lead.slice(0, take).concat(rest).concat(lead.slice(take)).slice(0, max);
+}
+
+function describeChange(o) {
+  if (o.action === "change_price") {
+    return (o.dir === "up" ? "Increase " : "Decrease ") + (o.which === "price" ? "regular price" : "sale price") +
+      " by " + o.amt + (o.unit === "pct" ? "%" : " rand");
+  }
+  if (o.action === "round") return "Round " + (o.which === "price" ? "regular prices" : "sale prices") + " to " +
+    (Number(o.end) === 0 ? "a whole rand" : "an ending of ." + String(o.end).split(".")[1]);
+  if (o.action === "copy_sale") return "Copy regular price to sale price, then take " + o.disc + "% off";
+  /* No scope phrase here: every caller already states the scope ("… on 6
+     products"), so carrying one would double it up. */
+  if (o.action === "set") return "Set " + SET_FIELDS[o.field][0].toLowerCase();
+  if (o.action === "replace") return "Replace “" + o.find + "” with “" + o.repl + "” in the " + (o.where === "name" ? "product name" : "product code");
+  if (o.action === "cats") {
+    var cname = CATS[o.term] ? CATS[o.term].name : "a deleted category";
+    return (o.op === "add" ? "Put products in the category " : "Take products out of the category ") + cname;
+  }
+  if (o.action === "tags") return (o.op === "add" ? "Add the tag " : "Remove the tag ") + o.term;
+  return "Make a change";
+}
+
+/* -------- side cards -------- */
+function breakdownHTML() {
+  var rows = targetProducts();
+  var vrows = targetVars();
+  /* Options ticked on the products screen are the selection: the card says so
+     rather than describing them as products nobody ticked. */
+  if (!rows.length && vrows.length) {
+    var vparents = {};
+    vrows.forEach(function (v) { vparents[v.parent] = true; });
+    return '<div class="card"><h3>This change will affect</h3>' +
+      '<p class="big num">' + nf(vrows.length) + "</p>" +
+      '<p class="hint" style="margin-bottom:9px">options you ticked on the products screen</p>' +
+      '<dl><div class="kv"><dt>Products they sit in</dt><dd class="num">' + nf(Object.keys(vparents).length) + "</dd></div>" +
+      '<div class="kv"><dt>Out of stock</dt><dd class="num">' +
+        nf(vrows.filter(function (v) { return v.qty === 0; }).length) + "</dd></div></dl>" +
+      '<p style="margin-top:11px"><button class="btn btn-quiet btn-sm" type="button" data-goto="grid">Change the selection</button></p></div>' +
+      '<div class="card"><h3>Safety</h3><p class="hint">Every batch is saved with the old values. One click in History puts them back.</p></div>';
+  }
+  var n = selectionCount();
+  /* The prototype holds a sample of a bigger shop, so every derived figure is
+     scaled by the same factor as the headline — or the card contradicts itself. */
+  var f = rows.length ? n / rows.length : 1;
+  var withOpts = Math.round(rows.filter(function (p) { return p.vars.length > 0; }).length * f);
+  var hidden = Math.round(rows.filter(function (p) { return !p.visible; }).length * f);
+  var drafts = Math.round(rows.filter(function (p) { return p.status === "draft"; }).length * f);
+  return '<div class="card"><h3>This change will affect</h3>' +
+    '<p class="big num">' + nf(n) + "</p>" +
+    '<p class="hint" style="margin-bottom:9px">' + (state.allMatching ? "products matching the current filter" : "products you ticked on the products screen") + "</p>" +
+    '<dl><div class="kv"><dt>With sizes or colours</dt><dd class="num">' + nf(withOpts) + "</dd></div>" +
+    '<div class="kv"><dt>Hidden from the site</dt><dd class="num">' + nf(hidden) + "</dd></div>" +
+    '<div class="kv"><dt>Drafts</dt><dd class="num">' + nf(drafts) + "</dd></div></dl>" +
+    '<p style="margin-top:11px"><button class="btn btn-quiet btn-sm" type="button" data-goto="grid">Change the selection</button></p></div>' +
+    '<div class="card"><h3>Safety</h3><p class="hint">Every batch is saved with the old values. One click in History puts them back.</p></div>';
+}
+
+/* Once the batch is away the selection is gone, so the pre-flight breakdown
+   would read zero next to "6 products updated". Restate the batch instead. */
+function doneSideHTML() {
+  var b = state.flow.batch;
+  if (!b) return breakdownHTML();
+  var done = !!state.flow.done;
+  var unit = b.unit === "option" ? "options" : "products";
+  return '<div class="card"><h3>' + (done ? "What changed" : "What is being changed") + "</h3>" +
+    '<p class="big num">' + nf(b.count) + "</p>" +
+    '<p class="hint" style="margin-bottom:9px">' + unit + (done ? " updated" : " in this batch") + "</p>" +
+    '<dl><div class="kv"><dt>Change</dt><dd>' + esc(b.what) + "</dd></div>" +
+    '<div class="kv"><dt>Which ' + unit + "</dt><dd>" + esc(b.scope) + "</dd></div>" +
+    (b.unit === "option"
+      ? ""
+      : '<div class="kv"><dt>Sizes and colours</dt><dd>' + (b.withVars ? "Included" : "Not included") + "</dd></div>") +
+    "</dl>" +
+    (done
+      ? '<p style="margin-top:11px"><button class="btn btn-quiet btn-sm" type="button" data-goto="history">See it in History</button></p>'
+      : "") + "</div>" +
+    '<div class="card"><h3>Safety</h3><p class="hint">' +
+      (done
+        ? "The old values were saved with this batch. One click in History puts them back."
+        : "The old values are being saved as this runs, so it can be put back from History.") +
+    "</p></div>";
+}
+
+/* -------- the three steps -------- */
+function flowHTML() {
+  var b = state.flow;
+  var stepNames = ["Choose the change", "Check it", "Done"];
+  var steps = '<div class="steps">' + stepNames.map(function (nm, i) {
+    var n = i + 1;
+    var cls = b.step === n ? "step now" : b.step > n ? "step done" : "step";
+    return (i ? '<span class="arr" aria-hidden="true">&rsaquo;</span>' : "") +
+      '<span class="' + cls + '"><span class="n">' + (b.step > n ? "✓" : n) + "</span>" + nm + "</span>";
+  }).join("") + "</div>";
+
+  var main = "";
+  if (b.step === 1) main = step1HTML();
+  else if (b.step === 2) main = step2HTML();
+  else main = step3HTML();
+
+  return steps + '<div class="flow"><div class="flow-main">' + main + "</div>" +
+    '<div class="flow-side">' + (b.step === 3 ? doneSideHTML() : breakdownHTML()) + "</div></div>";
+}
+
+function step1HTML() {
+  var b = state.flow;
+  /* Nothing is ever ticked on the user's behalf: an empty selection is said
+     out loud rather than filled in with products nobody chose. */
+  var empty = !flowTargetCount();
+  var onOpts = flowOnOptions();
+  return '<div class="flowbody"><h2>Choose the change</h2>' +
+    '<p class="sub">Pick one change. You will see exactly what it does, on real ' +
+      (onOpts ? "options" : "products") + ", before anything is saved.</p>" +
+    (empty
+      ? '<div class="notice warn" role="status" style="max-width:640px;margin-bottom:14px"><div class="body">' +
+        "<b>Nothing is selected</b><p>Go back to Products and tick what you want to change.</p>" +
+        '<div class="acts"><button class="btn btn-sm" type="button" data-goto="grid">Back to products</button></div>' +
+        "</div></div>"
+      : "") +
+    '<div class="choices" role="radiogroup" aria-label="Choose the change"' + (empty ? ' aria-disabled="true"' : "") + ">" +
+      ACTIONS.map(function (a) {
+        return '<div class="choice' + (b.action === a.id ? " on" : "") + '"' +
+            (empty ? ' style="opacity:.55"' : "") + ">" +
+          '<label for="act_' + a.id + '"><input type="radio" name="bulkaction" id="act_' + a.id + '" value="' + a.id + '"' +
+            (b.action === a.id ? " checked" : "") + (empty ? " disabled" : "") + ">" +
+          '<span><span class="ct">' + a.t + '</span><span class="cd">' + a.d + "</span>" +
+          '<span class="cd" style="margin-top:3px">' + a.consequence + "</span></span></label>" +
+          (b.action === a.id && !empty ? '<div class="cbody">' + actionBodyHTML(a.id) + "</div>" : "") +
+        "</div>";
+      }).join("") +
+    "</div></div>" +
+    '<div class="flowfoot"><button class="btn btn-primary" type="button" data-step="2"' + (empty ? " disabled" : "") +
+      ">Check the change</button>" +
+    '<button class="btn btn-quiet" type="button" data-goto="grid">Back to products</button>' +
+    '<span class="note">Step 1 of 3 &middot; You can undo this afterwards</span></div>';
+}
+
+function step2HTML() {
+  var o = pendingOpts.action ? pendingOpts : captureOpts();
+  var changes = computeChanges(o);
+  var sample = sampleChanges(changes, 8);
+  var onOpts = flowOnOptions();
+  var n = flowTargetCount();
+  var rows = targetProducts();
+  /* Same scaling factor as the headline, so nothing on this screen disagrees. */
+  var f = rows.length ? n / rows.length : 1;
+  var withOpts = Math.round(rows.filter(function (p) { return p.vars.length > 0; }).length * f);
+  /* Counted off the changes just computed, never off p.vars.length: the button
+     and the callouts can then only ever claim what the table below lists. */
+  var varCount = Math.round(changes.filter(function (c) {
+    var r = rowById[c.rid]; return !!(r && r.parent);
+  }).length * f);
+  var shownTotal = Math.round(changes.length * f);
+  var on = !!state.flow.applyToVars;
+  var offers = varsOffered(o.action);
+  var reaches = varsReach(o);
+
+  /* Which of the chosen products this change actually lands on. A price change
+     cannot land on a variable parent, so those are listed as no change rather
+     than left out of a table that claims to show everything. */
+  var touched = {};
+  changes.forEach(function (c) {
+    var r = rowById[c.rid];
+    if (r) touched[r.parent || r.id] = true;
+  });
+  var priceAction = o.action === "change_price" || o.action === "round" || o.action === "copy_sale" ||
+    (o.action === "set" && ["price","sale","qty","stockStatus"].indexOf(o.field) !== -1);
+  var skipped = priceAction
+    ? rows.filter(function (p) { return p.vars.length && !touched[p.id]; })
+    : [];
+  var nTouched = Math.round(Object.keys(touched).length * f);
+  var skipWord = (o.action === "set" && (o.field === "qty" || o.field === "stockStatus")) ? "Stock"
+    : (o.which === "sale" || o.action === "copy_sale") ? "Sale price" : "Regular price";
+  var skipRows = skipped.slice(0, 4).map(function (p) {
+    return '<tr class="skip"><td>' + esc(p.name) + "</td><td>" + skipWord + "</td>" +
+      '<td colspan="2" class="nochange">No change — ' +
+      (skipWord === "Stock" ? "stock is counted on each option" : "price is set on each option") + "</td></tr>";
+  }).join("");
+
+  var table = (sample.length || skipRows)
+    ? '<div style="overflow-x:auto"><table class="preview"><thead><tr>' +
+        "<th>Product</th><th>What changes</th><th>Now</th><th>After</th></tr></thead><tbody>" +
+        sample.map(function (c) {
+          var r = rowById[c.rid];
+          var down = typeof c.before === "number" && typeof c.after === "number" && c.after < c.before;
+          return '<tr' + (r && r.parent ? ' class="vline"' : "") + "><td>" + esc(rowName(c)) + "</td>" +
+            "<td>" + esc(c.label) + '</td><td class="from">' + esc(fmtValue(c.field, c.before)) + "</td>" +
+            '<td class="to' + (down ? " down" : "") + '">' + esc(fmtValue(c.field, c.after)) + "</td></tr>";
+        }).join("") + skipRows +
+      "</tbody></table></div>" +
+      /* The caption counts CHANGES, because that is what the table lists. */
+      (changes.length > sample.length
+        ? '<p class="hint" style="margin-top:9px">The first ' + sample.length + " of " + nf(shownTotal) +
+          " changes are shown. The same change applies to the rest." +
+          (skipped.length ? " " + noChangePhrase(Math.round(skipped.length * f)) : "") + "</p>"
+        : '<p class="hint" style="margin-top:9px">Every change is shown.' +
+          (skipped.length ? " " + noChangePhrase(Math.round(skipped.length * f)) : "") + "</p>")
+    : '<div class="notice warn"><div class="body"><b>Nothing would change</b>' +
+      "<p>None of the chosen products would be different after this change. Go back and adjust it.</p></div></div>";
+
+  /* Both of these are keyed to the live tick box, never to the default — and
+     neither describes a preview that has nothing in it. */
+  var worth = (changes.length && withOpts && offers && reaches)
+    ? '<div class="notice warn" style="margin-top:14px"><div class="body"><b>Worth knowing</b>' +
+      "<p>" + nf(withOpts) + " of these products " + (withOpts === 1 ? "has" : "have") +
+      " sizes or colours, and those carry their own prices and stock. " +
+      (on
+        ? "They are included in this change, and they appear in the preview above."
+        : "Nothing happens to them until you switch the option below on — the preview lists them as no change.") +
+      "</p></div></div>"
+    : "";
+
+  /* The tick box only appears for changes that really can reach the options.
+     For a product-level field it would be a promise the preview contradicts. */
+  /* When the ticks are already on options there is nothing to reach into. */
+  var varbox = onOpts
+    ? '<div class="varbox"><p class="why" style="margin-left:0">You ticked options, so this change goes straight to them. The products they sit in are not touched.</p></div>'
+    : (offers && reaches)
+    ? '<div class="varbox"><label class="check"><input type="checkbox" id="applyVars"' + (on ? " checked" : "") + ">" +
+      "<span><strong>Also change the sizes and colours inside each product</strong></span></label>" +
+      '<p class="why">' + (on
+        ? (varCount
+          ? "Switched on: the " + nf(varCount) + " sizes and colours inside these products will change too."
+          : withOpts
+            ? "Switched on, and the sizes and colours are included — none of them need this change."
+            : "Switched on, but none of the chosen products have sizes or colours.")
+        : "Switched off because sizes and colours often have their own prices and stock. Switch it on to change them too.") +
+      "</p></div>"
+    : '<div class="varbox"><p class="why" style="margin-left:0">' + esc(productOnlyWhy(o)) + "</p></div>";
+
+  /* The button counts what the preview lists, not what was ticked, so it can
+     never offer to change products this change leaves alone. */
+  var applyLabel = onOpts
+    ? "Apply to " + plural(changes.length, "option", "options")
+    : varCount
+      ? "Apply to " + plural(nTouched, "product", "products") + " and " + plural(varCount, "option", "options")
+      : "Apply to " + plural(nTouched, "product", "products");
+
+  return '<div class="flowbody"><h2>Check it</h2>' +
+    '<p class="sub">' + esc(describeChange(o)) + " on " +
+      plural(n, onOpts ? "option" : "product", onOpts ? "options" : "products") + ". Nothing has been saved yet.</p>" +
+    table +
+    worth +
+    varbox +
+    "</div>" +
+    '<div class="flowfoot"><button class="btn btn-primary" type="button" data-step="3"' + (changes.length ? "" : " disabled") + ">" + applyLabel + "</button>" +
+    '<button class="btn btn-quiet" type="button" data-step="1">Back</button>' +
+    '<span class="note">Step 2 of 3 &middot; You can undo this afterwards</span></div>';
+}
+
+function step3HTML() {
+  var b = state.flow;
+  var n = b.batch ? b.batch.count : flowTargetCount();
+  var unitOne = b.batch && b.batch.unit === "option" ? "option" : "product";
+  var unitMany = unitOne + "s";
+  if (!b.done) {
+    return '<div class="flowbody"><h2>Applying the change</h2>' +
+      '<p class="sub">Working through ' + plural(n, unitOne, unitMany) + " in the background.</p>" +
+      '<div class="progress"><i style="width:' + b.progress + '%"></i></div>' +
+      '<p class="hint num" style="margin-top:8px" aria-live="polite">' + nf(Math.round(n * b.progress / 100)) + " of " + nf(n) + " done</p>" +
+      '<p class="hint" style="margin-top:8px;max-width:64ch">You can leave this page. The update carries on in the background and appears in History when it finishes.</p>' +
+      "</div>" +
+      '<div class="flowfoot"><span class="note">Step 3 of 3 &middot; You can undo this afterwards</span></div>';
+  }
+  return '<div class="flowbody"><h2>Done</h2>' +
+    '<div class="notice ok" style="max-width:640px"><div class="body"><b>' + esc(b.batch.what) + "</b>" +
+    "<p>" + plural(b.batch.count, b.batch.unit === "option" ? "option" : "product",
+      b.batch.unit === "option" ? "options" : "products") + " updated" +
+    (b.batch.withVars ? ", sizes and colours included." : ".") +
+    " The old values are saved, so you can put this back at any time.</p>" +
+    '<div class="acts"><button class="btn btn-sm" type="button" data-undoid="' + b.batch.id + '">Undo this change</button>' +
+    '<button class="btn btn-quiet btn-sm" type="button" data-goto="history">See it in History</button></div></div></div></div>' +
+    '<div class="flowfoot"><button class="btn btn-primary" type="button" data-goto="grid">Back to products</button>' +
+    '<button class="btn btn-quiet" type="button" data-step="1">Make another change</button>' +
+    '<span class="note">Step 3 of 3 &middot; You can undo this afterwards</span></div>';
+}
+
+function runApply() {
+  var o = pendingOpts.action ? pendingOpts : captureOpts();
+  var changes = computeChanges(o);
+  var onOpts = flowOnOptions();
+  var rows = targetProducts();
+  var f = rows.length ? selectionCount() / rows.length : 1;
+  /* The batch is journalled with the count the preview showed: the products
+     this change really landed on, not everything that happened to be ticked. */
+  var touched = {};
+  changes.forEach(function (c) { var r = rowById[c.rid]; if (r) touched[r.parent || r.id] = true; });
+  changes.forEach(applyChange);
+  countCats();
+  var n = onOpts ? changes.length : Math.round(Object.keys(touched).length * f);
+  var batch = record({
+    when:"Today", time:stamp(),
+    ago:"just now", who:"Mia Fourie", what:describeChange(o),
+    /* Only an explicit "select all that match" may be journalled as a
+       catalogue-wide edit; ticked rows are a hand-picked selection. */
+    scope:state.allMatching
+      ? (state.cat ? "Category: " + catPath(state.cat).join(" › ") : (filtersActive() ? "Filtered list" : "All products"))
+      : (onOpts ? "Selected options" : "Selected products"),
+    /* A batch can never claim a scope computeChanges() did not touch. */
+    count:n, unit:onOpts ? "option" : "product",
+    withVars:!onOpts && state.flow.applyToVars && varsReach(o) &&
+      changes.some(function (c) { var r = rowById[c.rid]; return !!(r && r.parent); }),
+    kind:(o.action === "set" ? "values" : o.action === "change_price" || o.action === "round" || o.action === "copy_sale" ? "price" : "values"),
+    changes:changes
+  });
+  state.flow.batch = batch;
+  state.flow.progress = 0;
+  state.flow.done = false;
+  render();
+  var tick = function () {
+    state.flow.progress = Math.min(100, state.flow.progress + 20);
+    if (state.flow.progress >= 100) {
+      state.flow.done = true;
+      state.selected = {}; state.selectedVars = {}; state.allMatching = false;
+      render();
+      return;
+    }
+    render();
+    setTimeout(tick, 240);
+  };
+  setTimeout(tick, 260);
+}
+
+/* =====================================================================
+   10. History and undo
+   ===================================================================== */
+/* Each row is strictly later than the one above: minutes carry on the wrap. */
+function auditTime(b, i) {
+  var parts = String(b.time).split(":");
+  var total = i * 13 + 7;
+  var mins = Number(parts[1]) + Math.floor(total / 60);
+  var hrs = Number(parts[0]) + Math.floor(mins / 60);
+  return pad2(hrs % 24) + ":" + pad2(mins % 60) + ":" + pad2(total % 60);
+}
+
+function auditHTML(b) {
+  var rows = b.changes.slice(0, 8);
+  return '<div class="audit">' +
+    '<div class="cap">Batch ' + esc(b.id) + " &mdash; every product, field, before and after value is kept.</div>" +
+    '<div class="scroll"><table><thead><tr><th>Product</th><th>Field</th><th>Before</th><th>After</th><th>Time</th></tr></thead><tbody>' +
+    rows.map(function (c, i) {
+      return "<tr><td>" + esc(rowName(c)) + "</td><td>" + esc(c.label) + "</td>" +
+        "<td>" + esc(fmtValue(c.field, c.before)) + "</td><td>" + esc(fmtValue(c.field, c.after)) + "</td>" +
+        "<td>" + auditTime(b, i) + "</td></tr>";
+    }).join("") +
+    "</tbody></table></div>" +
+    (b.count > rows.length
+      ? '<p class="more">Showing ' + rows.length + " of " + nf(b.count) + " entries. " +
+        '<button class="btn-link" type="button" data-exportlog="' + b.id + '">Download the full log (CSV)</button></p>'
+      : "") +
+  "</div>";
+}
+
+/* The three products someone edited after the batch — its own table, forced
+   open, with the column that explains why they are here. */
+function conflictAuditHTML(b) {
+  var ids = b.conflictIds || [];
+  var rows = b.changes.filter(function (c) { return ids.indexOf(c.rid) !== -1; });
+  var ed = b.conflictEdits || {};
+  if (!rows.length) return "";
+  return '<div class="audit">' +
+    '<div class="cap">The ' + rows.length + " products someone edited after this change</div>" +
+    '<div class="scroll"><table><thead><tr><th>Product</th><th>Field</th><th>Before</th><th>After</th>' +
+      "<th>Edited since by / when</th></tr></thead><tbody>" +
+    rows.map(function (c) {
+      return "<tr><td>" + esc(rowName(c)) + "</td><td>" + esc(c.label) + "</td>" +
+        "<td>" + esc(fmtValue(c.field, c.before)) + "</td><td>" + esc(fmtValue(c.field, c.after)) + "</td>" +
+        "<td>" + esc(ed[c.rid] || "—") + "</td></tr>";
+    }).join("") +
+    "</tbody></table></div></div>";
+}
+
+function historyHTML() {
+  var list = HISTORY.filter(function (b) {
+    if (!(state.histWho === "Everyone" || b.who === state.histWho)) return false;
+    if (state.histWhen === "Last 7 days") return b.days <= 7;
+    if (state.histWhen === "Today") return b.days === 0;
+    return true;
+  });
+  return '<div class="hist">' +
+    /* The batch titles are h3, so the list needs its own h2 or the heading
+       order jumps straight from the page title to h3. */
+    '<h2 class="sr">Change history</h2>' +
+    '<div class="bar">' +
+      '<label class="sr" for="hWho">Show changes by</label>' +
+      '<select class="field" id="hWho">' + ["Everyone", "Mia Fourie", "Sam Naidoo"].map(function (w) {
+        return '<option' + (state.histWho === w ? " selected" : "") + ">" + w + "</option>";
+      }).join("") + "</select>" +
+      '<label class="sr" for="hWhen">Show changes from</label>' +
+      '<select class="field" id="hWhen">' + ["Last 30 days", "Last 7 days", "Today"].map(function (w) {
+        return '<option' + (state.histWhen === w ? " selected" : "") + ">" + w + "</option>";
+      }).join("") + "</select>" +
+      '<div class="right"><button class="btn btn-quiet" type="button" data-exportlog="all">Export log (CSV)</button></div>' +
+    "</div>" +
+    list.map(function (b) {
+      var open = !!state.auditOpen[b.id];
+      var settled = b.undone || b.partialUndone;
+      var conflict = state.conflictOpen === b.id && b.conflict && !settled;
+      return '<article class="batch' + (settled ? " undone" : "") + '">' +
+        '<div class="btop"><div class="what"><h3>' + esc(b.what) + "</h3>" +
+          '<p class="meta">' + esc(b.when) + ", " + esc(b.time) + ' &middot; <span class="who">' + esc(b.who) +
+          "</span> &middot; " + esc(b.scope) + " &middot; " + esc(b.ago) + "</p></div>" +
+          '<div class="bacts">' +
+            '<button class="btn btn-quiet btn-sm" type="button" data-audit="' + b.id + '" aria-expanded="' + open + '">' +
+              (open ? "Hide the changes" : "See every change") + "</button>" +
+            (settled
+              ? '<button class="btn btn-sm" type="button" disabled>Undone</button>'
+              : '<button class="btn btn-sm" type="button" data-undoclick="' + b.id + '">Undo</button>') +
+          "</div></div>" +
+        '<div class="btags">' +
+          '<span class="pill grey num">' + nf(b.count) + (b.unit === "option" ? " options" : " products") + "</span>" +
+          (b.withVars ? '<span class="pill grey">Variations included</span>' : "") +
+          (b.conflict && !settled ? '<span class="pill warn">' + b.conflict + " changed since</span>" : "") +
+          (b.undone ? '<span class="pill good">Undone &middot; Put back by ' + esc(b.undoneBy || "someone") + "</span>" : "") +
+          (b.partialUndone
+            ? '<span class="pill good num">' + nf(b.undoneCount) + " of " + nf(b.count) + " put back by " +
+              esc(b.undoneBy || "someone") + "</span>" +
+              '<span class="pill warn">' + b.conflict + " left alone</span>"
+            : "") +
+        "</div>" +
+        (conflict
+          ? '<div class="conflict"><span aria-hidden="true">&#9888;</span><div class="body">' +
+            "<h4>" + b.conflict + " of these products have changed since</h4>" +
+            "<p>Someone edited " + b.conflict + " products after this change was made. Undoing would overwrite that later work. " +
+            "The other " + nf(b.count - b.conflict) + " can go back safely.</p>" +
+            '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+              '<button class="btn btn-primary btn-sm" type="button" data-undosafe="' + b.id + '">Undo the other ' + nf(b.count - b.conflict) + "</button>" +
+              '<button class="btn btn-quiet btn-sm" type="button" data-conflictaudit="' + b.id +
+                '" aria-expanded="' + (state.conflictAuditOpen === b.id) + '">See the ' + b.conflict + " that changed</button>" +
+              '<button class="btn btn-danger btn-sm" type="button" data-undoall="' + b.id + '">Undo all ' + nf(b.count) + " anyway</button>" +
+              '<button class="btn-link" type="button" data-conflictcancel="1">Cancel</button>' +
+            "</div></div></div>"
+          : "") +
+        (conflict && state.conflictAuditOpen === b.id ? conflictAuditHTML(b) : "") +
+        (open ? auditHTML(b) : "") +
+      "</article>";
+    }).join("") +
+    '<p class="retain">Older batches are removed automatically after 90 days. Change this in Settings.</p>' +
+  "</div>";
+}
+
+/* =====================================================================
+   11. Modals: settings, confirm, category delete
+   ===================================================================== */
+var SETTINGS = { who:"managers", keepDays:90, batchSize:50 };
+
+function modalHTML(m) {
+  if (m.kind === "settings") {
+    return '<div class="modal" role="dialog" aria-modal="true" aria-labelledby="mTitle">' +
+      '<header><h2 id="mTitle">Settings</h2>' +
+      '<button class="dclose" type="button" data-modalclose="1" aria-label="Close settings">&times;</button></header>' +
+      '<div class="mbody">' +
+        '<fieldset><legend>Who can use this screen</legend>' +
+          '<label class="check" style="margin-bottom:7px"><input type="radio" name="whoCan" value="managers"' +
+            (SETTINGS.who === "managers" ? " checked" : "") + "> <span>Shop managers and administrators</span></label>" +
+          '<label class="check"><input type="radio" name="whoCan" value="admins"' +
+            (SETTINGS.who === "admins" ? " checked" : "") + "> <span>Administrators only</span></label></fieldset>" +
+        '<div><label class="lbl" for="keepDays">Keep history for</label>' +
+          '<div style="display:flex;align-items:center;gap:8px">' +
+          '<input class="field" id="keepDays" type="number" min="1" max="730" step="1" value="' + SETTINGS.keepDays + '" style="width:90px"> <span>days</span></div>' +
+          '<p class="hint" style="margin-top:4px">Batches older than this are removed, along with the values needed to undo them.</p></div>' +
+        '<div><label class="lbl" for="batchSize">Batch size (advanced)</label>' +
+          '<div style="display:flex;align-items:center;gap:8px">' +
+          '<input class="field" id="batchSize" type="number" min="10" max="500" step="10" value="' + SETTINGS.batchSize + '" style="width:90px"> <span>products per background run</span></div>' +
+          '<p class="hint" style="margin-top:4px">Lower this if your host is slow. Higher finishes sooner but works the site harder.</p></div>' +
+      "</div>" +
+      '<footer><span class="hint">Applies to everyone on this site.</span>' +
+      '<span class="grow"><button class="btn btn-quiet" type="button" data-modalclose="1">Cancel</button>' +
+      '<button class="btn btn-primary" type="button" data-savesettings="1">Save settings</button></span></footer></div>';
+  }
+  return '<div class="modal" role="dialog" aria-modal="true" aria-labelledby="mTitle">' +
+    '<header><h2 id="mTitle">' + esc(m.title) + "</h2></header>" +
+    '<div class="mbody"><p>' + esc(m.body) + "</p></div>" +
+    '<footer><span class="grow"><button class="btn btn-quiet" type="button" data-modalclose="1">Cancel</button>' +
+    '<button class="btn ' + (m.danger ? "btn-danger" : "btn-primary") + '" type="button" data-modalok="1">' + esc(m.ok) + "</button></span></footer></div>";
+}
+/* Closing a dialog has to put the keyboard back where it was, or a keyboard
+   user lands at the top of the document and has to walk the whole page again.
+   The opener is remembered on the way in; if the render that follows has
+   replaced it, Settings is the one control that never moves. */
+function openModal(m) { m.opener = document.activeElement; state.modal = m; renderModal(); }
+function closeModal() {
+  var opener = state.modal && state.modal.opener;
+  state.modal = null;
+  renderModal();
+  if (opener && opener.focus && document.body.contains(opener)) { opener.focus(); return; }
+  var fallback = document.getElementById("settingsBtn");
+  if (fallback) fallback.focus();
+}
+function renderModal() {
+  var host = $("#modalHost");
+  if (!state.modal) { host.innerHTML = ""; return; }
+  host.innerHTML = '<div id="modalscrim">' + modalHTML(state.modal) + "</div>";
+  var f = host.querySelector("button, input, select");
+  if (f) f.focus();
+}
+
+/* =====================================================================
+   12. Top-level render
+   ===================================================================== */
+function render() {
+  $$(".screennav button").forEach(function (b) {
+    b.setAttribute("aria-current", b.getAttribute("data-screen") === state.screen ? "true" : "false");
+  });
+  var slab = $("#slab"), tree = $("#treePane");
+  renderNotices();
+  if (state.screen === "grid") {
+    tree.hidden = false;
+    slab.classList.remove("solo");
+    renderTree();
+    renderGrid();
+  } else {
+    tree.hidden = true;
+    slab.classList.add("solo");
+    $("#pane").innerHTML = state.screen === "flow" ? flowHTML() : historyHTML();
+  }
+  renderDrawer();
+  renderModal();
+  /* The switcher follows the app, not the other way round, so it stays true
+     when navigation happens through the tabs or "Make a change to these". */
+  setProtoScreen(
+    state.screen === "flow" ? "3" :
+    state.screen === "history" ? "4" :
+    Object.keys(state.expanded).some(function (k) { return state.expanded[k]; }) ? "2" : "1"
+  );
+}
+
+/* =====================================================================
+   13. Events
+   ===================================================================== */
+function setProtoState(s) {
+  state.forced = s;
+  $$("#proto [data-state]").forEach(function (b) { b.setAttribute("aria-pressed", String(b.getAttribute("data-state") === s)); });
+}
+function setProtoScreen(n) {
+  $$("#proto [data-proto]").forEach(function (b) { b.setAttribute("aria-pressed", String(b.getAttribute("data-proto") === n)); });
+}
+function goScreen(s) {
+  state.screen = s;
+  if (s === "flow") {
+    /* Never tick rows on the user's behalf. A screen whose promise is "you will
+       see exactly what it does" cannot start by substituting the target set:
+       step 1 says so instead, and the demo selection is seeded once at boot. */
+    if (state.flow.step === 3 && state.flow.done) { state.flow.step = 1; state.flow.done = false; state.flow.progress = 0; }
+  }
+  render();
+}
+
+document.addEventListener("click", function (e) {
+  var t = e.target;
+  var at = function (name) { var el = t.closest("[data-" + name + "]"); return el ? el.getAttribute("data-" + name) : null; };
+
+  /* popovers and tree menus close on outside click */
+  var popName = at("pop");
+  if (popName) { state.pop = state.pop === popName ? null : popName; render(); return; }
+  if (!t.closest(".pop") && state.pop) { state.pop = null; render(); }
+  if (!t.closest(".tmenu") && !t.closest("[data-kebab]") && (state.treeMenu || state.treeMove)) {
+    state.treeMenu = null; state.treeMove = null; render();
+  }
+
+  /* prototype switcher */
+  var proto = at("proto");
+  if (proto) {
+    setProtoScreen(proto); setProtoState("normal");
+    state.drawer = null;
+    if (proto === "1") { state.screen = "grid"; state.mode = "products"; state.expanded = {}; }
+    if (proto === "2") {
+      state.screen = "grid"; state.mode = "products";
+      PRODUCTS.forEach(function (p) { if (p.vars.length) state.expanded[p.id] = true; });
+    }
+    if (proto === "3") { state.flow.step = 1; state.flow.done = false; state.flow.progress = 0; goScreen("flow"); return; }
+    if (proto === "4") { state.screen = "history"; }
+    render(); return;
+  }
+  var st = at("state");
+  if (st) { setProtoState(st); state.screen = "grid"; setProtoScreen("1"); render(); return; }
+
+  /* section nav */
+  var navBtn = t.closest(".screennav button");
+  var goto = navBtn ? navBtn.getAttribute("data-screen") : at("goto");
+  if (goto) { goScreen(goto); return; }
+
+  /* notices */
+  if (at("dismiss")) { state.notice = null; render(); return; }
+  var undoId = at("undoid");
+  if (undoId) {
+    /* Every way into an undo asks the same question: the toast, the Done screen
+       and the History row cannot differ on whether putting work back is
+       confirmed. */
+    var ub = HISTORY.filter(function (b) { return b.id === undoId; })[0];
+    if (ub) {
+      openModal({ kind:"confirm", title:"Undo this change?", ok:"Undo the change", body:undoWording(ub),
+        onOk:function () { doUndo(ub, false); } });
+    }
+    return;
+  }
+
+  /* settings and export */
+  if (t.id === "settingsBtn") { openModal({ kind:"settings" }); return; }
+  if (at("modalclose")) { closeModal(); return; }
+  if (at("savesettings")) {
+    var who = document.querySelector('input[name="whoCan"]:checked');
+    SETTINGS.who = who ? who.value : SETTINGS.who;
+    SETTINGS.keepDays = Number($("#keepDays").value) || SETTINGS.keepDays;
+    SETTINGS.batchSize = Number($("#batchSize").value) || SETTINGS.batchSize;
+    closeModal();
+    notify("ok", "Settings saved. History is kept for " + SETTINGS.keepDays + " days and " +
+      (SETTINGS.who === "admins" ? "only administrators" : "shop managers and administrators") + " can use this screen.");
+    render(); return;
+  }
+  if (at("modalok")) {
+    var m = state.modal;
+    closeModal();
+    if (m && typeof m.onOk === "function") m.onOk();
+    return;
+  }
+  if (t.id === "exportBtn") {
+    notify("ok", "Exporting " + nf(selectionCount() || matchingTotal()) + " products to CSV. The file downloads when it is ready.");
+    render(); return;
+  }
+  var xl = at("exportlog");
+  if (xl) { notify("ok", "Exporting the change log to CSV. The file downloads when it is ready."); render(); return; }
+  if (at("copyerr")) { notify("ok", "Error details copied. Paste them into a message to your host or to support."); render(); return; }
+  if (at("retry4")) {
+    setProtoState("normal");
+    notify("ok", "Trying 4 products again. They will appear in History when they finish.");
+    render(); return;
+  }
+
+  /* category tree */
+  var twist = at("twist");
+  if (twist) { openCats[twist] = !openCats[twist]; render(); return; }
+  var cat = at("cat");
+  if (cat) {
+    state.cat = cat === "all" ? null : cat;
+    if (cat !== "all") { var c = CATS[cat].parent; while (c) { openCats[c] = true; c = CATS[c].parent; } }
+    state.selected = {}; state.selectedVars = {}; state.allMatching = false;
+    render(); return;
+  }
+  if (t.id === "catShowAll") { state.cat = null; state.catSearch = ""; render(); return; }
+  var keb = at("kebab");
+  if (keb) { state.treeMenu = state.treeMenu === keb ? null : keb; state.treeMove = null; render(); return; }
+  if (at("treeclose")) { state.treeMenu = null; state.treeMove = null; render(); return; }
+  var rn = at("rename");
+  if (rn) { state.treeRename = rn; state.treeMenu = null; render(); return; }
+  var mv = at("move");
+  if (mv) { state.treeMove = mv; render(); return; }
+  var mvgo = at("movego");
+  if (mvgo) {
+    var dest = $("#mv_" + mvgo).value;
+    var nm = CATS[mvgo].name;
+    detach(mvgo);
+    if (dest) { CATS[mvgo].parent = dest; CATS[dest].kids.push(mvgo); openCats[dest] = true; }
+    else { CATS[mvgo].parent = null; ROOTS.push(mvgo); }
+    countCats();
+    state.treeMove = null; state.treeMenu = null;
+    notify("ok", nm + " moved to " + (dest ? catPath(dest).join(" › ") : "the top level") + ".");
+    render(); return;
+  }
+  var del = at("delcat");
+  if (del) {
+    state.treeMenu = null;
+    openModal({
+      kind:"confirm", title:"Delete this category?", danger:true, ok:"Delete category",
+      body:"“" + CATS[del].name + "” and any categories under it will be removed. Products in it move to " +
+        ((CATS[del].parent && CATS[CATS[del].parent]) ? "“" + CATS[CATS[del].parent].name + "”" : "Uncategorised") +
+        " and stay in your shop.",
+      onOk:function () {
+        var name = CATS[del].name;
+        /* Move the products out before the category goes, or every one of them
+           is left pointing at an id that no longer exists — which is what the
+           Category column would then print. */
+        var gone = descendants(del), up = CATS[del].parent;
+        var home = (up && CATS[up]) ? up : "uncategorised";
+        var moved = 0;
+        PRODUCTS.forEach(function (p) {
+          if (gone.indexOf(p.cat) === -1) return;
+          p.cat = home; moved++;
+        });
+        gone.forEach(function (k) { delete CATS[k]; });
+        detachSafe(del);
+        if (state.cat && !CATS[state.cat]) state.cat = null;
+        countCats();
+        notify("ok", name + " deleted. " + (moved
+          /* The tree counts are scaled to the shop, so the confirmation has to
+             be too — otherwise it contradicts the number just read. */
+          ? plural(moved * SCALE, "product", "products") + " moved to " + catPath(home).join(" › ") + "."
+          : "No products were in it."));
+        render();
+      }
+    });
+    return;
+  }
+  if (t.id === "addCat") {
+    var id = "new-" + Date.now();
+    CATS[id] = { id:id, name:"New category", parent:null, kids:[] };
+    ROOTS.push(id);
+    CAT_COUNT[id] = 0;
+    state.treeRename = id;
+    notify("ok", "Category added at the top level. Type its name, then drag it where it belongs.");
+    render(); return;
+  }
+
+  /* views, filters, columns */
+  var view = at("view");
+  if (view) {
+    state.view = view;
+    var saved = SAVED_VIEWS.filter(function (v) { return v.id === view; })[0];
+    if (saved && saved.saved) {
+      /* A view the user saved carries the filters it was saved with, so going
+         back to it restores the list they saw, not a blank one. */
+      state.filters = { status:saved.filters.status, stock:saved.filters.stock, visible:saved.filters.visible };
+      state.cat = saved.cat;
+      state.search = saved.search;
+    } else {
+      state.filters = { status:"any", stock:"any", visible:"any" };
+      if (view === "hidden") state.filters.visible = "no";
+      if (view === "lowstock") state.filters.stock = "low";
+    }
+    state.selected = {}; state.allMatching = false;
+    render(); return;
+  }
+  if (at("saveview")) {
+    /* Saving really adds the view: it joins the row above the list, it is
+       selected straight away, and clicking it later brings these filters back. */
+    var nSaved = SAVED_VIEWS.filter(function (v) { return v.saved; }).length + 1;
+    var nv = {
+      id:"saved" + nSaved, label:"My view " + nSaved, saved:true,
+      filters:{ status:state.filters.status, stock:state.filters.stock, visible:state.filters.visible },
+      cat:state.cat, search:state.search
+    };
+    SAVED_VIEWS.push(nv);
+    state.view = nv.id;
+    notify("ok", "Saved as “" + nv.label + "”. It is in the row of views above the list, and it keeps the filters you have on now.");
+    render(); return;
+  }
+  if (at("clearfilters")) {
+    state.cat = null; state.search = ""; state.view = "all";
+    state.filters = { status:"any", stock:"any", visible:"any" };
+    setProtoState("normal");
+    render(); return;
+  }
+  var mode = t.closest("[data-mode]");
+  if (mode) {
+    state.mode = mode.getAttribute("data-mode");
+    state.selected = {}; state.selectedVars = {}; state.allMatching = false;
+    render(); return;
+  }
+  if (t.id === "expandAll") {
+    var anyClosed = PRODUCTS.some(function (p) { return p.vars.length && !state.expanded[p.id]; });
+    PRODUCTS.forEach(function (p) { if (p.vars.length) { if (anyClosed) state.expanded[p.id] = true; else delete state.expanded[p.id]; } });
+    render(); return;
+  }
+
+  /* selection */
+  var check = at("check");
+  if (check) {
+    var cid = Number(check);
+    state.selected[cid] = !state.selected[cid];
+    /* Any tick drops out of select-all-matching: once the owner makes an
+       exception, "every product that matches" is no longer what they asked
+       for, and the flow must only carry the rows they can see ticked. */
+    if (state.allMatching) state.allMatching = false;
+    render();
+    /* render() replaces the pane, so focus has to be put back on the same
+       control in the fresh DOM: ticking 40 rows must not mean tabbing from the
+       top of the document 40 times. */
+    var cbBack = document.getElementById("cb" + cid);
+    if (cbBack) cbBack.focus();
+    return;
+  }
+  var vcheck = at("vcheck");
+  if (vcheck) {
+    var vid2 = Number(vcheck);
+    state.selectedVars[vid2] = !state.selectedVars[vid2];
+    if (state.allMatching) state.allMatching = false;
+    render();
+    var vcbBack = document.getElementById("vcb" + vid2);
+    if (vcbBack) vcbBack.focus();
+    return;
+  }
+  if (at("checkall")) {
+    /* In Variations mode the header box owns the option rows on screen,
+       not the product rows that are not being shown. */
+    if (state.mode === "variations") {
+      var vrows = flatVars();
+      var allVOn = vrows.length > 0 && vrows.every(function (pair) { return !!state.selectedVars[pair[1].id]; });
+      state.selectedVars = {};
+      if (!allVOn) vrows.forEach(function (pair) { state.selectedVars[pair[1].id] = true; });
+      state.selected = {}; state.allMatching = false;
+      render();
+      var allBack1 = document.getElementById("cbAll");
+      if (allBack1) allBack1.focus();
+      return;
+    }
+    var rows = filtered();
+    var allOn = rows.every(function (p) { return !!state.selected[p.id]; });
+    state.selected = {};
+    if (!allOn) rows.forEach(function (p) { state.selected[p.id] = true; });
+    state.allMatching = false;
+    render();
+    var allBack = document.getElementById("cbAll");
+    if (allBack) allBack.focus();
+    return;
+  }
+  var am = at("allmatching");
+  if (am) {
+    state.allMatching = am === "on";
+    if (am === "on") filtered().forEach(function (p) { state.selected[p.id] = true; });
+    render(); return;
+  }
+  if (at("clearsel")) { state.selected = {}; state.selectedVars = {}; state.allMatching = false; render(); return; }
+  var sv = at("selvars");
+  if (sv) { byId[Number(sv)].vars.forEach(function (v) { state.selectedVars[v.id] = true; }); render(); return; }
+
+  /* rows */
+  var ex = at("expand");
+  if (ex) { var eid = Number(ex); state.expanded[eid] = !state.expanded[eid]; render(); return; }
+  var op = at("open");
+  if (op) { openDrawer(Number(op)); return; }
+  if (t.id === "drawerClose" || t.id === "scrim") { closeDrawer(); return; }
+  if (at("changecats")) {
+    var catMsg = "Category picker opens here in the built plugin.";
+    /* Raised from inside the drawer? Then it has to be answered inside the
+       drawer — #notices lives behind the scrim and outside the modal. */
+    if (state.drawer) {
+      state.drawerNote = catMsg;
+      renderDrawer();
+      var backCats = document.querySelector('[data-changecats]');
+      if (backCats) backCats.focus();
+      /* No timer: this is an explanation, not a transient "Saved" tick, and it
+         clears with the drawer. */
+    } else {
+      notify("ok", catMsg);
+      render();
+    }
+    return;
+  }
+
+  /* visible-on-site switches */
+  var visId = at("vis");
+  if (visId) {
+    var row = rowById[Number(visId)];
+    var before = row.visible;
+    row.visible = !before;
+    if (!row.parent) row.catvis = row.visible ? "shop-search" : "hidden";
+    var isOpt = !!row.parent;
+    var label = isOpt ? optLabel(row) : row.name;
+    /* An option is not a product: the log and the exported change file must not
+       report one as the other. */
+    var b = record({
+      when:"Today", time:stamp(),
+      ago:"just now", who:"Mia Fourie",
+      scope:isOpt ? "One option" : "One product", unit:isOpt ? "option" : "product", kind:"visibility",
+      what:isOpt
+        ? (row.visible ? "Enabled an option" : "Stopped selling an option")
+        : (row.visible ? "Showed a product on the site" : "Hid a product from the site"),
+      count:1,
+      changes:[{ rid:row.id, field:"visible", label:isOpt ? "Enabled" : "Visible on site", before:before, after:row.visible }]
+    });
+    notify("ok", label + " is now " +
+      (isOpt
+        ? (row.visible ? "enabled." : "not sold.")
+        : (row.visible ? "on the site." : "hidden from the site.")), b.id);
+    render();
+    var visBack = document.querySelector('[data-vis="' + visId + '"]');
+    if (visBack) visBack.focus();
+    return;
+  }
+
+  /* quick actions */
+  var quick = at("quick");
+  if (quick) {
+    var want = quick === "show";
+    /* Hiding the whole shop in one click is as destructive as an undo, so it
+       asks the same question first. */
+    if (state.allMatching && selectionCount() > filtered().length) {
+      openModal({
+        kind:"confirm", danger:!want,
+        title:want ? "Show every matching product?" : "Hide every matching product?",
+        ok:want ? "Show them all" : "Hide them all",
+        body:"This " + (want ? "shows " : "hides ") + nf(selectionCount()) + " products " +
+          (want ? "in your shop" : "from your shop") + ". Continue?",
+        onOk:function () { runQuickVisibility(want); }
+      });
+      return;
+    }
+    runQuickVisibility(want);
+    return;
+  }
+  /* inline price editing on a product row */
+  var edit = at("edit");
+  if (edit && t.classList.contains("cellbtn")) { startInlineEdit(t, edit); return; }
+
+  /* bulk flow steps */
+  var step = at("step");
+  if (step) {
+    var s = Number(step);
+    if (s === 2) {
+      captureOpts();
+      state.flow.applyToVars = flowVarsDefault();
+    }
+    if (s === 1) { state.flow.done = false; state.flow.progress = 0; }
+    state.flow.step = s;
+    if (s === 3) { runApply(); return; }
+    render(); return;
+  }
+
+  /* history */
+  var audit = at("audit");
+  if (audit) { state.auditOpen[audit] = !state.auditOpen[audit]; render(); return; }
+  /* Forced open, never toggled: this button must not close what was asked for. */
+  var caudit = at("conflictaudit");
+  if (caudit) { state.conflictAuditOpen = caudit; render(); return; }
+  var uc = at("undoclick");
+  if (uc) {
+    var ub2 = HISTORY.filter(function (b) { return b.id === uc; })[0];
+    if (ub2.conflict) { state.conflictOpen = ub2.id; render(); return; }
+    openModal({ kind:"confirm", title:"Undo this change?", ok:"Undo the change", body:undoWording(ub2),
+      onOk:function () { doUndo(ub2, false); } });
+    return;
+  }
+  var us = at("undosafe");
+  if (us) {
+    var sb = HISTORY.filter(function (b) { return b.id === us; })[0];
+    openModal({ kind:"confirm", title:"Undo this change?", ok:"Undo the other " + nf(sb.count - sb.conflict),
+      body:"This puts " + nf(sb.count - sb.conflict) + " products back to their old prices and leaves the " + sb.conflict + " that changed since alone. Continue?",
+      onOk:function () { doUndo(sb, true); } });
+    return;
+  }
+  var ua = at("undoall");
+  if (ua) {
+    var ab = HISTORY.filter(function (b) { return b.id === ua; })[0];
+    openModal({ kind:"confirm", title:"Undo everything in this batch?", ok:"Undo all " + nf(ab.count), danger:true,
+      body:undoWording(ab) + " The " + ab.conflict + " products edited since will lose that later work.",
+      onOk:function () { doUndo(ab, false); } });
+    return;
+  }
+  if (at("conflictcancel")) { state.conflictOpen = null; state.conflictAuditOpen = null; render(); return; }
+});
+
+/* The one-click Show / Hide, shared by the selection bar and its confirmation. */
+function runQuickVisibility(want) {
+  var targets = targetProducts();
+  /* In Variations mode the ticks are on options, so act on those instead. */
+  var vtargets = targets.length ? [] : selectedVarIds().map(function (id) { return rowById[id]; }).filter(Boolean);
+  var onOpts = !targets.length && vtargets.length > 0;
+  var qrows = onOpts ? vtargets : targets;
+  /* Label the batch with the whole selection, not just the rendered rows. */
+  var qn = onOpts ? vtargets.length : selectionCount();
+  var changes = qrows.filter(function (r) { return r.visible !== want; })
+    .map(function (r) { return { rid:r.id, field:"visible", label:onOpts ? "Enabled" : "Visible on site", before:r.visible, after:want }; });
+  changes.forEach(applyChange);
+  if (!onOpts) targets.forEach(function (p) { p.catvis = p.visible ? "shop-search" : "hidden"; });
+  var qb = record({
+    when:"Today", time:stamp(), ago:"just now", who:"Mia Fourie", kind:"visibility",
+    what:onOpts
+      ? (want ? "Enabled options" : "Stopped selling options")
+      : (want ? "Showed products on the site" : "Hid products from the site"),
+    scope:onOpts ? "Selected options" : (state.cat ? "Category: " + catPath(state.cat).join(" › ") : "Selected products"),
+    count:qn, unit:onOpts ? "option" : "product", changes:changes
+  });
+  notify("ok", plural(qn, onOpts ? "option is" : "product is", onOpts ? "options are" : "products are") +
+    " now " + (onOpts
+      ? (want ? "enabled." : "not sold.")
+      : (want ? "on the site." : "hidden from the site.")), qb.id);
+  render();
+}
+
+function detachSafe(id) {
+  var i = ROOTS.indexOf(id);
+  if (i !== -1) { ROOTS.splice(i, 1); return; }
+  Object.keys(CATS).forEach(function (k) {
+    var j = CATS[k].kids.indexOf(id);
+    if (j !== -1) CATS[k].kids.splice(j, 1);
+  });
+}
+
+document.addEventListener("input", function (e) {
+  var t = e.target;
+  if (t.id === "catSearch") { state.catSearch = t.value; renderTree(); return; }
+  if (t.id === "q") {
+    state.search = t.value; state.selected = {}; state.allMatching = false;
+    renderGrid();
+    var q = $("#q");
+    if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
+  }
+});
+
+/* Editing an option in the drawer earns the same "Saved" tick as every other
+   field there, on the same 2.2s window. */
+function optLabel(v) {
+  return byId[v.parent].name + " " + v.attrs.map(function (a) { return a[1]; }).join(" / ");
+}
+function optSaved(vid, inputId) {
+  if (!state.drawer) return;
+  state.savedField = "opt:" + vid;
+  renderDrawer();
+  var back = inputId ? $("#" + inputId) : null;
+  if (back) back.focus();
+  clearTimeout(window.__tick);
+  window.__tick = setTimeout(function () {
+    state.savedField = null;
+    if (state.drawer) renderDrawer();
+  }, 2200);
+}
+
+document.addEventListener("change", function (e) {
+  var t = e.target;
+  if (t.id === "fStatus") { state.filters.status = t.value; state.pop = "filters"; render(); return; }
+  if (t.id === "fStock") { state.filters.stock = t.value; state.pop = "filters"; render(); return; }
+  if (t.id === "fVis") { state.filters.visible = t.value; state.pop = "filters"; render(); return; }
+  if (t.getAttribute && t.getAttribute("data-col")) {
+    state.cols[t.getAttribute("data-col")] = t.checked; state.pop = "cols"; render(); return;
+  }
+  if (t.name === "bulkaction") {
+    state.flow.action = t.value;
+    state.flow.applyToVars = flowVarsDefault();
+    pendingOpts = {};
+    render(); return;
+  }
+  if (t.name === "setfield") {
+    if (t.value === "__other") { state.flow.otherOpen = true; state.flow.setField = SET_OTHER[0]; }
+    else { state.flow.otherOpen = false; state.flow.setField = t.value; }
+    state.flow.applyToVars = flowVarsDefault();
+    render(); return;
+  }
+  if (t.id === "otherField") {
+    state.flow.setField = t.value; state.flow.otherOpen = true;
+    state.flow.applyToVars = flowVarsDefault();
+    render(); return;
+  }
+  if (t.id === "applyVars") { state.flow.applyToVars = t.checked; render(); return; }
+  if (t.id === "hWho") { state.histWho = t.value; render(); return; }
+  if (t.id === "hWhen") { state.histWhen = t.value; render(); return; }
+
+  /* inline variation editing */
+  var vp = t.getAttribute && t.getAttribute("data-vprice");
+  if (vp) {
+    var v1 = rowById[Number(vp)];
+    var b1 = v1.price;
+    v1.price = Number(t.value) || 0;
+    var bp = record({ when:"Today", time:stamp(),
+      ago:"just now", who:"Mia Fourie", scope:"One option", unit:"option", kind:"price",
+      what:"Changed the price of one option", count:1,
+      changes:[{ rid:v1.id, field:"price", label:"Regular price", before:b1, after:v1.price }] });
+    /* In the grid there is no drawer to show a "Saved" tick, so an option earns
+       the same notice and Undo that editing a product's price does. */
+    if (!state.drawer) {
+      notify("ok", "Saved. " + optLabel(v1) + " is now " + money(v1.price) + ".", bp.id);
+      render();
+      var againP = $("#" + t.id);
+      if (againP) againP.focus();
+      return;
+    }
+    optSaved(v1.id, t.id);
+    return;
+  }
+  var vq = t.getAttribute && t.getAttribute("data-vqty");
+  if (vq) {
+    var v2 = rowById[Number(vq)];
+    var b2 = v2.qty;
+    v2.qty = Number(t.value) || 0;
+    v2.stockStatus = v2.qty === 0 ? "outofstock" : "instock";
+    /* The product's figure is the sum of its options, so it follows them. */
+    var par2 = byId[v2.parent];
+    par2.qty = par2.vars.reduce(function (s3, vv) { return s3 + vv.qty; }, 0);
+    par2.stockStatus = par2.qty === 0 ? "outofstock" : "instock";
+    var bq = record({ when:"Today", time:stamp(),
+      ago:"just now", who:"Mia Fourie", scope:"One option", unit:"option", kind:"stock",
+      what:"Changed the stock of one option", count:1,
+      changes:[{ rid:v2.id, field:"qty", label:"Stock quantity", before:b2, after:v2.qty }] });
+    if (!state.drawer) {
+      notify("ok", "Saved. " + optLabel(v2) + " now has " + nf(v2.qty) + " in stock.", bq.id);
+      render();
+      var againQ = $("#" + t.id);
+      if (againQ) againQ.focus();
+      return;
+    }
+    optSaved(v2.id, t.id);
+    return;
+  }
+
+  /* drawer fields save on blur/change */
+  var df = t.getAttribute && t.getAttribute("data-dfield");
+  if (df && state.drawer) {
+    var p = byId[state.drawer];
+    var before = p[df];
+    var after = t.value;
+    if (df === "price" || df === "sale") after = t.value === "" ? 0 : Number(t.value);
+    if (df === "qty") after = Number(t.value) || 0;
+    p[df] = after;
+    if (df === "catvis") p.visible = after !== "hidden";
+    if (df === "qty") p.stockStatus = after === 0 ? "outofstock" : p.stockStatus;
+    record({ when:"Today", time:stamp(),
+      ago:"just now", who:"Mia Fourie", scope:"One product", kind:"values",
+      what:"Changed " + (SET_FIELDS[df] ? SET_FIELDS[df][0].toLowerCase() : df) + " on one product", count:1,
+      changes:[{ rid:p.id, field:df, label:SET_FIELDS[df] ? SET_FIELDS[df][0] : df, before:before, after:after }] });
+    state.savedField = df;
+    render();
+    var again = $("#" + t.id);
+    if (again) again.focus();
+    clearTimeout(window.__tick);
+    window.__tick = setTimeout(function () { state.savedField = null; if (state.drawer) renderDrawer(); }, 2200);
+  }
+});
+
+/* Everything a modal layer can hand focus to, in document order. */
+var FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),' +
+  'textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+function focusablesIn(box) {
+  return Array.prototype.filter.call(box.querySelectorAll(FOCUSABLE), function (el) {
+    return el.offsetWidth || el.offsetHeight || el.getClientRects().length;
+  });
+}
+
+document.addEventListener("keydown", function (e) {
+  /* The drawer and the settings modal are both modal layers: Tab wraps inside
+     whichever is open instead of escaping into the page behind the scrim. */
+  if (e.key === "Tab" && (state.modal || state.drawer)) {
+    var box = state.modal ? document.querySelector("#modalscrim .modal") : $("#drawer");
+    var f = box ? focusablesIn(box) : [];
+    if (f.length) {
+      var first = f[0], last = f[f.length - 1];
+      var inside = box.contains(document.activeElement);
+      if (e.shiftKey && (!inside || document.activeElement === first)) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && (!inside || document.activeElement === last)) { e.preventDefault(); first.focus(); }
+    }
+  }
+  if (e.key === "Escape") {
+    if (state.modal) { closeModal(); return; }
+    if (state.drawer) { closeDrawer(); return; }
+    if (state.pop) { state.pop = null; render(); return; }
+    if (state.treeMenu || state.treeMove) { state.treeMenu = null; state.treeMove = null; render(); return; }
+    if (state.conflictOpen) { state.conflictOpen = null; state.conflictAuditOpen = null; render(); return; }
+  }
+  if (e.target.classList && e.target.classList.contains("trename")) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      var id = state.treeRename;
+      CATS[id].name = e.target.value.trim() || CATS[id].name;
+      state.treeRename = null;
+      notify("ok", "Category renamed to " + CATS[id].name + ".");
+      render();
+    }
+    if (e.key === "Escape") { e.preventDefault(); state.treeRename = null; render(); }
+  }
+});
+document.addEventListener("focusout", function (e) {
+  if (e.target.classList && e.target.classList.contains("trename") && state.treeRename) {
+    var id = state.treeRename;
+    if (CATS[id]) CATS[id].name = e.target.value.trim() || CATS[id].name;
+    state.treeRename = null;
+    render();
+  }
+});
+
+function startInlineEdit(btn, key) {
+  var parts = key.split(":");
+  var field = parts[0];
+  var p = byId[Number(parts[1])];
+  var input = document.createElement("input");
+  input.className = "cellin";
+  input.type = "number";
+  input.step = "0.01";
+  input.min = "0";
+  input.value = p[field] ? Number(p[field]).toFixed(2) : "";
+  input.setAttribute("aria-label", (field === "price" ? "Regular price" : "Sale price") + " for " + p.name);
+  btn.replaceWith(input);
+  input.focus();
+  input.select();
+  var closed = false;
+  var commit = function (save) {
+    if (closed) return;
+    closed = true;
+    if (save) {
+      var before = p[field];
+      var after = input.value.trim() === "" ? 0 : Number(input.value);
+      if (after !== before) {
+        p[field] = after;
+        var b = record({ when:"Today", time:stamp(),
+          ago:"just now", who:"Mia Fourie", scope:"One product", kind:"price",
+          what:"Changed the regular price of one product", count:1,
+          changes:[{ rid:p.id, field:field, label:field === "price" ? "Regular price" : "Sale price", before:before, after:after }] });
+        notify("ok", "Saved. " + p.name + " is now " + money(after) + ".", b.id);
+      }
+    }
+    render();
+  };
+  input.addEventListener("blur", function () { commit(true); });
+  input.addEventListener("keydown", function (ev) {
+    if (ev.key === "Enter") { ev.preventDefault(); commit(true); }
+    if (ev.key === "Escape") { ev.preventDefault(); commit(false); }
+  });
+}
+
+/* =====================================================================
+   14. Boot
+   ===================================================================== */
+/* Mostly simple products that carry a price of their own, so the pre-filled
+   example is a real change and not a near-no-op — with exactly one variable
+   product kept in, so the amber note and one "No change" row still teach the
+   variation rule. */
+state.selected[1] = true; state.selected[2] = true; state.selected[3] = true;
+state.selected[5] = true; state.selected[7] = true; state.selected[8] = true;
+render();
+</script>
+</body>
+</html>

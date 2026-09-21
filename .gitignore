@@ -1,0 +1,9 @@
+vendor/
+node_modules/
+.phpunit.cache/
+.phpunit.result.cache
+tests/probe/seed.json
+__pycache__/
+dist/
+.remember/
+.claude/settings.local.json

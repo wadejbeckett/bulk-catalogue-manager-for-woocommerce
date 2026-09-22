@@ -31,9 +31,10 @@ final class Registry {
 	 * Tables, unprefixed name => the body of its `CREATE TABLE` statement:
 	 * one column or index per line in the form dbDelta() requires (two spaces
 	 * after PRIMARY KEY, KEY rather than INDEX, no trailing comma). The
-	 * migrator adds `$wpdb->prefix` and the charset. T6 adds the three §9.2 tables.
+	 * migrator adds `$wpdb->prefix` and the charset. The three §9.2 tables,
+	 * defined in Schema.
 	 */
-	private const TABLES = [];
+	private const TABLES = Schema::TABLES;
 
 	/**
 	 * Options.
@@ -133,6 +134,22 @@ final class Registry {
 	 */
 	public function tables(): array {
 		return $this->tables;
+	}
+
+	/**
+	 * The full name of a registry table on this site: `$wpdb->prefix` plus the
+	 * registered name. This is the only way the repositories name a table, so
+	 * an identifier in their SQL is always one the registry allows.
+	 *
+	 * @param string $name Unprefixed table name.
+	 * @throws \InvalidArgumentException When the table is not in the registry.
+	 */
+	public function table( string $name ): string {
+		if ( ! array_key_exists( $name, $this->tables ) ) {
+			throw new \InvalidArgumentException( esc_html( sprintf( 'Table "%s" is not in the registry.', $name ) ) );
+		}
+		global $wpdb;
+		return $wpdb->prefix . $name;
 	}
 
 	/**

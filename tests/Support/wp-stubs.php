@@ -162,6 +162,10 @@ if ( ! function_exists( 'add_filter' ) ) {
 	 * Records the text domain of every lookup; returns the translation set in
 	 * $GLOBALS['bcm_test']['translate'], or the text itself.
 	 */
+	function wp_json_encode( mixed $value, int $flags = 0, int $depth = 512 ): string|false {
+		return json_encode( $value, $flags, $depth );
+	}
+
 	function __( string $text, string $domain = 'default' ): string {
 		$GLOBALS['bcm_test']['gettext'][] = [ $text, $domain ];
 		return $GLOBALS['bcm_test']['translate'][ $text ] ?? $text;

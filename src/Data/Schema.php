@@ -1,0 +1,132 @@
+<?php
+/**
+ * The three tables of SPEC §9.2: batches, their materialised items and the
+ * change journal. Each body is in the form dbDelta() requires — one column or
+ * index per line, lower-case types, two spaces after PRIMARY KEY, KEY rather
+ * than INDEX, no backticks and no trailing comma. Integer types carry the
+ * display widths MySQL 5.7 and MariaDB report, so a later dbDelta() run finds
+ * nothing to alter there; MySQL 8.0.17 and later drop the width and dbDelta()
+ * ignores that difference. The migrator adds `$wpdb->prefix` and
+ * `$wpdb->get_charset_collate()`.
+ *
+ * Columns the specification marks NULL are nullable; every other column is
+ * NOT NULL. Counters and attempts default to zero and item state to pending.
+ * Bump Migrator::SCHEMA_VERSION whenever a body here changes.
+ *
+ * @package BulkCatalogueManager
+ * @license GPL-3.0-or-later
+ */
+
+declare( strict_types = 1 );
+
+namespace BulkCatalogueManager\Data;
+
+defined( 'ABSPATH' ) || exit;
+
+/**
+ * Table names, allowed values and CREATE TABLE bodies.
+ */
+final class Schema {
+	/**
+	 * One row per batch.
+	 */
+	public const BATCHES = 'bcm_batches';
+
+	/**
+	 * The batch's selection, materialised before any work starts.
+	 */
+	public const ITEMS = 'bcm_batch_items';
+
+	/**
+	 * The journal: one row per touched field per object.
+	 */
+	public const CHANGES = 'bcm_changes';
+
+	/**
+	 * Batch statuses.
+	 */
+	public const BATCH_STATUSES = [ 'queued', 'running', 'complete', 'partial', 'failed', 'cancelled', 'undoing', 'undone' ];
+
+	/**
+	 * Batch sources.
+	 */
+	public const BATCH_SOURCES = [ 'bulk', 'inline', 'tree', 'undo' ];
+
+	/**
+	 * Object types an item or change refers to.
+	 */
+	public const OBJECT_TYPES = [ 'product', 'variation', 'term' ];
+
+	/**
+	 * Item states.
+	 */
+	public const ITEM_STATES = [ 'pending', 'done', 'skipped', 'failed' ];
+
+	/**
+	 * Change results.
+	 */
+	public const CHANGE_RESULTS = [ 'applied', 'skipped', 'failed' ];
+
+	/**
+	 * `{prefix}bcm_batches`.
+	 */
+	public const BATCHES_BODY = 'batch_id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+uuid char(36) NOT NULL,
+user_id bigint(20) unsigned NOT NULL,
+created_gmt datetime NOT NULL,
+finished_gmt datetime NULL,
+status varchar(20) NOT NULL,
+source varchar(20) NOT NULL,
+undo_of bigint(20) unsigned NULL,
+operations longtext NOT NULL,
+selection longtext NOT NULL,
+total_items int(10) unsigned NOT NULL DEFAULT 0,
+done_items int(10) unsigned NOT NULL DEFAULT 0,
+changed_items int(10) unsigned NOT NULL DEFAULT 0,
+failed_items int(10) unsigned NOT NULL DEFAULT 0,
+PRIMARY KEY  (batch_id),
+KEY created_gmt (created_gmt),
+KEY status (status),
+KEY user_id (user_id)';
+
+	/**
+	 * `{prefix}bcm_batch_items`.
+	 */
+	public const ITEMS_BODY = "item_id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+batch_id bigint(20) unsigned NOT NULL,
+object_id bigint(20) unsigned NOT NULL,
+object_type varchar(16) NOT NULL,
+state varchar(12) NOT NULL DEFAULT 'pending',
+attempts tinyint(3) unsigned NOT NULL DEFAULT 0,
+PRIMARY KEY  (item_id),
+KEY batch_state (batch_id,state),
+KEY object (object_id)";
+
+	/**
+	 * `{prefix}bcm_changes`.
+	 */
+	public const CHANGES_BODY = 'change_id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+batch_id bigint(20) unsigned NOT NULL,
+object_id bigint(20) unsigned NOT NULL,
+object_type varchar(16) NOT NULL,
+prop varchar(64) NOT NULL,
+old_value longtext NOT NULL,
+new_value longtext NOT NULL,
+modified_gmt datetime NOT NULL,
+applied_gmt datetime NOT NULL,
+result varchar(12) NOT NULL,
+message varchar(255) NOT NULL DEFAULT \'\',
+PRIMARY KEY  (change_id),
+KEY batch_id (batch_id),
+KEY object_prop (object_id,prop),
+KEY applied_gmt (applied_gmt)';
+
+	/**
+	 * The three tables, unprefixed name => CREATE TABLE body, for the registry.
+	 */
+	public const TABLES = [
+		self::BATCHES => self::BATCHES_BODY,
+		self::ITEMS   => self::ITEMS_BODY,
+		self::CHANGES => self::CHANGES_BODY,
+	];
+}

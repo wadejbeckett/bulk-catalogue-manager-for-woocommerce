@@ -22,9 +22,10 @@ defined( 'ABSPATH' ) || exit;
 final class Migrator {
 	/**
 	 * The schema version this code expects. Bump it whenever a registry table
-	 * changes, so existing installs re-run dbDelta().
+	 * changes, so existing installs re-run dbDelta(). 1: no tables (T5);
+	 * 2: the three §9.2 tables (T6).
 	 */
-	public const SCHEMA_VERSION = '1';
+	public const SCHEMA_VERSION = '2';
 
 	/**
 	 * The option holding the schema version the database was last migrated to.

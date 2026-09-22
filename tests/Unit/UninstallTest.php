@@ -91,11 +91,17 @@ final class UninstallTest extends TestCase {
 
 	public function test_with_the_setting_on_every_registered_item_is_removed_and_nothing_else(): void {
 		self::seed( [ 'remove_data_on_delete' => true ] );
+		$GLOBALS['wpdb']->tables = [
+			'wp_posts'           => true,
+			'wp_bcm_batches'     => true,
+			'wp_bcm_batch_items' => true,
+			'wp_bcm_changes'     => true,
+		];
 
 		self::run_uninstall();
 
-		// The plugin registry today: no tables, user meta, term meta or
-		// transients yet (T6, T52, T64 and the count and tree caches add them here).
+		// The plugin registry today: the three §9.2 tables (T6) and no user
+		// meta, term meta or transients yet (T52, T64 and the count and tree caches add them here).
 		$this->assertSame(
 			[
 				'deleted'     => [
@@ -105,11 +111,16 @@ final class UninstallTest extends TestCase {
 				'unscheduled' => [
 					[ '', [], 'bcm' ],
 				],
-				'sql'         => [],
+				'sql'         => [
+					'DROP TABLE IF EXISTS `wp_bcm_batches`',
+					'DROP TABLE IF EXISTS `wp_bcm_batch_items`',
+					'DROP TABLE IF EXISTS `wp_bcm_changes`',
+				],
 			],
 			self::calls()
 		);
 		$this->assertSame( [ 'unrelated_option' => 'keep' ], $GLOBALS['bcm_test']['options'] );
+		$this->assertSame( [ 'wp_posts' => true ], $GLOBALS['wpdb']->tables );
 	}
 
 	public function test_every_kind_in_the_registry_is_removed_with_the_setting_on(): void {

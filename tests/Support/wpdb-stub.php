@@ -1,8 +1,12 @@
 <?php
 /**
- * A recording stand-in for WordPress's $wpdb: every statement sent through
- * query(), get_var() or get_col() is logged, SHOW TABLES LIKE answers from
- * $tables, and get_col() answers LIKE queries from $options.
+ * A recording stand-in for WordPress's $wpdb. Every statement sent through
+ * query(), get_var(), get_row(), get_results() or get_col() is logged in
+ * $queries; every prepare() call is logged in $prepared with its arguments;
+ * insert() and update() are logged in $writes. Reads answer from $responses,
+ * a map of exact SQL (or a '/regex/' key) to the value to return, and fall
+ * back to: SHOW TABLES LIKE answered from $tables, get_col() LIKE queries on
+ * the options table answered from $option_rows, otherwise null or [].
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -16,10 +20,21 @@ namespace BulkCatalogueManager\Tests\Support;
 
 // Declarations sit inside the condition so PHP does not hoist them before the check.
 if ( ! class_exists( WpdbStub::class ) ) {
+	if ( ! defined( 'OBJECT' ) ) {
+		define( 'OBJECT', 'OBJECT' );
+	}
+	if ( ! defined( 'ARRAY_A' ) ) {
+		define( 'ARRAY_A', 'ARRAY_A' );
+	}
+
 	final class WpdbStub {
 		public string $prefix = 'wp_';
 
 		public string $options = 'wp_options';
+
+		public int $insert_id = 0;
+
+		public string $last_error = '';
 
 		/**
 		 * Every statement run, in order.
@@ -27,6 +42,35 @@ if ( ! class_exists( WpdbStub::class ) ) {
 		 * @var string[]
 		 */
 		public array $queries = [];
+
+		/**
+		 * Every prepare() call: [ query, args ].
+		 *
+		 * @var array<int, array{0: string, 1: array}>
+		 */
+		public array $prepared = [];
+
+		/**
+		 * Every insert() and update() call: [ method, table, data, format, where, where_format ].
+		 *
+		 * @var array<int, array>
+		 */
+		public array $writes = [];
+
+		/**
+		 * Canned results: exact SQL, or a key starting with '/' used as a regex, => return value.
+		 * A Closure value is called with the SQL and its result returned.
+		 *
+		 * @var array<string, mixed>
+		 */
+		public array $responses = [];
+
+		/**
+		 * Methods (insert, update, query) that return false, as on a database error.
+		 *
+		 * @var string[]
+		 */
+		public array $failing = [];
 
 		/**
 		 * Existing tables, full name => true.
@@ -51,45 +95,104 @@ if ( ! class_exists( WpdbStub::class ) ) {
 		}
 
 		/**
-		 * Substitutes %s as a quoted string and %d as an integer, in order.
+		 * Substitutes %s as a quoted string, %d as an integer, %f as a float and
+		 * %i as a backticked identifier, in order; %% is a literal percent. Like
+		 * WordPress, a single array argument is the argument list.
 		 */
 		public function prepare( string $query, mixed ...$args ): string {
+			if ( 1 === count( $args ) && is_array( $args[0] ) ) {
+				$args = $args[0];
+			}
+			$this->prepared[] = [ $query, $args ];
 			return (string) preg_replace_callback(
-				'/%[sd]/',
+				'/%%|%[sdfi]/',
 				static function ( array $m ) use ( &$args ): string {
+					if ( '%%' === $m[0] ) {
+						return '%';
+					}
 					$value = array_shift( $args );
-					return '%d' === $m[0] ? (string) (int) $value : "'" . addslashes( (string) $value ) . "'";
+					return match ( $m[0] ) {
+						'%d'    => (string) (int) $value,
+						'%f'    => (string) (float) $value,
+						'%i'    => '`' . str_replace( '`', '``', (string) $value ) . '`',
+						default => "'" . addslashes( (string) $value ) . "'",
+					};
 				},
 				$query
 			);
 		}
 
+		/**
+		 * The canned response for a statement, or $fallback.
+		 */
+		private function respond( string $query, mixed $fallback ): mixed {
+			if ( array_key_exists( $query, $this->responses ) ) {
+				$value = $this->responses[ $query ];
+				return $value instanceof \Closure ? $value( $query ) : $value;
+			}
+			foreach ( $this->responses as $key => $value ) {
+				if ( str_starts_with( (string) $key, '/' ) && 1 === preg_match( (string) $key, $query ) ) {
+					return $value instanceof \Closure ? $value( $query ) : $value;
+				}
+			}
+			return $fallback;
+		}
+
 		public function query( string $query ): int|bool {
 			$this->queries[] = $query;
+			if ( in_array( 'query', $this->failing, true ) ) {
+				return false;
+			}
 			if ( 1 === preg_match( '/^DROP TABLE IF EXISTS `([^`]+)`$/', $query, $m ) ) {
 				unset( $this->tables[ $m[1] ] );
 			}
-			return true;
+			return $this->respond( $query, true );
 		}
 
-		public function get_var( string $query ): ?string {
+		public function insert( string $table, array $data, array|string|null $format = null ): int|false {
+			$this->writes[] = [ 'insert', $table, $data, $format, null, null ];
+			if ( in_array( 'insert', $this->failing, true ) ) {
+				return false;
+			}
+			++$this->insert_id;
+			return 1;
+		}
+
+		public function update( string $table, array $data, array $where, array|string|null $format = null, array|string|null $where_format = null ): int|false {
+			$this->writes[] = [ 'update', $table, $data, $format, $where, $where_format ];
+			return in_array( 'update', $this->failing, true ) ? false : 1;
+		}
+
+		public function get_var( string $query, int $x = 0, int $y = 0 ): ?string {
 			$this->queries[] = $query;
 			if ( 1 === preg_match( "/^SHOW TABLES LIKE '(.*)'$/", $query, $m ) ) {
 				$name = self::unlike( stripslashes( $m[1] ) );
 				return isset( $this->tables[ $name ] ) ? $name : null;
 			}
-			return null;
+			$value = $this->respond( $query, null );
+			return null === $value ? null : (string) $value;
+		}
+
+		public function get_row( string $query, string $output = OBJECT, int $y = 0 ): array|object|null {
+			$this->queries[] = $query;
+			return $this->respond( $query, null );
+		}
+
+		public function get_results( string $query, string $output = OBJECT ): array {
+			$this->queries[] = $query;
+			return $this->respond( $query, [] );
 		}
 
 		/**
-		 * Answers `SELECT option_name FROM wp_options WHERE option_name LIKE '<prefix>%'`.
+		 * Answers `SELECT option_name FROM wp_options WHERE option_name LIKE '<prefix>%'`
+		 * from $option_rows, anything else from $responses.
 		 *
 		 * @return string[]
 		 */
 		public function get_col( string $query ): array {
 			$this->queries[] = $query;
 			if ( 1 !== preg_match( "/^SELECT option_name FROM wp_options WHERE option_name LIKE '(.*)%'$/", $query, $m ) ) {
-				return [];
+				return $this->respond( $query, [] );
 			}
 			$prefix = self::unlike( stripslashes( $m[1] ) );
 			return array_values( array_filter( array_keys( $this->option_rows ), static fn( string $name ): bool => str_starts_with( $name, $prefix ) ) );

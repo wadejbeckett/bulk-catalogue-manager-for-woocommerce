@@ -57,7 +57,9 @@ final class Registry {
 	/**
 	 * Transient name prefixes; every transient whose name starts with one is the plugin's.
 	 */
-	private const TRANSIENT_PREFIXES = [];
+	private const TRANSIENT_PREFIXES = [
+		\BulkCatalogueManager\Categories\Cache::PREFIX,
+	];
 
 	/**
 	 * Recurring scheduled action hooks, all in ACTION_GROUP, which deactivation

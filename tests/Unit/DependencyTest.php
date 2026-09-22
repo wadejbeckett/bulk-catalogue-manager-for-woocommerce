@@ -31,7 +31,7 @@ final class DependencyTest extends TestCase {
 	/**
 	 * Boot the plugin in a clean process and return what the probe saw.
 	 *
-	 * @return array{hooks: array<string, int>, notice: string, features: array<int, array{0: string, 1: string, 2: bool}>, gettext: array<int, array{0: string, 1: string}>}
+	 * @return array{hooks: array<string, int>, notice: string, features: array<int, array{0: string, 1: string, 2: bool}>, gettext: array<int, array{0: string, 1: string}>, settings: string[]}
 	 */
 	private static function boot( string $wc_version, string $features = 'stub' ): array {
 		$output  = [];
@@ -56,6 +56,7 @@ final class DependencyTest extends TestCase {
 		);
 		self::assertSame( '<div class="notice notice-error"><p>' . self::NOTICE_TEXT . '</p></div>', $result['notice'] );
 		self::assertSame( [], $result['features'] );
+		self::assertSame( [], $result['settings'], 'No setting may be registered without a supported WooCommerce.' );
 		self::assertSame( [ [ self::NOTICE_TEXT, 'bulk-catalogue-manager-for-woocommerce' ] ], $result['gettext'] );
 	}
 
@@ -74,11 +75,13 @@ final class DependencyTest extends TestCase {
 		$this->assertSame(
 			[
 				'before_woocommerce_init' => 1,
+				'init'                    => 1,
 				'plugins_loaded'          => 1,
 			],
 			$result['hooks']
 		);
 		$this->assertSame( '', $result['notice'] );
+		$this->assertSame( [ 'bcm_settings' ], $result['settings'] );
 		$this->assertSame(
 			[
 				[ 'custom_order_tables', $file, true ],
@@ -100,6 +103,7 @@ final class DependencyTest extends TestCase {
 		$this->assertSame(
 			[
 				'before_woocommerce_init' => 1,
+				'init'                    => 1,
 				'plugins_loaded'          => 1,
 			],
 			$result['hooks']

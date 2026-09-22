@@ -1,8 +1,8 @@
 <?php
 /**
  * Loads the plugin in a fresh PHP process under one WooCommerce scenario and
- * prints, as JSON, the hooks registered, the admin notice output and the
- * compatibility declarations. Used by DependencyTest.
+ * prints, as JSON, the hooks registered, the admin notice output, the
+ * compatibility declarations and the settings registered on init. Used by DependencyTest.
  *
  *     php tests/Support/dependency-probe.php <WC_VERSION|none> <stub|nostub>
  *
@@ -42,6 +42,7 @@ do_action( 'admin_notices' );
 $notice = (string) ob_get_clean();
 
 do_action( 'before_woocommerce_init' );
+do_action( 'init' );
 
 echo json_encode(
 	[
@@ -49,5 +50,6 @@ echo json_encode(
 		'notice'   => $notice,
 		'features' => $GLOBALS['bcm_test']['features'],
 		'gettext'  => $GLOBALS['bcm_test']['gettext'],
+		'settings' => array_keys( $GLOBALS['bcm_test']['settings'] ),
 	]
 );

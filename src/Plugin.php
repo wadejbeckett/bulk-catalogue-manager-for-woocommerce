@@ -84,6 +84,7 @@ final class Plugin {
 	/**
 	 * Every hook the plugin registers: hook name, callback, priority, accepted arguments.
 	 * Without a supported WooCommerce that is the requirement notice alone.
+	 * The settings register on init so every save, from any context, is sanitised.
 	 *
 	 * @return array<int, array{0: string, 1: callable, 2: int, 3: int}>
 	 */
@@ -95,7 +96,15 @@ final class Plugin {
 		}
 		return [
 			[ 'before_woocommerce_init', [ $this, 'declare_compatibility' ], 10, 0 ],
+			[ 'init', [ $this, 'register_settings' ], 10, 0 ],
 		];
+	}
+
+	/**
+	 * Register the `bcm_settings` option and its sanitiser.
+	 */
+	public function register_settings(): void {
+		Settings\Settings::register();
 	}
 
 	/**

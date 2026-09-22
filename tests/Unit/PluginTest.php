@@ -135,8 +135,11 @@ final class PluginTest extends TestCase {
 		$copy = sys_get_temp_dir() . '/bcm-no-composer-' . bin2hex( random_bytes( 6 ) );
 		mkdir( $copy . '/src', 0777, true );
 		copy( self::root() . '/' . self::PLUGIN_FILE, $copy . '/' . self::PLUGIN_FILE );
-		foreach ( (array) glob( self::root() . '/src/*.php' ) as $file ) {
-			copy( $file, $copy . '/src/' . basename( $file ) );
+		foreach ( (array) glob( self::root() . '/src/*', GLOB_ONLYDIR ) as $dir ) {
+			mkdir( $copy . '/src/' . basename( $dir ) );
+		}
+		foreach ( (array) glob( self::root() . '/src/{,*/}*.php', GLOB_BRACE ) as $file ) {
+			copy( $file, $copy . '/src/' . substr( $file, strlen( self::root() . '/src/' ) ) );
 		}
 		$script = $copy . '/probe.php';
 		file_put_contents(
@@ -147,6 +150,7 @@ final class PluginTest extends TestCase {
 			. "do_action( 'plugins_loaded' );\n"
 			. "echo json_encode( [\n"
 			. "\t'resolves'  => class_exists( BulkCatalogueManager\\Plugin::class ),\n"
+			. "\t'nested'    => class_exists( BulkCatalogueManager\\Settings\\Settings::class ),\n"
 			. "\t'from'      => ( new ReflectionClass( BulkCatalogueManager\\Plugin::class ) )->getFileName(),\n"
 			. "\t'composer'  => class_exists( Composer\\Autoload\\ClassLoader::class, false ),\n"
 			. "\t'booted'    => BulkCatalogueManager\\Plugin::instance()->is_booted(),\n"
@@ -162,13 +166,17 @@ final class PluginTest extends TestCase {
 			$this->assertSame( 0, $exit, implode( "\n", $output ) );
 			$this->assertTrue( is_array( $result ), implode( "\n", $output ) );
 			$this->assertTrue( $result['resolves'] );
+			$this->assertTrue( $result['nested'], 'A class in a sub-namespace must resolve without Composer.' );
 			$this->assertFalse( $result['composer'], 'Composer must not be loaded in the fallback process.' );
 			$this->assertSame( realpath( $copy . '/src/Plugin.php' ), realpath( $result['from'] ) );
 			$this->assertTrue( $result['booted'] );
 			$this->assertSame( $copy . '/' . self::PLUGIN_FILE, $result['bcm_file'] );
 		} finally {
-			foreach ( (array) glob( $copy . '/{,src/}*.php', GLOB_BRACE ) as $file ) {
+			foreach ( (array) glob( $copy . '/{,src/,src/*/}*.php', GLOB_BRACE ) as $file ) {
 				unlink( $file );
+			}
+			foreach ( (array) glob( $copy . '/src/*', GLOB_ONLYDIR ) as $dir ) {
+				rmdir( $dir );
 			}
 			rmdir( $copy . '/src' );
 			rmdir( $copy );

@@ -20,6 +20,8 @@ if ( ! function_exists( 'add_filter' ) ) {
 			'gettext'     => [],
 			'translate'   => [],
 			'features'    => [],
+			'settings'    => [],
+			'errors'      => [],
 		];
 	}
 
@@ -64,9 +66,30 @@ if ( ! function_exists( 'add_filter' ) ) {
 		return $GLOBALS['bcm_test']['options'][ $name ] ?? $default;
 	}
 
+	/**
+	 * Runs the sanitize_option_{$name} filter first, as WordPress's sanitize_option() does.
+	 */
 	function update_option( string $name, mixed $value ): bool {
-		$GLOBALS['bcm_test']['options'][ $name ] = $value;
+		$GLOBALS['bcm_test']['options'][ $name ] = apply_filters( "sanitize_option_{$name}", $value, $name, $value );
 		return true;
+	}
+
+	/**
+	 * Records the arguments and hooks the sanitiser the way WordPress's register_setting() does.
+	 */
+	function register_setting( string $option_group, string $option_name, array $args = [] ): void {
+		$GLOBALS['bcm_test']['settings'][ $option_name ] = [ 'group' => $option_group ] + $args;
+		if ( isset( $args['sanitize_callback'] ) && is_callable( $args['sanitize_callback'] ) ) {
+			add_filter( "sanitize_option_{$option_name}", $args['sanitize_callback'] );
+		}
+	}
+
+	function add_settings_error( string $setting, string $code, string $message, string $type = 'error' ): void {
+		$GLOBALS['bcm_test']['errors'][] = [ $setting, $code, $message, $type ];
+	}
+
+	function sanitize_key( string $key ): string {
+		return (string) preg_replace( '/[^a-z0-9_\-]/', '', strtolower( $key ) );
 	}
 
 	function delete_option( string $name ): bool {

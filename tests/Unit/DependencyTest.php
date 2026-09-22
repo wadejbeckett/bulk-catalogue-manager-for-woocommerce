@@ -80,6 +80,7 @@ final class DependencyTest extends TestCase {
 				'before_woocommerce_init' => 1,
 				'init'                    => 1,
 				'plugins_loaded'          => 1,
+				'rest_api_init'           => 1,
 			],
 			$result['hooks']
 		);
@@ -118,6 +119,7 @@ final class DependencyTest extends TestCase {
 				'before_woocommerce_init' => 1,
 				'init'                    => 1,
 				'plugins_loaded'          => 1,
+				'rest_api_init'           => 1,
 			],
 			$result['hooks']
 		);

@@ -85,6 +85,10 @@ if ( ! class_exists( TestCase::class ) ) {
 			self::assertSame( null, $actual, $message );
 		}
 
+		public static function assertNotNull( mixed $actual, string $message = '' ): void {
+			self::assertNotSame( null, $actual, '' !== $message ? $message : 'Failed asserting that value is not null.' );
+		}
+
 		public static function assertCount( int $expected, \Countable|array $haystack, string $message = '' ): void {
 			self::assertSame( $expected, count( $haystack ), '' !== $message ? $message : sprintf( 'Failed asserting that count is %d.', $expected ) );
 		}

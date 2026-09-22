@@ -5,7 +5,9 @@
  * unscheduled actions in $GLOBALS['bcm_test'] so tests can inspect them, and
  * bcm_test_reset() puts a fresh recording $wpdb in $GLOBALS['wpdb'].
  * Defining BCM_TEST_NO_ACTION_SCHEDULER before loading leaves the
- * Action Scheduler functions undefined, as on a site without it.
+ * Action Scheduler functions undefined, as on a site without it. REST routes,
+ * login state, existing terms and SKUs in use are set and read in the same
+ * global; the REST classes are in rest-stubs.php.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -32,6 +34,12 @@ if ( ! function_exists( 'add_filter' ) ) {
 			'dbdelta_ok'  => true,
 			'activation'  => [],
 			'deactivate'  => [],
+			'routes'      => [],
+			'logged_in'   => false,
+			'terms'       => [],
+			'skus'        => [],
+			'decimals'    => 2,
+			'separator'   => '.',
 		];
 	}
 
@@ -177,5 +185,82 @@ if ( ! function_exists( 'add_filter' ) ) {
 
 	function current_user_can( string $capability, mixed ...$args ): bool {
 		return (bool) ( $GLOBALS['bcm_test']['caps'][ $capability ] ?? false );
+	}
+
+	function is_user_logged_in(): bool {
+		return (bool) $GLOBALS['bcm_test']['logged_in'];
+	}
+
+	/**
+	 * Records the route under "namespace/route" as WordPress keys it, with each
+	 * endpoint's arguments. Refuses a missing permission_callback, as WordPress
+	 * 5.5+ warns.
+	 */
+	function register_rest_route( string $route_namespace, string $route, array $args = [], bool $override = false ): bool {
+		$endpoints = isset( $args['methods'] ) || isset( $args['callback'] ) ? [ $args ] : array_filter( $args, 'is_int', ARRAY_FILTER_USE_KEY );
+		foreach ( $endpoints as $endpoint ) {
+			if ( ! array_key_exists( 'permission_callback', $endpoint ) ) {
+				return false;
+			}
+		}
+		$GLOBALS['bcm_test']['routes'][ '/' . trim( $route_namespace, '/' ) . '/' . ltrim( $route, '/' ) ] = $args;
+		return true;
+	}
+
+	function rest_authorization_required_code(): int {
+		return is_user_logged_in() ? 403 : 401;
+	}
+
+	function is_wp_error( mixed $thing ): bool {
+		return $thing instanceof WP_Error;
+	}
+
+	function rest_ensure_response( mixed $response ): mixed {
+		return $response instanceof WP_REST_Response || $response instanceof WP_Error ? $response : new WP_REST_Response( $response );
+	}
+
+	function sanitize_text_field( string $text ): string {
+		return trim( (string) preg_replace( '/\s+/', ' ', strip_tags( $text ) ) );
+	}
+
+	function wp_kses_post( string $text ): string {
+		return strip_tags( $text, '<a><strong><em><b><i><br><span>' );
+	}
+
+	/**
+	 * Whether a term id exists in a taxonomy, from $GLOBALS['bcm_test']['terms'][ taxonomy ].
+	 */
+	function term_exists( int|string $term, string $taxonomy = '', ?int $parent_term = null ): mixed {
+		return in_array( (int) $term, $GLOBALS['bcm_test']['terms'][ $taxonomy ] ?? [], true ) ? [ 'term_id' => (int) $term ] : null;
+	}
+
+	/**
+	 * WooCommerce's rounding when given decimal places; otherwise the number as given.
+	 */
+	function wc_format_decimal( mixed $number, mixed $dp = false, bool $trim_zeros = false ): string {
+		$number = (string) $number;
+		if ( '' !== $number && is_numeric( $dp ) && $dp >= 0 ) {
+			$number = number_format( (float) $number, (int) $dp, '.', '' );
+		}
+		if ( $trim_zeros && str_contains( $number, '.' ) ) {
+			$number = rtrim( rtrim( $number, '0' ), '.' );
+		}
+		return $number;
+	}
+
+	function wc_get_price_decimals(): int {
+		return (int) $GLOBALS['bcm_test']['decimals'];
+	}
+
+	function wc_get_price_decimal_separator(): string {
+		return (string) $GLOBALS['bcm_test']['separator'];
+	}
+
+	/**
+	 * False when another object id holds the SKU in $GLOBALS['bcm_test']['skus'] (sku => id).
+	 */
+	function wc_product_has_unique_sku( int $product_id, string $sku ): bool {
+		$holder = $GLOBALS['bcm_test']['skus'][ $sku ] ?? null;
+		return null === $holder || $holder === $product_id;
 	}
 }

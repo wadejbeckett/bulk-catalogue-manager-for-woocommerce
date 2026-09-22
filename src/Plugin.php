@@ -86,7 +86,8 @@ final class Plugin {
 	 * Without a supported WooCommerce that is the requirement notice alone.
 	 * The settings register on init so every save, from any context, is sanitised.
 	 * The migrator runs on admin_init as well as on activation, because an
-	 * update replaces the files without activating the plugin again.
+	 * update replaces the files without activating the plugin again. The REST
+	 * routes register on rest_api_init.
 	 *
 	 * @return array<int, array{0: string, 1: callable, 2: int, 3: int}>
 	 */
@@ -100,6 +101,7 @@ final class Plugin {
 			[ 'before_woocommerce_init', [ $this, 'declare_compatibility' ], 10, 0 ],
 			[ 'init', [ $this, 'register_settings' ], 10, 0 ],
 			[ 'admin_init', [ $this, 'migrate' ], 10, 0 ],
+			[ 'rest_api_init', [ $this, 'register_routes' ], 10, 0 ],
 		];
 	}
 
@@ -115,6 +117,13 @@ final class Plugin {
 	 */
 	public function migrate(): void {
 		( new Data\Migrator( Data\Registry::plugin() ) )->run();
+	}
+
+	/**
+	 * Register the `bcm/v1` REST routes.
+	 */
+	public function register_routes(): void {
+		( new Rest\FieldsController( Fields\Registry::instance() ) )->register_routes();
 	}
 
 	/**

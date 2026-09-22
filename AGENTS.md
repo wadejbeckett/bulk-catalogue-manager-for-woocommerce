@@ -22,4 +22,4 @@ Commit as the repo's configured author. Mark a ticket done in `docs/TICKETS.md` 
 Acme (the first install target) keeps its own records at `(local path)`; nothing from that workspace belongs in this repo. Installation on example.com is authorised as a live build by the owner, but only after he signs off the prototype and answers SPEC §18, and only with every write reversible.
 
 ## Current state (23 September 2026)
-T1–T2 done: plugin skeleton, autoloader, PHPUnit and PHPCS harness (`composer lint`, `composer test`, `composer test:standalone`). T3–T5 need no owner answers and can start; later work waits on SPEC §18 answers and prototype feedback.
+T1–T3 done: plugin skeleton, autoloader, PHPUnit and PHPCS harness (`composer lint`, `composer test`, `composer test:standalone`), and the WooCommerce 10.0 dependency guard with HPOS and Cart and Checkout Blocks compatibility declarations (the wp-env compatibility listing is still to be verified). T4–T5 need no owner answers and can start; later work waits on SPEC §18 answers and prototype feedback.

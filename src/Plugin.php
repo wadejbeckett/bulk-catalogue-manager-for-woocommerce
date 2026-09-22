@@ -1,7 +1,8 @@
 <?php
 /**
  * Boot: register the plugin's hooks exactly once per request, however many
- * times boot() is called.
+ * times boot() is called. Without WooCommerce at the minimum version the only
+ * hook is one admin notice naming the requirement.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -21,6 +22,12 @@ final class Plugin {
 	 * Must equal the `Version:` header of the main plugin file.
 	 */
 	public const VERSION = '0.1.0';
+
+	/**
+	 * Lowest WooCommerce version the plugin runs on. Must equal the
+	 * `WC requires at least:` header of the main plugin file.
+	 */
+	public const MIN_WC_VERSION = '10.0';
 
 	/**
 	 * The instance the main plugin file boots.
@@ -67,25 +74,55 @@ final class Plugin {
 	}
 
 	/**
+	 * Whether WooCommerce is loaded at MIN_WC_VERSION or later. WooCommerce
+	 * defines WC_VERSION as it loads, before plugins_loaded fires.
+	 */
+	public static function woocommerce_supported(): bool {
+		return defined( 'WC_VERSION' ) && version_compare( (string) constant( 'WC_VERSION' ), self::MIN_WC_VERSION, '>=' );
+	}
+
+	/**
 	 * Every hook the plugin registers: hook name, callback, priority, accepted arguments.
+	 * Without a supported WooCommerce that is the requirement notice alone.
 	 *
 	 * @return array<int, array{0: string, 1: callable, 2: int, 3: int}>
 	 */
 	public function hooks(): array {
+		if ( ! self::woocommerce_supported() ) {
+			return [
+				[ 'admin_notices', [ $this, 'render_requirement_notice' ], 10, 0 ],
+			];
+		}
 		return [
 			[ 'before_woocommerce_init', [ $this, 'declare_compatibility' ], 10, 0 ],
 		];
 	}
 
 	/**
+	 * Tell someone who can manage plugins that WooCommerce is missing or too old.
+	 */
+	public function render_requirement_notice(): void {
+		if ( ! current_user_can( 'activate_plugins' ) ) {
+			return;
+		}
+		printf(
+			'<div class="notice notice-error"><p>%s</p></div>',
+			esc_html( __( 'Bulk Catalogue Manager for WooCommerce needs WooCommerce 10.0 or later. Install or update WooCommerce to use it.', 'bulk-catalogue-manager-for-woocommerce' ) )
+		);
+	}
+
+	/**
 	 * Tell WooCommerce the plugin works with its order tables and its cart and
-	 * checkout blocks, so it shows no incompatible-plugin notice.
+	 * checkout blocks, so it shows no incompatible-plugin notice. Declared
+	 * against the plugin file's real path, which is how WooCommerce keys plugins.
 	 */
 	public function declare_compatibility(): void {
 		if ( ! class_exists( \Automattic\WooCommerce\Utilities\FeaturesUtil::class ) ) {
 			return;
 		}
 		$file = defined( 'BCM_FILE' ) ? (string) BCM_FILE : dirname( __DIR__ ) . '/bulk-catalogue-manager-for-woocommerce.php';
+		$real = realpath( $file );
+		$file = false === $real ? $file : $real;
 		\Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility( 'custom_order_tables', $file, true );
 		\Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility( 'cart_checkout_blocks', $file, true );
 	}

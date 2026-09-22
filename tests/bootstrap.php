@@ -12,6 +12,12 @@ if ( ! defined( 'ABSPATH' ) ) {
 	define( 'ABSPATH', '/' );
 }
 
+// The unit suite models a supported WooCommerce. DependencyTest covers an
+// absent or older one, each in its own PHP process.
+if ( ! defined( 'WC_VERSION' ) ) {
+	define( 'WC_VERSION', '10.0' );
+}
+
 $bcm_composer = dirname( __DIR__ ) . '/vendor/autoload.php';
 if ( file_exists( $bcm_composer ) ) {
 	require_once $bcm_composer;
@@ -23,3 +29,4 @@ if ( file_exists( $bcm_composer ) ) {
 // After Composer so the shim sees PHPUnit's real TestCase and defines nothing.
 require_once __DIR__ . '/Support/testcase-shim.php';
 require_once __DIR__ . '/Support/wp-stubs.php';
+require_once __DIR__ . '/Support/features-util-stub.php';

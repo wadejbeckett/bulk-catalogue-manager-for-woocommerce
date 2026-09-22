@@ -53,6 +53,7 @@ final class Routes {
 			[
 				new FieldsController( Registry::instance() ),
 				new ProductsController( Registry::instance() ),
+				new CategoriesController( Registry::instance() ),
 			]
 		);
 	}

@@ -404,3 +404,39 @@ if ( ! function_exists( 'add_filter' ) ) {
 		return true;
 	}
 }
+
+// T21: terms, term meta, transients and last-changed values for the category
+// tree. State lives under bcm_test keys that bcm_test_reset() drops:
+// 'term_list' (what get_terms() returns), 'get_terms_calls' (each call's
+// arguments), 'term_meta' (term id => key => value), 'transients' (name =>
+// value), 'transient_ttl' (name => expiration), 'last_changed' (group =>
+// value) and 'ext_object_cache' (whether a persistent object cache is in use).
+if ( ! function_exists( 'get_terms' ) ) {
+	function get_terms( array|string $args = [], mixed $deprecated = '' ): array|WP_Error {
+		$GLOBALS['bcm_test']['get_terms_calls'][] = $args;
+		return $GLOBALS['bcm_test']['term_list'] ?? [];
+	}
+
+	function get_term_meta( int $term_id, string $key = '', bool $single = false ): mixed {
+		$value = $GLOBALS['bcm_test']['term_meta'][ $term_id ][ $key ] ?? null;
+		return null === $value ? ( $single ? '' : [] ) : ( $single ? $value : [ $value ] );
+	}
+
+	function get_transient( string $transient ): mixed {
+		return $GLOBALS['bcm_test']['transients'][ $transient ] ?? false;
+	}
+
+	function set_transient( string $transient, mixed $value, int $expiration = 0 ): bool {
+		$GLOBALS['bcm_test']['transients'][ $transient ]    = $value;
+		$GLOBALS['bcm_test']['transient_ttl'][ $transient ] = $expiration;
+		return true;
+	}
+
+	function wp_cache_get_last_changed( string $group ): string {
+		return (string) ( $GLOBALS['bcm_test']['last_changed'][ $group ] ?? '1' );
+	}
+
+	function wp_using_ext_object_cache( ?bool $using = null ): bool {
+		return (bool) ( $GLOBALS['bcm_test']['ext_object_cache'] ?? false );
+	}
+}

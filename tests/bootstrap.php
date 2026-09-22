@@ -28,5 +28,7 @@ if ( file_exists( $bcm_composer ) ) {
 
 // After Composer so the shim sees PHPUnit's real TestCase and defines nothing.
 require_once __DIR__ . '/Support/testcase-shim.php';
+require_once __DIR__ . '/Support/wpdb-stub.php';
 require_once __DIR__ . '/Support/wp-stubs.php';
 require_once __DIR__ . '/Support/features-util-stub.php';
+bcm_test_reset();

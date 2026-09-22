@@ -12,6 +12,8 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Tests\Unit;
 
+use BulkCatalogueManager\Data\Cleanup;
+use BulkCatalogueManager\Data\Migrator;
 use BulkCatalogueManager\Plugin;
 use PHPUnit\Framework\TestCase;
 
@@ -31,7 +33,7 @@ final class DependencyTest extends TestCase {
 	/**
 	 * Boot the plugin in a clean process and return what the probe saw.
 	 *
-	 * @return array{hooks: array<string, int>, notice: string, features: array<int, array{0: string, 1: string, 2: bool}>, gettext: array<int, array{0: string, 1: string}>, settings: string[]}
+	 * @return array{hooks: array<string, int>, notice: string, features: array<int, array{0: string, 1: string, 2: bool}>, gettext: array<int, array{0: string, 1: string}>, settings: string[], activate: array<int, array{0: string, 1: string[]}>, deactive: array<int, array{0: string, 1: string[]}>}
 	 */
 	private static function boot( string $wc_version, string $features = 'stub' ): array {
 		$output  = [];
@@ -74,6 +76,7 @@ final class DependencyTest extends TestCase {
 
 		$this->assertSame(
 			[
+				'admin_init'              => 1,
 				'before_woocommerce_init' => 1,
 				'init'                    => 1,
 				'plugins_loaded'          => 1,
@@ -91,6 +94,15 @@ final class DependencyTest extends TestCase {
 		);
 	}
 
+	public function test_lifecycle_hooks_are_registered_against_the_plugin_file_whatever_woocommerce(): void {
+		$file = self::root() . '/' . self::PLUGIN_FILE;
+		foreach ( [ [ 'none', 'nostub' ], [ '9.9', 'stub' ], [ '10.0', 'stub' ] ] as [ $version, $features ] ) {
+			$result = self::boot( $version, $features );
+			$this->assertSame( [ [ $file, [ Migrator::class, 'activate' ] ] ], $result['activate'], "WooCommerce $version." );
+			$this->assertSame( [ [ $file, [ Cleanup::class, 'deactivate' ] ] ], $result['deactive'], "WooCommerce $version." );
+		}
+	}
+
 	public function test_later_woocommerce_versions_boot(): void {
 		foreach ( [ '10.0.0', '10.3.1', '11.0' ] as $version ) {
 			$this->assertArrayHasKey( 'before_woocommerce_init', self::boot( $version )['hooks'], "WooCommerce $version." );
@@ -102,6 +114,7 @@ final class DependencyTest extends TestCase {
 
 		$this->assertSame(
 			[
+				'admin_init'              => 1,
 				'before_woocommerce_init' => 1,
 				'init'                    => 1,
 				'plugins_loaded'          => 1,

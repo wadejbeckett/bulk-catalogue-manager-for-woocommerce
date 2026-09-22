@@ -2,6 +2,7 @@
 <ruleset name="Bulk Catalogue Manager for WooCommerce">
 	<description>WordPress-Extra and PHPCompatibilityWP, PHP 8.1+, WordPress 7.0+.</description>
 	<file>bulk-catalogue-manager-for-woocommerce.php</file>
+	<file>uninstall.php</file>
 	<file>src</file>
 	<file>tests</file>
 	<exclude-pattern>vendor/*</exclude-pattern>

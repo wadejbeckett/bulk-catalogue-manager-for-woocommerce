@@ -1,7 +1,11 @@
 <?php
 /**
  * WordPress function stubs for unit tests. Under WordPress this file defines nothing.
- * The stubs record hooks and options in $GLOBALS['bcm_test'] so tests can inspect them.
+ * The stubs record hooks, options, deletions, dbDelta() statements and
+ * unscheduled actions in $GLOBALS['bcm_test'] so tests can inspect them, and
+ * bcm_test_reset() puts a fresh recording $wpdb in $GLOBALS['wpdb'].
+ * Defining BCM_TEST_NO_ACTION_SCHEDULER before loading leaves the
+ * Action Scheduler functions undefined, as on a site without it.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -22,6 +26,12 @@ if ( ! function_exists( 'add_filter' ) ) {
 			'features'    => [],
 			'settings'    => [],
 			'errors'      => [],
+			'deleted'     => [],
+			'unscheduled' => [],
+			'dbdelta'     => [],
+			'dbdelta_ok'  => true,
+			'activation'  => [],
+			'deactivate'  => [],
 		];
 	}
 
@@ -29,6 +39,9 @@ if ( ! function_exists( 'add_filter' ) ) {
 
 	function bcm_test_reset(): void {
 		$GLOBALS['bcm_test'] = bcm_test_state();
+		if ( class_exists( \BulkCatalogueManager\Tests\Support\WpdbStub::class ) ) {
+			$GLOBALS['wpdb'] = new \BulkCatalogueManager\Tests\Support\WpdbStub();
+		}
 	}
 
 	function add_filter( string $hook, mixed $callback, int $priority = 10, int $accepted_args = 1 ): bool {
@@ -69,7 +82,7 @@ if ( ! function_exists( 'add_filter' ) ) {
 	/**
 	 * Runs the sanitize_option_{$name} filter first, as WordPress's sanitize_option() does.
 	 */
-	function update_option( string $name, mixed $value ): bool {
+	function update_option( string $name, mixed $value, mixed $autoload = null ): bool {
 		$GLOBALS['bcm_test']['options'][ $name ] = apply_filters( "sanitize_option_{$name}", $value, $name, $value );
 		return true;
 	}
@@ -93,8 +106,56 @@ if ( ! function_exists( 'add_filter' ) ) {
 	}
 
 	function delete_option( string $name ): bool {
+		$GLOBALS['bcm_test']['deleted'][] = [ 'option', $name ];
 		unset( $GLOBALS['bcm_test']['options'][ $name ] );
 		return true;
+	}
+
+	function delete_metadata( string $meta_type, int $object_id, string $meta_key, mixed $meta_value = '', bool $delete_all = false ): bool {
+		$GLOBALS['bcm_test']['deleted'][] = [ 'metadata', $meta_type, $object_id, $meta_key, $meta_value, $delete_all ];
+		return true;
+	}
+
+	function delete_transient( string $transient ): bool {
+		$GLOBALS['bcm_test']['deleted'][] = [ 'transient', $transient ];
+		return true;
+	}
+
+	function delete_site_transient( string $transient ): bool {
+		$GLOBALS['bcm_test']['deleted'][] = [ 'site_transient', $transient ];
+		return true;
+	}
+
+	function register_activation_hook( string $file, mixed $callback ): void {
+		$GLOBALS['bcm_test']['activation'][] = [ $file, $callback ];
+	}
+
+	function register_deactivation_hook( string $file, mixed $callback ): void {
+		$GLOBALS['bcm_test']['deactivate'][] = [ $file, $callback ];
+	}
+
+	/**
+	 * Records the statements. Unless $GLOBALS['bcm_test']['dbdelta_ok'] is
+	 * false, each CREATE TABLE creates its table in the stub $wpdb.
+	 *
+	 * @param string[]|string $queries Statements.
+	 */
+	// phpcs:ignore WordPress.NamingConventions.ValidFunctionName.FunctionNameInvalid -- WordPress's own name.
+	function dbDelta( array|string $queries = '', bool $execute = true ): array {
+		$queries                          = (array) $queries;
+		$GLOBALS['bcm_test']['dbdelta'][] = $queries;
+		foreach ( $queries as $query ) {
+			if ( $GLOBALS['bcm_test']['dbdelta_ok'] && isset( $GLOBALS['wpdb'] ) && 1 === preg_match( '/^CREATE TABLE (\S+) \(/', $query, $match ) ) {
+				$GLOBALS['wpdb']->tables[ $match[1] ] = true;
+			}
+		}
+		return [];
+	}
+
+	if ( ! defined( 'BCM_TEST_NO_ACTION_SCHEDULER' ) ) {
+		function as_unschedule_all_actions( string $hook, array $args = [], string $group = '' ): void {
+			$GLOBALS['bcm_test']['unscheduled'][] = [ $hook, $args, $group ];
+		}
 	}
 
 	/**

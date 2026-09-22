@@ -85,6 +85,8 @@ final class Plugin {
 	 * Every hook the plugin registers: hook name, callback, priority, accepted arguments.
 	 * Without a supported WooCommerce that is the requirement notice alone.
 	 * The settings register on init so every save, from any context, is sanitised.
+	 * The migrator runs on admin_init as well as on activation, because an
+	 * update replaces the files without activating the plugin again.
 	 *
 	 * @return array<int, array{0: string, 1: callable, 2: int, 3: int}>
 	 */
@@ -97,6 +99,7 @@ final class Plugin {
 		return [
 			[ 'before_woocommerce_init', [ $this, 'declare_compatibility' ], 10, 0 ],
 			[ 'init', [ $this, 'register_settings' ], 10, 0 ],
+			[ 'admin_init', [ $this, 'migrate' ], 10, 0 ],
 		];
 	}
 
@@ -105,6 +108,13 @@ final class Plugin {
 	 */
 	public function register_settings(): void {
 		Settings\Settings::register();
+	}
+
+	/**
+	 * Bring the plugin's tables up to the code's schema version; a no-op once current.
+	 */
+	public function migrate(): void {
+		( new Data\Migrator( Data\Registry::plugin() ) )->run();
 	}
 
 	/**

@@ -5,9 +5,11 @@
  * core refuses a malformed argument with 400 `rest_invalid_param` before the
  * handler runs.
  *
- * T14 registers the route with its generated arguments and schema, and
- * answers with truthful pagination from the query builder's `COUNT(*)` and
- * an empty `items` list. T18 fills `items` with hydrated rows (T16, T17).
+ * The handler reads one page through Query\Catalogue: ProductQuery's count
+ * and page statements, hydrated by Query\Hydrator in a fixed number of
+ * queries without instantiating a product, cached per last-changed window.
+ * Each item carries the requested `fields[]` (every field when absent) plus
+ * `parent_id` and, with the thumbnail column, `thumbnail_url`.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -18,8 +20,9 @@ declare( strict_types = 1 );
 namespace BulkCatalogueManager\Rest;
 
 use BulkCatalogueManager\Fields\Registry;
+use BulkCatalogueManager\Query\Catalogue;
 use BulkCatalogueManager\Query\Criteria;
-use BulkCatalogueManager\Query\ProductQuery;
+use BulkCatalogueManager\Query\Hydrator;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -45,12 +48,20 @@ final class ProductsController implements ReadController {
 	private RouteSchema $schema;
 
 	/**
+	 * The cached page reader.
+	 *
+	 * @var Catalogue
+	 */
+	private Catalogue $catalogue;
+
+	/**
 	 * Build over a registry.
 	 *
 	 * @param Registry $registry Field registry.
 	 */
 	public function __construct( Registry $registry ) {
-		$this->schema = new RouteSchema( $registry );
+		$this->schema    = new RouteSchema( $registry );
+		$this->catalogue = new Catalogue( new Hydrator( $registry ) );
 	}
 
 	/**
@@ -75,7 +86,6 @@ final class ProductsController implements ReadController {
 
 	/**
 	 * One page of the catalogue: `{ items, pagination: { page, perPage, total, totalPages } }`.
-	 * Until T18, `items` is empty and the pagination counts the matching rows.
 	 *
 	 * @param \WP_REST_Request $request The validated, sanitised request.
 	 */
@@ -88,10 +98,12 @@ final class ProductsController implements ReadController {
 				__( 'These filters or this sort could not be used. Clear them and try again.', 'bulk-catalogue-manager-for-woocommerce' )
 			);
 		}
-		$total = ( new ProductQuery( $criteria ) )->total();
+		$fields = $request->get_param( 'fields' );
+		$page   = $this->catalogue->page( $criteria, is_array( $fields ) ? array_values( array_filter( $fields, 'is_string' ) ) : [] );
+		$total  = $page['total'];
 		return new \WP_REST_Response(
 			[
-				'items'      => [],
+				'items'      => $page['items'],
 				'pagination' => [
 					'page'       => $criteria->page,
 					'perPage'    => $criteria->per_page,
@@ -109,6 +121,24 @@ final class ProductsController implements ReadController {
 	 * @return array<string, mixed>
 	 */
 	public function get_item_schema(): array {
-		return $this->schema->item_schema( self::TITLE );
+		return $this->schema->item_schema(
+			self::TITLE,
+			[
+				Hydrator::PARENT_ID     => [
+					'description' => __( 'The product a variation belongs to; 0 for a product.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'type'        => 'integer',
+					'minimum'     => 0,
+					'context'     => [ 'view', 'edit' ],
+					'readonly'    => true,
+				],
+				Hydrator::THUMBNAIL_URL => [
+					'description' => __( 'Address of the product image, or of the shop\'s placeholder image when there is none.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'type'        => 'string',
+					'format'      => 'uri',
+					'context'     => [ 'view', 'edit' ],
+					'readonly'    => true,
+				],
+			]
+		);
 	}
 }

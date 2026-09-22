@@ -3,7 +3,8 @@
  * `GET /bcm/v1/products` as T14 leaves it (SPEC §12.1): registered with the
  * generated arguments and item schema, a malformed argument refused 400
  * `rest_invalid_param` by core's validation before any catalogue query, and
- * a well-formed read reaching the query builder. T18 fills `items`.
+ * a well-formed read reaching the query builder and returning hydrated
+ * items (T16, T17). T18 asserts filters and search on a seeded catalogue.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -139,9 +140,50 @@ final class ProductsRouteTest extends TestCase {
 			],
 			$response->get_data()
 		);
-		$this->assertCount( 1, $GLOBALS['wpdb']->queries );
+		$this->assertCount( 2, $GLOBALS['wpdb']->queries, 'The count, then the page, which found no rows to hydrate.' );
 		$this->assertStringStartsWith( 'SELECT COUNT(*) ', $GLOBALS['wpdb']->queries[0] );
 		$this->assertStringContainsString( "l.stock_status IN ('outofstock')", $GLOBALS['wpdb']->queries[0] );
+		$this->assertStringStartsWith( 'SELECT p.ID AS id, p.post_parent AS parent_id', $GLOBALS['wpdb']->queries[1] );
+		$this->assertStringEndsWith( 'LIMIT 100 OFFSET 0', $GLOBALS['wpdb']->queries[1] );
+	}
+
+	public function test_a_read_returns_hydrated_items_for_the_requested_fields(): void {
+		$GLOBALS['bcm_test']['posts'][41]                    = [
+			'post_type'   => 'product',
+			'post_title'  => 'Blue shirt',
+			'post_status' => 'draft',
+		];
+		$GLOBALS['wpdb']->responses['/^SELECT COUNT\(\*\)/'] = '1';
+		$GLOBALS['wpdb']->responses['/^SELECT p\.ID AS id/'] = [
+			[
+				'id'        => '41',
+				'parent_id' => '0',
+			],
+		];
+		$response = self::get( [ 'fields' => 'name,status' ] );
+		$this->assertSame(
+			[
+				'items'      => [
+					[
+						'id'        => 41,
+						'parent_id' => 0,
+						'name'      => 'Blue shirt',
+						'status'    => 'draft',
+					],
+				],
+				'pagination' => [
+					'page'       => 1,
+					'perPage'    => 25,
+					'total'      => 1,
+					'totalPages' => 1,
+				],
+			],
+			$response->get_data()
+		);
+		$schema = call_user_func( $GLOBALS['bcm_test']['routes']['/bcm/v1/products']['schema'] );
+		$this->assertTrue( rest_validate_value_from_schema( $response->get_data()['items'][0], $schema, 'item' ) );
+		$this->assertSame( 'integer', $schema['properties']['parent_id']['type'] );
+		$this->assertSame( 'string', $schema['properties']['thumbnail_url']['type'] );
 	}
 
 	public function test_defaults_fill_paging_and_mode(): void {

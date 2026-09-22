@@ -440,3 +440,10 @@ if ( ! function_exists( 'get_terms' ) ) {
 		return (bool) ( $GLOBALS['bcm_test']['ext_object_cache'] ?? false );
 	}
 }
+
+// T22: the site's current time, from $GLOBALS['bcm_test']['now'] (any strtotime() text) when set.
+if ( ! function_exists( 'current_datetime' ) ) {
+	function current_datetime(): DateTimeImmutable {
+		return new DateTimeImmutable( $GLOBALS['bcm_test']['now'] ?? 'now', new DateTimeZone( 'UTC' ) );
+	}
+}

@@ -52,6 +52,7 @@ final class Routes {
 		return new self(
 			[
 				new FieldsController( Registry::instance() ),
+				new ProductsController( Registry::instance() ),
 			]
 		);
 	}

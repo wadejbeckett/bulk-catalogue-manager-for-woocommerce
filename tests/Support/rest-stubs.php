@@ -125,5 +125,91 @@ if ( ! class_exists( 'WP_Error' ) ) {
 		public function get_namespace_index(): array {
 			return [];
 		}
+
+		/**
+		 * Core's dispatch order for one request on a recorded route: match the
+		 * endpoint, fill defaults, refuse a missing required argument, run
+		 * every present argument's validate_callback (any failure answers 400
+		 * `rest_invalid_param` naming each), run the sanitize_callbacks, then
+		 * the permission callback, then the handler.
+		 */
+		public function dispatch( WP_REST_Request $request ): WP_REST_Response|WP_Error {
+			$handler = null;
+			foreach ( $this->get_routes()[ $request->get_route() ] ?? [] as $candidate ) {
+				if ( isset( $candidate['methods'][ $request->get_method() ] ) ) {
+					$handler = $candidate;
+					break;
+				}
+			}
+			if ( null === $handler ) {
+				return new WP_Error( 'rest_no_route', 'No route was found matching the URL and request method.', [ 'status' => 404 ] );
+			}
+			$args = $handler['args'] ?? [];
+			foreach ( $args as $key => $arg ) {
+				if ( null === $request->get_param( $key ) && array_key_exists( 'default', $arg ) ) {
+					$request->set_param( $key, $arg['default'] );
+				}
+			}
+			$missing = [];
+			$invalid = [];
+			$details = [];
+			foreach ( $args as $key => $arg ) {
+				$value = $request->get_param( $key );
+				if ( null === $value ) {
+					if ( ! empty( $arg['required'] ) ) {
+						$missing[] = $key;
+					}
+					continue;
+				}
+				if ( ! empty( $arg['validate_callback'] ) ) {
+					$valid = call_user_func( $arg['validate_callback'], $value, $request, $key );
+					if ( false === $valid ) {
+						$invalid[ $key ] = 'Invalid parameter.';
+					} elseif ( $valid instanceof WP_Error ) {
+						$invalid[ $key ] = $valid->get_error_message();
+						$details[ $key ] = [
+							'code'    => $valid->get_error_code(),
+							'message' => $valid->get_error_message(),
+							'data'    => $valid->get_error_data(),
+						];
+					}
+				}
+			}
+			if ( [] !== $missing ) {
+				return new WP_Error(
+					'rest_missing_callback_param',
+					'Missing parameter(s): ' . implode( ', ', $missing ),
+					[
+						'status' => 400,
+						'params' => $missing,
+					]
+				);
+			}
+			if ( [] !== $invalid ) {
+				return new WP_Error(
+					'rest_invalid_param',
+					'Invalid parameter(s): ' . implode( ', ', array_keys( $invalid ) ),
+					[
+						'status'  => 400,
+						'params'  => $invalid,
+						'details' => $details,
+					]
+				);
+			}
+			foreach ( $args as $key => $arg ) {
+				$value = $request->get_param( $key );
+				if ( null !== $value && ! empty( $arg['sanitize_callback'] ) ) {
+					$request->set_param( $key, call_user_func( $arg['sanitize_callback'], $value, $request, $key ) );
+				}
+			}
+			$permission = call_user_func( $handler['permission_callback'], $request );
+			if ( $permission instanceof WP_Error ) {
+				return $permission;
+			}
+			if ( true !== $permission ) {
+				return new WP_Error( 'rest_forbidden', 'Sorry, you are not allowed to do that.', [ 'status' => rest_authorization_required_code() ] );
+			}
+			return rest_ensure_response( call_user_func( $handler['callback'], $request ) );
+		}
 	}
 }

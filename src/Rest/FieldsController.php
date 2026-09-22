@@ -20,7 +20,7 @@ defined( 'ABSPATH' ) || exit;
 /**
  * The fields route.
  */
-final class FieldsController implements Controller {
+final class FieldsController implements ReadController {
 	/**
 	 * The route, under Access::REST_NAMESPACE.
 	 */

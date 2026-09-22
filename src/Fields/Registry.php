@@ -41,12 +41,15 @@ final class Registry {
 	private array $fields = [];
 
 	/**
-	 * Build every field with its translated labels.
+	 * Build every field with its translated labels. Code outside tests passes
+	 * nothing; a test double passes its own list, such as every field plus a
+	 * synthetic one, to show what derives from the registry.
 	 *
+	 * @param list<Field>|null $fields The fields, or null for the §5.2 fields and the read-only columns.
 	 * @throws \LogicException When two fields share a key.
 	 */
-	public function __construct() {
-		foreach ( [ ...self::editable_fields(), ...self::column_fields() ] as $field ) {
+	public function __construct( ?array $fields = null ) {
+		foreach ( $fields ?? [ ...self::editable_fields(), ...self::column_fields() ] as $field ) {
 			if ( isset( $this->fields[ $field->key() ] ) ) {
 				throw new \LogicException( esc_html( sprintf( 'Field "%s" is declared twice.', $field->key() ) ) );
 			}
@@ -116,6 +119,24 @@ final class Registry {
 	 */
 	public function columns(): array {
 		return array_filter( $this->fields, static fn( Field $field ): bool => $field->read_only() );
+	}
+
+	/**
+	 * The fields the grid may filter on, in registry order.
+	 *
+	 * @return array<string, Field>
+	 */
+	public function filterable(): array {
+		return array_filter( $this->fields, static fn( Field $field ): bool => $field->filterable() );
+	}
+
+	/**
+	 * The fields the grid may sort on, in registry order.
+	 *
+	 * @return array<string, Field>
+	 */
+	public function sortable(): array {
+		return array_filter( $this->fields, static fn( Field $field ): bool => $field->sortable() );
 	}
 
 	/**

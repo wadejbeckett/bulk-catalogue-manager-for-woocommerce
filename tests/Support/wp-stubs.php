@@ -314,4 +314,93 @@ if ( ! function_exists( 'add_filter' ) ) {
 		$holder = $GLOBALS['bcm_test']['skus'][ $sku ] ?? null;
 		return null === $holder || $holder === $product_id;
 	}
+
+	/**
+	 * Core's rest_is_array(): an array list, or comma-separated text.
+	 */
+	function bcm_test_rest_list( mixed $value ): ?array {
+		if ( is_scalar( $value ) ) {
+			$value = preg_split( '/[\s,]+/', (string) $value, -1, PREG_SPLIT_NO_EMPTY );
+		}
+		return is_array( $value ) && array_is_list( $value ) ? $value : null;
+	}
+
+	/**
+	 * Whether a value passes one JSON Schema type as core reads a request
+	 * (numeric text is a number, '1'/'true' a boolean, comma text a list).
+	 */
+	function bcm_test_rest_is_type( mixed $value, string $type ): bool {
+		return match ( $type ) {
+			'null'    => null === $value,
+			'boolean' => in_array( $value, [ true, false, 1, 0, '1', '0', 'true', 'false' ], true ),
+			'integer' => is_int( $value ) || ( is_string( $value ) && 1 === preg_match( '/^-?\d+$/', $value ) ) || ( is_float( $value ) && floor( $value ) === $value ),
+			'number'  => is_int( $value ) || is_float( $value ) || ( is_string( $value ) && is_numeric( $value ) ),
+			'string'  => is_string( $value ),
+			'array'   => null !== bcm_test_rest_list( $value ),
+			'object'  => ( is_array( $value ) && ( [] === $value || ! array_is_list( $value ) ) ) || $value instanceof stdClass || '' === $value,
+			default   => false,
+		};
+	}
+
+	/**
+	 * A minimal rest_validate_value_from_schema(): type (one or a list, in
+	 * core's priority order), enum, required and additionalProperties on
+	 * object properties, items, minimum, maxItems and maxLength. True, or a
+	 * WP_Error with core's codes.
+	 */
+	function rest_validate_value_from_schema( mixed $value, array $args, string $param = '' ): bool|WP_Error {
+		$types = (array) ( $args['type'] ?? [] );
+		$type  = null;
+		foreach ( [ 'array', 'object', 'integer', 'number', 'boolean', 'string', 'null' ] as $candidate ) {
+			if ( null === $type && in_array( $candidate, $types, true ) && bcm_test_rest_is_type( $value, $candidate ) ) {
+				$type = $candidate;
+			}
+		}
+		if ( null === $type ) {
+			return new WP_Error( 'rest_invalid_type', sprintf( '%s is not of type %s.', $param, implode( ',', $types ) ), [ 'param' => $param ] );
+		}
+		if ( 'array' === $type ) {
+			$value = bcm_test_rest_list( $value );
+			if ( isset( $args['maxItems'] ) && count( $value ) > $args['maxItems'] ) {
+				return new WP_Error( 'rest_too_many_items', sprintf( '%s must contain at most %d items.', $param, $args['maxItems'] ), [ 'param' => $param ] );
+			}
+			foreach ( $value as $index => $item ) {
+				$valid = rest_validate_value_from_schema( $item, $args['items'] ?? [ 'type' => [ 'array', 'object', 'integer', 'number', 'boolean', 'string', 'null' ] ], $param . '[' . $index . ']' );
+				if ( true !== $valid ) {
+					return $valid;
+				}
+			}
+			return true;
+		}
+		if ( 'object' === $type ) {
+			$value      = (array) $value;
+			$properties = $args['properties'] ?? [];
+			foreach ( $properties as $name => $property ) {
+				if ( ! array_key_exists( $name, $value ) ) {
+					if ( ! empty( $property['required'] ) ) {
+						return new WP_Error( 'rest_property_required', sprintf( '%s is a required property of %s.', $name, $param ), [ 'param' => $param ] );
+					}
+					continue;
+				}
+				$valid = rest_validate_value_from_schema( $value[ $name ], $property, $param . '[' . $name . ']' );
+				if ( true !== $valid ) {
+					return $valid;
+				}
+			}
+			if ( false === ( $args['additionalProperties'] ?? true ) && [] !== array_diff_key( $value, $properties ) ) {
+				return new WP_Error( 'rest_additional_properties_forbidden', sprintf( '%s is not a valid property of Object.', (string) array_key_first( array_diff_key( $value, $properties ) ) ), [ 'param' => $param ] );
+			}
+			return true;
+		}
+		if ( isset( $args['enum'] ) && ! in_array( $value, $args['enum'], true ) && ! ( is_string( $value ) && in_array( $value, array_map( 'strval', $args['enum'] ), true ) && in_array( $type, [ 'integer', 'number' ], true ) ) ) {
+			return new WP_Error( 'rest_not_in_enum', sprintf( '%s is not one of %s.', $param, implode( ', ', array_map( 'strval', $args['enum'] ) ) ), [ 'param' => $param ] );
+		}
+		if ( isset( $args['minimum'] ) && in_array( $type, [ 'integer', 'number' ], true ) && $value < $args['minimum'] ) {
+			return new WP_Error( 'rest_out_of_bounds', sprintf( '%s must be greater than or equal to %d', $param, $args['minimum'] ), [ 'param' => $param ] );
+		}
+		if ( isset( $args['maxLength'] ) && 'string' === $type && mb_strlen( $value ) > $args['maxLength'] ) {
+			return new WP_Error( 'rest_too_long', sprintf( '%s must be at most %d characters long.', $param, $args['maxLength'] ), [ 'param' => $param ] );
+		}
+		return true;
+	}
 }

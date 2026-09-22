@@ -286,6 +286,23 @@ final class Field {
 	}
 
 	/**
+	 * DataViews filter operators, in declaration order; empty when the field
+	 * is not a filter. Route arguments are generated from these (T14).
+	 *
+	 * @return string[]
+	 */
+	public function filter_operators(): array {
+		return $this->filter_operators;
+	}
+
+	/**
+	 * Whether the grid may filter on it.
+	 */
+	public function filterable(): bool {
+		return [] !== $this->filter_operators;
+	}
+
+	/**
 	 * The WooCommerce CRUD getter.
 	 */
 	public function getter(): string {

@@ -78,7 +78,7 @@ final class DependencyTest extends TestCase {
 			[
 				'admin_init'              => 1,
 				'before_woocommerce_init' => 1,
-				'init'                    => 1,
+				'init'                    => 2,
 				'plugins_loaded'          => 1,
 				'rest_api_init'           => 1,
 			],
@@ -117,7 +117,7 @@ final class DependencyTest extends TestCase {
 			[
 				'admin_init'              => 1,
 				'before_woocommerce_init' => 1,
-				'init'                    => 1,
+				'init'                    => 2,
 				'plugins_loaded'          => 1,
 				'rest_api_init'           => 1,
 			],

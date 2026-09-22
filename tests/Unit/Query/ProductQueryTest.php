@@ -327,6 +327,26 @@ final class ProductQueryTest extends TestCase {
 		}
 	}
 
+	public function test_the_conditions_accessor_is_the_count_statement_s_from_and_where_unprepared(): void {
+		foreach ( self::matrix() as $name => [ $args ] ) {
+			bcm_test_reset();
+			$query      = self::query( $args );
+			$conditions = $query->conditions_sql();
+
+			$this->assertSame( [ 'sql', 'args' ], array_keys( $conditions ), $name );
+			$this->assertStringStartsWith( 'FROM %i AS p LEFT JOIN %i AS l ON l.product_id = p.ID WHERE ', $conditions['sql'], $name );
+			$this->assertStringNotContainsString( 'LIMIT', $conditions['sql'], $name );
+			$this->assertSame( 0, preg_match( '/[\'"`]/', $conditions['sql'] ), $name );
+			$this->assertSame( preg_match_all( '/%[sdfi]/', $conditions['sql'] ), count( $conditions['args'] ), $name );
+			$this->assertSame( [], self::db()->prepared, $name . ': the accessor prepares nothing.' );
+			$this->assertSame(
+				$query->count_statement(),
+				self::db()->prepare( 'SELECT COUNT(*) ' . $conditions['sql'] . ' LIMIT %d', ...[ ...$conditions['args'], 1 ] ),
+				$name
+			);
+		}
+	}
+
 	public function test_every_value_is_a_prepare_argument(): void {
 		foreach ( self::matrix() as $name => [ $args ] ) {
 			bcm_test_reset();

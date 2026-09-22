@@ -405,12 +405,14 @@ if ( ! function_exists( 'add_filter' ) ) {
 	}
 }
 
-// T21: terms, term meta, transients and last-changed values for the category
-// tree. State lives under bcm_test keys that bcm_test_reset() drops:
-// 'term_list' (what get_terms() returns), 'get_terms_calls' (each call's
-// arguments), 'term_meta' (term id => key => value), 'transients' (name =>
-// value), 'transient_ttl' (name => expiration), 'last_changed' (group =>
-// value) and 'ext_object_cache' (whether a persistent object cache is in use).
+// T21: terms, term meta and transients for the category tree. State lives
+// under bcm_test keys that bcm_test_reset() drops: 'term_list' (what
+// get_terms() returns), 'get_terms_calls' (each call's arguments),
+// 'term_meta' (term id => key => value), 'transients' (name => value),
+// 'transient_ttl' (name => expiration) and 'ext_object_cache' (whether a
+// persistent object cache is in use). wp_cache_get_last_changed() is the one
+// in read-stubs.php, reading and writing 'last_changed' (group => value), so
+// a test may set a group's value directly.
 if ( ! function_exists( 'get_terms' ) ) {
 	function get_terms( array|string $args = [], mixed $deprecated = '' ): array|WP_Error {
 		$GLOBALS['bcm_test']['get_terms_calls'][] = $args;
@@ -430,10 +432,6 @@ if ( ! function_exists( 'get_terms' ) ) {
 		$GLOBALS['bcm_test']['transients'][ $transient ]    = $value;
 		$GLOBALS['bcm_test']['transient_ttl'][ $transient ] = $expiration;
 		return true;
-	}
-
-	function wp_cache_get_last_changed( string $group ): string {
-		return (string) ( $GLOBALS['bcm_test']['last_changed'][ $group ] ?? '1' );
 	}
 
 	function wp_using_ext_object_cache( ?bool $using = null ): bool {

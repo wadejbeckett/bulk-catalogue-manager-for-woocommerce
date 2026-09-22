@@ -11,6 +11,7 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Tests\Unit;
 
+use BulkCatalogueManager\Categories\Cache;
 use BulkCatalogueManager\Plugin;
 use PHPUnit\Framework\TestCase;
 
@@ -54,7 +55,8 @@ final class PluginTest extends TestCase {
 		$seen = [];
 		foreach ( $GLOBALS['bcm_test']['filters'] as $hook => $entries ) {
 			foreach ( $entries as [ $callback, $priority ] ) {
-				$id           = is_array( $callback ) ? spl_object_id( $callback[0] ) . '::' . $callback[1] : ( is_object( $callback ) ? (string) spl_object_id( $callback ) : (string) $callback );
+				$owner        = is_array( $callback ) ? ( is_object( $callback[0] ) ? (string) spl_object_id( $callback[0] ) : (string) $callback[0] ) : '';
+				$id           = is_array( $callback ) ? $owner . '::' . $callback[1] : ( is_object( $callback ) ? (string) spl_object_id( $callback ) : (string) $callback );
 				$key          = $hook . '|' . $priority . '|' . $id;
 				$seen[ $key ] = ( $seen[ $key ] ?? 0 ) + 1;
 			}
@@ -124,9 +126,26 @@ final class PluginTest extends TestCase {
 
 		$this->assertTrue( Plugin::instance()->is_booted() );
 		$this->assertSame( $after_first, self::registrations() );
-		foreach ( Plugin::instance()->hooks() as [ $hook ] ) {
-			$this->assertCount( 1, $GLOBALS['bcm_test']['filters'][ $hook ], "$hook must be registered once." );
+		$per_hook = array_count_values( array_column( Plugin::instance()->hooks(), 0 ) );
+		foreach ( $per_hook as $hook => $count ) {
+			$this->assertCount( $count, $GLOBALS['bcm_test']['filters'][ $hook ], "$hook must carry each of its callbacks once." );
 		}
+	}
+
+	public function test_init_registers_the_category_cache_invalidation_hooks(): void {
+		( new Plugin() )->boot();
+		$this->assertContains( [ 'init', [ Cache::class, 'register_hooks' ], 10, 0 ], ( new Plugin() )->hooks() );
+
+		do_action( 'init' );
+
+		foreach ( Cache::HOOKS as $hook => $accepted ) {
+			$callback = 4 === $accepted ? [ Cache::class, 'on_object_terms' ] : [ Cache::class, 'on_term' ];
+			$this->assertSame( [ [ $callback, 10, $accepted ] ], $GLOBALS['bcm_test']['filters'][ $hook ] ?? [], "$hook." );
+		}
+
+		unset( $GLOBALS['bcm_test']['transients'][ Cache::VERSION ] );
+		do_action( 'edited_term', 5, 5, 'product_cat' );
+		$this->assertTrue( is_string( $GLOBALS['bcm_test']['transients'][ Cache::VERSION ] ?? null ), 'A product category edit renews the tree cache version once the hooks are live.' );
 	}
 
 	public function test_plugin_file_loads_without_composer_and_plugin_still_resolves(): void {

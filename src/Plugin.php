@@ -85,6 +85,8 @@ final class Plugin {
 	 * Every hook the plugin registers: hook name, callback, priority, accepted arguments.
 	 * Without a supported WooCommerce that is the requirement notice alone.
 	 * The settings register on init so every save, from any context, is sanitised.
+	 * The category tree cache's invalidation hooks register on init too, so a
+	 * category edited from any screen, REST or WP-CLI renews it.
 	 * The migrator runs on admin_init as well as on activation, because an
 	 * update replaces the files without activating the plugin again. The REST
 	 * routes register on rest_api_init.
@@ -100,6 +102,7 @@ final class Plugin {
 		return [
 			[ 'before_woocommerce_init', [ $this, 'declare_compatibility' ], 10, 0 ],
 			[ 'init', [ $this, 'register_settings' ], 10, 0 ],
+			[ 'init', [ Categories\Cache::class, 'register_hooks' ], 10, 0 ],
 			[ 'admin_init', [ $this, 'migrate' ], 10, 0 ],
 			[ 'rest_api_init', [ $this, 'register_routes' ], 10, 0 ],
 		];

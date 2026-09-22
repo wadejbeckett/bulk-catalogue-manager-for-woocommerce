@@ -192,8 +192,9 @@ final class ProductQuery {
 			// A stable tiebreak, running the same way as the last key.
 			$order[] = 'p.ID ' . $keyword;
 		}
-		$sql  = 'SELECT ' . implode( ', ', $select ) . ' ' . $this->from() . ' WHERE ' . $this->where . ' ORDER BY ' . implode( ', ', $order ) . ' LIMIT %d OFFSET %d';
-		$args = [ ...$this->table_args(), ...$this->where_args, $this->criteria->per_page, $this->criteria->offset() ];
+		$conditions = $this->conditions_sql();
+		$sql        = 'SELECT ' . implode( ', ', $select ) . ' ' . $conditions['sql'] . ' ORDER BY ' . implode( ', ', $order ) . ' LIMIT %d OFFSET %d';
+		$args       = [ ...$conditions['args'], $this->criteria->per_page, $this->criteria->offset() ];
 		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- The template holds only allow-listed literals and placeholders; every value is an argument.
 		return (string) $wpdb->prepare( $sql, ...$args );
 	}
@@ -204,10 +205,27 @@ final class ProductQuery {
 	 */
 	public function count_statement(): string {
 		global $wpdb;
-		$sql  = 'SELECT COUNT(*) ' . $this->from() . ' WHERE ' . $this->where . ' LIMIT %d';
-		$args = [ ...$this->table_args(), ...$this->where_args, 1 ];
+		$conditions = $this->conditions_sql();
+		$sql        = 'SELECT COUNT(*) ' . $conditions['sql'] . ' LIMIT %d';
+		$args       = [ ...$conditions['args'], 1 ];
 		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- The template holds only allow-listed literals and placeholders; every value is an argument.
 		return (string) $wpdb->prepare( $sql, ...$args );
+	}
+
+	/**
+	 * The FROM and WHERE every statement over these criteria shares, not yet
+	 * prepared: a template of allow-listed literals and placeholders only, and
+	 * its arguments in order. For a caller that embeds the same conditions in
+	 * a statement of its own and prepares the whole once (Categories\Counts),
+	 * so it matches exactly the rows the grid lists.
+	 *
+	 * @return array{sql: string, args: list<int|float|string>}
+	 */
+	public function conditions_sql(): array {
+		return [
+			'sql'  => $this->from() . ' WHERE ' . $this->where,
+			'args' => [ ...$this->table_args(), ...$this->where_args ],
+		];
 	}
 
 	/**

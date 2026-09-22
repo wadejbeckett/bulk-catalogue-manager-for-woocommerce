@@ -4,8 +4,9 @@
  * (SPEC §7, §12.2), honouring the grid's active filters.
  *
  * The rows the grid would list come from ProductQuery itself: the statement
- * embeds the FROM and WHERE of ProductQuery::count_statement() for the same
- * criteria, so the tree and the grid can never disagree about which rows
+ * embeds ProductQuery::conditions_sql() (its FROM and WHERE with their
+ * arguments) for the same criteria and prepares the whole once, so the tree
+ * and the grid can never disagree about which rows
  * match. Each matching row is reduced to its product (a variation to its
  * parent), each product to the sorted list of its `product_cat` term ids, and
  * the products are grouped by that list:
@@ -54,17 +55,6 @@ final class Counts {
 	public const MAX_GROUPS = 1000000;
 
 	/**
-	 * What ProductQuery::count_statement() starts with; the rest up to the
-	 * closing LIMIT is its FROM and WHERE.
-	 */
-	private const COUNT_HEAD = 'SELECT COUNT(*) ';
-
-	/**
-	 * What ProductQuery::count_statement() ends with.
-	 */
-	private const COUNT_TAIL = ' LIMIT 1';
-
-	/**
 	 * The query whose conditions are counted.
 	 *
 	 * @var ProductQuery
@@ -81,22 +71,25 @@ final class Counts {
 	}
 
 	/**
-	 * The grouped statement, prepared.
-	 *
-	 * @throws \LogicException When ProductQuery's count statement no longer has the shape this reuses.
+	 * The grouped statement, prepared once over ProductQuery's conditions.
 	 */
 	public function statement(): string {
 		global $wpdb;
-		$head = $wpdb->prepare(
-			'SELECT g.terms, COUNT(*) AS products FROM (SELECT cr.object_id, GROUP_CONCAT(DISTINCT ct.term_id ORDER BY ct.term_id SEPARATOR %s) AS terms FROM %i AS cr INNER JOIN %i AS ct ON ct.term_taxonomy_id = cr.term_taxonomy_id WHERE ct.taxonomy = %s AND cr.object_id IN (SELECT (CASE WHEN p.post_type = %s THEN p.post_parent ELSE p.ID END) ',
+		$conditions = $this->query->conditions_sql();
+		$sql        = 'SELECT g.terms, COUNT(*) AS products FROM (SELECT cr.object_id, GROUP_CONCAT(DISTINCT ct.term_id ORDER BY ct.term_id SEPARATOR %s) AS terms FROM %i AS cr INNER JOIN %i AS ct ON ct.term_taxonomy_id = cr.term_taxonomy_id WHERE ct.taxonomy = %s AND cr.object_id IN (SELECT (CASE WHEN p.post_type = %s THEN p.post_parent ELSE p.ID END) '
+			. $conditions['sql']
+			. ') GROUP BY cr.object_id) AS g GROUP BY g.terms LIMIT %d';
+		$args       = [
 			',',
 			$wpdb->prefix . ProductQuery::TABLES['relationships'],
 			$wpdb->prefix . ProductQuery::TABLES['taxonomy'],
 			self::TAXONOMY,
-			'product_variation'
-		);
-		$tail = $wpdb->prepare( ') GROUP BY cr.object_id) AS g GROUP BY g.terms LIMIT %d', self::MAX_GROUPS );
-		return $head . $this->conditions() . $tail;
+			'product_variation',
+			...$conditions['args'],
+			self::MAX_GROUPS,
+		];
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- The template holds only literals and ProductQuery's placeholders; every value is an argument.
+		return (string) $wpdb->prepare( $sql, ...$args );
 	}
 
 	/**
@@ -106,7 +99,7 @@ final class Counts {
 	 */
 	public function groups(): array {
 		global $wpdb;
-		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- statement() is assembled from prepared fragments only.
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- statement() returns a prepared statement.
 		$rows   = $wpdb->get_results( $this->statement(), ARRAY_A );
 		$groups = [];
 		foreach ( is_array( $rows ) ? $rows : [] as $row ) {
@@ -116,19 +109,5 @@ final class Counts {
 			}
 		}
 		return $groups;
-	}
-
-	/**
-	 * ProductQuery's prepared FROM and WHERE for the criteria: its count
-	 * statement without the leading COUNT(*) and the closing LIMIT.
-	 *
-	 * @throws \LogicException When the count statement's shape has changed.
-	 */
-	private function conditions(): string {
-		$count = $this->query->count_statement();
-		if ( ! str_starts_with( $count, self::COUNT_HEAD . 'FROM ' ) || ! str_ends_with( $count, self::COUNT_TAIL ) ) {
-			throw new \LogicException( 'ProductQuery::count_statement() no longer has the shape the category counts reuse.' );
-		}
-		return substr( $count, strlen( self::COUNT_HEAD ), -strlen( self::COUNT_TAIL ) );
 	}
 }

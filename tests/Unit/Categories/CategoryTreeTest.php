@@ -86,6 +86,19 @@ final class CategoryTreeTest extends TestCase {
 		$this->assertSame( 1, substr_count( $statement, 'LIMIT' ), 'Only the outer statement carries a LIMIT; the inner one is dropped.' );
 	}
 
+	public function test_the_grouped_statement_is_prepared_once_over_the_conditions_accessor(): void {
+		$criteria   = CategoryTree::criteria( [ 'search' => 'hat' ] );
+		$conditions = ( new ProductQuery( $criteria ) )->conditions_sql();
+		bcm_test_reset();
+		( new Counts( $criteria ) )->statement();
+
+		$this->assertCount( 1, $GLOBALS['wpdb']->prepared );
+		[ $template, $values ] = $GLOBALS['wpdb']->prepared[0];
+		$this->assertStringContainsString( ' END) ' . $conditions['sql'] . ') GROUP BY ', $template );
+		$this->assertSame( $conditions['args'], array_slice( $values, 5, count( $conditions['args'] ) ) );
+		$this->assertSame( Counts::MAX_GROUPS, $values[ array_key_last( $values ) ] );
+	}
+
 	public function test_the_counts_leave_out_the_category_filter_sort_and_paging(): void {
 		$criteria = CategoryTree::criteria(
 			[

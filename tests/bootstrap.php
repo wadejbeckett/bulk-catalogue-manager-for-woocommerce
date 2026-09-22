@@ -1,0 +1,25 @@
+<?php
+/**
+ * Unit test bootstrap: no WordPress, no WooCommerce. Pure PHP plus stubs.
+ *
+ * @package BulkCatalogueManager
+ * @license GPL-3.0-or-later
+ */
+
+declare( strict_types = 1 );
+
+if ( ! defined( 'ABSPATH' ) ) {
+	define( 'ABSPATH', '/' );
+}
+
+$bcm_composer = dirname( __DIR__ ) . '/vendor/autoload.php';
+if ( file_exists( $bcm_composer ) ) {
+	require_once $bcm_composer;
+} else {
+	require_once dirname( __DIR__ ) . '/src/Autoloader.php';
+	\BulkCatalogueManager\Autoloader::register( dirname( __DIR__ ) . '/src' );
+}
+
+// After Composer so the shim sees PHPUnit's real TestCase and defines nothing.
+require_once __DIR__ . '/Support/testcase-shim.php';
+require_once __DIR__ . '/Support/wp-stubs.php';

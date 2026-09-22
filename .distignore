@@ -1,0 +1,24 @@
+# Files that never ship in the release archive (wp dist-archive reads this;
+# .gitattributes carries the same list for git archive / bin/build-zip.sh).
+.github/
+.gitignore
+.gitattributes
+.distignore
+.phpcs.xml.dist
+.wp-env.json
+.phpunit.cache/
+.phpunit.result.cache
+phpunit.xml.dist
+composer.json
+composer.lock
+package.json
+package-lock.json
+node_modules/
+docs/
+tests/
+bin/
+dist/
+.remember/
+.claude/
+vendor/
+AGENTS.md

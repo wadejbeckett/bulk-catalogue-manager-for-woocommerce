@@ -1,0 +1,46 @@
+<?xml version="1.0"?>
+<ruleset name="Bulk Catalogue Manager for WooCommerce">
+	<description>WordPress-Extra and PHPCompatibilityWP, PHP 8.1+, WordPress 7.0+.</description>
+	<file>bulk-catalogue-manager-for-woocommerce.php</file>
+	<file>src</file>
+	<file>tests</file>
+	<exclude-pattern>vendor/*</exclude-pattern>
+	<exclude-pattern>node_modules/*</exclude-pattern>
+	<arg name="extensions" value="php"/>
+	<arg name="colors"/>
+	<arg value="sp"/>
+	<config name="testVersion" value="8.1-"/>
+	<config name="minimum_wp_version" value="7.0"/>
+
+	<rule ref="WordPress-Extra">
+		<exclude name="WordPress.Files.FileName"/>
+		<exclude name="Universal.Arrays.DisallowShortArraySyntax"/>
+		<exclude name="Generic.Arrays.DisallowShortArraySyntax"/>
+	</rule>
+	<rule ref="PHPCompatibilityWP"/>
+
+	<!-- Tests are CLI-only pure PHP: no escaping, prefix or filesystem rules. The stubs deliberately define WordPress function names. -->
+	<rule ref="WordPress.NamingConventions.PrefixAllGlobals"><exclude-pattern>tests/*</exclude-pattern></rule>
+	<rule ref="WordPress.Security.EscapeOutput"><exclude-pattern>tests/*</exclude-pattern></rule>
+	<rule ref="WordPress.WP.AlternativeFunctions"><exclude-pattern>tests/*</exclude-pattern></rule>
+	<rule ref="WordPress.WP.GlobalVariablesOverride"><exclude-pattern>tests/*</exclude-pattern></rule>
+	<rule ref="Universal.NamingConventions.NoReservedKeywordParameterNames"><exclude-pattern>tests/*</exclude-pattern></rule>
+	<rule ref="Generic.CodeAnalysis.UnusedFunctionParameter"><exclude-pattern>tests/*</exclude-pattern></rule>
+
+	<rule ref="WordPress.WP.I18n">
+		<properties>
+			<property name="text_domain" type="array">
+				<element value="bulk-catalogue-manager-for-woocommerce"/>
+			</property>
+		</properties>
+	</rule>
+	<rule ref="WordPress.NamingConventions.PrefixAllGlobals">
+		<properties>
+			<property name="prefixes" type="array">
+				<element value="bcm_"/>
+				<element value="BCM_"/>
+				<element value="BulkCatalogueManager"/>
+			</property>
+		</properties>
+	</rule>
+</ruleset>

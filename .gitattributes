@@ -1,0 +1,25 @@
+# Kept out of `git archive` (bin/build-zip.sh, GitHub release zips). The
+# shipped plugin needs only the main file, src/, uninstall.php, readme.txt,
+# README.md, CHANGELOG.md and LICENSE: it has its own autoloader, so vendor/
+# is never part of the release either (and is untracked anyway).
+.github/            export-ignore
+.gitignore          export-ignore
+.gitattributes      export-ignore
+.distignore         export-ignore
+.phpcs.xml.dist     export-ignore
+.wp-env.json        export-ignore
+phpunit.xml.dist    export-ignore
+composer.json       export-ignore
+composer.lock       export-ignore
+package.json        export-ignore
+package-lock.json   export-ignore
+docs/               export-ignore
+tests/              export-ignore
+bin/                export-ignore
+.remember/          export-ignore
+.claude/            export-ignore
+vendor/             export-ignore
+
+# Release archives always use LF, whatever the checkout's autocrlf.
+* text=auto eol=lf
+AGENTS.md           export-ignore

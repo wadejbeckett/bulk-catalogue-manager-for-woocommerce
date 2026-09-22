@@ -14,12 +14,12 @@ Read in this order, then start work: `docs/SPEC.md` (the agreed shared understan
 Slug and text domain `bulk-catalogue-manager-for-woocommerce`; prefixes `bcm_` / `BCM_` / `bcm-`; PHP namespace `BulkCatalogueManager`; REST namespace `bcm/v1`; PHP >= 8.1, WordPress >= 7.0, WooCommerce >= 10.0. UI on `@wordpress/dataviews` bundled via wp-scripts, server-side paged.
 
 ## House conventions
-Copy the layout and tooling of the sibling repo `(local path)` (composer.json, package.json, phpcs, PHPUnit with the standalone runner `tests/run-tests.php`, `.wp-env.json`, GitHub Actions, `bin/build-zip.sh`, `.distignore`, `readme.txt`, `docs/TICKETS.md` note style). Its `docs/TICKETS.md` Notes section records what does and does not run on this workstation (Node 18, Docker group membership, wp-env).
+Copy the layout and tooling of the sibling repo `(local path)` (formerly hide-prices-from-guests-for-woocommerce) (composer.json, package.json, phpcs, PHPUnit with the standalone runner `tests/run-tests.php`, `.wp-env.json`, GitHub Actions, `bin/build-zip.sh`, `.distignore`, `readme.txt`, `docs/TICKETS.md` note style). Its `docs/TICKETS.md` Notes section records what does and does not run on this workstation (Node 18, Docker group membership, wp-env).
 
 Commit as the repo's configured author. Mark a ticket done in `docs/TICKETS.md` with the date and a note of what was verified, in the sibling's style. Remote: `origin` = github.com/wadejbeckett/bulk-catalogue-manager-for-woocommerce (private); push `main`.
 
 ## Client workspace
 Acme (the first install target) keeps its own records at `(local path)`; nothing from that workspace belongs in this repo. Installation on example.com is authorised as a live build by the owner, but only after he signs off the prototype and answers SPEC §18, and only with every write reversible.
 
-## Current state (22 September 2026)
-Three commits: bootstrap, spec + tickets, prototype. No code yet. Next work is T1 (plugin skeleton) once the owner answers SPEC §18 and gives prototype feedback; T1–T5 need no answers and can start.
+## Current state (23 September 2026)
+T1–T2 done: plugin skeleton, autoloader, PHPUnit and PHPCS harness (`composer lint`, `composer test`, `composer test:standalone`). T3–T5 need no owner answers and can start; later work waits on SPEC §18 answers and prototype feedback.

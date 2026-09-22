@@ -13,6 +13,8 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Fields;
 
+use BulkCatalogueManager\Rest\Refusal;
+
 defined( 'ABSPATH' ) || exit;
 
 /**
@@ -138,10 +140,9 @@ final class Registry {
 		if ( '' === $sale || '' === $regular || (float) $sale < (float) $regular ) {
 			return true;
 		}
-		return new \WP_Error(
+		return Refusal::invalid(
 			'bcm_invalid_value',
-			__( 'The sale price has to be below the regular price, so this product was skipped. Lower the sale price, or choose to clear it where it is not below the regular price.', 'bulk-catalogue-manager-for-woocommerce' ),
-			[ 'status' => 400 ]
+			__( 'The sale price has to be below the regular price, so this product was skipped. Lower the sale price, or choose to clear it where it is not below the regular price.', 'bulk-catalogue-manager-for-woocommerce' )
 		);
 	}
 

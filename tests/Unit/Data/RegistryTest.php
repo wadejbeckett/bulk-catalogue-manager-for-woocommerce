@@ -27,6 +27,8 @@ final class RegistryTest extends TestCase {
 		'bcm_invalid_value' => 'refusal code for a field value that fails its validator',
 		'bcm_read_only'     => 'refusal code for a write to a read-only column',
 		'bcm_not_available' => 'refusal code for a field that does not apply to that object, such as a parent-only field on a variation',
+		'bcm_cannot_edit'   => 'refusal code for one object the user may not edit, skipped and reported',
+		'bcm_'              => 'the prefix Rest\\Refusal requires of every refusal code',
 	];
 
 	/**

@@ -21,6 +21,8 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Fields;
 
+use BulkCatalogueManager\Rest\Refusal;
+
 defined( 'ABSPATH' ) || exit;
 
 /**
@@ -787,6 +789,6 @@ final class Field {
 	 * @param string $message Plain-English sentence.
 	 */
 	private static function error( string $code, string $message ): \WP_Error {
-		return new \WP_Error( $code, $message, [ 'status' => 400 ] );
+		return Refusal::invalid( $code, $message );
 	}
 }

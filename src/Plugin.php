@@ -120,10 +120,10 @@ final class Plugin {
 	}
 
 	/**
-	 * Register the `bcm/v1` REST routes.
+	 * Register the `bcm/v1` REST routes, all through the one registrar.
 	 */
 	public function register_routes(): void {
-		( new Rest\FieldsController( Fields\Registry::instance() ) )->register_routes();
+		Rest\Routes::plugin()->register();
 	}
 
 	/**

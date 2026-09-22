@@ -20,7 +20,7 @@ defined( 'ABSPATH' ) || exit;
 /**
  * The fields route.
  */
-final class FieldsController {
+final class FieldsController implements Controller {
 	/**
 	 * The route, under Access::REST_NAMESPACE.
 	 */
@@ -34,11 +34,12 @@ final class FieldsController {
 	public function __construct( private readonly Registry $registry ) {}
 
 	/**
-	 * Register the route. Runs on rest_api_init.
+	 * Add the route through the registrar.
+	 *
+	 * @param Routes $routes The registrar.
 	 */
-	public function register_routes(): void {
-		register_rest_route(
-			Access::REST_NAMESPACE,
+	public function register_routes( Routes $routes ): void {
+		$routes->add(
 			self::ROUTE,
 			[
 				[

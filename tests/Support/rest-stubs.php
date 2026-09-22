@@ -1,7 +1,7 @@
 <?php
 /**
- * Minimal WP_Error, WP_REST_Request and WP_REST_Response for unit tests.
- * Under WordPress this file defines nothing.
+ * Minimal WP_Error, WP_REST_Request, WP_REST_Response and WP_REST_Server for
+ * unit tests. Under WordPress this file defines nothing.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -81,6 +81,49 @@ if ( ! class_exists( 'WP_Error' ) ) {
 
 		public function get_status(): int {
 			return $this->status;
+		}
+	}
+
+	/**
+	 * The routes register_rest_route() recorded, shaped as core's get_routes()
+	 * returns them: each route a list of endpoints, route options such as
+	 * `schema` dropped, methods as a map, plus the namespace index core adds
+	 * for each namespace (public, with no permission callback, as in core).
+	 */
+	class WP_REST_Server {
+		public function get_routes( string $route_namespace = '' ): array {
+			$routes = [];
+			foreach ( array_keys( $GLOBALS['bcm_test']['namespaces'] ) as $space ) {
+				$routes[ '/' . $space ] = [
+					[
+						'methods'   => [ 'GET' => true ],
+						'callback'  => [ $this, 'get_namespace_index' ],
+						'namespace' => $space,
+					],
+				];
+			}
+			foreach ( $GLOBALS['bcm_test']['routes'] as $route => $args ) {
+				$handlers = isset( $args['callback'] ) ? [ $args ] : array_filter( $args, 'is_int', ARRAY_FILTER_USE_KEY );
+				$space    = '';
+				foreach ( array_keys( $GLOBALS['bcm_test']['namespaces'] ) as $candidate ) {
+					$space = str_starts_with( $route, '/' . $candidate . '/' ) ? $candidate : $space;
+				}
+				foreach ( $handlers as $key => $handler ) {
+					$methods              = is_string( $handler['methods'] ?? '' ) ? explode( ',', (string) ( $handler['methods'] ?? '' ) ) : (array) $handler['methods'];
+					$handler['methods']   = array_fill_keys( array_map( static fn( $m ) => strtoupper( trim( $m ) ), $methods ), true );
+					$handler['namespace'] = $space;
+					$handlers[ $key ]     = $handler + [ 'args' => [] ];
+				}
+				$routes[ $route ] = array_values( $handlers );
+			}
+			if ( '' === $route_namespace ) {
+				return $routes;
+			}
+			return array_filter( $routes, static fn( array $handlers ) => ( $handlers[0]['namespace'] ?? '' ) === $route_namespace );
+		}
+
+		public function get_namespace_index(): array {
+			return [];
 		}
 	}
 }

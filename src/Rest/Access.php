@@ -1,10 +1,13 @@
 <?php
 /**
- * Who may use the screen and its read routes (SPEC §13, §11): shop managers
- * and administrators (`manage_woocommerce`), or administrators alone
- * (`manage_options`) under the administrators-only setting, the result
- * filterable through `bcm_capability`. Every route's permission callback
- * resolves through here; none is `__return_true` (SPEC §12.1).
+ * Who may do what (SPEC §13, §11). Reading: shop managers and administrators
+ * (`manage_woocommerce`), or administrators alone (`manage_options`) under the
+ * administrators-only setting, the result filterable through `bcm_capability`.
+ * Writing products: that, plus `edit_products`, and each object checked with
+ * `edit_post` (which honours `edit_others_products`). Category writes: the read
+ * capability plus `manage_product_terms`. Settings writes: `manage_options`.
+ * Every route's permission callback resolves through here; none is
+ * `__return_true` (SPEC §12.1), and the registrar in Routes refuses one that is.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -19,13 +22,33 @@ use BulkCatalogueManager\Settings\Settings;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Capability resolution and the read permission callback.
+ * Capability resolution and the permission callbacks.
  */
 final class Access {
 	/**
 	 * The REST namespace every route is registered under.
 	 */
 	public const REST_NAMESPACE = 'bcm/v1';
+
+	/**
+	 * The capability product writes need on top of the read capability.
+	 */
+	public const WRITE_CAPABILITY = 'edit_products';
+
+	/**
+	 * The capability category writes need on top of the read capability.
+	 */
+	public const TERMS_CAPABILITY = 'manage_product_terms';
+
+	/**
+	 * The capability settings writes need.
+	 */
+	public const SETTINGS_CAPABILITY = 'manage_options';
+
+	/**
+	 * The code for one object the user may not edit, skipped and reported.
+	 */
+	public const CANNOT_EDIT = 'bcm_cannot_edit';
 
 	/**
 	 * The capability the screen and read routes need.
@@ -46,6 +69,27 @@ final class Access {
 	}
 
 	/**
+	 * The capabilities a product write route needs, all of them: the read
+	 * capability and `edit_products`. Each object is checked on its own as well.
+	 *
+	 * @param Settings|null $settings Settings; the stored ones when null.
+	 * @return list<string>
+	 */
+	public static function write_capabilities( ?Settings $settings = null ): array {
+		return array_values( array_unique( [ self::capability( $settings ), self::WRITE_CAPABILITY ] ) );
+	}
+
+	/**
+	 * The capabilities a category write route needs: the read capability and `manage_product_terms`.
+	 *
+	 * @param Settings|null $settings Settings; the stored ones when null.
+	 * @return list<string>
+	 */
+	public static function terms_capabilities( ?Settings $settings = null ): array {
+		return array_values( array_unique( [ self::capability( $settings ), self::TERMS_CAPABILITY ] ) );
+	}
+
+	/**
 	 * Permission callback for the read routes: true, or a `bcm_forbidden`
 	 * refusal with a plain sentence and a 401 or 403 status.
 	 *
@@ -56,9 +100,86 @@ final class Access {
 		if ( current_user_can( self::capability() ) ) {
 			return true;
 		}
-		$message = is_user_logged_in()
-			? __( 'Your account does not have permission to use Bulk Catalogue Manager. Ask an administrator for access.', 'bulk-catalogue-manager-for-woocommerce' )
-			: __( 'You need to log in to use Bulk Catalogue Manager. Log in and try again.', 'bulk-catalogue-manager-for-woocommerce' );
-		return new \WP_Error( 'bcm_forbidden', $message, [ 'status' => rest_authorization_required_code() ] );
+		return Refusal::forbidden( __( 'Your account does not have permission to use Bulk Catalogue Manager. Ask an administrator for access.', 'bulk-catalogue-manager-for-woocommerce' ) );
+	}
+
+	/**
+	 * Permission callback for the product write routes: the read capability
+	 * and `edit_products`. Objects are checked one by one with can_edit_object().
+	 *
+	 * @param mixed $request The REST request; unused.
+	 */
+	public static function can_write( mixed $request = null ): bool|\WP_Error {
+		$read = self::can_read( $request );
+		if ( true !== $read ) {
+			return $read;
+		}
+		if ( current_user_can( self::WRITE_CAPABILITY ) ) {
+			return true;
+		}
+		return Refusal::forbidden( __( 'Your account can see products here but not change them. Ask an administrator for permission to edit products.', 'bulk-catalogue-manager-for-woocommerce' ) );
+	}
+
+	/**
+	 * Permission callback for the category write routes: the read capability and `manage_product_terms`.
+	 *
+	 * @param mixed $request The REST request; unused.
+	 */
+	public static function can_manage_terms( mixed $request = null ): bool|\WP_Error {
+		$read = self::can_read( $request );
+		if ( true !== $read ) {
+			return $read;
+		}
+		if ( current_user_can( self::TERMS_CAPABILITY ) ) {
+			return true;
+		}
+		return Refusal::forbidden( __( 'Your account can see categories here but not change them. Ask an administrator for permission to manage categories.', 'bulk-catalogue-manager-for-woocommerce' ) );
+	}
+
+	/**
+	 * Permission callback for the settings write route: `manage_options`, whatever the read capability.
+	 *
+	 * @param mixed $request The REST request; unused.
+	 */
+	public static function can_manage_settings( mixed $request = null ): bool|\WP_Error {
+		unset( $request );
+		if ( current_user_can( self::SETTINGS_CAPABILITY ) ) {
+			return true;
+		}
+		return Refusal::forbidden( __( 'Only an administrator can change the Bulk Catalogue Manager settings. Ask an administrator to change them.', 'bulk-catalogue-manager-for-woocommerce' ) );
+	}
+
+	/**
+	 * Whether the current user may edit one product or variation: `edit_post`
+	 * on the object, which WordPress maps to `edit_products`,
+	 * `edit_others_products` or `edit_published_products` as it applies.
+	 * Otherwise a `bcm_cannot_edit` refusal the writer records as a skipped row.
+	 *
+	 * @param int $object_id Product or variation id.
+	 */
+	public static function can_edit_object( int $object_id ): bool|\WP_Error {
+		return current_user_can( 'edit_post', $object_id ) ? true : self::cannot_edit();
+	}
+
+	/**
+	 * The same check for a background chunk, which runs with no current user,
+	 * against the user who queued the batch (SPEC §13).
+	 *
+	 * @param int $user_id   The batch's recorded user id.
+	 * @param int $object_id Product or variation id.
+	 */
+	public static function user_can_edit_object( int $user_id, int $object_id ): bool|\WP_Error {
+		return $user_id > 0 && user_can( $user_id, 'edit_post', $object_id ) ? true : self::cannot_edit();
+	}
+
+	/**
+	 * The refusal for one object the user may not edit.
+	 */
+	private static function cannot_edit(): \WP_Error {
+		return Refusal::create(
+			self::CANNOT_EDIT,
+			__( 'You do not have permission to edit this product, so it was skipped. Ask an administrator for access to it.', 'bulk-catalogue-manager-for-woocommerce' ),
+			403
+		);
 	}
 }

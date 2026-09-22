@@ -35,6 +35,10 @@ if ( ! function_exists( 'add_filter' ) ) {
 			'activation'  => [],
 			'deactivate'  => [],
 			'routes'      => [],
+			'namespaces'  => [],
+			'wrong'       => [],
+			'nonces'      => [],
+			'user_caps'   => [],
 			'logged_in'   => false,
 			'terms'       => [],
 			'skus'        => [],
@@ -183,8 +187,47 @@ if ( ! function_exists( 'add_filter' ) ) {
 		return htmlspecialchars( $text, ENT_QUOTES, 'UTF-8' );
 	}
 
+	/**
+	 * A capability from $GLOBALS['bcm_test']['caps']; with an object id, the
+	 * key "capability:id" wins when set, as map_meta_cap decides per object.
+	 */
 	function current_user_can( string $capability, mixed ...$args ): bool {
-		return (bool) ( $GLOBALS['bcm_test']['caps'][ $capability ] ?? false );
+		$caps = $GLOBALS['bcm_test']['caps'];
+		if ( [] !== $args && array_key_exists( $capability . ':' . $args[0], $caps ) ) {
+			return (bool) $caps[ $capability . ':' . $args[0] ];
+		}
+		return (bool) ( $caps[ $capability ] ?? false );
+	}
+
+	/**
+	 * The same for a given user, from $GLOBALS['bcm_test']['user_caps'][ user id ].
+	 */
+	function user_can( int|object $user, string $capability, mixed ...$args ): bool {
+		$caps = $GLOBALS['bcm_test']['user_caps'][ is_object( $user ) ? (int) $user->ID : $user ] ?? [];
+		if ( [] !== $args && array_key_exists( $capability . ':' . $args[0], $caps ) ) {
+			return (bool) $caps[ $capability . ':' . $args[0] ];
+		}
+		return (bool) ( $caps[ $capability ] ?? false );
+	}
+
+	function _doing_it_wrong( string $function_name, string $message, string $version ): void {
+		$GLOBALS['bcm_test']['wrong'][] = [ $function_name, $message, $version ];
+	}
+
+	/**
+	 * A predictable nonce, recording the action it was made for.
+	 */
+	function wp_create_nonce( string|int $action = -1 ): string {
+		$GLOBALS['bcm_test']['nonces'][] = $action;
+		return 'nonce-' . $action;
+	}
+
+	function rest_url( string $path = '' ): string {
+		return 'https://example.test/wp-json/' . ltrim( $path, '/' );
+	}
+
+	function esc_url_raw( string $url ): string {
+		return $url;
 	}
 
 	function is_user_logged_in(): bool {
@@ -204,7 +247,15 @@ if ( ! function_exists( 'add_filter' ) ) {
 			}
 		}
 		$GLOBALS['bcm_test']['routes'][ '/' . trim( $route_namespace, '/' ) . '/' . ltrim( $route, '/' ) ] = $args;
+		$GLOBALS['bcm_test']['namespaces'][ trim( $route_namespace, '/' ) ]                                = true;
 		return true;
+	}
+
+	/**
+	 * A server over the recorded routes; WP_REST_Server is in rest-stubs.php.
+	 */
+	function rest_get_server(): WP_REST_Server {
+		return new WP_REST_Server();
 	}
 
 	function rest_authorization_required_code(): int {

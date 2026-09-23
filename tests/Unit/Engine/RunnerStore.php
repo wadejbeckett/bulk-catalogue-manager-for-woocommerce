@@ -3,7 +3,8 @@
  * One batch, its items and its journal in memory for the T34 chunk runner
  * tests. It answers the exact statements BatchRepository and
  * ChangeRepository prepare for the runner — the one-UPDATE claim and its
- * read-back by token, the stale-exhausted failure, marking with a message,
+ * read-back by token, the per-item claim and the stale-working reset (the
+ * security review's M2), the stale-exhausted failure, marking with a message,
  * releasing a claim, the counters, the item counts and the journal lookups —
  * and folds the recording `$wpdb`'s update() and insert() calls into the
  * rows before every read, so each read sees the writes before it.
@@ -127,6 +128,8 @@ final class RunnerStore {
 			"/^UPDATE $items SET claim_token = '/"      => fn( string $sql ): int => $this->claim( $sql ),
 			"/^SELECT item_id, object_id, object_type, attempts FROM $items/" => fn( string $sql ): array => $this->claimed( $sql ),
 			"/^UPDATE $items SET claim_token = NULL/"   => fn( string $sql ): int => $this->release( $sql ),
+			"/^UPDATE $items SET state = 'working' WHERE /" => fn( string $sql ): int => $this->claim_item( $sql ),
+			"/^UPDATE $items SET state = 'pending' WHERE batch_id = \\d+ AND state = 'working'/" => fn( string $sql ): int => $this->reset_working( $sql ),
 			"/^UPDATE $items SET state = 'failed', message = .* AND attempts >= /s" => fn( string $sql ): int => $this->exhaust( $sql ),
 			"/^UPDATE $items SET state = '\\w+', message = .* AND item_id IN /s" => fn( string $sql ): int => $this->mark( $sql ),
 			"/^UPDATE $items SET state = 'failed', message = .* AND state = 'pending'$/s" => fn( string $sql ): int => $this->fail_pending( $sql ),
@@ -368,6 +371,28 @@ final class RunnerStore {
 			}
 		}
 		return $claimed;
+	}
+
+	private function claim_item( string $sql ): int {
+		preg_match( "/WHERE batch_id = (\\d+) AND item_id = (\\d+) AND claim_token = '([0-9a-f]+)' AND state = 'pending'$/", $sql, $m );
+		$item = $this->items[ (int) $m[2] ] ?? null;
+		if ( null === $item || (int) $m[1] !== $item['batch_id'] || $m[3] !== $item['claim_token'] || 'pending' !== $item['state'] ) {
+			return 0;
+		}
+		$this->items[ (int) $m[2] ]['state'] = 'working';
+		return 1;
+	}
+
+	private function reset_working( string $sql ): int {
+		preg_match( "/WHERE batch_id = (\\d+) AND state = 'working' AND claimed_gmt < '([^']+)'$/", $sql, $m );
+		$reset = 0;
+		foreach ( $this->items as $id => $item ) {
+			if ( (int) $m[1] === $item['batch_id'] && 'working' === $item['state'] && null !== $item['claimed_gmt'] && $item['claimed_gmt'] < $m[2] ) {
+				$this->items[ $id ]['state'] = 'pending';
+				++$reset;
+			}
+		}
+		return $reset;
 	}
 
 	private function claimed( string $sql ): array {

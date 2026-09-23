@@ -424,6 +424,56 @@ final class BatchRepository {
 	}
 
 	/**
+	 * Claim one item of a chunk for this run alone, just before writing it
+	 * (§12.4): pending to working, only while the chunk's claim is still this
+	 * run's. A run whose lease went stale and was taken over gets false and
+	 * leaves the item to the run that holds it now.
+	 *
+	 * @param int    $batch_id Batch.
+	 * @param int    $item_id  Item.
+	 * @param string $token    The chunk's claim token.
+	 * @return bool Whether this run holds the item.
+	 * @throws \RuntimeException When the statement fails.
+	 */
+	public function claim_item( int $batch_id, int $item_id, string $token ): bool {
+		global $wpdb;
+		$result = $wpdb->query( $wpdb->prepare( 'UPDATE %i SET state = %s WHERE batch_id = %d AND item_id = %d AND claim_token = %s AND state = %s', $this->registry->table( Schema::ITEMS ), Schema::ITEM_WORKING, $batch_id, $item_id, $token, 'pending' ) );
+		if ( false === $result ) {
+			throw new \RuntimeException( 'The batch item could not be claimed.' );
+		}
+		return 1 === (int) $result;
+	}
+
+	/**
+	 * Put back to pending every working item of a batch whose claim is
+	 * older than `$stale_before`: the run writing it died, so the next claim
+	 * may take it over (and the journal's intent rows make that retry safe).
+	 *
+	 * @param int    $batch_id     Batch.
+	 * @param string $stale_before GMT `Y-m-d H:i:s`: claims before it are stale.
+	 * @return int Items put back.
+	 * @throws \RuntimeException When the statement fails.
+	 */
+	public function reset_stale_working( int $batch_id, string $stale_before ): int {
+		global $wpdb;
+		$result = $wpdb->query( $wpdb->prepare( 'UPDATE %i SET state = %s WHERE batch_id = %d AND state = %s AND claimed_gmt < %s', $this->registry->table( Schema::ITEMS ), 'pending', $batch_id, Schema::ITEM_WORKING, $stale_before ) );
+		if ( false === $result ) {
+			throw new \RuntimeException( 'The batch items could not be updated.' );
+		}
+		return (int) $result;
+	}
+
+	/**
+	 * Number of a batch's items not yet finished: pending, or working under a run.
+	 *
+	 * @param int $batch_id Batch.
+	 */
+	public function count_open( int $batch_id ): int {
+		global $wpdb;
+		return (int) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM %i WHERE batch_id = %d AND state IN (%s, %s)', $this->registry->table( Schema::ITEMS ), $batch_id, 'pending', Schema::ITEM_WORKING ) );
+	}
+
+	/**
 	 * Release a claim's still-pending items at once, keeping their attempts,
 	 * so the next run may claim them without waiting for the lease to go stale.
 	 *

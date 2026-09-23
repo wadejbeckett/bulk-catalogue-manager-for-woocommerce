@@ -64,8 +64,39 @@ final class ChunkRunnerTest extends TestCase {
 	 *
 	 * @param array<string, mixed> $settings Stored settings.
 	 */
-	private function runner( array $settings = [], int $limit = 30 ): ChunkRunner {
-		return new ChunkRunner( null, new Registry( new Fields() ), null, new Settings( $settings ), fn(): float => $this->now += $this->step, $limit );
+	private function runner( array $settings = [], int $limit = 30, ?\Closure $lease_clock = null ): ChunkRunner {
+		return new ChunkRunner( null, new Registry( new Fields() ), null, new Settings( $settings ), fn(): float => $this->now += $this->step, $limit, $lease_clock );
+	}
+
+	/**
+	 * A product whose save() also runs a callback, as a slow save hook would.
+	 */
+	private static function hooked( int $id, \Closure $on_save ): SavedProduct {
+		$stored                                 = new SavedProduct(
+			'simple',
+			[
+				'id'            => $id,
+				'regular_price' => '10',
+			]
+		);
+		$GLOBALS['bcm_test']['products'][ $id ] = new class( $stored, $on_save ) {
+			public function __construct( private SavedProduct $stored, private \Closure $on_save ) {}
+
+			public function is_type( string $type ): bool {
+				return $this->stored->is_type( $type );
+			}
+
+			public function save(): int {
+				$id = $this->stored->save();
+				( $this->on_save )();
+				return $id;
+			}
+
+			public function __call( string $method, array $args ): mixed {
+				return $this->stored->$method( ...$args );
+			}
+		};
+		return $stored;
 	}
 
 	/**
@@ -323,6 +354,100 @@ final class ChunkRunnerTest extends TestCase {
 		);
 	}
 
+	public function test_a_run_writes_only_the_items_it_still_holds(): void {
+		$ids   = self::products( 3 );
+		$store = new RunnerStore( self::BATCH, $ids, $this->increase(), self::USER );
+		// While the first product's save hook runs past the lease, another run takes the other two over.
+		$first = self::hooked(
+			1001,
+			static function () use ( $store ): void {
+				foreach ( [ 1002, 1003 ] as $object_id ) {
+					$item = $store->item( $object_id );
+					$store->items[ $item['item_id'] ]['claim_token'] = str_repeat( 'f', 32 );
+				}
+			}
+		);
+
+		$this->assertSame( 'continued', $this->runner()->run( self::BATCH ) );
+
+		$this->assertSame( [ '11.00', '10', '10' ], [ (string) $first->props['regular_price'], self::price( 1002 ), self::price( 1003 ) ], 'The items another run holds are not written twice.' );
+		$this->assertSame(
+			[
+				1001 => 'done',
+				1002 => 'pending',
+				1003 => 'pending',
+			],
+			$store->states(),
+			'Nor marked: they are the other run\'s to finish.'
+		);
+		$this->assertSame( str_repeat( 'f', 32 ), $store->item( 1002 )['claim_token'] );
+		$this->assertSame( [ [ 1001, 'regular_price', '10', '11.00', 'applied' ] ], $store->journal() );
+		$this->assertSame( [ 1, 1, 0 ], [ $store->batch()['done_items'], $store->batch()['changed_items'], $store->batch()['failed_items'] ] );
+	}
+
+	public function test_a_run_stops_claiming_items_past_most_of_the_lease(): void {
+		self::products( 3 );
+		$store = new RunnerStore( self::BATCH, [ 1001, 1002, 1003 ], $this->increase(), self::USER );
+		$lease = 0.0;
+		// The first product's save hooks take four and a half minutes of the five-minute lease.
+		$first = self::hooked(
+			1001,
+			static function () use ( &$lease ): void {
+				$lease += 270.0;
+			}
+		);
+
+		$clock = static function () use ( &$lease ): float {
+			return $lease;
+		};
+
+		$this->assertSame( 'continued', $this->runner( [], 30, $clock )->run( self::BATCH ) );
+
+		$this->assertSame( [ '11.00', '10', '10' ], [ (string) $first->props['regular_price'], self::price( 1002 ), self::price( 1003 ) ] );
+		$this->assertSame(
+			[
+				1001 => 'done',
+				1002 => 'pending',
+				1003 => 'pending',
+			],
+			$store->states()
+		);
+		$this->assertNull( $store->item( 1002 )['claim_token'], 'The rest are released at once for the next run.' );
+		$this->assertSame( [ 'enqueue', 'bcm_run_chunk', [ self::BATCH ], 'bulk-catalogue-manager-for-woocommerce', null ], self::scheduled( 'enqueue' )[0] ?? null );
+
+		// The successor finishes them.
+		$this->assertSame( 'complete', $this->runner( [], 30, $clock )->run( self::BATCH ) );
+		$this->assertSame( [ '11.00', '11.00' ], [ self::price( 1002 ), self::price( 1003 ) ] );
+	}
+
+	public function test_a_stale_working_item_goes_back_to_pending_and_is_finished(): void {
+		$ids   = self::products( 1 );
+		$store = new RunnerStore( self::BATCH, $ids, $this->increase(), self::USER );
+		$item  = $store->item( 1001 );
+		// A run claimed it for itself and died mid-write.
+		$store->items[ $item['item_id'] ] = [
+			'state'       => 'working',
+			'claim_token' => str_repeat( 'a', 32 ),
+			'claimed_gmt' => gmdate( 'Y-m-d H:i:s', (int) $this->now - BatchRepository::LEASE_SECONDS - 1 ),
+			'attempts'    => 1,
+		] + $item;
+
+		$this->assertSame( 'complete', $this->runner()->run( self::BATCH ) );
+		$this->assertSame( '11.00', self::price( 1001 ) );
+		$this->assertSame( [ 1001 => 'done' ], $store->states() );
+	}
+
+	public function test_no_time_limit_is_taken_as_the_lease(): void {
+		// WP-CLI and some cron runners have none: a chunk is bounded by its lease instead.
+		$previous = (string) ini_get( 'max_execution_time' );
+		ini_set( 'max_execution_time', '0' ); // phpcs:ignore WordPress.PHP.IniSet.max_execution_time_Disallowed -- restored below.
+		try {
+			$this->assertSame( BatchRepository::LEASE_SECONDS, ChunkRunner::php_time_limit() );
+		} finally {
+			ini_set( 'max_execution_time', $previous ); // phpcs:ignore WordPress.PHP.IniSet.max_execution_time_Disallowed -- restoring the test's own change.
+		}
+	}
+
 	public function test_a_slow_chunk_halves_the_size_within_the_floor_and_fast_chunks_grow_it_back(): void {
 		$store = new RunnerStore( self::BATCH, self::products( 400 ), $this->increase(), self::USER );
 
@@ -354,9 +479,6 @@ final class ChunkRunnerTest extends TestCase {
 		$this->runner()->run( self::BATCH );
 		$this->assertStringContainsString( 'LIMIT 50', self::claims()[8] );
 		$this->assertSame( 50, $store->batch()['chunk_size'] );
-
-		// A time limit of 0 is taken as 30 seconds.
-		$this->assertSame( 30, ChunkRunner::DEFAULT_TIME_LIMIT );
 	}
 
 	public function test_term_counting_is_deferred_around_the_work_and_flushed_even_when_it_throws(): void {

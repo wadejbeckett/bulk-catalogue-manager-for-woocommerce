@@ -12,9 +12,11 @@
  *    cancelled or finished batch, T35), and moves queued to running on the
  *    first chunk; a cancellation that lands between that read and the claim
  *    is seen straight after the claim, which is then released untouched;
- * 2. fails, with a plain reason, every pending item already claimed
- *    MAX_ATTEMPTS times whose last claim has gone stale (the chunk that held
- *    it died three times), counting it done and failed;
+ * 2. puts back to pending every item a dead run left working
+ *    (BatchRepository::reset_stale_working()), then fails, with a plain
+ *    reason, every pending item already claimed MAX_ATTEMPTS times whose
+ *    last claim has gone stale (the chunk that held it died three times),
+ *    counting it done and failed;
  * 3. claims the next chunk of pending items with one locking UPDATE
  *    (BatchRepository::claim_chunk()): unclaimed items, or items whose claim
  *    is older than LEASE_SECONDS — a claim left by a chunk that died is so
@@ -25,9 +27,17 @@
  * 5. inside wp_defer_term_counting( true ), flushed by passing false at the
  *    end even when the work throws, runs Writer::for_batch()->run() over the
  *    chunk: each object is written through the one write path, which checks
- *    the Validator and journals from inside (T32, T33). The journal's own
- *    guard makes a chunk idempotent: an object the batch already journalled
- *    is skipped, so a retried percentage increase applies once;
+ *    the Validator and journals from inside (T32, T33). Just before each
+ *    write the run claims that item for itself alone
+ *    (BatchRepository::claim_item(): pending to working, only while the
+ *    chunk's claim token is still its own), so a run whose lease went stale
+ *    and was taken over skips the items the newer run now holds rather than
+ *    writing them a second time; and past LEASE_SHARE (80 per cent) of the
+ *    lease it claims no further item, releasing the rest to its successor.
+ *    The journal's own guard makes a chunk idempotent: an object the batch
+ *    already journalled is skipped, and one left with intent rows is
+ *    finished from the recorded values, so a retried percentage increase
+ *    applies once;
  * 6. marks each item done, skipped or failed with its plain message and adds
  *    to the batch counters in one statement (done_items counts every
  *    finished item whatever its outcome, changed_items the saved ones,
@@ -42,9 +52,9 @@
  *    it back, doubling, up to the size the settings and the `bcm_batch_size`
  *    filter give (itself within 10 and 100). The time limit is
  *    `max_execution_time`, with 0 (no limit, as under WP-CLI and some cron
- *    runners) taken as 30 seconds;
+ *    runners) taken as the lease, LEASE_SECONDS;
  * 8. enqueues its successor with as_enqueue_async_action() while pending
- *    items remain, or finalises the batch: complete when nothing is reported,
+ *    or working items remain, or finalises the batch: complete when nothing is reported,
  *    failed when items failed and the journal holds no applied change, and
  *    partial otherwise (any failure or skip); finished_gmt is stamped. An
  *    undo batch then settles the batch it undid (Undo\Original: undone
@@ -123,9 +133,11 @@ final class ChunkRunner {
 	public const FAST = 0.3;
 
 	/**
-	 * Seconds taken as the time limit when PHP reports none.
+	 * Past this share of the lease a run claims no further item of its
+	 * chunk and hands the rest to its successor, so it never works an item
+	 * after its claim could have been taken over.
 	 */
-	public const DEFAULT_TIME_LIMIT = 30;
+	public const LEASE_SHARE = 0.8;
 
 	/**
 	 * Seconds past the lease before the dead-chunk retry runs, and before a
@@ -181,6 +193,13 @@ final class ChunkRunner {
 	private ?int $time_limit;
 
 	/**
+	 * Returns the Unix time the lease is measured by, with a fraction.
+	 *
+	 * @var \Closure
+	 */
+	private \Closure $lease_clock;
+
+	/**
 	 * Build a runner.
 	 *
 	 * @param BatchRepository|null  $batches    Batches; the plugin's by default.
@@ -189,14 +208,16 @@ final class ChunkRunner {
 	 * @param Settings|null         $settings   Settings; loaded when first needed by default.
 	 * @param \Closure|null         $clock      Returns the Unix time as a float; microtime( true ) by default.
 	 * @param int|null              $time_limit Seconds a request may run; PHP's max_execution_time by default.
+	 * @param \Closure|null         $lease_clock Returns the Unix time the lease is measured by; microtime( true ) by default.
 	 */
-	public function __construct( ?BatchRepository $batches = null, ?Actions $actions = null, ?ChangeRepository $changes = null, ?Settings $settings = null, ?\Closure $clock = null, ?int $time_limit = null ) {
-		$this->batches    = $batches ?? new BatchRepository();
-		$this->actions    = $actions ?? Actions::instance();
-		$this->changes    = $changes ?? new ChangeRepository();
-		$this->settings   = $settings;
-		$this->clock      = $clock ?? static fn(): float => microtime( true );
-		$this->time_limit = $time_limit;
+	public function __construct( ?BatchRepository $batches = null, ?Actions $actions = null, ?ChangeRepository $changes = null, ?Settings $settings = null, ?\Closure $clock = null, ?int $time_limit = null, ?\Closure $lease_clock = null ) {
+		$this->batches     = $batches ?? new BatchRepository();
+		$this->actions     = $actions ?? Actions::instance();
+		$this->changes     = $changes ?? new ChangeRepository();
+		$this->settings    = $settings;
+		$this->clock       = $clock ?? static fn(): float => microtime( true );
+		$this->time_limit  = $time_limit;
+		$this->lease_clock = $lease_clock ?? static fn(): float => microtime( true );
 	}
 
 	/**
@@ -248,6 +269,8 @@ final class ChunkRunner {
 		$now   = (int) $start;
 		$stale = gmdate( 'Y-m-d H:i:s', $now - BatchRepository::LEASE_SECONDS );
 
+		// An item a dead run was writing goes back to pending, so its stale claim can be taken over.
+		$this->batches->reset_stale_working( $batch_id, $stale );
 		$exhausted = $this->batches->fail_exhausted( $batch_id, $stale, self::exhausted_reason() );
 		if ( $exhausted > 0 ) {
 			$this->batches->increment_counters( $batch_id, $exhausted, 0, $exhausted );
@@ -267,7 +290,7 @@ final class ChunkRunner {
 		}
 
 		self::schedule_retry( $now + BatchRepository::LEASE_SECONDS + self::RETRY_DELAY, $batch_id );
-		[ $marks, $changed, $error ] = $this->work( $batch, $items );
+		[ $marks, $changed, $error, $stopped ] = $this->work( $batch, $items, $token );
 
 		$failed = 0;
 		foreach ( self::group( $marks ) as [ $state, $message, $ids ] ) {
@@ -275,7 +298,7 @@ final class ChunkRunner {
 			$failed += 'failed' === $state ? count( $ids ) : 0;
 		}
 		$this->batches->increment_counters( $batch_id, count( $marks ), $changed, $failed );
-		if ( null !== $error ) {
+		if ( null !== $error || $stopped ) {
 			$this->batches->release_claim( $batch_id, $token );
 		}
 		$this->adapt( $batch_id, $size, $configured, ( $this->clock )() - $start, count( $items ) );
@@ -290,12 +313,18 @@ final class ChunkRunner {
 
 	/**
 	 * Write the claimed items through one writer run, term counting deferred.
+	 * Each item is claimed for this run alone just before it is written
+	 * (BatchRepository::claim_item()): an item whose chunk claim another run
+	 * has taken over is skipped, neither written nor marked. Past LEASE_SHARE
+	 * of the lease no further item is claimed; the rest are left pending for
+	 * the successor.
 	 *
 	 * @param array                                                                     $batch The batch row.
 	 * @param array<int, array{item_id: int, object_id: int, object_type: string, attempts: int}> $items Claimed items.
-	 * @return array{0: array<int, array{0: string, 1: string}>, 1: int, 2: ?\Throwable} Item id => [ state, message ], items saved, the exception that stopped the chunk.
+	 * @param string                                                                    $token The chunk's claim token.
+	 * @return array{0: array<int, array{0: string, 1: string}>, 1: int, 2: ?\Throwable, 3: bool} Item id => [ state, message ], items saved, the exception that stopped the chunk, whether the lease ran short.
 	 */
-	private function work( array $batch, array $items ): array {
+	private function work( array $batch, array $items, string $token ): array {
 		$writer     = Writer::for_batch( $this->actions, Journal::from_settings( $this->actions->fields(), $this->settings(), $this->changes ), $batch['batch_id'], $batch['user_id'] );
 		$operations = $batch['operations'];
 		$undo       = 'undo' === $batch['source'];
@@ -303,12 +332,24 @@ final class ChunkRunner {
 		$marks      = [];
 		$changed    = 0;
 		$error      = null;
+		$stopped    = false;
+		$batches    = $this->batches;
+		$batch_id   = $batch['batch_id'];
+		$lease      = $this->lease_clock;
+		$deadline   = $lease() + self::LEASE_SHARE * BatchRepository::LEASE_SECONDS;
 
 		wp_defer_term_counting( true );
 		try {
 			$writer->run(
-				static function ( Writer $writer ) use ( $items, $operations, $undo, $own, &$marks, &$changed, &$error ): void {
+				static function ( Writer $writer ) use ( $items, $operations, $undo, $own, $batches, $batch_id, $token, $lease, $deadline, &$marks, &$changed, &$error, &$stopped ): void {
 					foreach ( $items as $item ) {
+						if ( $lease() > $deadline ) {
+							$stopped = true;
+							return;
+						}
+						if ( ! $batches->claim_item( $batch_id, $item['item_id'], $token ) ) {
+							continue; // Another run took the chunk over when this one's lease went stale.
+						}
 						if ( 'term' === $item['object_type'] ) {
 							$marks[ $item['item_id'] ] = [ 'failed', __( 'Category changes cannot run in the background yet, so this change was not made.', 'bulk-catalogue-manager-for-woocommerce' ) ];
 							continue;
@@ -335,7 +376,7 @@ final class ChunkRunner {
 		} finally {
 			wp_defer_term_counting( false );
 		}
-		return [ $marks, $changed, $error ];
+		return [ $marks, $changed, $error, $stopped ];
 	}
 
 	/**
@@ -350,7 +391,7 @@ final class ChunkRunner {
 		if ( 'running' !== $this->batches->status( $batch_id ) ) {
 			return 'stopped';
 		}
-		if ( $this->batches->count_items( $batch_id, 'pending' ) > 0 ) {
+		if ( $this->batches->count_open( $batch_id ) > 0 ) {
 			if ( $claimed ) {
 				as_enqueue_async_action( self::HOOK, [ $batch_id ], Data::ACTION_GROUP );
 				return 'continued';
@@ -458,11 +499,13 @@ final class ChunkRunner {
 	}
 
 	/**
-	 * PHP's time limit in seconds, 0 (none) taken as DEFAULT_TIME_LIMIT.
+	 * PHP's time limit in seconds. None (0, as under WP-CLI and some cron
+	 * runners) is taken as the lease: a chunk is then bounded by its claim,
+	 * not by PHP.
 	 */
 	public static function php_time_limit(): int {
 		$limit = (int) ini_get( 'max_execution_time' );
-		return $limit > 0 ? $limit : self::DEFAULT_TIME_LIMIT;
+		return $limit > 0 ? $limit : BatchRepository::LEASE_SECONDS;
 	}
 
 	/**

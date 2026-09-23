@@ -8,8 +8,19 @@
  * fields it accepts are every registry field allowing one of those kinds
  * (narrowed by accepts_field()), so a field gaining an edit kind in the
  * registry reaches the action without touching it. Its own arguments come
- * from arguments(); the common `field` and `skip_already` (T29) are added
- * here. validate() refuses an unknown argument, a field the action does not
+ * from arguments(); the common `field`, `apply_to_variations` (T69) and
+ * `skip_already` (T29) are added here.
+ *
+ * `apply_to_variations` ("Also apply to variations", SPEC §4.3, §6, §8) is
+ * kept only for a field a variation has a value of its own for (per
+ * variation, or conditional such as status and stock quantity): given, it
+ * is normalised to a boolean; absent, it takes the shop's default for the
+ * field's panel group (variation_default(): Publishing reads the status
+ * switch, Pricing the price switch, Stock the stock switch, any other group
+ * starts off). For a parent-only or derived field it is refused when on and
+ * dropped when off, so a normalised step never carries it there. It decides
+ * nothing about the object a step runs on; Engine\BatchFactory reads it to
+ * add each selected variable product's variations to the batch. validate() refuses an unknown argument, a field the action does not
  * accept, and any argument its spec refuses, then hands the normalised
  * arguments to normalise() for the rules that span arguments.
  *
@@ -36,6 +47,7 @@ use BulkCatalogueManager\Fields\Field;
 use BulkCatalogueManager\Fields\Registry as Fields;
 use BulkCatalogueManager\Fields\Values;
 use BulkCatalogueManager\Rest\Refusal;
+use BulkCatalogueManager\Settings\Settings;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -52,6 +64,20 @@ abstract class BaseOperation implements Operation {
 	 * The refusal code for a field the action does not accept.
 	 */
 	public const FIELD_NOT_ACCEPTED = 'bcm_field_not_accepted';
+
+	/**
+	 * The step argument for "Also apply to variations" (T69).
+	 */
+	public const APPLY_TO_VARIATIONS = 'apply_to_variations';
+
+	/**
+	 * Panel group => the Settings::apply_to_variations() switch its fields start from.
+	 */
+	private const VARIATION_DEFAULTS = [
+		Group::PUBLISHING => 'status',
+		Group::PRICING    => 'price',
+		Group::STOCK      => 'stock',
+	];
 
 	/**
 	 * Most characters of a submitted argument name a refusal repeats.
@@ -184,7 +210,7 @@ abstract class BaseOperation implements Operation {
 
 		$clean = [ 'field' => $key ];
 		foreach ( $specs as $name => $spec ) {
-			if ( 'field' === $name ) {
+			if ( 'field' === $name || self::APPLY_TO_VARIATIONS === $name ) {
 				continue;
 			}
 			if ( ! array_key_exists( $name, $args ) ) {
@@ -203,11 +229,59 @@ abstract class BaseOperation implements Operation {
 			$clean[ $name ] = $value;
 		}
 
+		$reach = self::reaches_variations( $field );
+		if ( array_key_exists( self::APPLY_TO_VARIATIONS, $args ) ) {
+			$on = Values::boolean( $args[ self::APPLY_TO_VARIATIONS ] );
+			if ( null === $on ) {
+				return $this->refuse( $specs[ self::APPLY_TO_VARIATIONS ]['rule'], self::APPLY_TO_VARIATIONS );
+			}
+			if ( $on && ! $reach ) {
+				return $this->refuse(
+					sprintf(
+						/* translators: %s: a field's name, such as "Categories". */
+						__( '%s belongs to the product, not to each variation, so it cannot be applied to variations. Turn off Also apply to variations and try again.', 'bulk-catalogue-manager-for-woocommerce' ),
+						$field->label()
+					),
+					self::APPLY_TO_VARIATIONS
+				);
+			}
+			if ( $reach ) {
+				$clean[ self::APPLY_TO_VARIATIONS ] = $on;
+			}
+		} elseif ( $reach ) {
+			$clean[ self::APPLY_TO_VARIATIONS ] = self::variation_default( $field, Settings::load() );
+		}
+
 		$normalised = $this->normalise( $clean, $field );
 		if ( is_string( $normalised ) ) {
 			return $this->refuse( $normalised );
 		}
 		return Validation::passed( $normalised );
+	}
+
+	/**
+	 * Whether "Also apply to variations" is offered for a field: a variation
+	 * has a value of its own for it (SPEC §5.2 last column: per variation,
+	 * or conditional). Parent-only and derived fields never reach a variation.
+	 *
+	 * @param Field $field A registry field.
+	 */
+	public static function reaches_variations( Field $field ): bool {
+		return ! $field->read_only() && in_array( $field->variation_rule(), [ Field::PER_VARIATION, Field::CONDITIONAL ], true );
+	}
+
+	/**
+	 * The starting position of "Also apply to variations" for a field that
+	 * reaches variations (SPEC §6, §11): the shop's switch for the field's
+	 * panel group — Publishing (status) the status switch, Pricing the price
+	 * switch, Stock the stock switch — and off for any other group.
+	 *
+	 * @param Field    $field    A field reaches_variations() accepts.
+	 * @param Settings $settings The settings.
+	 */
+	public static function variation_default( Field $field, Settings $settings ): bool {
+		$setting = self::VARIATION_DEFAULTS[ $field->group() ] ?? null;
+		return null !== $setting && $settings->apply_to_variations( $setting );
 	}
 
 	/**
@@ -523,7 +597,12 @@ abstract class BaseOperation implements Operation {
 				'choices'  => $choices,
 			],
 		] + $this->arguments() + [
-			'skip_already' => [
+			self::APPLY_TO_VARIATIONS => [
+				'type'  => 'boolean',
+				'label' => __( 'Also apply to variations', 'bulk-catalogue-manager-for-woocommerce' ),
+				'rule'  => __( 'Also apply to variations has to be on or off.', 'bulk-catalogue-manager-for-woocommerce' ),
+			],
+			'skip_already'            => [
 				'type'    => 'boolean',
 				'label'   => __( 'Skip rows where the value is already correct', 'bulk-catalogue-manager-for-woocommerce' ),
 				'rule'    => __( 'Skip rows where the value is already correct has to be on or off.', 'bulk-catalogue-manager-for-woocommerce' ),

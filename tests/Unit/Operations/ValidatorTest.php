@@ -150,7 +150,7 @@ final class ValidatorTest extends TestCase {
 				[],
 				Result::SKIPPED,
 				'bcm_not_available',
-				'Stock quantity only applies where stock is managed, so it was not changed here. Turn on Manage stock first.',
+				'This variation does not manage its own stock, so its stock quantity was not changed. Turn on Manage stock for the variation first.',
 			],
 			'categories on a variation'                   => [
 				'variation',
@@ -575,7 +575,12 @@ final class ValidatorTest extends TestCase {
 			}
 			$this->assertInstanceOf( \WP_Error::class, $written, $case );
 			$this->assertSame( [ $refusal->get_error_code(), $refusal->get_error_message() ], [ $written->get_error_code(), $written->get_error_message() ], "$case: refusal() is write()'s refusal." );
-			$this->assertSame( [ $written->get_error_code(), $written->get_error_message() ], [ $verdict->code(), $verdict->reason() ], "$case: the Validator says what the write says." );
+			if ( 'stock quantity on unmanaged variation stock' === $case ) {
+				// T70, SPEC §8: the one refusal the Validator words for itself, naming the variation.
+				$this->assertSame( [ $written->get_error_code(), Validator::unmanaged_stock_reason() ], [ $verdict->code(), $verdict->reason() ], $case );
+			} else {
+				$this->assertSame( [ $written->get_error_code(), $written->get_error_message() ], [ $verdict->code(), $verdict->reason() ], "$case: the Validator says what the write says." );
+			}
 			$this->assertSame( $code, $verdict->code(), $case );
 			$this->assertSame( [], $product->sets, "$case: a refused write sets nothing." );
 			++$checked;

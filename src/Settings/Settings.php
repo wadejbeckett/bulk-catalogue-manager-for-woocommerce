@@ -127,6 +127,13 @@ final class Settings {
 	}
 
 	/**
+	 * Variations per background batch, 10 to 100 (SPEC §12.4).
+	 */
+	public function variation_batch_size(): int {
+		return (int) $this->values[ Schema::VARIATION_BATCH_SIZE ];
+	}
+
+	/**
 	 * Days to keep history; 0 keeps it indefinitely.
 	 */
 	public function history_days(): int {

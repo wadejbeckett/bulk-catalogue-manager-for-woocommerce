@@ -118,7 +118,7 @@ final class PreviewRouteTest extends TestCase {
 		$this->assertInstanceOf( \WP_REST_Response::class, $response );
 		$this->assertSame( 200, $response->get_status() );
 		$data = $response->get_data();
-		$this->assertSame( [ 'totals', 'sample', 'warnings', 'unreadable', 'selection', 'hash' ], array_keys( $data ) );
+		$this->assertSame( [ 'totals', 'summary', 'sample', 'warnings', 'unreadable', 'selection', 'hash' ], array_keys( $data ) );
 		$this->assertSame( 2, $data['totals']['matched'] );
 		$this->assertSame( 1, $data['totals']['would_change'] );
 		$this->assertEquals( (object) [ 'Featured belongs to the product, not to each variation.' => 1 ], $data['totals']['would_fail'] );
@@ -126,8 +126,10 @@ final class PreviewRouteTest extends TestCase {
 		$this->assertSame( [ 999 ], $data['unreadable'] );
 		$this->assertSame(
 			[
-				'kind'  => 'ids',
-				'count' => 3,
+				'kind'             => 'ids',
+				'count'            => 3,
+				'variations_added' => 0,
+				'parents_left_out' => 0,
 			],
 			$data['selection']
 		);
@@ -157,9 +159,11 @@ final class PreviewRouteTest extends TestCase {
 		$data = $response->get_data();
 		$this->assertSame(
 			[
-				'kind'          => 'filter',
-				'count'         => 5,
-				'current_count' => 7,
+				'kind'             => 'filter',
+				'count'            => 5,
+				'current_count'    => 7,
+				'variations_added' => 0,
+				'parents_left_out' => 0,
 			],
 			$data['selection']
 		);

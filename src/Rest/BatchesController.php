@@ -559,7 +559,7 @@ final class BatchesController implements ReadController {
 				'sanitize_callback' => static fn( mixed $value ): string => strtolower( (string) $value ),
 			],
 			'operations'      => [
-				'description'       => __( 'The changes to make, in order: each an action and its arguments.', 'bulk-catalogue-manager-for-woocommerce' ),
+				'description'       => __( 'The changes to make, in order: each an action and its arguments. A step on a field variations have their own value for may carry apply_to_variations (true or false) to reach the variations of each chosen variable product; left out, it takes the shop\'s default for that kind of field.', 'bulk-catalogue-manager-for-woocommerce' ),
 				'type'              => 'array',
 				'items'             => [ 'type' => 'object' ],
 				'required'          => true,

@@ -286,6 +286,15 @@ final class Field {
 	}
 
 	/**
+	 * Whether a variable product holds a value of its own for this field
+	 * (T69). A price does not: a variable product takes it from its
+	 * variations, so the field is unavailable there (SPEC §8).
+	 */
+	public function applies_to_variable_parent(): bool {
+		return ! $this->read_only() && '' === $this->variable_parent_note;
+	}
+
+	/**
 	 * Whether the value must be unique across products and variations (the SKU).
 	 */
 	public function unique(): bool {

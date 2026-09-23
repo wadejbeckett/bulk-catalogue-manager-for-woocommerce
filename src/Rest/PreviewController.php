@@ -6,7 +6,10 @@
  * selection — an `ids` list or the signed `token` from `POST /selection`,
  * exactly one of them, taken with the same arguments as `POST /batches` —
  * and `sample_size`: 25 (the default), 100, or `all` for every row up to
- * 1,000. ("Also apply to variations" joins these arguments with T69.)
+ * 1,000. "Also apply to variations" (T69) is a step argument inside
+ * `operations` (`args.apply_to_variations`), so it needs no route argument
+ * of its own; the answer counts the variations it adds (`totals.by_type`,
+ * `summary`, `selection.variations_added`).
  *
  * It precedes a write, so it needs the write capability (Access::can_write);
  * each object is checked for the current user as the writer would. An

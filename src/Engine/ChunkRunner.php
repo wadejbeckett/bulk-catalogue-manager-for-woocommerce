@@ -20,7 +20,13 @@
  * 3. claims the next chunk of pending items with one locking UPDATE
  *    (BatchRepository::claim_chunk()): unclaimed items, or items whose claim
  *    is older than LEASE_SECONDS — a claim left by a chunk that died is so
- *    released and retried — sized by the batch's current chunk size;
+ *    released and retried — sized by the batch's current chunk size. A
+ *    chunk holds one kind of item (T71, §12.4): products (and category
+ *    items) while any is left to claim, up to the product size, and only
+ *    then variations, up to the variation size — so a mixed batch counts
+ *    its variations against the variation size and every chunk costs
+ *    about the same time. When no product is left the product claim finds
+ *    nothing and a second UPDATE claims variations;
  * 4. schedules a retry for just after the lease would go stale, so a chunk
  *    killed mid-way (a fatal error, the PHP time limit) is picked up again
  *    without anyone watching; a chunk that ends normally unschedules it;
@@ -42,15 +48,22 @@
  *    to the batch counters in one statement (done_items counts every
  *    finished item whatever its outcome, changed_items the saved ones,
  *    failed_items the failed ones);
- *    an undo batch's items (T56) each carry their own operation list
- *    (BatchRepository::item_operations(), one read per chunk), which the
- *    writer applies in place of the batch's; an undo item without one fails
- *    with a plain reason;
+ *    an item may carry its own operation list (BatchRepository::
+ *    item_operations(), one read per chunk) which the writer applies in
+ *    place of the batch's: every item of an undo batch (T56; an undo item
+ *    without one fails with a plain reason), and a variation "Also apply to
+ *    variations" added to a bulk batch whose other steps do not reach it (T69);
  * 7. adapts the chunk size: a chunk that used more than 70 per cent of the
  *    PHP time limit halves it for the rest of the batch, never below 10, and
  *    records why in the batch's note; one that used under 30 per cent grows
  *    it back, doubling, up to the size the settings and the `bcm_batch_size`
- *    filter give (itself within 10 and 100). The time limit is
+ *    filter give (itself within 10 and 100). The filter gets the batch id and
+ *    the kind, `product` or `variation`: products start from *Products per
+ *    background batch* (50), variations from *Variations per background
+ *    batch* (100). The batch's `chunk_size` records the product size; the
+ *    variation size follows it in proportion (configured variation size ×
+ *    chunk_size ÷ configured product size, within 10 and 100), so a halving
+ *    after a slow chunk of either kind halves both. The time limit is
  *    `max_execution_time`, with 0 (no limit, as under WP-CLI and some cron
  *    runners) taken as the lease, LEASE_SECONDS;
  * 8. enqueues its successor with as_enqueue_async_action() while pending
@@ -111,6 +124,16 @@ final class ChunkRunner {
 	 * The filter over the configured chunk size.
 	 */
 	public const SIZE_FILTER = 'bcm_batch_size';
+
+	/**
+	 * The `bcm_batch_size` kind for products (and category items).
+	 */
+	public const PRODUCT = 'product';
+
+	/**
+	 * The `bcm_batch_size` kind for variations.
+	 */
+	public const VARIATION = 'variation';
 
 	/**
 	 * Fewest items per chunk.
@@ -276,10 +299,15 @@ final class ChunkRunner {
 			$this->batches->increment_counters( $batch_id, $exhausted, 0, $exhausted );
 		}
 
-		$configured = $this->configured_size( $batch_id );
+		$configured = $this->configured_size( $batch_id, self::PRODUCT );
 		$size       = $batch['chunk_size'] > 0 ? min( self::clamp( $batch['chunk_size'] ), $configured ) : $configured;
 		$token      = bin2hex( random_bytes( 16 ) );
-		$items      = $this->batches->claim_chunk( $batch_id, $size, $token, gmdate( 'Y-m-d H:i:s', $now ), $stale );
+		$items      = $this->batches->claim_chunk( $batch_id, $size, $token, gmdate( 'Y-m-d H:i:s', $now ), $stale, BatchRepository::CLAIM_PRODUCTS );
+		$kind       = self::PRODUCT;
+		if ( [] === $items ) {
+			$kind  = self::VARIATION;
+			$items = $this->batches->claim_chunk( $batch_id, self::variation_size( $size, $configured, $this->configured_size( $batch_id, self::VARIATION ) ), $token, gmdate( 'Y-m-d H:i:s', $now ), $stale, BatchRepository::CLAIM_VARIATIONS );
+		}
 		if ( [] === $items ) {
 			return $this->settle( $batch, false );
 		}
@@ -301,7 +329,7 @@ final class ChunkRunner {
 		if ( null !== $error || $stopped ) {
 			$this->batches->release_claim( $batch_id, $token );
 		}
-		$this->adapt( $batch_id, $size, $configured, ( $this->clock )() - $start, count( $items ) );
+		$this->adapt( $batch_id, $size, $configured, ( $this->clock )() - $start, count( $items ), $kind );
 		self::unschedule_retry( $batch_id );
 
 		if ( null !== $error ) {
@@ -328,7 +356,7 @@ final class ChunkRunner {
 		$writer     = Writer::for_batch( $this->actions, Journal::from_settings( $this->actions->fields(), $this->settings(), $this->changes ), $batch['batch_id'], $batch['user_id'] );
 		$operations = $batch['operations'];
 		$undo       = 'undo' === $batch['source'];
-		$own        = $undo ? $this->batches->item_operations( $batch['batch_id'], array_values( array_map( static fn( array $item ): int => $item['item_id'], $items ) ) ) : [];
+		$own        = $this->batches->item_operations( $batch['batch_id'], array_values( array_map( static fn( array $item ): int => $item['item_id'], $items ) ) );
 		$marks      = [];
 		$changed    = 0;
 		$error      = null;
@@ -452,14 +480,31 @@ final class ChunkRunner {
 	 * @param int   $batch_id   The batch.
 	 * @param int   $size       This chunk's size.
 	 * @param int   $configured The configured size, the most it grows back to.
-	 * @param float $elapsed    Seconds the chunk took.
-	 * @param int   $count      Items it claimed.
+	 * @param float  $elapsed    Seconds the chunk took.
+	 * @param int    $count      Items it claimed.
+	 * @param string $kind       What it claimed: PRODUCT or VARIATION.
 	 */
-	private function adapt( int $batch_id, int $size, int $configured, float $elapsed, int $count ): void {
+	private function adapt( int $batch_id, int $size, int $configured, float $elapsed, int $count, string $kind = self::PRODUCT ): void {
 		$limit = $this->time_limit ?? self::php_time_limit();
 		$share = $elapsed / max( 1, $limit );
 		if ( $share > self::SLOW && $size > self::FLOOR ) {
 			$next = max( self::FLOOR, intdiv( $size, 2 ) );
+			if ( self::VARIATION === $kind ) {
+				$this->batches->record_chunk_size(
+					$batch_id,
+					$next,
+					sprintf(
+						/* translators: 1: number of variations in the chunk, 2: seconds it took, 3: seconds allowed, 4: new number of products per chunk, 5: new number of variations per chunk. */
+						__( 'The last group of %1$d variations took %2$d of the %3$d seconds the server allows, so this change now works on %4$d products or %5$d variations at a time.', 'bulk-catalogue-manager-for-woocommerce' ),
+						$count,
+						(int) round( $elapsed ),
+						$limit,
+						$next,
+						self::variation_size( $next, $configured, $this->configured_size( $batch_id, self::VARIATION ) )
+					)
+				);
+				return;
+			}
 			$note = sprintf(
 				/* translators: 1: number of products in the chunk, 2: seconds it took, 3: seconds allowed, 4: new number of products per chunk. */
 				__( 'The last group of %1$d products took %2$d of the %3$d seconds the server allows, so this change now works on %4$d products at a time.', 'bulk-catalogue-manager-for-woocommerce' ),
@@ -481,12 +526,36 @@ final class ChunkRunner {
 	}
 
 	/**
-	 * The configured chunk size: the setting through the `bcm_batch_size` filter, within the floor and ceiling.
+	 * The configured chunk size for a kind of item: *Products per background
+	 * batch* or *Variations per background batch* through the
+	 * `bcm_batch_size` filter, within the floor and ceiling.
 	 *
-	 * @param int $batch_id The batch, passed to the filter.
+	 * @param int    $batch_id The batch, passed to the filter.
+	 * @param string $kind     PRODUCT or VARIATION, passed to the filter.
 	 */
-	private function configured_size( int $batch_id ): int {
-		return self::clamp( (int) apply_filters( 'bcm_batch_size', $this->settings()->batch_size(), $batch_id ) );
+	private function configured_size( int $batch_id, string $kind ): int {
+		$setting = self::VARIATION === $kind ? $this->settings()->variation_batch_size() : $this->settings()->batch_size();
+		/**
+		 * Filters how many items one background chunk works on.
+		 *
+		 * @param int    $size     The setting for the kind, 10 to 100; the result is held within 10 and 100.
+		 * @param int    $batch_id The batch.
+		 * @param string $kind     `product` (products and categories) or `variation`.
+		 */
+		return self::clamp( (int) apply_filters( 'bcm_batch_size', $setting, $batch_id, $kind ) );
+	}
+
+	/**
+	 * The variation chunk size for the batch's current product size: the
+	 * configured variation size in the same proportion, within the floor
+	 * and ceiling, so halving one halves the other.
+	 *
+	 * @param int $size       The product size in use.
+	 * @param int $configured The configured product size.
+	 * @param int $variations The configured variation size.
+	 */
+	public static function variation_size( int $size, int $configured, int $variations ): int {
+		return self::clamp( intdiv( $variations * $size, max( 1, $configured ) ) );
 	}
 
 	/**

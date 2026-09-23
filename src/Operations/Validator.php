@@ -31,8 +31,18 @@
  *    sale price change becomes the clear, and a regular price change is
  *    followed by a second Result clearing the sale price.
  *
+ * Variations (T70, SPEC §8). Whatever a step computed, stock quantity on a
+ * variation that does not manage its own stock is skipped with "This
+ * variation does not manage its own stock", never failed or ignored. A step
+ * with "Also apply to variations" on (`apply_to_variations`) that finds a
+ * variable product without a value of its own (a price) is skipped with the
+ * field's sentence, since its variations carry the change; and on a
+ * variation reached that way, a choice a variation cannot take (a status
+ * other than published or private) is skipped with the field's sentence
+ * rather than failed, since the product carries it.
+ *
  * Only a change is checked against the field; already, skipped and failed
- * Results pass through (after the permission check). Every refusal keeps
+ * Results pass through (after the permission check and the variation rules). Every refusal keeps
  * its sentence in the Result's reason and its `bcm_` code in the separate
  * code field for the details line, never in the sentence (SPEC §4.8).
  *
@@ -59,6 +69,11 @@ defined( 'ABSPATH' ) || exit;
  * The row validator.
  */
 final class Validator {
+	/**
+	 * The code of a step skipped because the field does not apply to the object.
+	 */
+	public const NOT_AVAILABLE = 'bcm_not_available';
+
 	/**
 	 * SKUs let through in this run: SKU => object id.
 	 *
@@ -123,10 +138,17 @@ final class Validator {
 		if ( null !== $denied ) {
 			return [ Result::skipped( $result->field(), $result->old(), $denied->get_error_message(), (string) $denied->get_error_code() ) ];
 		}
+		$field = $this->fields->get( $result->field() );
+		if ( null !== $field && $field->requires_managed_stock() && self::is( $subject, 'variation' ) && true !== $subject->get_manage_stock( 'edit' ) ) {
+			return [ Result::skipped( $result->field(), $result->old(), self::unmanaged_stock_reason(), self::NOT_AVAILABLE ) ];
+		}
+		$pushed = true === ( $args[ BaseOperation::APPLY_TO_VARIATIONS ] ?? null );
+		if ( $pushed && Result::FAILED === $result->state() && self::NOT_AVAILABLE === $result->code() && self::is( $subject, 'variable' ) ) {
+			return [ Result::skipped( $result->field(), $result->old(), $result->reason(), self::NOT_AVAILABLE ) ];
+		}
 		if ( ! $result->is_changed() ) {
 			return [ $result ];
 		}
-		$field = $this->fields->get( $result->field() );
 		if ( null === $field ) {
 			throw new \LogicException( esc_html( sprintf( 'Field "%s" is not in the registry.', $result->field() ) ) );
 		}
@@ -139,7 +161,7 @@ final class Validator {
 
 		$refusal = $field->refusal( $subject, $result->new() );
 		if ( null !== $refusal ) {
-			return [ self::refused( $field, $result, $refusal ) ];
+			return [ self::refused( $field, $result, $refusal, $pushed && Field::ENUM === $field->type() && self::is( $subject, 'variation' ) ) ];
 		}
 
 		$clash = $this->claim( $field, $subject, $result );
@@ -157,12 +179,13 @@ final class Validator {
 	 * @param Field     $field   The field.
 	 * @param Result    $result  The computed change.
 	 * @param \WP_Error $refusal What Field::refusal() returned.
+	 * @param bool      $pushed  Whether a choice was pushed down to a variation by "Also apply to variations".
 	 */
-	private static function refused( Field $field, Result $result, \WP_Error $refusal ): Result {
+	private static function refused( Field $field, Result $result, \WP_Error $refusal, bool $pushed = false ): Result {
 		$code    = (string) $refusal->get_error_code();
 		$message = $refusal->get_error_message();
-		$skip    = ( 'bcm_not_available' === $code && $field->requires_managed_stock() )
-			|| ( 'bcm_invalid_value' === $code && self::below_zero( $field, $result->new() ) );
+		$skip    = ( self::NOT_AVAILABLE === $code && $field->requires_managed_stock() )
+			|| ( 'bcm_invalid_value' === $code && ( $pushed || self::below_zero( $field, $result->new() ) ) );
 		return $skip
 			? Result::skipped( $field->key(), $result->old(), $message, $code )
 			: Result::failed( $field->key(), $result->old(), $message, $code );
@@ -267,6 +290,24 @@ final class Validator {
 	 */
 	private static function assigns_terms( Field $field ): bool {
 		return in_array( $field->type(), [ Field::TERMS, Field::TERM ], true ) && Storage::TAXONOMY === $field->storage()->kind();
+	}
+
+	/**
+	 * The reason stock quantity is not changed on a variation that does not
+	 * manage its own stock (SPEC §8).
+	 */
+	public static function unmanaged_stock_reason(): string {
+		return __( 'This variation does not manage its own stock, so its stock quantity was not changed. Turn on Manage stock for the variation first.', 'bulk-catalogue-manager-for-woocommerce' );
+	}
+
+	/**
+	 * Whether an object is of a WooCommerce product type.
+	 *
+	 * @param object $subject A product or variation.
+	 * @param string $type    Product type, such as variation or variable.
+	 */
+	private static function is( object $subject, string $type ): bool {
+		return method_exists( $subject, 'is_type' ) && true === $subject->is_type( $type );
 	}
 
 	/**

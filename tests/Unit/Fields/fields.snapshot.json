@@ -1632,6 +1632,11 @@
                         "type": "boolean",
                         "default": false
                     },
+                    "apply_to_variations": {
+                        "title": "Also apply to variations",
+                        "description": "Also apply to variations has to be on or off.",
+                        "type": "boolean"
+                    },
                     "skip_already": {
                         "title": "Skip rows where the value is already correct",
                         "description": "Skip rows where the value is already correct has to be on or off.",
@@ -1698,6 +1703,11 @@
                             }
                         ],
                         "required": true
+                    },
+                    "apply_to_variations": {
+                        "title": "Also apply to variations",
+                        "description": "Also apply to variations has to be on or off.",
+                        "type": "boolean"
                     },
                     "skip_already": {
                         "title": "Skip rows where the value is already correct",
@@ -1811,6 +1821,11 @@
                         "minimum": 0,
                         "exclusiveMinimum": true,
                         "required": true
+                    },
+                    "apply_to_variations": {
+                        "title": "Also apply to variations",
+                        "description": "Also apply to variations has to be on or off.",
+                        "type": "boolean"
                     },
                     "skip_already": {
                         "title": "Skip rows where the value is already correct",
@@ -1938,6 +1953,11 @@
                         "maximum": 1,
                         "exclusiveMaximum": true
                     },
+                    "apply_to_variations": {
+                        "title": "Also apply to variations",
+                        "description": "Also apply to variations has to be on or off.",
+                        "type": "boolean"
+                    },
                     "skip_already": {
                         "title": "Skip rows where the value is already correct",
                         "description": "Skip rows where the value is already correct has to be on or off.",
@@ -2004,6 +2024,11 @@
                         "description": "Clear the sale price where it is not below the regular price has to be on or off.",
                         "type": "boolean",
                         "default": false
+                    },
+                    "apply_to_variations": {
+                        "title": "Also apply to variations",
+                        "description": "Also apply to variations has to be on or off.",
+                        "type": "boolean"
                     },
                     "skip_already": {
                         "title": "Skip rows where the value is already correct",
@@ -2080,6 +2105,11 @@
                         "type": "boolean",
                         "default": false
                     },
+                    "apply_to_variations": {
+                        "title": "Also apply to variations",
+                        "description": "Also apply to variations has to be on or off.",
+                        "type": "boolean"
+                    },
                     "skip_already": {
                         "title": "Skip rows where the value is already correct",
                         "description": "Skip rows where the value is already correct has to be on or off.",
@@ -2151,6 +2181,11 @@
                         "maxLength": 100,
                         "required": true
                     },
+                    "apply_to_variations": {
+                        "title": "Also apply to variations",
+                        "description": "Also apply to variations has to be on or off.",
+                        "type": "boolean"
+                    },
                     "skip_already": {
                         "title": "Skip rows where the value is already correct",
                         "description": "Skip rows where the value is already correct has to be on or off.",
@@ -2211,6 +2246,11 @@
                         "maxItems": 100,
                         "uniqueItems": true,
                         "required": true
+                    },
+                    "apply_to_variations": {
+                        "title": "Also apply to variations",
+                        "description": "Also apply to variations has to be on or off.",
+                        "type": "boolean"
                     },
                     "skip_already": {
                         "title": "Skip rows where the value is already correct",
@@ -2273,6 +2313,11 @@
                         "uniqueItems": true,
                         "required": true
                     },
+                    "apply_to_variations": {
+                        "title": "Also apply to variations",
+                        "description": "Also apply to variations has to be on or off.",
+                        "type": "boolean"
+                    },
                     "skip_already": {
                         "title": "Skip rows where the value is already correct",
                         "description": "Skip rows where the value is already correct has to be on or off.",
@@ -2333,6 +2378,11 @@
                         "maxItems": 100,
                         "uniqueItems": true,
                         "required": true
+                    },
+                    "apply_to_variations": {
+                        "title": "Also apply to variations",
+                        "description": "Also apply to variations has to be on or off.",
+                        "type": "boolean"
                     },
                     "skip_already": {
                         "title": "Skip rows where the value is already correct",

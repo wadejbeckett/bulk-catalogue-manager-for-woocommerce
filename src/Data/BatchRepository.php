@@ -45,6 +45,21 @@ final class BatchRepository {
 	public const LEASE_SECONDS = 300;
 
 	/**
+	 * claim_chunk(): any pending item.
+	 */
+	public const CLAIM_ANY = 'any';
+
+	/**
+	 * claim_chunk(): any pending item but a variation (products and terms).
+	 */
+	public const CLAIM_PRODUCTS = 'products';
+
+	/**
+	 * claim_chunk(): pending variations only.
+	 */
+	public const CLAIM_VARIATIONS = 'variations';
+
+	/**
 	 * Longest stored item message or batch note (the column width).
 	 */
 	public const MESSAGE_LENGTH = 255;
@@ -393,18 +408,28 @@ final class BatchRepository {
 	 * @param string $token        32 lower-case hex characters, unique to this claim.
 	 * @param string $now_gmt      GMT `Y-m-d H:i:s` stamped on the claim.
 	 * @param string $stale_before GMT `Y-m-d H:i:s`: an earlier claim is stale.
+	 * @param string $kind         CLAIM_ANY (every item), CLAIM_PRODUCTS (every item but variations) or CLAIM_VARIATIONS (T71).
 	 * @return array<int, array{item_id: int, object_id: int, object_type: string, attempts: int}> Claimed items, attempts after the claim.
-	 * @throws \InvalidArgumentException On a malformed token.
+	 * @throws \InvalidArgumentException On a malformed token or an unknown kind.
 	 * @throws \RuntimeException When the claim cannot be written.
 	 */
-	public function claim_chunk( int $batch_id, int $limit, string $token, string $now_gmt, string $stale_before ): array {
+	public function claim_chunk( int $batch_id, int $limit, string $token, string $now_gmt, string $stale_before, string $kind = self::CLAIM_ANY ): array {
 		global $wpdb;
 		if ( 1 !== preg_match( '/^[0-9a-f]{32}$/', $token ) ) {
 			throw new \InvalidArgumentException( 'A claim token is 32 lower-case hex characters.' );
 		}
-		$limit   = max( 1, min( self::MAX_CLAIM, $limit ) );
-		$table   = $this->registry->table( Schema::ITEMS );
-		$claimed = $wpdb->query( $wpdb->prepare( "UPDATE %i SET claim_token = %s, claimed_gmt = %s, attempts = attempts + 1 WHERE batch_id = %d AND state = 'pending' AND attempts < %d AND (claimed_gmt IS NULL OR claimed_gmt < %s) ORDER BY item_id ASC LIMIT %d", $table, $token, $now_gmt, $batch_id, self::MAX_ATTEMPTS, $stale_before, $limit ) );
+		self::assert_in( $kind, [ self::CLAIM_ANY, self::CLAIM_PRODUCTS, self::CLAIM_VARIATIONS ], 'claim kind' );
+		$limit = max( 1, min( self::MAX_CLAIM, $limit ) );
+		$table = $this->registry->table( Schema::ITEMS );
+		$sql   = "UPDATE %i SET claim_token = %s, claimed_gmt = %s, attempts = attempts + 1 WHERE batch_id = %d AND state = 'pending' AND attempts < %d AND (claimed_gmt IS NULL OR claimed_gmt < %s)";
+		$args  = [ $table, $token, $now_gmt, $batch_id, self::MAX_ATTEMPTS, $stale_before ];
+		if ( self::CLAIM_ANY !== $kind ) {
+			$sql   .= self::CLAIM_VARIATIONS === $kind ? ' AND object_type = %s' : ' AND object_type <> %s';
+			$args[] = 'variation';
+		}
+		$args[] = $limit;
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $sql holds only literals and placeholders; every value is an argument.
+		$claimed = $wpdb->query( $wpdb->prepare( $sql . ' ORDER BY item_id ASC LIMIT %d', ...$args ) );
 		if ( false === $claimed ) {
 			throw new \RuntimeException( 'The batch items could not be claimed.' );
 		}

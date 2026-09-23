@@ -25,6 +25,7 @@ final class Schema {
 	public const ADMINISTRATORS_ONLY   = 'administrators_only';
 	public const ROWS_PER_PAGE         = 'rows_per_page';
 	public const BATCH_SIZE            = 'batch_size';
+	public const VARIATION_BATCH_SIZE  = 'variation_batch_size';
 	public const HISTORY_DAYS          = 'history_days';
 	public const CONFIRM_THRESHOLD     = 'confirm_threshold';
 	public const VARIATIONS_STATUS     = 'variations_status';
@@ -64,6 +65,12 @@ final class Schema {
 		self::BATCH_SIZE            => [
 			'type'    => 'integer',
 			'default' => 50,
+			'min'     => 10,
+			'max'     => 100,
+		],
+		self::VARIATION_BATCH_SIZE  => [
+			'type'    => 'integer',
+			'default' => 100,
 			'min'     => 10,
 			'max'     => 100,
 		],
@@ -151,6 +158,7 @@ final class Schema {
 			self::ADMINISTRATORS_ONLY   => __( 'Only administrators can use this screen', 'bulk-catalogue-manager-for-woocommerce' ),
 			self::ROWS_PER_PAGE         => __( 'Rows per page', 'bulk-catalogue-manager-for-woocommerce' ),
 			self::BATCH_SIZE            => __( 'Products per background batch', 'bulk-catalogue-manager-for-woocommerce' ),
+			self::VARIATION_BATCH_SIZE  => __( 'Variations per background batch', 'bulk-catalogue-manager-for-woocommerce' ),
 			self::HISTORY_DAYS          => __( 'Keep history for', 'bulk-catalogue-manager-for-woocommerce' ),
 			self::CONFIRM_THRESHOLD     => __( 'Confirm above this many rows', 'bulk-catalogue-manager-for-woocommerce' ),
 			self::VARIATIONS_STATUS     => __( 'Apply status changes to variations by default', 'bulk-catalogue-manager-for-woocommerce' ),
@@ -173,7 +181,7 @@ final class Schema {
 	private static function rule_text( string $key ): string {
 		return match ( $key ) {
 			self::ROWS_PER_PAGE     => __( 'choose 25, 50 or 100.', 'bulk-catalogue-manager-for-woocommerce' ),
-			self::BATCH_SIZE        => __( 'enter a whole number from 10 to 100.', 'bulk-catalogue-manager-for-woocommerce' ),
+			self::BATCH_SIZE, self::VARIATION_BATCH_SIZE => __( 'enter a whole number from 10 to 100.', 'bulk-catalogue-manager-for-woocommerce' ),
 			self::HISTORY_DAYS      => __( 'enter a number of days from 7 to 730, or 0 to keep history indefinitely.', 'bulk-catalogue-manager-for-woocommerce' ),
 			self::CONFIRM_THRESHOLD => __( 'enter a whole number of rows, 0 or more.', 'bulk-catalogue-manager-for-woocommerce' ),
 			self::CSV_SEPARATOR     => __( 'choose comma or semicolon.', 'bulk-catalogue-manager-for-woocommerce' ),

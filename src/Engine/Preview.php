@@ -9,7 +9,9 @@
  * 2. resolves the selection exactly as a batch would, through
  *    BatchFactory::materialise() (a filter is re-resolved now; an id list
  *    keeps its order and drops ids that are no longer a listable product or
- *    variation, which are listed as unreadable);
+ *    variation, which are listed as unreadable), then adds the variations
+ *    "Also apply to variations" reaches through BatchFactory::expand() (T69),
+ *    each computed with only the steps that reach it, as the batch will;
  * 3. for each object, up to CAP of them, loads it with wc_get_product() —
  *    the writer's own load — and works on a clone, never the loaded object:
  *    per step in list order it runs the operation's compute(), passes the
@@ -23,7 +25,15 @@
  *    listed under `unreadable` and left out;
  * 4. answers totals, a sample of rows, a warning block and a hash.
  *
- * Totals count objects: `matched` is what the selection resolves to now;
+ * Totals count objects: `matched` is what the selection resolves to now,
+ * the variations added included, and `by_type` splits `matched` and
+ * `would_change` into products and variations; `summary` says it in one
+ * plain sentence ("Regular price will change on 1,284 products and 3,915
+ * variations."). The selection's `current_count` is the selection's own
+ * objects, before any variations are added, as the T38 count check compares;
+ * `variations_added` is how many the switch adds, and `parents_left_out` how
+ * many variable products it leaves out because no step is theirs (a price
+ * reaching their variations);
  * `would_change` the objects with at least one change; `already` those
  * where every step finds the target value already there; `would_fail`
  * counts, per plain reason, the objects with a failed or skipped step (an
@@ -156,14 +166,19 @@ final class Preview {
 		if ( $selection->too_large() ) {
 			return self::too_large( $selection->count );
 		}
-		$objects = $this->factory->materialise( $selection );
+		$selected = $this->factory->materialise( $selection );
+		if ( count( $selected ) > Selection::MAX_OBJECTS ) {
+			return self::too_large( count( $selected ) );
+		}
+		$expanded = $this->factory->expand( $selected, $operations );
+		$objects  = $expanded['objects'];
 		if ( count( $objects ) > Selection::MAX_OBJECTS ) {
 			return self::too_large( count( $objects ) );
 		}
 
 		$unreadable = [];
 		if ( ! $selection->is_filter() ) {
-			$found      = array_flip( array_column( $objects, 0 ) );
+			$found      = array_flip( array_column( $selected, 0 ) );
 			$unreadable = array_values( array_filter( $selection->ids, static fn( int $id ): bool => ! isset( $found[ $id ] ) ) );
 		}
 
@@ -171,6 +186,13 @@ final class Preview {
 		$computed = array_slice( $objects, 0, max( 1, $this->cap ) );
 		$tally    = $this->compute( $computed, $operations, max( 1, min( self::SAMPLE_ALL, $sample_size ) ) );
 		$factor   = [] === $computed ? 1.0 : $matched / count( $computed );
+		$by_type  = [];
+		foreach ( [ 'product', 'variation' ] as $type ) {
+			$by_type[ $type ] = [
+				'matched'      => count( array_filter( $objects, static fn( array $entry ): bool => $type === $entry[1] ) ),
+				'would_change' => self::scale( $tally['by_type'][ $type ], $factor ),
+			];
+		}
 
 		$settings ??= Settings::load();
 		return [
@@ -182,19 +204,24 @@ final class Preview {
 				'already'      => self::scale( $tally['already'], $factor ),
 				'would_fail'   => array_map( static fn( int $n ): int => self::scale( $n, $factor ), $tally['would_fail'] ),
 				'rows'         => array_map( static fn( int $n ): int => self::scale( $n, $factor ), $tally['rows'] ),
+				'by_type'      => $by_type,
 			],
+			'summary'    => self::summary( $tally['fields'], $by_type['product']['would_change'], $by_type['variation']['would_change'] ),
 			'sample'     => $tally['sample'],
 			'warnings'   => array_map( static fn( int $n ): int => self::scale( $n, $factor ), $tally['warnings'] ),
 			'unreadable' => array_merge( $unreadable, $tally['unreadable'] ),
-			'selection'  => $selection->is_filter()
+			'selection'  => ( $selection->is_filter()
 				? [
 					'kind'          => 'filter',
 					'count'         => $selection->count,
-					'current_count' => $matched,
+					'current_count' => count( $selected ),
 				]
 				: [
 					'kind'  => 'ids',
 					'count' => $selection->count,
+				] ) + [
+					'variations_added' => $expanded['added'],
+					'parents_left_out' => $expanded['left_out'],
 				],
 			'hash'       => self::hash( '' !== $token ? $token : $selection->ids, $operations, $settings ),
 		];
@@ -225,14 +252,14 @@ final class Preview {
 	 * Compute the objects: totals before extrapolation, the sample, the
 	 * warnings and the objects that could not be loaded.
 	 *
-	 * @param list<array{0: int, 1: string}>                          $objects    The objects to compute, in order.
-	 * @param list<array{action: string, args: array<string, mixed>}> $operations The normalised list.
-	 * @param int                                                     $limit      Sample rows wanted.
-	 * @return array{would_change: int, already: int, would_fail: array<string, int>, rows: array<string, int>, sample: list<array<string, mixed>>, warnings: array<string, int>, unreadable: list<int>}
+	 * @param list<array{0: int, 1: string, 2?: list<array{action: string, args: array<string, mixed>}>}> $objects    The objects to compute, in order, each with its own step list when it has one.
+	 * @param list<array{action: string, args: array<string, mixed>}>                                      $operations The normalised list.
+	 * @param int                                                                                          $limit      Sample rows wanted.
+	 * @return array{would_change: int, already: int, would_fail: array<string, int>, rows: array<string, int>, sample: list<array<string, mixed>>, warnings: array<string, int>, unreadable: list<int>, by_type: array<string, int>, fields: array<string, string>}
 	 */
 	private function compute( array $objects, array $operations, int $limit ): array {
 		$fields    = $this->actions->fields();
-		$steps     = $this->steps( $operations );
+		$all       = $this->steps( $operations );
 		$validator = Validator::for_request( $fields );
 		$name      = $fields->get( 'name' );
 		$tally     = [
@@ -243,10 +270,17 @@ final class Preview {
 			'sample'       => [],
 			'warnings'     => array_fill_keys( self::WARNINGS, 0 ),
 			'unreadable'   => [],
+			'by_type'      => [
+				'product'   => 0,
+				'variation' => 0,
+			],
+			'fields'       => [],
 		];
 
-		foreach ( $objects as [ $id, $type ] ) {
-			$subject = self::load( $id );
+		foreach ( $objects as $entry ) {
+			[ $id, $type ] = $entry;
+			$steps         = isset( $entry[2] ) ? $this->steps( $entry[2] ) : $all;
+			$subject       = self::load( $id );
 			if ( null === $subject ) {
 				$tally['unreadable'][] = $id;
 				continue;
@@ -275,6 +309,10 @@ final class Preview {
 				if ( Result::FAILED === $state || Result::SKIPPED === $state ) {
 					$failed[ $result->reason() ] = true;
 				}
+				if ( Result::CHANGED === $state && ! isset( $tally['fields'][ $result->field() ] ) ) {
+					$field                               = $fields->get( $result->field() );
+					$tally['fields'][ $result->field() ] = null === $field ? $result->field() : $field->label();
+				}
 				if ( count( $tally['sample'] ) < $limit ) {
 					$tally['sample'][] = [
 						'object_id'   => $id,
@@ -292,6 +330,7 @@ final class Preview {
 			}
 			if ( isset( $states[ Result::CHANGED ] ) ) {
 				++$tally['would_change'];
+				++$tally['by_type'][ 'variation' === $type ? 'variation' : 'product' ];
 			} elseif ( [ Result::ALREADY ] === array_keys( $states ) ) {
 				++$tally['already'];
 			}
@@ -300,6 +339,58 @@ final class Preview {
 			}
 		}
 		return $tally;
+	}
+
+	/**
+	 * The preview's plain summary (SPEC §4.4 item 1): what will change, on
+	 * how many products and how many variations, such as "Regular price
+	 * will change on 1,284 products and 3,915 variations." One field is
+	 * named; several are counted.
+	 *
+	 * @param array<string, string> $fields     Labels of the fields that would change, by key.
+	 * @param int                   $products   Products that would change.
+	 * @param int                   $variations Variations that would change.
+	 */
+	public static function summary( array $fields, int $products, int $variations ): string {
+		if ( [] === $fields || 0 === $products + $variations ) {
+			return __( 'Nothing will change: every row already holds the value or cannot be changed.', 'bulk-catalogue-manager-for-woocommerce' );
+		}
+		$product_text = sprintf(
+			/* translators: %s: a number of products, such as "1,284". */
+			_n( '%s product', '%s products', $products, 'bulk-catalogue-manager-for-woocommerce' ),
+			number_format_i18n( $products )
+		);
+		$variation_text = sprintf(
+			/* translators: %s: a number of variations, such as "3,915". */
+			_n( '%s variation', '%s variations', $variations, 'bulk-catalogue-manager-for-woocommerce' ),
+			number_format_i18n( $variations )
+		);
+		if ( 0 === $variations ) {
+			$where = $product_text;
+		} elseif ( 0 === $products ) {
+			$where = $variation_text;
+		} else {
+			$where = sprintf(
+				/* translators: 1: a number of products, such as "1,284 products"; 2: a number of variations, such as "3,915 variations". */
+				__( '%1$s and %2$s', 'bulk-catalogue-manager-for-woocommerce' ),
+				$product_text,
+				$variation_text
+			);
+		}
+		if ( 1 === count( $fields ) ) {
+			return sprintf(
+				/* translators: 1: a field's name, such as "Regular price"; 2: where, such as "1,284 products and 3,915 variations". */
+				__( '%1$s will change on %2$s.', 'bulk-catalogue-manager-for-woocommerce' ),
+				(string) reset( $fields ),
+				$where
+			);
+		}
+		return sprintf(
+			/* translators: 1: how many fields, such as 3; 2: where, such as "1,284 products and 3,915 variations". */
+			_n( '%1$d field will change on %2$s.', '%1$d fields will change on %2$s.', count( $fields ), 'bulk-catalogue-manager-for-woocommerce' ),
+			count( $fields ),
+			$where
+		);
 	}
 
 	/**

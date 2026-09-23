@@ -353,17 +353,19 @@ final class RunnerStore {
 
 	private function claim( string $sql ): int {
 		$this->sync();
-		$ok = preg_match( "/SET claim_token = '([0-9a-f]{32})', claimed_gmt = '([^']+)', attempts = attempts \\+ 1 WHERE batch_id = (\\d+) AND state = 'pending' AND attempts < (\\d+) AND \\(claimed_gmt IS NULL OR claimed_gmt < '([^']+)'\\) ORDER BY item_id ASC LIMIT (\\d+)$/", $sql, $m );
+		$ok = preg_match( "/SET claim_token = '([0-9a-f]{32})', claimed_gmt = '([^']+)', attempts = attempts \\+ 1 WHERE batch_id = (\\d+) AND state = 'pending' AND attempts < (\\d+) AND \\(claimed_gmt IS NULL OR claimed_gmt < '([^']+)'\\)(?: AND object_type (=|<>) '(\\w+)')? ORDER BY item_id ASC LIMIT (\\d+)$/", $sql, $m );
 		if ( 1 !== $ok ) {
 			throw new \LogicException( "Unexpected claim: $sql" );
 		}
 		$claimed = 0;
 		ksort( $this->items );
 		foreach ( $this->items as $id => $item ) {
-			if ( $claimed >= (int) $m[6] ) {
+			if ( $claimed >= (int) $m[8] ) {
 				break;
 			}
-			if ( (int) $m[3] === $item['batch_id'] && 'pending' === $item['state'] && $item['attempts'] < (int) $m[4] && ( null === $item['claimed_gmt'] || $item['claimed_gmt'] < $m[5] ) ) {
+			// T71: a claim of one kind (`= 'variation'`, or `<> 'variation'` for products and terms).
+			$kind = '' === $m[6] || ( '=' === $m[6] ) === ( $m[7] === $item['object_type'] );
+			if ( $kind && (int) $m[3] === $item['batch_id'] && 'pending' === $item['state'] && $item['attempts'] < (int) $m[4] && ( null === $item['claimed_gmt'] || $item['claimed_gmt'] < $m[5] ) ) {
 				$this->items[ $id ]['claim_token'] = $m[1];
 				$this->items[ $id ]['claimed_gmt'] = $m[2];
 				++$this->items[ $id ]['attempts'];

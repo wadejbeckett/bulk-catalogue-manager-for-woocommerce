@@ -265,21 +265,23 @@ final class RegistryTest extends TestCase {
 		}
 		$this->assertSame(
 			[
-				'field'              => 'regular_price',
-				'value'              => '12.50',
-				'clear_invalid_sale' => false,
-				'skip_already'       => true,
+				'field'               => 'regular_price',
+				'value'               => '12.50',
+				'clear_invalid_sale'  => false,
+				'skip_already'        => true,
+				'apply_to_variations' => false,
 			],
 			$valid[0]['args'],
 			'The value is canonical and the defaults are filled in.'
 		);
 		$this->assertSame(
 			[
-				'field'        => 'regular_price',
-				'to'           => 'ending',
-				'direction'    => 'nearest',
-				'ending'       => '0.95',
-				'skip_already' => true,
+				'field'               => 'regular_price',
+				'to'                  => 'ending',
+				'direction'           => 'nearest',
+				'ending'              => '0.95',
+				'skip_already'        => true,
+				'apply_to_variations' => false,
 			],
 			$valid[3]['args'],
 			'Round keeps only the setting its way uses.'
@@ -310,9 +312,10 @@ final class RegistryTest extends TestCase {
 		$this->assertFalse( $off[0]['args']['skip_already'] );
 		$this->assertSame(
 			[
-				'field'        => 'status',
-				'value'        => 'draft',
-				'skip_already' => true,
+				'field'               => 'status',
+				'value'               => 'draft',
+				'skip_already'        => true,
+				'apply_to_variations' => true,
 			],
 			self::registry()->validate_list(
 				[

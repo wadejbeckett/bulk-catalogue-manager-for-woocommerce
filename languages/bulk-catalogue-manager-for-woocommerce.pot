@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-09-23T15:03:10+00:00\n"
+"POT-Creation-Date: 2026-09-23T15:23:44+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -115,6 +115,11 @@ msgstr[1] ""
 msgid "Category changes cannot run in the background yet, so this change was not made."
 msgstr ""
 
+#. translators: 1: number of variations in the chunk, 2: seconds it took, 3: seconds allowed, 4: new number of products per chunk, 5: new number of variations per chunk.
+#, php-format
+msgid "The last group of %1$d variations took %2$d of the %3$d seconds the server allows, so this change now works on %4$d products or %5$d variations at a time."
+msgstr ""
+
 #. translators: 1: number of products in the chunk, 2: seconds it took, 3: seconds allowed, 4: new number of products per chunk.
 #, php-format
 msgid "The last group of %1$d products took %2$d of the %3$d seconds the server allows, so this change now works on %4$d products at a time."
@@ -144,6 +149,40 @@ msgstr ""
 
 msgid "This was already at the value asked for, so it was left alone."
 msgstr ""
+
+msgid "Nothing will change: every row already holds the value or cannot be changed."
+msgstr ""
+
+#. translators: %s: a number of products, such as "1,284".
+#, php-format
+msgid "%s product"
+msgid_plural "%s products"
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of variations, such as "3,915".
+#, php-format
+msgid "%s variation"
+msgid_plural "%s variations"
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: 1: a number of products, such as "1,284 products"; 2: a number of variations, such as "3,915 variations".
+#, php-format
+msgid "%1$s and %2$s"
+msgstr ""
+
+#. translators: 1: a field's name, such as "Regular price"; 2: where, such as "1,284 products and 3,915 variations".
+#, php-format
+msgid "%1$s will change on %2$s."
+msgstr ""
+
+#. translators: 1: how many fields, such as 3; 2: where, such as "1,284 products and 3,915 variations".
+#, php-format
+msgid "%1$d field will change on %2$s."
+msgid_plural "%1$d fields will change on %2$s."
+msgstr[0] ""
+msgstr[1] ""
 
 msgid "WooCommerce did not accept this value. Check it and try again."
 msgstr ""
@@ -558,6 +597,11 @@ msgstr ""
 msgid "%1$s has no setting called \"%2$s\". Choose the action again and try again."
 msgstr ""
 
+#. translators: %s: a field's name, such as "Categories".
+#, php-format
+msgid "%s belongs to the product, not to each variation, so it cannot be applied to variations. Turn off Also apply to variations and try again."
+msgstr ""
+
 #. translators: %s: an action's name, such as "Round prices".
 #, php-format
 msgid "%s was asked to change a field that does not exist. Choose one of the fields it offers and try again."
@@ -589,6 +633,12 @@ msgstr ""
 #. translators: %s: an action's name, such as "Round prices".
 #, php-format
 msgid "Choose the field %s should change, then try again."
+msgstr ""
+
+msgid "Also apply to variations"
+msgstr ""
+
+msgid "Also apply to variations has to be on or off."
 msgstr ""
 
 msgid "Skip rows where the value is already correct"
@@ -855,6 +905,9 @@ msgstr ""
 msgid "%s could not be saved on this product. Try again in a moment."
 msgstr ""
 
+msgid "This variation does not manage its own stock, so its stock quantity was not changed. Turn on Manage stock for the variation first."
+msgstr ""
+
 msgid "Bulk Catalogue Manager for WooCommerce needs WooCommerce 10.0 or later. Install or update WooCommerce to use it."
 msgstr ""
 
@@ -946,7 +999,7 @@ msgstr ""
 msgid "This change could not be sent because its request id is missing or damaged. Reload the page and try again."
 msgstr ""
 
-msgid "The changes to make, in order: each an action and its arguments."
+msgid "The changes to make, in order: each an action and its arguments. A step on a field variations have their own value for may carry apply_to_variations (true or false) to reach the variations of each chosen variable product; left out, it takes the shop's default for that kind of field."
 msgstr ""
 
 msgid "The chosen products or variations, by id, instead of a selection token."
@@ -1140,6 +1193,9 @@ msgid "Rows per page"
 msgstr ""
 
 msgid "Products per background batch"
+msgstr ""
+
+msgid "Variations per background batch"
 msgstr ""
 
 msgid "Keep history for"

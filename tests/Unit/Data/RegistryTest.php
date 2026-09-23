@@ -21,16 +21,19 @@ final class RegistryTest extends TestCase {
 	 * Add a new hook name or code here only if it is never a storage key.
 	 */
 	private const NOT_STORAGE = [
-		'bcm_invalid_'      => 'prefix of the settings error codes passed to add_settings_error()',
-		'bcm_capability'    => 'filter hook for the capability the screen and read routes need',
-		'bcm_forbidden'     => 'REST refusal code for a user without that capability',
-		'bcm_invalid_value' => 'refusal code for a field value that fails its validator',
-		'bcm_read_only'     => 'refusal code for a write to a read-only column',
-		'bcm_not_available' => 'refusal code for a field that does not apply to that object, such as a parent-only field on a variation',
-		'bcm_cannot_edit'   => 'refusal code for one object the user may not edit, skipped and reported',
-		'bcm_'              => 'the prefix Rest\\Refusal requires of every refusal code',
-		'bcm_not_found'     => 'REST refusal code for an id that is not a product',
-		'bcm_catalogue'     => 'object-cache group for hydrated catalogue pages; keys carry the last-changed values and expire, so nothing is left to remove',
+		'bcm_invalid_'            => 'prefix of the settings error codes passed to add_settings_error()',
+		'bcm_capability'          => 'filter hook for the capability the screen and read routes need',
+		'bcm_forbidden'           => 'REST refusal code for a user without that capability',
+		'bcm_invalid_value'       => 'refusal code for a field value that fails its validator',
+		'bcm_read_only'           => 'refusal code for a write to a read-only column',
+		'bcm_not_available'       => 'refusal code for a field that does not apply to that object, such as a parent-only field on a variation',
+		'bcm_cannot_edit'         => 'refusal code for one object the user may not edit, skipped and reported',
+		'bcm_'                    => 'the prefix Rest\\Refusal requires of every refusal code',
+		'bcm_not_found'           => 'REST refusal code for an id that is not a product',
+		'bcm_invalid_selection'   => 'REST refusal code for a selection token that is altered, expired or another user\'s',
+		'bcm_selection_too_large' => 'REST refusal code for a selection of more than 100,000 objects',
+		'bcm_selection_ttl'       => 'filter hook for how long a selection token lasts',
+		'bcm_catalogue'           => 'object-cache group for hydrated catalogue pages; keys carry the last-changed values and expire, so nothing is left to remove',
 	];
 
 	/**

@@ -219,6 +219,39 @@ final class Criteria {
 	}
 
 	/**
+	 * Criteria back from conditions() (T19: a selection token's filter),
+	 * validated again exactly as from_array() validates a request, with the
+	 * default sort and the first page. An "in the past" value comes back from
+	 * its normalised `[ count, unit ]` to the `{ value, unit }` input shape.
+	 *
+	 * @param array<string, mixed> $conditions What conditions() returned.
+	 * @throws \InvalidArgumentException When they are not valid conditions.
+	 */
+	public static function from_conditions( array $conditions ): self {
+		if ( [ 'filters', 'mode', 'parent', 'search' ] !== array_keys( self::sorted( $conditions ) ) || ! is_array( $conditions['filters'] ) ) {
+			throw new \InvalidArgumentException( 'Conditions need a mode, a search, filters and a parent.' );
+		}
+		$filters = [];
+		foreach ( $conditions['filters'] as $filter ) {
+			if ( is_array( $filter ) && 'inThePast' === ( $filter['operator'] ?? null ) && is_array( $filter['value'] ?? null ) && array_is_list( $filter['value'] ) && 2 === count( $filter['value'] ) ) {
+				$filter['value'] = [
+					'value' => $filter['value'][0],
+					'unit'  => $filter['value'][1],
+				];
+			}
+			$filters[] = $filter;
+		}
+		return self::from_array(
+			[
+				'mode'    => $conditions['mode'],
+				'search'  => $conditions['search'],
+				'filters' => $filters,
+				'parent'  => $conditions['parent'],
+			]
+		);
+	}
+
+	/**
 	 * Zero-based offset of the first row of the page.
 	 */
 	public function offset(): int {

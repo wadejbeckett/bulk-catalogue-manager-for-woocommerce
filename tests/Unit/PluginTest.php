@@ -13,6 +13,7 @@ namespace BulkCatalogueManager\Tests\Unit;
 
 use BulkCatalogueManager\Categories\Cache;
 use BulkCatalogueManager\Plugin;
+use BulkCatalogueManager\Query\CountCache;
 use PHPUnit\Framework\TestCase;
 
 final class PluginTest extends TestCase {
@@ -140,12 +141,37 @@ final class PluginTest extends TestCase {
 
 		foreach ( Cache::HOOKS as $hook => $accepted ) {
 			$callback = 4 === $accepted ? [ Cache::class, 'on_object_terms' ] : [ Cache::class, 'on_term' ];
-			$this->assertSame( [ [ $callback, 10, $accepted ] ], $GLOBALS['bcm_test']['filters'][ $hook ] ?? [], "$hook." );
+			$mine     = array_values( array_filter( $GLOBALS['bcm_test']['filters'][ $hook ] ?? [], static fn( array $entry ): bool => is_array( $entry[0] ) && Cache::class === $entry[0][0] ) );
+			$this->assertSame( [ [ $callback, 10, $accepted ] ], $mine, "$hook." );
 		}
 
 		unset( $GLOBALS['bcm_test']['transients'][ Cache::VERSION ] );
 		do_action( 'edited_term', 5, 5, 'product_cat' );
 		$this->assertTrue( is_string( $GLOBALS['bcm_test']['transients'][ Cache::VERSION ] ?? null ), 'A product category edit renews the tree cache version once the hooks are live.' );
+	}
+
+	public function test_init_registers_the_count_cache_invalidation_hooks(): void {
+		( new Plugin() )->boot();
+		$this->assertContains( [ 'init', [ CountCache::class, 'register_hooks' ], 10, 0 ], ( new Plugin() )->hooks() );
+
+		do_action( 'init' );
+
+		foreach ( CountCache::HOOKS as $hook => [ $method, $accepted ] ) {
+			$mine = array_values( array_filter( $GLOBALS['bcm_test']['filters'][ $hook ] ?? [], static fn( array $entry ): bool => is_array( $entry[0] ) && CountCache::class === $entry[0][0] ) );
+			$this->assertSame( [ [ [ CountCache::class, $method ], 10, $accepted ] ], $mine, "$hook." );
+		}
+
+		$renewed = static function ( callable $event ): bool {
+			unset( $GLOBALS['bcm_test']['transients'][ CountCache::VERSION ] );
+			$event();
+			return is_string( $GLOBALS['bcm_test']['transients'][ CountCache::VERSION ] ?? null );
+		};
+		$this->assertTrue( $renewed( static fn() => do_action( 'clean_post_cache', 7, (object) [ 'post_type' => 'product' ] ) ), 'A product save renews the count version.' );
+		$this->assertTrue( $renewed( static fn() => do_action( 'clean_post_cache', 8, (object) [ 'post_type' => 'product_variation' ] ) ), 'A variation save renews the count version.' );
+		$this->assertTrue( $renewed( static fn() => do_action( 'set_object_terms', 7, [], [], 'product_tag' ) ) );
+		$this->assertTrue( $renewed( static fn() => do_action( 'delete_term', 5, 5, 'product_cat' ) ) );
+		$this->assertFalse( $renewed( static fn() => do_action( 'clean_post_cache', 9, (object) [ 'post_type' => 'post' ] ) ), 'A blog post is not the catalogue.' );
+		$this->assertFalse( $renewed( static fn() => do_action( 'edited_term', 5, 5, 'category' ) ) );
 	}
 
 	public function test_plugin_file_loads_without_composer_and_plugin_still_resolves(): void {

@@ -20,6 +20,7 @@ namespace BulkCatalogueManager\Tests\Unit\Query;
 
 use BulkCatalogueManager\Fields\Registry;
 use BulkCatalogueManager\Query\Catalogue;
+use BulkCatalogueManager\Query\CountCache;
 use BulkCatalogueManager\Query\Criteria;
 use BulkCatalogueManager\Query\Hydrator;
 use PHPUnit\Framework\TestCase;
@@ -271,7 +272,10 @@ final class HydratorTest extends TestCase {
 		$this->assertGreaterThan( 0, self::queries_for( [ 'per_page' => 25 ] ), 'A different read is a different entry.' );
 		$this->assertGreaterThan( 0, self::queries_for( $criteria, [ 'name' ] ), 'Different columns are a different entry.' );
 
+		// A product save moves the posts' last-changed value and, through
+		// clean_post_cache, renews the count cache's version.
 		wp_cache_set_last_changed( 'posts' );
+		CountCache::on_post( 101, (object) [ 'post_type' => 'product' ] );
 		// Count, page, terms, variation count and lookup; the unchanged posts and meta stay primed in this request.
 		$this->assertSame( 5, self::queries_for( $criteria ), 'A product change must invalidate the page.' );
 		$this->assertSame( 0, self::queries_for( $criteria ) );

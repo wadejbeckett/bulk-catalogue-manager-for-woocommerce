@@ -59,6 +59,7 @@ final class Registry {
 	 */
 	private const TRANSIENT_PREFIXES = [
 		\BulkCatalogueManager\Categories\Cache::PREFIX,
+		\BulkCatalogueManager\Query\CountCache::PREFIX,
 	];
 
 	/**

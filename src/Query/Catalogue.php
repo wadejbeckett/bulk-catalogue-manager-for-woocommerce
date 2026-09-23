@@ -9,6 +9,8 @@
  * window issues no catalogue query and any product change makes the old
  * entries unreachable. The key also carries a formatted sample price, so a
  * change to the shop's currency or price format is never served stale.
+ * The total comes from CountCache, which keeps each filter's `COUNT(*)` for
+ * 60 seconds across requests (T19).
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -36,11 +38,21 @@ final class Catalogue {
 	public const CACHE_TTL = 3600;
 
 	/**
+	 * The count cache.
+	 *
+	 * @var CountCache
+	 */
+	private CountCache $counts;
+
+	/**
 	 * Build over a hydrator.
 	 *
-	 * @param Hydrator $hydrator Row hydrator.
+	 * @param Hydrator        $hydrator Row hydrator.
+	 * @param CountCache|null $counts   Count cache; the plugin's by default.
 	 */
-	public function __construct( private readonly Hydrator $hydrator ) {}
+	public function __construct( private readonly Hydrator $hydrator, ?CountCache $counts = null ) {
+		$this->counts = $counts ?? new CountCache();
+	}
 
 	/**
 	 * One page: its hydrated rows and the total matching the criteria. The
@@ -59,7 +71,7 @@ final class Catalogue {
 		}
 
 		$query = new ProductQuery( $criteria );
-		$total = $query->total();
+		$total = $this->counts->total( $query );
 		$page  = [
 			'items' => $total > $criteria->offset() ? $this->hydrator->hydrate( $query->rows(), $keys ) : [],
 			'total' => $total,

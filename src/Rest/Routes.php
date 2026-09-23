@@ -56,6 +56,7 @@ final class Routes {
 				new VariationsController( Registry::instance() ),
 				new CategoriesController( Registry::instance() ),
 				new ExportController( Registry::instance() ),
+				new SelectionController( Registry::instance() ),
 			]
 		);
 	}

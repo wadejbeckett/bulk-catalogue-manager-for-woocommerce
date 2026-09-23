@@ -101,8 +101,8 @@ final class UninstallTest extends TestCase {
 		self::run_uninstall();
 
 		// The plugin registry today: the three §9.2 tables (T6), the category
-		// tree cache's transients (T21) and no user meta or term meta yet
-		// (T52, T64 and the count cache add them here).
+		// tree cache's transients (T21), the filtered count cache's transients
+		// (T19) and no user meta or term meta yet (T52 and T64 add them here).
 		$this->assertSame(
 			[
 				'deleted'     => [
@@ -118,6 +118,8 @@ final class UninstallTest extends TestCase {
 					'DROP TABLE IF EXISTS `wp_bcm_changes`',
 					"SELECT option_name FROM wp_options WHERE option_name LIKE '\\\\_transient\\\\_bcm\\\\_category\\\\_tree\\\\_%'",
 					"SELECT option_name FROM wp_options WHERE option_name LIKE '\\\\_site\\\\_transient\\\\_bcm\\\\_category\\\\_tree\\\\_%'",
+					"SELECT option_name FROM wp_options WHERE option_name LIKE '\\\\_transient\\\\_bcm\\\\_count\\\\_%'",
+					"SELECT option_name FROM wp_options WHERE option_name LIKE '\\\\_site\\\\_transient\\\\_bcm\\\\_count\\\\_%'",
 				],
 			],
 			self::calls()

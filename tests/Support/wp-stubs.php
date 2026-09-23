@@ -445,3 +445,20 @@ if ( ! function_exists( 'current_datetime' ) ) {
 		return new DateTimeImmutable( $GLOBALS['bcm_test']['now'] ?? 'now', new DateTimeZone( 'UTC' ) );
 	}
 }
+
+// T19: selection tokens. The current user's id is $GLOBALS['bcm_test']['user_id']
+// when set, else 1 for a logged-in user and 0 for a visitor; the auth salt is
+// $GLOBALS['bcm_test']['salt'] when set, so a test can rotate it.
+if ( ! function_exists( 'wp_salt' ) ) {
+	function wp_salt( string $scheme = 'auth' ): string {
+		return $scheme . ':' . ( $GLOBALS['bcm_test']['salt'] ?? 'test-salt' );
+	}
+
+	function get_current_user_id(): int {
+		return (int) ( $GLOBALS['bcm_test']['user_id'] ?? ( is_user_logged_in() ? 1 : 0 ) );
+	}
+
+	function number_format_i18n( float|int $number, int $decimals = 0 ): string {
+		return number_format( $number, $decimals );
+	}
+}

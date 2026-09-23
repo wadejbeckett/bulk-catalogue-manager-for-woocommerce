@@ -222,6 +222,31 @@ final class RouteSchema {
 	}
 
 	/**
+	 * The arguments of `POST /selection` (T19): the grid's conditions —
+	 * search, mode and one argument per filterable field, as `/products`
+	 * takes them — or an explicit `ids` list of positive object ids. Sort,
+	 * paging and columns do not change which rows match, so they are not taken.
+	 *
+	 * @return array<string, array<string, mixed>>
+	 */
+	public function selection_args(): array {
+		return array_intersect_key( $this->query_args(), array_flip( [ 'search', 'mode' ] ) ) + $this->filter_args() + [
+			'ids' => self::arg(
+				[
+					'description' => __( 'The chosen products or variations, by id, instead of a filter.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'type'        => 'array',
+					'items'       => [
+						'type'    => 'integer',
+						'minimum' => 1,
+					],
+					'minItems'    => 1,
+				],
+				static fn( mixed $value ): array => array_map( 'intval', self::as_list( $value ) )
+			),
+		];
+	}
+
+	/**
 	 * One argument per filterable field, named after the field, taking one
 	 * of the field's operators and a value shaped by the field's type.
 	 *

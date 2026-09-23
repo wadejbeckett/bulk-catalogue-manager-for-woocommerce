@@ -64,6 +64,7 @@ export function fieldsFromRegistry( registry ) {
 			label: descriptor.label || descriptor.dataviews.label,
 			enableSorting: descriptor.sortable === true,
 			filterBy: false,
+			descriptor, // The registry's word on variations (variations/).
 			render: ( { item } ) =>
 				renderCell( { item, descriptor, companion, role } ),
 		};

@@ -9,6 +9,7 @@ import { __ } from '@wordpress/i18n';
 import { CellContext } from './cells';
 import { PER_PAGE_SIZES } from './defaults';
 import { LoadingRows } from './states';
+import { useVariationRows } from './variations';
 
 const LAYOUTS = { table: {} };
 const CONFIG = { perPageSizes: PER_PAGE_SIZES };
@@ -55,6 +56,16 @@ export default function CatalogueTable( {
 	selection,
 	onChangeSelection,
 } ) {
+	const tree = useVariationRows( {
+		items,
+		fields,
+		view,
+		onChangeView,
+		actions,
+		pagination,
+		selection,
+		onChangeSelection,
+	} ); // T67–T68.
 	const context = useMemo(
 		() => ( { termNames, pending } ),
 		[ termNames, pending ]
@@ -80,6 +91,7 @@ export default function CatalogueTable( {
 						: '' )
 				}
 			>
+				{ tree.before }
 				<DataViews
 					data={ items }
 					fields={ fields }
@@ -99,7 +111,9 @@ export default function CatalogueTable( {
 						'bulk-catalogue-manager-for-woocommerce'
 					) }
 					empty={ isLoading && ! items.length ? skeleton : empty }
+					{ ...tree.props }
 				/>
+				{ tree.after }
 			</div>
 		</CellContext.Provider>
 	);

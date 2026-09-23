@@ -5,6 +5,7 @@
  * Every value renders as text.
  */
 import { Button } from '@wordpress/components';
+import { createContext } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 
 import { choiceLabel, textOf } from '../cells';
@@ -12,6 +13,14 @@ import { ROW } from '../defaults';
 import { STATES, cellState } from './cell-state';
 import { KINDS, metaOf } from './model';
 import { countOf } from './registry';
+
+/**
+ * True inside a cell cellState() does not let the owner edit (a locked cell,
+ * a variation's name): the editing layer (edit/index.js) reads it and draws
+ * the plain value, so a parent's value shown greyed on a variation row is
+ * never an editor for the parent.
+ */
+export const LockedContext = createContext( false );
 
 const isBlank = ( value ) =>
 	value === undefined || value === null || value === '';
@@ -64,7 +73,9 @@ function Locked( { kind, reason, children } ) {
 				}
 			} }
 		>
-			{ children }
+			<LockedContext.Provider value={ true }>
+				{ children }
+			</LockedContext.Provider>
 			{ reason && (
 				<span className="screen-reader-text">{ ` ${ reason }` }</span>
 			) }
@@ -175,7 +186,9 @@ function VariationTitle( { row, meta, name } ) {
 					) ) }
 				</span>
 			) : (
-				name
+				<LockedContext.Provider value={ true }>
+					{ name }
+				</LockedContext.Provider>
 			) }
 			{ meta.level === 0 && ! isBlank( parentName ) && (
 				<span className="bcm-vrow__parent">{ parentName }</span>

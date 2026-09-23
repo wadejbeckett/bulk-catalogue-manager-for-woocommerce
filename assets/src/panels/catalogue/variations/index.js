@@ -9,5 +9,6 @@ import './style.scss';
 
 export { useVariationRows, modeOf, splitSelection } from './use-variation-rows';
 export { cellState, STATES } from './cell-state';
+export { LockedContext } from './cells';
 export { buildRows, reducer, INITIAL, KINDS, META, metaOf } from './model';
 export { MODES, CAP, variationRoles, withVariations } from './registry';

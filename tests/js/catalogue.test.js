@@ -82,6 +82,7 @@ describe( 'catalogue table', () => {
 			'Name',
 			'SKU',
 			'Status',
+			'Visible on site',
 			'Regular price',
 			'Sale price',
 			'Stock status',
@@ -162,5 +163,8 @@ describe( 'catalogue table', () => {
 			screen.getByRole( 'menuitem', { name: 'Edit details' } )
 		);
 		expect( onEditDetails ).toHaveBeenCalledWith( ROWS[ 0 ] );
+		// The detail panel opens and settles its reads (T47).
+		expect( await screen.findByRole( 'dialog' ) ).toBeTruthy();
+		await screen.findByRole( 'button', { name: 'Save' } );
 	} );
 } );

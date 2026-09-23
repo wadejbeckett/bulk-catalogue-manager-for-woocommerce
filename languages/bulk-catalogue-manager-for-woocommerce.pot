@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-09-23T18:03:22+00:00\n"
+"POT-Creation-Date: 2026-09-23T18:08:02+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -386,68 +386,68 @@ msgid "A product with the SKU %s already exists, so this SKU was not applied."
 msgstr ""
 
 #. translators: %s: a field's name, such as "Total sales".
-#, php-format
+#, php-format,js-format
 msgid "%s cannot be changed here. It is shown for information only."
 msgstr ""
 
 #. translators: 1: a field's name, such as "SKU", 2: the most characters it takes.
-#, php-format
+#, php-format,js-format
 msgid "%1$s has to be text of up to %2$d character, or left empty."
 msgid_plural "%1$s has to be text of up to %2$d characters, or left empty."
 msgstr[0] ""
 msgstr[1] ""
 
 #. translators: 1: a field's name, such as "Name", 2: the most characters it takes.
-#, php-format
+#, php-format,js-format
 msgid "%1$s cannot be empty and has to be up to %2$d character."
 msgid_plural "%1$s cannot be empty and has to be up to %2$d characters."
 msgstr[0] ""
 msgstr[1] ""
 
 #. translators: 1: a field's name, such as "Stock status", 2: the choices, separated by commas.
-#, php-format
+#, php-format,js-format
 msgid "%1$s has to be one of: %2$s."
 msgstr ""
 
 #. translators: %s: a field's name, such as "Featured".
-#, php-format
+#, php-format,js-format
 msgid "%s has to be on or off."
 msgstr ""
 
 #. translators: %s: a field's name, such as "Regular price".
-#, php-format
+#, php-format,js-format
 msgid "%s has to be a price of 0 or more, like 12.50, or left empty."
 msgstr ""
 
 #. translators: %s: a field's name, such as "Weight".
-#, php-format
+#, php-format,js-format
 msgid "%s has to be a number of 0 or more, like 1.5, or left empty."
 msgstr ""
 
 #. translators: %s: a field's name, such as "Stock quantity".
-#, php-format
+#, php-format,js-format
 msgid "%s has to be a whole number. Enter a number like 12."
 msgstr ""
 
 #. translators: 1: a field's name, such as "Categories", 2: the most items allowed.
-#, php-format
+#, php-format,js-format
 msgid "%1$s has to be a list of up to %2$d that already exists. Choose it from the list."
 msgid_plural "%1$s has to be a list of up to %2$d that already exist. Choose them from the list."
 msgstr[0] ""
 msgstr[1] ""
 
 #. translators: %s: a field's name, such as "Shipping class".
-#, php-format
+#, php-format,js-format
 msgid "%s has to be one that already exists. Choose it from the list."
 msgstr ""
 
 #. translators: 1: a field's name, such as "Status", 2: the choices, separated by commas.
-#, php-format
+#, php-format,js-format
 msgid "On a variation, %1$s can only be: %2$s."
 msgstr ""
 
 #. translators: 1: a field's name, such as "Tax class", 2: the choices, separated by commas.
-#, php-format
+#, php-format,js-format
 msgid "On a product, %1$s can only be: %2$s."
 msgstr ""
 
@@ -2720,6 +2720,105 @@ msgid "Save settings"
 msgstr ""
 
 msgid "Bulk Catalogue Manager sections"
+msgstr ""
+
+#. translators: 1: a field's name, such as "SKU", 2: a product name.
+#. translators: 1: the switch's name, "Visible on site", 2: a product name.
+#, js-format
+msgid "%1$s, %2$s"
+msgstr ""
+
+#. translators: 1: a field's name, 2: a product name.
+#, js-format
+msgid "%1$s saved for %2$s."
+msgstr ""
+
+#. translators: 1: a field's name, 2: a product name, 3: what happened or what to do, as a sentence.
+#, js-format
+msgid "We could not save %1$s for %2$s. %3$s"
+msgstr ""
+
+msgid "Try again in a moment."
+msgstr ""
+
+#. translators: %s: a field's name and a product name, such as "SKU, Blue Widget".
+#, js-format
+msgid "Edit %s"
+msgstr ""
+
+msgid "Saved"
+msgstr ""
+
+#. translators: %s: the fields saved, separated by commas.
+#, js-format
+msgid "Saved: %s."
+msgstr ""
+
+#. translators: 1: a product name, 2: what happened or what to do, as a sentence.
+#, js-format
+msgid "We could not save the changes to %1$s. %2$s"
+msgstr ""
+
+msgid "No changes recorded yet."
+msgstr ""
+
+#. translators: 1: a field's name, such as "Regular price", 2: a date.
+#, js-format
+msgid "%1$s was changed on %2$s."
+msgstr ""
+
+msgid "Details"
+msgstr ""
+
+msgid "Close details"
+msgstr ""
+
+msgid "You have changes that are not saved. Close without saving them?"
+msgstr ""
+
+msgid "Keep editing"
+msgstr ""
+
+msgid "Discard changes"
+msgstr ""
+
+msgid "Loading the product…"
+msgstr ""
+
+msgid "Save"
+msgstr ""
+
+msgid "Show the variations in the list"
+msgstr ""
+
+msgid "Recent changes"
+msgstr ""
+
+msgid "See history"
+msgstr ""
+
+#. translators: 1: a product name, 2: what happened or what to do, as a sentence.
+#, js-format
+msgid "We could not change whether %1$s is visible on site, so it is as it was. %2$s"
+msgstr ""
+
+#. translators: %s: the exact catalogue visibility, such as "Shop only".
+#, js-format
+msgid "Partly visible: %s. Choose on or off to change it."
+msgstr ""
+
+msgid "in the shop or in search results, not both"
+msgstr ""
+
+msgid "When published"
+msgstr ""
+
+msgid "On site"
+msgstr ""
+
+#. translators: %s: a status such as "Draft".
+#, js-format
+msgid "%s: not on the site until it is published."
 msgstr ""
 
 #. translators: %s: a number of products, such as "1,284".

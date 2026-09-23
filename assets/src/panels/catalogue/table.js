@@ -3,11 +3,12 @@
  * row menu, and the table's own empty content per state.
  */
 import { DataViews } from '@wordpress/dataviews';
-import { useMemo } from '@wordpress/element';
+import { useCallback, useMemo, useRef } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 
 import { CellContext } from './cells';
 import { PER_PAGE_SIZES } from './defaults';
+import { useEditScope } from './edit';
 import { LoadingRows } from './states';
 import { useVariationRows } from './variations';
 
@@ -56,19 +57,36 @@ export default function CatalogueTable( {
 	selection,
 	onChangeSelection,
 } ) {
-	const tree = useVariationRows( {
+	// T46's editing scope first (its rows as last written and its row
+	// actions), then T67's row tree over them: the tree wraps each cell's
+	// renderer, so cellState() decides before the editor does (a locked cell
+	// never reaches renderEditable()'s editor; see variations/README.md).
+	const expand = useRef( null );
+	const onExpandVariations = useCallback(
+		( item ) => expand.current?.( item ),
+		[]
+	);
+	const edit = useEditScope( {
 		items,
+		fields,
+		actions,
+		pending,
+		onExpandVariations,
+	} );
+	const tree = useVariationRows( {
+		items: edit.items,
 		fields,
 		view,
 		onChangeView,
-		actions,
+		actions: edit.actions,
 		pagination,
 		selection,
 		onChangeSelection,
 	} ); // T67–T68.
+	expand.current = tree.expand;
 	const context = useMemo(
-		() => ( { termNames, pending } ),
-		[ termNames, pending ]
+		() => ( { termNames, pending: edit.pending } ),
+		[ termNames, edit.pending ]
 	);
 	const skeleton = (
 		<LoadingRows
@@ -81,7 +99,7 @@ export default function CatalogueTable( {
 	if ( ! hasLoaded ) {
 		return skeleton;
 	}
-	return (
+	return edit.wrap(
 		<CellContext.Provider value={ context }>
 			<div
 				className={
@@ -93,14 +111,14 @@ export default function CatalogueTable( {
 			>
 				{ tree.before }
 				<DataViews
-					data={ items }
+					data={ edit.items }
 					fields={ fields }
 					view={ view }
 					onChangeView={ onChangeView }
 					paginationInfo={ pagination }
 					defaultLayouts={ LAYOUTS }
 					isLoading={ isLoading }
-					actions={ actions }
+					actions={ edit.actions }
 					getItemId={ itemId }
 					{ ...( onChangeSelection
 						? { selection, onChangeSelection }

@@ -18,6 +18,7 @@
 export const DEFAULT_COLUMNS = [
 	'sku',
 	'status',
+	'visible_on_site',
 	'regular_price',
 	'sale_price',
 	'stock_status',
@@ -94,4 +95,45 @@ export const QUICK_VISIBILITY = {
 	field: 'visible_on_site',
 	show: 'on',
 	hide: 'off',
+};
+
+/**
+ * The "Visible on site" switch (SPEC §5.3, T45): the switch field, the
+ * four-way catalogue visibility field it simplifies, the status field whose
+ * off-site values earn the grey badge beside it, the status value that puts a
+ * product on the site, and the catalogue visibility each real position
+ * writes. A middle state (shop only, search only) is never written by the
+ * switch; the owner chooses one of these two.
+ */
+export const VISIBILITY = {
+	field: 'visible_on_site',
+	terms: 'catalog_visibility',
+	status: 'status',
+	onSite: 'publish',
+	writes: { on: 'visible', off: 'hidden' },
+};
+
+/**
+ * Fields a row also carries so its cells know what they can edit (T46): the
+ * switch needs the exact visibility and the status, a price needs the product
+ * type (a variable product's price is derived) and the stock quantity needs
+ * whether stock is managed. field key => keys fetched with it.
+ */
+export const CONTEXT = {
+	visible_on_site: [ 'catalog_visibility', 'status' ],
+	regular_price: [ 'type' ],
+	sale_price: [ 'type' ],
+	stock_quantity: [ 'manage_stock' ],
+};
+
+/** The product type whose own price is derived from its variations. */
+export const VARIABLE_TYPE = { field: 'type', value: 'variable' };
+
+/**
+ * A field that only applies where a switch field is on (Stock quantity where
+ * stock is managed): field key => switch field key. The registry's note for
+ * the field says why when it is off.
+ */
+export const REQUIRES = {
+	stock_quantity: 'manage_stock',
 };

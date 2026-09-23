@@ -31,7 +31,7 @@ import {
 	sourceOf,
 	toFetch,
 } from './model';
-import { CAP, MODES, variationRoles } from './registry';
+import { CAP, MODES, countOf, variationRoles } from './registry';
 import { CountLine, FocusNotice, ModeBar } from './toolbar';
 
 /**
@@ -409,8 +409,31 @@ export function useVariationRows( {
 		}
 	};
 
+	/**
+	 * Show a product's options in the grid (the detail panel's link, T47):
+	 * open it in place when it is a row on this page in a product mode,
+	 * otherwise list its options in Variations mode as Show all does.
+	 *
+	 * @param {Object} product Product row.
+	 */
+	const expand = ( product ) => {
+		const id = Number( product?.id );
+		if ( ! id ) {
+			return;
+		}
+		const onPage = parents.some( ( row ) => Number( row.id ) === id );
+		if ( mode !== MODES.variations && onPage ) {
+			if ( ! state.open.includes( id ) ) {
+				ctx.toggle( product );
+			}
+			return;
+		}
+		ctx.showAll( product, countOf( product, roles ) || 0 );
+	};
+
 	const paginationInfo = focused ? focused.pagination : pagination;
 	return {
+		expand,
 		props: {
 			data: rows,
 			fields: wrapped,

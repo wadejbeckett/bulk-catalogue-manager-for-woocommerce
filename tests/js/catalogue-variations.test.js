@@ -573,6 +573,16 @@ describe( 'inheritance display (T68)', () => {
 			cellOf( child, 'SKU' ).querySelector( '.bcm-locked' )
 		).toBeNull();
 		expect( cellOf( child, 'SKU' ).textContent ).toBe( 'POLO-1' );
+		// T46 composes under T67: no locked cell anywhere holds an editor
+		// or the switch, and the variation's own SKU does edit.
+		document.querySelectorAll( '.bcm-locked' ).forEach( ( cell ) => {
+			expect(
+				cell.querySelector( 'button, input, [role="switch"]' )
+			).toBeNull();
+		} );
+		expect(
+			cellOf( child, 'SKU' ).querySelector( 'button[aria-label^="Edit"]' )
+		).not.toBeNull();
 	} );
 } );
 

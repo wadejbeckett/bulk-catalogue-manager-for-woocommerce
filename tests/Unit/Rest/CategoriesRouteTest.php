@@ -30,14 +30,14 @@ final class CategoriesRouteTest extends TestCase {
 	/**
 	 * Matches the grouped statement.
 	 */
-	private const GROUPED = '/^SELECT g\.terms, COUNT\(\*\) AS products FROM /';
+	private const GROUPED = '/^SELECT a\.ancestor AS term_id, /';
 
 	protected function setUp(): void {
 		bcm_test_reset();
 		$GLOBALS['bcm_test']['logged_in']                  = true;
 		$GLOBALS['bcm_test']['caps']['manage_woocommerce'] = true;
 		CatalogueFixture::seed();
-		$GLOBALS['wpdb']->responses[ self::GROUPED ] = static fn( string $sql ): array => CatalogueFixture::rows( str_contains( $sql, "p.post_status IN ('draft')" ) ? [ 'draft' ] : null );
+		$GLOBALS['wpdb']->responses[ self::GROUPED ] = CatalogueFixture::answer();
 		( new Plugin() )->boot();
 		do_action( 'rest_api_init' );
 	}

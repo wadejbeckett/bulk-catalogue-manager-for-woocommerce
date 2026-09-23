@@ -81,7 +81,7 @@ final class CategoryTree {
 			return $cached;
 		}
 		$tree   = self::tree();
-		$result = $tree->is_empty() ? [] : $tree->to_array( ( new Counts( $criteria ) )->groups() );
+		$result = $tree->is_empty() ? [] : $tree->to_array_counted( ( new Counts( $criteria ) )->totals( $tree ) );
 		$this->cache->set( $key, $result );
 		return $result;
 	}

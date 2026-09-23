@@ -18,6 +18,7 @@ namespace BulkCatalogueManager\Tests\Unit\Categories;
 use BulkCatalogueManager\Categories\Cache;
 use BulkCatalogueManager\Categories\CategoryTree;
 use BulkCatalogueManager\Categories\Counts;
+use BulkCatalogueManager\Categories\Tree;
 use BulkCatalogueManager\Data\Registry;
 use BulkCatalogueManager\Query\Criteria;
 use BulkCatalogueManager\Query\ProductQuery;
@@ -29,12 +30,12 @@ final class CategoryTreeTest extends TestCase {
 	/**
 	 * Matches the grouped statement.
 	 */
-	private const GROUPED = '/^SELECT g\.terms, COUNT\(\*\) AS products FROM /';
+	private const GROUPED = '/^SELECT a\.ancestor AS term_id, /';
 
 	protected function setUp(): void {
 		bcm_test_reset();
 		CatalogueFixture::seed();
-		$GLOBALS['wpdb']->responses[ self::GROUPED ] = CatalogueFixture::rows();
+		$GLOBALS['wpdb']->responses[ self::GROUPED ] = CatalogueFixture::answer();
 	}
 
 	/**
@@ -72,15 +73,17 @@ final class CategoryTreeTest extends TestCase {
 		);
 		$count     = ( new ProductQuery( $criteria ) )->count_statement();
 		$body      = substr( $count, strlen( 'SELECT COUNT(*) ' ), -strlen( ' LIMIT 1' ) );
-		$statement = ( new Counts( $criteria ) )->statement();
+		$tree      = Tree::from_terms( CatalogueFixture::terms( array_slice( CatalogueFixture::TERMS, 0, 3, true ) ) );
+		$statement = ( new Counts( $criteria ) )->statement( $tree );
 
 		$this->assertStringStartsWith( 'FROM `wp_posts` AS p LEFT JOIN `wp_wc_product_meta_lookup` AS l ON l.product_id = p.ID WHERE ', $body );
 		$this->assertSame(
-			"SELECT g.terms, COUNT(*) AS products FROM (SELECT cr.object_id, GROUP_CONCAT(DISTINCT ct.term_id ORDER BY ct.term_id SEPARATOR ',') AS terms FROM `wp_term_relationships` AS cr INNER JOIN `wp_term_taxonomy` AS ct ON ct.term_taxonomy_id = cr.term_taxonomy_id WHERE ct.taxonomy = 'product_cat' AND cr.object_id IN (SELECT (CASE WHEN p.post_type = 'product_variation' THEN p.post_parent ELSE p.ID END) "
+			'SELECT a.ancestor AS term_id, COUNT(DISTINCT CASE WHEN a.term_id = a.ancestor THEN cr.object_id END) AS own, COUNT(DISTINCT cr.object_id) AS total FROM `wp_term_relationships` AS cr INNER JOIN `wp_term_taxonomy` AS ct ON ct.term_taxonomy_id = cr.term_taxonomy_id INNER JOIN (SELECT 1 AS term_id, 1 AS ancestor UNION ALL SELECT 2, 2 UNION ALL SELECT 2, 1 UNION ALL SELECT 3, 3 UNION ALL SELECT 3, 2 UNION ALL SELECT 3, 1) AS a ON a.term_id = ct.term_id WHERE ct.taxonomy = \'product_cat\' AND cr.object_id IN (SELECT (CASE WHEN p.post_type = \'product_variation\' THEN p.post_parent ELSE p.ID END) '
 			. $body
-			. ') GROUP BY cr.object_id) AS g GROUP BY g.terms LIMIT ' . Counts::MAX_GROUPS,
+			. ') GROUP BY a.ancestor LIMIT 3',
 			$statement
 		);
+		$this->assertStringNotContainsString( 'GROUP_CONCAT', $statement );
 		$this->assertStringContainsString( "p.post_status IN ('draft')", $statement );
 		$this->assertStringContainsString( "p.post_type IN ('product', 'product_variation')", $statement );
 		$this->assertStringContainsString( "p.post_title LIKE '%" . addslashes( $GLOBALS['wpdb']->esc_like( "50% off_'s" ) ) . "%'", $statement, 'The search reaches SQL escaped, through ProductQuery.' );
@@ -90,14 +93,17 @@ final class CategoryTreeTest extends TestCase {
 	public function test_the_grouped_statement_is_prepared_once_over_the_conditions_accessor(): void {
 		$criteria   = CategoryTree::criteria( [ 'search' => 'hat' ] );
 		$conditions = ( new ProductQuery( $criteria ) )->conditions_sql();
+		$tree       = Tree::from_terms( CatalogueFixture::terms() );
 		bcm_test_reset();
-		( new Counts( $criteria ) )->statement();
+		( new Counts( $criteria ) )->statement( $tree );
 
 		$this->assertCount( 1, $GLOBALS['wpdb']->prepared );
 		[ $template, $values ] = $GLOBALS['wpdb']->prepared[0];
 		$this->assertStringContainsString( ' END) ' . $conditions['sql'] . ') GROUP BY ', $template );
-		$this->assertSame( $conditions['args'], array_slice( $values, 5, count( $conditions['args'] ) ) );
-		$this->assertSame( Counts::MAX_GROUPS, $values[ array_key_last( $values ) ] );
+		$pairs = count( $tree->pairs() ) * 2;
+		$this->assertSame( array_merge( ...$tree->pairs() ), array_slice( $values, 2, $pairs ), 'The tree\'s pairs are arguments.' );
+		$this->assertSame( $conditions['args'], array_slice( $values, 2 + $pairs + 2, count( $conditions['args'] ) ) );
+		$this->assertSame( $tree->size(), $values[ array_key_last( $values ) ], 'At most one row per category.' );
 	}
 
 	public function test_the_counts_leave_out_the_category_filter_sort_and_paging(): void {
@@ -136,7 +142,7 @@ final class CategoryTreeTest extends TestCase {
 			],
 			$criteria->conditions()
 		);
-		$this->assertStringNotContainsString( 'term_id IN', ( new Counts( $criteria ) )->statement() );
+		$this->assertStringNotContainsString( 'term_id IN', ( new Counts( $criteria ) )->statement( Tree::from_terms( CatalogueFixture::terms() ) ) );
 	}
 
 	public function test_criteria_refuse_what_the_query_builder_refuses(): void {
@@ -163,13 +169,9 @@ final class CategoryTreeTest extends TestCase {
 		foreach ( range( 1, 200 ) as $id ) {
 			$terms[ $id ] = [ "Category $id", "category-$id", $id > 4 ? intdiv( $id, 4 ) : 0 ];
 		}
-		$GLOBALS['bcm_test']['term_list']            = CatalogueFixture::terms( $terms );
-		$GLOBALS['wpdb']->responses[ self::GROUPED ] = [
-			[
-				'terms'    => '48,49',
-				'products' => '7',
-			],
-		];
+		$GLOBALS['bcm_test']['term_list'] = CatalogueFixture::terms( $terms );
+		// Seven products, each in both 48 and 49.
+		$GLOBALS['wpdb']->responses[ self::GROUPED ] = CatalogueFixture::answer( array_fill( 1, 7, [ [ 48, 49 ], 'publish' ] ) );
 		$service                                     = new CategoryTree();
 		$criteria                                    = CategoryTree::criteria( [] );
 
@@ -200,7 +202,7 @@ final class CategoryTreeTest extends TestCase {
 	}
 
 	public function test_counts_follow_a_status_filter_and_are_cached_apart(): void {
-		$GLOBALS['wpdb']->responses[ self::GROUPED ] = static fn( string $sql ): array => CatalogueFixture::rows( str_contains( $sql, "p.post_status IN ('draft')" ) ? [ 'draft' ] : null );
+		$GLOBALS['wpdb']->responses[ self::GROUPED ] = CatalogueFixture::answer();
 		$service                                     = new CategoryTree();
 
 		$all   = CatalogueFixture::flatten( $service->get( CategoryTree::criteria( [] ) ) );
@@ -213,6 +215,29 @@ final class CategoryTreeTest extends TestCase {
 			$this->assertSame( [ $own, $total ], [ $draft[ $id ]['count'], $draft[ $id ]['countWithDescendants'] ], "Draft counts of $id." );
 		}
 		$this->assertCount( 2, $GLOBALS['wpdb']->queries, 'Each set of conditions has its own entry.' );
+	}
+
+	public function test_a_product_in_hundreds_of_categories_counts_on_every_one(): void {
+		// 300 categories under one parent: their ids joined with commas pass
+		// MySQL's default group_concat_max_len of 1024 bytes.
+		$terms = [ 1 => [ 'All', 'all', 0 ] ];
+		foreach ( range( 1000, 1299 ) as $id ) {
+			$terms[ $id ] = [ "Category $id", "category-$id", 1 ];
+		}
+		$GLOBALS['bcm_test']['term_list']            = CatalogueFixture::terms( $terms );
+		$GLOBALS['wpdb']->responses[ self::GROUPED ] = CatalogueFixture::answer(
+			[
+				501 => [ range( 1000, 1299 ), 'publish' ],
+				502 => [ [ 1299 ], 'publish' ],
+			]
+		);
+
+		$flat = CatalogueFixture::flatten( ( new CategoryTree() )->get( CategoryTree::criteria( [] ) ) );
+
+		$this->assertStringNotContainsString( 'GROUP_CONCAT', $GLOBALS['wpdb']->queries[0], 'Nothing is concatenated, so nothing can be cut short.' );
+		$this->assertSame( [ 1, 1 ], [ $flat[1000]['count'], $flat[1000]['countWithDescendants'] ] );
+		$this->assertSame( [ 2, 2 ], [ $flat[1299]['count'], $flat[1299]['countWithDescendants'] ], 'The last category, past 1024 bytes of ids.' );
+		$this->assertSame( [ 0, 2 ], [ $flat[1]['count'], $flat[1]['countWithDescendants'] ], 'Each product once on the parent.' );
 	}
 
 	public function test_no_categories_skips_the_count_query(): void {

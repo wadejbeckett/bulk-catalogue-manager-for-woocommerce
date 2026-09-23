@@ -1,8 +1,9 @@
 <?php
 /**
  * A seeded four-level category tree with products, for the T21 tests: the
- * terms get_terms() returns, their stored order, the grouped rows the count
- * statement would return for a status, and the naive per-node counts the
+ * terms get_terms() returns, their stored order, the grouped rows of the
+ * earlier count statement for a status (Tree::counts()' groups), what the
+ * counts statement answers (answer()), and the naive per-node counts the
  * tree's counts must equal.
  *
  * Clothing (1) > Men (2) > Shirts (3) > Formal (4); Clothing > Women (5);
@@ -132,6 +133,53 @@ final class CatalogueFixture {
 			];
 		}
 		return $rows;
+	}
+
+	/**
+	 * What MySQL answers to Counts' statement: the statement's own (category,
+	 * ancestor) pairs are read back from it, and each product counts once as
+	 * `own` on every category it carries and once in `total` on every
+	 * ancestor one of its categories pairs with. A statement filtered to
+	 * drafts counts only draft products.
+	 *
+	 * @param array<int, array{0: list<int>, 1: string}> $products Products: id => [ category ids, status ]; PRODUCTS by default.
+	 * @return \Closure( string ): list<array{term_id: string, own: string, total: string}>
+	 */
+	public static function answer( array $products = self::PRODUCTS ): \Closure {
+		return static function ( string $sql ) use ( $products ): array {
+			if ( 1 !== preg_match( '/INNER JOIN \(SELECT (\d+) AS term_id, (\d+) AS ancestor((?: UNION ALL SELECT \d+, \d+)*)\) AS a /', $sql, $m ) ) {
+				throw new \LogicException( "Not the counts statement: $sql" );
+			}
+			preg_match_all( '/ UNION ALL SELECT (\d+), (\d+)/', $m[3], $more, PREG_SET_ORDER );
+			$pairs    = array_merge( [ [ (int) $m[1], (int) $m[2] ] ], array_map( static fn( array $x ): array => [ (int) $x[1], (int) $x[2] ], $more ) );
+			$statuses = str_contains( $sql, "p.post_status IN ('draft')" ) ? [ 'draft' ] : null;
+			$own      = [];
+			$total    = [];
+			foreach ( $products as [ $ids, $status ] ) {
+				if ( null !== $statuses && ! in_array( $status, $statuses, true ) ) {
+					continue;
+				}
+				$reach = [];
+				foreach ( $pairs as [ $term, $ancestor ] ) {
+					if ( in_array( $term, $ids, true ) ) {
+						$reach[ $ancestor ] = true;
+						$own[ $ancestor ]   = ( $own[ $ancestor ] ?? 0 ) + ( $term === $ancestor ? 1 : 0 );
+					}
+				}
+				foreach ( array_keys( $reach ) as $ancestor ) {
+					$total[ $ancestor ] = ( $total[ $ancestor ] ?? 0 ) + 1;
+				}
+			}
+			$rows = [];
+			foreach ( $total as $id => $count ) {
+				$rows[] = [
+					'term_id' => (string) $id,
+					'own'     => (string) ( $own[ $id ] ?? 0 ),
+					'total'   => (string) $count,
+				];
+			}
+			return $rows;
+		};
 	}
 
 	/**

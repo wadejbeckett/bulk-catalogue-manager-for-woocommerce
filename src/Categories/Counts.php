@@ -6,24 +6,29 @@
  * The rows the grid would list come from ProductQuery itself: the statement
  * embeds ProductQuery::conditions_sql() (its FROM and WHERE with their
  * arguments) for the same criteria and prepares the whole once, so the tree
- * and the grid can never disagree about which rows
- * match. Each matching row is reduced to its product (a variation to its
- * parent), each product to the sorted list of its `product_cat` term ids, and
- * the products are grouped by that list:
+ * and the grid can never disagree about which rows match. Each matching row
+ * is reduced to its product (a variation to its parent), and each product's
+ * `product_cat` relationships are joined to the tree's own (category,
+ * ancestor) pairs — every node paired with itself and each node above it, as
+ * Tree::pairs() gives them, so orphans and loops count where the panel draws
+ * them — then counted per ancestor:
  *
- *     SELECT g.terms, COUNT(*) AS products FROM (
- *       SELECT cr.object_id, GROUP_CONCAT(DISTINCT ct.term_id ...) AS terms
- *       FROM term_relationships cr JOIN term_taxonomy ct ...
- *       WHERE ct.taxonomy = 'product_cat' AND cr.object_id IN (
- *         SELECT <product of the row> FROM ... WHERE ...   -- ProductQuery's
- *       ) GROUP BY cr.object_id
- *     ) g GROUP BY g.terms LIMIT n
+ *     SELECT a.ancestor AS term_id,
+ *       COUNT(DISTINCT CASE WHEN a.term_id = a.ancestor THEN cr.object_id END) AS own,
+ *       COUNT(DISTINCT cr.object_id) AS total
+ *     FROM term_relationships cr JOIN term_taxonomy ct ...
+ *     JOIN ( SELECT 4 AS term_id, 4 AS ancestor UNION ALL SELECT 4, 3 ... ) a
+ *       ON a.term_id = ct.term_id
+ *     WHERE ct.taxonomy = 'product_cat' AND cr.object_id IN (
+ *       SELECT <product of the row> FROM ... WHERE ...   -- ProductQuery's
+ *     ) GROUP BY a.ancestor LIMIT <nodes>
  *
- * One row per distinct combination of categories, far fewer than products,
- * from which Tree::counts() derives both counts exactly. A product in more
- * categories than MySQL's default `group_concat_max_len` (1024 bytes, over a
- * hundred category ids) would have its list cut short; no real catalogue
- * nears that.
+ * One row per category, whatever the catalogue holds: `own` counts the
+ * products filed directly in it, `total` the products in it or anywhere
+ * below it, each once (a product in a child and a grandchild counts once on
+ * the parent). Nothing is concatenated, so a product in any number of
+ * categories counts exactly (the GROUP_CONCAT form this replaces cut a list
+ * at MySQL's default 1024 bytes).
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -50,11 +55,6 @@ final class Counts {
 	public const TAXONOMY = 'product_cat';
 
 	/**
-	 * Most combinations the statement returns; each is at least one product.
-	 */
-	public const MAX_GROUPS = 1000000;
-
-	/**
 	 * The query whose conditions are counted.
 	 *
 	 * @var ProductQuery
@@ -71,43 +71,59 @@ final class Counts {
 	}
 
 	/**
-	 * The grouped statement, prepared once over ProductQuery's conditions.
+	 * The grouped statement over a tree's pairs, prepared once over ProductQuery's conditions.
+	 *
+	 * @param Tree $tree The category tree; not empty.
+	 * @throws \InvalidArgumentException For an empty tree.
 	 */
-	public function statement(): string {
+	public function statement( Tree $tree ): string {
 		global $wpdb;
+		$pairs = $tree->pairs();
+		if ( [] === $pairs ) {
+			throw new \InvalidArgumentException( 'An empty tree has nothing to count.' );
+		}
 		$conditions = $this->query->conditions_sql();
-		$sql        = 'SELECT g.terms, COUNT(*) AS products FROM (SELECT cr.object_id, GROUP_CONCAT(DISTINCT ct.term_id ORDER BY ct.term_id SEPARATOR %s) AS terms FROM %i AS cr INNER JOIN %i AS ct ON ct.term_taxonomy_id = cr.term_taxonomy_id WHERE ct.taxonomy = %s AND cr.object_id IN (SELECT (CASE WHEN p.post_type = %s THEN p.post_parent ELSE p.ID END) '
+		$ancestors  = 'SELECT %d AS term_id, %d AS ancestor' . str_repeat( ' UNION ALL SELECT %d, %d', count( $pairs ) - 1 );
+		$sql        = 'SELECT a.ancestor AS term_id, COUNT(DISTINCT CASE WHEN a.term_id = a.ancestor THEN cr.object_id END) AS own, COUNT(DISTINCT cr.object_id) AS total FROM %i AS cr INNER JOIN %i AS ct ON ct.term_taxonomy_id = cr.term_taxonomy_id INNER JOIN ('
+			. $ancestors
+			. ') AS a ON a.term_id = ct.term_id WHERE ct.taxonomy = %s AND cr.object_id IN (SELECT (CASE WHEN p.post_type = %s THEN p.post_parent ELSE p.ID END) '
 			. $conditions['sql']
-			. ') GROUP BY cr.object_id) AS g GROUP BY g.terms LIMIT %d';
+			. ') GROUP BY a.ancestor LIMIT %d';
 		$args       = [
-			',',
 			$wpdb->prefix . ProductQuery::TABLES['relationships'],
 			$wpdb->prefix . ProductQuery::TABLES['taxonomy'],
+			...array_merge( ...$pairs ),
 			self::TAXONOMY,
 			'product_variation',
 			...$conditions['args'],
-			self::MAX_GROUPS,
+			$tree->size(),
 		];
-		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- The template holds only literals and ProductQuery's placeholders; every value is an argument.
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- The template holds only literals and placeholders; every value is an argument.
 		return (string) $wpdb->prepare( $sql, ...$args );
 	}
 
 	/**
-	 * Run the statement.
+	 * Run the statement: each category's own count and its count including
+	 * descendants, 0 for a category no matching product reaches.
 	 *
-	 * @return list<array{0: list<int>, 1: int}> Each distinct set of category ids and how many products carry exactly it.
+	 * @param Tree $tree The category tree; not empty.
+	 * @return array{own: array<int, int>, total: array<int, int>}
 	 */
-	public function groups(): array {
+	public function totals( Tree $tree ): array {
 		global $wpdb;
 		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- statement() returns a prepared statement.
-		$rows   = $wpdb->get_results( $this->statement(), ARRAY_A );
-		$groups = [];
+		$rows   = $wpdb->get_results( $this->statement( $tree ), ARRAY_A );
+		$counts = [
+			'own'   => [],
+			'total' => [],
+		];
 		foreach ( is_array( $rows ) ? $rows : [] as $row ) {
-			$ids = array_values( array_filter( array_map( 'intval', explode( ',', (string) ( $row['terms'] ?? '' ) ) ), static fn( int $id ): bool => $id > 0 ) );
-			if ( [] !== $ids ) {
-				$groups[] = [ $ids, (int) ( $row['products'] ?? 0 ) ];
+			$id = (int) ( $row['term_id'] ?? 0 );
+			if ( null !== $tree->node( $id ) ) {
+				$counts['own'][ $id ]   = (int) ( $row['own'] ?? 0 );
+				$counts['total'][ $id ] = (int) ( $row['total'] ?? 0 );
 			}
 		}
-		return $groups;
+		return $counts;
 	}
 }

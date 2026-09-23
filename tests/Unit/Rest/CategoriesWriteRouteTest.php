@@ -122,7 +122,7 @@ final class CategoriesWriteRouteTest extends TestCase {
 	}
 
 	public function test_the_tree_read_still_answers_beside_the_create(): void {
-		$GLOBALS['wpdb']->responses = [ '/^SELECT g\.terms, COUNT\(\*\) AS products FROM /' => CatalogueFixture::rows() ] + $GLOBALS['wpdb']->responses;
+		$GLOBALS['wpdb']->responses = [ '/^SELECT a\.ancestor AS term_id, /' => CatalogueFixture::answer() ] + $GLOBALS['wpdb']->responses;
 		$response                   = self::send( 'GET', '/categories' );
 		$this->assertInstanceOf( \WP_REST_Response::class, $response );
 		$this->assertSame( [ 5, 2 ], array_column( $response->get_data()[0]['children'], 'id' ) );

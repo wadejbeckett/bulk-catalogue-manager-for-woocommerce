@@ -12,11 +12,13 @@
  * WooCommerce's stored category order, then by name, then by id; a node's
  * `order` is whichever of the two decided its place.
  *
- * Counts come from groups: each group is a set of category ids some number
- * of products carry exactly. A product counts once on every category it has
- * (its own count) and once on each of those categories and all their
- * ancestors (its count including descendants), so a product in both a child
- * and a grandchild is not counted twice on the parent.
+ * Counts come from Counts::totals() over the tree's own (category,
+ * ancestor) pairs (to_array_counted()), or from groups: each group a set of
+ * category ids some number of products carry exactly (to_array()). Either
+ * way a product counts once on every category it has (its own count) and
+ * once on each of those categories and all their ancestors (its count
+ * including descendants), so a product in both a child and a grandchild is
+ * not counted twice on the parent.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -182,6 +184,34 @@ final class Tree {
 			$id     = $this->nodes[ $id ]['parent'];
 		}
 		return $line;
+	}
+
+	/**
+	 * Every (category, ancestor) pair of the tree, each node with itself
+	 * first and then each node above it, as lineage() walks them: what
+	 * Counts joins product categories to, so a count reaches exactly the
+	 * nodes the panel draws above a category.
+	 *
+	 * @return list<array{0: int, 1: int}>
+	 */
+	public function pairs(): array {
+		$pairs = [];
+		foreach ( array_keys( $this->nodes ) as $id ) {
+			foreach ( $this->lineage( $id ) as $ancestor ) {
+				$pairs[] = [ $id, $ancestor ];
+			}
+		}
+		return $pairs;
+	}
+
+	/**
+	 * The nested array the route returns, from counts already made (Counts::totals()).
+	 *
+	 * @param array{own: array<int, int>, total: array<int, int>} $counts Own and including-descendants counts by id.
+	 * @return list<array<string, mixed>>
+	 */
+	public function to_array_counted( array $counts ): array {
+		return $this->branch( 0, $counts['own'], $counts['total'] );
 	}
 
 	/**

@@ -51,3 +51,66 @@ final class FakeProduct {
 		throw new \BadMethodCallException( $method );
 	}
 }
+
+// phpcs:disable Generic.Files.OneObjectStructurePerFile.MultipleFound -- T32's stand-in sits beside FakeProduct.
+
+/**
+ * T32: a stand-in for a loaded WooCommerce product the writer saves. Like
+ * FakeProduct, get_{prop}() answers the prop and set_{prop}() stores and
+ * records it; save() records a copy of the props at that moment in $saves.
+ * A setter named in $refuse throws WC_Data_Exception with that message, as
+ * WooCommerce's set_sku() does for a duplicate. get_id() and
+ * get_parent_id() answer the `id` and `parent_id` props.
+ */
+final class SavedProduct {
+	/**
+	 * Setter calls, in order: [ method, value ].
+	 *
+	 * @var array<int, array{0: string, 1: mixed}>
+	 */
+	public array $sets = [];
+
+	/**
+	 * The props at each save().
+	 *
+	 * @var array<int, array<string, mixed>>
+	 */
+	public array $saves = [];
+
+	/**
+	 * Setter => message for setters that throw WC_Data_Exception.
+	 *
+	 * @var array<string, string>
+	 */
+	public array $refuse = [];
+
+	public function __construct( private string $type = 'simple', public array $props = [] ) {}
+
+	public function is_type( string $type ): bool {
+		return $type === $this->type;
+	}
+
+	public function get_type(): string {
+		return $this->type;
+	}
+
+	public function save(): int {
+		$this->saves[] = $this->props;
+		return (int) ( $this->props['id'] ?? 0 );
+	}
+
+	public function __call( string $method, array $args ): mixed {
+		if ( str_starts_with( $method, 'get_' ) ) {
+			return $this->props[ substr( $method, 4 ) ] ?? null;
+		}
+		if ( str_starts_with( $method, 'set_' ) ) {
+			if ( isset( $this->refuse[ $method ] ) ) {
+				throw new \WC_Data_Exception( 'product_invalid_value', $this->refuse[ $method ] );
+			}
+			$this->sets[]                        = [ $method, $args[0] ];
+			$this->props[ substr( $method, 4 ) ] = $args[0];
+			return null;
+		}
+		throw new \BadMethodCallException( $method );
+	}
+}

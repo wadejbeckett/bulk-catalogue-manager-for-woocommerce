@@ -490,3 +490,28 @@ if ( ! function_exists( 'wp_set_object_terms' ) ) {
 		return $GLOBALS['bcm_test']['set_object_terms_error'] ?? array_values( (array) $terms );
 	}
 }
+
+// T32: the writer's WooCommerce and meta entry points.
+if ( ! function_exists( 'wc_get_product' ) ) {
+	/**
+	 * Answers the object a test put in $GLOBALS['bcm_test']['products'][ $id ]
+	 * (a SavedProduct, say), or false as WooCommerce does for an id that is
+	 * not a product; records each id asked for in
+	 * $GLOBALS['bcm_test']['products_loaded'].
+	 */
+	function wc_get_product( mixed $the_product = false, array $deprecated = [] ): mixed {
+		$GLOBALS['bcm_test']['products_loaded'][] = $the_product;
+		return $GLOBALS['bcm_test']['products'][ (int) $the_product ] ?? false;
+	}
+}
+
+if ( ! function_exists( 'update_post_meta' ) ) {
+	/**
+	 * Records each call in $GLOBALS['bcm_test']['post_meta_updates'] as
+	 * [ post id, key, value ], so a test can assert a write path made none.
+	 */
+	function update_post_meta( int $post_id, string $meta_key, mixed $meta_value, mixed $prev_value = '' ): int|bool {
+		$GLOBALS['bcm_test']['post_meta_updates'][] = [ $post_id, $meta_key, $meta_value ];
+		return true;
+	}
+}

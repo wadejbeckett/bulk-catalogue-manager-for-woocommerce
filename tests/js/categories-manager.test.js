@@ -33,6 +33,7 @@ const NODES = [
 				id: 2,
 				name: 'T-Shirts',
 				slug: 't-shirts',
+				description: 'Short sleeves',
 				count: 0,
 				countWithDescendants: 0,
 				children: [],
@@ -263,5 +264,12 @@ describe( 'category manager', () => {
 				'You can browse and filter by categories, but changing them needs permission to manage product categories.'
 			)
 		).toBeTruthy();
+	} );
+
+	it( 'shows the description the tree carries in the details pane', () => {
+		render(
+			<CategoryManager tree={ makeTree() } categoryId={ 2 } canManage />
+		);
+		expect( field( 'Description' ).value ).toBe( 'Short sleeves' );
 	} );
 } );

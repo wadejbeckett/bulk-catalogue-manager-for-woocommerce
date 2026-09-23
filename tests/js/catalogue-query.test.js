@@ -2,6 +2,7 @@
  * T40: the view object maps to GET /products arguments (SPEC §12.1).
  */
 import {
+	categoryArgs,
 	clearFilters,
 	isFiltered,
 	toQuery,
@@ -102,5 +103,23 @@ describe( 'view to route arguments', () => {
 			search: '',
 			filters: [],
 		} );
+	} );
+} );
+
+describe( 'category panel arguments', () => {
+	it( 'send include_children: false for this category only (T62)', () => {
+		expect( categoryArgs( { id: 3, includeChildren: true } ) ).toEqual( {
+			category_ids: { operator: 'isAny', value: [ 3 ] },
+		} );
+		expect(
+			categoryArgs( { id: 3, ids: [ 3, 4 ], includeChildren: false } )
+		).toEqual( {
+			category_ids: {
+				operator: 'isAny',
+				value: [ 3, 4 ],
+				include_children: false,
+			},
+		} );
+		expect( categoryArgs( null ) ).toEqual( {} );
 	} );
 } );

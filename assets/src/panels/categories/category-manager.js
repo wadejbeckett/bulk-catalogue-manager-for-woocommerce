@@ -68,8 +68,9 @@ export default function CategoryManager( {
 	onCancel,
 } ) {
 	const entry = categoryId ? tree.byId.get( categoryId ) : null;
+	// A description saved here since the tree was read, else the tree's own.
 	const knownDescription = categoryId
-		? tree.descriptions?.get( categoryId )
+		? ( tree.descriptions?.get( categoryId ) ?? entry?.node.description )
 		: '';
 	const initial = useMemo(
 		() => ( {

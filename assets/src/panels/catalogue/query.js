@@ -34,8 +34,8 @@ export function toQuery( view, descriptors, extra = {} ) {
 /**
  * The GET /products filter argument for the category panel's value (T62):
  * `{ operator: 'isAny', value: ids }` under the category field, or nothing
- * for all products. The server includes each category's descendants; the
- * panel's "this category only" choice waits for its include-children flag.
+ * for all products. The server includes each category's descendants unless
+ * the panel's "this category only" choice sends `include_children: false`.
  *
  * @param {Object|null} value CategoryPanel value `{ id, ids?, includeChildren }`.
  * @return {Object} Filter arguments.
@@ -44,9 +44,20 @@ export function categoryArgs( value ) {
 	const ids = ( value?.ids?.length ? value.ids : [ value?.id ] )
 		.map( Number )
 		.filter( ( id ) => id > 0 );
-	return ids.length
-		? { [ CATEGORY_FILTER ]: { operator: 'isAny', value: ids } }
-		: {};
+	if ( ! ids.length ) {
+		return {};
+	}
+	// "This category only" (T62): the server matches the chosen categories
+	// without the ones below them; the default includes them.
+	return {
+		[ CATEGORY_FILTER ]: {
+			operator: 'isAny',
+			value: ids,
+			...( value?.includeChildren === false
+				? { include_children: false }
+				: {} ),
+		},
+	};
 }
 
 /**

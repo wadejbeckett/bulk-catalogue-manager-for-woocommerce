@@ -274,4 +274,20 @@ final class ChangeRepository {
 		$parsed = \DateTimeImmutable::createFromFormat( '!Y-m-d H:i:s', $value, new \DateTimeZone( 'UTC' ) );
 		return false !== $parsed && $parsed->format( 'Y-m-d H:i:s' ) === $value;
 	}
+
+	/**
+	 * A page of a batch's journal from the newest row down, for the undo
+	 * planner (T55): pass the last change_id seen as $before to continue,
+	 * 0 for the start. Names its columns, unlike for_batch().
+	 *
+	 * @param int $batch_id Batch.
+	 * @param int $before   Return only rows with a smaller change_id; 0 for none.
+	 * @param int $limit    Most rows, 1 to MAX_PAGE.
+	 * @return array<int, array{change_id: int, batch_id: int, object_id: int, object_type: string, prop: string, old_value: mixed, new_value: mixed, modified_gmt: string, applied_gmt: string, result: string, message: string}>
+	 */
+	public function newest_first( int $batch_id, int $before, int $limit ): array {
+		global $wpdb;
+		$rows = $wpdb->get_results( $wpdb->prepare( 'SELECT change_id, batch_id, object_id, object_type, prop, old_value, new_value, modified_gmt, applied_gmt, result, message FROM %i WHERE batch_id = %d AND change_id < %d ORDER BY change_id DESC LIMIT %d', $this->registry->table( Schema::CHANGES ), $batch_id, $before > 0 ? $before : PHP_INT_MAX, max( 1, min( self::MAX_PAGE, $limit ) ) ), ARRAY_A );
+		return array_map( [ self::class, 'row' ], is_array( $rows ) ? $rows : [] );
+	}
 }

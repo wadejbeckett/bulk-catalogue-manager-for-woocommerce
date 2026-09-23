@@ -50,6 +50,7 @@ final class RegistryTest extends TestCase {
 		'bcm_run_chunk'           => 'one-off Action Scheduler action in the bcm group running one chunk of a batch; not recurring, and uninstall unschedules the whole group',
 		'bcm_batch_size'          => 'filter hook over the configured chunk size of a background batch',
 		'bcm_not_cancellable'     => 'REST refusal code for cancelling a batch that has already finished',
+		'bcm_not_reversible'      => 'refusal code for undoing a batch that is running, already undone, pruned or outside the retention window',
 	];
 
 	/**

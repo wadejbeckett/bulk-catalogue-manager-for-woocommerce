@@ -740,4 +740,37 @@ final class BatchRepository {
 			}
 		}
 	}
+
+	/**
+	 * The undo batches recorded against a batch (T55), newest first, as
+	 * `{ batch_id, status }`, so the planner can refuse one already undone.
+	 *
+	 * @param int $batch_id The batch undone.
+	 * @return list<array{batch_id: int, status: string}>
+	 */
+	public function undos_of( int $batch_id ): array {
+		global $wpdb;
+		$rows = $wpdb->get_results( $wpdb->prepare( 'SELECT batch_id, status FROM %i WHERE undo_of = %d ORDER BY batch_id DESC LIMIT %d', $this->registry->table( Schema::BATCHES ), $batch_id, self::MAX_CLAIM ), ARRAY_A );
+		return array_map(
+			static fn( array $row ): array => [
+				'batch_id' => (int) $row['batch_id'],
+				'status'   => (string) $row['status'],
+			],
+			is_array( $rows ) ? $rows : []
+		);
+	}
+
+	/**
+	 * When the history clean-up pruned a batch's journal, or null when it has
+	 * not (T55). Reads the whole row, so it answers null on a schema that has
+	 * no `pruned_gmt` column rather than failing.
+	 *
+	 * @param int $batch_id Batch.
+	 */
+	public function pruned_gmt( int $batch_id ): ?string {
+		global $wpdb;
+		$row   = $wpdb->get_row( $wpdb->prepare( 'SELECT * FROM %i WHERE batch_id = %d', $this->registry->table( Schema::BATCHES ), $batch_id ), ARRAY_A );
+		$value = is_array( $row ) ? ( $row['pruned_gmt'] ?? null ) : null;
+		return null === $value || '' === (string) $value || '0000-00-00 00:00:00' === (string) $value ? null : (string) $value;
+	}
 }

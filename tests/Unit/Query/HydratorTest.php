@@ -448,6 +448,7 @@ final class HydratorTest extends TestCase {
 				'type'              => 'variation',
 				'parent_name'       => 'Product 3',
 				'attribute_summary' => '',
+				'attributes'        => [],
 			],
 			$items[0]
 		);

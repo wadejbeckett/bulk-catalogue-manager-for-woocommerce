@@ -23,7 +23,8 @@
  * 7. when the page holds variation rows (T20): the page's meta cache (primed
  *    in step 2 whatever the columns), one `_prime_post_caches()` over their
  *    products for `parent_name`, and at most one `get_terms()` naming the
- *    attribute terms for `attribute_summary`, such as "Blue / Large".
+ *    attribute terms for `attribute_summary`, such as "Blue / Large", and
+ *    `attributes`, the same values as `{ label, value }` pairs.
  *
  * Each value then comes through the field registry's read contract,
  * `Field::read()`, over a Snapshot answering the CRUD getters from those
@@ -78,6 +79,12 @@ final class Hydrator {
 	 * Extra item property on a variation row: its attribute values, such as "Blue / Large".
 	 */
 	public const ATTRIBUTE_SUMMARY = 'attribute_summary';
+
+	/**
+	 * Extra item property on a variation row: its attributes as a list of
+	 * `{ label, value }` pairs, in the summary's order (`value` '' for "any").
+	 */
+	public const ATTRIBUTES = 'attributes';
 
 	/**
 	 * Separator between attribute values in a summary.
@@ -203,13 +210,33 @@ final class Hydrator {
 	}
 
 	/**
-	 * The parent name and attribute summary of each variation row, from the
+	 * Attribute pairs, the summary's parts as data: `{ label, value }` per
+	 * attribute in the same order, the label the attribute's name ("Size")
+	 * and the value its term name or custom value; '' where the variation
+	 * leaves the attribute open ("any").
+	 *
+	 * @param array<int, array{0: string, 1: string}> $attributes [ label, value ] per attribute; value '' for any.
+	 * @return list<array{label: string, value: string}>
+	 */
+	public static function attribute_pairs( array $attributes ): array {
+		$pairs = [];
+		foreach ( $attributes as [ $label, $value ] ) {
+			$pairs[] = [
+				'label' => $label,
+				'value' => $value,
+			];
+		}
+		return $pairs;
+	}
+
+	/**
+	 * The parent name, attribute summary and attribute pairs of each variation row, from the
 	 * page's primed meta, one prime of the products' posts and at most one
 	 * term read naming the attribute values stored as term slugs.
 	 *
 	 * @param array<int, array{id: int, parent_id: int}> $rows    The page's rows.
 	 * @param int[]                                      $parents The variation rows' products.
-	 * @return array<int, array<string, string>> Variation id => extra properties.
+	 * @return array<int, array<string, mixed>> Variation id => extra properties.
 	 */
 	private function variations( array $rows, array $parents ): array {
 		_prime_post_caches( $parents, false, false );
@@ -273,6 +300,7 @@ final class Hydrator {
 			$extras[ $id ] = [
 				self::PARENT_NAME       => is_object( $parent ) ? (string) $parent->post_title : '',
 				self::ATTRIBUTE_SUMMARY => self::attribute_summary( $attributes ),
+				self::ATTRIBUTES        => self::attribute_pairs( $attributes ),
 			];
 		}
 		return $extras;

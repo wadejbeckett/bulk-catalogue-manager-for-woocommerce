@@ -56,6 +56,7 @@ final class Routes {
 				new ProductsController( Registry::instance() ),
 				new VariationsController( Registry::instance() ),
 				new CategoriesController( Registry::instance() ),
+				new TermsController(),
 				new ExportController( Registry::instance() ),
 				new SelectionController( Registry::instance() ),
 				new BatchesController(),

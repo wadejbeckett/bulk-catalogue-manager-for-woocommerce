@@ -89,7 +89,7 @@ final class VariationsRouteTest extends TestCase {
 		$schema = call_user_func( $route['schema'] );
 		$this->assertSame( VariationsController::TITLE, $schema['title'] );
 		$this->assertSame( ( new VariationsController( new Registry() ) )->get_item_schema(), $schema );
-		foreach ( [ Hydrator::PARENT_ID, Hydrator::PARENT_NAME, Hydrator::ATTRIBUTE_SUMMARY, Hydrator::THUMBNAIL_URL ] as $extra ) {
+		foreach ( [ Hydrator::PARENT_ID, Hydrator::PARENT_NAME, Hydrator::ATTRIBUTE_SUMMARY, Hydrator::ATTRIBUTES, Hydrator::THUMBNAIL_URL ] as $extra ) {
 			$this->assertArrayHasKey( $extra, $schema['properties'] );
 		}
 		foreach ( Registry::instance()->keys() as $key ) {
@@ -113,7 +113,7 @@ final class VariationsRouteTest extends TestCase {
 		$this->assertSame( [ 202, 201 ], array_column( $data['items'], 'id' ), 'Menu order, then id; the trashed variation is left out.' );
 
 		[ $green, $blue ] = $data['items'];
-		$this->assertSame( array_merge( [ 'id', 'parent_id' ], array_diff( Registry::instance()->keys(), [ 'id' ] ), [ Hydrator::THUMBNAIL_URL, Hydrator::PARENT_NAME, Hydrator::ATTRIBUTE_SUMMARY ] ), array_keys( $blue ), 'Every registry field, then the extras.' );
+		$this->assertSame( array_merge( [ 'id', 'parent_id' ], array_diff( Registry::instance()->keys(), [ 'id' ] ), [ Hydrator::THUMBNAIL_URL, Hydrator::PARENT_NAME, Hydrator::ATTRIBUTE_SUMMARY, Hydrator::ATTRIBUTES ] ), array_keys( $blue ), 'Every registry field, then the extras.' );
 		$expected = [
 			'parent_id'         => 103,
 			'parent_name'       => 'Rain Jacket',
@@ -132,6 +132,34 @@ final class VariationsRouteTest extends TestCase {
 			$this->assertSame( $value, $blue[ $key ], $key );
 		}
 		$this->assertSame( 'Dark Green / Any Size', $green['attribute_summary'], 'A term slug reads as its name; an open attribute as "Any".' );
+		$this->assertSame(
+			[
+				[
+					'label' => 'Colour',
+					'value' => 'Blue',
+				],
+				[
+					'label' => 'Size',
+					'value' => 'Large',
+				],
+			],
+			$blue['attributes'],
+			'The summary\'s pairs, in its order: the taxonomy\'s label and term name, the custom attribute\'s name and value.'
+		);
+		$this->assertSame(
+			[
+				[
+					'label' => 'Colour',
+					'value' => 'Dark Green',
+				],
+				[
+					'label' => 'Size',
+					'value' => '',
+				],
+			],
+			$green['attributes'],
+			'An open attribute has an empty value.'
+		);
 		$this->assertSame( 'private', $green['status'] );
 		$this->assertSame( 'outofstock', $green['stock_status'] );
 
@@ -159,6 +187,16 @@ final class VariationsRouteTest extends TestCase {
 				'sku'               => 'JACKET-BL-L',
 				'parent_name'       => 'Rain Jacket',
 				'attribute_summary' => 'Blue / Large',
+				'attributes'        => [
+					[
+						'label' => 'Colour',
+						'value' => 'Blue',
+					],
+					[
+						'label' => 'Size',
+						'value' => 'Large',
+					],
+				],
 			],
 			$items[1]
 		);

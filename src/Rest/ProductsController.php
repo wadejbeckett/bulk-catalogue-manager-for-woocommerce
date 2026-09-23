@@ -10,13 +10,20 @@
  * queries without instantiating a product, cached per last-changed window.
  * Each item carries the requested `fields[]` (every field when absent) plus
  * `parent_id`, with the thumbnail column `thumbnail_url`, and on a variation
- * row `parent_name` and `attribute_summary` (RouteSchema::row_extras()).
+ * row `parent_name`, `attribute_summary` and `attributes`, the summary's
+ * `{ label, value }` pairs (RouteSchema::row_extras()).
  *
  * `mode` switches between products, products and variations, and variations
  * only; any other value is refused 400 by its generated enum before the
  * handler runs. A `category_ids` filter includes the chosen categories'
  * descendants unless it carries `include_children: false` ("this category
  * only", T62; Query\ProductQuery).
+ *
+ * `parent` (a product id) lists only that product's variations, paged,
+ * sorted and narrowed by `fields[]` like any list; it needs
+ * `mode=variations`, and with any other mode the read is refused 400
+ * `bcm_invalid_value`. Without `orderby` the variations keep WooCommerce's
+ * order; an id with no listed variations answers no items.
  *
  * `search` matches each listed row's own name and SKU. In the
  * products_and_variations and variations modes a variation is therefore

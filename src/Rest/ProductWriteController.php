@@ -19,7 +19,13 @@
  * through the same operations, Validator, Writer and Journal as a bulk batch,
  * synchronously, and never queued.
  *
- * The answer is `{ item, batch_id, status, results }`: `item` is the object
+ * `GET /bcm/v1/products/{id}` on the same route (Access::can_read, args
+ * RouteSchema::row_args(): the id and `fields[]`) reads one product or
+ * variation through Query\Catalogue::row(), the list's row builder, and
+ * answers `{ item }`; an id that is not a listed product or variation is
+ * 404 `bcm_not_found`.
+ *
+ * The PATCH answer is `{ item, batch_id, status, results }`: `item` is the object
  * re-read through Query\Catalogue after its caches are cleared, in the same
  * shape as a `/products` item, so the grid can replace the row; `status` is
  * the batch's final status (complete, partial or failed); `results` holds
@@ -34,18 +40,21 @@ declare( strict_types = 1 );
 namespace BulkCatalogueManager\Rest;
 
 use BulkCatalogueManager\Engine\InlineWrite;
+use BulkCatalogueManager\Engine\Writer;
 use BulkCatalogueManager\Fields\Registry;
 use BulkCatalogueManager\Operations\Registry as Actions;
 use BulkCatalogueManager\Operations\Result;
 use BulkCatalogueManager\Query\Catalogue;
+use BulkCatalogueManager\Query\Criteria;
 use BulkCatalogueManager\Query\Hydrator;
+use BulkCatalogueManager\Query\ProductQuery;
 
 defined( 'ABSPATH' ) || exit;
 
 /**
- * The single-object write route.
+ * The single-object route: its read and its write.
  */
-final class ProductWriteController implements Controller {
+final class ProductWriteController implements ReadController {
 	/**
 	 * The route, under Access::REST_NAMESPACE.
 	 */
@@ -104,6 +113,12 @@ final class ProductWriteController implements Controller {
 					'permission_callback' => [ Access::class, 'can_write' ],
 					'args'                => $this->args(),
 				],
+				[
+					'methods'             => 'GET',
+					'callback'            => [ $this, 'get_item' ],
+					'permission_callback' => [ Access::class, 'can_read' ],
+					'args'                => $this->schema->row_args(),
+				],
 				'schema' => [ $this, 'get_item_schema' ],
 			]
 		);
@@ -160,6 +175,33 @@ final class ProductWriteController implements Controller {
 	}
 
 	/**
+	 * One product or variation as the list shows it: `{ item }`, the row
+	 * Query\Catalogue::row() hydrates, narrowed by `fields[]` as on
+	 * `/products`. An id that is not a listed product or variation (missing,
+	 * another post type, trashed or an auto-draft) is 404 `bcm_not_found`.
+	 *
+	 * @param \WP_REST_Request $request The validated, sanitised request.
+	 */
+	public function get_item( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
+		$id     = (int) $request->get_param( 'id' );
+		$post   = $id > 0 ? get_post( $id ) : null;
+		$fields = $request->get_param( 'fields' );
+		$item   = is_object( $post )
+			&& in_array( $post->post_type ?? '', ProductQuery::POST_TYPES[ Criteria::MODE_PRODUCTS_AND_VARIATIONS ], true )
+			&& in_array( $post->post_status ?? '', ProductQuery::STATUSES, true )
+			? $this->catalogue->row( $id, is_array( $fields ) ? array_values( array_filter( $fields, 'is_string' ) ) : [] )
+			: null;
+		if ( null === $item ) {
+			return Refusal::create(
+				Writer::NOT_FOUND,
+				__( 'That product could not be found. It may have been deleted; reload the list and try again.', 'bulk-catalogue-manager-for-woocommerce' ),
+				404
+			);
+		}
+		return new \WP_REST_Response( [ 'item' => $item ], 200 );
+	}
+
+	/**
 	 * Write the submitted fields and answer the updated row.
 	 *
 	 * @param \WP_REST_Request $request The validated, sanitised request.
@@ -190,7 +232,7 @@ final class ProductWriteController implements Controller {
 
 	/**
 	 * The schema of the answer: the row as `/products` items carry it, the
-	 * batch and one outcome per step.
+	 * batch and one outcome per step. A GET answers `item` alone.
 	 *
 	 * @return array<string, mixed>
 	 */

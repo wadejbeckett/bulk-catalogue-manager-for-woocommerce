@@ -9,7 +9,8 @@
  * the variations mode restricted to the product, published and private
  * variations in WooCommerce's order (`menu_order`, then id), hydrated without
  * instantiating a product. Each item carries the variation's registry fields,
- * `parent_id`, `parent_name` and `attribute_summary` ("Blue / Large").
+ * `parent_id`, `parent_name`, `attribute_summary` ("Blue / Large") and
+ * `attributes`, the same values as `{ label, value }` pairs.
  *
  * A product with no variations answers 200 with no items; an id that is not
  * a product — missing, a variation, any other post type or trashed —

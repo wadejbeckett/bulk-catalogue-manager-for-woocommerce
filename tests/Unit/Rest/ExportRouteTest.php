@@ -306,6 +306,36 @@ final class ExportRouteTest extends TestCase {
 		$this->assertStringContainsString( "l.stock_status IN ('outofstock')", $GLOBALS['wpdb']->queries[0] );
 	}
 
+	public function test_a_parent_exports_one_product_s_variations_and_needs_the_variations_mode(): void {
+		bcm_test_reset();
+		$GLOBALS['bcm_test']['logged_in']                    = true;
+		$GLOBALS['bcm_test']['caps']['manage_woocommerce']   = true;
+		$GLOBALS['wpdb']->responses['/^SELECT COUNT\(\*\)/'] = '0';
+		$controller = new ExportController( new Registry() );
+		( new Routes( [ $controller ] ) )->register();
+
+		$refused = self::get(
+			[
+				'columns' => [ 'name' ],
+				'parent'  => 103,
+			]
+		);
+		$this->assertInstanceOf( \WP_Error::class, $refused );
+		$this->assertSame( 'bcm_invalid_value', $refused->get_error_code() );
+
+		$response = self::get(
+			[
+				'columns' => [ 'name' ],
+				'mode'    => 'variations',
+				'parent'  => 103,
+			]
+		);
+		$stream   = fopen( 'php://memory', 'w+b' );
+		$this->assertTrue( $controller->serve( false, $response, null, self::server(), $stream ) );
+		$this->assertCount( 1, $GLOBALS['wpdb']->queries );
+		$this->assertStringContainsString( 'p.post_parent = 103', $GLOBALS['wpdb']->queries[0] );
+	}
+
 	/**
 	 * A request with parameters, as the handler receives it after validation.
 	 *

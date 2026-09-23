@@ -120,7 +120,7 @@ final class RouteSchemaTest extends TestCase {
 		$registry = new Registry();
 		$args     = ( new RouteSchema( $registry ) )->query_args();
 
-		$this->assertSame( [ ...RouteSchema::PAGING, ...RouteSchema::QUERY ], array_slice( array_keys( $args ), 0, 7 ) );
+		$this->assertSame( [ ...RouteSchema::PAGING, ...RouteSchema::QUERY ], array_slice( array_keys( $args ), 0, 8 ) );
 		$this->assertSame( 1, $args['page']['default'] );
 		$this->assertSame( 'integer', $args['per_page']['type'] );
 		$this->assertSame( Criteria::DEFAULT_PER_PAGE, $args['per_page']['default'] );

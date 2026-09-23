@@ -7,9 +7,9 @@
  * Paging is clamped rather than refused, with `per_page` capped at 100.
  *
  * `parent` restricts a variations read to one product's variations (the
- * `/products/{id}/variations` route, T20). It is not a `/products` argument:
- * RouteSchema never passes it from a request, and it is accepted only with
- * the variations mode. Without an explicit sort such a read is in the order
+ * `/products/{id}/variations` route, T20, and the `parent` argument of
+ * `/products`, `POST /selection` and the catalogue export). It is accepted
+ * only with the variations mode; with any other mode it throws. Without an explicit sort such a read is in the order
  * WooCommerce keeps variations in, `menu_order` then id.
  *
  * Filter fields and their operators mirror the field registry's `filterBy`
@@ -91,7 +91,7 @@ final class Criteria {
 	/**
 	 * The arguments only code sets, never a request (RouteSchema::criteria_input()).
 	 */
-	public const INTERNAL_ARGS = [ 'filters', 'parent' ];
+	public const INTERNAL_ARGS = [ 'filters' ];
 
 	/*
 	 * Filter value kinds.

@@ -224,6 +224,49 @@ final class UninstallTest extends TestCase {
 		$this->assertSame( [ [ 'metadata', 'term', 0, 'bcm_order', '', true ], [ 'option', 'bcm_settings' ], [ 'option', 'bcm_db_version' ] ], $result['deleted'] );
 	}
 
+	public function test_tables_are_dropped_through_prepare_with_an_identifier_placeholder(): void {
+		$registry                = new Registry( [ 'bcm_alpha' => 'id INT' ], [], [], [], [], [] );
+		$GLOBALS['wpdb']->tables = [ 'wp_bcm_alpha' => true ];
+
+		( new Cleanup( $registry ) )->uninstall( new Settings( [ 'remove_data_on_delete' => true ] ) );
+
+		$this->assertSame( [ 'DROP TABLE IF EXISTS %i', [ 'wp_bcm_alpha' ] ], $GLOBALS['wpdb']->prepared[0], 'The table name reaches SQL as a %i identifier, never interpolated.' );
+		$this->assertStringNotContainsString( '{$table}', (string) file_get_contents( self::root() . '/src/Data/Cleanup.php' ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- reading plugin source.
+	}
+
+	public function test_on_multisite_every_site_is_cleaned_under_its_own_prefix(): void {
+		self::seed( [ 'remove_data_on_delete' => true ] );
+		$GLOBALS['bcm_test']['multisite'] = true;
+		$GLOBALS['bcm_test']['sites']     = [ 1, 2, 5 ];
+		// Site 2 keeps its data; site 5 asks for it to go, as site 1 does.
+		$GLOBALS['bcm_test']['site_options'] = [
+			2 => [ 'bcm_settings' => [ 'remove_data_on_delete' => false ] ],
+			5 => [ 'bcm_settings' => [ 'remove_data_on_delete' => true ] ],
+		];
+		$GLOBALS['wpdb']->tables             = [
+			'wp_bcm_batches'   => true,
+			'wp_2_bcm_batches' => true,
+			'wp_5_bcm_batches' => true,
+			'wp_5_bcm_changes' => true,
+			'wp_5_other_table' => true,
+		];
+
+		self::run_uninstall();
+
+		$this->assertSame( [ [ 'switch', 1 ], [ 'restore' ], [ 'switch', 2 ], [ 'restore' ], [ 'switch', 5 ], [ 'restore' ] ], $GLOBALS['bcm_test']['switched'] );
+		$this->assertSame(
+			[
+				'wp_2_bcm_batches' => true,
+				'wp_5_other_table' => true,
+			],
+			$GLOBALS['wpdb']->tables,
+			'Each site\'s own tables go under its own setting.'
+		);
+		$this->assertSame( [ 'unrelated_option' => 'keep' ], $GLOBALS['bcm_test']['options'] );
+		$this->assertSame( [], $GLOBALS['bcm_test']['site_options'][5] );
+		$this->assertSame( 'wp_', $GLOBALS['wpdb']->prefix, 'The current site is restored.' );
+	}
+
 	public function test_uninstall_guards_and_bootstraps_its_own_autoloader(): void {
 		// Uninstall runs with no Composer autoloader and no plugin file loaded,
 		// so the script must load src/ itself before touching any class.

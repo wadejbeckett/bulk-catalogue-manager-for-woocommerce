@@ -56,6 +56,45 @@ if ( ! function_exists( 'add_filter' ) ) {
 		}
 	}
 
+	/**
+	 * Multisite: off unless $GLOBALS['bcm_test']['multisite'] is set; the site
+	 * ids come from $GLOBALS['bcm_test']['sites']. switch_to_blog() and
+	 * restore_current_blog() record themselves in `switched`, move
+	 * $wpdb->prefix as WordPress does (site 1 keeps the base prefix) and swap
+	 * in each site's own options from `site_options`.
+	 */
+	function is_multisite(): bool {
+		return true === ( $GLOBALS['bcm_test']['multisite'] ?? false );
+	}
+
+	function get_sites( array $args = [] ): array {
+		$GLOBALS['bcm_test']['get_sites_args'][] = $args;
+		return $GLOBALS['bcm_test']['sites'] ?? [];
+	}
+
+	function switch_to_blog( int $site_id ): bool {
+		$state                             = &$GLOBALS['bcm_test'];
+		$current                           = $state['site'] ?? 1;
+		$state['switched'][]               = [ 'switch', $site_id ];
+		$state['site_stack'][]             = $current;
+		$state['site_options'][ $current ] = $state['options'];
+		$state['options']                  = $state['site_options'][ $site_id ] ?? [];
+		$state['site']                     = $site_id;
+		$GLOBALS['wpdb']->prefix           = 1 === $site_id ? 'wp_' : 'wp_' . $site_id . '_';
+		return true;
+	}
+
+	function restore_current_blog(): bool {
+		$state                                   = &$GLOBALS['bcm_test'];
+		$previous                                = array_pop( $state['site_stack'] ) ?? 1;
+		$state['switched'][]                     = [ 'restore' ];
+		$state['site_options'][ $state['site'] ] = $state['options'];
+		$state['options']                        = $state['site_options'][ $previous ] ?? [];
+		$state['site']                           = $previous;
+		$GLOBALS['wpdb']->prefix                 = 1 === $previous ? 'wp_' : 'wp_' . $previous . '_';
+		return true;
+	}
+
 	function add_filter( string $hook, mixed $callback, int $priority = 10, int $accepted_args = 1 ): bool {
 		$GLOBALS['bcm_test']['filters'][ $hook ][] = [ $callback, $priority, $accepted_args ];
 		return true;

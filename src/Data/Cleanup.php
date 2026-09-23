@@ -88,6 +88,33 @@ final class Cleanup {
 	}
 
 	/**
+	 * Run a site's cleanup on every site of a network, switched to each in
+	 * turn so its own prefix, options and settings apply, or once on a
+	 * single site.
+	 *
+	 * @param callable $cleanup fn(): void, run once per site.
+	 */
+	public static function on_every_site( callable $cleanup ): void {
+		if ( ! is_multisite() ) {
+			$cleanup();
+			return;
+		}
+		foreach ( get_sites(
+			[
+				'fields' => 'ids',
+				'number' => 0,
+			]
+		) as $site_id ) {
+			switch_to_blog( (int) $site_id );
+			try {
+				$cleanup();
+			} finally {
+				restore_current_blog();
+			}
+		}
+	}
+
+	/**
 	 * Drop every registry table.
 	 */
 	private function drop_tables(): void {
@@ -96,10 +123,9 @@ final class Cleanup {
 			if ( ! Registry::valid_name( $name ) ) {
 				continue;
 			}
-			$table = $wpdb->prefix . $name;
-			// Uninstall removes the plugin's own tables. The identifier is the site prefix plus a registry
-			// name validated as bcm_[a-z0-9_]+, and identifiers cannot be passed through prepare().
-			$wpdb->query( "DROP TABLE IF EXISTS `{$table}`" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.DirectDatabaseQuery.SchemaChange, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			// Uninstall removes the plugin's own tables: the site prefix plus a registry name
+			// validated as bcm_[a-z0-9_]+, passed to prepare() as a %i identifier.
+			$wpdb->query( $wpdb->prepare( 'DROP TABLE IF EXISTS %i', $wpdb->prefix . $name ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.DirectDatabaseQuery.SchemaChange
 		}
 	}
 

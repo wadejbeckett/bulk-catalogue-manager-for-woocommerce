@@ -2,7 +2,7 @@
 /**
  * The three tables match SPEC §9.2 column for column and index for index
  * (plus T34's chunk_size and note on batches and claim_token, claimed_gmt
- * and message on items),
+ * and message on items, and T54's actions and pruned_gmt on batches),
  * are in the form dbDelta() requires, and are in the registry.
  *
  * @package BulkCatalogueManager
@@ -42,6 +42,8 @@ final class SchemaTest extends TestCase {
 				'failed_items'    => [ 'int unsigned', false ],
 				'chunk_size'      => [ 'smallint unsigned', false ],
 				'note'            => [ 'varchar(255)', false ],
+				'actions'         => [ 'varchar(255)', false ],
+				'pruned_gmt'      => [ 'datetime', true ],
 			],
 			'indexes' => [
 				'PRIMARY'     => 'batch_id',
@@ -163,7 +165,7 @@ final class SchemaTest extends TestCase {
 			$this->assertSame( "CREATE TABLE wp_7_{$name} (\n" . Schema::TABLES[ $name ] . "\n) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci;", $statements[ $i ] );
 		}
 		$this->assertSame( [ 'wp_7_bcm_batches', 'wp_7_bcm_batch_items', 'wp_7_bcm_changes' ], array_keys( $GLOBALS['wpdb']->tables ) );
-		$this->assertSame( '4', Migrator::SCHEMA_VERSION, 'T38\'s previewed count bumped the schema version, so a site migrated at 3 gains the column.' );
+		$this->assertSame( '5', Migrator::SCHEMA_VERSION, 'T54\'s action list and pruned time bumped the schema version, so a site migrated at 4 gains the columns.' );
 	}
 
 	public function test_table_names_come_only_from_the_registry_with_the_site_prefix(): void {

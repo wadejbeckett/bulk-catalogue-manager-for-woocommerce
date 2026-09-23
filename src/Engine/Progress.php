@@ -30,6 +30,12 @@
  * running -> failed, its pending items are marked failed with a plain
  * reason and counted, and its note says why. Nothing else is written.
  *
+ * - `reversibility` (T54, §4.6): `{ state, conflicts, reason }` from
+ *   Reversibility, computed after the sweep so a swept batch reads as
+ *   finished; reports() answers a page of the history list with one grouped
+ *   pair of reads for every row's state. `actions` lists the action ids the
+ *   batch's operations use, for the list's "what" column and its filter.
+ *
  * cancel() moves a queued or running batch to `cancelled`. The runner reads
  * the status before claiming, again after claiming (releasing the claim when
  * it sees the cancellation) and before enqueueing a successor, so the next
@@ -95,16 +101,25 @@ final class Progress {
 	private \Closure $clock;
 
 	/**
+	 * Whether each batch can still be undone.
+	 *
+	 * @var Reversibility
+	 */
+	private Reversibility $reversibility;
+
+	/**
 	 * Build over the repositories.
 	 *
-	 * @param BatchRepository|null  $batches Batches; the plugin's by default.
-	 * @param ChangeRepository|null $changes The journal; the plugin's by default.
-	 * @param \Closure|null         $clock   Returns the Unix time; time() by default.
+	 * @param BatchRepository|null  $batches       Batches; the plugin's by default.
+	 * @param ChangeRepository|null $changes       The journal; the plugin's by default.
+	 * @param \Closure|null         $clock         Returns the Unix time; time() by default.
+	 * @param Reversibility|null    $reversibility The reversibility state; one over the same repositories and clock by default.
 	 */
-	public function __construct( ?BatchRepository $batches = null, ?ChangeRepository $changes = null, ?\Closure $clock = null ) {
-		$this->batches = $batches ?? new BatchRepository();
-		$this->changes = $changes ?? new ChangeRepository();
-		$this->clock   = $clock ?? static fn(): int => time();
+	public function __construct( ?BatchRepository $batches = null, ?ChangeRepository $changes = null, ?\Closure $clock = null, ?Reversibility $reversibility = null ) {
+		$this->batches       = $batches ?? new BatchRepository();
+		$this->changes       = $changes ?? new ChangeRepository();
+		$this->clock         = $clock ?? static fn(): int => time();
+		$this->reversibility = $reversibility ?? new Reversibility( $this->batches, $this->changes, null, $this->clock );
 	}
 
 	/**
@@ -119,13 +134,27 @@ final class Progress {
 	}
 
 	/**
+	 * The history list's reports of a page of batch rows, without the
+	 * grouped reasons, their reversibility read for the page at once.
+	 *
+	 * @param list<array<string, mixed>> $batches Typed batch rows (BatchRepository::history()).
+	 * @return list<array<string, mixed>>
+	 */
+	public function reports( array $batches ): array {
+		$batches = array_map( [ $this, 'sweep' ], $batches );
+		$states  = $this->reversibility->for_page( $batches );
+		return array_map( fn( array $batch ): array => $this->report_for( $batch, false, $states[ $batch['batch_id'] ] ), $batches );
+	}
+
+	/**
 	 * The report of a batch row already read.
 	 *
-	 * @param array<string, mixed> $batch   Typed batch row (BatchRepository::find()).
-	 * @param bool                 $summary Whether to add the grouped reasons (two grouped reads).
+	 * @param array<string, mixed>                                   $batch         Typed batch row (BatchRepository::find()).
+	 * @param bool                                                   $summary       Whether to add the grouped reasons (two grouped reads).
+	 * @param array{state: string, conflicts: int, reason: ?string}|null $reversibility The batch's state when already read for its page; read here otherwise.
 	 * @return array<string, mixed>
 	 */
-	public function report_for( array $batch, bool $summary = true ): array {
+	public function report_for( array $batch, bool $summary = true, ?array $reversibility = null ): array {
 		$batch   = $this->sweep( $batch );
 		$active  = in_array( $batch['status'], self::ACTIVE, true );
 		$pending = $active ? $this->batches->count_items( $batch['batch_id'], 'pending' ) : 0;
@@ -153,6 +182,8 @@ final class Progress {
 			'last_activity_gmt'    => $last,
 			'previewed_count'      => $batch['previewed_items'] ?? null,
 			'selection_difference' => self::difference( $batch['previewed_items'] ?? null, $batch['total_items'] ),
+			'actions'              => $batch['actions'] ?? [],
+			'reversibility'        => $reversibility ?? $this->reversibility->of( $batch ),
 		];
 		if ( $summary ) {
 			$report['summary'] = $this->summary( $batch['batch_id'] );

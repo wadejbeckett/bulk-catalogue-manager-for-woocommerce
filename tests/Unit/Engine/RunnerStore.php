@@ -74,6 +74,8 @@ final class RunnerStore {
 			'failed_items'    => 0,
 			'chunk_size'      => 0,
 			'note'            => '',
+			'actions'         => '',
+			'pruned_gmt'      => null,
 		];
 		$id          = 100;
 		foreach ( $objects as $object ) {

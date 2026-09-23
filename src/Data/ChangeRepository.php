@@ -44,6 +44,11 @@ final class ChangeRepository {
 	public const UNKNOWN_TIME = '0000-00-00 00:00:00';
 
 	/**
+	 * The filters audit() and audit_count() accept (T54).
+	 */
+	public const AUDIT_FILTERS = [ 'object_id', 'prop', 'user_id', 'after', 'before' ];
+
+	/**
 	 * Where the table name comes from.
 	 *
 	 * @var Registry
@@ -219,6 +224,120 @@ final class ChangeRepository {
 			],
 			is_array( $rows ) ? $rows : []
 		);
+	}
+
+	/**
+	 * For a page of batches in one grouped read, how many `applied` journal
+	 * rows each has (T54's reversibility state): batch id => count, batches
+	 * with none left out.
+	 *
+	 * @param list<int> $batch_ids Batches.
+	 * @return array<int, int>
+	 * @throws \InvalidArgumentException On an id that is not a positive integer.
+	 */
+	public function applied_counts( array $batch_ids ): array {
+		global $wpdb;
+		$batch_ids = array_values( array_unique( $batch_ids ) );
+		if ( [] === $batch_ids ) {
+			return [];
+		}
+		foreach ( $batch_ids as $id ) {
+			if ( ! is_int( $id ) || $id < 1 ) {
+				throw new \InvalidArgumentException( 'Invalid batch id.' );
+			}
+		}
+		$in   = implode( ', ', array_fill( 0, count( $batch_ids ), '%d' ) );
+		$args = array_merge( [ $this->registry->table( Schema::CHANGES ) ], $batch_ids );
+		// $in holds only %d placeholders, one per id; every id is a prepared argument.
+		$rows   = $wpdb->get_results( $wpdb->prepare( "SELECT batch_id, COUNT(*) AS applied FROM %i WHERE batch_id IN ({$in}) AND result = 'applied' GROUP BY batch_id", $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
+		$counts = [];
+		foreach ( is_array( $rows ) ? $rows : [] as $row ) {
+			$counts[ (int) $row['batch_id'] ] = (int) $row['applied'];
+		}
+		return $counts;
+	}
+
+	/**
+	 * One page of the audit log (T54, §4.6): journal rows across every
+	 * batch, newest first, each with its batch's user, filtered by object,
+	 * field, the batch's user and the time the row was written.
+	 *
+	 * @param array{object_id?: int, prop?: string, user_id?: int, after?: string, before?: string} $filters  Filters; times are GMT `Y-m-d H:i:s`, `after` inclusive, `before` exclusive.
+	 * @param int                                                                                  $page     Page, from 1.
+	 * @param int                                                                                  $per_page Rows per page, 1 to MAX_PAGE.
+	 * @return array<int, array{change_id: int, batch_id: int, object_id: int, object_type: string, prop: string, old_value: mixed, new_value: mixed, modified_gmt: string, applied_gmt: string, result: string, message: string, user_id: int}>
+	 * @throws \InvalidArgumentException On an unknown filter or value.
+	 */
+	public function audit( array $filters, int $page, int $per_page ): array {
+		global $wpdb;
+		$per_page         = max( 1, min( self::MAX_PAGE, $per_page ) );
+		[ $where, $args ] = $this->audit_conditions( $filters );
+		$args[]           = $per_page;
+		$args[]           = ( max( 1, $page ) - 1 ) * $per_page;
+		// $where holds only fixed conditions with placeholders; every value is a prepared argument.
+		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT c.change_id, c.batch_id, c.object_id, c.object_type, c.prop, c.old_value, c.new_value, c.modified_gmt, c.applied_gmt, c.result, c.message, b.user_id FROM %i AS c INNER JOIN %i AS b ON b.batch_id = c.batch_id WHERE {$where} ORDER BY c.change_id DESC LIMIT %d OFFSET %d", $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
+		return array_map( static fn( array $row ): array => self::row( $row ) + [ 'user_id' => (int) $row['user_id'] ], is_array( $rows ) ? $rows : [] );
+	}
+
+	/**
+	 * Number of rows audit() pages through.
+	 *
+	 * @param array<string, mixed> $filters As audit().
+	 * @throws \InvalidArgumentException On an unknown filter or value.
+	 */
+	public function audit_count( array $filters ): int {
+		global $wpdb;
+		[ $where, $args ] = $this->audit_conditions( $filters );
+		// $where holds only fixed conditions with placeholders; every value is a prepared argument.
+		return (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM %i AS c INNER JOIN %i AS b ON b.batch_id = c.batch_id WHERE {$where}", $args ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
+	}
+
+	/**
+	 * The WHERE clause and its arguments (the two tables first) for the audit log.
+	 *
+	 * @param array<string, mixed> $filters Filters.
+	 * @return array{0: string, 1: list<mixed>}
+	 * @throws \InvalidArgumentException On an unknown filter or value.
+	 */
+	private function audit_conditions( array $filters ): array {
+		$unknown = array_diff( array_keys( $filters ), self::AUDIT_FILTERS );
+		if ( [] !== $unknown ) {
+			throw new \InvalidArgumentException( esc_html( sprintf( 'Unknown audit filter "%s".', (string) reset( $unknown ) ) ) );
+		}
+		$where = [ 'c.change_id > 0' ];
+		$args  = [ $this->registry->table( Schema::CHANGES ), $this->registry->table( Schema::BATCHES ) ];
+		foreach ( [
+			'object_id' => 'c.object_id = %d',
+			'user_id'   => 'b.user_id = %d',
+		] as $key => $condition ) {
+			if ( isset( $filters[ $key ] ) ) {
+				if ( ! is_int( $filters[ $key ] ) || $filters[ $key ] < 1 ) {
+					throw new \InvalidArgumentException( esc_html( sprintf( 'The %s filter is a positive integer.', $key ) ) );
+				}
+				$where[] = $condition;
+				$args[]  = $filters[ $key ];
+			}
+		}
+		if ( isset( $filters['prop'] ) ) {
+			if ( ! is_string( $filters['prop'] ) || 1 !== preg_match( '/^[a-z][a-z0-9_]{0,' . ( self::PROP_LENGTH - 1 ) . '}$/', $filters['prop'] ) ) {
+				throw new \InvalidArgumentException( 'The field filter is a field key.' );
+			}
+			$where[] = 'c.prop = %s';
+			$args[]  = $filters['prop'];
+		}
+		foreach ( [
+			'after'  => 'c.applied_gmt >= %s',
+			'before' => 'c.applied_gmt < %s',
+		] as $key => $condition ) {
+			if ( isset( $filters[ $key ] ) ) {
+				if ( ! is_string( $filters[ $key ] ) || ! self::is_datetime( $filters[ $key ] ) ) {
+					throw new \InvalidArgumentException( 'A date filter is a GMT Y-m-d H:i:s time.' );
+				}
+				$where[] = $condition;
+				$args[]  = $filters[ $key ];
+			}
+		}
+		return [ implode( ' AND ', $where ), $args ];
 	}
 
 	/**

@@ -106,20 +106,31 @@ final class BatchChangesController implements ReadController {
 		$page     = (int) ( $request->get_param( 'page' ) ?? 1 );
 		$per_page = (int) ( $request->get_param( 'per_page' ) ?? 25 );
 		$rows     = $this->changes->page( $batch_id, $page, $per_page, $results );
-		$ids      = array_values( array_unique( array_map( static fn( array $row ): int => $row['object_id'], array_filter( $rows, static fn( array $row ): bool => 'term' !== $row['object_type'] ) ) ) );
-		if ( [] !== $ids ) {
-			_prime_post_caches( $ids, false, false );
-		}
+		self::prime_names( $rows );
 		return BatchesController::paged( array_map( [ $this, 'change' ], $rows ), $page, $per_page, $this->changes->page_count( $batch_id, $results ) );
 	}
 
 	/**
-	 * One journal row as the feed shows it.
+	 * Load the names of a page of journal rows' products and variations in
+	 * one post-cache prime, so change() reads each from the cache (the
+	 * changes feed and the audit log).
+	 *
+	 * @param list<array<string, mixed>> $rows Typed journal rows.
+	 */
+	public static function prime_names( array $rows ): void {
+		$ids = array_values( array_unique( array_map( static fn( array $row ): int => $row['object_id'], array_filter( $rows, static fn( array $row ): bool => 'term' !== $row['object_type'] ) ) ) );
+		if ( [] !== $ids ) {
+			_prime_post_caches( $ids, false, false );
+		}
+	}
+
+	/**
+	 * One journal row as the feed shows it (and, with its batch, the audit log).
 	 *
 	 * @param array<string, mixed> $row Typed journal row.
 	 * @return array<string, mixed>
 	 */
-	private function change( array $row ): array {
+	public function change( array $row ): array {
 		$field = $this->fields->get( $row['prop'] );
 		return [
 			'change_id'   => $row['change_id'],

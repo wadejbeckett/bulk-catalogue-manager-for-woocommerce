@@ -24,9 +24,10 @@ final class Migrator {
 	 * The schema version this code expects. Bump it whenever a registry table
 	 * changes, so existing installs re-run dbDelta(). 1: no tables (T5);
 	 * 2: the three §9.2 tables (T6); 3: the chunk runner's claim lease, item
-	 * message, chunk size and note (T34); 4: the batch's previewed count (T38).
+	 * message, chunk size and note (T34); 4: the batch's previewed count (T38); 5: the batch's action list and
+	 * pruned time (T54).
 	 */
-	public const SCHEMA_VERSION = '4';
+	public const SCHEMA_VERSION = '5';
 
 	/**
 	 * The option holding the schema version the database was last migrated to.

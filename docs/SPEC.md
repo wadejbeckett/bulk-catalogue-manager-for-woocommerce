@@ -221,6 +221,8 @@ Applying creates a batch row and materialises the selection into `bcm_batch_item
   failed_items  INT UNSIGNED
   chunk_size    SMALLINT UNSIGNED   -- NOT NULL DEFAULT 0; size the runner settled on, 0 until the first chunk
   note          VARCHAR(255)        -- NOT NULL DEFAULT ''; plain reason the chunk size changed
+  actions       VARCHAR(255)        -- NOT NULL DEFAULT ''; action ids the operations use, comma-delimited with a comma at each end (",adjust,round,"), for the history's action-type filter
+  pruned_gmt    DATETIME NULL       -- when retention pruning removed the batch's journal; the batch stays listed, not reversible
   KEY created_gmt (created_gmt), KEY status (status), KEY user_id (user_id)
 
 {prefix}bcm_batch_items

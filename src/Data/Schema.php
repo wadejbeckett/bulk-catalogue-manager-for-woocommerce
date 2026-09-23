@@ -22,6 +22,13 @@
  * the count the owner saw in the preview of a filter selection, NULL for an
  * id selection, so a batch whose materialised `total_items` differs can say
  * so in its history row as well as in its report.
+ * Schema version 5 (T54, history and audit) adds two columns on batches:
+ * `actions`, the action ids the operation list uses, comma-delimited with a
+ * comma at each end (`,adjust,round,`) so the history list filters by action
+ * type with one `LIKE '%,adjust,%'` and never parses the operations JSON in
+ * SQL (BatchRepository::create() derives it); and `pruned_gmt`, NULL until
+ * the retention pruner removes the batch's journal and items, after which
+ * the batch stays listed as no longer reversible (§9.5).
  * Bump Migrator::SCHEMA_VERSION whenever a body here changes.
  *
  * @package BulkCatalogueManager
@@ -98,6 +105,8 @@ changed_items int(10) unsigned NOT NULL DEFAULT 0,
 failed_items int(10) unsigned NOT NULL DEFAULT 0,
 chunk_size smallint(5) unsigned NOT NULL DEFAULT 0,
 note varchar(255) NOT NULL DEFAULT \'\',
+actions varchar(255) NOT NULL DEFAULT \'\',
+pruned_gmt datetime NULL,
 PRIMARY KEY  (batch_id),
 KEY created_gmt (created_gmt),
 KEY status (status),

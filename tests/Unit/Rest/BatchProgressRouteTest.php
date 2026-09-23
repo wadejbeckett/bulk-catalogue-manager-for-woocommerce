@@ -175,7 +175,7 @@ final class BatchProgressRouteTest extends TestCase {
 		$routes = $GLOBALS['bcm_test']['routes'];
 		$this->assertSame( [ 'POST', 'GET' ], array_column( array_filter( $routes['/bcm/v1/batches'], 'is_int', ARRAY_FILTER_USE_KEY ), 'methods' ) );
 		$this->assertSame( [ Access::class, 'can_read' ], $routes['/bcm/v1/batches'][1]['permission_callback'] );
-		$this->assertSame( [ 'page', 'per_page', 'status', 'user', 'after', 'before' ], array_keys( $routes['/bcm/v1/batches'][1]['args'] ) );
+		$this->assertSame( [ 'page', 'per_page', 'status', 'user', 'after', 'before', 'action' ], array_keys( $routes['/bcm/v1/batches'][1]['args'] ) );
 		$this->assertSame( [ Access::class, 'can_read' ], $routes[ '/bcm/v1' . BatchesController::ITEM_ROUTE ][0]['permission_callback'] );
 		$this->assertSame( [ Access::class, 'can_read' ], $routes[ '/bcm/v1' . BatchChangesController::ROUTE ][0]['permission_callback'] );
 		$this->assertSame( [ 'id', 'page', 'per_page', 'result' ], array_keys( $routes[ '/bcm/v1' . BatchChangesController::ROUTE ][0]['args'] ) );
@@ -474,6 +474,8 @@ final class BatchProgressRouteTest extends TestCase {
 				'failed_items'    => 'partial' === $status ? 1 : 0,
 				'chunk_size'      => 50,
 				'note'            => '',
+				'actions'         => '',
+				'pruned_gmt'      => null,
 			];
 		}
 		$db              = new SqlEvaluator(

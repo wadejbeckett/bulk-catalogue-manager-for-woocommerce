@@ -52,7 +52,17 @@ final class BatchRepository {
 	/**
 	 * The filters history() and history_count() accept.
 	 */
-	public const LIST_FILTERS = [ 'status', 'user_id', 'after', 'before' ];
+	public const LIST_FILTERS = [ 'status', 'user_id', 'after', 'before', 'action' ];
+
+	/**
+	 * Length of the `actions` column (T54).
+	 */
+	public const ACTIONS_LENGTH = 255;
+
+	/**
+	 * An action id as the `actions` column and the action filter take it.
+	 */
+	private const ACTION_ID = '/^[a-z][a-z0-9_]{0,63}$/';
 
 	/**
 	 * Where table names come from.
@@ -71,7 +81,10 @@ final class BatchRepository {
 	}
 
 	/**
-	 * Create a batch row with status `queued` and zeroed counters.
+	 * Create a batch row with status `queued` and zeroed counters. The
+	 * `actions` column (T54) is derived here from the operation list — the
+	 * distinct `action` ids in order, delimited `,adjust,round,` — so every
+	 * batch, whoever creates it, can be filtered by action type.
 	 *
 	 * @param string   $uuid        Client request id (36 characters).
 	 * @param int      $user_id     Initiating user.
@@ -108,8 +121,9 @@ final class BatchRepository {
 			'operations'  => self::json( $operations ),
 			'selection'   => self::json( $selection ),
 			'total_items' => $total_items,
+			'actions'     => self::actions( $operations ),
 		];
-		$format = [ '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%d' ];
+		$format = [ '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%d', '%s' ];
 		if ( null !== $undo_of ) {
 			$data['undo_of'] = $undo_of;
 			$format[]        = '%d';
@@ -130,7 +144,7 @@ final class BatchRepository {
 	 * Read a batch back, typed, with operations and selection decoded.
 	 *
 	 * @param int $batch_id Batch.
-	 * @return array{batch_id: int, uuid: string, user_id: int, created_gmt: string, finished_gmt: ?string, status: string, source: string, undo_of: ?int, operations: array, selection: array, total_items: int, previewed_items: ?int, done_items: int, changed_items: int, failed_items: int, chunk_size: int, note: string}|null
+	 * @return array{batch_id: int, uuid: string, user_id: int, created_gmt: string, finished_gmt: ?string, status: string, source: string, undo_of: ?int, operations: array, selection: array, total_items: int, previewed_items: ?int, done_items: int, changed_items: int, failed_items: int, chunk_size: int, note: string, actions: list<string>, pruned_gmt: ?string}|null
 	 */
 	public function find( int $batch_id ): ?array {
 		global $wpdb;
@@ -593,11 +607,11 @@ final class BatchRepository {
 
 	/**
 	 * One page of batches, newest first, for the history screen (T35; T54
-	 * adds the action-type filter and the reversibility state).
+	 * adds the action-type filter).
 	 *
-	 * @param array{status?: string, user_id?: int, after?: string, before?: string} $filters  Status, initiating user, and created at or after / before a GMT `Y-m-d H:i:s` time.
-	 * @param int                                                                    $page     Page, from 1.
-	 * @param int                                                                    $per_page Rows per page, 1 to 100.
+	 * @param array{status?: string, user_id?: int, after?: string, before?: string, action?: string} $filters  Status, initiating user, created at or after / before a GMT `Y-m-d H:i:s` time, and an action id the operations use.
+	 * @param int                                                                                     $page     Page, from 1.
+	 * @param int                                                                                     $per_page Rows per page, 1 to 100.
 	 * @return list<array<string, mixed>> Typed rows as find() returns them, with an empty selection.
 	 * @throws \InvalidArgumentException On an unknown filter or value.
 	 */
@@ -609,14 +623,14 @@ final class BatchRepository {
 		$args[]           = ( max( 1, $page ) - 1 ) * $per_page;
 		// Every column but the selection snapshot, which can hold 100,000 ids and is not shown in a list.
 		// $where holds only fixed column conditions with placeholders; every value is a prepared argument.
-		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT batch_id, uuid, user_id, created_gmt, finished_gmt, status, source, undo_of, operations, total_items, previewed_items, done_items, changed_items, failed_items, chunk_size, note FROM %i WHERE {$where} ORDER BY batch_id DESC LIMIT %d OFFSET %d", $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
+		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT batch_id, uuid, user_id, created_gmt, finished_gmt, status, source, undo_of, operations, total_items, previewed_items, done_items, changed_items, failed_items, chunk_size, note, actions, pruned_gmt FROM %i WHERE {$where} ORDER BY batch_id DESC LIMIT %d OFFSET %d", $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
 		return array_map( [ self::class, 'typed' ], is_array( $rows ) ? $rows : [] );
 	}
 
 	/**
 	 * Number of batches history() pages through.
 	 *
-	 * @param array{status?: string, user_id?: int, after?: string, before?: string} $filters As history().
+	 * @param array{status?: string, user_id?: int, after?: string, before?: string, action?: string} $filters As history().
 	 * @throws \InvalidArgumentException On an unknown filter or value.
 	 */
 	public function history_count( array $filters ): int {
@@ -627,6 +641,44 @@ final class BatchRepository {
 	}
 
 	/**
+	 * The undo batch that completed undoing a batch, or null (T54, §4.6:
+	 * "already undone"). A redo is an undo of the undo batch, so it names the
+	 * undo batch, never the original.
+	 *
+	 * @param int $batch_id Batch.
+	 */
+	public function undo_of( int $batch_id ): ?int {
+		return $this->undone_by( [ $batch_id ] )[ $batch_id ] ?? null;
+	}
+
+	/**
+	 * For a page of batches in one read, the latest undo batch that
+	 * completed undoing each: batch id => undo batch id, batches without one
+	 * left out.
+	 *
+	 * @param list<int> $batch_ids Batches.
+	 * @return array<int, int>
+	 * @throws \InvalidArgumentException On an id that is not a positive integer.
+	 */
+	public function undone_by( array $batch_ids ): array {
+		global $wpdb;
+		$batch_ids = array_values( array_unique( $batch_ids ) );
+		if ( [] === $batch_ids ) {
+			return [];
+		}
+		self::assert_ids( $batch_ids, 'batch id' );
+		$in   = implode( ', ', array_fill( 0, count( $batch_ids ), '%d' ) );
+		$args = array_merge( [ $this->registry->table( Schema::BATCHES ) ], $batch_ids );
+		// $in holds only %d placeholders, one per id; every id is a prepared argument.
+		$rows   = $wpdb->get_results( $wpdb->prepare( "SELECT batch_id, undo_of FROM %i WHERE undo_of IN ({$in}) AND source = 'undo' AND status = 'complete' ORDER BY batch_id ASC", $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
+		$undone = [];
+		foreach ( is_array( $rows ) ? $rows : [] as $row ) {
+			$undone[ (int) $row['undo_of'] ] = (int) $row['batch_id'];
+		}
+		return $undone;
+	}
+
+	/**
 	 * The WHERE clause and its arguments (the table first) for history() and history_count().
 	 *
 	 * @param array<string, mixed> $filters Filters.
@@ -634,6 +686,7 @@ final class BatchRepository {
 	 * @throws \InvalidArgumentException On an unknown filter or value.
 	 */
 	private function conditions( array $filters ): array {
+		global $wpdb;
 		$unknown = array_diff( array_keys( $filters ), self::LIST_FILTERS );
 		if ( [] !== $unknown ) {
 			throw new \InvalidArgumentException( esc_html( sprintf( 'Unknown batch filter "%s".', (string) reset( $unknown ) ) ) );
@@ -649,6 +702,13 @@ final class BatchRepository {
 			self::assert_ids( [ $filters['user_id'] ], 'user id' );
 			$where[] = 'user_id = %d';
 			$args[]  = $filters['user_id'];
+		}
+		if ( isset( $filters['action'] ) ) {
+			if ( ! is_string( $filters['action'] ) || 1 !== preg_match( self::ACTION_ID, $filters['action'] ) ) {
+				throw new \InvalidArgumentException( 'An action filter is an action id.' );
+			}
+			$where[] = 'actions LIKE %s';
+			$args[]  = '%,' . $wpdb->esc_like( $filters['action'] ) . ',%';
 		}
 		foreach ( [
 			'after'  => 'created_gmt >= %s',
@@ -669,7 +729,7 @@ final class BatchRepository {
 	 * A batch row typed, operations and selection decoded (an absent selection as empty).
 	 *
 	 * @param array $row Row from the database.
-	 * @return array{batch_id: int, uuid: string, user_id: int, created_gmt: string, finished_gmt: ?string, status: string, source: string, undo_of: ?int, operations: array, selection: array, total_items: int, previewed_items: ?int, done_items: int, changed_items: int, failed_items: int, chunk_size: int, note: string}
+	 * @return array{batch_id: int, uuid: string, user_id: int, created_gmt: string, finished_gmt: ?string, status: string, source: string, undo_of: ?int, operations: array, selection: array, total_items: int, previewed_items: ?int, done_items: int, changed_items: int, failed_items: int, chunk_size: int, note: string, actions: list<string>, pruned_gmt: ?string}
 	 */
 	private static function typed( array $row ): array {
 		return [
@@ -690,7 +750,29 @@ final class BatchRepository {
 			'failed_items'    => (int) $row['failed_items'],
 			'chunk_size'      => (int) ( $row['chunk_size'] ?? 0 ),
 			'note'            => (string) ( $row['note'] ?? '' ),
+			'actions'         => array_values( array_filter( explode( ',', (string) ( $row['actions'] ?? '' ) ), static fn( string $id ): bool => '' !== $id ) ),
+			'pruned_gmt'      => null === ( $row['pruned_gmt'] ?? null ) ? null : (string) $row['pruned_gmt'],
 		];
+	}
+
+	/**
+	 * The `actions` column for an operation list: its distinct action ids in
+	 * order, with a comma at each end (`,adjust,round,`), or '' when it names
+	 * none. An entry without a well-formed id is left out, and an id that
+	 * would overflow the column is dropped (every version 1 action id
+	 * together takes well under a third of it).
+	 *
+	 * @param array $operations Operation list, `[ { action, args } ]`.
+	 */
+	public static function actions( array $operations ): string {
+		$ids = [];
+		foreach ( $operations as $operation ) {
+			$id = is_array( $operation ) ? ( $operation['action'] ?? null ) : null;
+			if ( is_string( $id ) && 1 === preg_match( self::ACTION_ID, $id ) && ! in_array( $id, $ids, true ) && strlen( ',' . implode( ',', [ ...$ids, $id ] ) . ',' ) <= self::ACTIONS_LENGTH ) {
+				$ids[] = $id;
+			}
+		}
+		return [] === $ids ? '' : ',' . implode( ',', $ids ) . ',';
 	}
 
 	/**

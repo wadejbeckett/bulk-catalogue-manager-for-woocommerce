@@ -231,4 +231,66 @@ final class ChangeRepositoryTest extends TestCase {
 		}
 		$this->assertCount( count( self::db()->prepared ), self::db()->queries, 'One prepare() per statement.' );
 	}
+
+	public function test_the_audit_log_joins_the_batch_for_its_user_and_filters(): void {
+		global $wpdb;
+		$repo            = new ChangeRepository();
+		$filters         = [
+			'object_id' => 1001,
+			'prop'      => 'regular_price',
+			'user_id'   => 4,
+			'after'     => '2026-09-01 00:00:00',
+			'before'    => '2026-10-01 00:00:00',
+		];
+		$wpdb->responses = [
+			'/^SELECT c\.change_id/' => [
+				[
+					'change_id'    => '5',
+					'batch_id'     => '2',
+					'object_id'    => '1001',
+					'object_type'  => 'product',
+					'prop'         => 'regular_price',
+					'old_value'    => '"10"',
+					'new_value'    => '"11"',
+					'modified_gmt' => self::MODIFIED,
+					'applied_gmt'  => self::MODIFIED,
+					'result'       => 'applied',
+					'message'      => '',
+					'user_id'      => '4',
+				],
+			],
+			'/^SELECT COUNT/'        => '41',
+		];
+		$rows            = $repo->audit( $filters, 3, 20 );
+		$this->assertSame( "SELECT c.change_id, c.batch_id, c.object_id, c.object_type, c.prop, c.old_value, c.new_value, c.modified_gmt, c.applied_gmt, c.result, c.message, b.user_id FROM `wp_bcm_changes` AS c INNER JOIN `wp_bcm_batches` AS b ON b.batch_id = c.batch_id WHERE c.change_id > 0 AND c.object_id = 1001 AND b.user_id = 4 AND c.prop = 'regular_price' AND c.applied_gmt >= '2026-09-01 00:00:00' AND c.applied_gmt < '2026-10-01 00:00:00' ORDER BY c.change_id DESC LIMIT 20 OFFSET 40", end( $wpdb->queries ) );
+		$this->assertSame( [ 5, 2, '10', '11', 4 ], [ $rows[0]['change_id'], $rows[0]['batch_id'], $rows[0]['old_value'], $rows[0]['new_value'], $rows[0]['user_id'] ] );
+		$this->assertSame( 41, $repo->audit_count( [] ) );
+		$this->assertSame( 'SELECT COUNT(*) FROM `wp_bcm_changes` AS c INNER JOIN `wp_bcm_batches` AS b ON b.batch_id = c.batch_id WHERE c.change_id > 0', end( $wpdb->queries ) );
+		$repo->audit( [], 1, 5000 );
+		$this->assertStringEndsWith( 'LIMIT ' . ChangeRepository::MAX_PAGE . ' OFFSET 0', end( $wpdb->queries ) );
+
+		$repo->applied_counts( [ 3, 1, 3 ] );
+		$this->assertSame( "SELECT batch_id, COUNT(*) AS applied FROM `wp_bcm_changes` WHERE batch_id IN (3, 1) AND result = 'applied' GROUP BY batch_id", end( $wpdb->queries ) );
+		$count = count( $wpdb->queries );
+		$this->assertSame( [], $repo->applied_counts( [] ) );
+		$this->assertCount( $count, $wpdb->queries );
+
+		foreach ( [ [ 'orderby' => 'x' ], [ 'object_id' => 0 ], [ 'object_id' => '5' ], [ 'user_id' => -1 ], [ 'prop' => '_price' ], [ 'prop' => "x' OR 1" ], [ 'after' => '2026-09-01' ], [ 'before' => "1' OR 1=1" ] ] as $bad ) {
+			try {
+				$repo->audit( $bad, 1, 10 );
+				$this->fail( 'Accepted ' . wp_json_encode( $bad ) );
+			} catch ( \InvalidArgumentException $e ) {
+				$this->assertNotSame( '', $e->getMessage() );
+			}
+		}
+		try {
+			$repo->applied_counts( [ 0 ] );
+			$this->fail( 'Accepted a zero id.' );
+		} catch ( \InvalidArgumentException $e ) {
+			$this->assertNotSame( '', $e->getMessage() );
+		}
+		foreach ( $wpdb->prepared as [ $template ] ) {
+			$this->assertStringContainsString( '%i', $template );
+		}
+	}
 }

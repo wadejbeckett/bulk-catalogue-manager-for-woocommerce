@@ -24,9 +24,13 @@
  * unless the body carries `confirm_changed: true` — the owner's answer after
  * the screen stated both numbers.
  *
- * `GET /bcm/v1/batches` (T35) pages the batches newest first, filtered by
- * status, user and creation time, for the history screen; T54 adds the
- * action-type filter and the reversibility state.
+ * `GET /bcm/v1/batches` (T35, T54) pages the batches newest first, filtered
+ * by status, user, creation time and action type (`action`, one id from the
+ * operations registry, matched on the batch's `actions` column), for the
+ * history screen. Every row, like the single read, carries `actions` and
+ * `reversibility` — `{ state, conflicts, reason }` from
+ * Engine\Reversibility (§4.6) — the list reading every row's state with one
+ * grouped pair of reads. The audit log across batches is AuditController.
  *
  * `GET /bcm/v1/batches/{id}` (T35, T36) answers Engine\Progress::report():
  * status, counters, times, source, note, chunk size, the `stalled` flag and
@@ -57,7 +61,9 @@ use BulkCatalogueManager\Data\ChangeRepository;
 use BulkCatalogueManager\Data\Schema;
 use BulkCatalogueManager\Engine\BatchFactory;
 use BulkCatalogueManager\Engine\Progress;
+use BulkCatalogueManager\Engine\Reversibility;
 use BulkCatalogueManager\Fields\Registry as Fields;
+use BulkCatalogueManager\Operations\Registry as Actions;
 use BulkCatalogueManager\Selection\Selection;
 use BulkCatalogueManager\Selection\SelectionToken;
 
@@ -148,20 +154,30 @@ final class BatchesController implements ReadController {
 	private Fields $fields;
 
 	/**
+	 * The operations registry, for the action-type filter; the shared one when null.
+	 *
+	 * @var Actions|null
+	 */
+	private ?Actions $actions;
+
+	/**
 	 * Build a controller.
 	 *
 	 * @param BatchFactory|null     $factory  Batch factory; built when first needed by default.
 	 * @param BatchRepository|null  $batches  Batches; the plugin's by default.
 	 * @param ChangeRepository|null $changes  The journal; the plugin's by default.
 	 * @param Fields|null           $fields   Field registry; the shared one by default.
-	 * @param \Closure|null         $clock    Returns the Unix time, for the stalled check; time() by default.
+	 * @param \Closure|null         $clock    Returns the Unix time, for the stalled check and retention; time() by default.
+	 * @param Reversibility|null    $reversibility The reversibility state (T55 passes one counting conflicts); one over the same repositories and clock by default.
+	 * @param Actions|null          $actions  Operations registry, for the action filter; the shared one by default.
 	 */
-	public function __construct( ?BatchFactory $factory = null, ?BatchRepository $batches = null, ?ChangeRepository $changes = null, ?Fields $fields = null, ?\Closure $clock = null ) {
+	public function __construct( ?BatchFactory $factory = null, ?BatchRepository $batches = null, ?ChangeRepository $changes = null, ?Fields $fields = null, ?\Closure $clock = null, ?Reversibility $reversibility = null, ?Actions $actions = null ) {
 		$this->factory            = $factory;
 		$this->batches            = $batches ?? new BatchRepository();
 		$changes                  = $changes ?? new ChangeRepository();
 		$this->fields             = $fields ?? Fields::instance();
-		$this->progress           = new Progress( $this->batches, $changes, $clock );
+		$this->actions            = $actions;
+		$this->progress           = new Progress( $this->batches, $changes, $clock, $reversibility );
 		$this->changes_controller = new BatchChangesController( $this->batches, $changes, $this->fields );
 	}
 
@@ -256,6 +272,24 @@ final class BatchesController implements ReadController {
 				'last_activity_gmt'    => $time,
 				'previewed_count'      => [ 'type' => [ 'integer', 'null' ] ],
 				'selection_difference' => $text,
+				'actions'              => [
+					'type'  => 'array',
+					'items' => [ 'type' => 'string' ],
+				],
+				'reversibility'        => [
+					'type'       => 'object',
+					'properties' => [
+						'state'     => [
+							'type' => 'string',
+							'enum' => Reversibility::STATES,
+						],
+						'conflicts' => $integer,
+						'reason'    => [
+							'type' => [ 'string', 'null' ],
+							'enum' => [ ...Reversibility::REASONS, null ],
+						],
+					],
+				],
 				'summary'              => [
 					'type'  => 'array',
 					'items' => [
@@ -291,12 +325,13 @@ final class BatchesController implements ReadController {
 	}
 
 	/**
-	 * The history listing's arguments: paging, status, user and a creation-time range.
+	 * A time filter argument, read as GMT `Y-m-d H:i:s` (the history list and the audit log).
 	 *
-	 * @return array<string, array<string, mixed>>
+	 * @param string $description What the argument does.
+	 * @return array<string, mixed>
 	 */
-	public function list_args(): array {
-		$date = static fn( string $description ): array => [
+	public static function date_arg( string $description ): array {
+		return [
 			'description'       => $description,
 			'type'              => 'string',
 			'pattern'           => self::DATE,
@@ -308,6 +343,31 @@ final class BatchesController implements ReadController {
 			},
 			'sanitize_callback' => [ self::class, 'gmt' ],
 		];
+	}
+
+	/**
+	 * The user filter argument: a user id (the history list and the audit log).
+	 *
+	 * @return array<string, mixed>
+	 */
+	public static function user_arg(): array {
+		return self::arg(
+			[
+				'description' => __( 'Only changes made by this user, by id.', 'bulk-catalogue-manager-for-woocommerce' ),
+				'type'        => 'integer',
+				'minimum'     => 1,
+			],
+			'intval'
+		);
+	}
+
+	/**
+	 * The history listing's arguments: paging, status, user, a creation-time
+	 * range and an action type from the operations registry.
+	 *
+	 * @return array<string, array<string, mixed>>
+	 */
+	public function list_args(): array {
 		return ( new RouteSchema( $this->fields ) )->paging_args() + [
 			'status' => self::arg(
 				[
@@ -317,16 +377,17 @@ final class BatchesController implements ReadController {
 				],
 				'strval'
 			),
-			'user'   => self::arg(
+			'user'   => self::user_arg(),
+			'after'  => self::date_arg( __( 'Only changes made at or after this time (UTC unless it names a zone).', 'bulk-catalogue-manager-for-woocommerce' ) ),
+			'before' => self::date_arg( __( 'Only changes made before this time (UTC unless it names a zone).', 'bulk-catalogue-manager-for-woocommerce' ) ),
+			'action' => self::arg(
 				[
-					'description' => __( 'Only changes made by this user, by id.', 'bulk-catalogue-manager-for-woocommerce' ),
-					'type'        => 'integer',
-					'minimum'     => 1,
+					'description' => __( 'Only changes that used this action.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'type'        => 'string',
+					'enum'        => ( $this->actions ?? Actions::instance() )->ids(),
 				],
-				'intval'
+				'strval'
 			),
-			'after'  => $date( __( 'Only changes made at or after this time (UTC unless it names a zone).', 'bulk-catalogue-manager-for-woocommerce' ) ),
-			'before' => $date( __( 'Only changes made before this time (UTC unless it names a zone).', 'bulk-catalogue-manager-for-woocommerce' ) ),
 		];
 	}
 
@@ -336,20 +397,30 @@ final class BatchesController implements ReadController {
 	 * @param \WP_REST_Request $request The validated, sanitised request.
 	 */
 	public function get_items( \WP_REST_Request $request ): \WP_REST_Response {
-		$filters      = array_filter(
+		$filters  = array_filter(
 			[
 				'status'  => $request->get_param( 'status' ),
 				'user_id' => $request->get_param( 'user' ),
 				'after'   => $request->get_param( 'after' ),
 				'before'  => $request->get_param( 'before' ),
+				'action'  => $request->get_param( 'action' ),
 			],
-			static fn( mixed $value ): bool => null !== $value && '' !== $value
+			[ self::class, 'is_given' ]
 		);
-			$page     = (int) ( $request->get_param( 'page' ) ?? 1 );
-			$per_page = (int) ( $request->get_param( 'per_page' ) ?? 25 );
-			$total    = $this->batches->history_count( $filters );
-			$items    = array_map( fn( array $batch ): array => $this->progress->report_for( $batch, false ), $this->batches->history( $filters, $page, $per_page ) );
-			return self::paged( $items, $page, $per_page, $total );
+		$page     = (int) ( $request->get_param( 'page' ) ?? 1 );
+		$per_page = (int) ( $request->get_param( 'per_page' ) ?? 25 );
+		$total    = $this->batches->history_count( $filters );
+		$items    = $this->progress->reports( $this->batches->history( $filters, $page, $per_page ) );
+		return self::paged( $items, $page, $per_page, $total );
+	}
+
+	/**
+	 * Whether a filter parameter was given (not absent, not empty).
+	 *
+	 * @param mixed $value The parameter.
+	 */
+	public static function is_given( mixed $value ): bool {
+		return null !== $value && '' !== $value;
 	}
 
 	/**

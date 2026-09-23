@@ -72,10 +72,11 @@ final class BatchRepositoryTest extends TestCase {
 				'operations'  => '[{"field":"regular_price","op":"set","value":"0.00"}]',
 				'selection'   => '{"ids":[10,11]}',
 				'total_items' => 2,
+				'actions'     => '',
 			],
 			$data
 		);
-		$this->assertSame( [ '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%d' ], $format );
+		$this->assertSame( [ '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%d', '%s' ], $format );
 	}
 
 	public function test_an_undo_batch_records_what_it_undoes(): void {
@@ -447,7 +448,7 @@ final class BatchRepositoryTest extends TestCase {
 		$this->assertSame( 41, $repo->history_count( $filters ) );
 		$this->assertSame( [], $repo->history( $filters, 3, 20 ) );
 		$list = end( self::db()->queries );
-		$this->assertSame( "SELECT batch_id, uuid, user_id, created_gmt, finished_gmt, status, source, undo_of, operations, total_items, previewed_items, done_items, changed_items, failed_items, chunk_size, note FROM `wp_bcm_batches` WHERE batch_id > 0 AND status = 'partial' AND user_id = 3 AND created_gmt >= '2026-09-01 00:00:00' AND created_gmt < '2026-10-01 00:00:00' ORDER BY batch_id DESC LIMIT 20 OFFSET 40", $list );
+		$this->assertSame( "SELECT batch_id, uuid, user_id, created_gmt, finished_gmt, status, source, undo_of, operations, total_items, previewed_items, done_items, changed_items, failed_items, chunk_size, note, actions, pruned_gmt FROM `wp_bcm_batches` WHERE batch_id > 0 AND status = 'partial' AND user_id = 3 AND created_gmt >= '2026-09-01 00:00:00' AND created_gmt < '2026-10-01 00:00:00' ORDER BY batch_id DESC LIMIT 20 OFFSET 40", $list );
 		$this->assertStringNotContainsString( 'selection', $list, 'A list never reads the selection snapshot.' );
 		$repo->history( [], 1, 500 );
 		$this->assertStringEndsWith( 'WHERE batch_id > 0 ORDER BY batch_id DESC LIMIT 100 OFFSET 0', end( self::db()->queries ) );
@@ -469,6 +470,50 @@ final class BatchRepositoryTest extends TestCase {
 		$this->assertStringStartsWith( 'UPDATE `wp_3_bcm_batches` SET', self::db()->queries[0] );
 
 		$this->assert_invalid( static fn() => ( new BatchRepository( new Registry( [], [], [], [], [], [] ) ) )->count_items( 6, 'done' ) );
+	}
+
+	public function test_the_action_list_is_derived_from_the_operations_and_filtered_on(): void {
+		$step = static fn( mixed $action ): array => [
+			'action' => $action,
+			'args'   => [],
+		];
+		$this->assertSame( ',adjust,round,set_value,', BatchRepository::actions( [ $step( 'adjust' ), $step( 'round' ), $step( 'adjust' ), $step( 'set_value' ) ] ), 'Distinct ids in step order.' );
+		$this->assertSame( '', BatchRepository::actions( [] ) );
+		$this->assertSame( ',clear,', BatchRepository::actions( [ $step( 'Bad Id' ), $step( 7 ), 'not a step', $step( 'clear' ), $step( "x'; DROP" ) ] ), 'Anything but a well-formed id is left out.' );
+		$long = array_map( static fn( int $i ): array => [ 'action' => 'a' . str_repeat( 'x', 60 ) . $i ], range( 1, 5 ) );
+		$this->assertTrue( strlen( BatchRepository::actions( $long ) ) <= BatchRepository::ACTIONS_LENGTH, 'Never wider than the column.' );
+
+		( new BatchRepository() )->create( self::UUID, 3, 'bulk', [ $step( 'adjust' ), $step( 'round' ) ], [], 1 );
+		$this->assertSame( ',adjust,round,', self::db()->writes[0][2]['actions'] );
+
+		$repo = new BatchRepository();
+		$repo->history_count( [ 'action' => 'set_value' ] );
+		$this->assertSame( "SELECT COUNT(*) FROM `wp_bcm_batches` WHERE batch_id > 0 AND actions LIKE '%,set\\\\_value,%'", end( self::db()->queries ) );
+		foreach ( [ 'Set', "x' OR 1=1", '%', '', 7 ] as $bad ) {
+			$this->assert_invalid( static fn() => $repo->history( [ 'action' => $bad ], 1, 10 ) );
+		}
+	}
+
+	public function test_undone_by_reads_a_page_of_completed_undo_batches_at_once(): void {
+		self::db()->responses = [
+			"SELECT batch_id, undo_of FROM `wp_bcm_batches` WHERE undo_of IN (4, 7) AND source = 'undo' AND status = 'complete' ORDER BY batch_id ASC" => [
+				[
+					'batch_id' => '8',
+					'undo_of'  => '7',
+				],
+				[
+					'batch_id' => '9',
+					'undo_of'  => '7',
+				],
+			],
+		];
+		$repo                 = new BatchRepository();
+		$this->assertSame( [ 7 => 9 ], $repo->undone_by( [ 4, 7, 4 ] ), 'The latest undo that completed.' );
+		$this->assertSame( [], $repo->undone_by( [] ) );
+		$this->assertCount( 1, self::db()->queries, 'No statement for an empty page.' );
+		$this->assertNull( $repo->undo_of( 5 ) );
+		$this->assert_invalid( static fn() => $repo->undone_by( [ 0 ] ) );
+		$this->assert_all_prepared();
 	}
 
 	/**

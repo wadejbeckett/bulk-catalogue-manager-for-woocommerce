@@ -213,6 +213,26 @@ final class SelectionTokenTest extends TestCase {
 		}
 	}
 
+	public function test_the_selection_is_kept_on_the_server_and_the_token_is_an_id_and_a_hex_signature(): void {
+		$ids   = range( 1, 5000 );
+		$token = SelectionToken::mint( Selection::of_ids( $ids ), null, self::NOW );
+
+		$this->assertSame( 1, preg_match( '/^([0-9a-f]{32})\.[0-9a-f]{64}$/', $token, $m ), 'An id and a hex HMAC: short whatever the selection holds.' );
+		$name = SelectionToken::PREFIX . $m[1];
+		$this->assertSame( 'bcm_selection_', SelectionToken::PREFIX );
+		$this->assertArrayHasKey( $name, $GLOBALS['bcm_test']['transients'], 'The selection itself is stored in a transient under the id.' );
+		$this->assertSame( SelectionToken::ttl(), $GLOBALS['bcm_test']['transient_ttl'][ $name ] );
+		$this->assertContains( SelectionToken::PREFIX, \BulkCatalogueManager\Data\Registry::plugin()->transient_prefixes() );
+		$this->assertSame( $ids, SelectionToken::parse( $token, null, self::NOW )->ids );
+
+		unset( $GLOBALS['bcm_test']['transients'][ $name ] );
+		$this->check_refused( SelectionToken::parse( $token, null, self::NOW ), 'A token whose stored selection has gone.' );
+
+		// Nothing encodes a token in base64 any more.
+		$source = (string) file_get_contents( dirname( __DIR__, 3 ) . '/src/Selection/SelectionToken.php' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- reading plugin source.
+		$this->assertStringNotContainsString( 'base64', $source );
+	}
+
 	public function test_a_token_is_made_only_for_a_user(): void {
 		$GLOBALS['bcm_test']['user_id'] = 0;
 		try {

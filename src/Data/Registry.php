@@ -65,6 +65,7 @@ final class Registry {
 		\BulkCatalogueManager\Categories\Cache::PREFIX,
 		\BulkCatalogueManager\Query\CountCache::PREFIX,
 		\BulkCatalogueManager\Engine\BatchFactory::PREFIX,
+		\BulkCatalogueManager\Selection\SelectionToken::PREFIX,
 	];
 
 	/**

@@ -2,21 +2,22 @@
 /**
  * Signed selection tokens (SPEC §9.1, §12.1, §13). `POST /selection` hands
  * the client a token instead of trusting it to send the same filter or ids
- * again: a snapshot of the selection — a filter's normalised conditions
- * (Criteria::conditions()) with the count they matched, or the id list —
- * plus the user it was made for and when it expires, signed with an HMAC
- * (SHA-256) keyed on `wp_salt( 'auth' )`.
+ * again. The selection itself stays on the server: a snapshot — a filter's
+ * normalised conditions (Criteria::conditions()) with the count they
+ * matched, or the id list — plus the user it was made for and when it
+ * expires, stored in a `bcm_selection_` transient under a random id.
  *
- * Form: `base64url( JSON payload ) . '.' . base64url( signature )`, the
- * signature taken over the encoded payload text and compared as text with
- * `hash_equals()`, so any altered byte anywhere in the token is refused.
- * parse() gives back the materialised Selection, or refuses 403
- * `bcm_invalid_selection` for a token that is malformed, altered, expired or
- * made for another user. A filter comes back through
- * Criteria::from_conditions(), validated again as a request would be.
+ * Form: `id . '.' . signature`, the id 32 lower-case hex characters and the
+ * signature the hex HMAC (SHA-256, keyed on `wp_salt( 'auth' )`) of the id,
+ * compared with `hash_equals()`, so any altered character is refused before
+ * anything is read. parse() gives back the materialised Selection, or
+ * refuses 403 `bcm_invalid_selection` for a token that is malformed,
+ * altered, expired, made for another user or whose stored selection has
+ * gone. A filter comes back through Criteria::from_conditions(), validated
+ * again as a request would be.
  *
  * Tokens last TTL seconds, filterable through `bcm_selection_ttl` (clamped
- * to one minute to one day). Nothing is stored: a token is its own record.
+ * to one minute to one day); the transient lasts as long.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -57,9 +58,14 @@ final class SelectionToken {
 	private const VERSION = 1;
 
 	/**
-	 * Longest token parse() reads: 100,000 ids of up to 19 digits, encoded, with room.
+	 * The transient name prefix a stored selection is kept under, followed by its id.
 	 */
-	private const MAX_LENGTH = 4000000;
+	public const PREFIX = 'bcm_selection_';
+
+	/**
+	 * A token: the stored selection's id, a dot and the hex HMAC of the id.
+	 */
+	private const FORM = '/^([0-9a-f]{32})\.([0-9a-f]{64})$/';
 
 	/**
 	 * Mixed into the signed text so a signature made with the same salt for
@@ -91,8 +97,9 @@ final class SelectionToken {
 		} else {
 			$payload['i'] = $selection->ids;
 		}
-		$body = self::encode( (string) wp_json_encode( $payload ) );
-		return $body . '.' . self::sign( $body );
+		$id = bin2hex( random_bytes( 16 ) );
+		set_transient( self::PREFIX . $id, $payload, self::ttl() );
+		return $id . '.' . self::sign( $id );
 	}
 
 	/**
@@ -104,14 +111,13 @@ final class SelectionToken {
 	 */
 	public static function parse( mixed $token, ?int $user_id = null, ?int $now = null ): Selection|\WP_Error {
 		$user_id ??= get_current_user_id();
-		if ( ! is_string( $token ) || strlen( $token ) > self::MAX_LENGTH || 1 !== preg_match( '/^([A-Za-z0-9_-]+)\.([A-Za-z0-9_-]+)$/', $token, $parts ) ) {
+		if ( ! is_string( $token ) || 1 !== preg_match( self::FORM, $token, $parts ) ) {
 			return self::refusal();
 		}
 		if ( ! hash_equals( self::sign( $parts[1] ), $parts[2] ) ) {
 			return self::refusal();
 		}
-		$json    = self::decode( $parts[1] );
-		$payload = null === $json ? null : json_decode( $json, true );
+		$payload = get_transient( self::PREFIX . $parts[1] );
 		if ( ! is_array( $payload ) || self::VERSION !== ( $payload['v'] ?? null ) || ! is_int( $payload['u'] ?? null ) || ! is_int( $payload['e'] ?? null ) || ! is_int( $payload['n'] ?? null ) ) {
 			return self::refusal();
 		}
@@ -151,32 +157,11 @@ final class SelectionToken {
 	}
 
 	/**
-	 * The encoded signature of an encoded payload.
+	 * The hex signature of a stored selection's id.
 	 *
-	 * @param string $body Encoded payload.
+	 * @param string $id The id.
 	 */
-	private static function sign( string $body ): string {
-		return self::encode( hash_hmac( 'sha256', self::CONTEXT . self::VERSION . '.' . $body, wp_salt( 'auth' ), true ) );
-	}
-
-	/**
-	 * Base64url without padding.
-	 *
-	 * @param string $bytes Bytes.
-	 */
-	private static function encode( string $bytes ): string {
-		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode -- A token's transport encoding, not obfuscation.
-		return rtrim( strtr( base64_encode( $bytes ), '+/', '-_' ), '=' );
-	}
-
-	/**
-	 * Bytes from base64url, or null.
-	 *
-	 * @param string $text Base64url text.
-	 */
-	private static function decode( string $text ): ?string {
-		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- A token's transport encoding, not obfuscation.
-		$bytes = base64_decode( strtr( $text, '-_', '+/' ), true );
-		return false === $bytes ? null : $bytes;
+	private static function sign( string $id ): string {
+		return hash_hmac( 'sha256', self::CONTEXT . self::VERSION . '.' . $id, wp_salt( 'auth' ) );
 	}
 }

@@ -30,7 +30,10 @@ final class ValidatorTest extends TestCase {
 
 	protected function setUp(): void {
 		bcm_test_reset();
-		$GLOBALS['bcm_test']['caps']  = [ 'edit_post' => true ];
+		$GLOBALS['bcm_test']['caps']  = [
+			'edit_post'            => true,
+			'assign_product_terms' => true,
+		];
 		$GLOBALS['bcm_test']['skus']  = [ 'SHOE-42' => 99 ];
 		$GLOBALS['bcm_test']['terms'] = [
 			'product_cat' => [ 5 ],
@@ -486,6 +489,73 @@ final class ValidatorTest extends TestCase {
 		);
 		$this->assertSame( Result::SKIPPED, Validator::for_user( new Fields(), 0 )->check( new FakeProduct( 'simple', [ 'id' => 90 ] ), $change )[0]->state(), 'No recorded user edits nothing.' );
 		$this->assertSame( Result::SKIPPED, self::validator()->check( new FakeProduct( 'simple', [ 'id' => 90 ] ), $change )[0]->state(), 'The current user, who has no rights here, is not the recorded user.' );
+	}
+
+	public function test_a_variation_needs_edit_rights_on_its_parent_too(): void {
+		// The variation's own author may differ from its parent's; saving it resyncs the parent.
+		$GLOBALS['bcm_test']['caps']['edit_post:50'] = false;
+		$variation                                   = new FakeProduct(
+			'variation',
+			[
+				'id'            => 60,
+				'parent_id'     => 50,
+				'regular_price' => '10.00',
+			]
+		);
+		$change                                      = Result::changed( 'regular_price', '10.00', '12.00' );
+
+		$refused = self::validator()->check( $variation, $change )[0];
+		$this->assertSame( [ Result::SKIPPED, 'bcm_cannot_edit', self::CANNOT_EDIT ], [ $refused->state(), $refused->code(), $refused->reason() ] );
+
+		$GLOBALS['bcm_test']['caps']['edit_post:50'] = true;
+		$this->assertSame( Result::CHANGED, self::validator()->check( $variation, $change )[0]->state() );
+
+		// In background work, against the batch's recorded user.
+		$GLOBALS['bcm_test']['caps']      = [];
+		$GLOBALS['bcm_test']['user_caps'] = [
+			5 => [
+				'edit_post'    => true,
+				'edit_post:50' => false,
+			],
+		];
+		$this->assertSame( Result::SKIPPED, Validator::for_user( new Fields(), 5 )->check( $variation, $change )[0]->state() );
+		$GLOBALS['bcm_test']['user_caps'][5]['edit_post:50'] = true;
+		$this->assertSame( Result::CHANGED, Validator::for_user( new Fields(), 5 )->check( $variation, $change )[0]->state() );
+	}
+
+	public function test_a_term_change_needs_the_taxonomy_assign_capability(): void {
+		$product = new FakeProduct(
+			'simple',
+			[
+				'id'           => 70,
+				'category_ids' => [],
+				'tag_ids'      => [],
+			]
+		);
+		$cases   = [
+			'categories' => Result::changed( 'category_ids', [], [ 5 ], true ),
+			'tags'       => Result::changed( 'tag_ids', [], [ 6 ], true ),
+		];
+		$GLOBALS['bcm_test']['caps']['assign_product_terms'] = false;
+		foreach ( $cases as $case => $change ) {
+			$refused = self::validator()->check( $product, $change )[0];
+			$this->assertSame( [ Result::SKIPPED, 'bcm_cannot_edit' ], [ $refused->state(), $refused->code() ], $case );
+			$this->assertStringContainsString( 'permission', $refused->reason(), $case );
+			$this->assertStringNotContainsString( 'bcm_', $refused->reason(), $case );
+		}
+		$this->assertSame( Result::ALREADY, self::validator()->check( $product, Result::already( 'category_ids', [] ) )[0]->state(), 'Only a change needs it.' );
+
+		$GLOBALS['bcm_test']['caps']['assign_product_terms'] = true;
+		foreach ( $cases as $case => $change ) {
+			$this->assertSame( Result::CHANGED, self::validator()->check( $product, $change )[0]->state(), $case );
+		}
+
+		// In background work, against the batch's recorded user.
+		$GLOBALS['bcm_test']['caps']      = [];
+		$GLOBALS['bcm_test']['user_caps'] = [ 5 => [ 'edit_post' => true ] ];
+		$this->assertSame( Result::SKIPPED, Validator::for_user( new Fields(), 5 )->check( $product, $cases['categories'] )[0]->state() );
+		$GLOBALS['bcm_test']['user_caps'][5]['assign_product_terms'] = true;
+		$this->assertSame( Result::CHANGED, Validator::for_user( new Fields(), 5 )->check( $product, $cases['categories'] )[0]->state() );
 	}
 
 	public function test_the_verdict_agrees_with_the_field_write_for_every_refused_change(): void {

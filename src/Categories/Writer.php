@@ -178,7 +178,7 @@ final class Writer {
 	 */
 	public function create( array $input, int $user_id ): array|\WP_Error {
 		$tree      = CategoryTree::tree_of( CategoryTree::terms() );
-		$name      = self::text( $input['name'] ?? '' );
+		$name      = self::text( $input['name'] ?? '', $user_id );
 		$parent_id = (int) ( $input['parent'] ?? 0 );
 		$slug      = self::slug( $input['slug'] ?? null );
 		if ( '' === $name ) {
@@ -191,7 +191,7 @@ final class Writer {
 		}
 
 		$args = [
-			'description' => self::html( (string) ( $input['description'] ?? '' ) ),
+			'description' => self::html( (string) ( $input['description'] ?? '' ), $user_id ),
 			'parent'      => $parent_id,
 		];
 		if ( is_string( $slug ) ) {
@@ -230,7 +230,7 @@ final class Writer {
 		$current = self::values( $term );
 		$wanted  = [];
 		if ( array_key_exists( 'name', $input ) && null !== $input['name'] ) {
-			$wanted['name'] = self::text( $input['name'] );
+			$wanted['name'] = self::text( $input['name'], $user_id );
 			if ( '' === $wanted['name'] ) {
 				return self::name_required();
 			}
@@ -243,7 +243,7 @@ final class Writer {
 			$wanted['slug'] = $slug;
 		}
 		if ( array_key_exists( 'description', $input ) && null !== $input['description'] ) {
-			$wanted['description'] = self::html( (string) $input['description'] );
+			$wanted['description'] = self::html( (string) $input['description'], $user_id );
 		}
 		if ( array_key_exists( 'parent', $input ) && null !== $input['parent'] ) {
 			$wanted['parent'] = (int) $input['parent'];
@@ -587,19 +587,22 @@ final class Writer {
 	 * A name: trimmed, and through the post HTML filter for a user without
 	 * unfiltered_html (SPEC §13).
 	 *
-	 * @param mixed $text Submitted text.
+	 * @param mixed $text    Submitted text.
+	 * @param int   $user_id The user the batch is recorded for.
 	 */
-	private static function text( mixed $text ): string {
-		return trim( self::html( is_scalar( $text ) ? (string) $text : '' ) );
+	private static function text( mixed $text, int $user_id ): string {
+		return trim( self::html( is_scalar( $text ) ? (string) $text : '', $user_id ) );
 	}
 
 	/**
-	 * Text through the post HTML filter for a user without unfiltered_html.
+	 * Text through the post HTML filter unless the user the batch is
+	 * recorded for has unfiltered_html.
 	 *
-	 * @param string $text Submitted text.
+	 * @param string $text    Submitted text.
+	 * @param int    $user_id The user the batch is recorded for.
 	 */
-	private static function html( string $text ): string {
-		return current_user_can( 'unfiltered_html' ) ? $text : wp_kses_post( $text );
+	private static function html( string $text, int $user_id ): string {
+		return $user_id > 0 && user_can( $user_id, 'unfiltered_html' ) ? $text : wp_kses_post( $text );
 	}
 
 	/**

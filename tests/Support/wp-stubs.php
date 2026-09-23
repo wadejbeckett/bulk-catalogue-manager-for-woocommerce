@@ -95,6 +95,25 @@ if ( ! function_exists( 'add_filter' ) ) {
 		return true;
 	}
 
+	/**
+	 * The product taxonomies with the capabilities WooCommerce registers them
+	 * with; any other taxonomy is unknown (false).
+	 */
+	function get_taxonomy( string $taxonomy ): object|false {
+		if ( ! in_array( $taxonomy, [ 'product_cat', 'product_tag', 'product_shipping_class' ], true ) ) {
+			return false;
+		}
+		return (object) [
+			'name' => $taxonomy,
+			'cap'  => (object) [
+				'manage_terms' => 'manage_product_terms',
+				'edit_terms'   => 'edit_product_terms',
+				'delete_terms' => 'delete_product_terms',
+				'assign_terms' => 'assign_product_terms',
+			],
+		];
+	}
+
 	function add_filter( string $hook, mixed $callback, int $priority = 10, int $accepted_args = 1 ): bool {
 		$GLOBALS['bcm_test']['filters'][ $hook ][] = [ $callback, $priority, $accepted_args ];
 		return true;

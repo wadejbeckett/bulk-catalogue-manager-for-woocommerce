@@ -39,6 +39,8 @@ final class CategoriesWriteRouteTest extends TestCase {
 		$GLOBALS['bcm_test']['user_id']                      = 12;
 		$GLOBALS['bcm_test']['caps']['manage_woocommerce']   = true;
 		$GLOBALS['bcm_test']['caps']['manage_product_terms'] = true;
+		$GLOBALS['bcm_test']['caps']['edit_product_terms']   = true;
+		$GLOBALS['bcm_test']['caps']['edit_term']            = true;
 		$GLOBALS['bcm_test']['caps']['unfiltered_html']      = true;
 		( new Plugin() )->boot();
 		do_action( 'rest_api_init' );
@@ -198,6 +200,32 @@ final class CategoriesWriteRouteTest extends TestCase {
 			$refused = $this->assert_refused( self::send( $method, $route, $params ), 'bcm_forbidden', 403 );
 			$this->assertStringContainsString( 'categories', $refused->get_error_message() );
 		}
+	}
+
+	public function test_each_write_checks_the_per_term_capabilities_core_checks(): void {
+		// Creating needs the taxonomy's edit_terms capability.
+		$GLOBALS['bcm_test']['caps']['edit_product_terms'] = false;
+		$this->assert_refused( self::send( 'POST', '/categories', [ 'name' => 'Hats' ] ), 'bcm_forbidden', 403 );
+		$GLOBALS['bcm_test']['caps']['edit_product_terms'] = true;
+
+		// Editing or moving one category needs edit_term on that category.
+		$GLOBALS['bcm_test']['caps']['edit_term:3'] = false;
+		$GLOBALS['bcm_test']['caps']['edit_term:2'] = false;
+		$this->assert_refused( self::send( 'PATCH', '/categories/3', [ 'name' => 'Tops' ] ), 'bcm_forbidden', 403 );
+		$this->assert_refused(
+			self::send(
+				'POST',
+				'/categories/2/move',
+				[
+					'parent'   => 1,
+					'position' => 0,
+				]
+			),
+			'bcm_forbidden',
+			403
+		);
+		$GLOBALS['bcm_test']['caps']['edit_term:3'] = true;
+		$this->assertSame( 200, self::send( 'PATCH', '/categories/3', [ 'name' => 'Tops' ] )->get_status() );
 	}
 
 	public function test_an_unknown_id_is_404_and_a_move_inside_itself_400(): void {

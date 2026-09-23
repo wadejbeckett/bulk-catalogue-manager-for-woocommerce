@@ -35,7 +35,10 @@ final class JournalTest extends TestCase {
 
 	protected function setUp(): void {
 		bcm_test_reset();
-		$GLOBALS['bcm_test']['caps']  = [ 'edit_post' => true ];
+		$GLOBALS['bcm_test']['caps']  = [
+			'edit_post'            => true,
+			'assign_product_terms' => true,
+		];
 		$GLOBALS['bcm_test']['terms'] = [
 			'product_cat' => [ 11, 12 ],
 			'product_tag' => [ 21, 22 ],

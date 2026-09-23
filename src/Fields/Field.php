@@ -133,6 +133,13 @@ final class Field {
 	private ?array $resolved_choices = null;
 
 	/**
+	 * The user background work acts for (Field::acting_as()), or null for the current user.
+	 *
+	 * @var int|null
+	 */
+	private static ?int $acting_user = null;
+
+	/**
 	 * Describe a field. The registry is the only caller.
 	 *
 	 * @param string                                 $key                    Field key: lower case, as journalled in `bcm_changes.prop`.
@@ -384,6 +391,36 @@ final class Field {
 	}
 
 	/**
+	 * Run work on behalf of a user other than the current one: background
+	 * work, which has no current user, acting for the batch's recorded user.
+	 * Whether text may keep markup the post HTML filter would remove is then
+	 * that user's `unfiltered_html`, as it would be in their own edit.
+	 *
+	 * @param int|null $user_id The user acted for, or null for the current user.
+	 * @param callable $work    fn(): mixed.
+	 * @return mixed What the work returned.
+	 */
+	public static function acting_as( ?int $user_id, callable $work ): mixed {
+		$previous          = self::$acting_user;
+		self::$acting_user = $user_id;
+		try {
+			return $work();
+		} finally {
+			self::$acting_user = $previous;
+		}
+	}
+
+	/**
+	 * Whether the user acted for (or the current user) may write unfiltered HTML.
+	 */
+	private static function may_write_unfiltered_html(): bool {
+		if ( null === self::$acting_user ) {
+			return current_user_can( 'unfiltered_html' );
+		}
+		return self::$acting_user > 0 && user_can( self::$acting_user, 'unfiltered_html' );
+	}
+
+	/**
 	 * The sanitiser: the value in the field's canonical form. Run after
 	 * validate(); given an invalid value it returns the field's empty value
 	 * rather than guessing.
@@ -395,7 +432,7 @@ final class Field {
 			case self::TEXT:
 				$text = is_scalar( $value ) ? trim( (string) $value ) : '';
 				if ( $this->kses ) {
-					return current_user_can( 'unfiltered_html' ) ? $text : wp_kses_post( $text );
+					return self::may_write_unfiltered_html() ? $text : wp_kses_post( $text );
 				}
 				return sanitize_text_field( $text );
 			case self::ENUM:

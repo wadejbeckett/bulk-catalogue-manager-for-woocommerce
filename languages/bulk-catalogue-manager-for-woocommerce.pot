@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-09-23T11:12:21+00:00\n"
+"POT-Creation-Date: 2026-09-23T11:19:09+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -861,6 +861,11 @@ msgstr ""
 msgid "Only an administrator can change the Bulk Catalogue Manager settings. Ask an administrator to change them."
 msgstr ""
 
+#. translators: %s: a field's name, such as "Categories".
+#, php-format
+msgid "You do not have permission to change %s on products, so this was skipped. Ask an administrator for access."
+msgstr ""
+
 msgid "You do not have permission to edit this product, so it was skipped. Ask an administrator for access to it."
 msgstr ""
 
@@ -1215,7 +1220,7 @@ msgstr ""
 msgid "This product no longer exists, so it was left alone."
 msgstr ""
 
-msgid "The person who ran this batch can no longer edit this product, so it was left alone."
+msgid "You can no longer edit this product, so it was left alone. Ask an administrator for access to it."
 msgstr ""
 
 msgid "One of the values this batch changed can no longer be changed here, so this product was left alone."

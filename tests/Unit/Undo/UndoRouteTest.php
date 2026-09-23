@@ -64,7 +64,12 @@ final class UndoRouteTest extends TestCase {
 		$GLOBALS['bcm_test']['user_id']                    = self::USER;
 		$GLOBALS['bcm_test']['caps']['manage_woocommerce'] = true;
 		$GLOBALS['bcm_test']['caps']['edit_products']      = true;
-		$GLOBALS['bcm_test']['user_caps']                  = [ self::USER => [ 'edit_post' => true ] ];
+		$GLOBALS['bcm_test']['user_caps']                  = [
+			self::USER => [
+				'edit_post'            => true,
+				'assign_product_terms' => true,
+			],
+		];
 		$GLOBALS['bcm_test']['scheduled']                  = [];
 		$GLOBALS['bcm_test']['terms']                      = [ 'product_cat' => [ 5, 7 ] ];
 		$GLOBALS['wpdb']->insert_id                        = 40;

@@ -33,7 +33,10 @@ use PHPUnit\Framework\TestCase;
 final class WriterTest extends TestCase {
 	protected function setUp(): void {
 		bcm_test_reset();
-		$GLOBALS['bcm_test']['caps']  = [ 'edit_post' => true ];
+		$GLOBALS['bcm_test']['caps']  = [
+			'edit_post'            => true,
+			'assign_product_terms' => true,
+		];
 		$GLOBALS['bcm_test']['terms'] = [
 			'product_cat'            => [ 11, 12 ],
 			'product_tag'            => [ 21, 22 ],
@@ -713,6 +716,69 @@ final class WriterTest extends TestCase {
 		$this->assertSame( [ [ 'set_status', 'publish' ] ], $product->sets, 'Only the row the validator passed reaches a setter.' );
 		$this->assertTrue( $outcome->saved() );
 		$this->assertSame( [ 'status' => 'draft' ], $outcome->before() );
+	}
+
+	public function test_a_background_write_filters_html_by_the_batch_users_rights(): void {
+		$raw = '<script>alert(1)</script>Shirt <b>bold</b>';
+		// The list was validated in the administrator's own request, so it holds the markup as given.
+		$GLOBALS['bcm_test']['caps']['unfiltered_html'] = true;
+		$list                             = $this->steps(
+			[
+				[
+					'set_value',
+					[
+						'field' => 'name',
+						'value' => $raw,
+					],
+				],
+			]
+		);
+		$GLOBALS['bcm_test']['caps']      = [];
+		$GLOBALS['bcm_test']['user_caps'] = [
+			5 => [
+				'edit_post'       => true,
+				'unfiltered_html' => true,
+			],
+			6 => [ 'edit_post' => true ],
+		];
+
+		// An administrator's batch runs with no current user and keeps their markup, as their own edit would.
+		$product                             = new SavedProduct(
+			'simple',
+			[
+				'id'   => 83,
+				'name' => 'Old',
+			]
+		);
+		$GLOBALS['bcm_test']['products'][83] = $product;
+		( new Writer( self::registry(), null, 5 ) )->write( 83, $list );
+		$this->assertSame( $raw, $product->props['name'] );
+
+		// A shop manager's batch is filtered even if the process happens to have a trusted current user.
+		$GLOBALS['bcm_test']['caps']['unfiltered_html'] = true;
+		$product                                        = new SavedProduct(
+			'simple',
+			[
+				'id'   => 84,
+				'name' => 'Old',
+			]
+		);
+		$GLOBALS['bcm_test']['products'][84]            = $product;
+		( new Writer( self::registry(), null, 6 ) )->write( 84, $list );
+		$this->assertSame( 'alert(1)Shirt <b>bold</b>', $product->props['name'] );
+
+		// Outside a background write, the current user decides again.
+		$product                                  = new SavedProduct(
+			'simple',
+			[
+				'id'   => 85,
+				'name' => 'Old',
+			]
+		);
+		$GLOBALS['bcm_test']['products'][85]      = $product;
+		$GLOBALS['bcm_test']['caps']['edit_post'] = true;
+		( new Writer( self::registry() ) )->write( 85, $list );
+		$this->assertSame( $raw, $product->props['name'] );
 	}
 
 	public function test_an_object_the_batch_user_may_not_edit_is_skipped_and_not_saved(): void {

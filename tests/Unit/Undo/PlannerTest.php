@@ -47,6 +47,7 @@ final class PlannerTest extends TestCase {
 	protected function setUp(): void {
 		bcm_test_reset();
 		$GLOBALS['bcm_test']['user_caps']   = [ self::USER => [ 'edit_post' => true ] ];
+		$GLOBALS['bcm_test']['user_id']     = self::USER; // The person undoing, unless a test says otherwise.
 		$GLOBALS['bcm_test']['terms']       = [
 			'product_cat' => [ 5, 7 ],
 			'product_tag' => [ 8 ],
@@ -467,6 +468,29 @@ final class PlannerTest extends TestCase {
 			],
 			$plan->counts()
 		);
+	}
+
+	public function test_edit_rights_are_those_of_the_person_undoing_not_the_batch_author(): void {
+		$this->change( 1001, 'regular_price', '10.00', '11.00' );
+		self::product( 1001, [ 'regular_price' => '11.00' ] );
+		// The author has since been demoted; an administrator undoes the batch.
+		$GLOBALS['bcm_test']['user_caps'] = [
+			self::USER => [],
+			9          => [ 'edit_post' => true ],
+		];
+
+		$plan = $this->planner()->plan( self::BATCH, 9 );
+		$this->assertSame( Plan::REVERTIBLE, self::item( $plan, 1001 )['state'], 'The batch can still be undone by someone who may edit the product.' );
+
+		$GLOBALS['bcm_test']['user_caps'] = [
+			self::USER => [ 'edit_post' => true ],
+			9          => [],
+		];
+		$item                             = self::item( $this->planner()->plan( self::BATCH, 9 ), 1001 );
+		$this->assertSame( [ Plan::SKIPPED, 'cannot_edit' ], [ $item['state'], $item['code'] ], 'The author\'s rights do not let someone else undo.' );
+
+		$GLOBALS['bcm_test']['user_id'] = 9;
+		$this->assertSame( Plan::SKIPPED, self::item( $this->planner()->plan( self::BATCH ), 1001 )['state'], 'Without a user, the current user\'s rights apply.' );
 	}
 
 	public function test_a_partial_failed_or_cancelled_batch_plans_the_applied_part_only(): void {

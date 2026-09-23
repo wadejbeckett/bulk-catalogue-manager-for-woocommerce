@@ -78,6 +78,7 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Engine;
 
+use BulkCatalogueManager\Fields\Field;
 use BulkCatalogueManager\Operations\Operation;
 use BulkCatalogueManager\Operations\Registry;
 use BulkCatalogueManager\Operations\Result;
@@ -177,6 +178,18 @@ final class Writer {
 	 * @throws \LogicException When the list was not validated.
 	 */
 	public function write( int $id, array $operations ): WriteOutcome {
+		// Background work acts for the batch's user: their unfiltered_html decides, as in their own edit.
+		return null === $this->user_id ? $this->write_one( $id, $operations ) : Field::acting_as( $this->user_id, fn(): WriteOutcome => $this->write_one( $id, $operations ) );
+	}
+
+	/**
+	 * Apply an operation list to one object, as write() describes.
+	 *
+	 * @param int                                                $id         Product or variation id.
+	 * @param list<array{action: string, args: array<string, mixed>}> $operations The list Registry::validate_list() returned.
+	 * @throws \LogicException When the list was not validated.
+	 */
+	private function write_one( int $id, array $operations ): WriteOutcome {
 		$steps = $this->resolve( $operations );
 		if ( null !== $this->journal && $this->journal->already_done( $this->batch_id, $id ) ) {
 			return new WriteOutcome( $id, self::done_before( $steps ), false );

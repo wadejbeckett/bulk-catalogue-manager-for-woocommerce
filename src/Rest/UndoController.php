@@ -184,7 +184,7 @@ final class UndoController implements Controller {
 		}
 
 		$this->planner ??= new Planner( $this->batches, $this->changes, null, null, $this->clock );
-		$plan            = $this->planner->plan( $batch_id );
+		$plan            = $this->planner->plan( $batch_id, $user_id );
 		if ( $plan instanceof \WP_Error ) {
 			return $plan;
 		}

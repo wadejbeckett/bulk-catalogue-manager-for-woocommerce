@@ -24,7 +24,7 @@
  *
  * - skipped where the batch applied nothing to the object (its rows were
  *   themselves skipped or failed), where the object no longer exists or is
- *   no longer the same kind, where the batch's recorded user may no longer
+ *   no longer the same kind, where the person undoing (not the batch's author) may not
  *   edit it, or where a value can no longer be written (a deleted term, a
  *   field no longer in the registry);
  * - conflicted where a field's current value, read through Field::read(),
@@ -170,13 +170,18 @@ final class Planner {
 	}
 
 	/**
-	 * Plan the undo of a batch, writing nothing.
+	 * Plan the undo of a batch, writing nothing. Each object is checked
+	 * against the person undoing — the user who will run the undo batch —
+	 * not the batch's original author, who may since have been demoted or
+	 * removed.
 	 *
-	 * @param int $batch_id The batch to undo.
+	 * @param int      $batch_id The batch to undo.
+	 * @param int|null $user_id  The person undoing; the current user by default.
 	 * @return Plan|\WP_Error The plan, or 404 `bcm_not_found`, or 409 `bcm_not_reversible` with its reason.
 	 */
-	public function plan( int $batch_id ): Plan|\WP_Error {
-		$batch = $batch_id > 0 ? $this->batches->find( $batch_id ) : null;
+	public function plan( int $batch_id, ?int $user_id = null ): Plan|\WP_Error {
+		$user_id ??= get_current_user_id();
+		$batch     = $batch_id > 0 ? $this->batches->find( $batch_id ) : null;
 		if ( null === $batch ) {
 			return Refusal::create( Writer::NOT_FOUND, __( 'That batch could not be found. It may have been removed. Reload the history and try again.', 'bulk-catalogue-manager-for-woocommerce' ), 404 );
 		}
@@ -192,7 +197,7 @@ final class Planner {
 
 		$items = [];
 		foreach ( $objects as $object_id => $journal ) {
-			$items[] = $this->item( $object_id, $journal, $batch['user_id'] );
+			$items[] = $this->item( $object_id, $journal, $user_id );
 		}
 		return new Plan( $batch_id, $items, $this->hash( $batch_id, $items ) );
 	}
@@ -361,7 +366,7 @@ final class Planner {
 	 *
 	 * @param int                                                                                   $object_id Object.
 	 * @param array{type: string, fields: array<string, array{expected: mixed, target: mixed}>} $journal   Its journal.
-	 * @param int                                                                                   $user_id   The batch's recorded user.
+	 * @param int                                                                                   $user_id   The person undoing.
 	 * @return array{object_id: int, object_type: string, operations: list<array{action: string, args: array<string, mixed>}>, state: string, code: string, reason: string, conflicts: list<array{field: string, expected: mixed, current: mixed}>}
 	 */
 	private function item( int $object_id, array $journal, int $user_id ): array {
@@ -392,8 +397,8 @@ final class Planner {
 					: __( 'This product no longer exists, so it was left alone.', 'bulk-catalogue-manager-for-woocommerce' )
 			);
 		}
-		if ( true !== Access::user_can_edit_object( $user_id, $object_id ) ) {
-			return self::skipped( $object_id, $type, self::CANNOT_EDIT, __( 'The person who ran this batch can no longer edit this product, so it was left alone.', 'bulk-catalogue-manager-for-woocommerce' ) );
+		if ( true !== Access::user_can_edit_object( $user_id, $object_id, $variation ? max( 0, (int) $subject->get_parent_id( 'edit' ) ) : 0 ) ) {
+			return self::skipped( $object_id, $type, self::CANNOT_EDIT, __( 'You can no longer edit this product, so it was left alone. Ask an administrator for access to it.', 'bulk-catalogue-manager-for-woocommerce' ) );
 		}
 
 		$fields     = $this->actions->fields();

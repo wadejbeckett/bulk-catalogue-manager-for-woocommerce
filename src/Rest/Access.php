@@ -41,6 +41,11 @@ final class Access {
 	public const TERMS_CAPABILITY = 'manage_product_terms';
 
 	/**
+	 * The taxonomy the category write routes change.
+	 */
+	public const TERMS_TAXONOMY = 'product_cat';
+
+	/**
 	 * The capability settings writes need.
 	 */
 	public const SETTINGS_CAPABILITY = 'manage_options';
@@ -121,19 +126,31 @@ final class Access {
 	}
 
 	/**
-	 * Permission callback for the category write routes: the read capability and `manage_product_terms`.
+	 * Permission callback for the category write routes: the read capability
+	 * and `manage_product_terms`, then the per-term capabilities core checks:
+	 * with an `id` (an edit or a move) `edit_term` on that category, when it
+	 * exists (an unknown id is left to the handler's 404); without one (a
+	 * create) the taxonomy's `edit_terms` capability.
 	 *
-	 * @param mixed $request The REST request; unused.
+	 * @param mixed $request The REST request.
 	 */
 	public static function can_manage_terms( mixed $request = null ): bool|\WP_Error {
 		$read = self::can_read( $request );
 		if ( true !== $read ) {
 			return $read;
 		}
-		if ( current_user_can( self::TERMS_CAPABILITY ) ) {
-			return true;
+		$refusal = __( 'Your account can see categories here but not change them. Ask an administrator for permission to manage categories.', 'bulk-catalogue-manager-for-woocommerce' );
+		if ( ! current_user_can( self::TERMS_CAPABILITY ) ) {
+			return Refusal::forbidden( $refusal );
 		}
-		return Refusal::forbidden( __( 'Your account can see categories here but not change them. Ask an administrator for permission to manage categories.', 'bulk-catalogue-manager-for-woocommerce' ) );
+		$id = $request instanceof \WP_REST_Request ? (int) $request->get_param( 'id' ) : 0;
+		if ( $id > 0 ) {
+			$allowed = ! is_object( get_term( $id, self::TERMS_TAXONOMY ) ) || current_user_can( 'edit_term', $id );
+		} else {
+			$taxonomy = get_taxonomy( self::TERMS_TAXONOMY );
+			$allowed  = is_object( $taxonomy ) && isset( $taxonomy->cap->edit_terms ) && current_user_can( (string) $taxonomy->cap->edit_terms );
+		}
+		return $allowed ? true : Refusal::forbidden( $refusal );
 	}
 
 	/**
@@ -152,13 +169,17 @@ final class Access {
 	/**
 	 * Whether the current user may edit one product or variation: `edit_post`
 	 * on the object, which WordPress maps to `edit_products`,
-	 * `edit_others_products` or `edit_published_products` as it applies.
-	 * Otherwise a `bcm_cannot_edit` refusal the writer records as a skipped row.
+	 * `edit_others_products` or `edit_published_products` as it applies, and
+	 * for a variation `edit_post` on its parent as well, since saving a
+	 * variation resynchronises and saves the parent. Otherwise a
+	 * `bcm_cannot_edit` refusal the writer records as a skipped row.
 	 *
 	 * @param int $object_id Product or variation id.
+	 * @param int $parent_id A variation's parent product, or 0.
 	 */
-	public static function can_edit_object( int $object_id ): bool|\WP_Error {
-		return current_user_can( 'edit_post', $object_id ) ? true : self::cannot_edit();
+	public static function can_edit_object( int $object_id, int $parent_id = 0 ): bool|\WP_Error {
+		$allowed = current_user_can( 'edit_post', $object_id ) && ( $parent_id < 1 || current_user_can( 'edit_post', $parent_id ) );
+		return $allowed ? true : self::cannot_edit();
 	}
 
 	/**
@@ -167,9 +188,38 @@ final class Access {
 	 *
 	 * @param int $user_id   The batch's recorded user id.
 	 * @param int $object_id Product or variation id.
+	 * @param int $parent_id A variation's parent product, or 0.
 	 */
-	public static function user_can_edit_object( int $user_id, int $object_id ): bool|\WP_Error {
-		return $user_id > 0 && user_can( $user_id, 'edit_post', $object_id ) ? true : self::cannot_edit();
+	public static function user_can_edit_object( int $user_id, int $object_id, int $parent_id = 0 ): bool|\WP_Error {
+		$allowed = $user_id > 0 && user_can( $user_id, 'edit_post', $object_id ) && ( $parent_id < 1 || user_can( $user_id, 'edit_post', $parent_id ) );
+		return $allowed ? true : self::cannot_edit();
+	}
+
+	/**
+	 * Whether a user may assign terms of a taxonomy to products: the
+	 * taxonomy's `assign_terms` capability (`assign_product_terms` for
+	 * WooCommerce's), which core checks besides `edit_post`. An unknown
+	 * taxonomy is refused. Otherwise a `bcm_cannot_edit` refusal naming the field.
+	 *
+	 * @param int|null $user_id  The batch's recorded user, or null for the current user.
+	 * @param string   $taxonomy The taxonomy.
+	 * @param string   $label    The field's label, such as "Categories".
+	 */
+	public static function can_assign_terms( ?int $user_id, string $taxonomy, string $label ): bool|\WP_Error {
+		$object = get_taxonomy( $taxonomy );
+		$cap    = is_object( $object ) && isset( $object->cap->assign_terms ) ? (string) $object->cap->assign_terms : '';
+		if ( '' !== $cap && ( null === $user_id ? current_user_can( $cap ) : $user_id > 0 && user_can( $user_id, $cap ) ) ) {
+			return true;
+		}
+		return Refusal::create(
+			self::CANNOT_EDIT,
+			sprintf(
+				/* translators: %s: a field's name, such as "Categories". */
+				__( 'You do not have permission to change %s on products, so this was skipped. Ask an administrator for access.', 'bulk-catalogue-manager-for-woocommerce' ),
+				$label
+			),
+			403
+		);
 	}
 
 	/**

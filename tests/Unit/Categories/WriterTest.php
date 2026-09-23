@@ -153,6 +153,25 @@ final class WriterTest extends TestCase {
 		$this->assertSame( [ 'xHats', '<em>Warm</em>' ], [ $result['item']['name'], $result['item']['description'] ] );
 	}
 
+	public function test_the_html_filter_follows_the_user_the_batch_is_recorded_for(): void {
+		$GLOBALS['bcm_test']['caps']['unfiltered_html'] = true;
+		$GLOBALS['bcm_test']['user_caps']               = [
+			self::USER => [ 'unfiltered_html' => false ],
+			13         => [ 'unfiltered_html' => true ],
+		];
+		$input = [
+			'name'        => '<script>x</script>Hats',
+			'description' => '<em>Warm</em><iframe></iframe>',
+		];
+
+		$filtered = self::writer()->create( $input, self::USER );
+		$this->assertSame( [ 'xHats', '<em>Warm</em>' ], [ $filtered['item']['name'], $filtered['item']['description'] ] );
+
+		$GLOBALS['bcm_test']['caps']['unfiltered_html'] = false;
+		$kept = self::writer()->create( [ 'name' => '<b>Caps</b>' ] + $input, 13 );
+		$this->assertSame( [ '<b>Caps</b>', '<em>Warm</em><iframe></iframe>' ], [ $kept['item']['name'], $kept['item']['description'] ] );
+	}
+
 	public function test_a_create_refuses_an_empty_or_duplicate_name_a_taken_slug_and_a_missing_parent(): void {
 		$this->assert_refused( self::writer()->create( [ 'name' => '   ' ], self::USER ), Writer::NAME_REQUIRED );
 		$taken = $this->assert_refused(

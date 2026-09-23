@@ -8,9 +8,12 @@
  *
  * 1. Permission. The object is authorised before anything else: in a
  *    request with current_user_can( 'edit_post', $id ), in background work
- *    with user_can() against the batch's recorded user. A refusal turns any
- *    Result into skipped with the permission sentence, so the row is
- *    reported, never dropped.
+ *    with user_can() against the batch's recorded user; a variation needs
+ *    `edit_post` on its parent too, since its save resyncs the parent. A
+ *    refusal turns any Result into skipped with the permission sentence, so
+ *    the row is reported, never dropped. A change to a term field (categories,
+ *    tags, shipping class) also needs the taxonomy's `assign_terms`
+ *    capability, as core requires, or is skipped naming the field.
  * 2. The registry's validator. A change goes through Field::refusal(), the
  *    dry run of Field::write(), so the verdict is the refusal the write
  *    would give: a parent-only field on a variation ("Categories belong to
@@ -46,6 +49,7 @@ namespace BulkCatalogueManager\Operations;
 
 use BulkCatalogueManager\Fields\Field;
 use BulkCatalogueManager\Fields\Registry as Fields;
+use BulkCatalogueManager\Fields\Storage;
 use BulkCatalogueManager\Fields\Values;
 use BulkCatalogueManager\Rest\Access;
 
@@ -97,7 +101,8 @@ final class Validator {
 	 */
 	public function authorise( object $subject ): ?\WP_Error {
 		$id      = self::id_of( $subject );
-		$allowed = null === $this->user_id ? Access::can_edit_object( $id ) : Access::user_can_edit_object( $this->user_id, $id );
+		$parent  = self::parent_of( $subject );
+		$allowed = null === $this->user_id ? Access::can_edit_object( $id, $parent ) : Access::user_can_edit_object( $this->user_id, $id, $parent );
 		return true === $allowed ? null : $allowed;
 	}
 
@@ -124,6 +129,12 @@ final class Validator {
 		$field = $this->fields->get( $result->field() );
 		if ( null === $field ) {
 			throw new \LogicException( esc_html( sprintf( 'Field "%s" is not in the registry.', $result->field() ) ) );
+		}
+		if ( self::assigns_terms( $field ) ) {
+			$denied = Access::can_assign_terms( $this->user_id, $field->storage()->key(), $field->label() );
+			if ( true !== $denied ) {
+				return [ Result::skipped( $result->field(), $result->old(), $denied->get_error_message(), (string) $denied->get_error_code() ) ];
+			}
 		}
 
 		$refusal = $field->refusal( $subject, $result->new() );
@@ -247,6 +258,27 @@ final class Validator {
 		}
 		$number = Values::decimal( $value );
 		return null !== $number && str_starts_with( $number, '-' ) && 0.0 !== (float) $number;
+	}
+
+	/**
+	 * Whether a change to the field assigns taxonomy terms to the object.
+	 *
+	 * @param Field $field The field.
+	 */
+	private static function assigns_terms( Field $field ): bool {
+		return in_array( $field->type(), [ Field::TERMS, Field::TERM ], true ) && Storage::TAXONOMY === $field->storage()->kind();
+	}
+
+	/**
+	 * A variation's parent product id, or 0 for anything else.
+	 *
+	 * @param object $subject A product or variation.
+	 */
+	private static function parent_of( object $subject ): int {
+		if ( ! method_exists( $subject, 'is_type' ) || true !== $subject->is_type( 'variation' ) ) {
+			return 0;
+		}
+		return max( 0, (int) $subject->get_parent_id( 'edit' ) );
 	}
 
 	/**

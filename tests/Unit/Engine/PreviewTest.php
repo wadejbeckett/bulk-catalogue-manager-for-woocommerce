@@ -55,7 +55,10 @@ final class PreviewTest extends TestCase {
 
 	protected function setUp(): void {
 		bcm_test_reset();
-		$GLOBALS['bcm_test']['caps']  = [ 'edit_post' => true ];
+		$GLOBALS['bcm_test']['caps']  = [
+			'edit_post'            => true,
+			'assign_product_terms' => true,
+		];
 		$GLOBALS['bcm_test']['terms'] = [
 			'product_cat' => [ 10, 11, 12, 20 ],
 			'product_tag' => [ 30, 31 ],

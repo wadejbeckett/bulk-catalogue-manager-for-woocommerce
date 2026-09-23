@@ -39,7 +39,7 @@ final class AccessTest extends TestCase {
 	}
 
 	public function test_a_shop_manager_reads_and_writes_until_administrators_only_is_on(): void {
-		self::grant( [ 'manage_woocommerce', 'edit_products', 'manage_product_terms' ] );
+		self::grant( [ 'manage_woocommerce', 'edit_products', 'manage_product_terms', 'edit_product_terms' ] );
 		$this->assertSame( [ 'manage_woocommerce', 'edit_products' ], Access::write_capabilities() );
 		$this->assertSame( [ 'manage_woocommerce', 'manage_product_terms' ], Access::terms_capabilities() );
 		$this->assertSame( 200, self::http_status( Access::can_read() ) );
@@ -57,7 +57,7 @@ final class AccessTest extends TestCase {
 	}
 
 	public function test_an_administrator_passes_with_administrators_only_off_and_on(): void {
-		self::grant( [ 'manage_options', 'manage_woocommerce', 'edit_products', 'edit_others_products', 'manage_product_terms' ] );
+		self::grant( [ 'manage_options', 'manage_woocommerce', 'edit_products', 'edit_others_products', 'manage_product_terms', 'edit_product_terms' ] );
 		foreach ( [ false, true ] as $on ) {
 			self::administrators_only( $on );
 			$this->assertSame( 200, self::http_status( Access::can_read() ) );

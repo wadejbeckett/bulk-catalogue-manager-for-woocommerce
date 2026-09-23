@@ -579,3 +579,35 @@ if ( ! function_exists( 'clean_post_cache' ) ) {
 		wp_cache_set_last_changed( 'posts' );
 	}
 }
+
+if ( ! defined( 'BCM_TEST_NO_ACTION_SCHEDULER' ) && ! function_exists( 'as_schedule_recurring_action' ) ) {
+	/**
+	 * T60: recorded in $GLOBALS['bcm_test']['scheduled'] as [ 'recurring',
+	 * hook, args, group, timestamp, interval, the number of
+	 * as_unschedule_all_actions() calls recorded so far ].
+	 */
+	function as_schedule_recurring_action( int $timestamp, int $interval_in_seconds, string $hook, array $args = [], string $group = '', bool $unique = false, int $priority = 10 ): int {
+		$GLOBALS['bcm_test']['scheduled'][] = [ 'recurring', $hook, $args, $group, $timestamp, $interval_in_seconds, count( $GLOBALS['bcm_test']['unscheduled'] ?? [] ) ];
+		return count( $GLOBALS['bcm_test']['scheduled'] );
+	}
+
+	/**
+	 * T60: the timestamp of the latest recurring action recorded for the hook
+	 * (and args and group, when given) that no later as_unschedule_all_actions()
+	 * call for its hook or its whole group removed, or false.
+	 */
+	function as_next_scheduled_action( string $hook, ?array $args = null, string $group = '' ): int|bool {
+		foreach ( array_reverse( $GLOBALS['bcm_test']['scheduled'] ?? [] ) as $entry ) {
+			if ( 'recurring' !== $entry[0] || $hook !== $entry[1] || ( null !== $args && $args !== $entry[2] ) || ( '' !== $group && $group !== $entry[3] ) ) {
+				continue;
+			}
+			foreach ( array_slice( $GLOBALS['bcm_test']['unscheduled'] ?? [], $entry[6] ) as [ $unscheduled_hook, , $unscheduled_group ] ) {
+				if ( ( '' === $unscheduled_hook || $hook === $unscheduled_hook ) && ( '' === $unscheduled_group || $entry[3] === $unscheduled_group ) ) {
+					continue 2;
+				}
+			}
+			return $entry[4];
+		}
+		return false;
+	}
+}

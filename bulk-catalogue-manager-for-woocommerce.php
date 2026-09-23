@@ -33,6 +33,7 @@ if ( file_exists( __DIR__ . '/vendor/autoload.php' ) ) {
 
 // Registered whatever WooCommerce's state, since WordPress fires them before plugins_loaded.
 register_activation_hook( __FILE__, [ \BulkCatalogueManager\Data\Migrator::class, 'activate' ] );
+register_activation_hook( __FILE__, [ \BulkCatalogueManager\Engine\Pruner::class, 'schedule' ] );
 register_deactivation_hook( __FILE__, [ \BulkCatalogueManager\Data\Cleanup::class, 'deactivate' ] );
 
 add_action(

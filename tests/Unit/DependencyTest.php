@@ -14,6 +14,7 @@ namespace BulkCatalogueManager\Tests\Unit;
 
 use BulkCatalogueManager\Data\Cleanup;
 use BulkCatalogueManager\Data\Migrator;
+use BulkCatalogueManager\Engine\Pruner;
 use BulkCatalogueManager\Plugin;
 use PHPUnit\Framework\TestCase;
 
@@ -78,6 +79,7 @@ final class DependencyTest extends TestCase {
 			[
 				'admin_init'              => 1,
 				'bcm_batch_created'       => 1,
+				'bcm_prune_history'       => 1,
 				'bcm_run_chunk'           => 1,
 				'before_woocommerce_init' => 1,
 				'init'                    => 3,
@@ -101,7 +103,14 @@ final class DependencyTest extends TestCase {
 		$file = self::root() . '/' . self::PLUGIN_FILE;
 		foreach ( [ [ 'none', 'nostub' ], [ '9.9', 'stub' ], [ '10.0', 'stub' ] ] as [ $version, $features ] ) {
 			$result = self::boot( $version, $features );
-			$this->assertSame( [ [ $file, [ Migrator::class, 'activate' ] ] ], $result['activate'], "WooCommerce $version." );
+			$this->assertSame(
+				[
+					[ $file, [ Migrator::class, 'activate' ] ],
+					[ $file, [ Pruner::class, 'schedule' ] ],
+				],
+				$result['activate'],
+				"WooCommerce $version."
+			);
 			$this->assertSame( [ [ $file, [ Cleanup::class, 'deactivate' ] ] ], $result['deactive'], "WooCommerce $version." );
 		}
 	}
@@ -119,6 +128,7 @@ final class DependencyTest extends TestCase {
 			[
 				'admin_init'              => 1,
 				'bcm_batch_created'       => 1,
+				'bcm_prune_history'       => 1,
 				'bcm_run_chunk'           => 1,
 				'before_woocommerce_init' => 1,
 				'init'                    => 3,

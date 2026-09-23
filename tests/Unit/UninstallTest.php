@@ -102,11 +102,12 @@ final class UninstallTest extends TestCase {
 
 		// The plugin registry today: the three §9.2 tables (T6), the category
 		// tree cache's transients (T21), the filtered count cache's transients
-		// (T19), the batch request replay transients (T31) and no user meta or
-		// term meta yet (T52 and T64 add them here).
+		// (T19), the batch request replay transients (T31), the category tree
+		// order term meta (T64) and no user meta yet (T52 adds it here).
 		$this->assertSame(
 			[
 				'deleted'     => [
+					[ 'metadata', 'term', 0, 'bcm_order', '', true ],
 					[ 'option', 'bcm_settings' ],
 					[ 'option', 'bcm_db_version' ],
 				],
@@ -220,7 +221,7 @@ final class UninstallTest extends TestCase {
 		$this->assertTrue( is_array( $result ), $text );
 		$this->assertFalse( $result['scheduler'] );
 		$this->assertSame( [], $result['unscheduled'] );
-		$this->assertSame( [ [ 'option', 'bcm_settings' ], [ 'option', 'bcm_db_version' ] ], $result['deleted'] );
+		$this->assertSame( [ [ 'metadata', 'term', 0, 'bcm_order', '', true ], [ 'option', 'bcm_settings' ], [ 'option', 'bcm_db_version' ] ], $result['deleted'] );
 	}
 
 	public function test_uninstall_guards_and_bootstraps_its_own_autoloader(): void {

@@ -61,6 +61,7 @@ final class Routes {
 				new BatchesController(),
 				new PreviewController(),
 				new ProductWriteController( Registry::instance() ),
+				new CategoriesWriteController(),
 			]
 		);
 	}

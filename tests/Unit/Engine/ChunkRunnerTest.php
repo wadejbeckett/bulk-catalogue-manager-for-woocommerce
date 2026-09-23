@@ -444,6 +444,7 @@ final class ChunkRunnerTest extends TestCase {
 		sort( $calls );
 		$this->assertSame(
 			[
+				"Categories/Writer.php: 'running' -> \$status",
 				"Engine/BatchFactory.php: 'queued' -> 'running'",
 				"Engine/ChunkRunner.php: 'queued' -> 'running'",
 				"Engine/ChunkRunner.php: 'running' -> \$status",
@@ -453,7 +454,7 @@ final class ChunkRunnerTest extends TestCase {
 				"Engine/Progress.php: 'running' -> 'failed'",
 			],
 			$calls,
-			'The engine writes queued -> running -> complete, partial, failed or cancelled (and a stale inline batch running -> failed), and nothing else.'
+			'The engine writes queued -> running -> complete, partial, failed or cancelled (and a stale inline batch running -> failed), a category write finishes its batch of one, and nothing else.'
 		);
 
 		// The one variable target is the final status, which is only ever complete, partial or failed.

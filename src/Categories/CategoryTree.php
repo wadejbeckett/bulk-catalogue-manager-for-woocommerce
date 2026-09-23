@@ -35,6 +35,13 @@ final class CategoryTree {
 	public const ORDER_META = 'order';
 
 	/**
+	 * The plugin's own term meta key for a category's position among its
+	 * siblings in this tree only, written by a move (Categories\Writer) and
+	 * never read by the storefront (SPEC §4.7, §7; Data\Registry).
+	 */
+	public const TREE_ORDER_META = 'bcm_order';
+
+	/**
 	 * Build over a cache.
 	 *
 	 * @param Cache $cache Tree cache.
@@ -81,9 +88,19 @@ final class CategoryTree {
 
 	/**
 	 * Every product category, from one get_terms() call that also primes the
-	 * term meta cache the stored order is read from.
+	 * term meta cache both stored orders are read from.
 	 */
-	private static function tree(): Tree {
+	public static function tree(): Tree {
+		return self::tree_of( self::terms() );
+	}
+
+	/**
+	 * Every product category as get_terms() returns them, in one call that
+	 * primes the term meta cache.
+	 *
+	 * @return list<object>
+	 */
+	public static function terms(): array {
 		$terms = get_terms(
 			[
 				'taxonomy'               => Counts::TAXONOMY,
@@ -91,15 +108,23 @@ final class CategoryTree {
 				'update_term_meta_cache' => true,
 			]
 		);
-		if ( ! is_array( $terms ) ) {
-			return Tree::from_terms( [] );
-		}
-		$orders = [];
+		return is_array( $terms ) ? array_values( array_filter( $terms, 'is_object' ) ) : [];
+	}
+
+	/**
+	 * The tree of a term list, with WooCommerce's order and the plugin's tree order.
+	 *
+	 * @param list<object> $terms Terms from terms().
+	 */
+	public static function tree_of( array $terms ): Tree {
+		$orders      = [];
+		$tree_orders = [];
 		foreach ( $terms as $term ) {
-			if ( is_object( $term ) && isset( $term->term_id ) ) {
-				$orders[ (int) $term->term_id ] = get_term_meta( (int) $term->term_id, self::ORDER_META, true );
+			if ( isset( $term->term_id ) ) {
+				$orders[ (int) $term->term_id ]      = get_term_meta( (int) $term->term_id, self::ORDER_META, true );
+				$tree_orders[ (int) $term->term_id ] = get_term_meta( (int) $term->term_id, self::TREE_ORDER_META, true );
 			}
 		}
-		return Tree::from_terms( array_filter( $terms, 'is_object' ), $orders );
+		return Tree::from_terms( $terms, $orders, $tree_orders );
 	}
 }

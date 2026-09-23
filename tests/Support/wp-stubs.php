@@ -270,8 +270,29 @@ if ( ! function_exists( 'add_filter' ) ) {
 				return false;
 			}
 		}
-		$GLOBALS['bcm_test']['routes'][ '/' . trim( $route_namespace, '/' ) . '/' . ltrim( $route, '/' ) ] = $args;
-		$GLOBALS['bcm_test']['namespaces'][ trim( $route_namespace, '/' ) ]                                = true;
+		$key = '/' . trim( $route_namespace, '/' ) . '/' . ltrim( $route, '/' );
+		// As core, a second registration of a route adds its endpoints to the
+		// first's unless it overrides; here an endpoint for methods the route
+		// already has replaces that one, so a test may boot the plugin twice.
+		if ( isset( $GLOBALS['bcm_test']['routes'][ $key ] ) && ! $override ) {
+			$as_list = static fn( array $given ): array => isset( $given['methods'] ) || isset( $given['callback'] ) ? [ $given ] : $given;
+			$merged  = [];
+			foreach ( [ $as_list( $GLOBALS['bcm_test']['routes'][ $key ] ), $as_list( $args ) ] as $part ) {
+				foreach ( $part as $name => $entry ) {
+					$merged[ is_int( $name ) ? 'endpoint:' . strtoupper( implode( ',', (array) ( $entry['methods'] ?? '' ) ) ) : $name ] = $entry;
+				}
+			}
+			$args = [];
+			foreach ( $merged as $name => $entry ) {
+				if ( str_starts_with( (string) $name, 'endpoint:' ) ) {
+					$args[] = $entry;
+				} else {
+					$args[ $name ] = $entry;
+				}
+			}
+		}
+		$GLOBALS['bcm_test']['routes'][ $key ]                              = $args;
+		$GLOBALS['bcm_test']['namespaces'][ trim( $route_namespace, '/' ) ] = true;
 		return true;
 	}
 
@@ -577,5 +598,110 @@ if ( ! function_exists( 'clean_post_cache' ) ) {
 		$GLOBALS['bcm_test']['cleaned_posts'][] = $id;
 		unset( $GLOBALS['bcm_test']['primed_posts'][ $id ], $GLOBALS['bcm_test']['primed_meta'][ $id ] );
 		wp_cache_set_last_changed( 'posts' );
+	}
+}
+
+if ( ! function_exists( 'wp_slash' ) ) {
+	/**
+	 * T63: core's wp_slash(), adding slashes to a string or each string in an array.
+	 */
+	function wp_slash( mixed $value ): mixed {
+		if ( is_array( $value ) ) {
+			return array_map( 'wp_slash', $value );
+		}
+		return is_string( $value ) ? addslashes( $value ) : $value;
+	}
+}
+
+if ( ! function_exists( 'sanitize_title' ) ) {
+	/**
+	 * T63: a slug as core's sanitize_title() makes one from plain text:
+	 * lower case, runs of anything but letters, digits and hyphens as one hyphen.
+	 */
+	function sanitize_title( string $title, string $fallback_title = '', string $context = 'save' ): string {
+		$slug = trim( (string) preg_replace( '/[^a-z0-9-]+/', '-', strtolower( $title ) ), '-' );
+		return '' === $slug ? $fallback_title : $slug;
+	}
+}
+
+// T63, T64: term writes over the T21 term list. wp_insert_term() and
+// wp_update_term() take slashed data as core does, change
+// $GLOBALS['bcm_test']['term_list'] (a new term's id is one above the
+// highest), record each call in 'inserted_terms' and 'updated_terms', fire
+// created_term or edited_term as core does, and answer the WP_Error in
+// 'insert_term_error' or 'update_term_error' when a test sets one.
+// update_term_meta() writes 'term_meta' and records 'term_meta_updates';
+// wp_delete_term() removes a term and records 'deleted_terms'.
+if ( ! function_exists( 'wp_insert_term' ) ) {
+	function get_term( int|object $term, string $taxonomy = '', string $output = 'OBJECT', string $filter = 'raw' ): mixed {
+		$id = is_object( $term ) ? (int) $term->term_id : $term;
+		foreach ( $GLOBALS['bcm_test']['term_list'] ?? [] as $candidate ) {
+			if ( (int) $candidate->term_id === $id && ( '' === $taxonomy || ( $candidate->taxonomy ?? 'product_cat' ) === $taxonomy ) ) {
+				return $candidate;
+			}
+		}
+		return null;
+	}
+
+	function wp_insert_term( string $term, string $taxonomy, array|string $args = [] ): array|WP_Error {
+		$args                                    = (array) $args;
+		$GLOBALS['bcm_test']['inserted_terms'][] = [ $term, $taxonomy, $args ];
+		if ( isset( $GLOBALS['bcm_test']['insert_term_error'] ) ) {
+			return $GLOBALS['bcm_test']['insert_term_error'];
+		}
+		$id = 1;
+		foreach ( $GLOBALS['bcm_test']['term_list'] ?? [] as $candidate ) {
+			$id = max( $id, (int) $candidate->term_id + 1 );
+		}
+		$name                               = stripslashes( $term );
+		$GLOBALS['bcm_test']['term_list'][] = (object) [
+			'term_id'     => $id,
+			'name'        => $name,
+			'slug'        => '' !== (string) ( $args['slug'] ?? '' ) ? stripslashes( (string) $args['slug'] ) : sanitize_title( $name ),
+			'parent'      => (int) ( $args['parent'] ?? 0 ),
+			'taxonomy'    => $taxonomy,
+			'description' => stripslashes( (string) ( $args['description'] ?? '' ) ),
+		];
+		do_action( 'created_term', $id, $id, $taxonomy );
+		return [
+			'term_id'          => $id,
+			'term_taxonomy_id' => $id,
+		];
+	}
+
+	function wp_update_term( int $term_id, string $taxonomy, array $args = [] ): array|WP_Error {
+		$GLOBALS['bcm_test']['updated_terms'][] = [ $term_id, $taxonomy, $args ];
+		if ( isset( $GLOBALS['bcm_test']['update_term_error'] ) ) {
+			return $GLOBALS['bcm_test']['update_term_error'];
+		}
+		$term = get_term( $term_id, $taxonomy );
+		if ( null === $term ) {
+			return new WP_Error( 'invalid_term', 'Empty Term.' );
+		}
+		foreach ( [ 'name', 'slug', 'description' ] as $key ) {
+			if ( array_key_exists( $key, $args ) ) {
+				$term->$key = stripslashes( (string) $args[ $key ] );
+			}
+		}
+		if ( array_key_exists( 'parent', $args ) ) {
+			$term->parent = (int) $args['parent'];
+		}
+		do_action( 'edited_term', $term_id, $term_id, $taxonomy );
+		return [
+			'term_id'          => $term_id,
+			'term_taxonomy_id' => $term_id,
+		];
+	}
+
+	function update_term_meta( int $term_id, string $meta_key, mixed $meta_value, mixed $prev_value = '' ): int|bool {
+		$GLOBALS['bcm_test']['term_meta'][ $term_id ][ $meta_key ] = $meta_value;
+		$GLOBALS['bcm_test']['term_meta_updates'][]                = [ $term_id, $meta_key, $meta_value ];
+		return true;
+	}
+
+	function wp_delete_term( int $term, string $taxonomy, array|string $args = [] ): bool|int|WP_Error {
+		$GLOBALS['bcm_test']['deleted_terms'][] = [ $term, $taxonomy ];
+		$GLOBALS['bcm_test']['term_list']       = array_values( array_filter( $GLOBALS['bcm_test']['term_list'] ?? [], static fn( object $t ): bool => (int) $t->term_id !== $term ) );
+		return true;
 	}
 }

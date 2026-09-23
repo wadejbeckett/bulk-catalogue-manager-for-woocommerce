@@ -323,6 +323,11 @@ final class BatchFactory {
 	 * itself. A row or items the database will not take leave nothing written
 	 * and answer 500 `bcm_batch_not_recorded`.
 	 *
+	 * A `tree` batch (T63, T64: a category write) holds term items and the
+	 * category step its caller, Categories\Writer, has already validated;
+	 * the action registry knows product actions only, so it is not consulted
+	 * and the list is stored as given (tree_operations()).
+	 *
 	 * @param int                            $user_id    Initiating user.
 	 * @param mixed                          $operations The operation list as submitted.
 	 * @param list<array{0: int, 1: string}> $objects    The objects, materialised by the caller, as [ object_id, object_type ] pairs.
@@ -334,7 +339,7 @@ final class BatchFactory {
 		if ( 'undo' === $source || [] === $objects ) {
 			throw new \InvalidArgumentException( 'A synchronous batch needs objects and is never an undo.' );
 		}
-		$operations = $this->actions->validate_list( $operations );
+		$operations = 'tree' === $source ? self::tree_operations( $operations, $objects ) : $this->actions->validate_list( $operations );
 		if ( $operations instanceof \WP_Error ) {
 			return $operations;
 		}
@@ -359,6 +364,29 @@ final class BatchFactory {
 			);
 		}
 		return $batch_id;
+	}
+
+	/**
+	 * A tree batch's steps as given: a non-empty list of `{ action, args }`
+	 * steps over term items only.
+	 *
+	 * @param mixed                          $operations The steps.
+	 * @param list<array{0: int, 1: string}> $objects    The items.
+	 * @return list<array{action: string, args: array<string, mixed>}>
+	 * @throws \InvalidArgumentException On anything else: a programming error.
+	 */
+	private static function tree_operations( mixed $operations, array $objects ): array {
+		$valid = is_array( $operations ) && [] !== $operations && array_is_list( $operations );
+		foreach ( $valid ? $operations : [] as $step ) {
+			$valid = $valid && is_array( $step ) && is_string( $step['action'] ?? null ) && is_array( $step['args'] ?? null );
+		}
+		foreach ( $objects as $pair ) {
+			$valid = $valid && 'term' === ( $pair[1] ?? null );
+		}
+		if ( ! $valid ) {
+			throw new \InvalidArgumentException( 'A tree batch holds term items and validated { action, args } steps.' );
+		}
+		return $operations;
 	}
 
 	/**

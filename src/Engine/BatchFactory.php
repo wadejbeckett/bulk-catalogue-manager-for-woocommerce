@@ -44,8 +44,11 @@
  * the token's own) is refused 409 `bcm_selection_changed`, naming both
  * numbers, unless the owner confirmed it. The previewed count is stored on
  * the batch as `previewed_items`, and Engine\Progress states any difference
- * from `total_items` in the batch's report and history row. The REST route
- * always passes the check for a token; an id selection ignores it.
+ * from `total_items` in the batch's report and history row. A bulk batch of
+ * ids (an id list, or a token made from one) is held to its preview's hash
+ * the same way — every bulk write is previewed first — with no count check.
+ * The REST route always passes the check (`token` is then the token as sent,
+ * or '' for an id list, whose hash is taken over the ids).
  *
  * create_undo() (T56, §9.4) is the variant for an undo: the objects and
  * their operations come from an Undo\Plan rather than a selection, each
@@ -206,7 +209,7 @@ final class BatchFactory {
 	 * @param Selection $selection  The selection, from an id list or a parsed token.
 	 * @param string    $source     bulk, inline, tree or undo.
 	 * @param int|null  $undo_of    The batch an undo batch reverses.
-	 * @param array{token: string, hash: string, previewed?: int|null, confirmed?: bool, settings?: Settings}|null $apply The apply check for a filter selection (T38), or null for none.
+	 * @param array{token: string, hash: string, previewed?: int|null, confirmed?: bool, settings?: Settings}|null $apply The apply check (T38; `token` '' for an id list), or null for none.
 	 * @return array{batch_id: int, status: string, total_items: int, previewed_items: int|null, replayed: bool}|\WP_Error
 	 */
 	public function create( string $uuid, int $user_id, mixed $operations, Selection $selection, string $source = 'bulk', ?int $undo_of = null, ?array $apply = null ): array|\WP_Error {
@@ -222,8 +225,8 @@ final class BatchFactory {
 		if ( $selection->too_large() ) {
 			return self::too_large( $selection->count );
 		}
-		$checked = null !== $apply && $selection->is_filter();
-		if ( $checked && ! self::preview_matches( $apply, $operations ) ) {
+		$checked = null !== $apply && ( $selection->is_filter() || 'bulk' === $source );
+		if ( $checked && ! self::preview_matches( $apply, $operations, $selection ) ) {
 			return Refusal::create(
 				self::STALE_PREVIEW,
 				__( 'This change no longer matches its preview: the products, the change or the settings have moved on since. Preview the change again, then apply it.', 'bulk-catalogue-manager-for-woocommerce' ),
@@ -240,7 +243,7 @@ final class BatchFactory {
 				__( 'None of the chosen products can be changed now: they have been deleted or no longer match the filters. Choose the products again and try again.', 'bulk-catalogue-manager-for-woocommerce' )
 			);
 		}
-		$previewed = $checked ? (int) ( $apply['previewed'] ?? $selection->count ) : null;
+		$previewed = $checked && $selection->is_filter() ? (int) ( $apply['previewed'] ?? $selection->count ) : null;
 		if ( null !== $previewed && count( $objects ) !== $previewed && true !== ( $apply['confirmed'] ?? false ) ) {
 			return self::changed( $previewed, count( $objects ) );
 		}
@@ -414,18 +417,21 @@ final class BatchFactory {
 
 	/**
 	 * Whether the hash an apply carries is the one a preview of the same
-	 * token, normalised operation list and current settings gives now.
+	 * token (or, without one, the same ids), normalised operation list and
+	 * current settings gives now.
 	 *
 	 * @param array<string, mixed> $apply      The apply check.
 	 * @param array<mixed>         $operations The normalised operation list.
+	 * @param Selection            $selection  The selection, for an id list's ids.
 	 */
-	private static function preview_matches( array $apply, array $operations ): bool {
+	private static function preview_matches( array $apply, array $operations, Selection $selection ): bool {
 		$hash = $apply['hash'] ?? '';
 		if ( ! is_string( $hash ) || '' === $hash ) {
 			return false;
 		}
+		$token    = (string) ( $apply['token'] ?? '' );
 		$settings = $apply['settings'] ?? null;
-		return hash_equals( Preview::hash( (string) $apply['token'], $operations, $settings instanceof Settings ? $settings : Settings::load() ), $hash );
+		return hash_equals( Preview::hash( '' !== $token ? $token : $selection->ids, $operations, $settings instanceof Settings ? $settings : Settings::load() ), $hash );
 	}
 
 	/**

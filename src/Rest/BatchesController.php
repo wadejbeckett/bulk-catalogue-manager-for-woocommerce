@@ -17,9 +17,10 @@
  * seconds answers 200 with the same batch, both as
  * `{ batch_id, status, total_items, replayed }`.
  *
- * Applying a filter selection (T38, §9.1): a body with a `token` carries the
- * preview's `preview_hash` and the count the preview showed
- * (`preview_count`; the token's own count when absent). BatchFactory refuses
+ * Applying a selection (T38, §9.1): every body carries the preview's
+ * `preview_hash` — for an id list or id token as much as for a filter, since
+ * every bulk write is previewed first — and a filter token the count the
+ * preview showed (`preview_count`; the token's own count when absent). BatchFactory refuses
  * 409 `bcm_preview_stale` when the hash is missing or no longer what a
  * preview gives now, and 409 `bcm_selection_changed` with `data.previewed`
  * and `data.current` when the filter now matches another number of objects,
@@ -596,7 +597,7 @@ final class BatchesController implements ReadController {
 			),
 			'preview_hash'    => self::arg(
 				[
-					'description' => __( 'The hash the preview answered; required with a filter selection token.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'description' => __( 'The hash the preview answered; required, since every bulk change is previewed first.', 'bulk-catalogue-manager-for-woocommerce' ),
 					'type'        => 'string',
 					'pattern'     => '^[0-9a-f]{64}$',
 				],
@@ -638,10 +639,11 @@ final class BatchesController implements ReadController {
 			if ( $selection instanceof \WP_Error ) {
 				return $selection;
 			}
+			// Every bulk write is held to its preview: a filter, an id token and an id list alike.
 			$token  = $request->get_param( 'token' );
 			$count  = $request->get_param( 'preview_count' );
-			$apply  = null === $token ? null : [
-				'token'     => (string) $token,
+			$apply  = [
+				'token'     => null === $token ? '' : (string) $token,
 				'hash'      => (string) ( $request->get_param( 'preview_hash' ) ?? '' ),
 				'previewed' => null === $count ? null : (int) $count,
 				'confirmed' => true === $request->get_param( 'confirm_changed' ),

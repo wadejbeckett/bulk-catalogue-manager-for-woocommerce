@@ -584,11 +584,23 @@ def check_write_engine(p: Probe) -> None:
         want = {str(t["id"]): t["regular_price"] for t in targets}
         p.row("write", "write:undo-values", got == want, f"{got} want {want}")
 
+    def ids_need_preview() -> None:
+        # Security review m6: ticked rows are held to their preview as a filter is.
+        target = p.simple(2)
+        ops = [{"action": "set_value", "args": {"field": "regular_price", "value": target["regular_price"]}}]
+        before = p.modified([target["id"]])
+        bare = p.http("manager", "POST", "/batches", body={"uuid": str(uuid.uuid4()), "ids": [target["id"]], "operations": ops})
+        wrong = p.http("manager", "POST", "/batches", body={"uuid": str(uuid.uuid4()), "ids": [target["id"]], "operations": ops, "preview_hash": "0" * 64})
+        untouched = p.modified([target["id"]]) == before
+        ok = bare.status == 409 and bare.code() == "bcm_preview_stale" and wrong.status == 409 and wrong.code() == "bcm_preview_stale" and untouched
+        p.row("write", "write:ids-need-preview", ok, f"no hash {bare.brief()}, wrong hash {wrong.brief()}, nothing written: {untouched}")
+
     def skip_already() -> None:
         target = p.simple(4)
         before = p.modified([target["id"]])
-        body = {"uuid": str(uuid.uuid4()), "ids": [target["id"]],
-                "operations": [{"action": "set_value", "args": {"field": "regular_price", "value": target["regular_price"]}}]}
+        ops = [{"action": "set_value", "args": {"field": "regular_price", "value": target["regular_price"]}}]
+        pre = p.http("manager", "POST", "/preview", body={"ids": [target["id"]], "operations": ops}).json() or {}
+        body = {"uuid": str(uuid.uuid4()), "ids": [target["id"]], "operations": ops, "preview_hash": pre.get("hash")}
         d = p.http("manager", "POST", "/batches", body=body).json() or {}
         report = p.run_queue(d.get("batch_id", 0))
         same = p.modified([target["id"]]) == before
@@ -596,7 +608,7 @@ def check_write_engine(p: Probe) -> None:
               f"status {report.get('status')} changed {report.get('changed_items')}, post_modified_gmt untouched: {same}")
 
     for name, fn in [("refusals", refusals), ("preview", preview), ("batch", apply), ("batch-run", run),
-                     ("batch-values", verify), ("undo", undo), ("skip-already", skip_already)]:
+                     ("batch-values", verify), ("undo", undo), ("ids-need-preview", ids_need_preview), ("skip-already", skip_already)]:
         if name not in ("refusals", "preview") and not state.get("token"):
             p.row("write", f"write:{name}", False, "no selection token from the preview step")
             continue

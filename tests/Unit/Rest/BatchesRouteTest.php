@@ -16,7 +16,8 @@
  * the preview and apply, apply is refused 409 `bcm_selection_changed` naming
  * the previewed and the current count in plain words, with nothing written,
  * and applies with `confirm_changed`, keeping the previewed count on the
- * batch; an id token needs no hash.
+ * batch. An id list or id token needs its preview's hash too (security
+ * review m6: every bulk write is previewed first), but no count.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -82,18 +83,20 @@ final class BatchesRouteTest extends TestCase {
 	 * @return array<string, mixed>
 	 */
 	private static function body(): array {
-		return [
-			'uuid'       => self::UUID,
-			'operations' => [
-				[
-					'action' => 'set_value',
-					'args'   => [
-						'field' => 'status',
-						'value' => 'draft',
-					],
+		$operations = [
+			[
+				'action' => 'set_value',
+				'args'   => [
+					'field' => 'status',
+					'value' => 'draft',
 				],
 			],
-			'ids'        => [ 104, 201 ],
+		];
+		return [
+			'uuid'         => self::UUID,
+			'operations'   => $operations,
+			'ids'          => [ 104, 201 ],
+			'preview_hash' => self::preview_hash( [ 104, 201 ], $operations ),
 		];
 	}
 
@@ -149,10 +152,10 @@ final class BatchesRouteTest extends TestCase {
 	/**
 	 * The hash a preview of this token and operation list answers.
 	 *
-	 * @param string $token      The selection token.
-	 * @param array  $operations The operation list as posted.
+	 * @param string|list<int> $token      The selection token, or the id list.
+	 * @param array            $operations The operation list as posted.
 	 */
-	private static function preview_hash( string $token, array $operations ): string {
+	private static function preview_hash( string|array $token, array $operations ): string {
 		$list = Actions::instance()->validate_list( $operations );
 		return Preview::hash( $token, is_array( $list ) ? $list : [], Settings::load() );
 	}
@@ -243,11 +246,28 @@ final class BatchesRouteTest extends TestCase {
 		$this->assertSame( 201, self::post( $body )->get_status(), 'The current preview\'s hash applies.' );
 	}
 
-	public function test_an_id_token_needs_no_preview_hash(): void {
-		$token    = SelectionToken::mint( Selection::of_ids( [ 104, 201 ] ), 12 );
-		$response = self::post( [ 'token' => $token ] + array_diff_key( self::body(), [ 'ids' => 0 ] ) );
+	public function test_an_id_token_needs_the_hash_of_its_preview_but_no_count(): void {
+		$token = SelectionToken::mint( Selection::of_ids( [ 104, 201 ] ), 12 );
+		$body  = [ 'token' => $token ] + array_diff_key( self::body(), [ 'ids' => 0 ] );
+		$this->assert_refused( self::post( $body ), BatchFactory::STALE_PREVIEW, 409 );
+
+		$response = self::post( [ 'preview_hash' => self::preview_hash( $token, $body['operations'] ) ] + $body );
 		$this->assertSame( 201, $response->get_status() );
 		$this->assertNull( $this->store->batches[1]['previewed_items'] ?? null );
+	}
+
+	public function test_an_id_list_needs_the_hash_of_its_preview(): void {
+		// Every bulk write is previewed first: ticked rows as much as a filter.
+		$body     = self::body();
+		$response = self::post( array_diff_key( $body, [ 'preview_hash' => 0 ] ) );
+		$this->assert_refused( $response, BatchFactory::STALE_PREVIEW, 409 );
+		$this->assertStringContainsString( 'Preview the change again', $response->get_error_message() );
+		$this->assert_refused( self::post( [ 'preview_hash' => self::preview_hash( [ 104 ], $body['operations'] ) ] + $body ), BatchFactory::STALE_PREVIEW, 409 );
+		$this->assert_refused( self::post( [ 'preview_hash' => self::preview_hash( [ 201, 104 ], $body['operations'] ) ] + $body ), BatchFactory::STALE_PREVIEW, 409 );
+
+		$response = self::post( $body );
+		$this->assertSame( 201, $response->get_status(), 'The preview of these ids and this change applies.' );
+		$this->assertNull( $this->store->batches[1]['previewed_items'], 'Only a filter records the count it showed.' );
 	}
 
 	public function test_a_selection_token_is_materialised_through_its_filter(): void {

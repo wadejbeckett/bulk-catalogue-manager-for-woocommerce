@@ -218,6 +218,8 @@ Applying creates a batch row and materialises the selection into `bcm_batch_item
   done_items    INT UNSIGNED
   changed_items INT UNSIGNED
   failed_items  INT UNSIGNED
+  chunk_size    SMALLINT UNSIGNED   -- NOT NULL DEFAULT 0; size the runner settled on, 0 until the first chunk
+  note          VARCHAR(255)        -- NOT NULL DEFAULT ''; plain reason the chunk size changed
   KEY created_gmt (created_gmt), KEY status (status), KEY user_id (user_id)
 
 {prefix}bcm_batch_items
@@ -227,6 +229,9 @@ Applying creates a batch row and materialises the selection into `bcm_batch_item
   object_type VARCHAR(16)           -- product|variation|term
   state       VARCHAR(12)           -- pending|done|skipped|failed
   attempts    TINYINT UNSIGNED
+  claim_token CHAR(32) NULL         -- claim lease held by the chunk working the item
+  claimed_gmt DATETIME NULL         -- when that claim was taken
+  message     VARCHAR(255)          -- NOT NULL DEFAULT ''; plain reason the item failed or was skipped
   KEY batch_state (batch_id, state), KEY object (object_id)
 
 {prefix}bcm_changes
@@ -309,7 +314,7 @@ Each chunk runs inside one Action Scheduler action in the `bcm` group, wrapped i
 
 Action Scheduler ships inside WooCommerce and is used through its public `as_*` functions only. The plugin does not touch WooCommerce's internal batch-processing classes, which carry no backwards-compatibility guarantee.
 
-The model is a chain, not a fan-out, because Action Scheduler's default concurrency is one. Creating a batch enqueues one `bcm_run_chunk` action through `as_enqueue_async_action()`; each run claims the next chunk of pending items with a locking update, processes them, updates the counters and enqueues its successor if items remain. A claim is released after a timeout and retried up to three times. This survives a crash and gives accurate progress without scheduling hundreds of actions up front.
+The model is a chain, not a fan-out, because Action Scheduler's default concurrency is one. Creating a batch enqueues one `bcm_run_chunk` action through `as_enqueue_async_action()`; each run claims the next chunk of pending items with a locking update, processes them, updates the counters and enqueues its successor if items remain. A claim is released after a timeout and retried up to three times. Each claim schedules its own retry six minutes ahead (the five-minute lease plus one minute), unscheduled when the chunk ends normally, so a chunk killed mid-way is picked up without anyone watching; a claim older than five minutes is stale and the next run takes its items over. This survives a crash and gives accurate progress without scheduling hundreds of actions up front.
 
 Default chunk size is 50 products or 100 variations, floor 10, ceiling 100, filterable through `bcm_batch_size`. A chunk using more than 70 per cent of the PHP time limit halves the size for the rest of the batch and records why. Cancelling sets the status and the next run exits without claiming; applied chunks stay applied and the batch remains undoable. The queue runner is not reconfigured on the owner's behalf — `action_scheduler_queue_runner_batch_size` and `_concurrent_batches` are left alone — and chunk size is the only knob.
 

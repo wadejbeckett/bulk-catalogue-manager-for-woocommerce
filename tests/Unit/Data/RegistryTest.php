@@ -43,6 +43,8 @@ final class RegistryTest extends TestCase {
 		'bcm_selection_empty'     => 'refusal code for a batch whose selection no longer holds any product or variation',
 		'bcm_selection_required'  => 'refusal code for a batch request naming neither or both of an id list and a selection token',
 		'bcm_batch_not_recorded'  => 'refusal code for a batch the database would not take; nothing is left written',
+		'bcm_already_done'        => 'result code for an object a retried chunk skips because its batch already journalled it',
+		'bcm_save_failed'         => 'result code for changes lost because WooCommerce could not save the object',
 	];
 
 	/**

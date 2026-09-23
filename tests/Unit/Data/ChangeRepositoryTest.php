@@ -57,6 +57,11 @@ final class ChangeRepositoryTest extends TestCase {
 		$this->assertSame( str_repeat( 'é', 255 ), self::db()->writes[0][2]['message'] );
 	}
 
+	public function test_an_unknown_modified_time_is_stored_as_the_zero_date(): void {
+		( new ChangeRepository() )->append( 6, 404, 'product', 'regular_price', null, null, ChangeRepository::UNKNOWN_TIME, 'failed', 'Not found.' );
+		$this->assertSame( '0000-00-00 00:00:00', self::db()->writes[0][2]['modified_gmt'] );
+	}
+
 	public function test_append_refuses_bad_input_before_writing(): void {
 		$repo = new ChangeRepository();
 		$bad  = [

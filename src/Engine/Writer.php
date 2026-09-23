@@ -49,8 +49,26 @@
  * clashes with the same SKU on another object of that chunk; a write()
  * outside run() is its own run.
  *
- * An exception from save() or from the hook is not caught: nothing was
- * saved and the caller records the item as failed (SPEC §12.6).
+ * The journal (T33, T29). A writer built with a Journal and a batch id
+ * journals every object from inside write(), not from a hook afterwards:
+ * before loading the object it asks Journal::already_done() and skips an
+ * object this batch already journalled (every step reported skipped with
+ * Journal::ALREADY_DONE, nothing loaded, computed or saved), so a retried
+ * chunk cannot apply a percentage increase twice; straight after loading it
+ * records the object's post_modified_gmt; and after save() — or in its place
+ * when nothing is saved — it writes one row per field the steps named
+ * through Journal::record(), with each Result and its step's `skip_already`
+ * switch. An `already` Result is never saved; whether it is journalled
+ * follows the switch and the shop's *Record unchanged rows* setting (see
+ * Journal). Inline edits, detail-panel saves and term writes use the same
+ * writer for their one-item batch, so they journal identically.
+ *
+ * An exception from save() does not stop the caller: the object's changes
+ * are reported failed with a plain reason (code SAVE_FAILED), nothing is
+ * resynchronised, and the journal writes failed rows. Term lists are written
+ * by wp_set_object_terms() before save(), so after a failed save a term
+ * change may have stuck although it is reported failed. An exception from
+ * the before-save hook or from the journal itself is not caught.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -81,6 +99,11 @@ final class Writer {
 	 * The code for a value WooCommerce's own setter refused.
 	 */
 	public const INVALID = 'bcm_invalid_value';
+
+	/**
+	 * The code for a change lost because WooCommerce could not save the object.
+	 */
+	public const SAVE_FAILED = 'bcm_save_failed';
 
 	/**
 	 * Called with ( object, touched field keys, before values ) just before save().
@@ -116,9 +139,34 @@ final class Writer {
 	 * @param Registry      $operations  Resolves each step's action and the field registry.
 	 * @param callable|null $before_save Journal hook: fn( object $product, list<string> $fields, array<string, mixed> $before ): void.
 	 * @param int|null      $user_id     The batch's recorded user for background work, or null to check the current user.
+	 * @param Journal|null  $journal     The journal every object is recorded in, or null to journal nothing.
+	 * @param int           $batch_id    The batch the journal rows belong to; required with a journal.
+	 * @throws \LogicException When a journal is given without a batch.
 	 */
-	public function __construct( private readonly Registry $operations, ?callable $before_save = null, private readonly ?int $user_id = null ) {
+	public function __construct(
+		private readonly Registry $operations,
+		?callable $before_save = null,
+		private readonly ?int $user_id = null,
+		private readonly ?Journal $journal = null,
+		private readonly int $batch_id = 0
+	) {
+		if ( null !== $journal && $batch_id < 1 ) {
+			throw new \LogicException( esc_html( 'A journalling writer needs the batch its rows belong to.' ) );
+		}
 		$this->before_save = null === $before_save ? null : \Closure::fromCallable( $before_save );
+	}
+
+	/**
+	 * A writer that journals every object in one batch: a bulk batch's chunk,
+	 * or an inline edit, detail-panel save or term write as a one-item batch.
+	 *
+	 * @param Registry $operations The operation registry.
+	 * @param Journal  $journal    The journal.
+	 * @param int      $batch_id   The batch.
+	 * @param int|null $user_id    The batch's recorded user for background work, or null for the current user.
+	 */
+	public static function for_batch( Registry $operations, Journal $journal, int $batch_id, ?int $user_id = null ): self {
+		return new self( $operations, null, $user_id, $journal, $batch_id );
 	}
 
 	/**
@@ -129,42 +177,59 @@ final class Writer {
 	 * @throws \LogicException When the list was not validated.
 	 */
 	public function write( int $id, array $operations ): WriteOutcome {
-		$steps   = $this->resolve( $operations );
-		$product = wc_get_product( $id );
-		if ( ! is_object( $product ) ) {
-			return new WriteOutcome( $id, self::not_found( $steps ), false );
+		$steps = $this->resolve( $operations );
+		if ( null !== $this->journal && $this->journal->already_done( $this->batch_id, $id ) ) {
+			return new WriteOutcome( $id, self::done_before( $steps ), false );
 		}
 
+		$product = wc_get_product( $id );
+		if ( ! is_object( $product ) ) {
+			$results = self::not_found( $steps );
+			$this->journal( $id, null, '', self::entries( $results, $steps ), [], null );
+			return new WriteOutcome( $id, $results, false );
+		}
+
+		$modified  = null === $this->journal ? '' : $this->journal->modified_gmt( $product );
 		$validator = $this->validator ?? $this->new_validator();
 		$before    = $this->before( $product, $steps );
-		$results   = [];
+		$entries   = [];
 		foreach ( $steps as [ $operation, $args ] ) {
-			$checked = $validator->check( $product, $operation->compute( $product, $args ), $args );
+			$skip_already = (bool) ( $args['skip_already'] ?? true );
+			$checked      = $validator->check( $product, $operation->compute( $product, $args ), $args );
 			foreach ( $checked as $index => $result ) {
-				$results[] = 0 === $index ? self::apply( $operation, $result, $product ) : $this->apply_field( $result, $product );
+				$entries[] = [ 0 === $index ? self::apply( $operation, $result, $product ) : $this->apply_field( $result, $product ), $skip_already ];
 				if ( $result->is_changed() && ! array_key_exists( $result->field(), $before ) ) {
 					// A field no step names (the sale-price clear): its value before this first change.
 					$before[ $result->field() ] = $result->old();
 				}
 			}
 		}
+		$results = array_column( $entries, 0 );
 
 		$touched = array_values( array_unique( array_map( static fn( Result $r ): string => $r->field(), array_filter( $results, static fn( Result $r ): bool => $r->is_changed() ) ) ) );
 		if ( [] === $touched ) {
+			$this->journal( $id, $product, $modified, $entries, $before, null );
 			return new WriteOutcome( $id, $results, false );
 		}
 
-		$before = array_intersect_key( $before, array_flip( $touched ) );
+		$changed_before = array_intersect_key( $before, array_flip( $touched ) );
 		if ( null !== $this->before_save ) {
-			( $this->before_save )( $product, $touched, $before );
+			( $this->before_save )( $product, $touched, $changed_before );
 		}
-		$product->save();
+		try {
+			$product->save();
+		} catch ( \Exception $e ) {
+			$entries = self::save_failed( $entries );
+			$this->journal( $id, $product, $modified, $entries, $before, null );
+			return new WriteOutcome( $id, array_column( $entries, 0 ), false );
+		}
 
 		$parent_id = self::variable_parent( $product );
 		if ( $parent_id > 0 ) {
 			$this->sync( $parent_id );
 		}
-		return new WriteOutcome( $id, $results, true, $parent_id, $before );
+		$this->journal( $id, $product, $modified, $entries, $before, $product );
+		return new WriteOutcome( $id, $results, true, $parent_id, $changed_before );
 	}
 
 	/**
@@ -289,6 +354,62 @@ final class Writer {
 			return Result::failed( $result->field(), $result->old(), $written->get_error_message(), str_starts_with( $code, 'bcm_' ) ? $code : '' );
 		}
 		return $result;
+	}
+
+	/**
+	 * Journal one object, when this writer journals.
+	 *
+	 * @param int                             $id       Object id.
+	 * @param object|null                     $product  The loaded object, or null.
+	 * @param string                          $modified Its post_modified_gmt before the write ('' when not loaded).
+	 * @param list<array{0: Result, 1: bool}> $entries  Every Result with its step's skip switch.
+	 * @param array<string, mixed>            $before   Before values.
+	 * @param object|null                     $saved    The saved object, or null.
+	 */
+	private function journal( int $id, ?object $product, string $modified, array $entries, array $before, ?object $saved ): void {
+		if ( null === $this->journal ) {
+			return;
+		}
+		if ( '' === $modified ) {
+			$modified = $this->journal->modified_gmt( $product );
+		}
+		$this->journal->record( $this->batch_id, $id, Journal::object_type( $product ), $modified, $entries, $before, $saved );
+	}
+
+	/**
+	 * Pair each Result with its step's skip switch, one Result per step.
+	 *
+	 * @param list<Result>                                        $results One per step.
+	 * @param list<array{0: Operation, 1: array<string, mixed>}> $steps   Resolved steps.
+	 * @return list<array{0: Result, 1: bool}>
+	 */
+	private static function entries( array $results, array $steps ): array {
+		return array_map( static fn( Result $r, array $step ): array => [ $r, (bool) ( $step[1]['skip_already'] ?? true ) ], $results, $steps );
+	}
+
+	/**
+	 * Each change turned into a failure, because save() threw.
+	 *
+	 * @param list<array{0: Result, 1: bool}> $entries Results with their skip switch.
+	 * @return list<array{0: Result, 1: bool}>
+	 */
+	private static function save_failed( array $entries ): array {
+		$reason = __( 'WooCommerce could not save this product, so this change was not made. Try again, or open the product to see why.', 'bulk-catalogue-manager-for-woocommerce' );
+		return array_map(
+			static fn( array $entry ): array => [ $entry[0]->is_changed() ? Result::failed( $entry[0]->field(), $entry[0]->old(), $reason, self::SAVE_FAILED ) : $entry[0], $entry[1] ],
+			$entries
+		);
+	}
+
+	/**
+	 * A skipped result for every step of an object this batch already journalled.
+	 *
+	 * @param list<array{0: Operation, 1: array<string, mixed>}> $steps Resolved steps.
+	 * @return list<Result>
+	 */
+	private static function done_before( array $steps ): array {
+		$reason = __( 'This product was already updated by this change, so it was not changed again.', 'bulk-catalogue-manager-for-woocommerce' );
+		return array_map( static fn( array $step ): Result => Result::skipped( $step[1]['field'], null, $reason, Journal::ALREADY_DONE ), $steps );
 	}
 
 	/**

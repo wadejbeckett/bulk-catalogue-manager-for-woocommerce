@@ -38,6 +38,12 @@ final class ChangeRepository {
 	public const PROP_LENGTH = 64;
 
 	/**
+	 * The modified time of an object whose time is not known (it could not
+	 * be loaded), in WordPress's own zero-date form.
+	 */
+	public const UNKNOWN_TIME = '0000-00-00 00:00:00';
+
+	/**
 	 * Where the table name comes from.
 	 *
 	 * @var Registry
@@ -62,7 +68,7 @@ final class ChangeRepository {
 	 * @param string $prop         Field key from the field registry.
 	 * @param mixed  $old_value    Value before the write.
 	 * @param mixed  $new_value    Value after the write (or the intended value, for a skipped or failed row).
-	 * @param string $modified_gmt The object's post_modified_gmt at write time, `Y-m-d H:i:s`.
+	 * @param string $modified_gmt The object's post_modified_gmt at write time, `Y-m-d H:i:s`, or UNKNOWN_TIME.
 	 * @param string $result       One of Schema::CHANGE_RESULTS.
 	 * @param string $message      Reason for a skip or failure; cut to MESSAGE_LENGTH characters.
 	 * @return int The new change_id.
@@ -84,7 +90,7 @@ final class ChangeRepository {
 		if ( ! in_array( $result, Schema::CHANGE_RESULTS, true ) ) {
 			throw new \InvalidArgumentException( esc_html( sprintf( 'Unknown result "%s".', $result ) ) );
 		}
-		if ( ! self::is_datetime( $modified_gmt ) ) {
+		if ( self::UNKNOWN_TIME !== $modified_gmt && ! self::is_datetime( $modified_gmt ) ) {
 			throw new \InvalidArgumentException( 'The modified time must be Y-m-d H:i:s.' );
 		}
 		$data = [

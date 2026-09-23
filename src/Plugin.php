@@ -109,6 +109,7 @@ final class Plugin {
 			[ 'rest_api_init', [ $this, 'register_routes' ], 10, 0 ],
 			[ Engine\BatchFactory::CREATED, [ Engine\ChunkRunner::class, 'enqueue' ], 10, 1 ],
 			[ Engine\ChunkRunner::HOOK, [ Engine\ChunkRunner::class, 'handle' ], 10, 2 ],
+			[ Engine\Pruner::HOOK, [ Engine\Pruner::class, 'handle' ], 10, 0 ],
 		];
 	}
 

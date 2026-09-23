@@ -274,4 +274,32 @@ final class ChangeRepository {
 		$parsed = \DateTimeImmutable::createFromFormat( '!Y-m-d H:i:s', $value, new \DateTimeZone( 'UTC' ) );
 		return false !== $parsed && $parsed->format( 'Y-m-d H:i:s' ) === $value;
 	}
+
+	/**
+	 * Delete up to a number of journal rows of some batches, lowest change id
+	 * first (T60: one bounded pruning statement). The batch rows are left.
+	 *
+	 * @param list<int> $batch_ids Batches, positive ids.
+	 * @param int       $limit     Most rows, at least 1.
+	 * @return int Rows deleted.
+	 * @throws \InvalidArgumentException On an invalid id.
+	 * @throws \RuntimeException When the statement fails.
+	 */
+	public function delete_for_batches( array $batch_ids, int $limit ): int {
+		global $wpdb;
+		if ( [] === $batch_ids ) {
+			return 0;
+		}
+		foreach ( $batch_ids as $id ) {
+			if ( ! is_int( $id ) || $id < 1 ) {
+				throw new \InvalidArgumentException( 'Invalid batch id.' );
+			}
+		}
+		$in     = implode( ', ', array_fill( 0, count( $batch_ids ), '%d' ) );
+		$result = $wpdb->query( $wpdb->prepare( "DELETE FROM %i WHERE batch_id IN ({$in}) ORDER BY change_id ASC LIMIT %d", array_merge( [ $this->registry->table( Schema::CHANGES ) ], array_values( $batch_ids ), [ max( 1, $limit ) ] ) ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in is only %d placeholders.
+		if ( false === $result ) {
+			throw new \RuntimeException( 'The journal rows could not be pruned.' );
+		}
+		return (int) $result;
+	}
 }

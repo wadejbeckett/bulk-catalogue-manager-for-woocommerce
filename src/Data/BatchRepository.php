@@ -740,4 +740,100 @@ final class BatchRepository {
 			}
 		}
 	}
+
+	/**
+	 * Batches due for pruning (T60, SPEC §9.5): finished before a moment, in
+	 * any status but queued, running or undoing (never touched whatever their
+	 * age), and still holding item or journal rows, lowest id first. A batch
+	 * whose rows are all gone is not returned again.
+	 *
+	 * @param string $finished_before GMT `Y-m-d H:i:s`; only batches finished earlier.
+	 * @param int    $limit           Most batches, 1 to MAX_CLAIM.
+	 * @return list<int>
+	 * @throws \InvalidArgumentException On a malformed time.
+	 */
+	public function prunable( string $finished_before, int $limit ): array {
+		global $wpdb;
+		if ( 1 !== preg_match( '/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $finished_before ) ) {
+			throw new \InvalidArgumentException( 'A prune limit is a GMT Y-m-d H:i:s time.' );
+		}
+		$ids = $wpdb->get_col(
+			$wpdb->prepare(
+				"SELECT b.batch_id AS batch_id FROM %i AS b WHERE b.finished_gmt IS NOT NULL AND b.finished_gmt < %s AND b.status NOT IN ('queued', 'running', 'undoing') AND (EXISTS (SELECT i.item_id FROM %i AS i WHERE i.batch_id = b.batch_id) OR EXISTS (SELECT c.change_id FROM %i AS c WHERE c.batch_id = b.batch_id)) ORDER BY b.batch_id ASC LIMIT %d",
+				$this->registry->table( Schema::BATCHES ),
+				$finished_before,
+				$this->registry->table( Schema::ITEMS ),
+				$this->registry->table( Schema::CHANGES ),
+				max( 1, min( self::MAX_CLAIM, $limit ) )
+			)
+		);
+		return array_map( 'intval', is_array( $ids ) ? array_values( $ids ) : [] );
+	}
+
+	/**
+	 * Mark batches pruned (T60): their note becomes the plain reason they can
+	 * no longer be undone and, where the batches table has a `pruned_gmt`
+	 * column, it is stamped once (a later mark keeps the first time). The
+	 * column is looked up rather than assumed, so this works on either side
+	 * of the schema version that adds it. A queued, running or undoing batch
+	 * is never marked. Counters, status and every other column are left alone.
+	 *
+	 * @param list<int> $batch_ids Batches.
+	 * @param string    $note      The plain reason, cut to MESSAGE_LENGTH.
+	 * @param string    $now_gmt   GMT `Y-m-d H:i:s` for `pruned_gmt`.
+	 * @return int Batch rows updated.
+	 * @throws \InvalidArgumentException On an invalid id.
+	 * @throws \RuntimeException When the statement fails.
+	 */
+	public function mark_pruned( array $batch_ids, string $note, string $now_gmt ): int {
+		global $wpdb;
+		if ( [] === $batch_ids ) {
+			return 0;
+		}
+		self::assert_ids( $batch_ids, 'batch id' );
+		$table = $this->registry->table( Schema::BATCHES );
+		$in    = implode( ', ', array_fill( 0, count( $batch_ids ), '%d' ) );
+		if ( $this->has_pruned_column() ) {
+			$result = $wpdb->query( $wpdb->prepare( "UPDATE %i SET note = %s, pruned_gmt = COALESCE(pruned_gmt, %s) WHERE status NOT IN ('queued', 'running', 'undoing') AND batch_id IN ({$in})", array_merge( [ $table, self::cut( $note ), $now_gmt ], array_values( $batch_ids ) ) ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in is only %d placeholders.
+		} else {
+			$result = $wpdb->query( $wpdb->prepare( "UPDATE %i SET note = %s WHERE status NOT IN ('queued', 'running', 'undoing') AND batch_id IN ({$in})", array_merge( [ $table, self::cut( $note ) ], array_values( $batch_ids ) ) ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in is only %d placeholders.
+		}
+		if ( false === $result ) {
+			throw new \RuntimeException( 'The pruned batches could not be marked.' );
+		}
+		return (int) $result;
+	}
+
+	/**
+	 * Delete up to a number of item rows of some batches, lowest item id
+	 * first (T60: one bounded pruning statement).
+	 *
+	 * @param list<int> $batch_ids Batches.
+	 * @param int       $limit     Most rows, at least 1.
+	 * @return int Rows deleted.
+	 * @throws \InvalidArgumentException On an invalid id.
+	 * @throws \RuntimeException When the statement fails.
+	 */
+	public function delete_items( array $batch_ids, int $limit ): int {
+		global $wpdb;
+		if ( [] === $batch_ids ) {
+			return 0;
+		}
+		self::assert_ids( $batch_ids, 'batch id' );
+		$in     = implode( ', ', array_fill( 0, count( $batch_ids ), '%d' ) );
+		$result = $wpdb->query( $wpdb->prepare( "DELETE FROM %i WHERE batch_id IN ({$in}) ORDER BY item_id ASC LIMIT %d", array_merge( [ $this->registry->table( Schema::ITEMS ) ], array_values( $batch_ids ), [ max( 1, $limit ) ] ) ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in is only %d placeholders.
+		if ( false === $result ) {
+			throw new \RuntimeException( 'The batch items could not be pruned.' );
+		}
+		return (int) $result;
+	}
+
+	/**
+	 * Whether the batches table has a `pruned_gmt` column on this site.
+	 */
+	private function has_pruned_column(): bool {
+		global $wpdb;
+		// A schema check, once per prune run; nothing to cache.
+		return 'pruned_gmt' === $wpdb->get_var( $wpdb->prepare( 'SHOW COLUMNS FROM %i LIKE %s', $this->registry->table( Schema::BATCHES ), $wpdb->esc_like( 'pruned_gmt' ) ) );
+	}
 }

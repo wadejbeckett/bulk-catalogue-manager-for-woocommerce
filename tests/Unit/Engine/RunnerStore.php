@@ -8,6 +8,12 @@
  * and folds the recording `$wpdb`'s update() and insert() calls into the
  * rows before every read, so each read sees the writes before it.
  *
+ * T56: besides its own batch it holds any batch created while it runs (an
+ * undo batch, through BatchFactory: the row insert, the item insert with
+ * each item's own operations, a discard) in `$others`, every read and
+ * write addressed by batch id, so an undo can be planned, created and run
+ * over the same rows. A new row takes the id `$wpdb->insert()` gave it.
+ *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
  */
@@ -40,6 +46,23 @@ final class RunnerStore {
 	 * @var list<array<string, mixed>>
 	 */
 	public array $changes = [];
+
+	/**
+	 * Batch rows other than `$batch`, by batch id (T56: undo batches).
+	 *
+	 * @var array<int, array<string, mixed>>
+	 */
+	public array $others = [];
+
+	/**
+	 * `$wpdb->insert_id` when the store was built; each insert takes the next.
+	 */
+	private int $first_insert;
+
+	/**
+	 * Inserts folded in so far.
+	 */
+	private int $inserts = 0;
 
 	/**
 	 * $wpdb->writes already folded in.
@@ -91,23 +114,28 @@ final class RunnerStore {
 				'claim_token' => null,
 				'claimed_gmt' => null,
 				'message'     => '',
+				'operations'  => null,
 			];
 		}
-		$items           = '`wp_bcm_batch_items`';
-		$batches         = '`wp_bcm_batches`';
-		$changes         = '`wp_bcm_changes`';
-		$wpdb->responses = [
+		$this->first_insert = $wpdb->insert_id;
+		$items              = '`wp_bcm_batch_items`';
+		$batches            = '`wp_bcm_batches`';
+		$changes            = '`wp_bcm_changes`';
+		$wpdb->responses    = [
 			"/^SELECT \\* FROM $batches WHERE batch_id = (\\d+)$/" => fn( string $sql ): ?array => $this->find( $sql ),
 			"/^SELECT status FROM $batches WHERE batch_id = (\\d+)$/" => fn( string $sql ): ?string => $this->find( $sql )['status'] ?? null,
-			"/^UPDATE $items SET claim_token = '/"    => fn( string $sql ): int => $this->claim( $sql ),
+			"/^UPDATE $items SET claim_token = '/"      => fn( string $sql ): int => $this->claim( $sql ),
 			"/^SELECT item_id, object_id, object_type, attempts FROM $items/" => fn( string $sql ): array => $this->claimed( $sql ),
-			"/^UPDATE $items SET claim_token = NULL/" => fn( string $sql ): int => $this->release( $sql ),
+			"/^UPDATE $items SET claim_token = NULL/"   => fn( string $sql ): int => $this->release( $sql ),
 			"/^UPDATE $items SET state = 'failed', message = .* AND attempts >= /s" => fn( string $sql ): int => $this->exhaust( $sql ),
 			"/^UPDATE $items SET state = '\\w+', message = .* AND item_id IN /s" => fn( string $sql ): int => $this->mark( $sql ),
 			"/^UPDATE $items SET state = 'failed', message = .* AND state = 'pending'$/s" => fn( string $sql ): int => $this->fail_pending( $sql ),
-			"/^UPDATE $batches SET done_items = /"    => fn( string $sql ): int => $this->count_up( $sql ),
+			"/^UPDATE $batches SET done_items = /"      => fn( string $sql ): int => $this->count_up( $sql ),
 			"/^SELECT COUNT\\(\\*\\) FROM $items WHERE batch_id = \\d+ AND state = '/" => fn( string $sql ): string => $this->count_state( $sql ),
-			"/^SELECT COUNT\\(\\*\\) FROM $items WHERE batch_id = \\d+ AND state <> 'pending'/" => fn(): string => $this->count_reported(),
+			"/^SELECT COUNT\\(\\*\\) FROM $items WHERE batch_id = \\d+ AND state <> 'pending'/" => fn( string $sql ): string => $this->count_reported( $sql ),
+			"/^INSERT INTO $items /"                    => fn( string $sql ): int => $this->insert_items( $sql ),
+			"/^DELETE FROM ($items|$batches) WHERE batch_id = (\\d+)$/" => fn( string $sql ): int => $this->discard( $sql ),
+			"/^SELECT item_id, operations FROM $items/" => fn( string $sql ): array => $this->item_operations( $sql ),
 			"/^SELECT change_id FROM $changes WHERE batch_id = (\\d+) AND object_id = (\\d+) LIMIT 1$/" => fn( string $sql ): ?string => $this->has_object( $sql ),
 			"/^SELECT COUNT\\(\\*\\) FROM $changes WHERE batch_id = (\\d+) AND result = '(\\w+)'$/" => fn( string $sql ): string => $this->count_changes( $sql ),
 		] + $wpdb->responses + [
@@ -132,13 +160,14 @@ final class RunnerStore {
 		}
 		$db   = new SqlEvaluator(
 			[
-				'wp_bcm_batches'     => [ $this->batch ],
+				'wp_bcm_batches'     => [ $this->batch, ...array_values( $this->others ) ],
 				'wp_bcm_batch_items' => array_values( $this->items ),
 				'wp_bcm_changes'     => $changes,
 			]
 		);
 		$rows = $db->rows( $sql );
-		if ( 1 === preg_match( '/^SELECT (COUNT\(\*\)|claimed_gmt) FROM/', $sql ) ) {
+		// A single value: a count, the last claim, or an earlier batch of the same request (T56).
+		if ( 1 === preg_match( '/^SELECT (COUNT\(\*\)|claimed_gmt) FROM/', $sql ) || 1 === preg_match( '/^SELECT batch_id FROM \S+ WHERE uuid = /', $sql ) ) {
 			return [] === $rows ? null : reset( $rows[0] );
 		}
 		return $rows;
@@ -151,12 +180,34 @@ final class RunnerStore {
 		global $wpdb;
 		foreach ( array_slice( $wpdb->writes, $this->seen ) as [ $method, $table, $data, , $where ] ) {
 			++$this->seen;
-			if ( 'update' === $method && 'wp_bcm_batches' === $table && $where['batch_id'] === $this->batch['batch_id'] && ( ! isset( $where['status'] ) || $where['status'] === $this->batch['status'] ) ) {
-				$this->batch = $data + $this->batch;
-			} elseif ( 'insert' === $method && 'wp_bcm_changes' === $table && ! in_array( 'insert', $wpdb->failing, true ) ) {
+			$inserted = 'insert' === $method && ! in_array( 'insert', $wpdb->failing, true );
+			if ( 'update' === $method && 'wp_bcm_batches' === $table && ! in_array( 'update', $wpdb->failing, true ) ) {
+				if ( $where['batch_id'] === $this->batch['batch_id'] && ( ! isset( $where['status'] ) || $where['status'] === $this->batch['status'] ) ) {
+					$this->batch = $data + $this->batch;
+				} elseif ( isset( $this->others[ $where['batch_id'] ] ) && ( ! isset( $where['status'] ) || $where['status'] === $this->others[ $where['batch_id'] ]['status'] ) ) {
+					$this->others[ $where['batch_id'] ] = $data + $this->others[ $where['batch_id'] ];
+				}
+			} elseif ( $inserted && 'wp_bcm_changes' === $table ) {
+				++$this->inserts;
 				$data['old_value'] = ValueCodec::decode( $data['old_value'] );
 				$data['new_value'] = ValueCodec::decode( $data['new_value'] );
 				$this->changes[]   = $data;
+			} elseif ( $inserted && 'wp_bcm_batches' === $table ) {
+				$id                  = $this->first_insert + ( ++$this->inserts );
+				$this->others[ $id ] = $data + [
+					'batch_id'        => $id,
+					'finished_gmt'    => null,
+					'undo_of'         => null,
+					'previewed_items' => null,
+					'done_items'      => 0,
+					'changed_items'   => 0,
+					'failed_items'    => 0,
+					'chunk_size'      => 0,
+					'note'            => '',
+					'pruned_gmt'      => null,
+				];
+			} elseif ( $inserted ) {
+				++$this->inserts;
 			}
 		}
 	}
@@ -211,10 +262,82 @@ final class RunnerStore {
 	private function find( string $sql ): ?array {
 		$this->sync();
 		preg_match( '/batch_id = (\d+)$/', $sql, $m );
-		if ( (int) $m[1] !== $this->batch['batch_id'] ) {
+		$row = (int) $m[1] === $this->batch['batch_id'] ? $this->batch : ( $this->others[ (int) $m[1] ] ?? null );
+		if ( null === $row ) {
 			return null;
 		}
-		return array_map( static fn( mixed $value ): ?string => null === $value ? null : (string) $value, $this->batch );
+		return array_map( static fn( mixed $value ): ?string => null === $value ? null : ( is_bool( $value ) ? (string) (int) $value : (string) $value ), $row );
+	}
+
+	/**
+	 * Another batch's row after every write so far (T56), or null.
+	 *
+	 * @return array<string, mixed>|null
+	 */
+	public function other( int $batch_id ): ?array {
+		$this->sync();
+		return $this->others[ $batch_id ] ?? null;
+	}
+
+	/**
+	 * A batch's items in id order.
+	 *
+	 * @return list<array<string, mixed>>
+	 */
+	public function items_of( int $batch_id ): array {
+		ksort( $this->items );
+		return array_values( array_filter( $this->items, static fn( array $item ): bool => $batch_id === $item['batch_id'] ) );
+	}
+
+	private function insert_items( string $sql ): int {
+		$this->sync();
+		preg_match_all( "/\\((\\d+), (\\d+), '(\\w+)', 'pending', 0(?:, '((?:[^'\\\\]|\\\\.)*)')?\\)/s", $sql, $rows, PREG_SET_ORDER );
+		$id = [] === $this->items ? 100 : max( array_keys( $this->items ) );
+		foreach ( $rows as $row ) {
+			++$id;
+			$this->items[ $id ] = [
+				'item_id'     => $id,
+				'batch_id'    => (int) $row[1],
+				'object_id'   => (int) $row[2],
+				'object_type' => $row[3],
+				'state'       => 'pending',
+				'attempts'    => 0,
+				'claim_token' => null,
+				'claimed_gmt' => null,
+				'message'     => '',
+				'operations'  => isset( $row[4] ) ? stripslashes( $row[4] ) : null,
+			];
+		}
+		return count( $rows );
+	}
+
+	private function discard( string $sql ): int {
+		$this->sync();
+		preg_match( '/^DELETE FROM `(\w+)` WHERE batch_id = (\d+)$/', $sql, $m );
+		$id = (int) $m[2];
+		if ( 'wp_bcm_batches' === $m[1] ) {
+			unset( $this->others[ $id ] );
+			return 1;
+		}
+		$before      = count( $this->items );
+		$this->items = array_filter( $this->items, static fn( array $item ): bool => $id !== $item['batch_id'] );
+		return $before - count( $this->items );
+	}
+
+	private function item_operations( string $sql ): array {
+		preg_match( '/WHERE batch_id = (\d+) AND operations IS NOT NULL AND item_id IN \(([\d, ]+)\)/', $sql, $m );
+		$ids  = array_map( 'intval', explode( ', ', $m[2] ) );
+		$rows = [];
+		foreach ( $ids as $id ) {
+			$item = $this->items[ $id ] ?? null;
+			if ( null !== $item && (int) $m[1] === $item['batch_id'] && null !== $item['operations'] ) {
+				$rows[] = [
+					'item_id'    => (string) $id,
+					'operations' => $item['operations'],
+				];
+			}
+		}
+		return $rows;
 	}
 
 	private function claim( string $sql ): int {
@@ -267,7 +390,7 @@ final class RunnerStore {
 		preg_match( "/message = '(.*)' WHERE batch_id = (\\d+) AND state = 'pending' AND attempts >= (\\d+) AND \\(claimed_gmt IS NULL OR claimed_gmt < '([^']+)'\\)$/s", $sql, $m );
 		$failed = 0;
 		foreach ( $this->items as $id => $item ) {
-			if ( 'pending' === $item['state'] && $item['attempts'] >= (int) $m[3] && ( null === $item['claimed_gmt'] || $item['claimed_gmt'] < $m[4] ) ) {
+			if ( (int) $m[2] === $item['batch_id'] && 'pending' === $item['state'] && $item['attempts'] >= (int) $m[3] && ( null === $item['claimed_gmt'] || $item['claimed_gmt'] < $m[4] ) ) {
 				$this->items[ $id ]['state']   = 'failed';
 				$this->items[ $id ]['message'] = stripslashes( $m[1] );
 				++$failed;
@@ -305,6 +428,15 @@ final class RunnerStore {
 	private function count_up( string $sql ): int {
 		$this->sync();
 		preg_match( '/done_items \+ (\d+), changed_items = changed_items \+ (\d+), failed_items = failed_items \+ (\d+) WHERE batch_id = (\d+)$/', $sql, $m );
+		if ( (int) $m[4] !== $this->batch['batch_id'] ) {
+			if ( ! isset( $this->others[ (int) $m[4] ] ) ) {
+				return 0;
+			}
+			$this->others[ (int) $m[4] ]['done_items']    += (int) $m[1];
+			$this->others[ (int) $m[4] ]['changed_items'] += (int) $m[2];
+			$this->others[ (int) $m[4] ]['failed_items']  += (int) $m[3];
+			return 1;
+		}
 		$this->batch['done_items']    += (int) $m[1];
 		$this->batch['changed_items'] += (int) $m[2];
 		$this->batch['failed_items']  += (int) $m[3];
@@ -312,12 +444,13 @@ final class RunnerStore {
 	}
 
 	private function count_state( string $sql ): string {
-		preg_match( "/state = '(\\w+)'$/", $sql, $m );
-		return (string) count( array_filter( $this->items, static fn( array $item ): bool => $m[1] === $item['state'] ) );
+		preg_match( "/batch_id = (\\d+) AND state = '(\\w+)'$/", $sql, $m );
+		return (string) count( array_filter( $this->items, static fn( array $item ): bool => (int) $m[1] === $item['batch_id'] && $m[2] === $item['state'] ) );
 	}
 
-	private function count_reported(): string {
-		return (string) count( array_filter( $this->items, static fn( array $item ): bool => 'pending' !== $item['state'] && ( 'done' !== $item['state'] || '' !== $item['message'] ) ) );
+	private function count_reported( string $sql ): string {
+		preg_match( '/batch_id = (\d+) AND/', $sql, $m );
+		return (string) count( array_filter( $this->items, static fn( array $item ): bool => (int) $m[1] === $item['batch_id'] && 'pending' !== $item['state'] && ( 'done' !== $item['state'] || '' !== $item['message'] ) ) );
 	}
 
 	private function has_object( string $sql ): ?string {

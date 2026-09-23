@@ -596,7 +596,7 @@ final class Planner {
 	/**
 	 * The sentence for a batch being undone now.
 	 */
-	private static function undoing_sentence(): string {
+	public static function undoing_sentence(): string {
 		return __( 'This batch is being undone now. Wait for that to finish, then check the history.', 'bulk-catalogue-manager-for-woocommerce' );
 	}
 

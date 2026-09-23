@@ -31,6 +31,10 @@
  *    to the batch counters in one statement (done_items counts every
  *    finished item whatever its outcome, changed_items the saved ones,
  *    failed_items the failed ones);
+ *    an undo batch's items (T56) each carry their own operation list
+ *    (BatchRepository::item_operations(), one read per chunk), which the
+ *    writer applies in place of the batch's; an undo item without one fails
+ *    with a plain reason;
  * 7. adapts the chunk size: a chunk that used more than 70 per cent of the
  *    PHP time limit halves it for the rest of the batch, never below 10, and
  *    records why in the batch's note; one that used under 30 per cent grows
@@ -41,7 +45,9 @@
  * 8. enqueues its successor with as_enqueue_async_action() while pending
  *    items remain, or finalises the batch: complete when nothing is reported,
  *    failed when items failed and the journal holds no applied change, and
- *    partial otherwise (any failure or skip); finished_gmt is stamped. A
+ *    partial otherwise (any failure or skip); finished_gmt is stamped. An
+ *    undo batch then settles the batch it undid (Undo\Original: undone
+ *    after complete or partial, back to its old status after failed). A
  *    batch cancelled while the chunk ran gets neither: its applied items
  *    stay applied and journalled, the rest stay pending, and the status
  *    stays cancelled (the move is from running only in any case).
@@ -72,6 +78,7 @@ use BulkCatalogueManager\Data\Registry as Data;
 use BulkCatalogueManager\Operations\Registry as Actions;
 use BulkCatalogueManager\Operations\Result;
 use BulkCatalogueManager\Settings\Settings;
+use BulkCatalogueManager\Undo\Original;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -250,7 +257,7 @@ final class ChunkRunner {
 		$token      = bin2hex( random_bytes( 16 ) );
 		$items      = $this->batches->claim_chunk( $batch_id, $size, $token, gmdate( 'Y-m-d H:i:s', $now ), $stale );
 		if ( [] === $items ) {
-			return $this->settle( $batch_id, false );
+			return $this->settle( $batch, false );
 		}
 		// A cancellation that landed between the status read and the claim (T35): give the items back untouched.
 		if ( 'running' !== $this->batches->status( $batch_id ) ) {
@@ -277,7 +284,7 @@ final class ChunkRunner {
 			self::schedule_retry( (int) ( $this->clock )() + self::RETRY_DELAY, $batch_id );
 			throw $error;
 		}
-		return $this->settle( $batch_id, true );
+		return $this->settle( $batch, true );
 	}
 
 	/**
@@ -290,6 +297,8 @@ final class ChunkRunner {
 	private function work( array $batch, array $items ): array {
 		$writer     = Writer::for_batch( $this->actions, Journal::from_settings( $this->actions->fields(), $this->settings(), $this->changes ), $batch['batch_id'], $batch['user_id'] );
 		$operations = $batch['operations'];
+		$undo       = 'undo' === $batch['source'];
+		$own        = $undo ? $this->batches->item_operations( $batch['batch_id'], array_values( array_map( static fn( array $item ): int => $item['item_id'], $items ) ) ) : [];
 		$marks      = [];
 		$changed    = 0;
 		$error      = null;
@@ -297,14 +306,18 @@ final class ChunkRunner {
 		wp_defer_term_counting( true );
 		try {
 			$writer->run(
-				static function ( Writer $writer ) use ( $items, $operations, &$marks, &$changed, &$error ): void {
+				static function ( Writer $writer ) use ( $items, $operations, $undo, $own, &$marks, &$changed, &$error ): void {
 					foreach ( $items as $item ) {
 						if ( 'term' === $item['object_type'] ) {
 							$marks[ $item['item_id'] ] = [ 'failed', __( 'Category changes cannot run in the background yet, so this change was not made.', 'bulk-catalogue-manager-for-woocommerce' ) ];
 							continue;
 						}
+						if ( $undo && ! isset( $own[ $item['item_id'] ] ) ) {
+							$marks[ $item['item_id'] ] = [ 'failed', self::no_operations_reason() ];
+							continue;
+						}
 						try {
-							$outcome = $writer->write( $item['object_id'], $operations );
+							$outcome = $writer->write( $item['object_id'], $own[ $item['item_id'] ] ?? $operations );
 						} catch ( \Throwable $e ) {
 							$marks[ $item['item_id'] ] = [ 'failed', self::error_reason() ];
 							$error                     = $e;
@@ -327,10 +340,11 @@ final class ChunkRunner {
 	/**
 	 * After a chunk: enqueue the successor while items are pending, or finalise.
 	 *
-	 * @param int  $batch_id The batch.
-	 * @param bool $claimed  Whether this run claimed anything (else pending items are under a live claim).
+	 * @param array<string, mixed> $batch   The batch row, as read at the start of the run.
+	 * @param bool                 $claimed Whether this run claimed anything (else pending items are under a live claim).
 	 */
-	private function settle( int $batch_id, bool $claimed ): string {
+	private function settle( array $batch, bool $claimed ): string {
+		$batch_id = $batch['batch_id'];
 		// Cancelled while the chunk ran (T35): the chunk's work stands, nothing follows it.
 		if ( 'running' !== $this->batches->status( $batch_id ) ) {
 			return 'stopped';
@@ -348,7 +362,9 @@ final class ChunkRunner {
 			$this->batches->count_items( $batch_id, 'failed' ),
 			$this->changes->count_for_batch( $batch_id, 'applied' )
 		);
-		$this->batches->transition( $batch_id, 'running', $status );
+		if ( $this->batches->transition( $batch_id, 'running', $status ) ) {
+			Original::settle( $this->batches, $batch, $status );
+		}
 		return $status;
 	}
 
@@ -505,6 +521,13 @@ final class ChunkRunner {
 	 */
 	private static function exhausted_reason(): string {
 		return __( 'This product could not be finished after three tries, so it was not changed. Open it to check it, then try the change again.', 'bulk-catalogue-manager-for-woocommerce' );
+	}
+
+	/**
+	 * The reason an undo item fails when it holds no operations of its own.
+	 */
+	private static function no_operations_reason(): string {
+		return __( 'The record of what to put back on this product is missing, so it was left alone.', 'bulk-catalogue-manager-for-woocommerce' );
 	}
 
 	/**

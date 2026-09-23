@@ -188,8 +188,14 @@ final class BatchRepository {
 	/**
 	 * Materialise a selection into pending items, INSERT_CHUNK rows per statement.
 	 *
-	 * @param int                                   $batch_id Batch.
-	 * @param array<int, array{0: int, 1: string}> $objects  [ object_id, object_type ] pairs.
+	 * An object may carry its own operation list as a third element (T56:
+	 * each item of an undo batch puts that object's own old values back),
+	 * stored as JSON in the item's `operations` column; either every object
+	 * of a call carries one or none does, and an item without one takes the
+	 * batch's list.
+	 *
+	 * @param int                                                              $batch_id Batch.
+	 * @param array<int, array{0: int, 1: string, 2?: list<array<string, mixed>>}> $objects  [ object_id, object_type ] pairs, or [ object_id, object_type, operations ] triples.
 	 * @return int Rows written.
 	 * @throws \InvalidArgumentException On an invalid id or type.
 	 * @throws \RuntimeException When a statement fails.
@@ -198,24 +204,36 @@ final class BatchRepository {
 		global $wpdb;
 		self::assert_ids( [ $batch_id ], 'batch id' );
 		$values = [];
+		$own    = null;
 		foreach ( $objects as $object ) {
 			if ( ! is_array( $object ) || ! is_int( $object[0] ?? null ) || ! is_string( $object[1] ?? null ) ) {
 				throw new \InvalidArgumentException( 'Each item is an [ object_id, object_type ] pair.' );
 			}
 			self::assert_ids( [ $object[0] ], 'object id' );
 			self::assert_in( $object[1], Schema::OBJECT_TYPES, 'object type' );
-			$values[] = [ $object[0], $object[1] ];
+			$has   = array_key_exists( 2, $object );
+			$own ??= $has;
+			if ( $own !== $has || ( $has && ( ! is_array( $object[2] ) || [] === $object[2] ) ) ) {
+				throw new \InvalidArgumentException( 'Either every item carries its own non-empty operation list or none does.' );
+			}
+			$values[] = $has ? [ $object[0], $object[1], self::json( $object[2] ) ] : [ $object[0], $object[1] ];
 		}
 		$table   = $this->registry->table( Schema::ITEMS );
 		$written = 0;
 		foreach ( array_chunk( $values, self::INSERT_CHUNK ) as $chunk ) {
 			$args = [ $table ];
 			foreach ( $chunk as $pair ) {
-				array_push( $args, $batch_id, $pair[0], $pair[1] );
+				array_push( $args, $batch_id, ...$pair );
 			}
-			$rows = implode( ', ', array_fill( 0, count( $chunk ), "(%d, %d, %s, 'pending', 0)" ) );
-			// $rows is only a repeated placeholder group; every value is a prepared argument.
-			$result = $wpdb->query( $wpdb->prepare( "INSERT INTO %i (batch_id, object_id, object_type, state, attempts) VALUES {$rows}", $args ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			if ( true === $own ) {
+				$rows = implode( ', ', array_fill( 0, count( $chunk ), "(%d, %d, %s, 'pending', 0, %s)" ) );
+				// $rows is only a repeated placeholder group; every value is a prepared argument.
+				$result = $wpdb->query( $wpdb->prepare( "INSERT INTO %i (batch_id, object_id, object_type, state, attempts, operations) VALUES {$rows}", $args ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			} else {
+				$rows = implode( ', ', array_fill( 0, count( $chunk ), "(%d, %d, %s, 'pending', 0)" ) );
+				// $rows is only a repeated placeholder group; every value is a prepared argument.
+				$result = $wpdb->query( $wpdb->prepare( "INSERT INTO %i (batch_id, object_id, object_type, state, attempts) VALUES {$rows}", $args ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			}
 			if ( false === $result ) {
 				throw new \RuntimeException( 'The batch items could not be recorded.' );
 			}
@@ -438,7 +456,9 @@ final class BatchRepository {
 	/**
 	 * Move a batch from one status to another only if it is still in the
 	 * first, so a status set meanwhile (a cancellation, T35) is never
-	 * overwritten. A final status also stamps finished_gmt, as set_status() does.
+	 * overwritten. A final status also stamps finished_gmt, as set_status()
+	 * does, except a move out of `undoing` (T56): that batch finished before
+	 * its undo started, and keeps the time it finished.
 	 *
 	 * @param int    $batch_id Batch.
 	 * @param string $from     The status the batch must be in.
@@ -452,7 +472,7 @@ final class BatchRepository {
 		self::assert_in( $to, Schema::BATCH_STATUSES, 'status' );
 		$data   = [ 'status' => $to ];
 		$format = [ '%s' ];
-		if ( ! in_array( $to, [ 'queued', 'running', 'undoing' ], true ) ) {
+		if ( 'undoing' !== $from && ! in_array( $to, [ 'queued', 'running', 'undoing' ], true ) ) {
 			$data['finished_gmt'] = gmdate( 'Y-m-d H:i:s' );
 			$format[]             = '%s';
 		}
@@ -923,5 +943,34 @@ final class BatchRepository {
 			],
 			is_array( $rows ) ? $rows : []
 		);
+	}
+
+	/**
+	 * The operation lists some items of a batch carry of their own (T56: an
+	 * undo batch's items), decoded, by item id; items without one are left
+	 * out, and take the batch's list.
+	 *
+	 * @param int       $batch_id Batch.
+	 * @param list<int> $item_ids Items, at most MAX_CLAIM.
+	 * @return array<int, list<array<string, mixed>>>
+	 * @throws \InvalidArgumentException On an invalid id.
+	 */
+	public function item_operations( int $batch_id, array $item_ids ): array {
+		global $wpdb;
+		if ( [] === $item_ids ) {
+			return [];
+		}
+		self::assert_ids( $item_ids, 'item id' );
+		$item_ids = array_slice( array_values( array_unique( $item_ids ) ), 0, self::MAX_CLAIM );
+		$in       = implode( ', ', array_fill( 0, count( $item_ids ), '%d' ) );
+		$rows     = $wpdb->get_results( $wpdb->prepare( "SELECT item_id, operations FROM %i WHERE batch_id = %d AND operations IS NOT NULL AND item_id IN ({$in}) LIMIT %d", array_merge( [ $this->registry->table( Schema::ITEMS ), $batch_id ], $item_ids, [ count( $item_ids ) ] ) ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in is only %d placeholders.
+		$found    = [];
+		foreach ( is_array( $rows ) ? $rows : [] as $row ) {
+			$operations = ValueCodec::decode( (string) $row['operations'] );
+			if ( is_array( $operations ) && [] !== $operations ) {
+				$found[ (int) $row['item_id'] ] = array_values( $operations );
+			}
+		}
+		return $found;
 	}
 }

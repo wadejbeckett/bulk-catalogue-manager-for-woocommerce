@@ -29,6 +29,10 @@
  * SQL (BatchRepository::create() derives it); and `pruned_gmt`, NULL until
  * the retention pruner removes the batch's journal and items, after which
  * the batch stays listed as no longer reversible (§9.5).
+ * Schema version 6 (T56, undo) adds a nullable `operations` on items: the
+ * item's own operation list as JSON, for a batch whose objects each take
+ * their own operations (an undo batch puts each object's own old values
+ * back); NULL for every other item, which takes the batch's list.
  * Bump Migrator::SCHEMA_VERSION whenever a body here changes.
  *
  * @package BulkCatalogueManager
@@ -124,6 +128,7 @@ attempts tinyint(3) unsigned NOT NULL DEFAULT 0,
 claim_token char(32) NULL,
 claimed_gmt datetime NULL,
 message varchar(255) NOT NULL DEFAULT '',
+operations longtext NULL,
 PRIMARY KEY  (item_id),
 KEY batch_state (batch_id,state),
 KEY object (object_id)";

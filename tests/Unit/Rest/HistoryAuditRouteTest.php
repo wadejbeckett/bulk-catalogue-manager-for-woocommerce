@@ -268,7 +268,7 @@ final class HistoryAuditRouteTest extends TestCase {
 	/**
 	 * Every listed batch's state, as `id => [ state, conflicts, reason ]`.
 	 *
-	 * @return array<int, array{0: string, 1: int, 2: ?string}>
+	 * @return array<int, array{0: string, 1: ?int, 2: ?string}>
 	 */
 	private function states(): array {
 		$states = [];
@@ -343,30 +343,40 @@ final class HistoryAuditRouteTest extends TestCase {
 		$this->conflicts = [ 2 => 3 ];
 		$this->assertSame(
 			[
-				14 => [ 'not_reversible', 0, 'nothing_applied' ],          // Finished with every row already at its target.
-				13 => [ 'not_reversible', 0, 'already_undone' ],           // Its status says so.
-				12 => [ 'reversible', 0, null ],                           // Cancelled after applying some rows: those can be undone.
-				11 => [ 'completed_with_errors', 0, null ],                // A failed undo batch with applied rows.
-				10 => [ 'not_reversible', 0, 'outside_retention' ],        // Created 114 days ago, kept 90.
-				9  => [ 'not_reversible', 0, 'pruned' ],                   // Pruning removed its journal.
-				8  => [ 'reversible', 0, null ],                           // The undo batch itself can be undone: Redo.
-				7  => [ 'not_reversible', 0, 'already_undone' ],           // Batch 8 undid it and completed.
-				6  => [ 'not_reversible', 0, 'nothing_applied' ],          // Failed without applying anything.
-				5  => [ 'completed_with_errors', 0, null ],                // Partial with applied rows; its undo (11) did not complete.
-				4  => [ 'in_progress', 0, null ],                          // Queued.
-				3  => [ 'in_progress', 0, null ],                          // Running.
-				2  => [ 'partially_reversible', 3, null ],                 // Three applied rows changed again since.
-				1  => [ 'reversible', 0, null ],
+				14 => [ 'not_reversible', null, 'nothing_applied' ],          // Finished with every row already at its target.
+				13 => [ 'not_reversible', null, 'already_undone' ],           // Its status says so.
+				12 => [ 'reversible', null, null ],                           // Cancelled after applying some rows: those can be undone.
+				11 => [ 'completed_with_errors', null, null ],                // A failed undo batch with applied rows.
+				10 => [ 'not_reversible', null, 'outside_retention' ],        // Created 114 days ago, kept 90.
+				9  => [ 'not_reversible', null, 'pruned' ],                   // Pruning removed its journal.
+				8  => [ 'reversible', null, null ],                           // The undo batch itself can be undone: Redo.
+				7  => [ 'not_reversible', null, 'already_undone' ],           // Batch 8 undid it and completed.
+				6  => [ 'not_reversible', null, 'nothing_applied' ],          // Failed without applying anything.
+				5  => [ 'completed_with_errors', null, null ],                // Partial with applied rows; its undo (11) did not complete.
+				4  => [ 'in_progress', null, null ],                          // Queued.
+				3  => [ 'in_progress', null, null ],                          // Running.
+				2  => [ 'reversible', null, null ],                           // Conflicts are not counted on the list (T56): the single read says partially reversible.
+				1  => [ 'reversible', null, null ],
 			],
 			$this->states()
 		);
-		sort( $this->asked );
-		$this->assertSame( [ 1, 2, 5, 8, 11, 12 ], $this->asked, 'Conflicts are counted only where undo is still possible.' );
+		$this->assertSame( [], $this->asked, 'The list counts no conflicts, so it builds no undo plan per row (T56).' );
 
 		// One grouped read each for the whole page, not one per row.
 		$queries = $GLOBALS['wpdb']->queries;
 		$this->assertCount( 1, preg_grep( '/undo_of IN \(/', $queries ) );
 		$this->assertCount( 1, preg_grep( "/result = 'applied' GROUP BY batch_id/", $queries ) );
+
+		// The single read counts them, only where undo is still possible.
+		$states = [];
+		foreach ( range( 1, 14 ) as $id ) {
+			$states[ $id ] = array_values( $this->ok( self::dispatch( "/batches/$id" ) )['reversibility'] );
+		}
+		$this->assertSame( [ 'partially_reversible', 3, null ], $states[2], 'Three objects changed again since.' );
+		$this->assertSame( [ 'in_progress', 0, null ], $states[3] );
+		$this->assertSame( [ 'not_reversible', 0, 'pruned' ], $states[9] );
+		sort( $this->asked );
+		$this->assertSame( [ 1, 2, 5, 8, 11, 12 ], $this->asked, 'Conflicts are counted only where undo is still possible.' );
 	}
 
 	public function test_a_batch_read_carries_its_state(): void {
@@ -400,15 +410,15 @@ final class HistoryAuditRouteTest extends TestCase {
 
 	public function test_retention_follows_the_setting_and_never_applies_when_kept_indefinitely(): void {
 		$GLOBALS['bcm_test']['options']['bcm_settings'] = [ 'history_days' => 730 ];
-		$this->assertSame( [ 'reversible', 0, null ], $this->states()[10] );
+		$this->assertSame( [ 'reversible', null, null ], $this->states()[10] );
 
 		$GLOBALS['bcm_test']['options']['bcm_settings'] = [ 'history_days' => 0 ];
-		$this->assertSame( [ 'reversible', 0, null ], $this->states()[10], 'Kept indefinitely: never outside retention.' );
+		$this->assertSame( [ 'reversible', null, null ], $this->states()[10], 'Kept indefinitely: never outside retention.' );
 
 		$GLOBALS['bcm_test']['options']['bcm_settings'] = [ 'history_days' => 7 ];
 		$states = $this->states();
-		$this->assertSame( [ 'not_reversible', 0, 'outside_retention' ], $states[10] );
-		$this->assertSame( [ 'reversible', 0, null ], $states[1], 'Created three days ago, inside seven.' );
+		$this->assertSame( [ 'not_reversible', null, 'outside_retention' ], $states[10] );
+		$this->assertSame( [ 'reversible', null, null ], $states[1], 'Created three days ago, inside seven.' );
 		$this->assertSame( 'pruned', $states[9][2], 'Pruned is reported before retention.' );
 	}
 

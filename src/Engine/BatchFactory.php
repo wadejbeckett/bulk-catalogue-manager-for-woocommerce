@@ -47,6 +47,14 @@
  * from `total_items` in the batch's report and history row. The REST route
  * always passes the check for a token; an id selection ignores it.
  *
+ * create_undo() (T56, §9.4) is the variant for an undo: the objects and
+ * their operations come from an Undo\Plan rather than a selection, each
+ * item carrying its own operation list (the object's own old values), so
+ * nothing is re-resolved or re-validated beyond what the planner did. It
+ * shares the replay check, the race guard, the items-before-work order and
+ * `bcm_batch_created`, and moves the batch undone to `undoing` before the
+ * first chunk can run (Undo\Original moves it on when the undo finishes).
+ *
  * open() (T37) is the synchronous variant for a batch its caller writes in
  * the same request: validated operations, the row and its items, the
  * status moved straight to running, and no `bcm_batch_created`, so no
@@ -67,6 +75,8 @@ use BulkCatalogueManager\Rest\Refusal;
 use BulkCatalogueManager\Rest\SelectionController;
 use BulkCatalogueManager\Selection\Selection;
 use BulkCatalogueManager\Settings\Settings;
+use BulkCatalogueManager\Undo\Plan;
+use BulkCatalogueManager\Undo\Planner;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -120,6 +130,16 @@ final class BatchFactory {
 	 * Refusal code for a batch the database would not take.
 	 */
 	public const NOT_RECORDED = 'bcm_batch_not_recorded';
+
+	/**
+	 * Refusal code for an undo that would put nothing back (T56).
+	 */
+	public const NOTHING_TO_UNDO = 'bcm_nothing_to_undo';
+
+	/**
+	 * Most grouped reasons an undo batch keeps for the items it could not put back.
+	 */
+	public const MAX_UNDO_REASONS = 20;
 
 	/**
 	 * Object type per post type.
@@ -268,6 +288,136 @@ final class BatchFactory {
 			'status'          => 'queued',
 			'total_items'     => count( $objects ),
 			'previewed_items' => $previewed,
+			'replayed'        => false,
+		];
+	}
+
+	/**
+	 * Create the undo batch of a plan (T56, §9.4), or answer the one this
+	 * request already created: source `undo`, `undo_of` the planned batch,
+	 * one pending item per revertible object — and per conflicted object
+	 * when `$force` (**Revert anyway**) — each carrying its own operations,
+	 * written before any work is queued. The batch undone moves from its
+	 * status to `undoing` once the items are written; if another undo moved
+	 * it first, this batch is removed and the request refused 409
+	 * `bcm_not_reversible` (`undo_in_progress`). The selection column keeps
+	 * what the report needs: the batch undone, its status before, the plan's
+	 * counts and hash, whether it was forced, how many objects were left
+	 * alone because they changed since, and the grouped reasons of those
+	 * that could not be put back.
+	 *
+	 * @param string $uuid    Client request id (a UUID).
+	 * @param int    $user_id Initiating user.
+	 * @param Plan   $plan    The plan, from Undo\Planner::plan() now.
+	 * @param bool   $force   Whether conflicted objects are put back too.
+	 * @return array{batch_id: int, status: string, total_items: int, previewed_items: int|null, replayed: bool}|\WP_Error
+	 */
+	public function create_undo( string $uuid, int $user_id, Plan $plan, bool $force ): array|\WP_Error {
+		$existing = $this->replayed( $uuid, $user_id );
+		if ( null !== $existing ) {
+			return $this->replay( $existing );
+		}
+		$undo_of  = $plan->batch_id();
+		$original = $this->batches->find( $undo_of );
+		if ( null === $original ) {
+			return Refusal::create( Writer::NOT_FOUND, __( 'That batch could not be found. It may have been removed. Reload the history and try again.', 'bulk-catalogue-manager-for-woocommerce' ), 404 );
+		}
+		$previous = $original['status'];
+
+		$objects = [];
+		$outline = [];
+		$reasons = [];
+		foreach ( $plan->items() as $item ) {
+			$take = Plan::REVERTIBLE === $item['state'] || ( $force && Plan::CONFLICTED === $item['state'] );
+			if ( Plan::SKIPPED === $item['state'] && Planner::NOT_APPLIED !== $item['code'] ) {
+				$reasons[ $item['reason'] ] = ( $reasons[ $item['reason'] ] ?? 0 ) + 1;
+			}
+			if ( ! $take || [] === $item['operations'] ) {
+				continue;
+			}
+			$objects[] = [ $item['object_id'], $item['object_type'], $item['operations'] ];
+			foreach ( $item['operations'] as $operation ) {
+				$outline[ $operation['action'] . '|' . $operation['args']['field'] ] ??= [
+					'action' => $operation['action'],
+					'args'   => [ 'field' => $operation['args']['field'] ],
+				];
+			}
+		}
+		$counts = $plan->counts();
+		if ( [] === $objects ) {
+			return Refusal::create(
+				self::NOTHING_TO_UNDO,
+				$counts[ Plan::CONFLICTED ] > 0 && ! $force
+					? __( 'Everything this batch changed has been changed again since, so nothing was undone. Choose Revert anyway to put the old values back regardless.', 'bulk-catalogue-manager-for-woocommerce' )
+					: __( 'Nothing this batch changed can be put back now, so nothing was undone. The preview lists why for each product.', 'bulk-catalogue-manager-for-woocommerce' ),
+				409,
+				[ 'counts' => $counts ]
+			);
+		}
+		arsort( $reasons );
+		$grouped = [];
+		foreach ( array_slice( $reasons, 0, self::MAX_UNDO_REASONS, true ) as $message => $count ) {
+			$grouped[] = [
+				'message' => (string) $message,
+				'count'   => $count,
+			];
+		}
+		$snapshot = [
+			'kind'            => 'undo',
+			'undo_of'         => $undo_of,
+			'previous_status' => $previous,
+			'force'           => $force,
+			'plan_hash'       => $plan->hash(),
+			'counts'          => $counts,
+			'left_alone'      => $force ? 0 : $counts[ Plan::CONFLICTED ],
+			'not_undone'      => array_sum( $reasons ),
+			'reasons'         => $grouped,
+			'materialised'    => count( $objects ),
+		];
+
+		$now = ( $this->clock )();
+		try {
+			$batch_id = $this->batches->create( $uuid, $user_id, 'undo', array_values( $outline ), $snapshot, count( $objects ), $undo_of );
+			$earlier  = $this->batches->earlier_request( $uuid, $user_id, $batch_id, gmdate( 'Y-m-d H:i:s', $now - self::REPLAY_TTL ) );
+			if ( null !== $earlier ) {
+				$this->batches->discard( $batch_id );
+				return $this->replay( $earlier );
+			}
+			try {
+				$this->batches->materialise_items( $batch_id, $objects );
+			} catch ( \RuntimeException $e ) {
+				$this->batches->discard( $batch_id );
+				throw $e;
+			}
+			if ( ! $this->batches->transition( $undo_of, $previous, 'undoing' ) ) {
+				// Another undo of the same batch started first; it wins.
+				$this->batches->discard( $batch_id );
+				return Refusal::create( Planner::NOT_REVERSIBLE, Planner::undoing_sentence(), 409, [ 'reason' => Planner::UNDO_IN_PROGRESS ] );
+			}
+		} catch ( \RuntimeException $e ) {
+			return Refusal::create(
+				self::NOT_RECORDED,
+				__( 'The change could not be saved, so nothing was changed. Try again in a moment.', 'bulk-catalogue-manager-for-woocommerce' ),
+				500,
+				[ 'details' => $e->getMessage() ]
+			);
+		}
+
+		set_transient(
+			self::key( $uuid, $user_id ),
+			[
+				'batch_id' => $batch_id,
+				'at'       => $now,
+			],
+			self::REPLAY_TTL
+		);
+		/** This action is documented in create(). */
+		do_action( 'bcm_batch_created', $batch_id );
+		return [
+			'batch_id'        => $batch_id,
+			'status'          => 'queued',
+			'total_items'     => count( $objects ),
+			'previewed_items' => null,
 			'replayed'        => false,
 		];
 	}

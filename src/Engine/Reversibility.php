@@ -27,14 +27,18 @@
  * Conflicts are T55's undo planner's to count. They come through the
  * injectable `$conflicts` callable, `fn( array $batch ): int`, called only
  * for a batch that is not in progress and not refused; it defaults to 0
- * here, and Progress (so BatchesController and the history list) passes
- * Undo\Planner::counter(), the plan's conflicted items. The list calls it
- * once per such row of a page, so each costs one plan: the batch's journal
- * and a read of each object it touched.
+ * here, and Progress (so the single batch read) passes
+ * Undo\Planner::counter(), the plan's conflicted items. A count costs one
+ * plan — the batch's journal and a read of each object it touched — so it
+ * is made only for one batch at a time (of()).
  *
- * for_page() answers a whole page with two grouped reads (the completed
- * undo batches and the applied counts), so the history list costs the same
- * however many rows it shows.
+ * for_page() answers a whole page of the history list from the cheap
+ * signals alone: two grouped reads (the completed undo batches and the
+ * applied counts) and no plan, so the list costs the same however many
+ * rows it shows and reads no product (T56). Its rows carry `conflicts:
+ * null` — not counted — and so read `reversible` or
+ * `completed_with_errors` where the single read may say
+ * `partially_reversible`; the screen asks the single read before Undo.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -143,22 +147,34 @@ final class Reversibility {
 	}
 
 	/**
-	 * The state of one batch.
+	 * The state of one batch, its conflicts counted.
 	 *
 	 * @param array<string, mixed> $batch Typed batch row (BatchRepository::find()).
 	 * @return array{state: string, conflicts: int, reason: ?string}
 	 */
 	public function of( array $batch ): array {
-		return $this->for_page( [ $batch ] )[ $batch['batch_id'] ];
+		return $this->states( [ $batch ], true )[ $batch['batch_id'] ];
 	}
 
 	/**
-	 * The states of a page of batches, by batch id, in two grouped reads.
+	 * The states of a page of batches, by batch id, in two grouped reads,
+	 * conflicts not counted (`null`).
 	 *
 	 * @param list<array<string, mixed>> $batches Typed batch rows.
-	 * @return array<int, array{state: string, conflicts: int, reason: ?string}>
+	 * @return array<int, array{state: string, conflicts: null, reason: ?string}>
 	 */
 	public function for_page( array $batches ): array {
+		return $this->states( $batches, false );
+	}
+
+	/**
+	 * The states of some batches, by batch id, in two grouped reads.
+	 *
+	 * @param list<array<string, mixed>> $batches Typed batch rows.
+	 * @param bool                       $count   Whether to count conflicts (one plan per batch) or report null.
+	 * @return array<int, array{state: string, conflicts: ?int, reason: ?string}>
+	 */
+	private function states( array $batches, bool $count ): array {
 		$finished = [];
 		foreach ( $batches as $batch ) {
 			if ( ! in_array( $batch['status'], self::ACTIVE, true ) ) {
@@ -172,7 +188,7 @@ final class Reversibility {
 		$states  = [];
 		foreach ( $batches as $batch ) {
 			$id            = (int) $batch['batch_id'];
-			$states[ $id ] = $this->state( $batch, isset( $undone[ $id ] ), $applied[ $id ] ?? 0, $cutoff );
+			$states[ $id ] = $this->state( $batch, isset( $undone[ $id ] ), $applied[ $id ] ?? 0, $cutoff, $count );
 		}
 		return $states;
 	}
@@ -184,11 +200,13 @@ final class Reversibility {
 	 * @param bool                 $undone  Whether a completed undo batch names it.
 	 * @param int                  $applied Its applied journal rows.
 	 * @param string|null          $cutoff  Batches created before this GMT time are outside retention; null keeps them all.
-	 * @return array{state: string, conflicts: int, reason: ?string}
+	 * @param bool                 $count   Whether to count conflicts; null is reported otherwise.
+	 * @return array{state: string, conflicts: ?int, reason: ?string}
 	 */
-	private function state( array $batch, bool $undone, int $applied, ?string $cutoff ): array {
+	private function state( array $batch, bool $undone, int $applied, ?string $cutoff, bool $count ): array {
+		$none = $count ? 0 : null;
 		if ( in_array( $batch['status'], self::ACTIVE, true ) ) {
-			return self::answer( self::IN_PROGRESS );
+			return self::answer( self::IN_PROGRESS, $none );
 		}
 		$reason = match ( true ) {
 			null !== ( $batch['pruned_gmt'] ?? null )                 => self::PRUNED,
@@ -198,24 +216,24 @@ final class Reversibility {
 			default                                                   => null,
 		};
 		if ( null !== $reason ) {
-			return self::answer( self::NOT_REVERSIBLE, 0, $reason );
+			return self::answer( self::NOT_REVERSIBLE, $none, $reason );
 		}
-		$conflicts = max( 0, (int) ( $this->conflicts )( $batch ) );
+		$conflicts = $count ? max( 0, (int) ( $this->conflicts )( $batch ) ) : null;
 		if ( in_array( $batch['status'], self::WITH_ERRORS, true ) ) {
 			return self::answer( self::COMPLETED_WITH_ERRORS, $conflicts );
 		}
-		return self::answer( $conflicts > 0 ? self::PARTIALLY_REVERSIBLE : self::REVERSIBLE, $conflicts );
+		return self::answer( null !== $conflicts && $conflicts > 0 ? self::PARTIALLY_REVERSIBLE : self::REVERSIBLE, $conflicts );
 	}
 
 	/**
 	 * A state in the route's shape.
 	 *
 	 * @param string      $state     One of STATES.
-	 * @param int         $conflicts Applied rows changed again since.
+	 * @param int|null    $conflicts Objects changed again since, or null when not counted.
 	 * @param string|null $reason    One of REASONS, for not_reversible.
-	 * @return array{state: string, conflicts: int, reason: ?string}
+	 * @return array{state: string, conflicts: ?int, reason: ?string}
 	 */
-	private static function answer( string $state, int $conflicts = 0, ?string $reason = null ): array {
+	private static function answer( string $state, ?int $conflicts = 0, ?string $reason = null ): array {
 		return [
 			'state'     => $state,
 			'conflicts' => $conflicts,

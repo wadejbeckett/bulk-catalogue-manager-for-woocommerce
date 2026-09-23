@@ -447,6 +447,7 @@ final class ChunkRunnerTest extends TestCase {
 		$this->assertSame(
 			[
 				"Categories/Writer.php: 'running' -> \$status",
+				"Engine/BatchFactory.php: \$previous -> 'undoing'",
 				"Engine/BatchFactory.php: 'queued' -> 'running'",
 				"Engine/ChunkRunner.php: 'queued' -> 'running'",
 				"Engine/ChunkRunner.php: 'running' -> \$status",
@@ -454,10 +455,16 @@ final class ChunkRunnerTest extends TestCase {
 				"Engine/Progress.php: 'queued' -> 'cancelled'",
 				"Engine/Progress.php: 'running' -> 'cancelled'",
 				"Engine/Progress.php: 'running' -> 'failed'",
+				"Undo/Original.php: 'undoing' -> \$previous",
+				"Undo/Original.php: 'undoing' -> 'undone'",
 			],
 			$calls,
-			'The engine writes queued -> running -> complete, partial, failed or cancelled (and a stale inline batch running -> failed), a category write finishes its batch of one, and nothing else.'
+			'The engine writes queued -> running -> complete, partial, failed or cancelled (and a stale inline batch running -> failed), a category write finishes its batch of one, an undo moves the batch it undoes to undoing and then to undone or back, and nothing else.'
 		);
+
+		// The batch an undo starts on came from a finished status (the planner refuses any other), and goes back only to one.
+		$source = (string) file_get_contents( $root . '/Engine/BatchFactory.php' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- reading plugin source.
+		$this->assertStringContainsString( "\$previous = \$original['status'];", $source );
 
 		// The one variable target is the final status, which is only ever complete, partial or failed.
 		$finals = [];

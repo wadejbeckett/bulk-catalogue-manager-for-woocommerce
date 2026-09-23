@@ -670,7 +670,18 @@ final class PlannerTest extends TestCase {
 		$this->assertSame( 1, $this->planner()->conflicts( $batch ) );
 
 		$progress = new Progress( null, null, $clock );
-		$this->assertSame( Reversibility::PARTIALLY_REVERSIBLE, $progress->reports( [ $batch ] )[0]['reversibility']['state'], 'Progress, and so the history routes, count conflicts with the planner by default.' );
+		$this->assertSame( Reversibility::PARTIALLY_REVERSIBLE, $progress->report_for( $batch, false )['reversibility']['state'], 'Progress, and so the single batch read, counts conflicts with the planner by default.' );
+		$GLOBALS['bcm_test']['products_loaded'] = [];
+		$this->assertSame(
+			[
+				'state'     => Reversibility::REVERSIBLE,
+				'conflicts' => null,
+				'reason'    => null,
+			],
+			$progress->reports( [ $batch ] )[0]['reversibility'],
+			'The history list reports from the cheap signals, conflicts not counted (T56).'
+		);
+		$this->assertSame( [], $GLOBALS['bcm_test']['products_loaded'], 'The list reads no product.' );
 
 		$changed->props['regular_price'] = '22.00';
 		$this->assertSame( Reversibility::REVERSIBLE, ( new Reversibility( null, null, new Settings( [] ), $clock, Planner::counter( null, null, $clock ) ) )->of( $batch )['state'], 'Back to what the batch left: reversible again.' );

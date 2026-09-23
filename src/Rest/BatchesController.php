@@ -30,7 +30,10 @@
  * history screen. Every row, like the single read, carries `actions` and
  * `reversibility` — `{ state, conflicts, reason }` from
  * Engine\Reversibility (§4.6) — the list reading every row's state with one
- * grouped pair of reads. The audit log across batches is AuditController.
+ * grouped pair of reads and no undo plan, so its rows carry `conflicts:
+ * null` and no product is read; only the single read counts conflicts
+ * (T56). An undo batch's row carries `undo` ("Undo of #418"). The audit log
+ * across batches is AuditController.
  *
  * `GET /bcm/v1/batches/{id}` (T35, T36) answers Engine\Progress::report():
  * status, counters, times, source, note, chunk size, the `stalled` flag and
@@ -38,7 +41,8 @@
  * cancels a queued or running batch; a batch already cancelled answers as it
  * is, a finished one 409 `bcm_not_cancellable`. `GET
  * /bcm/v1/batches/{id}/changes` (T36) is registered here from
- * BatchChangesController, which owns its row schema.
+ * BatchChangesController, which owns its row schema, and `POST
+ * /bcm/v1/batches/{id}/undo` (T56) from UndoController.
  *
  * Who may read which batch: the reads sit behind Access::can_read and the
  * cancellation behind Access::can_write, and any user who passes may read or
@@ -147,6 +151,13 @@ final class BatchesController implements ReadController {
 	private BatchChangesController $changes_controller;
 
 	/**
+	 * The undo route's controller, registered with these routes (T56).
+	 *
+	 * @var UndoController
+	 */
+	private UndoController $undo_controller;
+
+	/**
 	 * The field registry, for field labels and the paging arguments.
 	 *
 	 * @var Fields
@@ -170,8 +181,9 @@ final class BatchesController implements ReadController {
 	 * @param \Closure|null         $clock    Returns the Unix time, for the stalled check and retention; time() by default.
 	 * @param Reversibility|null    $reversibility The reversibility state; by default Progress's, counting conflicts with the undo planner (T55).
 	 * @param Actions|null          $actions  Operations registry, for the action filter; the shared one by default.
+	 * @param UndoController|null   $undo     The undo route (T56); by default one over the same repositories, fields, factory and clock.
 	 */
-	public function __construct( ?BatchFactory $factory = null, ?BatchRepository $batches = null, ?ChangeRepository $changes = null, ?Fields $fields = null, ?\Closure $clock = null, ?Reversibility $reversibility = null, ?Actions $actions = null ) {
+	public function __construct( ?BatchFactory $factory = null, ?BatchRepository $batches = null, ?ChangeRepository $changes = null, ?Fields $fields = null, ?\Closure $clock = null, ?Reversibility $reversibility = null, ?Actions $actions = null, ?UndoController $undo = null ) {
 		$this->factory            = $factory;
 		$this->batches            = $batches ?? new BatchRepository();
 		$changes                  = $changes ?? new ChangeRepository();
@@ -179,6 +191,7 @@ final class BatchesController implements ReadController {
 		$this->actions            = $actions;
 		$this->progress           = new Progress( $this->batches, $changes, $clock, $reversibility );
 		$this->changes_controller = new BatchChangesController( $this->batches, $changes, $this->fields );
+		$this->undo_controller    = $undo ?? new UndoController( $this->batches, $changes, $this->fields, null, $factory, $clock );
 	}
 
 	/**
@@ -218,6 +231,7 @@ final class BatchesController implements ReadController {
 			]
 		);
 		$this->changes_controller->register_routes( $routes );
+		$this->undo_controller->register_routes( $routes );
 		$routes->add(
 			self::CANCEL_ROUTE,
 			[
@@ -283,10 +297,26 @@ final class BatchesController implements ReadController {
 							'type' => 'string',
 							'enum' => Reversibility::STATES,
 						],
-						'conflicts' => $integer,
+						'conflicts' => [ 'type' => [ 'integer', 'null' ] ],
 						'reason'    => [
 							'type' => [ 'string', 'null' ],
 							'enum' => [ ...Reversibility::REASONS, null ],
+						],
+					],
+				],
+				'undo'                 => [
+					'type'       => [ 'object', 'null' ],
+					'properties' => [
+						'undo_of'    => $integer,
+						'label'      => $text,
+						'forced'     => [ 'type' => [ 'boolean', 'null' ] ],
+						'counts'     => [ 'type' => [ 'object', 'null' ] ],
+						'left_alone' => [ 'type' => [ 'integer', 'null' ] ],
+						'not_undone' => [ 'type' => [ 'integer', 'null' ] ],
+						'sentence'   => $text,
+						'reasons'    => [
+							'type'  => 'array',
+							'items' => [ 'type' => 'object' ],
 						],
 					],
 				],

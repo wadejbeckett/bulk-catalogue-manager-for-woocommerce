@@ -1,0 +1,334 @@
+<?php
+/**
+ * `POST /bcm/v1/batches/{id}/undo` (SPEC §4.6, §9.4, §12.1, §12.6; T56):
+ * undo a batch, through its own preview first. Registered by
+ * BatchesController, behind Access::can_write (it writes products; each
+ * object is checked again, against the undo batch's user, as it is written).
+ *
+ * With `preview: true` it plans the undo through Undo\Planner and writes
+ * nothing: `{ batch_id, preview, counts, total, items, pagination,
+ * plan_hash, sentence }`, the items a page of the plan with the conflicted
+ * ones first (each with its name, state, plain reason, the fields it puts
+ * back and, when conflicted, each changed field with the value the batch
+ * left and the value found now), bound to the plan's hash like any preview.
+ *
+ * Applied (`preview` false, the default) it needs the client's `uuid` and
+ * the preview's `plan_hash`: the same uuid within sixty seconds answers 200
+ * with the batch the first request created (BatchFactory's replay), before
+ * anything is planned again; otherwise the plan is made again now and a
+ * missing or different hash is refused 409 `bcm_preview_stale`, and
+ * Engine\BatchFactory::create_undo() creates the undo batch — source `undo`,
+ * `undo_of` the batch, the revertible objects (and the conflicted ones with
+ * `force: true`, **Revert anyway**) materialised with their own operations
+ * before any work starts — and moves the batch undone to `undoing`. The
+ * chunk runner then works it like any other batch, through the same writer
+ * and journal. It answers 201 `{ batch_id, status, total_items, replayed,
+ * undo }`, `undo` being Engine\Progress::undo_summary(): "Undo of #418" and
+ * how many objects were left alone.
+ *
+ * A batch the planner refuses (running, already undone or being undone,
+ * pruned, outside retention) answers its 409 `bcm_not_reversible` with the
+ * reason; one with nothing left to put back 409 `bcm_nothing_to_undo`; a
+ * missing batch 404 `bcm_not_found`.
+ *
+ * @package BulkCatalogueManager
+ * @license GPL-3.0-or-later
+ */
+
+declare( strict_types = 1 );
+
+namespace BulkCatalogueManager\Rest;
+
+use BulkCatalogueManager\Data\BatchRepository;
+use BulkCatalogueManager\Data\ChangeRepository;
+use BulkCatalogueManager\Engine\BatchFactory;
+use BulkCatalogueManager\Engine\Progress;
+use BulkCatalogueManager\Fields\Registry as Fields;
+use BulkCatalogueManager\Undo\Plan;
+use BulkCatalogueManager\Undo\Planner;
+
+defined( 'ABSPATH' ) || exit;
+
+/**
+ * The undo route.
+ */
+final class UndoController implements Controller {
+	/**
+	 * The route, under Access::REST_NAMESPACE.
+	 */
+	public const ROUTE = '/batches/(?P<id>[\d]+)/undo';
+
+	/**
+	 * The planner, built on first use.
+	 *
+	 * @var Planner|null
+	 */
+	private ?Planner $planner;
+
+	/**
+	 * The journal.
+	 *
+	 * @var ChangeRepository
+	 */
+	private ChangeRepository $changes;
+
+	/**
+	 * Returns the Unix time, for the planner's retention check; time() when null.
+	 *
+	 * @var \Closure|null
+	 */
+	private ?\Closure $clock;
+
+	/**
+	 * The factory, built on first use.
+	 *
+	 * @var BatchFactory|null
+	 */
+	private ?BatchFactory $factory;
+
+	/**
+	 * Batches.
+	 *
+	 * @var BatchRepository
+	 */
+	private BatchRepository $batches;
+
+	/**
+	 * The field registry, for labels and the paging arguments.
+	 *
+	 * @var Fields
+	 */
+	private Fields $fields;
+
+	/**
+	 * Build a controller.
+	 *
+	 * @param BatchRepository|null  $batches Batches; the plugin's by default.
+	 * @param ChangeRepository|null $changes The journal; the plugin's by default.
+	 * @param Fields|null           $fields  Field registry; the shared one by default.
+	 * @param Planner|null          $planner The planner; one over the same repositories and clock, built when first needed, by default.
+	 * @param BatchFactory|null     $factory The factory; one over the same batches, built when first needed, by default.
+	 * @param \Closure|null         $clock   Returns the Unix time, for the default planner; time() by default.
+	 */
+	public function __construct( ?BatchRepository $batches = null, ?ChangeRepository $changes = null, ?Fields $fields = null, ?Planner $planner = null, ?BatchFactory $factory = null, ?\Closure $clock = null ) {
+		$this->batches = $batches ?? new BatchRepository();
+		$this->changes = $changes ?? new ChangeRepository();
+		$this->fields  = $fields ?? Fields::instance();
+		$this->planner = $planner;
+		$this->factory = $factory;
+		$this->clock   = $clock;
+	}
+
+	/**
+	 * Add the route through the registrar.
+	 *
+	 * @param Routes $routes The registrar.
+	 */
+	public function register_routes( Routes $routes ): void {
+		$routes->add(
+			self::ROUTE,
+			[
+				[
+					'methods'             => 'POST',
+					'callback'            => [ $this, 'undo' ],
+					'permission_callback' => [ Access::class, 'can_write' ],
+					'args'                => $this->args(),
+				],
+			]
+		);
+	}
+
+	/**
+	 * The route's arguments.
+	 *
+	 * @return array<string, array<string, mixed>>
+	 */
+	public function args(): array {
+		$uuid                = BatchesController::args()['uuid'];
+		$uuid['required']    = false;
+		$uuid['description'] = __( 'A request id the screen makes once per undo, so sending it twice undoes once; required unless previewing.', 'bulk-catalogue-manager-for-woocommerce' );
+		return BatchesController::id_arg() + ( new RouteSchema( $this->fields ) )->paging_args() + [
+			'uuid'      => $uuid,
+			'preview'   => self::flag( __( 'Plan the undo and show it, changing nothing.', 'bulk-catalogue-manager-for-woocommerce' ) ),
+			'force'     => self::flag( __( 'Revert anyway: also put back products that were changed again after this batch.', 'bulk-catalogue-manager-for-woocommerce' ) ),
+			'plan_hash' => [
+				'description'       => __( 'The hash the undo preview answered; required to undo.', 'bulk-catalogue-manager-for-woocommerce' ),
+				'type'              => 'string',
+				'pattern'           => '^[0-9a-f]{64}$',
+				'validate_callback' => static fn( mixed $value ): bool|\WP_Error => is_string( $value ) && 1 === preg_match( '/^[0-9a-f]{64}$/', $value ) ? true : Refusal::invalid( 'bcm_invalid_value', __( 'This undo could not be sent because its preview is missing or damaged. Preview the undo again, then confirm it.', 'bulk-catalogue-manager-for-woocommerce' ) ),
+				'sanitize_callback' => static fn( mixed $value ): string => (string) $value,
+			],
+		];
+	}
+
+	/**
+	 * Preview or apply the undo of a batch.
+	 *
+	 * @param \WP_REST_Request $request The validated, sanitised request.
+	 */
+	public function undo( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
+		$batch_id = (int) $request->get_param( 'id' );
+		$preview  = true === $request->get_param( 'preview' );
+		$user_id  = get_current_user_id();
+		$uuid     = $request->get_param( 'uuid' );
+
+		if ( ! $preview ) {
+			if ( ! is_string( $uuid ) || '' === $uuid ) {
+				return Refusal::invalid( 'bcm_invalid_value', __( 'This undo could not be sent because its request id is missing or damaged. Reload the page and try again.', 'bulk-catalogue-manager-for-woocommerce' ) );
+			}
+			// A repeat answers before anything is planned: the batch is being undone by then.
+			$existing = $this->factory()->replayed( $uuid, $user_id );
+			if ( null !== $existing ) {
+				return $this->created( $this->factory()->replay( $existing ), 200 );
+			}
+		}
+
+		$this->planner ??= new Planner( $this->batches, $this->changes, null, null, $this->clock );
+		$plan            = $this->planner->plan( $batch_id );
+		if ( $plan instanceof \WP_Error ) {
+			return $plan;
+		}
+		if ( $preview ) {
+			return $this->preview( $plan, (int) ( $request->get_param( 'page' ) ?? 1 ), (int) ( $request->get_param( 'per_page' ) ?? 25 ) );
+		}
+
+		$hash = $request->get_param( 'plan_hash' );
+		if ( ! is_string( $hash ) || '' === $hash || ! hash_equals( $plan->hash(), $hash ) ) {
+			return Refusal::create(
+				BatchFactory::STALE_PREVIEW,
+				__( 'This undo no longer matches its preview: the products or the settings have changed since. Preview the undo again, then confirm it.', 'bulk-catalogue-manager-for-woocommerce' ),
+				409
+			);
+		}
+		$result = $this->factory()->create_undo( $uuid, $user_id, $plan, true === $request->get_param( 'force' ) );
+		if ( $result instanceof \WP_Error ) {
+			return $result;
+		}
+		return $this->created( $result, $result['replayed'] ? 200 : 201 );
+	}
+
+	/**
+	 * The preview of a plan: counts, a page of items with the conflicted first, and the hash.
+	 *
+	 * @param Plan $plan     The plan.
+	 * @param int  $page     Page, from 1.
+	 * @param int  $per_page Items per page.
+	 */
+	private function preview( Plan $plan, int $page, int $per_page ): \WP_REST_Response {
+		$ordered = $plan->conflicts_first();
+		$total   = count( $ordered );
+		$items   = array_slice( $ordered, ( max( 1, $page ) - 1 ) * $per_page, $per_page );
+		BatchChangesController::prime_names( $items );
+		$counts = $plan->counts();
+		return new \WP_REST_Response(
+			[
+				'batch_id'   => $plan->batch_id(),
+				'preview'    => true,
+				'counts'     => $counts,
+				'total'      => $total,
+				'items'      => array_map( [ $this, 'item' ], $items ),
+				'pagination' => [
+					'page'       => $page,
+					'perPage'    => $per_page,
+					'total'      => $total,
+					'totalPages' => (int) ceil( $total / max( 1, $per_page ) ),
+				],
+				'plan_hash'  => $plan->hash(),
+				'sentence'   => $counts[ Plan::CONFLICTED ] > 0 ? sprintf(
+					/* translators: 1: number of products changed since the batch, such as "12"; 2: number of products the batch changed, such as "1,284". */
+					_n( '%1$s of %2$s was changed again after this batch and will be left alone unless you choose Revert anyway.', '%1$s of %2$s were changed again after this batch and will be left alone unless you choose Revert anyway.', $counts[ Plan::CONFLICTED ], 'bulk-catalogue-manager-for-woocommerce' ),
+					number_format_i18n( $counts[ Plan::CONFLICTED ] ),
+					number_format_i18n( $counts[ Plan::CONFLICTED ] + $counts[ Plan::REVERTIBLE ] )
+				) : '',
+			],
+			200
+		);
+	}
+
+	/**
+	 * One plan item as the preview shows it.
+	 *
+	 * @param array<string, mixed> $item Plan item.
+	 * @return array<string, mixed>
+	 */
+	public function item( array $item ): array {
+		$fields = [];
+		foreach ( $item['operations'] as $operation ) {
+			$fields[ $operation['args']['field'] ] = true;
+		}
+		return [
+			'object_id'   => $item['object_id'],
+			'object_type' => $item['object_type'],
+			'name'        => BatchChangesController::name( $item['object_id'], $item['object_type'] ),
+			'state'       => $item['state'],
+			'code'        => $item['code'],
+			'reason'      => $item['reason'],
+			'fields'      => array_map( fn( string $key ): array => $this->field( $key ), array_keys( $fields ) ),
+			'conflicts'   => array_map(
+				fn( array $conflict ): array => $this->field( $conflict['field'] ) + [
+					'expected' => $conflict['expected'],
+					'current'  => $conflict['current'],
+				],
+				$item['conflicts']
+			),
+		];
+	}
+
+	/**
+	 * A field key with its plain label.
+	 *
+	 * @param string $key Field key.
+	 * @return array{field: string, field_label: string}
+	 */
+	private function field( string $key ): array {
+		$field = $this->fields->get( $key );
+		return [
+			'field'       => $key,
+			'field_label' => null === $field ? $key : $field->label(),
+		];
+	}
+
+	/**
+	 * The answer for a created or replayed undo batch.
+	 *
+	 * @param array{batch_id: int, status: string, total_items: int, replayed: bool} $result The factory's answer.
+	 * @param int                                                                       $status HTTP status.
+	 */
+	private function created( array $result, int $status ): \WP_REST_Response {
+		$batch = $this->batches->find( $result['batch_id'] );
+		return new \WP_REST_Response(
+			[
+				'batch_id'    => $result['batch_id'],
+				'status'      => $result['status'],
+				'total_items' => $result['total_items'],
+				'replayed'    => $result['replayed'],
+				'undo'        => null === $batch ? null : Progress::undo_summary( $batch ),
+			],
+			$status
+		);
+	}
+
+	/**
+	 * The factory, built on first use.
+	 */
+	private function factory(): BatchFactory {
+		$this->factory ??= new BatchFactory( null, $this->batches );
+		return $this->factory;
+	}
+
+	/**
+	 * A boolean argument, off by default.
+	 *
+	 * @param string $description What it does.
+	 * @return array<string, mixed>
+	 */
+	private static function flag( string $description ): array {
+		return [
+			'description'       => $description,
+			'type'              => 'boolean',
+			'default'           => false,
+			'validate_callback' => static fn( mixed $value, mixed $request = null, string $param = '' ): bool|\WP_Error => rest_validate_value_from_schema( $value, [ 'type' => 'boolean' ], $param ),
+			'sanitize_callback' => static fn( mixed $value ): bool => true === $value || 1 === $value || in_array( is_string( $value ) ? strtolower( $value ) : '', [ '1', 'true' ], true ),
+		];
+	}
+}

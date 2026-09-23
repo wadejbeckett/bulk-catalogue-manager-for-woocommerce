@@ -162,7 +162,7 @@ final class BatchChangesController implements ReadController {
 	 * @param int    $object_id   Object.
 	 * @param string $object_type product, variation or term.
 	 */
-	private static function name( int $object_id, string $object_type ): string {
+	public static function name( int $object_id, string $object_type ): string {
 		$post  = 'term' === $object_type ? null : get_post( $object_id );
 		$title = is_object( $post ) ? (string) ( $post->post_title ?? '' ) : '';
 		if ( '' !== $title ) {

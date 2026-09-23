@@ -33,8 +33,18 @@
  * - `reversibility` (T54, §4.6): `{ state, conflicts, reason }` from
  *   Reversibility, computed after the sweep so a swept batch reads as
  *   finished; reports() answers a page of the history list with one grouped
- *   pair of reads for every row's state. `actions` lists the action ids the
- *   batch's operations use, for the list's "what" column and its filter.
+ *   pair of reads for every row's state and no plan (`conflicts: null`,
+ *   T56), and report() counts the one batch's conflicts with the planner.
+ *   `actions` lists the action ids the batch's operations use, for the
+ *   list's "what" column and its filter.
+ *
+ * - `undo` (T56, §4.6, §9.4): null except on an undo batch, where it names
+ *   the batch undone ("Undo of #418") and, from the batch's selection
+ *   snapshot (the single read; a list row carries the label only), whether
+ *   Revert anyway was chosen, the plan's counts, how many objects were left
+ *   alone because they changed since, how many could not be put back, the
+ *   plain sentence ("12 of 1,284 were changed again after this batch and
+ *   were left alone.") and the grouped reasons of those not put back.
  *
  * cancel() moves a queued or running batch to `cancelled`. The runner reads
  * the status before claiming, again after claiming (releasing the claim when
@@ -52,6 +62,7 @@ namespace BulkCatalogueManager\Engine;
 
 use BulkCatalogueManager\Data\BatchRepository;
 use BulkCatalogueManager\Data\ChangeRepository;
+use BulkCatalogueManager\Undo\Original;
 use BulkCatalogueManager\Undo\Planner;
 
 defined( 'ABSPATH' ) || exit;
@@ -185,11 +196,72 @@ final class Progress {
 			'selection_difference' => self::difference( $batch['previewed_items'] ?? null, $batch['total_items'] ),
 			'actions'              => $batch['actions'] ?? [],
 			'reversibility'        => $reversibility ?? $this->reversibility->of( $batch ),
+			'undo'                 => self::undo_summary( $batch ),
 		];
 		if ( $summary ) {
 			$report['summary'] = $this->summary( $batch['batch_id'] );
 		}
 		return $report;
+	}
+
+	/**
+	 * An undo batch's account of itself (T56): the batch undone and, when
+	 * the row carries its selection snapshot, what was left alone; null for
+	 * any other batch.
+	 *
+	 * @param array<string, mixed> $batch Typed batch row.
+	 * @return array{undo_of: int, label: string, forced: ?bool, counts: ?array<string, int>, left_alone: ?int, not_undone: ?int, sentence: string, reasons: list<array{message: string, count: int, sentence: string}>}|null
+	 */
+	public static function undo_summary( array $batch ): ?array {
+		if ( 'undo' !== ( $batch['source'] ?? '' ) || null === ( $batch['undo_of'] ?? null ) ) {
+			return null;
+		}
+		$snapshot = is_array( $batch['selection'] ?? null ) && 'undo' === ( $batch['selection']['kind'] ?? null ) ? $batch['selection'] : null;
+		$counts   = null === $snapshot ? null : array_map( 'intval', (array) ( $snapshot['counts'] ?? [] ) );
+		$left     = null === $snapshot ? null : (int) ( $snapshot['left_alone'] ?? 0 );
+		$forced   = null === $snapshot ? null : true === ( $snapshot['force'] ?? false );
+		$reasons  = [];
+		foreach ( null === $snapshot ? [] : (array) ( $snapshot['reasons'] ?? [] ) as $reason ) {
+			if ( is_array( $reason ) && is_string( $reason['message'] ?? null ) ) {
+				$reasons[] = [
+					'message'  => $reason['message'],
+					'count'    => (int) ( $reason['count'] ?? 0 ),
+					'sentence' => self::sentence( $reason['message'], (int) ( $reason['count'] ?? 0 ) ),
+				];
+			}
+		}
+		$conflicted = (int) ( $counts['conflicted'] ?? 0 );
+		$total      = (int) ( $counts['revertible'] ?? 0 ) + $conflicted;
+		$sentence   = '';
+		if ( null !== $left && $left > 0 ) {
+			$sentence = sprintf(
+				/* translators: 1: number of products left alone, such as "12"; 2: number of products the batch changed, such as "1,284". */
+				_n( '%1$s of %2$s was changed again after this batch and was left alone.', '%1$s of %2$s were changed again after this batch and were left alone.', $left, 'bulk-catalogue-manager-for-woocommerce' ),
+				number_format_i18n( $left ),
+				number_format_i18n( $total )
+			);
+		} elseif ( true === $forced && $conflicted > 0 ) {
+			$sentence = sprintf(
+				/* translators: 1: number of products put back although they changed since, such as "12"; 2: number of products the batch changed, such as "1,284". */
+				_n( '%1$s of %2$s was changed again after this batch and was put back anyway, because Revert anyway was chosen.', '%1$s of %2$s were changed again after this batch and were put back anyway, because Revert anyway was chosen.', $conflicted, 'bulk-catalogue-manager-for-woocommerce' ),
+				number_format_i18n( $conflicted ),
+				number_format_i18n( $total )
+			);
+		}
+		return [
+			'undo_of'    => (int) $batch['undo_of'],
+			'label'      => sprintf(
+				/* translators: %s: the number of the batch undone, such as "418". */
+				__( 'Undo of #%s', 'bulk-catalogue-manager-for-woocommerce' ),
+				(string) (int) $batch['undo_of']
+			),
+			'forced'     => $forced,
+			'counts'     => $counts,
+			'left_alone' => $left,
+			'not_undone' => null === $snapshot ? null : (int) ( $snapshot['not_undone'] ?? 0 ),
+			'sentence'   => $sentence,
+			'reasons'    => $reasons,
+		];
 	}
 
 	/**
@@ -261,6 +333,10 @@ final class Progress {
 		if ( 'running' === $batch['status'] ) {
 			$this->batches->transition( $batch_id, 'running', 'cancelled' );
 			$batch = $this->batches->find( $batch_id ) ?? $batch;
+		}
+		if ( 'cancelled' === $batch['status'] ) {
+			// A cancelled undo gives the batch it was undoing back its old status (T56).
+			Original::settle( $this->batches, $batch, 'cancelled' );
 		}
 		return 'cancelled' === $batch['status'] ? $this->report_for( $batch ) : 'finished';
 	}

@@ -12,6 +12,7 @@ declare( strict_types = 1 );
 namespace BulkCatalogueManager\Tests\Unit\Data;
 
 use BulkCatalogueManager\Data\BatchRepository;
+use BulkCatalogueManager\Data\ValueCodec;
 use BulkCatalogueManager\Data\Registry;
 use PHPUnit\Framework\TestCase;
 
@@ -205,6 +206,53 @@ final class BatchRepositoryTest extends TestCase {
 				$this->assertSame( [], self::db()->queries );
 			}
 		}
+	}
+
+	public function test_items_may_carry_their_own_operations_and_read_them_back(): void {
+		self::db()->responses['/^INSERT INTO/'] = static fn( string $sql ): int => substr_count( $sql, "'pending'" );
+		$repo                                   = new BatchRepository();
+		$own                                    = [
+			[
+				'action' => 'set_value',
+				'args'   => [
+					'field' => 'regular_price',
+					'value' => "10's",
+				],
+			],
+		];
+		$this->assertSame( 2, $repo->materialise_items( 6, [ [ 1, 'product', $own ], [ 2, 'variation', $own ] ] ) );
+		[ $template, $args ] = self::db()->prepared[0];
+		$this->assertSame( 'INSERT INTO %i (batch_id, object_id, object_type, state, attempts, operations) VALUES (%d, %d, %s, \'pending\', 0, %s), (%d, %d, %s, \'pending\', 0, %s)', $template );
+		$this->assertSame( [ 'wp_bcm_batch_items', 6, 1, 'product', ValueCodec::encode( $own ), 6, 2, 'variation', ValueCodec::encode( $own ) ], $args );
+
+		foreach ( [ [ [ 1, 'product', $own ], [ 2, 'product' ] ], [ [ 1, 'product' ], [ 2, 'product', $own ] ], [ [ 1, 'product', [] ] ], [ [ 1, 'product', 'x' ] ] ] as $objects ) {
+			try {
+				$repo->materialise_items( 6, $objects );
+				$this->fail( 'Accepted ' . json_encode( $objects ) );
+			} catch ( \InvalidArgumentException $e ) {
+				$this->assertCount( 1, self::db()->queries, 'Refused before writing.' );
+			}
+		}
+
+		self::db()->responses['/^SELECT item_id, operations FROM/'] = [
+			[
+				'item_id'    => '11',
+				'operations' => ValueCodec::encode( $own ),
+			],
+		];
+		$this->assertSame( [ 11 => $own ], $repo->item_operations( 6, [ 11, 12, 11 ] ) );
+		$this->assertSame( 'SELECT item_id, operations FROM `wp_bcm_batch_items` WHERE batch_id = 6 AND operations IS NOT NULL AND item_id IN (11, 12) LIMIT 2', end( self::db()->queries ) );
+		$this->assertSame( [], $repo->item_operations( 6, [] ) );
+		$this->assert_invalid( static fn() => $repo->item_operations( 6, [ 0 ] ) );
+		$this->assert_all_prepared();
+	}
+
+	public function test_a_move_out_of_undoing_keeps_the_batches_finished_time(): void {
+		$repo = new BatchRepository();
+		$this->assertTrue( $repo->transition( 6, 'complete', 'undoing' ) );
+		$this->assertTrue( $repo->transition( 6, 'undoing', 'undone' ) );
+		$this->assertTrue( $repo->transition( 6, 'undoing', 'partial' ) );
+		$this->assertSame( [ [ 'status' => 'undoing' ], [ 'status' => 'undone' ], [ 'status' => 'partial' ] ], array_column( self::db()->writes, 2 ), 'The batch finished before its undo; it keeps that time.' );
 	}
 
 	public function test_claim_selects_pending_items_under_the_attempt_limit_then_counts_the_attempt(): void {

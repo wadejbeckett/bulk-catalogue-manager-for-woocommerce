@@ -235,6 +235,7 @@ Applying creates a batch row and materialises the selection into `bcm_batch_item
   claim_token CHAR(32) NULL         -- claim lease held by the chunk working the item
   claimed_gmt DATETIME NULL         -- when that claim was taken
   message     VARCHAR(255)          -- NOT NULL DEFAULT ''; plain reason the item failed or was skipped
+  operations  LONGTEXT NULL         -- JSON; the item's own operation list (an undo batch), NULL to take the batch's
   KEY batch_state (batch_id, state), KEY object (object_id)
 
 {prefix}bcm_changes
@@ -261,6 +262,8 @@ The journal is written inside the same code path that saves the product, recordi
 ### 9.4 Undo
 
 Undo creates a batch with `source = undo` and `undo_of` set, whose operations are the recorded changes in reverse order, written back through the same CRUD path, queue and journal, with its own preview. Before reverting, the current value is compared with `new_value`; if they differ the item is skipped and reported as "changed since this batch ran". The preview lists conflicts first, and **Revert anyway** is off by default. The result reports plainly: "12 of 1,284 were changed again after this batch and were left alone." A partial, failed or cancelled batch can be undone for the part that was applied.
+
+`POST /batches/{id}/undo` with `preview: true` returns the plan's counts and a page of its objects, conflicts first, with a `plan_hash`; applying sends the client `uuid`, that hash (409 `bcm_preview_stale` when the plan has moved on since) and `force` for **Revert anyway**. The undo batch's items each carry their own operations (`bcm_batch_items.operations`), materialised before any work; the batch undone is `undoing` while it runs, `undone` once it completes or finishes partial, and back to its old status if the undo fails or is cancelled. The history list shows reversibility from the cheap signals only (`conflicts: null`, no product read); the single batch read counts conflicts.
 
 ### 9.5 Retention
 

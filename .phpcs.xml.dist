@@ -28,6 +28,16 @@
 	<rule ref="Universal.NamingConventions.NoReservedKeywordParameterNames"><exclude-pattern>tests/*</exclude-pattern></rule>
 	<rule ref="Generic.CodeAnalysis.UnusedFunctionParameter"><exclude-pattern>tests/*</exclude-pattern></rule>
 
+	<!-- Escaping and markup safety (T7, SPEC §13, §15): the escaping, input-validation, nonce and SQL sniffs are
+	     errors over the plugin file, src/ and uninstall.php, so `composer lint` fails on any finding. Every remaining
+	     phpcs:ignore names its sniff and justifies itself inline in one sentence. -->
+	<rule ref="WordPress.Security.EscapeOutput"><type>error</type></rule>
+	<rule ref="WordPress.Security.ValidatedSanitizedInput"><type>error</type></rule>
+	<rule ref="WordPress.Security.NonceVerification"><type>error</type></rule>
+	<rule ref="WordPress.DB.PreparedSQL"><type>error</type></rule>
+	<rule ref="WordPress.DB.PreparedSQLPlaceholders"><type>error</type></rule>
+	<rule ref="WordPress.DB.DirectDatabaseQuery"><type>error</type></rule>
+
 	<!-- Translation readiness (T74): every I18n message, including the missing translators comment and the
 	     unordered-placeholder warnings, is an error, so `composer lint` fails on any of them. -->
 	<rule ref="WordPress.WP.I18n">

@@ -353,4 +353,165 @@ final class BatchFactoryTest extends TestCase {
 		$this->assertStringNotContainsString( 'as_enqueue', $source );
 		$this->assertStringNotContainsString( 'as_schedule', $source );
 	}
+
+	/**
+	 * T69: a 10 per cent increase on the regular price, with "Also apply to variations" as given.
+	 *
+	 * @return list<array<string, mixed>>
+	 */
+	private static function increase( ?bool $variations ): array {
+		$args = [
+			'field'     => 'regular_price',
+			'direction' => 'increase',
+			'by'        => 'percent',
+			'amount'    => '10',
+		];
+		if ( null !== $variations ) {
+			$args['apply_to_variations'] = $variations;
+		}
+		return [
+			[
+				'action' => 'adjust',
+				'args'   => $args,
+			],
+		];
+	}
+
+	/**
+	 * The items of batch 1 as [ object id, type, the step fields of its own list or null ].
+	 *
+	 * @return list<array{0: int, 1: string, 2: list<string>|null}>
+	 */
+	private function items(): array {
+		$this->store->sync();
+		return array_values(
+			array_map(
+				static fn( array $item ): array => [ $item['object_id'], $item['object_type'], null === $item['operations'] ? null : array_map( static fn( array $step ): string => $step['args']['field'], $item['operations'] ) ],
+				array_filter( $this->store->items, static fn( array $item ): bool => 1 === $item['batch_id'] )
+			)
+		);
+	}
+
+	public function test_apply_to_variations_adds_each_selected_parents_listed_variations_as_items(): void {
+		// 103 is variable with 201 (published), 202 (private) and 203 (trashed); 107 is variable with none.
+		$operations = [
+			...self::increase( true ),
+			[
+				'action' => 'set_value',
+				'args'   => [
+					'field'               => 'status',
+					'value'               => 'publish',
+					'apply_to_variations' => true,
+				],
+			],
+		];
+		$result     = $this->factory()->create( self::UUID, self::USER, $operations, Selection::of_ids( [ 101, 103, 107 ] ) );
+
+		$this->assertSame( 5, $result['total_items'], 'total_items counts the products and the variations added.' );
+		$this->assertSame(
+			[
+				[ 101, 'product', null ],
+				[ 103, 'product', null ],
+				[ 107, 'product', null ],
+				[ 202, 'variation', null ],
+				[ 201, 'variation', null ],
+			],
+			$this->items(),
+			'The parent keeps its row for the status it takes; its listed variations follow in menu order, the trashed one left out; a parent with no variations adds nothing.'
+		);
+		$batch = ( new BatchRepository() )->find( 1 );
+		$this->assertSame( 5, $batch['total_items'] );
+		$this->assertSame( [ 3, 2, 0, 5 ], [ $batch['selection']['selected'], $batch['selection']['variations_added'], $batch['selection']['parents_left_out'], $batch['selection']['materialised'] ] );
+		$this->assertSame( [ 'batch:1', 'items:1:5' ], $this->store->log, 'Every item is written before any work is queued.' );
+	}
+
+	public function test_a_parent_with_nothing_of_its_own_to_change_is_left_out_for_its_variations(): void {
+		$result = $this->factory()->create( self::UUID, self::USER, self::increase( true ), Selection::of_ids( [ 101, 103, 107 ] ) );
+
+		$this->assertSame( 4, $result['total_items'] );
+		$this->assertSame(
+			[
+				[ 101, 'product', null ],
+				[ 107, 'product', null ],
+				[ 202, 'variation', null ],
+				[ 201, 'variation', null ],
+			],
+			$this->items(),
+			'A price reaching the variations leaves out the variable product, which has no price of its own; 107, which reached nothing, keeps its row and reports why.'
+		);
+		$batch = ( new BatchRepository() )->find( 1 );
+		$this->assertSame( [ 3, 2, 1 ], [ $batch['selection']['selected'], $batch['selection']['variations_added'], $batch['selection']['parents_left_out'] ] );
+	}
+
+	public function test_selecting_a_parent_alone_never_reaches_its_variations(): void {
+		foreach ( [ false, null ] as $index => $switch ) {
+			bcm_test_reset();
+			$this->db    = SeededCatalogue::seed();
+			$this->store = new BatchStore( $this->db );
+			$result      = $this->factory()->create( sprintf( '3f2504e0-4f89-41d3-9a0c-0305e82c33%02d', $index ), self::USER, self::increase( $switch ), Selection::of_ids( [ 103 ] ) );
+			$this->assertSame( 1, $result['total_items'], 'Off, or absent with the price default off.' );
+			$this->assertSame( [ [ 103, 'product', null ] ], $this->items() );
+			$this->assertArrayNotHasKey( 'selected', ( new BatchRepository() )->find( 1 )['selection'] );
+		}
+	}
+
+	public function test_the_default_comes_from_the_settings_per_field_group(): void {
+		$GLOBALS['bcm_test']['options']['bcm_settings'] = [ 'variations_price' => true ];
+		$result = $this->factory()->create( self::UUID, self::USER, self::increase( null ), Selection::of_ids( [ 103 ] ) );
+		$this->assertSame( 2, $result['total_items'], 'With the price switch on, a price step reaches the variations by default.' );
+		$this->assertSame( [ [ 202, 'variation', null ], [ 201, 'variation', null ] ], $this->items() );
+	}
+
+	public function test_a_variation_selected_directly_is_not_added_twice_and_keeps_the_whole_list(): void {
+		$operations = [
+			[
+				'action' => 'set_value',
+				'args'   => [
+					'field' => 'status',
+					'value' => 'publish',
+				],
+			],
+			[
+				'action' => 'set_value',
+				'args'   => [
+					'field' => 'featured',
+					'value' => true,
+				],
+			],
+		];
+		$result     = $this->factory()->create( self::UUID, self::USER, $operations, Selection::of_ids( [ 202, 103 ] ) );
+		$this->assertSame( 3, $result['total_items'] );
+		$this->assertSame(
+			[
+				[ 202, 'variation', null ],
+				[ 103, 'product', null ],
+				[ 201, 'variation', [ 'status' ] ],
+			],
+			$this->items(),
+			'202 keeps its own row and the whole list; the added 201 carries only the step that reaches variations (status, on by default), never the parent-only featured step.'
+		);
+		$this->assertSame( [ 'batch:1', 'items:1:2', 'items:1:1' ], $this->store->log, 'Rows taking the batch list, then rows with their own, in two statements before any work.' );
+	}
+
+	public function test_variations_only_mode_is_unaffected(): void {
+		$result = $this->factory()->create( self::UUID, self::USER, self::increase( true ), self::filter( Criteria::MODE_VARIATIONS ) );
+		$this->assertSame( 2, $result['total_items'] );
+		$this->assertSame( [ [ 201, 'variation', null ], [ 202, 'variation', null ] ], $this->items() );
+	}
+
+	public function test_a_filter_of_products_and_variations_adds_nothing_it_already_holds(): void {
+		$result = $this->factory()->create( self::UUID, self::USER, self::increase( true ), self::filter( Criteria::MODE_PRODUCTS_AND_VARIATIONS ) );
+		$this->assertSame( count( SeededCatalogue::PRODUCTS ) + count( SeededCatalogue::VARIATIONS ) - 1, $result['total_items'], 'Nothing is added twice; the variable product 103 has no price of its own and is left out.' );
+		$selection = ( new BatchRepository() )->find( 1 )['selection'];
+		$this->assertSame( [ 9, 0, 1 ], [ $selection['selected'], $selection['variations_added'], $selection['parents_left_out'] ] );
+	}
+
+	public function test_the_variations_added_count_against_the_object_limit(): void {
+		$factory = new BatchFactory( new Actions( new Fields() ), null, fn(): int => $this->now, 3 );
+		$result  = $this->assert_refused_with_nothing_written( $factory->create( self::UUID, self::USER, self::increase( true ), Selection::of_ids( [ 101, 103, 104 ] ) ), 'bcm_selection_too_large' );
+		$this->assertSame( [ 4, 3 ], [ $result->get_error_data()['count'], $result->get_error_data()['limit'] ], 'Two products and two variations pass a limit of three.' );
+		$this->assertStringContainsString( 'more than the 3 one change can include', $result->get_error_message() );
+
+		$this->assertSame( 3, $factory->create( self::UUID, self::USER, self::increase( true ), Selection::of_ids( [ 101, 103 ] ) )['total_items'], 'Exactly the limit is a valid batch.' );
+	}
 }

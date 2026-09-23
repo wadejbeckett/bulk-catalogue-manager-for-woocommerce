@@ -32,6 +32,16 @@ Chapters (``--chapters``, comma separated, default all, run in this order):
              edit and move; the write routes' refusals.
   access     The administrators-only setting flips a shop manager to 403
              while an administrator keeps 200.
+  variations T72. A variable product with 60 variations (upserted by the
+             chapter through WP-CLI): /products/{id}/variations read past the
+             50-row grid cap in menu order; Variations only filtered to out of
+             stock against WooCommerce; a 10 per cent increase with Also apply
+             to variations on previewed (60 variations, the parent left out,
+             nothing saved), applied and run, each variation's stored price and
+             the parent's wc_product_meta_lookup min/max checked; the undo run
+             and the prices and lookup row compared with the snapshot; the
+             variations list, preview and batches refuse anonymous 401 and a
+             subscriber 403.
   lifecycle  Activation created the three tables with every documented
              index; WooCommerce lists the plugin compatible with HPOS and the
              Cart and Checkout Blocks; a bcm_db_version bump re-runs dbDelta on
@@ -924,15 +934,190 @@ def check_lifecycle(p: Probe) -> None:
 
 
 # ---------------------------------------------------------------------------
+# variations (T72)
+# ---------------------------------------------------------------------------
+
+SIXTY_SKU = "bcm-probe-sixty"
+SIXTY = 60
+
+# Upserts variable product bcm-probe-sixty with variations 1..60 (menu order
+# 1..60) at 10.00 + (n - 1), every third out of stock, none managing stock,
+# resynchronises it through WooCommerce, and echoes the parent and the
+# variation ids in menu order with their prices and stock statuses.
+SIXTY_SEED_PHP = r"""
+$sku    = '%s';
+$count  = %d;
+$id     = wc_get_product_id_by_sku( $sku );
+$parent = $id ? wc_get_product( $id ) : new WC_Product_Variable();
+$options = array();
+for ( $n = 1; $n <= $count; $n++ ) { $options[] = (string) $n; }
+$attribute = new WC_Product_Attribute();
+$attribute->set_name( 'Number' );
+$attribute->set_options( $options );
+$attribute->set_visible( true );
+$attribute->set_variation( true );
+$parent->set_name( 'Probe Sixty' );
+$parent->set_sku( $sku );
+$parent->set_status( 'publish' );
+$parent->set_attributes( array( $attribute ) );
+$parent_id = (int) $parent->save();
+$out = array();
+for ( $n = 1; $n <= $count; $n++ ) {
+	$vsku = $sku . '-' . $n;
+	$vid  = wc_get_product_id_by_sku( $vsku );
+	$v    = $vid ? wc_get_product( $vid ) : new WC_Product_Variation();
+	$v->set_parent_id( $parent_id );
+	$v->set_sku( $vsku );
+	$v->set_status( 'publish' );
+	$v->set_menu_order( $n );
+	$v->set_attributes( array( 'number' => (string) $n ) );
+	$v->set_regular_price( sprintf( '%%d.00', 9 + $n ) );
+	$v->set_sale_price( '' );
+	$v->set_manage_stock( false );
+	$v->set_stock_status( 0 === $n %% 3 ? 'outofstock' : 'instock' );
+	$out[] = array( 'id' => (int) $v->save(), 'price' => $v->get_regular_price( 'edit' ), 'stock' => $v->get_stock_status( 'edit' ) );
+}
+WC_Product_Variable::sync( $parent_id );
+wc_delete_product_transients( $parent_id );
+bcm_out( array( 'parent' => $parent_id, 'variations' => $out ) );
+"""
+
+# The parent's lookup row and every variation's stored regular price.
+SIXTY_STATE_PHP = r"""
+global $wpdb;
+$parent = %d;
+$row    = $wpdb->get_row( $wpdb->prepare( 'SELECT min_price, max_price FROM %%i WHERE product_id = %%d', $wpdb->prefix . 'wc_product_meta_lookup', $parent ), ARRAY_A );
+$prices = array();
+foreach ( wc_get_product( $parent )->get_children() as $id ) { $prices[ $id ] = wc_get_product( $id )->get_regular_price( 'edit' ); }
+bcm_out( array( 'min' => $row ? $row['min_price'] : null, 'max' => $row ? $row['max_price'] : null, 'prices' => $prices ) );
+"""
+
+
+def money(value: str | float | None) -> str:
+    return "" if value is None or value == "" else f"{float(value):.2f}"
+
+
+def check_variations(p: Probe) -> None:
+    """T72: a variable product with 60 variations read past the 50-row grid cap,
+    filtered Variations only to out of stock, previewed and changed with Also
+    apply to variations on, its parent's lookup range resynchronised, and the
+    change undone back to the snapshot; every variation route refuses an
+    anonymous and a subscriber request."""
+    state: dict[str, Any] = {}
+    increase = [{"action": "adjust", "args": {"field": "regular_price", "direction": "increase", "by": "percent",
+                                              "amount": "10", "apply_to_variations": True}}]
+
+    def seed() -> None:
+        made = p.wp_eval(SIXTY_SEED_PHP % (SIXTY_SKU, SIXTY))
+        state.update(parent=made["parent"], variations=made["variations"])
+        state["before"] = p.wp_eval(SIXTY_STATE_PHP % made["parent"])
+        ok = len(made["variations"]) == SIXTY and money(state["before"]["min"]) == "10.00" and money(state["before"]["max"]) == f"{9 + SIXTY:.2f}"
+        p.row("variations", "variations:seed", ok, f"parent {made['parent']}, {len(made['variations'])} variations, lookup {state['before']['min']}-{state['before']['max']}")
+
+    def refusals() -> None:
+        route = f"/products/{state['parent']}/variations"
+        bad = []
+        for method, path, body in (("GET", route, None),
+                                   ("POST", "/preview", {"ids": [state["parent"]], "operations": increase}),
+                                   ("POST", "/batches", {"uuid": str(uuid.uuid4()), "ids": [state["parent"]], "operations": increase})):
+            anon, sub = p.http(None, method, path, body=body), p.http("subscriber", method, path, body=body)
+            if anon.status != 401 or sub.status != 403:
+                bad.append(f"{method} {path}: {anon.status}/{sub.status}")
+        p.row("variations", "variations:refusals", not bad, "; ".join(bad) or "anonymous 401, subscriber 403 on the variations list, preview and batches")
+
+    def past_cap() -> None:
+        route = f"/products/{state['parent']}/variations"
+        first = p.http("manager", "GET", route, [("per_page", "50"), ("page", "1")]).json() or {}
+        second = p.http("manager", "GET", route, [("per_page", "50"), ("page", "2")]).json() or {}
+        got = [row["id"] for row in first.get("items", []) + second.get("items", [])]
+        want = [v["id"] for v in state["variations"]]
+        pag = first.get("pagination", {})
+        ok = got == want and pag.get("total") == SIXTY and pag.get("totalPages") == 2 and len(first.get("items", [])) == 50
+        p.row("variations", "variations:past-grid-cap", ok, f"{len(first.get('items', []))} + {len(second.get('items', []))} rows, total {pag.get('total')}, in menu order: {got == want}")
+
+    def out_of_stock() -> None:
+        ids, pag = all_ids(p, [("mode", "variations")] + filter_params("stock_status", "isAny", ["outofstock"]))
+        mine = {v["id"] for v in state["variations"]}
+        got = sorted(i for i in ids if i in mine)
+        want = sorted(v["id"] for v in state["variations"] if v["stock"] == "outofstock")
+        truth_ids = p.wp_eval(
+            "bcm_out( array_map( 'intval', get_posts( array( 'post_type' => 'product_variation', 'post_status' => array( 'publish', 'private' ), "
+            "'posts_per_page' => -1, 'fields' => 'ids', 'meta_key' => '_stock_status', 'meta_value' => 'outofstock', 'orderby' => 'ID', 'order' => 'ASC' ) ) ) );"
+        )
+        ok = got == want and len(want) == SIXTY // 3 and sorted(ids) == sorted(truth_ids)
+        p.row("variations", "variations:filter-out-of-stock", ok, f"{len(got)} of this product's (want {len(want)}), {pag.get('total')} in all vs {len(truth_ids)} by WooCommerce")
+
+    def preview() -> None:
+        r = p.http("manager", "POST", "/preview", body={"ids": [state["parent"]], "operations": increase, "sample_size": "all"})
+        d = r.json() or {}
+        state["hash"] = d.get("hash")
+        totals = d.get("totals", {})
+        by = totals.get("by_type", {})
+        sample_ids = {row["object_id"] for row in d.get("sample", [])}
+        untouched = p.wp_eval(SIXTY_STATE_PHP % state["parent"]) == state["before"]
+        ok = (r.status == 200 and totals.get("matched") == SIXTY and (by.get("variation") or {}).get("would_change") == SIXTY
+              and (by.get("product") or {}).get("matched") == 0 and d.get("summary") == "Regular price will change on 60 variations."
+              and (d.get("selection") or {}).get("variations_added") == SIXTY and (d.get("selection") or {}).get("parents_left_out") == 1
+              and sample_ids == {v["id"] for v in state["variations"]} and untouched)
+        p.row("variations", "variations:preview", ok, f"{r.brief()} matched {totals.get('matched')} by_type {by} summary {d.get('summary')!r}, nothing saved: {untouched}")
+
+    def apply() -> None:
+        r = p.http("manager", "POST", "/batches", body={"uuid": str(uuid.uuid4()), "ids": [state["parent"]], "operations": increase, "preview_hash": state["hash"]})
+        d = r.json() or {}
+        state["batch"] = d.get("batch_id")
+        p.row("variations", "variations:batch-create", r.status == 201 and d.get("total_items") == SIXTY, f"{r.brief()} total_items {d.get('total_items')}")
+        report = p.run_queue(state["batch"])
+        ok = report.get("status") == "complete" and report.get("changed_items") == SIXTY and report.get("failed_items") == 0
+        p.row("variations", "variations:batch-run", ok, f"status {report.get('status')} changed {report.get('changed_items')} failed {report.get('failed_items')} chunk {report.get('chunk_size')}")
+
+    def verify() -> None:
+        after = p.wp_eval(SIXTY_STATE_PHP % state["parent"])
+        want = {str(v["id"]): f"{round(float(v['price']) * 1.1 + 1e-9, 2):.2f}" for v in state["variations"]}
+        got = {str(k): money(v) for k, v in after["prices"].items()}
+        p.row("variations", "variations:batch-values", got == want, f"{sum(1 for k in want if got.get(k) == want[k])} of {SIXTY} variations at +10%")
+        lo, hi = money(after["min"]), money(after["max"])
+        want_lo, want_hi = min(want.values(), key=float), max(want.values(), key=float)
+        p.row("variations", "variations:parent-lookup-resynced", (lo, hi) == (want_lo, want_hi), f"lookup {lo}-{hi}, want {want_lo}-{want_hi}")
+        feed = p.http("manager", "GET", f"/batches/{state['batch']}/changes", [("per_page", "100")]).json() or {}
+        items = feed.get("items", [])
+        p.row("variations", "variations:journal", len(items) == SIXTY and all(c.get("object_type") == "variation" and c.get("result") == "applied" for c in items),
+              f"{len(items)} journal rows, types {sorted({c.get('object_type') for c in items})}")
+
+    def undo() -> None:
+        route = f"/batches/{state['batch']}/undo"
+        pre = p.http("manager", "POST", route, body={"preview": True}).json() or {}
+        r = p.http("manager", "POST", route, body={"uuid": str(uuid.uuid4()), "plan_hash": pre.get("plan_hash")})
+        u = r.json() or {}
+        report = p.run_queue(u.get("batch_id", 0))
+        original = p.http("manager", "GET", f"/batches/{state['batch']}").json() or {}
+        p.row("variations", "variations:undo-run", r.status == 201 and u.get("total_items") == SIXTY and report.get("status") == "complete" and original.get("status") == "undone",
+              f"{r.brief()} undo total {u.get('total_items')} {report.get('status')}, original {original.get('status')}")
+        after = p.wp_eval(SIXTY_STATE_PHP % state["parent"])
+        same = after == state["before"]
+        p.row("variations", "variations:undo-snapshot", same, f"prices and lookup {after['min']}-{after['max']} back to the snapshot: {same}")
+
+    steps = [("seed", seed), ("refusals", refusals), ("past-grid-cap", past_cap), ("filter-out-of-stock", out_of_stock),
+             ("preview", preview), ("batch", apply), ("batch-values", verify), ("undo", undo)]
+    for name, fn in steps:
+        if name != "seed" and not state.get("parent"):
+            p.row("variations", f"variations:{name}", False, "no seeded product")
+            continue
+        if name in ("batch-values", "undo") and not state.get("batch"):
+            p.row("variations", f"variations:{name}", False, "no batch from the batch step")
+            continue
+        p.guard("variations", f"variations:{name}", fn)
+
+# ---------------------------------------------------------------------------
 
 CHAPTERS: dict[str, list[Callable[[Probe], None]]] = {
     "screen": [check_screen],
     "read": [check_read_matrix, check_read_queries],
     "write": [check_write_engine, check_write_stale, check_write_inline, check_write_categories],
     "access": [check_access],
+    "variations": [check_variations],
     "lifecycle": [check_lifecycle],
 }
-NEEDS_WP = {"write", "access", "lifecycle"}
+NEEDS_WP = {"write", "access", "variations", "lifecycle"}
 
 
 def main() -> int:

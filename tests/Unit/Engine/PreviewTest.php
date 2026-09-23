@@ -204,9 +204,20 @@ final class PreviewTest extends TestCase {
 					'skipped' => 1,
 					'failed'  => 1,
 				],
+				'by_type'      => [
+					'product'   => [
+						'matched'      => 4,
+						'would_change' => 2,
+					],
+					'variation' => [
+						'matched'      => 1,
+						'would_change' => 1,
+					],
+				],
 			],
 			$result['totals']
 		);
+		$this->assertSame( 'Regular price will change on 2 products and 1 variation.', $result['summary'] );
 		$this->assertSame(
 			[
 				[ 101, 'regular_price', '20', '25.00', 'changed' ],
@@ -239,8 +250,10 @@ final class PreviewTest extends TestCase {
 		$this->assertSame( [], $result['unreadable'] );
 		$this->assertSame(
 			[
-				'kind'  => 'ids',
-				'count' => 5,
+				'kind'             => 'ids',
+				'count'            => 5,
+				'variations_added' => 0,
+				'parents_left_out' => 0,
 			],
 			$result['selection']
 		);
@@ -282,9 +295,11 @@ final class PreviewTest extends TestCase {
 		$this->assertSame( 3, array_sum( $result['totals']['would_fail'] ) );
 		$this->assertSame(
 			[
-				'kind'          => 'filter',
-				'count'         => 3,
-				'current_count' => 7,
+				'kind'             => 'filter',
+				'count'            => 3,
+				'current_count'    => 7,
+				'variations_added' => 0,
+				'parents_left_out' => 0,
 			],
 			$result['selection'],
 			'A filter selection answers the count when chosen and the count now.'
@@ -591,5 +606,82 @@ final class PreviewTest extends TestCase {
 		$this->assertSame( 0, $result['totals']['would_change'] );
 		$this->assertSame( 2, $result['totals']['already'] );
 		$this->assertSame( [], $result['totals']['would_fail'] );
+	}
+
+	public function test_apply_to_variations_previews_the_variations_it_adds_and_counts_them_apart(): void {
+		$operations = self::ops(
+			[
+				[
+					'adjust',
+					[
+						'field'               => 'regular_price',
+						'direction'           => 'increase',
+						'by'                  => 'percent',
+						'amount'              => '10',
+						'apply_to_variations' => true,
+					],
+				],
+				[
+					'set_value',
+					[
+						'field' => 'featured',
+						'value' => true,
+					],
+				],
+			]
+		);
+		$result     = $this->answer( Selection::of_ids( [ 101, 103 ] ), $operations );
+
+		$this->assertSame(
+			[
+				[ 101, 'regular_price', '20', '22.00', 'changed' ],
+				[ 101, 'featured', false, true, 'changed' ],
+				[ 103, 'regular_price', '', '', 'skipped' ],
+				[ 103, 'featured', false, true, 'changed' ],
+				[ 202, 'regular_price', '80', '88.00', 'changed' ],
+				[ 201, 'regular_price', '60', '66.00', 'changed' ],
+			],
+			self::rows( $result ),
+			'The variations are computed with only the step that reaches them; the parent keeps the steps it takes, and its own price is skipped, not failed.'
+		);
+		$this->assertSame( 4, $result['totals']['matched'] );
+		$this->assertSame(
+			[
+				'product'   => [
+					'matched'      => 2,
+					'would_change' => 2,
+				],
+				'variation' => [
+					'matched'      => 2,
+					'would_change' => 2,
+				],
+			],
+			$result['totals']['by_type']
+		);
+		$this->assertSame( '2 fields will change on 2 products and 2 variations.', $result['summary'] );
+		$this->assertSame(
+			[
+				'kind'             => 'ids',
+				'count'            => 2,
+				'variations_added' => 2,
+				'parents_left_out' => 0,
+			],
+			$result['selection']
+		);
+
+		$price = $this->answer( Selection::of_ids( [ 101, 103 ] ), [ $operations[0] ] );
+		$this->assertSame( [ 101, 202, 201 ], array_values( array_unique( array_column( $price['sample'], 'object_id' ) ) ), 'A price alone leaves out the variable product, which takes its price from its variations.' );
+		$this->assertSame( 'Regular price will change on 1 product and 2 variations.', $price['summary'] );
+		$this->assertSame( 1, $price['selection']['parents_left_out'] );
+
+		$one = $this->answer( Selection::of_ids( [ 103 ] ), self::set( 'regular_price', '70' ) );
+		$this->assertSame( 1, $one['totals']['matched'], 'With the price default off, a parent alone reaches nothing.' );
+	}
+
+	public function test_the_summary_names_one_field_and_each_kind_it_changes(): void {
+		$this->assertSame( 'Regular price will change on 1,284 products and 3,915 variations.', Preview::summary( [ 'regular_price' => 'Regular price' ], 1284, 3915 ) );
+		$this->assertSame( 'Regular price will change on 1 product.', Preview::summary( [ 'regular_price' => 'Regular price' ], 1, 0 ) );
+		$this->assertSame( 'Stock status will change on 2 variations.', Preview::summary( [ 'stock_status' => 'Stock status' ], 0, 2 ) );
+		$this->assertSame( 'Nothing will change: every row already holds the value or cannot be changed.', Preview::summary( [], 0, 0 ) );
 	}
 }

@@ -16,6 +16,7 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Tests\Unit\Engine;
 
+use BulkCatalogueManager\Data\ValueCodec;
 use BulkCatalogueManager\Tests\Support\SqlEvaluator;
 
 final class BatchStore {
@@ -29,7 +30,7 @@ final class BatchStore {
 	/**
 	 * Item rows, in insertion order.
 	 *
-	 * @var list<array{batch_id: int, object_id: int, object_type: string, state: string, attempts: int}>
+	 * @var list<array{batch_id: int, object_id: int, object_type: string, state: string, attempts: int, operations: ?array}>
 	 */
 	public array $items = [];
 
@@ -103,14 +104,16 @@ final class BatchStore {
 
 	private function insert_items( string $sql ): int {
 		$this->sync();
-		preg_match_all( "/\((\d+), (\d+), '([a-z]+)', 'pending', 0\)/", $sql, $rows, PREG_SET_ORDER );
-		foreach ( $rows as [ , $batch, $object, $type ] ) {
+		// T69: an item may carry its own operation list as a sixth value.
+		preg_match_all( "/\((\d+), (\d+), '([a-z]+)', 'pending', 0(?:, '((?:[^'\\\\]|\\\\.)*)')?\)/s", $sql, $rows, PREG_SET_ORDER );
+		foreach ( $rows as $row ) {
 			$this->items[] = [
-				'batch_id'    => (int) $batch,
-				'object_id'   => (int) $object,
-				'object_type' => $type,
+				'batch_id'    => (int) $row[1],
+				'object_id'   => (int) $row[2],
+				'object_type' => $row[3],
 				'state'       => 'pending',
 				'attempts'    => 0,
+				'operations'  => isset( $row[4] ) ? ValueCodec::decode( stripslashes( $row[4] ) ) : null,
 			];
 		}
 		$this->log[] = 'items:' . $rows[0][1] . ':' . count( $rows );

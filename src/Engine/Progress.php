@@ -20,7 +20,8 @@
  *
  * - `previewed_count` and `selection_difference` (T38, §12.6): for a filter
  *   selection, the count its preview showed, and, when that differs from the
- *   materialised `total_items`, one §4.8 sentence stating both numbers and
+ *   objects the selection materialised (`total_items`, less any variations
+ *   "Also apply to variations" added: the snapshot's `selected`), one §4.8 sentence stating both numbers and
  *   the difference; '' otherwise. The history list carries both too.
  *
  * Stale inline batches (T38, from T37): an inline batch is written in the
@@ -193,7 +194,8 @@ final class Progress {
 			'stalled_message'      => $stalled ? self::stalled_message() : '',
 			'last_activity_gmt'    => $last,
 			'previewed_count'      => $batch['previewed_items'] ?? null,
-			'selection_difference' => self::difference( $batch['previewed_items'] ?? null, $batch['total_items'] ),
+			// The selection's own objects, before any variations "Also apply to variations" added (T69).
+			'selection_difference' => self::difference( $batch['previewed_items'] ?? null, (int) ( $batch['selection']['selected'] ?? $batch['total_items'] ) ),
 			'actions'              => $batch['actions'] ?? [],
 			'reversibility'        => $reversibility ?? $this->reversibility->of( $batch ),
 			'undo'                 => self::undo_summary( $batch ),

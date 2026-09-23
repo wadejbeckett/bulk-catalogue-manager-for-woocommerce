@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-09-23T15:44:46+00:00\n"
+"POT-Creation-Date: 2026-09-23T17:49:15+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -269,6 +269,116 @@ msgstr ""
 msgid "No"
 msgstr ""
 
+msgid "When (UTC)"
+msgstr ""
+
+msgid "Finished (UTC)"
+msgstr ""
+
+msgid "Change number"
+msgstr ""
+
+msgid "Who"
+msgstr ""
+
+msgid "Product"
+msgstr ""
+
+msgid "ID"
+msgstr ""
+
+msgid "Kind"
+msgstr ""
+
+msgid "Field"
+msgstr ""
+
+msgid "Old value"
+msgstr ""
+
+msgid "New value"
+msgstr ""
+
+msgid "Result"
+msgstr ""
+
+msgid "Reason"
+msgstr ""
+
+msgid "What"
+msgstr ""
+
+msgid "Outcome"
+msgstr ""
+
+msgid "Rows"
+msgstr ""
+
+msgid "Changed"
+msgstr ""
+
+msgid "Failed"
+msgstr ""
+
+msgid "Variations included"
+msgstr ""
+
+msgid "Can be undone"
+msgstr ""
+
+msgid "Undo of"
+msgstr ""
+
+msgid "Put back by"
+msgstr ""
+
+#. translators: 1: the number of the undo, 2: the name of the user who ran it.
+#, php-format
+msgid "#%1$d by %2$s"
+msgstr ""
+
+msgid "Applied"
+msgstr ""
+
+msgid "Skipped"
+msgstr ""
+
+msgid "Variation"
+msgstr ""
+
+msgid "Category"
+msgstr ""
+
+msgid "Waiting to start"
+msgstr ""
+
+msgid "In progress"
+msgstr ""
+
+msgid "Complete"
+msgstr ""
+
+msgid "Completed with errors"
+msgstr ""
+
+msgid "Cancelled"
+msgstr ""
+
+msgid "Being undone"
+msgstr ""
+
+msgid "Undone"
+msgstr ""
+
+msgid "Partly"
+msgstr ""
+
+msgid "Not yet: still running"
+msgstr ""
+
+msgid "Yes, with errors"
+msgstr ""
+
 #. translators: %s: the SKU that is already in use.
 #, php-format
 msgid "A product with the SKU %s already exists, so this SKU was not applied."
@@ -405,9 +515,6 @@ msgstr ""
 msgid "Visible"
 msgstr ""
 
-msgid "Partly"
-msgstr ""
-
 msgid "Categories"
 msgstr ""
 
@@ -480,9 +587,6 @@ msgstr ""
 msgid "Tax class"
 msgstr ""
 
-msgid "ID"
-msgstr ""
-
 msgid "Type"
 msgstr ""
 
@@ -520,9 +624,6 @@ msgid "External/Affiliate product"
 msgstr ""
 
 msgid "Variable product"
-msgstr ""
-
-msgid "Variation"
 msgstr ""
 
 msgid "Increase or decrease"
@@ -628,9 +729,6 @@ msgstr ""
 #. translators: 1: a field's name, such as "Regular price", 2: the value it would have had, such as -2.50.
 #, php-format
 msgid "%1$s would go below zero (%2$s), so it was not changed."
-msgstr ""
-
-msgid "Field"
 msgstr ""
 
 #. translators: %s: an action's name, such as "Round prices".
@@ -859,9 +957,6 @@ msgstr ""
 msgid "Gives every chosen product the same value for one field, replacing what is there now."
 msgstr ""
 
-msgid "New value"
-msgstr ""
-
 msgid "Enter the new value, then try again."
 msgstr ""
 
@@ -969,6 +1064,12 @@ msgstr ""
 msgid "Product %d"
 msgstr ""
 
+msgid "Whether the change also reached variations the selection did not name (\"Also apply to variations\"). List rows only."
+msgstr ""
+
+msgid "On a change that was undone, the undo that put it back and who ran it; null otherwise. List rows only."
+msgstr ""
+
 msgid "The change, by its number."
 msgstr ""
 
@@ -988,6 +1089,12 @@ msgid "Only changes made before this time (UTC unless it names a zone)."
 msgstr ""
 
 msgid "Only changes that used this action."
+msgstr ""
+
+#. translators: %d: the id of a user account that no longer exists or has no name.
+#. translators: %d: a user id.
+#, php-format,js-format
+msgid "User %d"
 msgstr ""
 
 msgid "This change has already finished, so it cannot be cancelled. Use Undo in the history to reverse it."
@@ -1029,7 +1136,13 @@ msgstr ""
 msgid "These products could not be selected. Choose the products again and try again."
 msgstr ""
 
+msgid "The user's display name, or \"User 7\" for an account that no longer exists."
+msgstr ""
+
 msgid "The category counts could not use the current filters. Clear the filters and try again."
+msgstr ""
+
+msgid "The category's description as stored, to show as text; empty when it has none."
 msgstr ""
 
 msgid "Parent category id; 0 at the top level, including a category whose parent no longer exists."
@@ -1074,10 +1187,34 @@ msgstr ""
 msgid "Columns to export, in order: the visible columns of the view."
 msgstr ""
 
+msgid "What to export: the catalogue (products, the default), a change's rows (changes, with batch), the audit log (audit) or the change history (batches)."
+msgstr ""
+
+msgid "For source changes: the change whose rows to export, by its number."
+msgstr ""
+
+msgid "For the catalogue, the status filter; for the change history, only changes with this outcome."
+msgstr ""
+
 msgid "These columns could not be exported. Choose the columns again and try again."
 msgstr ""
 
 msgid "These filters or this sort could not be used. Clear them and try again."
+msgstr ""
+
+msgid "This export does not say which change to export. Open the change in the history and export it again."
+msgstr ""
+
+msgid "Whether the grid shows it by default, after the product cell (T40)."
+msgstr ""
+
+msgid "Its place among the default columns, from 1; null when it is not shown by default."
+msgstr ""
+
+msgid "Whether setting this choice takes the product out of shoppers' sight, so a bulk change to it always asks first (SPEC §4.5)."
+msgstr ""
+
+msgid "How it hides the product: off_site (its status keeps it off the site) or hidden (hidden from the shop and from search); null when it does not."
 msgstr ""
 
 msgid "How many rows of the preview to return: 25, 100, or all for every row up to 1,000."
@@ -1148,6 +1285,9 @@ msgstr ""
 #. translators: %s: a field's name, such as "Stock status".
 #, php-format
 msgid "Filter on %s."
+msgstr ""
+
+msgid "Whether each chosen category includes the categories below it. On unless turned off."
 msgstr ""
 
 #. translators: %s: a field's name, such as "Stock status".
@@ -1581,9 +1721,6 @@ msgid "The download arrives with the export."
 msgstr ""
 
 msgid "A sample of the rows this change would touch"
-msgstr ""
-
-msgid "Product"
 msgstr ""
 
 msgid "What changes"
@@ -2062,25 +2199,10 @@ msgstr ""
 msgid "Undo"
 msgstr ""
 
-msgid "Waiting to start"
-msgstr ""
-
 msgid "Running"
 msgstr ""
 
 msgid "Done with errors"
-msgstr ""
-
-msgid "Failed"
-msgstr ""
-
-msgid "Cancelled"
-msgstr ""
-
-msgid "Being undone"
-msgstr ""
-
-msgid "Undone"
 msgstr ""
 
 msgid "The saved values for this change were removed when old history was cleared, so it cannot be undone."
@@ -2096,12 +2218,6 @@ msgid "Nothing was changed by this batch, so there is nothing to undo."
 msgstr ""
 
 msgid "This change can no longer be undone."
-msgstr ""
-
-msgid "Changed"
-msgstr ""
-
-msgid "Skipped"
 msgstr ""
 
 msgid "Waiting"
@@ -2134,9 +2250,6 @@ msgid "Loading the changes…"
 msgstr ""
 
 msgid "Before"
-msgstr ""
-
-msgid "Result"
 msgstr ""
 
 msgid "Time"
@@ -2312,11 +2425,6 @@ msgid_plural "The %s products that changed since will be left alone."
 msgstr[0] ""
 msgstr[1] ""
 
-#. translators: %d: a user id.
-#, js-format
-msgid "User %d"
-msgstr ""
-
 msgid "Someone"
 msgstr ""
 
@@ -2333,13 +2441,7 @@ msgstr[1] ""
 msgid "Date"
 msgstr ""
 
-msgid "Who"
-msgstr ""
-
 msgid "Action"
-msgstr ""
-
-msgid "Outcome"
 msgstr ""
 
 #. translators: 1: a field, such as "regular price"; 2: the value it was set to.
@@ -2436,15 +2538,6 @@ msgstr ""
 msgid "When"
 msgstr ""
 
-msgid "What"
-msgstr ""
-
-msgid "Rows"
-msgstr ""
-
-msgid "Can be undone"
-msgstr ""
-
 msgid "Export log (CSV)"
 msgstr ""
 
@@ -2455,12 +2548,6 @@ msgid "Loading the history…"
 msgstr ""
 
 msgid "No changes match these filters yet."
-msgstr ""
-
-msgid "Reason"
-msgstr ""
-
-msgid "Change number"
 msgstr ""
 
 msgid "Type part of a product name to find it."

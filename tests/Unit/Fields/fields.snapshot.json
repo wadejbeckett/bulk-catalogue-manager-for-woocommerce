@@ -15,6 +15,8 @@
             "variationNote": "A variation takes its name from its product and its attributes, so it cannot be changed here.",
             "variableParentNote": "",
             "sortable": true,
+            "defaultColumn": false,
+            "defaultOrder": null,
             "schema": {
                 "description": "Name",
                 "type": "string",
@@ -51,6 +53,8 @@
             "variationNote": "A variation can only be published or private.",
             "variableParentNote": "",
             "sortable": false,
+            "defaultColumn": true,
+            "defaultOrder": 2,
             "schema": {
                 "description": "Status",
                 "type": "string",
@@ -101,19 +105,27 @@
             "choices": [
                 {
                     "value": "publish",
-                    "label": "Published"
+                    "label": "Published",
+                    "hidesProduct": false,
+                    "hidesAs": null
                 },
                 {
                     "value": "draft",
-                    "label": "Draft"
+                    "label": "Draft",
+                    "hidesProduct": true,
+                    "hidesAs": "off_site"
                 },
                 {
                     "value": "pending",
-                    "label": "Pending review"
+                    "label": "Pending review",
+                    "hidesProduct": true,
+                    "hidesAs": "off_site"
                 },
                 {
                     "value": "private",
-                    "label": "Private"
+                    "label": "Private",
+                    "hidesProduct": false,
+                    "hidesAs": null
                 }
             ],
             "writableChoices": [
@@ -143,6 +155,8 @@
             "variationNote": "Catalogue visibility belongs to the product, not to each variation.",
             "variableParentNote": "",
             "sortable": false,
+            "defaultColumn": false,
+            "defaultOrder": null,
             "schema": {
                 "description": "Catalogue visibility",
                 "type": "string",
@@ -193,19 +207,27 @@
             "choices": [
                 {
                     "value": "visible",
-                    "label": "Shop and search results"
+                    "label": "Shop and search results",
+                    "hidesProduct": false,
+                    "hidesAs": null
                 },
                 {
                     "value": "catalog",
-                    "label": "Shop only"
+                    "label": "Shop only",
+                    "hidesProduct": false,
+                    "hidesAs": null
                 },
                 {
                     "value": "search",
-                    "label": "Search results only"
+                    "label": "Search results only",
+                    "hidesProduct": false,
+                    "hidesAs": null
                 },
                 {
                     "value": "hidden",
-                    "label": "Hidden"
+                    "label": "Hidden",
+                    "hidesProduct": true,
+                    "hidesAs": "hidden"
                 }
             ],
             "writableChoices": [
@@ -237,6 +259,8 @@
             "variationNote": "Visible on site belongs to the product, not to each variation.",
             "variableParentNote": "",
             "sortable": false,
+            "defaultColumn": false,
+            "defaultOrder": null,
             "schema": {
                 "description": "Visible on site",
                 "type": "string",
@@ -277,15 +301,21 @@
             "choices": [
                 {
                     "value": "on",
-                    "label": "Visible"
+                    "label": "Visible",
+                    "hidesProduct": false,
+                    "hidesAs": null
                 },
                 {
                     "value": "off",
-                    "label": "Hidden"
+                    "label": "Hidden",
+                    "hidesProduct": true,
+                    "hidesAs": "hidden"
                 },
                 {
                     "value": "partly",
-                    "label": "Partly"
+                    "label": "Partly",
+                    "hidesProduct": false,
+                    "hidesAs": null
                 }
             ],
             "writableChoices": [
@@ -313,6 +343,8 @@
             "variationNote": "Featured belongs to the product, not to each variation.",
             "variableParentNote": "",
             "sortable": false,
+            "defaultColumn": false,
+            "defaultOrder": null,
             "schema": {
                 "description": "Featured",
                 "type": "boolean",
@@ -353,6 +385,8 @@
             "variationNote": "Categories belong to the product, not to each variation.",
             "variableParentNote": "",
             "sortable": false,
+            "defaultColumn": true,
+            "defaultOrder": 6,
             "schema": {
                 "description": "Categories",
                 "type": "array",
@@ -402,6 +436,8 @@
             "variationNote": "Tags belong to the product, not to each variation.",
             "variableParentNote": "",
             "sortable": false,
+            "defaultColumn": false,
+            "defaultOrder": null,
             "schema": {
                 "description": "Tags",
                 "type": "array",
@@ -452,6 +488,8 @@
             "variationNote": "",
             "variableParentNote": "A variable product takes its price from its variations. Change the variations instead.",
             "sortable": true,
+            "defaultColumn": true,
+            "defaultOrder": 3,
             "schema": {
                 "description": "Regular price",
                 "type": "string",
@@ -496,6 +534,8 @@
             "variationNote": "",
             "variableParentNote": "A variable product takes its price from its variations. Change the variations instead.",
             "sortable": false,
+            "defaultColumn": true,
+            "defaultOrder": 4,
             "schema": {
                 "description": "Sale price",
                 "type": "string",
@@ -530,6 +570,8 @@
             "variationNote": "",
             "variableParentNote": "",
             "sortable": true,
+            "defaultColumn": true,
+            "defaultOrder": 5,
             "schema": {
                 "description": "Stock status",
                 "type": "string",
@@ -575,15 +617,21 @@
             "choices": [
                 {
                     "value": "instock",
-                    "label": "In stock"
+                    "label": "In stock",
+                    "hidesProduct": false,
+                    "hidesAs": null
                 },
                 {
                     "value": "outofstock",
-                    "label": "Out of stock"
+                    "label": "Out of stock",
+                    "hidesProduct": false,
+                    "hidesAs": null
                 },
                 {
                     "value": "onbackorder",
-                    "label": "On backorder"
+                    "label": "On backorder",
+                    "hidesProduct": false,
+                    "hidesAs": null
                 }
             ],
             "writableChoices": [
@@ -613,6 +661,8 @@
             "variationNote": "",
             "variableParentNote": "",
             "sortable": false,
+            "defaultColumn": false,
+            "defaultOrder": null,
             "schema": {
                 "description": "Manage stock",
                 "type": "boolean",
@@ -652,6 +702,8 @@
             "variationNote": "Stock quantity only applies where stock is managed, so it was not changed here. Turn on Manage stock first.",
             "variableParentNote": "",
             "sortable": true,
+            "defaultColumn": false,
+            "defaultOrder": null,
             "schema": {
                 "description": "Stock quantity",
                 "type": [
@@ -698,6 +750,8 @@
             "variationNote": "",
             "variableParentNote": "",
             "sortable": true,
+            "defaultColumn": true,
+            "defaultOrder": 1,
             "schema": {
                 "description": "SKU",
                 "type": "string",
@@ -736,6 +790,8 @@
             "variationNote": "",
             "variableParentNote": "",
             "sortable": false,
+            "defaultColumn": false,
+            "defaultOrder": null,
             "schema": {
                 "description": "Weight",
                 "type": "string",
@@ -771,6 +827,8 @@
             "variationNote": "",
             "variableParentNote": "",
             "sortable": false,
+            "defaultColumn": false,
+            "defaultOrder": null,
             "schema": {
                 "description": "Length",
                 "type": "string",
@@ -806,6 +864,8 @@
             "variationNote": "",
             "variableParentNote": "",
             "sortable": false,
+            "defaultColumn": false,
+            "defaultOrder": null,
             "schema": {
                 "description": "Width",
                 "type": "string",
@@ -841,6 +901,8 @@
             "variationNote": "",
             "variableParentNote": "",
             "sortable": false,
+            "defaultColumn": false,
+            "defaultOrder": null,
             "schema": {
                 "description": "Height",
                 "type": "string",
@@ -875,6 +937,8 @@
             "variationNote": "",
             "variableParentNote": "",
             "sortable": false,
+            "defaultColumn": false,
+            "defaultOrder": null,
             "schema": {
                 "description": "Shipping class",
                 "type": "integer",
@@ -916,6 +980,8 @@
             "variationNote": "",
             "variableParentNote": "",
             "sortable": false,
+            "defaultColumn": false,
+            "defaultOrder": null,
             "schema": {
                 "description": "Tax status",
                 "type": "string",
@@ -956,15 +1022,21 @@
             "choices": [
                 {
                     "value": "taxable",
-                    "label": "Taxable"
+                    "label": "Taxable",
+                    "hidesProduct": false,
+                    "hidesAs": null
                 },
                 {
                     "value": "shipping",
-                    "label": "Shipping only"
+                    "label": "Shipping only",
+                    "hidesProduct": false,
+                    "hidesAs": null
                 },
                 {
                     "value": "none",
-                    "label": "None"
+                    "label": "None",
+                    "hidesProduct": false,
+                    "hidesAs": null
                 }
             ],
             "writableChoices": [
@@ -994,6 +1066,8 @@
             "variationNote": "",
             "variableParentNote": "",
             "sortable": false,
+            "defaultColumn": false,
+            "defaultOrder": null,
             "schema": {
                 "description": "Tax class",
                 "type": "string",
@@ -1034,11 +1108,15 @@
             "choices": [
                 {
                     "value": "",
-                    "label": "Standard"
+                    "label": "Standard",
+                    "hidesProduct": false,
+                    "hidesAs": null
                 },
                 {
                     "value": "parent",
-                    "label": "Same as product"
+                    "label": "Same as product",
+                    "hidesProduct": false,
+                    "hidesAs": null
                 }
             ],
             "writableChoices": [
@@ -1068,6 +1146,8 @@
             "variationNote": "Sold individually belongs to the product, not to each variation.",
             "variableParentNote": "",
             "sortable": false,
+            "defaultColumn": false,
+            "defaultOrder": null,
             "schema": {
                 "description": "Sold individually",
                 "type": "boolean",
@@ -1102,6 +1182,8 @@
             "variationNote": "Reviews belongs to the product, not to each variation.",
             "variableParentNote": "",
             "sortable": false,
+            "defaultColumn": false,
+            "defaultOrder": null,
             "schema": {
                 "description": "Reviews",
                 "type": "boolean",
@@ -1134,6 +1216,8 @@
             "variationNote": "",
             "variableParentNote": "",
             "sortable": true,
+            "defaultColumn": false,
+            "defaultOrder": null,
             "schema": {
                 "description": "ID",
                 "type": "integer",
@@ -1166,6 +1250,8 @@
             "variationNote": "",
             "variableParentNote": "",
             "sortable": false,
+            "defaultColumn": false,
+            "defaultOrder": null,
             "schema": {
                 "description": "Type",
                 "type": "string",
@@ -1221,23 +1307,33 @@
             "choices": [
                 {
                     "value": "simple",
-                    "label": "Simple product"
+                    "label": "Simple product",
+                    "hidesProduct": false,
+                    "hidesAs": null
                 },
                 {
                     "value": "grouped",
-                    "label": "Grouped product"
+                    "label": "Grouped product",
+                    "hidesProduct": false,
+                    "hidesAs": null
                 },
                 {
                     "value": "external",
-                    "label": "External/Affiliate product"
+                    "label": "External/Affiliate product",
+                    "hidesProduct": false,
+                    "hidesAs": null
                 },
                 {
                     "value": "variable",
-                    "label": "Variable product"
+                    "label": "Variable product",
+                    "hidesProduct": false,
+                    "hidesAs": null
                 },
                 {
                     "value": "variation",
-                    "label": "Variation"
+                    "label": "Variation",
+                    "hidesProduct": false,
+                    "hidesAs": null
                 }
             ],
             "writableChoices": [
@@ -1268,6 +1364,8 @@
             "variationNote": "",
             "variableParentNote": "",
             "sortable": false,
+            "defaultColumn": false,
+            "defaultOrder": null,
             "schema": {
                 "description": "Image",
                 "type": "integer",
@@ -1300,6 +1398,8 @@
             "variationNote": "",
             "variableParentNote": "",
             "sortable": false,
+            "defaultColumn": false,
+            "defaultOrder": null,
             "schema": {
                 "description": "Price",
                 "type": "string",
@@ -1331,6 +1431,8 @@
             "variationNote": "",
             "variableParentNote": "",
             "sortable": true,
+            "defaultColumn": false,
+            "defaultOrder": null,
             "schema": {
                 "description": "Date created",
                 "type": [
@@ -1372,6 +1474,8 @@
             "variationNote": "",
             "variableParentNote": "",
             "sortable": true,
+            "defaultColumn": false,
+            "defaultOrder": null,
             "schema": {
                 "description": "Last modified",
                 "type": [
@@ -1413,6 +1517,8 @@
             "variationNote": "",
             "variableParentNote": "",
             "sortable": true,
+            "defaultColumn": false,
+            "defaultOrder": null,
             "schema": {
                 "description": "Total sales",
                 "type": "integer",
@@ -1444,6 +1550,8 @@
             "variationNote": "",
             "variableParentNote": "",
             "sortable": false,
+            "defaultColumn": false,
+            "defaultOrder": null,
             "schema": {
                 "description": "Variations",
                 "type": "integer",

@@ -35,8 +35,17 @@
  * Engine\Reversibility (§4.6) — the list reading every row's state with one
  * grouped pair of reads and no undo plan, so its rows carry `conflicts:
  * null` and no product is read; only the single read counts conflicts
- * (T56). An undo batch's row carries `undo` ("Undo of #418"). The audit log
- * across batches is AuditController.
+ * (T56). An undo batch's row carries `undo` ("Undo of #418"). List rows
+ * also carry `user_name` (the batch user's display name, every name on a
+ * page from one get_users() call), `variations_included` (whether "Also
+ * apply to variations" reached variations the selection did not name, from
+ * the selection snapshot's `variations_added`, one read per page) and
+ * `undone_by`: on an undone row `{ batch_id, user_id, user_name }` of the
+ * undo batch that put it back, one read per page that has undone rows, else
+ * null. `GET /bcm/v1/batches/users` (BatchUsersController, registered here)
+ * lists `{ id, name }` of every user who owns a batch, for the history and
+ * audit log's user filter. The
+ * audit log across batches is AuditController.
  *
  * `GET /bcm/v1/batches/{id}` (T35, T36) answers Engine\Progress::report():
  * status, counters, times, source, note, chunk size, the `stalled` flag and
@@ -235,6 +244,7 @@ final class BatchesController implements ReadController {
 			]
 		);
 		$this->changes_controller->register_routes( $routes );
+		( new BatchUsersController( $this->batches ) )->register_routes( $routes );
 		$this->undo_controller->register_routes( $routes );
 		$routes->add(
 			self::CANCEL_ROUTE,
@@ -275,6 +285,7 @@ final class BatchesController implements ReadController {
 					'enum' => Schema::BATCH_SOURCES,
 				],
 				'user_id'      => $integer,
+				'user_name'    => $text,
 				'undo_of'      => [ 'type' => [ 'integer', 'null' ] ],
 				'created_gmt'  => $text,
 				'finished_gmt' => $time,
@@ -322,6 +333,19 @@ final class BatchesController implements ReadController {
 							'type'  => 'array',
 							'items' => [ 'type' => 'object' ],
 						],
+					],
+				],
+				'variations_included'  => [
+					'description' => __( 'Whether the change also reached variations the selection did not name ("Also apply to variations"). List rows only.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'type'        => 'boolean',
+				],
+				'undone_by'            => [
+					'description' => __( 'On a change that was undone, the undo that put it back and who ran it; null otherwise. List rows only.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'type'        => [ 'object', 'null' ],
+					'properties'  => [
+						'batch_id'  => $integer,
+						'user_id'   => $integer,
+						'user_name' => $text,
 					],
 				],
 				'summary'              => [
@@ -431,21 +455,111 @@ final class BatchesController implements ReadController {
 	 * @param \WP_REST_Request $request The validated, sanitised request.
 	 */
 	public function get_items( \WP_REST_Request $request ): \WP_REST_Response {
-		$filters  = array_filter(
+		$filters  = self::filters( $request->get_params() );
+		$page     = (int) ( $request->get_param( 'page' ) ?? 1 );
+		$per_page = (int) ( $request->get_param( 'per_page' ) ?? 25 );
+		$rows     = $this->rows( $filters, $page, $per_page );
+		return self::paged( $rows['items'], $page, $per_page, $rows['total'] );
+	}
+
+	/**
+	 * The history list's filters from a request's validated parameters.
+	 *
+	 * @param array<string, mixed> $params Parameters: status, user, after, before, action.
+	 * @return array<string, mixed> Filters for BatchRepository::history().
+	 */
+	public static function filters( array $params ): array {
+		return array_filter(
 			[
-				'status'  => $request->get_param( 'status' ),
-				'user_id' => $request->get_param( 'user' ),
-				'after'   => $request->get_param( 'after' ),
-				'before'  => $request->get_param( 'before' ),
-				'action'  => $request->get_param( 'action' ),
+				'status'  => $params['status'] ?? null,
+				'user_id' => $params['user'] ?? null,
+				'after'   => $params['after'] ?? null,
+				'before'  => $params['before'] ?? null,
+				'action'  => $params['action'] ?? null,
 			],
 			[ self::class, 'is_given' ]
 		);
-		$page     = (int) ( $request->get_param( 'page' ) ?? 1 );
-		$per_page = (int) ( $request->get_param( 'per_page' ) ?? 25 );
-		$total    = $this->batches->history_count( $filters );
-		$items    = $this->progress->reports( $this->batches->history( $filters, $page, $per_page ) );
-		return self::paged( $items, $page, $per_page, $total );
+	}
+
+	/**
+	 * One page of history rows as the list answers them, and the total (the
+	 * list route and the history export read through this).
+	 *
+	 * @param array<string, mixed> $filters  Filters, as filters() returns them.
+	 * @param int                  $page     Page, from 1.
+	 * @param int                  $per_page Rows per page.
+	 * @param bool                 $count    Whether to count the total (an export counts once, on its first page); 0 when not.
+	 * @return array{items: list<array<string, mixed>>, total: int}
+	 */
+	public function rows( array $filters, int $page, int $per_page, bool $count = true ): array {
+		return [
+			'items' => $this->decorate( $this->progress->reports( $this->batches->history( $filters, $page, $per_page ) ) ),
+			'total' => $count ? $this->batches->history_count( $filters ) : 0,
+		];
+	}
+
+	/**
+	 * Add the list's own properties to a page of reports: `user_name`,
+	 * `variations_included` and `undone_by`, with every name from one
+	 * get_users() call and at most two batch reads for the page.
+	 *
+	 * @param list<array<string, mixed>> $items Reports.
+	 * @return list<array<string, mixed>>
+	 */
+	private function decorate( array $items ): array {
+		if ( [] === $items ) {
+			return [];
+		}
+		$ids    = array_map( static fn( array $item ): int => (int) $item['batch_id'], $items );
+		$undone = array_values( array_map( static fn( array $item ): int => (int) $item['batch_id'], array_filter( $items, static fn( array $item ): bool => 'undone' === $item['status'] ) ) );
+		$by     = $this->batches->undone_by_with_users( $undone );
+		$with   = array_flip( $this->batches->with_variations_added( $ids ) );
+		$names  = self::user_names( [ ...array_column( $items, 'user_id' ), ...array_column( $by, 'user_id' ) ] );
+		foreach ( $items as $index => $item ) {
+			$undo = $by[ (int) $item['batch_id'] ] ?? null;
+			// The list's own properties sit after the report's, before its undo summary.
+			$items[ $index ] = $item + [
+				'user_name'           => $names[ (int) $item['user_id'] ] ?? '',
+				'variations_included' => isset( $with[ (int) $item['batch_id'] ] ),
+				'undone_by'           => null === $undo ? null : $undo + [ 'user_name' => $names[ $undo['user_id'] ] ?? '' ],
+			];
+		}
+		return $items;
+	}
+
+	/**
+	 * Display names for a set of user ids from one get_users() call: id =>
+	 * name, a removed user as "User 7", id 0 left out.
+	 *
+	 * @param list<int|string> $user_ids User ids; repeats and 0 are fine.
+	 * @return array<int, string>
+	 */
+	public static function user_names( array $user_ids ): array {
+		$ids = array_values( array_unique( array_filter( array_map( 'intval', $user_ids ), static fn( int $id ): bool => $id > 0 ) ) );
+		if ( [] === $ids ) {
+			return [];
+		}
+		sort( $ids );
+		$names = [];
+		$users = get_users(
+			[
+				'include' => $ids,
+				'fields'  => [ 'ID', 'display_name' ],
+				'number'  => count( $ids ),
+			]
+		);
+		foreach ( is_array( $users ) ? $users : [] as $user ) {
+			if ( is_object( $user ) && isset( $user->ID ) ) {
+				$names[ (int) $user->ID ] = (string) ( $user->display_name ?? '' );
+			}
+		}
+		foreach ( $ids as $id ) {
+			if ( '' === ( $names[ $id ] ?? '' ) ) {
+				/* translators: %d: the id of a user account that no longer exists or has no name. */
+				$names[ $id ] = sprintf( __( 'User %d', 'bulk-catalogue-manager-for-woocommerce' ), $id );
+			}
+		}
+		return $names;
 	}
 
 	/**

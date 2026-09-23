@@ -194,6 +194,67 @@ final class ProductsCatalogueTest extends TestCase {
 		);
 	}
 
+	public function test_a_category_filter_with_include_children_off_matches_only_the_chosen_categories(): void {
+		$only = fn( string $operator, array $ids, mixed $children, array $params = [] ): array => $this->ids(
+			[
+				'category_ids' => [
+					'operator'         => $operator,
+					'value'            => $ids,
+					'include_children' => $children,
+				],
+				'orderby'      => 'id',
+			] + $params
+		);
+		$this->assertSame( [ 105 ], $only( 'isAny', [ 10 ], false ), 'Clothing itself holds only the gift box; its shirts sit below it.' );
+		$this->assertSame( [ 101, 106, 107 ], $only( 'isAny', [ 11 ], 'false' ), 'Shirts only, from a query string; the formal shirt is in Formal below it.' );
+		$this->assertSame( [ 101, 102, 106, 107 ], $only( 'isAny', [ 11 ], true ), 'On is the whole branch, as when the flag is left out.' );
+		$this->assertSame( [ 101, 102, 106, 107 ], $only( 'isAny', [ 11 ], '1' ) );
+		$this->assertSame( $this->filtered( 'category_ids', 'isAny', [ 11 ] ), $only( 'isAny', [ 11 ], true ) );
+		$this->assertSame( [ 101, 102, 103, 104, 106, 107 ], $only( 'isNone', [ 10 ], false ), 'None of Clothing itself.' );
+		$this->assertSame( [], $only( 'isAll', [ 10, 20 ], false ), 'No product is filed in Clothing itself and in Outerwear.' );
+		$this->assertSame( [ 201, 202 ], $only( 'isAny', [ 20 ], false, [ 'mode' => 'variations' ] ), 'Variations still resolve against their parent.' );
+
+		foreach ( [ 'maybe', [ true ], 2 ] as $bad ) {
+			$response = self::get(
+				[
+					'category_ids' => [
+						'operator'         => 'isAny',
+						'value'            => [ 11 ],
+						'include_children' => $bad,
+					],
+				]
+			);
+			$this->assertInstanceOf( \WP_Error::class, $response, (string) wp_json_encode( $bad ) );
+			$this->assertSame( 'rest_invalid_param', $response->get_error_code() );
+			$this->assertSame( [ 'category_ids' ], array_keys( $response->get_error_data()['params'] ) );
+		}
+		$response = self::get(
+			[
+				'tag_ids' => [
+					'operator'         => 'isAny',
+					'value'            => [ 30 ],
+					'include_children' => false,
+				],
+			]
+		);
+		$this->assertInstanceOf( \WP_Error::class, $response, 'Only the category filter takes the flag.' );
+		$this->assertSame( [ 'tag_ids' ], array_keys( $response->get_error_data()['params'] ) );
+	}
+
+	public function test_a_search_reaches_a_variation_by_its_own_sku_where_variations_are_listed(): void {
+		$search = fn( string $text, string $mode ): array => $this->ids(
+			[
+				'search'  => $text,
+				'mode'    => $mode,
+				'orderby' => 'id',
+			]
+		);
+		$this->assertSame( [], $search( 'JACKET-BL', 'products' ), 'The products mode lists no variation.' );
+		$this->assertSame( [ 201 ], $search( 'JACKET-BL', 'products_and_variations' ), 'Its own SKU finds the variation, not its parent.' );
+		$this->assertSame( [ 103, 201, 202 ], $search( 'jacket', 'products_and_variations' ) );
+		$this->assertSame( [ 202 ], $search( 'jacket-dg', 'variations' ) );
+	}
+
 	public function test_per_page_500_returns_100_rows_reporting_per_page_100(): void {
 		self::boot( SeededCatalogue::fillers( 150 ) );
 		$response = self::get(

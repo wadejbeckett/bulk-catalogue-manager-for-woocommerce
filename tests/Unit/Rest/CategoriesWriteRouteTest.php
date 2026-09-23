@@ -142,7 +142,7 @@ final class CategoriesWriteRouteTest extends TestCase {
 		$this->assertSame( 201, $response->get_status() );
 		$data = $response->get_data();
 		$this->assertSame( [ 'item', 'batch_id', 'status', 'results' ], array_keys( $data ) );
-		$this->assertSame( [ 'id', 'name', 'slug', 'parent', 'depth', 'order', 'description' ], array_keys( $data['item'] ) );
+		$this->assertSame( [ 'id', 'name', 'slug', 'description', 'parent', 'depth', 'order' ], array_keys( $data['item'] ) );
 		$this->assertSame( [ 12, 'Hats', 'hats', 6, 1 ], [ $data['item']['id'], $data['item']['name'], $data['item']['slug'], $data['item']['parent'], $data['item']['depth'] ] );
 		$this->assertSame( 'complete', $data['status'] );
 		$batch = $this->store->batch( $data['batch_id'] );

@@ -28,7 +28,7 @@
  *
  * After a write the tree cache is renewed (Cache::invalidate(); the term
  * hooks do so too, but a term meta change fires none), and the answer holds
- * the category in the tree's node shape plus its description.
+ * the category in the tree's node shape, which carries its description.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later

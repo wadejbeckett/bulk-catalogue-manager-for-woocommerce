@@ -774,6 +774,77 @@ final class BatchRepository {
 	}
 
 	/**
+	 * For a page of batches in one read, the latest undo batch that
+	 * completed undoing each, with its user: batch id => [ batch_id,
+	 * user_id ] of the undo batch, batches without one left out (the
+	 * history's "put back by").
+	 *
+	 * @param list<int> $batch_ids Batches.
+	 * @return array<int, array{batch_id: int, user_id: int}>
+	 * @throws \InvalidArgumentException On an id that is not a positive integer.
+	 */
+	public function undone_by_with_users( array $batch_ids ): array {
+		global $wpdb;
+		$batch_ids = array_values( array_unique( $batch_ids ) );
+		if ( [] === $batch_ids ) {
+			return [];
+		}
+		self::assert_ids( $batch_ids, 'batch id' );
+		$in   = implode( ', ', array_fill( 0, count( $batch_ids ), '%d' ) );
+		$args = array_merge( [ $this->registry->table( Schema::BATCHES ) ], $batch_ids );
+		// $in holds only %d placeholders, one per id; every id is a prepared argument.
+		$rows   = $wpdb->get_results( $wpdb->prepare( "SELECT batch_id, undo_of, user_id FROM %i WHERE undo_of IN ({$in}) AND source = 'undo' AND status = 'complete' ORDER BY batch_id ASC", $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in is only %d placeholders; every id is an argument.
+		$undone = [];
+		foreach ( is_array( $rows ) ? $rows : [] as $row ) {
+			$undone[ (int) $row['undo_of'] ] = [
+				'batch_id' => (int) $row['batch_id'],
+				'user_id'  => (int) $row['user_id'],
+			];
+		}
+		return $undone;
+	}
+
+	/**
+	 * Which of a page of batches reached variations their selection did not
+	 * name ("Also apply to variations", T69): the selection snapshot records
+	 * `variations_added` only when the switch added or left out objects, so
+	 * a batch counts when that number is present and not 0. One read that
+	 * returns only ids; the snapshot itself, which can hold 100,000 ids, is
+	 * never loaded into PHP.
+	 *
+	 * @param list<int> $batch_ids Batches.
+	 * @return list<int> The ids among them that included variations.
+	 * @throws \InvalidArgumentException On an id that is not a positive integer.
+	 */
+	public function with_variations_added( array $batch_ids ): array {
+		global $wpdb;
+		$batch_ids = array_values( array_unique( $batch_ids ) );
+		if ( [] === $batch_ids ) {
+			return [];
+		}
+		self::assert_ids( $batch_ids, 'batch id' );
+		$key  = '"' . $wpdb->esc_like( 'variations_added' ) . '":';
+		$in   = implode( ', ', array_fill( 0, count( $batch_ids ), '%d' ) );
+		$args = array_merge( [ $this->registry->table( Schema::BATCHES ) ], $batch_ids, [ '%' . $key . '%', '%' . $key . '0,%', '%' . $key . '0}%' ] );
+		// $in holds only %d placeholders, one per id; every id and pattern is a prepared argument.
+		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT batch_id FROM %i WHERE batch_id IN ({$in}) AND selection LIKE %s AND selection NOT LIKE %s AND selection NOT LIKE %s ORDER BY batch_id ASC", $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in is only %d placeholders; every value is an argument.
+		return array_map( static fn( array $row ): int => (int) $row['batch_id'], is_array( $rows ) ? $rows : [] );
+	}
+
+	/**
+	 * The users who own at least one batch, by id, for the history and
+	 * audit log's user filter; at most $limit of them.
+	 *
+	 * @param int $limit Most ids returned, 1 to 1000.
+	 * @return list<int>
+	 */
+	public function user_ids( int $limit = 500 ): array {
+		global $wpdb;
+		$rows = $wpdb->get_results( $wpdb->prepare( 'SELECT user_id FROM %i WHERE user_id > 0 GROUP BY user_id ORDER BY user_id ASC LIMIT %d', $this->registry->table( Schema::BATCHES ), max( 1, min( 1000, $limit ) ) ), ARRAY_A );
+		return array_map( static fn( array $row ): int => (int) $row['user_id'], is_array( $rows ) ? $rows : [] );
+	}
+
+	/**
 	 * The WHERE clause and its arguments (the table first) for history() and history_count().
 	 *
 	 * @param array<string, mixed> $filters Filters.

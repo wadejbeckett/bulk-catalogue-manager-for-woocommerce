@@ -35,6 +35,12 @@ final class Cache {
 	public const PREFIX = 'bcm_category_tree_';
 
 	/**
+	 * The shape of a stored tree, in every key, so a tree stored before a
+	 * node gained a property (2: `description`) is never served.
+	 */
+	public const SHAPE = 2;
+
+	/**
 	 * The transient holding the current version.
 	 */
 	public const VERSION = self::PREFIX . 'version';
@@ -107,7 +113,7 @@ final class Cache {
 	 * @param array<string, mixed> $conditions Criteria::conditions().
 	 */
 	public function key( array $conditions ): string {
-		$parts = [ self::version() ];
+		$parts = [ self::version(), self::SHAPE ];
 		if ( wp_using_ext_object_cache() ) {
 			$parts[] = wp_cache_get_last_changed( 'terms' );
 			$parts[] = wp_cache_get_last_changed( 'posts' );

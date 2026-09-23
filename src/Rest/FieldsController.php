@@ -16,6 +16,7 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Rest;
 
+use BulkCatalogueManager\Fields\Field;
 use BulkCatalogueManager\Fields\Registry;
 use BulkCatalogueManager\Operations\Group;
 use BulkCatalogueManager\Operations\Registry as Actions;
@@ -178,9 +179,35 @@ final class FieldsController implements ReadController {
 				'variationNote'        => [ 'type' => 'string' ],
 				'variableParentNote'   => [ 'type' => 'string' ],
 				'sortable'             => [ 'type' => 'boolean' ],
+				'defaultColumn'        => [
+					'description' => __( 'Whether the grid shows it by default, after the product cell (T40).', 'bulk-catalogue-manager-for-woocommerce' ),
+					'type'        => 'boolean',
+				],
+				'defaultOrder'         => [
+					'description' => __( 'Its place among the default columns, from 1; null when it is not shown by default.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'type'        => [ 'integer', 'null' ],
+				],
 				'schema'               => [ 'type' => 'object' ],
 				'dataviews'            => [ 'type' => 'object' ],
-				'choices'              => [ 'type' => 'array' ],
+				'choices'              => [
+					'type'  => 'array',
+					'items' => [
+						'type'       => 'object',
+						'properties' => [
+							'value'        => [ 'type' => 'string' ],
+							'label'        => [ 'type' => 'string' ],
+							'hidesProduct' => [
+								'description' => __( 'Whether setting this choice takes the product out of shoppers\' sight, so a bulk change to it always asks first (SPEC §4.5).', 'bulk-catalogue-manager-for-woocommerce' ),
+								'type'        => 'boolean',
+							],
+							'hidesAs'      => [
+								'description' => __( 'How it hides the product: off_site (its status keeps it off the site) or hidden (hidden from the shop and from search); null when it does not.', 'bulk-catalogue-manager-for-woocommerce' ),
+								'type'        => [ 'string', 'null' ],
+								'enum'        => [ ...Field::HIDES, null ],
+							],
+						],
+					],
+				],
 				'writableChoices'      => $string_list,
 				'variationChoices'     => $string_list,
 				'variationOnlyChoices' => $string_list,

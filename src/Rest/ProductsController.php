@@ -15,7 +15,14 @@
  * `mode` switches between products, products and variations, and variations
  * only; any other value is refused 400 by its generated enum before the
  * handler runs. A `category_ids` filter includes the chosen categories'
- * descendants (Query\ProductQuery).
+ * descendants unless it carries `include_children: false` ("this category
+ * only", T62; Query\ProductQuery).
+ *
+ * `search` matches each listed row's own name and SKU. In the
+ * products_and_variations and variations modes a variation is therefore
+ * found by its own SKU (the history's product filter uses this to reach a
+ * variation, then filters `GET /audit` by its id); in the products mode no
+ * variation is listed, so a variation's SKU finds nothing.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later

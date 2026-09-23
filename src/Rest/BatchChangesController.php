@@ -101,13 +101,49 @@ final class BatchChangesController implements ReadController {
 		if ( null === $this->batches->status( $batch_id ) ) {
 			return BatchesController::not_found();
 		}
-		$results  = $request->get_param( 'result' );
-		$results  = is_array( $results ) && [] !== $results ? array_values( array_map( 'strval', $results ) ) : null;
 		$page     = (int) ( $request->get_param( 'page' ) ?? 1 );
 		$per_page = (int) ( $request->get_param( 'per_page' ) ?? 25 );
-		$rows     = $this->changes->page( $batch_id, $page, $per_page, $results );
+		$rows     = $this->rows( $batch_id, self::results( $request->get_param( 'result' ) ), $page, $per_page );
+		return BatchesController::paged( $rows['items'], $page, $per_page, $rows['total'] );
+	}
+
+	/**
+	 * Whether a batch exists (the export checks before streaming).
+	 *
+	 * @param int $batch_id Batch.
+	 */
+	public function exists( int $batch_id ): bool {
+		return null !== $this->batches->status( $batch_id );
+	}
+
+	/**
+	 * The `result` argument as a list of results, or null for every result.
+	 *
+	 * @param mixed $results The sanitised argument.
+	 * @return list<string>|null
+	 */
+	public static function results( mixed $results ): ?array {
+		return is_array( $results ) && [] !== $results ? array_values( array_map( 'strval', $results ) ) : null;
+	}
+
+	/**
+	 * One page of a batch's rows as the feed answers them, and the total
+	 * (the feed and the batch's export read through this).
+	 *
+	 * @param int               $batch_id Batch.
+	 * @param list<string>|null $results  Results to keep; null for all.
+	 * @param int               $page     Page, from 1.
+	 * @param int               $per_page Rows per page.
+	 * @param bool              $count    Whether to count the total (an export counts once, on its first page); 0 when not.
+	 * @return array{items: list<array<string, mixed>>, total: int}
+	 */
+	public function rows( int $batch_id, ?array $results, int $page, int $per_page, bool $count = true ): array {
+		$rows = $this->changes->page( $batch_id, $page, $per_page, $results );
 		self::prime_names( $rows );
-		return BatchesController::paged( array_map( [ $this, 'change' ], $rows ), $page, $per_page, $this->changes->page_count( $batch_id, $results ) );
+		return [
+			'items' => array_map( [ $this, 'change' ], $rows ),
+			'total' => $count ? $this->changes->page_count( $batch_id, $results ) : 0,
+		];
 	}
 
 	/**

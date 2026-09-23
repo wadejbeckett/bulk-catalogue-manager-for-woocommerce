@@ -272,6 +272,14 @@ final class RouteSchema {
 				],
 				'additionalProperties' => false,
 			];
+			if ( Criteria::BRANCH_FILTER === $key ) {
+				// T62, SPEC §7: "this category only" (false) or the whole branch (true, the default).
+				$schema['properties'][ Criteria::INCLUDE_CHILDREN ] = [
+					'description' => __( 'Whether each chosen category includes the categories below it. On unless turned off.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'type'        => 'boolean',
+					'default'     => true,
+				];
+			}
 
 			$schema['validate_callback'] = static function ( mixed $value, mixed $request = null, string $param = '' ) use ( $schema, $key, $field ): bool|\WP_Error {
 				unset( $request );
@@ -279,8 +287,12 @@ final class RouteSchema {
 				if ( true !== $valid ) {
 					return $valid;
 				}
+				$filter = [ 'field' => $key ] + (array) $value;
+				if ( array_key_exists( Criteria::INCLUDE_CHILDREN, $filter ) ) {
+					$filter[ Criteria::INCLUDE_CHILDREN ] = self::flag( $filter[ Criteria::INCLUDE_CHILDREN ] );
+				}
 				try {
-					Criteria::from_array( [ 'filters' => [ [ 'field' => $key ] + (array) $value ] ] );
+					Criteria::from_array( [ 'filters' => [ $filter ] ] );
 				} catch ( \InvalidArgumentException $e ) {
 					return Refusal::invalid(
 						'bcm_invalid_value',
@@ -293,10 +305,16 @@ final class RouteSchema {
 				}
 				return true;
 			};
-			$schema['sanitize_callback'] = static fn( mixed $value ): array => [
-				'operator' => is_array( $value ) ? ( $value['operator'] ?? '' ) : '',
-				'value'    => is_array( $value ) ? ( $value['value'] ?? null ) : null,
-			];
+			$schema['sanitize_callback'] = static function ( mixed $value ) use ( $key ): array {
+				$clean = [
+					'operator' => is_array( $value ) ? ( $value['operator'] ?? '' ) : '',
+					'value'    => is_array( $value ) ? ( $value['value'] ?? null ) : null,
+				];
+				if ( Criteria::BRANCH_FILTER === $key && is_array( $value ) && array_key_exists( Criteria::INCLUDE_CHILDREN, $value ) ) {
+					$clean[ Criteria::INCLUDE_CHILDREN ] = self::flag( $value[ Criteria::INCLUDE_CHILDREN ] );
+				}
+				return $clean;
+			};
 			$args[ $key ]                = $schema;
 		}
 		return $args;
@@ -346,17 +364,40 @@ final class RouteSchema {
 		$filters = [];
 		foreach ( array_keys( $this->registry->filterable() ) as $key ) {
 			if ( isset( $params[ $key ] ) && is_array( $params[ $key ] ) ) {
-				$filters[] = [
+				$filter = [
 					'field'    => $key,
 					'operator' => $params[ $key ]['operator'] ?? '',
 					'value'    => $params[ $key ]['value'] ?? null,
 				];
+				if ( array_key_exists( Criteria::INCLUDE_CHILDREN, $params[ $key ] ) ) {
+					$filter[ Criteria::INCLUDE_CHILDREN ] = $params[ $key ][ Criteria::INCLUDE_CHILDREN ];
+				}
+				$filters[] = $filter;
 			}
 		}
 		if ( [] !== $filters ) {
 			$input['filters'] = $filters;
 		}
 		return $input;
+	}
+
+	/**
+	 * A switch as a query string or JSON sends it: true, false, 1, 0, "true",
+	 * "false", "1" or "0" as a boolean; anything else unchanged, for the
+	 * validator to refuse.
+	 *
+	 * @param mixed $value Value.
+	 */
+	public static function flag( mixed $value ): mixed {
+		if ( is_bool( $value ) ) {
+			return $value;
+		}
+		$text = is_int( $value ) || is_string( $value ) ? strtolower( (string) $value ) : null;
+		return match ( $text ) {
+			'1', 'true' => true,
+			'0', 'false' => false,
+			default => $value,
+		};
 	}
 
 	/**

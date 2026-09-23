@@ -91,6 +91,12 @@ final class HistoryAuditRouteTest extends TestCase {
 		// The same routes again over the test's clock and conflict counter.
 		( new Routes( [ new BatchesController( null, null, null, null, $clock, $reversibility ) ] ) )->register();
 		$this->seed();
+		// User 3 owns most batches; 4 is Rosa; 9 ran no batch; 5 (below) is an account since removed.
+		$GLOBALS['bcm_test']['users'] = [
+			3 => 'Sam Shop',
+			4 => 'Rosa Admin',
+			9 => 'Nobody',
+		];
 	}
 
 	/**
@@ -286,7 +292,7 @@ final class HistoryAuditRouteTest extends TestCase {
 		$this->assertSame( [ 'page', 'per_page', 'product', 'field', 'user', 'after', 'before' ], array_keys( $audit[0]['args'] ) );
 		$this->assertSame( ( new Fields() )->keys(), $audit[0]['args']['field']['enum'], 'The field argument is the registry.' );
 		$this->assertSame( 'bcm-audit-change', call_user_func( $audit['schema'] )['title'] );
-		$this->assertSame( [ 'batch_id', 'user_id', 'change_id' ], array_slice( array_keys( call_user_func( $audit['schema'] )['properties'] ), 0, 3 ) );
+		$this->assertSame( [ 'batch_id', 'user_id', 'user_name', 'change_id' ], array_slice( array_keys( call_user_func( $audit['schema'] )['properties'] ), 0, 4 ) );
 
 		$list = $routes['/bcm/v1/batches'][1];
 		$this->assertSame( [ Access::class, 'can_read' ], $list['permission_callback'] );
@@ -364,7 +370,8 @@ final class HistoryAuditRouteTest extends TestCase {
 
 		// One grouped read each for the whole page, not one per row.
 		$queries = $GLOBALS['wpdb']->queries;
-		$this->assertCount( 1, preg_grep( '/undo_of IN \(/', $queries ) );
+		$this->assertCount( 1, preg_grep( '/^SELECT batch_id, undo_of FROM .* undo_of IN \(/', $queries ) );
+		$this->assertCount( 1, preg_grep( '/^SELECT batch_id, undo_of, user_id FROM .* undo_of IN \(/', $queries ), 'The list row\'s "put back by", for the undone rows only.' );
 		$this->assertCount( 1, preg_grep( "/result = 'applied' GROUP BY batch_id/", $queries ) );
 
 		// The single read counts them, only where undo is still possible.
@@ -438,6 +445,95 @@ final class HistoryAuditRouteTest extends TestCase {
 		);
 	}
 
+	public function test_list_rows_carry_the_user_name_whether_variations_were_included_and_who_put_them_back(): void {
+		// Batch 1 reached 3 variations; batch 2's switch added none but left a parent out; batch 13 was put back by 15, run by a removed account.
+		$this->batches[0]['selection'] = ValueCodec::encode(
+			[
+				'kind'             => 'ids',
+				'ids'              => [ 103 ],
+				'selected'         => 1,
+				'variations_added' => 3,
+				'parents_left_out' => 1,
+			]
+		);
+		$this->batches[1]['selection'] = ValueCodec::encode(
+			[
+				'kind'             => 'ids',
+				'ids'              => [ 103 ],
+				'selected'         => 1,
+				'variations_added' => 0,
+				'parents_left_out' => 1,
+			]
+		);
+		$this->batch(
+			15,
+			'complete',
+			[ 'set_value' ],
+			[
+				'source'  => 'undo',
+				'undo_of' => 13,
+				'user_id' => 5,
+			]
+		);
+		$before = count( $GLOBALS['wpdb']->queries );
+		$items  = array_column( $this->ok( self::dispatch( '/batches', [ 'per_page' => 100 ] ) )['items'], null, 'batch_id' );
+		$this->assertSame( [ 'Sam Shop', 'Rosa Admin', 'User 5' ], [ $items[1]['user_name'], $items[2]['user_name'], $items[15]['user_name'] ], 'A removed account reads as "User 5".' );
+		$this->assertSame( [ 1 ], array_keys( array_filter( array_column( $items, 'variations_included', 'batch_id' ) ) ), 'Only a batch whose switch added variations.' );
+		$this->assertSame(
+			[
+				'batch_id'  => 15,
+				'user_id'   => 5,
+				'user_name' => 'User 5',
+			],
+			$items[13]['undone_by']
+		);
+		$this->assertSame( [ 13 ], array_keys( array_filter( array_column( $items, 'undone_by', 'batch_id' ) ) ), 'Only an undone row says who put it back.' );
+		$this->assertCount( 1, $GLOBALS['bcm_test']['get_users_calls'], 'Every name on the page from one get_users() call.' );
+		$this->assertSame( [ 3, 4, 5 ], $GLOBALS['bcm_test']['get_users_calls'][0]['include'] );
+		$queries = array_slice( $GLOBALS['wpdb']->queries, $before );
+		$this->assertCount( 1, preg_grep( '/selection LIKE/', $queries ), 'One read for the variations flag.' );
+		$this->assertCount( 0, preg_grep( '/SELECT \\* |SELECT selection/', $queries ), 'The selection snapshot is never loaded.' );
+
+		$schema = call_user_func( $GLOBALS['bcm_test']['routes']['/bcm/v1/batches']['schema'] )['properties'];
+		foreach ( [ 'user_name', 'variations_included', 'undone_by' ] as $key ) {
+			$this->assertArrayHasKey( $key, $schema );
+		}
+
+		// A page with no undone row reads no undo batch.
+		$before = count( $GLOBALS['wpdb']->queries );
+		$this->ok( self::dispatch( '/batches', [ 'status' => 'complete' ] ) );
+		$this->assertCount( 0, preg_grep( '/undo_of, user_id/', array_slice( $GLOBALS['wpdb']->queries, $before ) ) );
+	}
+
+	public function test_the_users_route_lists_every_batch_owner_by_name(): void {
+		$this->batch( 15, 'complete', [ 'adjust' ], [ 'user_id' => 5 ] );
+		$route = $GLOBALS['bcm_test']['routes']['/bcm/v1/batches/users'];
+		$this->assertSame( [ Access::class, 'can_read' ], $route[0]['permission_callback'] );
+		$this->assertSame( 'bcm-batch-user', call_user_func( $route['schema'] )['title'] );
+		$this->assertSame(
+			[
+				[
+					'id'   => 4,
+					'name' => 'Rosa Admin',
+				],
+				[
+					'id'   => 3,
+					'name' => 'Sam Shop',
+				],
+				[
+					'id'   => 5,
+					'name' => 'User 5',
+				],
+			],
+			$this->ok( self::dispatch( '/batches/users' ) )['items'],
+			'Owners only (user 9 ran nothing), by name.'
+		);
+		$this->assertCount( 1, $GLOBALS['bcm_test']['get_users_calls'] );
+
+		$GLOBALS['bcm_test']['caps'] = [];
+		$this->refused( self::dispatch( '/batches/users' ), 'bcm_forbidden', 403 );
+	}
+
 	public function test_the_audit_log_lists_changes_across_batches_newest_first_with_names_and_labels(): void {
 		$before = count( $GLOBALS['wpdb']->queries );
 		$page   = $this->ok( self::dispatch( '/audit', [ 'per_page' => 3 ] ) );
@@ -453,9 +549,12 @@ final class HistoryAuditRouteTest extends TestCase {
 		$this->assertSame( [ 16, 15, 14 ], array_column( $page['items'], 'change_id' ), 'Newest first.' );
 		$row = $page['items'][1];
 		$this->assertSame(
-			[ 'batch_id', 'user_id', 'change_id', 'object_id', 'object_type', 'name', 'field', 'field_label', 'old_value', 'new_value', 'result', 'message', 'detail', 'applied_gmt' ],
+			[ 'batch_id', 'user_id', 'user_name', 'change_id', 'object_id', 'object_type', 'name', 'field', 'field_label', 'old_value', 'new_value', 'result', 'message', 'detail', 'applied_gmt' ],
 			array_keys( $row )
 		);
+		$this->assertSame( [ 'Rosa Admin', 'Rosa Admin', 'Rosa Admin' ], array_column( $page['items'], 'user_name' ) );
+		$this->assertCount( 1, $GLOBALS['bcm_test']['get_users_calls'], 'One get_users() call for the page.' );
+		$this->assertSame( [ 4 ], $GLOBALS['bcm_test']['get_users_calls'][0]['include'] );
 		$this->assertSame( [ 2, 4, 1003, 'variation', 'Shoe 1003', 'regular_price', 'Regular price', '5', '6', 'applied', '2026-09-22 12:00:00' ], [ $row['batch_id'], $row['user_id'], $row['object_id'], $row['object_type'], $row['name'], $row['field'], $row['field_label'], $row['old_value'], $row['new_value'], $row['result'], $row['applied_gmt'] ] );
 		$this->assertSame( 'Product 1009', $page['items'][0]['name'], 'A product that is gone gets a plain stand-in.' );
 		$this->assertSame( 'Sale price', $page['items'][2]['field_label'] );
@@ -470,6 +569,7 @@ final class HistoryAuditRouteTest extends TestCase {
 	public function test_the_audit_log_filters_by_product_field_user_and_date(): void {
 		$ids = fn( array $params ): array => array_column( $this->ok( self::dispatch( '/audit', $params + [ 'per_page' => 100 ] ) )['items'], 'change_id' );
 		$this->assertSame( [ 12, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1 ], $ids( [ 'product' => 1001 ] ) );
+		$this->assertSame( [ 15 ], $ids( [ 'product' => 1003 ] ), 'A variation id lists that variation\'s own changes.' );
 		$this->assertSame( [ 14 ], $ids( [ 'field' => 'sale_price' ] ) );
 		$this->assertSame( [ 16, 15, 14, 2 ], $ids( [ 'user' => 4 ] ), 'The user is the batch\'s.' );
 		$this->assertSame(

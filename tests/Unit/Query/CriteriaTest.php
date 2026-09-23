@@ -243,6 +243,54 @@ final class CriteriaTest extends TestCase {
 		$this->assertNotSame( $one->conditions(), Criteria::from_array( $base )->conditions() );
 	}
 
+	public function test_the_category_filter_takes_include_children_and_keeps_its_conditions_stable(): void {
+		$filter  = static fn( array $extra ): array => [
+			'filters' => [
+				[
+					'field'    => 'category_ids',
+					'operator' => 'isAny',
+					'value'    => [ 3 ],
+				] + $extra,
+			],
+		];
+		$default = Criteria::from_array( $filter( [] ) );
+		$this->assertTrue( $default->filters[0]->include_children, 'On by default (SPEC §7).' );
+		$this->assertSame( $default->conditions(), Criteria::from_array( $filter( [ 'include_children' => true ] ) )->conditions(), 'On is the default and hashes as a filter written before the flag.' );
+		$this->assertArrayNotHasKey( 'include_children', $default->conditions()['filters'][0] );
+
+		$only = Criteria::from_array( $filter( [ 'include_children' => false ] ) );
+		$this->assertFalse( $only->filters[0]->include_children );
+		$this->assertFalse( $only->conditions()['filters'][0]['include_children'] );
+		$this->assertNotSame( $default->conditions(), $only->conditions(), 'A count or selection token keyed on the conditions tells the two apart.' );
+		$this->assertSame( $only->conditions(), Criteria::from_conditions( $only->conditions() )->conditions(), 'It round-trips through a selection token.' );
+
+		foreach ( [ 'false', 0, null ] as $bad ) {
+			try {
+				Criteria::from_array( $filter( [ 'include_children' => $bad ] ) );
+				$this->fail( 'Accepted include_children ' . wp_json_encode( $bad ) );
+			} catch ( \InvalidArgumentException $e ) {
+				$this->assertStringContainsString( 'include_children', $e->getMessage() );
+			}
+		}
+		try {
+			Criteria::from_array(
+				[
+					'filters' => [
+						[
+							'field'            => 'tag_ids',
+							'operator'         => 'isAny',
+							'value'            => [ 3 ],
+							'include_children' => false,
+						],
+					],
+				]
+			);
+			$this->fail( 'A tag filter took include_children.' );
+		} catch ( \InvalidArgumentException $e ) {
+			$this->assertStringContainsString( 'include_children', $e->getMessage() );
+		}
+	}
+
 	public function test_a_parent_restriction_needs_the_variations_mode_and_keeps_woocommerce_order(): void {
 		$criteria = Criteria::from_array(
 			[

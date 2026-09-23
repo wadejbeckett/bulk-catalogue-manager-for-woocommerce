@@ -130,6 +130,10 @@ final class CategoriesController implements ReadController {
 				],
 				'name'                 => [ 'type' => 'string' ],
 				'slug'                 => [ 'type' => 'string' ],
+				'description'          => [
+					'description' => __( 'The category\'s description as stored, to show as text; empty when it has none.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'type'        => 'string',
+				],
 				'parent'               => [
 					'description' => __( 'Parent category id; 0 at the top level, including a category whose parent no longer exists.', 'bulk-catalogue-manager-for-woocommerce' ),
 					'type'        => 'integer',

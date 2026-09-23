@@ -404,6 +404,21 @@ def read_routes(p: Probe) -> list[tuple[str, str, str, Any, Any, Callable[[Respo
         rows = list(csv.reader(io.StringIO(r.body.decode("utf-8-sig"))))
         return "" if len(rows) == 13 else f"{len(rows)} lines (want header + 12)"
 
+    def users_shape(r: Response) -> str:
+        d = r.json()
+        if not isinstance(d, dict) or not isinstance(d.get("items"), list):
+            return "no items list"
+        return "" if all(set(u) == {"id", "name"} for u in d["items"]) else f"entries {d['items'][:2]}"
+
+    def csv_header(want: list[str]) -> Callable[[Response], str]:
+        def shape(r: Response) -> str:
+            ctype = r.headers.get("Content-Type", "")
+            if "text/csv" not in ctype:
+                return f"content-type {ctype}"
+            rows = list(csv.reader(io.StringIO(r.body.decode("utf-8-sig"))))
+            return "" if rows and rows[0] == want else f"header {rows[0] if rows else None} want {want}"
+        return shape
+
     cat = filter_params("category_ids", "isAny", [root])
     return [
         ("fields", "GET", "/fields", None, None, fields_shape),
@@ -415,6 +430,10 @@ def read_routes(p: Probe) -> list[tuple[str, str, str, Any, Any, Callable[[Respo
         # T54's history and audit routes carry the same four legs.
         ("batches", "GET", "/batches", None, None, paged_shape),
         ("audit", "GET", "/audit", None, None, paged_shape),
+        # Server follow-ups 2026-09-23: the batch owners and the history exports (T58).
+        ("batches-users", "GET", "/batches/users", None, None, users_shape),
+        ("export-audit", "GET", "/export", [("source", "audit"), ("columns[]", "applied_gmt"), ("columns[]", "name")], None, csv_header(["When (UTC)", "Product"])),
+        ("export-batches", "GET", "/export", [("source", "batches"), ("columns[]", "batch_id"), ("columns[]", "user_name")], None, csv_header(["Change number", "Who"])),
     ]
 
 
@@ -556,9 +575,50 @@ def check_read_queries(p: Probe) -> None:
         p.row("read", "read:products:no-product-objects", found["product_reads"] == 0, f"woocommerce_product_read fired {found['product_reads']} times")
         p.row("read", "read:products:live-schema", invalid == 0, f"{invalid} rows invalid against the registered schema (rest_validate_value_from_schema)")
 
+    def include_children() -> None:
+        # T62: "this category only" (include_children false) against WordPress's own tax query without children.
+        only = cat[:1] + [("category_ids[value][]", str(root)), ("category_ids[include_children]", "false")]
+        ids, pag = all_ids(p, only)
+        want = sorted(p.wp_eval(
+            "bcm_out( get_posts( array( 'post_type' => 'product', 'post_status' => array( 'publish', 'draft', 'pending', 'private' ), "
+            f"'fields' => 'ids', 'numberposts' => -1, 'tax_query' => array( array( 'taxonomy' => 'product_cat', 'terms' => array( {root} ), 'include_children' => false ) ) ) ) );"
+        ))
+        branch, _ = all_ids(p, cat + [("category_ids[include_children]", "true")])
+        whole, _ = all_ids(p, cat)
+        ok = sorted(ids) == want and pag["total"] == len(want) and 0 < len(want) < len(whole) and sorted(branch) == sorted(whole)
+        p.row("read", "read:products:filter-category-only", ok,
+              f"only {sorted(ids)} vs WordPress {want}; with children {len(branch)} = default {len(whole)}")
+        bad = p.http("manager", "GET", "/products", cat + [("category_ids[include_children]", "maybe")])
+        p.row("read", "read:products:filter-category-only-refused", bad.status == 400 and bad.code() == "rest_invalid_param", bad.brief())
+
+    def variation_sku() -> None:
+        vsku = p.seed["variable"]["variations"][0]["sku"] if isinstance(p.seed["variable"]["variations"][0], dict) else "bcm-probe-variable-small"
+        mixed, _ = all_ids(p, [("mode", "products_and_variations"), ("search", vsku)])
+        plain, _ = all_ids(p, [("search", vsku)])
+        want = p.wp_eval(f"bcm_out( wc_get_product_id_by_sku( '{vsku}' ) );")
+        p.row("read", "read:products:search-variation-sku", mixed == [want] and plain == [],
+              f"{vsku}: products_and_variations {mixed}, products {plain}, WooCommerce {want}")
+
+    def category_description() -> None:
+        d = p.http("manager", "GET", "/categories").json()
+        node = find_node(d.get("items", d) if isinstance(d, dict) else d, root) or {}
+        want = p.wp_eval(f"bcm_out( get_term( {root}, 'product_cat' )->description );")
+        p.row("read", "read:categories:description", node.get("description") == want, f"node {node.get('description')!r} vs term {want!r}")
+
+    def registry_flags() -> None:
+        fields = p.http("manager", "GET", "/fields").json()["fields"]
+        default = [f["key"] for f in sorted((f for f in fields if f.get("defaultColumn")), key=lambda f: f["defaultOrder"])]
+        hiding = {f["key"]: sorted(c["value"] for c in f.get("choices", []) if c.get("hidesProduct")) for f in fields}
+        hiding = {k: v for k, v in hiding.items() if v}
+        want_hiding = {"status": ["draft", "pending"], "catalog_visibility": ["hidden"], "visible_on_site": ["off"]}
+        ok = default == ["sku", "status", "regular_price", "sale_price", "stock_status", "category_ids"] and hiding == want_hiding
+        p.row("read", "read:fields:flags", ok, f"default columns {default}; hiding choices {hiding}")
+
     for name, fn in [("hydration", hydration), ("filter-category", category), ("search", search), ("filter-price", price_range),
                      ("filter-status", status), ("sort", sort), ("paging", paging), ("variations", variations),
-                     ("selection-ids", selection_ids), ("categories-counts", categories_counts), ("export-diff", export_diff)]:
+                     ("selection-ids", selection_ids), ("categories-counts", categories_counts), ("export-diff", export_diff),
+                     ("filter-category-only", include_children), ("search-variation-sku", variation_sku),
+                     ("categories-description", category_description), ("fields-flags", registry_flags)]:
         p.guard("read", f"read:{name}", fn)
 
 
@@ -749,6 +809,9 @@ def check_write_categories(p: Probe) -> None:
         r = p.http("manager", "PATCH", f"/categories/{term_id}", body={"name": name + " Edited", "description": "Edited by the probe"})
         got = p.wp_eval(f"$t = get_term( {term_id}, 'product_cat' ); bcm_out( array( $t->name, $t->description ) );")
         p.row("write", "write:category-edit", r.status == 200 and got == [name + " Edited", "Edited by the probe"], f"{r.brief()} live {got}")
+        tree = p.http("manager", "GET", "/categories").json()
+        node = find_node(tree.get("items", tree) if isinstance(tree, dict) else tree, term_id) or {}
+        p.row("write", "write:category-description", node.get("description") == "Edited by the probe", f"tree node description {node.get('description')!r}")
         r = p.http("manager", "POST", f"/categories/{term_id}/move", body={"parent": shirts, "position": 0})
         parent = p.wp_eval(f"bcm_out( get_term( {term_id}, 'product_cat' )->parent );")
         p.row("write", "write:category-move", r.status == 200 and parent == shirts, f"{r.brief()} parent {parent} want {shirts}")
@@ -757,6 +820,66 @@ def check_write_categories(p: Probe) -> None:
         p.wp("term", "delete", "product_cat", str(term_id), check=False)
 
     p.guard("write", "write:categories", run)
+
+
+def check_write_history(p: Probe) -> None:
+    """History rows and exports over the batches the write engine made (server follow-ups 2026-09-23, T58)."""
+    manager_id = p.seed["users"]["manager"]["id"]
+
+    def lines(r: Response) -> list[list[str]]:
+        return list(csv.reader(io.StringIO(r.body.decode("utf-8-sig"))))
+
+    def run() -> None:
+        listing = p.http("manager", "GET", "/batches", [("per_page", "100")]).json() or {}
+        items = listing.get("items", [])
+        undone = next((b for b in items if b.get("status") == "undone"), None)
+        names = p.wp_eval(f"bcm_out( get_userdata( {manager_id} )->display_name );")
+        ok = bool(items) and all(isinstance(b.get("variations_included"), bool) and b.get("user_name") for b in items)
+        ok = ok and all((b.get("undone_by") is None) == (b.get("status") != "undone") for b in items)
+        by = (undone or {}).get("undone_by") or {}
+        ok = ok and undone is not None and by.get("user_name") == names and by.get("batch_id", 0) > undone["batch_id"]
+        p.row("write", "write:history-rows", ok, f"{len(items)} rows; undone #{(undone or {}).get('batch_id')} put back by {by}; manager is {names!r}")
+
+        users = p.http("manager", "GET", "/batches/users").json() or {}
+        p.row("write", "write:history-users", {"id": manager_id, "name": names} in users.get("items", []), f"{users.get('items')}")
+
+        if undone is None:
+            p.row("write", "write:export-changes", False, "no undone batch from the engine")
+            return
+        bid = undone["batch_id"]
+        cols = ["object_id", "name", "field_label", "old_value", "new_value", "result"]
+        r = p.http("manager", "GET", "/export", [("source", "changes"), ("batch", str(bid))] + [("columns[]", c) for c in cols])
+        csv_rows = lines(r)
+        feed = p.http("manager", "GET", f"/batches/{bid}/changes", [("per_page", "100")]).json() or {}
+        want = [[str(c["object_id"]), c["name"], c["field_label"], str(c["old_value"]), str(c["new_value"])] for c in feed.get("items", [])]
+        got = [row[:5] for row in csv_rows[1:]]
+        ok = r.status == 200 and f"change-{bid}-" in r.headers.get("Content-Disposition", "") and got == want and len(want) == feed["pagination"]["total"] > 0
+        ok = ok and all(row[5] in ("Applied", "Skipped", "Failed") for row in csv_rows[1:])
+        p.row("write", "write:export-changes", ok, f"{r.brief()} {len(got)} CSV rows vs {len(want)} feed rows; header {csv_rows[0] if csv_rows else None}")
+
+        product = feed["items"][0]["object_id"] if feed.get("items") else 0
+        r = p.http("manager", "GET", "/export", [("source", "audit"), ("product", str(product)), ("columns[]", "batch_id"), ("columns[]", "object_id")])
+        audit = p.http("manager", "GET", "/audit", [("product", str(product)), ("per_page", "100")]).json() or {}
+        got = [[int(a), int(b)] for a, b in lines(r)[1:]]
+        want = [[a["batch_id"], a["object_id"]] for a in audit.get("items", [])]
+        p.row("write", "write:export-audit", r.status == 200 and got == want and len(want) == audit["pagination"]["total"] > 0,
+              f"product {product}: {len(got)} CSV rows vs {len(want)} audit rows")
+
+        r = p.http("manager", "GET", "/export", [("source", "batches"), ("status", "undone"), ("columns[]", "batch_id"), ("columns[]", "status"), ("columns[]", "undone_by")])
+        rows = lines(r)[1:]
+        total = (p.http("manager", "GET", "/batches", [("status", "undone")]).json() or {}).get("pagination", {}).get("total")
+        ok = r.status == 200 and len(rows) == total and all(row[1] == "Undone" and row[2].startswith("#") for row in rows)
+        p.row("write", "write:export-batches", ok, f"{len(rows)} undone rows vs {total}; first {rows[:1]}")
+
+        refusals = [
+            p.http(None, "GET", "/export", [("source", "changes"), ("batch", str(bid)), ("columns[]", "name")]).status,
+            p.http("subscriber", "GET", "/export", [("source", "changes"), ("batch", str(bid)), ("columns[]", "name")]).status,
+            p.http("manager", "GET", "/export", [("source", "changes"), ("columns[]", "name")]).status,
+            p.http("manager", "GET", "/export", [("source", "changes"), ("batch", "999999"), ("columns[]", "name")]).status,
+        ]
+        p.row("write", "write:export-history-refusals", refusals == [401, 403, 400, 404], f"anonymous, subscriber, no batch, unknown batch: {refusals}")
+
+    p.guard("write", "write:history", run)
 
 
 # ---------------------------------------------------------------------------
@@ -1147,7 +1270,7 @@ def check_variations(p: Probe) -> None:
 CHAPTERS: dict[str, list[Callable[[Probe], None]]] = {
     "screen": [check_screen],
     "read": [check_read_matrix, check_read_queries],
-    "write": [check_write_engine, check_write_stale, check_write_inline, check_write_categories],
+    "write": [check_write_engine, check_write_stale, check_write_inline, check_write_categories, check_write_history],
     "access": [check_access, check_settings],
     "variations": [check_variations],
     "lifecycle": [check_lifecycle],

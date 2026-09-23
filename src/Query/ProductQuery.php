@@ -31,7 +31,9 @@
  * cached `product_cat_children` hierarchy option rather than the database,
  * before the statement is built; "any of" and "none of" test the whole
  * expanded set, and "all of" needs each chosen category or one of its
- * descendants. Tags and shipping classes are flat, so they match exactly.
+ * descendants. With the filter's `include_children` off (T62, SPEC §7:
+ * "this category only") each chosen category matches exactly, like a tag.
+ * Tags and shipping classes are flat, so they match exactly.
  *
  * A read restricted to one product (`Criteria::$parent_id`, T20) lists that
  * product's variations in the statuses WooCommerce counts as its children,
@@ -497,7 +499,8 @@ final class ProductQuery {
 
 	/**
 	 * A category filter, each chosen category standing for itself and every
-	 * category below it: any of or none of the whole expanded set, or for
+	 * category below it (or for itself alone when the filter's
+	 * include_children is off): any of or none of the whole expanded set, or for
 	 * "all of" one EXISTS per chosen category over that category's branch.
 	 *
 	 * @param Filter             $filter     Category filter; the value is a list of term ids.
@@ -505,7 +508,7 @@ final class ProductQuery {
 	 * @param array<int, string> $owner_args Its arguments.
 	 */
 	private function categories( Filter $filter, string $owner, array $owner_args ): void {
-		$branches = array_map( static fn( int $id ): array => self::branch( $id ), $filter->value );
+		$branches = array_map( static fn( int $id ): array => $filter->include_children ? self::branch( $id ) : [ $id ], $filter->value );
 		if ( 'isAll' === $filter->operator ) {
 			$parts = [];
 			$args  = [];

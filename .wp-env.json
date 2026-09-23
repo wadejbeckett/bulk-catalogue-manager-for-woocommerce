@@ -2,7 +2,7 @@
 	"core": "WordPress/WordPress#7.1",
 	"phpVersion": "8.3",
 	"testsEnvironment": false,
-	"plugins": [ ".", "https://downloads.wordpress.org/plugin/woocommerce.11.1.0.zip" ],
+	"plugins": [ "https://downloads.wordpress.org/plugin/woocommerce.11.1.0.zip", "." ],
 	"config": {
 		"WP_DEBUG": true,
 		"SCRIPT_DEBUG": true

@@ -23,7 +23,7 @@ jobs:
       matrix:
         php: [ '8.1', '8.2', '8.3', '8.4' ]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
@@ -37,7 +37,7 @@ jobs:
     name: Standalone runner without vendor/
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.1'
@@ -50,8 +50,8 @@ jobs:
     name: JavaScript lint, tests and build
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: '20'
           cache: npm
@@ -75,18 +75,20 @@ jobs:
     env:
       WP_CMD: npx wp-env run cli wp
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: '20'
       - name: Install wp-env
         run: npm install -g @wordpress/env@11.16.0
+      # WooCommerce comes first: wp-env activates in list order, and WordPress refuses to
+      # activate this plugin (Requires Plugins: woocommerce) while WooCommerce is inactive.
       - name: Pin WordPress and WooCommerce for this leg
         run: |
           cat > .wp-env.override.json <<JSON
           {
             "core": "https://wordpress.org/wordpress-${{ matrix.wp }}.zip",
-            "plugins": [ ".", "https://downloads.wordpress.org/plugin/woocommerce.${{ matrix.wc }}.zip" ]
+            "plugins": [ "https://downloads.wordpress.org/plugin/woocommerce.${{ matrix.wc }}.zip", "." ]
           }
           JSON
           cat .wp-env.override.json

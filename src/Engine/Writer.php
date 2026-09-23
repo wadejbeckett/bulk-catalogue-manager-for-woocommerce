@@ -5,6 +5,27 @@
  * the single-object route, inline edits, the detail panel, term writes and
  * undo all come through here; the writer schedules nothing of its own.
  *
+ * @package BulkCatalogueManager
+ * @license GPL-3.0-or-later
+ */
+
+declare( strict_types = 1 );
+
+namespace BulkCatalogueManager\Engine;
+
+use BulkCatalogueManager\Fields\Field;
+use BulkCatalogueManager\Operations\Operation;
+use BulkCatalogueManager\Operations\Registry;
+use BulkCatalogueManager\Operations\Result;
+use BulkCatalogueManager\Operations\Validator;
+use BulkCatalogueManager\Operations\WriteRefused;
+use BulkCatalogueManager\Undo\Planner;
+
+defined( 'ABSPATH' ) || exit;
+
+/**
+ * Applies operations to one object through WooCommerce CRUD.
+ *
  * For one object it:
  * 1. loads it with wc_get_product() — an id that is not a product fails
  *    every operation with a plain reason and writes nothing;
@@ -75,27 +96,6 @@
  * by wp_set_object_terms() before save(), so after a failed save a term
  * change may have stuck although it is reported failed. An exception from
  * the before-save hook or from the journal itself is not caught.
- *
- * @package BulkCatalogueManager
- * @license GPL-3.0-or-later
- */
-
-declare( strict_types = 1 );
-
-namespace BulkCatalogueManager\Engine;
-
-use BulkCatalogueManager\Fields\Field;
-use BulkCatalogueManager\Operations\Operation;
-use BulkCatalogueManager\Operations\Registry;
-use BulkCatalogueManager\Operations\Result;
-use BulkCatalogueManager\Operations\Validator;
-use BulkCatalogueManager\Operations\WriteRefused;
-use BulkCatalogueManager\Undo\Planner;
-
-defined( 'ABSPATH' ) || exit;
-
-/**
- * Applies operations to one object through WooCommerce CRUD.
  */
 final class Writer {
 	/**

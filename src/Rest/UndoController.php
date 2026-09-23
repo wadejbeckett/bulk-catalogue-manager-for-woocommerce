@@ -5,6 +5,27 @@
  * BatchesController, behind Access::can_write (it writes products; each
  * object is checked again, against the undo batch's user, as it is written).
  *
+ * @package BulkCatalogueManager
+ * @license GPL-3.0-or-later
+ */
+
+declare( strict_types = 1 );
+
+namespace BulkCatalogueManager\Rest;
+
+use BulkCatalogueManager\Data\BatchRepository;
+use BulkCatalogueManager\Data\ChangeRepository;
+use BulkCatalogueManager\Engine\BatchFactory;
+use BulkCatalogueManager\Engine\Progress;
+use BulkCatalogueManager\Fields\Registry as Fields;
+use BulkCatalogueManager\Undo\Plan;
+use BulkCatalogueManager\Undo\Planner;
+
+defined( 'ABSPATH' ) || exit;
+
+/**
+ * The undo route.
+ *
  * With `preview: true` it plans the undo through Undo\Planner and writes
  * nothing: `{ batch_id, preview, counts, total, items, pagination,
  * plan_hash, sentence }`, the items a page of the plan with the conflicted
@@ -30,27 +51,6 @@
  * pruned, outside retention) answers its 409 `bcm_not_reversible` with the
  * reason; one with nothing left to put back 409 `bcm_nothing_to_undo`; a
  * missing batch 404 `bcm_not_found`.
- *
- * @package BulkCatalogueManager
- * @license GPL-3.0-or-later
- */
-
-declare( strict_types = 1 );
-
-namespace BulkCatalogueManager\Rest;
-
-use BulkCatalogueManager\Data\BatchRepository;
-use BulkCatalogueManager\Data\ChangeRepository;
-use BulkCatalogueManager\Engine\BatchFactory;
-use BulkCatalogueManager\Engine\Progress;
-use BulkCatalogueManager\Fields\Registry as Fields;
-use BulkCatalogueManager\Undo\Plan;
-use BulkCatalogueManager\Undo\Planner;
-
-defined( 'ABSPATH' ) || exit;
-
-/**
- * The undo route.
  */
 final class UndoController implements Controller {
 	/**

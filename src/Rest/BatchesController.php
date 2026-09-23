@@ -2,6 +2,30 @@
 /**
  * The batch routes (SPEC §4.6, §9.2, §12.1, §12.4, §12.6).
  *
+ * @package BulkCatalogueManager
+ * @license GPL-3.0-or-later
+ */
+
+declare( strict_types = 1 );
+
+namespace BulkCatalogueManager\Rest;
+
+use BulkCatalogueManager\Data\BatchRepository;
+use BulkCatalogueManager\Data\ChangeRepository;
+use BulkCatalogueManager\Data\Schema;
+use BulkCatalogueManager\Engine\BatchFactory;
+use BulkCatalogueManager\Engine\Progress;
+use BulkCatalogueManager\Engine\Reversibility;
+use BulkCatalogueManager\Fields\Registry as Fields;
+use BulkCatalogueManager\Operations\Registry as Actions;
+use BulkCatalogueManager\Selection\Selection;
+use BulkCatalogueManager\Selection\SelectionToken;
+
+defined( 'ABSPATH' ) || exit;
+
+/**
+ * The batches route.
+ *
  * `POST /bcm/v1/batches` (T31) queues a change. The
  * body carries the client's request id (`uuid`), the operation list
  * (`operations`, `[ { action, args } ]`), the selection — an `ids` list, or
@@ -63,30 +87,6 @@
  * and the capability is what the owner grants for the screen as a whole
  * (§13); the batch's own user_id is reported, not enforced. A missing batch
  * answers 404 `bcm_not_found`.
- *
- * @package BulkCatalogueManager
- * @license GPL-3.0-or-later
- */
-
-declare( strict_types = 1 );
-
-namespace BulkCatalogueManager\Rest;
-
-use BulkCatalogueManager\Data\BatchRepository;
-use BulkCatalogueManager\Data\ChangeRepository;
-use BulkCatalogueManager\Data\Schema;
-use BulkCatalogueManager\Engine\BatchFactory;
-use BulkCatalogueManager\Engine\Progress;
-use BulkCatalogueManager\Engine\Reversibility;
-use BulkCatalogueManager\Fields\Registry as Fields;
-use BulkCatalogueManager\Operations\Registry as Actions;
-use BulkCatalogueManager\Selection\Selection;
-use BulkCatalogueManager\Selection\SelectionToken;
-
-defined( 'ABSPATH' ) || exit;
-
-/**
- * The batches route.
  */
 final class BatchesController implements ReadController {
 	/**

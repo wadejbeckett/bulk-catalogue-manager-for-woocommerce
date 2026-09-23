@@ -7,6 +7,27 @@
  * a read behind the read routes' capability, cookie and nonce, generated on
  * request and stored nowhere.
  *
+ * @package BulkCatalogueManager
+ * @license GPL-3.0-or-later
+ */
+
+declare( strict_types = 1 );
+
+namespace BulkCatalogueManager\Rest;
+
+use BulkCatalogueManager\Export\CallableRowSource;
+use BulkCatalogueManager\Export\CsvExport;
+use BulkCatalogueManager\Export\HistoryColumns;
+use BulkCatalogueManager\Export\RowSource;
+use BulkCatalogueManager\Fields\Registry;
+use BulkCatalogueManager\Query\Criteria;
+use BulkCatalogueManager\Settings\Settings;
+
+defined( 'ABSPATH' ) || exit;
+
+/**
+ * The export route.
+ *
  * The handler validates the request and answers with a response whose data
  * is the CsvExport; `rest_pre_serve_request` then sends the CSV headers and
  * streams the body in place of JSON. A refusal before that point is an
@@ -29,27 +50,6 @@
  * is the catalogue's status filter for products and the batch outcome for
  * the history list; it is validated as whichever the `source` asks for.
  * `source` defaults to `products`, so a catalogue export is unchanged.
- *
- * @package BulkCatalogueManager
- * @license GPL-3.0-or-later
- */
-
-declare( strict_types = 1 );
-
-namespace BulkCatalogueManager\Rest;
-
-use BulkCatalogueManager\Export\CallableRowSource;
-use BulkCatalogueManager\Export\CsvExport;
-use BulkCatalogueManager\Export\HistoryColumns;
-use BulkCatalogueManager\Export\RowSource;
-use BulkCatalogueManager\Fields\Registry;
-use BulkCatalogueManager\Query\Criteria;
-use BulkCatalogueManager\Settings\Settings;
-
-defined( 'ABSPATH' ) || exit;
-
-/**
- * The export route.
  */
 final class ExportController implements ReadController {
 	/**

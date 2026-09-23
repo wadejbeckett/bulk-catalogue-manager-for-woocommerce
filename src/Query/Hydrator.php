@@ -4,6 +4,25 @@
  * §5.2) in a fixed number of queries whatever the page size, and without
  * instantiating a `WC_Product`, so `woocommerce_product_read` never fires:
  *
+ * @package BulkCatalogueManager
+ * @license GPL-3.0-or-later
+ */
+
+declare( strict_types = 1 );
+
+namespace BulkCatalogueManager\Query;
+
+use BulkCatalogueManager\Fields\Field;
+use BulkCatalogueManager\Fields\Registry;
+use BulkCatalogueManager\Fields\Storage;
+
+defined( 'ABSPATH' ) || exit;
+
+// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- SPEC §12.2: the grouped variation count and the page's lookup rows are one direct, prepared statement each; Catalogue caches the hydrated page in an object-cache group keyed on the last-changed values.
+
+/**
+ * Hydrates one page of catalogue rows.
+ *
  * 1. `_prime_post_caches()` over the page's ids;
  * 2. one `update_meta_cache()` over them, only when a visible column is
  *    stored in meta (core primes every key of an object at once; priming
@@ -29,25 +48,6 @@
  * Each value then comes through the field registry's read contract,
  * `Field::read()`, over a Snapshot answering the CRUD getters from those
  * caches, so the grid shows exactly what journal and preview read.
- *
- * @package BulkCatalogueManager
- * @license GPL-3.0-or-later
- */
-
-declare( strict_types = 1 );
-
-namespace BulkCatalogueManager\Query;
-
-use BulkCatalogueManager\Fields\Field;
-use BulkCatalogueManager\Fields\Registry;
-use BulkCatalogueManager\Fields\Storage;
-
-defined( 'ABSPATH' ) || exit;
-
-// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- SPEC §12.2: the grouped variation count and the page's lookup rows are one direct, prepared statement each; Catalogue caches the hydrated page in an object-cache group keyed on the last-changed values.
-
-/**
- * Hydrates one page of catalogue rows.
  */
 final class Hydrator {
 	/**
@@ -349,10 +349,10 @@ final class Hydrator {
 	 */
 	private function children( array $ids ): array {
 		global $wpdb;
-		$sql  = 'SELECT post_parent AS parent_id, COUNT(*) AS children FROM %i WHERE post_parent IN (' . self::placeholders( $ids ) . ') AND post_type = %s AND post_status IN (%s, %s) GROUP BY post_parent LIMIT %d';
+		$in   = implode( ', ', array_fill( 0, count( $ids ), '%d' ) );
 		$args = [ $wpdb->prefix . ProductQuery::TABLES['posts'], ...$ids, 'product_variation', ...ProductQuery::CHILD_STATUSES, count( $ids ) ];
-		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Literal template with placeholders only; every value is an argument.
-		$rows   = $wpdb->get_results( $wpdb->prepare( $sql, ...$args ), ARRAY_A );
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in is only %d placeholders; every value is an argument.
+		$rows   = $wpdb->get_results( $wpdb->prepare( "SELECT post_parent AS parent_id, COUNT(*) AS children FROM %i WHERE post_parent IN ({$in}) AND post_type = %s AND post_status IN (%s, %s) GROUP BY post_parent LIMIT %d", $args ), ARRAY_A );
 		$counts = [];
 		foreach ( is_array( $rows ) ? $rows : [] as $row ) {
 			$counts[ (int) $row['parent_id'] ] = (int) $row['children'];
@@ -368,10 +368,10 @@ final class Hydrator {
 	 */
 	private function prices( array $ids ): array {
 		global $wpdb;
-		$sql  = 'SELECT product_id, min_price, max_price FROM %i WHERE product_id IN (' . self::placeholders( $ids ) . ') LIMIT %d';
+		$in   = implode( ', ', array_fill( 0, count( $ids ), '%d' ) );
 		$args = [ $wpdb->prefix . ProductQuery::TABLES['lookup'], ...$ids, count( $ids ) ];
-		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Literal template with placeholders only; every value is an argument.
-		$rows   = $wpdb->get_results( $wpdb->prepare( $sql, ...$args ), ARRAY_A );
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in is only %d placeholders; every value is an argument.
+		$rows   = $wpdb->get_results( $wpdb->prepare( "SELECT product_id, min_price, max_price FROM %i WHERE product_id IN ({$in}) LIMIT %d", $args ), ARRAY_A );
 		$prices = [];
 		foreach ( is_array( $rows ) ? $rows : [] as $row ) {
 			$prices[ (int) $row['product_id'] ] = self::render_price( $row['min_price'] ?? null, $row['max_price'] ?? null );
@@ -408,14 +408,5 @@ final class Hydrator {
 			$urls[ $id ] = $url;
 		}
 		return $urls;
-	}
-
-	/**
-	 * One %d placeholder per id.
-	 *
-	 * @param int[] $ids Ids.
-	 */
-	private static function placeholders( array $ids ): string {
-		return implode( ', ', array_fill( 0, count( $ids ), '%d' ) );
 	}
 }

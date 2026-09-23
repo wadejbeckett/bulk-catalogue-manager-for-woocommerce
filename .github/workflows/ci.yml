@@ -97,3 +97,46 @@ jobs:
       - run: npx wp-env run cli wp plugin list
       - run: bash tests/probe/seed.sh
       - run: python3 tests/probe/probe.py --base-url http://localhost:8888
+
+  plugin-check:
+    name: Plugin Check on the release archive
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          cache: npm
+      # Exports HEAD, rebuilds the bundle from the exported source alone, checks the
+      # file list against bin/archive-manifest.txt and writes dist/<slug>-<version>.zip.
+      - run: bin/build-zip.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-archive
+          path: dist/*.zip
+          if-no-files-found: error
+      - name: Unpack the archive
+        run: unzip -q dist/bulk-catalogue-manager-for-woocommerce-*.zip -d dist/archive
+      - name: Install wp-env
+        run: npm install -g @wordpress/env@11.16.0
+      # The unpacked archive, not the checkout, is the plugin under test. WooCommerce first:
+      # WordPress refuses to activate this plugin (Requires Plugins) while it is inactive.
+      - name: Point wp-env at WooCommerce, the archive and Plugin Check
+        run: |
+          cat > .wp-env.override.json <<JSON
+          {
+            "plugins": [
+              "https://downloads.wordpress.org/plugin/woocommerce.11.1.0.zip",
+              "./dist/archive/bulk-catalogue-manager-for-woocommerce",
+              "https://downloads.wordpress.org/plugin/plugin-check.2.1.0.zip"
+            ]
+          }
+          JSON
+      - run: npx wp-env start
+      - run: npx wp-env run cli wp plugin list
+      - name: Run Plugin Check
+        run: |
+          npx wp-env run cli wp plugin check bulk-catalogue-manager-for-woocommerce --format=json --include-experimental > plugin-check.json
+          cat plugin-check.json
+      # Zero ERROR rows; WARNING rows only as listed in bin/plugin-check-allowed.tsv.
+      - run: bin/plugin-check.sh plugin-check.json

@@ -4,6 +4,25 @@
  * registry, argument validation driven by one argument list, and the default
  * apply() through the field's setter.
  *
+ * @package BulkCatalogueManager
+ * @license GPL-3.0-or-later
+ */
+
+declare( strict_types = 1 );
+
+namespace BulkCatalogueManager\Operations;
+
+use BulkCatalogueManager\Fields\Field;
+use BulkCatalogueManager\Fields\Registry as Fields;
+use BulkCatalogueManager\Fields\Values;
+use BulkCatalogueManager\Rest\Refusal;
+use BulkCatalogueManager\Settings\Settings;
+
+defined( 'ABSPATH' ) || exit;
+
+/**
+ * Shared action behaviour.
+ *
  * An action names its id, group, label, description and edit kinds; the
  * fields it accepts are every registry field allowing one of those kinds
  * (narrowed by accepts_field()), so a field gaining an edit kind in the
@@ -34,25 +53,6 @@
  * (the §4.8 sentence a refusal shows), and optionally `required`, `default`,
  * `choices` (value => label), `min`, `max`, `exclusive_min`, `exclusive_max`,
  * `max_length`, `allow_empty`, `min_items` and `max_items`.
- *
- * @package BulkCatalogueManager
- * @license GPL-3.0-or-later
- */
-
-declare( strict_types = 1 );
-
-namespace BulkCatalogueManager\Operations;
-
-use BulkCatalogueManager\Fields\Field;
-use BulkCatalogueManager\Fields\Registry as Fields;
-use BulkCatalogueManager\Fields\Values;
-use BulkCatalogueManager\Rest\Refusal;
-use BulkCatalogueManager\Settings\Settings;
-
-defined( 'ABSPATH' ) || exit;
-
-/**
- * Shared action behaviour.
  */
 abstract class BaseOperation implements Operation {
 	/**

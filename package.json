@@ -12,7 +12,10 @@
     "start": "wp-scripts start",
     "lint:js": "wp-scripts lint-js assets/src tests/js webpack.config.js eslint.config.cjs --max-warnings=0",
     "format": "wp-scripts format assets/src tests/js webpack.config.js eslint.config.cjs",
-    "test": "wp-scripts test-unit-js"
+    "test": "wp-scripts test-unit-js",
+    "make-json": "composer make-json",
+    "build:zip": "bin/build-zip.sh",
+    "plugin-check": "bin/plugin-check.sh"
   },
   "dependencies": {
     "@wordpress/api-fetch": "7.40.1",

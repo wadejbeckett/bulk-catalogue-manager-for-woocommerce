@@ -4,6 +4,30 @@
  * category, edit its name, slug, description and parent, and move it to a
  * parent and a position among its siblings.
  *
+ * @package BulkCatalogueManager
+ * @license GPL-3.0-or-later
+ */
+
+declare( strict_types = 1 );
+
+namespace BulkCatalogueManager\Categories;
+
+use BulkCatalogueManager\Data\BatchRepository;
+use BulkCatalogueManager\Data\ChangeRepository;
+use BulkCatalogueManager\Engine\BatchFactory;
+use BulkCatalogueManager\Engine\ChunkRunner;
+use BulkCatalogueManager\Engine\Journal;
+use BulkCatalogueManager\Engine\Writer as ProductWriter;
+use BulkCatalogueManager\Fields\Registry as Fields;
+use BulkCatalogueManager\Operations\Result;
+use BulkCatalogueManager\Rest\Refusal;
+use BulkCatalogueManager\Settings\Settings;
+
+defined( 'ABSPATH' ) || exit;
+
+/**
+ * Writes product categories as journalled batches of one.
+ *
  * Every write goes through WordPress's own term functions, `wp_insert_term()`
  * and `wp_update_term()` (never SQL), with the tree order in the plugin's own
  * `bcm_order` term meta (CategoryTree::TREE_ORDER_META), which only this tree
@@ -29,30 +53,6 @@
  * After a write the tree cache is renewed (Cache::invalidate(); the term
  * hooks do so too, but a term meta change fires none), and the answer holds
  * the category in the tree's node shape, which carries its description.
- *
- * @package BulkCatalogueManager
- * @license GPL-3.0-or-later
- */
-
-declare( strict_types = 1 );
-
-namespace BulkCatalogueManager\Categories;
-
-use BulkCatalogueManager\Data\BatchRepository;
-use BulkCatalogueManager\Data\ChangeRepository;
-use BulkCatalogueManager\Engine\BatchFactory;
-use BulkCatalogueManager\Engine\ChunkRunner;
-use BulkCatalogueManager\Engine\Journal;
-use BulkCatalogueManager\Engine\Writer as ProductWriter;
-use BulkCatalogueManager\Fields\Registry as Fields;
-use BulkCatalogueManager\Operations\Result;
-use BulkCatalogueManager\Rest\Refusal;
-use BulkCatalogueManager\Settings\Settings;
-
-defined( 'ABSPATH' ) || exit;
-
-/**
- * Writes product categories as journalled batches of one.
  */
 final class Writer {
 	/**

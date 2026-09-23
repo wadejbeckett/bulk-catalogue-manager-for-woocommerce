@@ -1,0 +1,31 @@
+# What the release archive may contain, one extended regular expression per
+# line, matched against each path inside the archive's <slug>/ directory
+# (bin/build-zip.sh and tests/Unit/PackagingTest.php both read this file).
+# Lines starting with "!" name a file that must be present.
+^bulk-catalogue-manager-for-woocommerce\.php$
+^uninstall\.php$
+^readme\.txt$
+^LICENSE$
+^src/([A-Za-z0-9]+/)*[A-Za-z0-9]+\.php$
+^assets/build/(index\.js|index\.asset\.php|style-index\.css|style-index-rtl\.css)$
+^assets/src/([a-z0-9-]+/)*[a-z0-9-]+\.(js|scss)$
+^assets/src/([a-z0-9-]+/)*README\.md$
+^webpack\.config\.js$
+^package\.json$
+^package-lock\.json$
+^languages/bulk-catalogue-manager-for-woocommerce(-[a-z]{2,3}(_[A-Z]{2})?(_[a-z]+)?(-[0-9a-f]{32})?)?\.(pot|po|mo|json|l10n\.php)$
+!bulk-catalogue-manager-for-woocommerce.php
+!uninstall.php
+!readme.txt
+!LICENSE
+!src/Plugin.php
+!src/Autoloader.php
+!assets/build/index.js
+!assets/build/index.asset.php
+!assets/build/style-index.css
+!assets/build/style-index-rtl.css
+!assets/src/index.js
+!webpack.config.js
+!package.json
+!package-lock.json
+!languages/bulk-catalogue-manager-for-woocommerce.pot

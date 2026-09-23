@@ -6,6 +6,30 @@
  * same operation classes, Validator, Writer and Journal as a bulk batch and
  * is recorded as its own batch, so it shows in history and undoes like one.
  *
+ * @package BulkCatalogueManager
+ * @license GPL-3.0-or-later
+ */
+
+declare( strict_types = 1 );
+
+namespace BulkCatalogueManager\Engine;
+
+use BulkCatalogueManager\Data\BatchRepository;
+use BulkCatalogueManager\Data\ChangeRepository;
+use BulkCatalogueManager\Fields\Field;
+use BulkCatalogueManager\Fields\Values;
+use BulkCatalogueManager\Operations\Registry as Actions;
+use BulkCatalogueManager\Operations\Result;
+use BulkCatalogueManager\Rest\Access;
+use BulkCatalogueManager\Rest\Refusal;
+use BulkCatalogueManager\Selection\Selection;
+use BulkCatalogueManager\Settings\Settings;
+
+defined( 'ABSPATH' ) || exit;
+
+/**
+ * Writes one object as a synchronous batch of one.
+ *
  * For one request it:
  * 1. resolves the id through BatchFactory::materialise(), exactly as a
  *    batch's id list is resolved: anything that is not a listable product
@@ -37,30 +61,6 @@
  *
  * A write that throws (the journal refusing a row) still finalises the batch
  * as failed and is answered 500 `bcm_save_failed`.
- *
- * @package BulkCatalogueManager
- * @license GPL-3.0-or-later
- */
-
-declare( strict_types = 1 );
-
-namespace BulkCatalogueManager\Engine;
-
-use BulkCatalogueManager\Data\BatchRepository;
-use BulkCatalogueManager\Data\ChangeRepository;
-use BulkCatalogueManager\Fields\Field;
-use BulkCatalogueManager\Fields\Values;
-use BulkCatalogueManager\Operations\Registry as Actions;
-use BulkCatalogueManager\Operations\Result;
-use BulkCatalogueManager\Rest\Access;
-use BulkCatalogueManager\Rest\Refusal;
-use BulkCatalogueManager\Selection\Selection;
-use BulkCatalogueManager\Settings\Settings;
-
-defined( 'ABSPATH' ) || exit;
-
-/**
- * Writes one object as a synchronous batch of one.
  */
 final class InlineWrite {
 	/**

@@ -4,6 +4,23 @@
  * the state the history list and the batch read show beside Undo, derived
  * from the batch row, its journal and the retention setting — never stored.
  *
+ * @package BulkCatalogueManager
+ * @license GPL-3.0-or-later
+ */
+
+declare( strict_types = 1 );
+
+namespace BulkCatalogueManager\Engine;
+
+use BulkCatalogueManager\Data\BatchRepository;
+use BulkCatalogueManager\Data\ChangeRepository;
+use BulkCatalogueManager\Settings\Settings;
+
+defined( 'ABSPATH' ) || exit;
+
+/**
+ * The derived reversibility state of a batch.
+ *
  * `{ state, conflicts, reason }`, checked in this order:
  * - `in_progress`: the batch is queued, running or undoing; the screen shows
  *   a progress row in place of Undo. No reason, no conflicts.
@@ -39,23 +56,6 @@
  * null` — not counted — and so read `reversible` or
  * `completed_with_errors` where the single read may say
  * `partially_reversible`; the screen asks the single read before Undo.
- *
- * @package BulkCatalogueManager
- * @license GPL-3.0-or-later
- */
-
-declare( strict_types = 1 );
-
-namespace BulkCatalogueManager\Engine;
-
-use BulkCatalogueManager\Data\BatchRepository;
-use BulkCatalogueManager\Data\ChangeRepository;
-use BulkCatalogueManager\Settings\Settings;
-
-defined( 'ABSPATH' ) || exit;
-
-/**
- * The derived reversibility state of a batch.
  */
 final class Reversibility {
 	public const REVERSIBLE            = 'reversible';

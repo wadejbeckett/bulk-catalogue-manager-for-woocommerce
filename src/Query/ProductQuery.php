@@ -5,6 +5,21 @@
  * `COUNT(*)` over exactly the same conditions. No `WC_Product` is built and
  * `SQL_CALC_FOUND_ROWS` is never used.
  *
+ * @package BulkCatalogueManager
+ * @license GPL-3.0-or-later
+ */
+
+declare( strict_types = 1 );
+
+namespace BulkCatalogueManager\Query;
+
+defined( 'ABSPATH' ) || exit;
+
+// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- SPEC §12.2: the catalogue read is deliberately one direct, prepared statement; the caller (T16, T19) caches results in an object-cache group keyed on the products' last-changed value.
+
+/**
+ * Builds and runs the page and count statements for one set of criteria.
+ *
  * The statement reads `{prefix}posts` joined to
  * `{prefix}wc_product_meta_lookup`, which carries SKU, prices, stock and sales,
  * so no filter or sort touches `wp_postmeta`. The lookup is a LEFT JOIN so a
@@ -38,21 +53,6 @@
  * A read restricted to one product (`Criteria::$parent_id`, T20) lists that
  * product's variations in the statuses WooCommerce counts as its children,
  * published and private, in WooCommerce's order: `menu_order`, then id.
- *
- * @package BulkCatalogueManager
- * @license GPL-3.0-or-later
- */
-
-declare( strict_types = 1 );
-
-namespace BulkCatalogueManager\Query;
-
-defined( 'ABSPATH' ) || exit;
-
-// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- SPEC §12.2: the catalogue read is deliberately one direct, prepared statement; the caller (T16, T19) caches results in an object-cache group keyed on the products' last-changed value.
-
-/**
- * Builds and runs the page and count statements for one set of criteria.
  */
 final class ProductQuery {
 	/**

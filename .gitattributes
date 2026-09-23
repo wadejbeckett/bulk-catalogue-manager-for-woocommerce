@@ -1,26 +1,34 @@
-# Kept out of `git archive` (bin/build-zip.sh, GitHub release zips). The
-# shipped plugin needs only the main file, src/, uninstall.php, readme.txt,
-# README.md, CHANGELOG.md and LICENSE: it has its own autoloader, so vendor/
-# is never part of the release either (and is untracked anyway).
-.github/            export-ignore
+# Release archives always use LF, whatever the checkout's autocrlf.
+* text=auto eol=lf
+
+# Kept out of `git archive` (bin/build-zip.sh, GitHub release zips), SPEC §15.
+# The archive ships the main file, src/, uninstall.php, readme.txt, LICENSE,
+# languages/, the built assets/build and, so a reviewer can reproduce the
+# bundle, the readable assets/src with its build configuration
+# (webpack.config.js, package.json, package-lock.json). The plugin has its own
+# autoloader, so vendor/ never ships. .distignore carries the same list for
+# `wp dist-archive`; tests/Unit/PackagingTest.php keeps the two in step and
+# checks the result against bin/archive-manifest.txt. Directories are
+# written dir/** so `git check-attr` sees every file inside them as ignored
+# too, not only `git archive`.
+.github/**          export-ignore
 .gitignore          export-ignore
 .gitattributes      export-ignore
 .distignore         export-ignore
 .phpcs.xml.dist     export-ignore
 .wp-env.json        export-ignore
-phpunit.xml.dist    export-ignore
+.remember/**        export-ignore
+.claude/**          export-ignore
+AGENTS.md           export-ignore
+CHANGELOG.md        export-ignore
+README.md           export-ignore
+bin/**              export-ignore
 composer.json       export-ignore
 composer.lock       export-ignore
-package.json        export-ignore
-package-lock.json   export-ignore
-docs/               export-ignore
-tests/              export-ignore
-bin/                export-ignore
-.remember/          export-ignore
-.claude/            export-ignore
-vendor/             export-ignore
-
-# Release archives always use LF, whatever the checkout's autocrlf.
-* text=auto eol=lf
-AGENTS.md           export-ignore
+docs/**             export-ignore
+eslint.config.cjs   export-ignore
 jest.config.js      export-ignore
+phpunit.xml.dist    export-ignore
+scratch/**          export-ignore
+tests/**            export-ignore
+vendor/**           export-ignore

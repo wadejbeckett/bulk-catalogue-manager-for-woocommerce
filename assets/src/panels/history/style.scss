@@ -1,0 +1,252 @@
+// The History panel (T57–T59), in the admin's own look (docs/prototype screen 4).
+.bcm-history {
+	background: #fff;
+	border: 1px solid #dcdcde;
+	padding: 16px 20px 24px;
+
+	> h2 {
+		margin-top: 0;
+	}
+}
+
+.bcm-history__bar {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: flex-start;
+	margin: 12px 0;
+}
+
+.bcm-history__bar-right {
+	margin-left: auto;
+	display: flex;
+	gap: 8px;
+}
+
+.bcm-scope-notice,
+.bcm-history__retention {
+	color: #50575e;
+	font-size: 12px;
+}
+
+.bcm-history__empty {
+	padding: 24px 0;
+	color: #50575e;
+}
+
+.bcm-batch {
+	border: 1px solid #dcdcde;
+	border-radius: 4px;
+	background: #fff;
+	margin-bottom: 10px;
+	overflow: hidden;
+
+	&.is-undone {
+		background: #f6f7f7;
+	}
+
+	h3 {
+		font-size: 14px;
+		font-weight: 600;
+		margin: 0 0 3px;
+	}
+}
+
+.bcm-batch__top {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px;
+	align-items: flex-start;
+	padding: 12px 14px;
+}
+
+.bcm-batch__what {
+	flex: 1;
+	min-width: 220px;
+}
+
+.bcm-batch__meta {
+	color: #50575e;
+	font-size: 12px;
+	margin: 0;
+}
+
+.bcm-batch__who {
+	color: #1d2327;
+	font-weight: 600;
+}
+
+.bcm-batch__actions {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+	margin-left: auto;
+}
+
+.bcm-batch__tags {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	padding: 0 14px 12px;
+}
+
+.bcm-batch__reason,
+.bcm-batch__progress,
+.bcm-batch__error,
+.bcm-batch__reasons {
+	margin: 0;
+	padding: 0 14px 12px;
+	font-size: 12px;
+}
+
+.bcm-batch__reasons {
+	list-style: disc inside;
+}
+
+.bcm-pill {
+	display: inline-block;
+	border: 1px solid #c3c4c7;
+	border-radius: 999px;
+	padding: 1px 8px;
+	font-size: 11px;
+	color: #50575e;
+	background: #f6f7f7;
+
+	&--warn,
+	&--partial,
+	&--failed {
+		border-color: #dba617;
+		background: #fcf9e8;
+		color: #614200;
+	}
+
+	&--good,
+	&--undone {
+		border-color: #68de7c;
+		background: #edfaef;
+		color: #005c12;
+	}
+}
+
+.bcm-conflict {
+	border-top: 1px solid #dba617;
+	background: #fcf9e8;
+	padding: 12px 14px;
+
+	h4 {
+		margin: 0 0 3px;
+		font-size: 13px;
+	}
+
+	p {
+		color: #614200;
+		font-size: 12px;
+		max-width: 74ch;
+	}
+}
+
+.bcm-conflict__choices,
+.bcm-confirm__buttons {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: center;
+}
+
+.bcm-confirm__buttons {
+	justify-content: flex-end;
+	margin-top: 16px;
+}
+
+.bcm-confirm__warning {
+	color: #8a2424;
+}
+
+.bcm-changes {
+	border-top: 1px solid #dcdcde;
+	background: #f6f7f7;
+}
+
+.bcm-changes__bar,
+.bcm-changes__pages {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: center;
+	padding: 8px 14px;
+}
+
+.bcm-changes__scroll {
+	overflow-x: auto;
+}
+
+.bcm-changes__table {
+	width: 100%;
+	min-width: 560px;
+	border-collapse: collapse;
+
+	caption {
+		text-align: left;
+		padding: 8px 14px;
+		color: #50575e;
+		font-size: 12px;
+	}
+
+	th,
+	td {
+		text-align: left;
+		padding: 6px 14px;
+		border-bottom: 1px solid #e0e0e0;
+		font-size: 12px;
+		font-variant-numeric: tabular-nums;
+		vertical-align: top;
+	}
+
+	thead th {
+		font-size: 11px;
+		font-weight: 600;
+		color: #50575e;
+		white-space: nowrap;
+	}
+
+	tbody th {
+		font-weight: 400;
+	}
+}
+
+.bcm-changes__empty,
+.bcm-changes__loading {
+	padding: 9px 14px;
+	color: #50575e;
+	font-size: 12px;
+}
+
+.bcm-result__reason,
+.bcm-result__detail {
+	display: block;
+	color: #50575e;
+}
+
+.bcm-result__detail {
+	font-family: monospace;
+}
+
+.bcm-progress {
+	display: flex;
+	gap: 10px;
+	align-items: center;
+}
+
+.bcm-progress__bar {
+	width: 100%;
+	max-width: 520px;
+}
+
+.bcm-audit__product {
+	min-width: 260px;
+}
+
+.bcm-error__details {
+	font-family: monospace;
+	font-size: 12px;
+}

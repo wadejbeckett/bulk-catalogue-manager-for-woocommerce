@@ -51,6 +51,23 @@ final class Field {
 	 */
 	public const TYPES = [ self::TEXT, self::ENUM, self::BOOLEAN, self::MONEY, self::DECIMAL, self::INTEGER, self::TERMS, self::TERM, self::ID, self::DATETIME, self::HTML, self::IMAGE ];
 
+	/**
+	 * A choice that takes the product off the site altogether: its status
+	 * keeps it from shoppers (draft, pending review).
+	 */
+	public const HIDES_OFF_SITE = 'off_site';
+
+	/**
+	 * A choice that hides the product from the shop and from search while it
+	 * stays published (catalogue visibility hidden, Visible on site off).
+	 */
+	public const HIDES_FROM_SHOP = 'hidden';
+
+	/**
+	 * How a choice can hide a product (`hidesAs` in the client payload).
+	 */
+	public const HIDES = [ self::HIDES_OFF_SITE, self::HIDES_FROM_SHOP ];
+
 	/*
 	 * Variation rules (SPEC §5.2 last column, §8). Per variation: each
 	 * variation has its own value. Parent only: the value belongs to the
@@ -167,6 +184,8 @@ final class Field {
 	 * @param bool                                   $sortable               Whether the grid may sort on it.
 	 * @param string[]                               $filter_operators       DataViews filter operators; empty when it is not a filter.
 	 * @param string                                 $group                  The bulk action panel group it sits in (Operations\Group); '' for a read-only column.
+	 * @param int                                    $default_order          Its place among the grid's default columns after the product cell (T40, SPEC §4.1), from 1; 0 when it is not shown by default.
+	 * @param array<string, string>                  $hiding_choices         For an enum, the choices that take a product out of the shopper's sight when set, value => HIDES_OFF_SITE or HIDES_FROM_SHOP (SPEC §4.5, §5.3).
 	 * @throws \InvalidArgumentException When the description is inconsistent.
 	 */
 	public function __construct(
@@ -194,7 +213,9 @@ final class Field {
 		private readonly bool $unique = false,
 		private readonly bool $sortable = false,
 		private readonly array $filter_operators = [],
-		private readonly string $group = ''
+		private readonly string $group = '',
+		private readonly int $default_order = 0,
+		private readonly array $hiding_choices = []
 	) {
 		$problem = match ( true ) {
 			1 !== preg_match( '/^[a-z][a-z0-9_]{0,63}$/', $key ) => 'its key is not a lower-case field key',
@@ -208,6 +229,10 @@ final class Field {
 			in_array( self::CLEAR, $edit_kinds, true ) && ! $nullable => 'only a nullable field can be cleared',
 			'' !== $group && ! in_array( $group, Group::ALL, true ) => 'its group is unknown',
 			'' !== $group && [] === $edit_kinds                    => 'a read-only column has no group',
+			0 > $default_order                                     => 'its default column place is negative',
+			[] !== $hiding_choices && self::ENUM !== $type         => 'only a field of choices can hide a product',
+			0 < count( array_diff( $hiding_choices, self::HIDES ) ) => 'it hides a product in an unknown way',
+			is_array( $choices ) && [] !== array_diff( array_keys( $hiding_choices ), array_map( 'strval', array_keys( $choices ) ) ) => 'a choice that hides a product is not one of its choices',
 			self::PER_VARIATION !== $variation_rule && self::CONDITIONAL !== $variation_rule && [] !== $edit_kinds && '' === $variation_note => 'it needs a note saying why a variation cannot take it',
 			default                                                => '',
 		};
@@ -720,11 +745,19 @@ final class Field {
 			'variationNote'      => $this->variation_note,
 			'variableParentNote' => $this->variable_parent_note,
 			'sortable'           => $this->sortable,
+			'defaultColumn'      => $this->default_order > 0,
+			'defaultOrder'       => $this->default_order > 0 ? $this->default_order : null,
 			'schema'             => $this->rest_schema(),
 			'dataviews'          => $this->dataviews(),
 		];
 		if ( self::ENUM === $this->type ) {
-			$client['choices']              = self::elements( $this->choices() );
+			$client['choices']              = array_map(
+				fn( array $element ): array => $element + [
+					'hidesProduct' => isset( $this->hiding_choices[ $element['value'] ] ),
+					'hidesAs'      => $this->hiding_choices[ $element['value'] ] ?? null,
+				],
+				self::elements( $this->choices() )
+			);
 			$client['writableChoices']      = $this->writable_choices();
 			$client['variationChoices']     = $this->variation_choices ?? $this->writable_choices();
 			$client['variationOnlyChoices'] = $this->variation_only_choices;

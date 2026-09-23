@@ -86,10 +86,10 @@ final class WriterTest extends TestCase {
 				'id'          => 12,
 				'name'        => 'Hats',
 				'slug'        => 'hats',
+				'description' => 'Every hat',
 				'parent'      => 1,
 				'depth'       => 1,
 				'order'       => 0,
-				'description' => 'Every hat',
 			],
 			$result['item']
 		);
@@ -262,10 +262,10 @@ final class WriterTest extends TestCase {
 				'id'          => 3,
 				'name'        => 'Tops',
 				'slug'        => 'tops',
+				'description' => 'Shirts and more',
 				'parent'      => 2,
 				'depth'       => 2,
 				'order'       => 0,
-				'description' => 'Shirts and more',
 			],
 			$result['item']
 		);

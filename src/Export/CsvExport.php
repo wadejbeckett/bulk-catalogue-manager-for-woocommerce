@@ -6,6 +6,9 @@
  * at a time and written as each page arrives, so memory stays flat whatever
  * the total, and nothing is stored.
  *
+ * History exports (a batch's changes, the audit log, the history list) use
+ * the same class with their own column headers (HistoryColumns).
+ *
  * The number of pages is fixed by the total the first page reports, so a
  * source is asked ceil( total / 100 ) times (once when nothing matches);
  * reading stops early if a page comes back empty.
@@ -32,14 +35,16 @@ final class CsvExport {
 	public const PER_PAGE = 100;
 
 	/**
-	 * Build an export. Columns must be registry keys; the controller checks them first.
+	 * Build an export. Columns must be registry keys, or with $labels keys of
+	 * $labels (a history export's own columns); the controller checks them first.
 	 *
-	 * @param RowSource            $source    Where rows come from.
-	 * @param Registry             $registry  Field registry, for column labels.
-	 * @param list<string>         $columns   Field keys, in column order.
-	 * @param array<string, mixed> $params    The read's parameters, without paging.
-	 * @param string               $separator "," or ";".
-	 * @param string               $filename  Download name.
+	 * @param RowSource                  $source    Where rows come from.
+	 * @param Registry                   $registry  Field registry, for column labels.
+	 * @param list<string>               $columns   Field keys (or keys of $labels), in column order.
+	 * @param array<string, mixed>       $params    The read's parameters, without paging.
+	 * @param string                     $separator "," or ";".
+	 * @param string                     $filename  Download name.
+	 * @param array<string, string>|null $labels    Headers by column key for columns that are not fields (HistoryColumns::labels()); null for field columns.
 	 * @throws \InvalidArgumentException When there is no column, a column repeats or is not a field.
 	 */
 	public function __construct(
@@ -48,13 +53,14 @@ final class CsvExport {
 		private readonly array $columns,
 		private readonly array $params,
 		private readonly string $separator,
-		private readonly string $filename
+		private readonly string $filename,
+		private readonly ?array $labels = null
 	) {
 		if ( [] === $columns || count( array_unique( $columns ) ) !== count( $columns ) ) {
 			throw new \InvalidArgumentException( 'An export needs one or more distinct columns.' );
 		}
 		foreach ( $columns as $column ) {
-			if ( ! $registry->has( $column ) ) {
+			if ( null === $labels ? ! $registry->has( $column ) : ! isset( $labels[ $column ] ) ) {
 				throw new \InvalidArgumentException( esc_html( sprintf( 'Unknown column "%s".', $column ) ) );
 			}
 		}
@@ -92,12 +98,21 @@ final class CsvExport {
 	}
 
 	/**
-	 * The header row: each column's registry label.
+	 * The header row: each column's registry label, or its given header.
 	 *
 	 * @return list<string>
 	 */
 	public function header(): array {
-		return array_map( fn( string $key ): string => $this->registry->get( $key )->label(), $this->columns );
+		return array_map( fn( string $key ): string => null === $this->labels ? $this->registry->get( $key )->label() : $this->labels[ $key ], $this->columns );
+	}
+
+	/**
+	 * The read's parameters, without paging, as the source is given them.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function params(): array {
+		return $this->params;
 	}
 
 	/**

@@ -236,7 +236,12 @@ final class Registry {
 				],
 				variation_choices: [ 'publish', 'private' ],
 				variation_note: __( 'A variation can only be published or private.', 'bulk-catalogue-manager-for-woocommerce' ),
-				filter_operators: [ 'isAny', 'isNone' ]
+				filter_operators: [ 'isAny', 'isNone' ],
+				default_order: 2,
+				hiding_choices: [
+					'draft'   => Field::HIDES_OFF_SITE,
+					'pending' => Field::HIDES_OFF_SITE,
+				]
 			),
 			new Field(
 				key: 'catalog_visibility',
@@ -255,7 +260,8 @@ final class Registry {
 					'hidden'  => __( 'Hidden', 'bulk-catalogue-manager-for-woocommerce' ),
 				],
 				variation_note: $per_product( $catalogue_visibility ),
-				filter_operators: [ 'isAny', 'isNone' ]
+				filter_operators: [ 'isAny', 'isNone' ],
+				hiding_choices: [ 'hidden' => Field::HIDES_FROM_SHOP ]
 			),
 			new Field(
 				key: 'visible_on_site',
@@ -275,7 +281,8 @@ final class Registry {
 				],
 				write_choices: [ 'on', 'off' ],
 				variation_note: $per_product( $visible_on_site ),
-				adapter: Field::ADAPTER_SWITCH
+				adapter: Field::ADAPTER_SWITCH,
+				hiding_choices: [ 'off' => Field::HIDES_FROM_SHOP ]
 			),
 			new Field(
 				key: 'featured',
@@ -303,7 +310,8 @@ final class Registry {
 				setter: 'set_category_ids',
 				variation_note: __( 'Categories belong to the product, not to each variation.', 'bulk-catalogue-manager-for-woocommerce' ),
 				source: 'categories',
-				filter_operators: [ 'isAny', 'isNone', 'isAll' ]
+				filter_operators: [ 'isAny', 'isNone', 'isAll' ],
+				default_order: 6
 			),
 			new Field(
 				key: 'tag_ids',
@@ -333,7 +341,8 @@ final class Registry {
 				nullable: true,
 				variable_parent_note: $variable_price,
 				sortable: true,
-				filter_operators: self::RANGE
+				filter_operators: self::RANGE,
+				default_order: 3
 			),
 			new Field(
 				key: 'sale_price',
@@ -347,7 +356,8 @@ final class Registry {
 				setter: 'set_sale_price',
 				inline: true,
 				nullable: true,
-				variable_parent_note: $variable_price
+				variable_parent_note: $variable_price,
+				default_order: 4
 			),
 			new Field(
 				key: 'stock_status',
@@ -366,7 +376,8 @@ final class Registry {
 					'onbackorder' => __( 'On backorder', 'bulk-catalogue-manager-for-woocommerce' ),
 				],
 				sortable: true,
-				filter_operators: [ 'isAny', 'isNone' ]
+				filter_operators: [ 'isAny', 'isNone' ],
+				default_order: 5
 			),
 			new Field(
 				key: 'manage_stock',
@@ -411,7 +422,8 @@ final class Registry {
 				nullable: true,
 				max_length: 100,
 				unique: true,
-				sortable: true
+				sortable: true,
+				default_order: 1
 			),
 			new Field(
 				key: 'weight',

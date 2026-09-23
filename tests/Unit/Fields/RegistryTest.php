@@ -179,6 +179,70 @@ final class RegistryTest extends TestCase {
 		}
 	}
 
+	public function test_the_default_columns_and_the_choices_that_hide_a_product_are_flagged(): void {
+		$client  = array_map( static fn( Field $field ): array => $field->to_client(), ( new Registry() )->all() );
+		$default = array_filter( $client, static fn( array $field ): bool => $field['defaultColumn'] );
+		uasort( $default, static fn( array $a, array $b ): int => $a['defaultOrder'] <=> $b['defaultOrder'] );
+		$this->assertSame( [ 'sku', 'status', 'regular_price', 'sale_price', 'stock_status', 'category_ids' ], array_keys( $default ), 'T40: the columns after the product cell, in order.' );
+		$this->assertSame( [ 1, 2, 3, 4, 5, 6 ], array_column( $default, 'defaultOrder' ) );
+		foreach ( array_diff_key( $client, $default ) as $key => $field ) {
+			$this->assertNull( $field['defaultOrder'], $key );
+		}
+
+		$hiding = [];
+		foreach ( $client as $key => $field ) {
+			foreach ( $field['choices'] ?? [] as $choice ) {
+				$this->assertSame( null !== $choice['hidesAs'], $choice['hidesProduct'], "$key {$choice['value']}" );
+				if ( $choice['hidesProduct'] ) {
+					$hiding[ $key ][ $choice['value'] ] = $choice['hidesAs'];
+				}
+			}
+		}
+		$this->assertSame(
+			[
+				'status'             => [
+					'draft'   => Field::HIDES_OFF_SITE,
+					'pending' => Field::HIDES_OFF_SITE,
+				],
+				'catalog_visibility' => [ 'hidden' => Field::HIDES_FROM_SHOP ],
+				'visible_on_site'    => [ 'off' => Field::HIDES_FROM_SHOP ],
+			],
+			$hiding
+		);
+		$this->assertArrayNotHasKey( 'hidesProduct', $client['status']['dataviews']['elements'][0], 'The DataViews elements stay value and label.' );
+
+		$bad = static fn( array $args ): Field => new Field(
+			...( $args + [
+				'key'            => 'thing',
+				'label'          => 'Thing',
+				'type'           => Field::ENUM,
+				'storage'        => Storage::meta( '_thing' ),
+				'edit_kinds'     => [],
+				'variation_rule' => Field::PER_VARIATION,
+				'getter'         => 'get_thing',
+				'setter'         => null,
+				'choices'        => [ 'a' => 'A' ],
+			] )
+		);
+		foreach ( [
+			[ 'hiding_choices' => [ 'b' => Field::HIDES_FROM_SHOP ] ],
+			[ 'hiding_choices' => [ 'a' => 'gone' ] ],
+			[
+				'type'           => Field::TEXT,
+				'choices'        => [],
+				'hiding_choices' => [ 'a' => Field::HIDES_FROM_SHOP ],
+			],
+			[ 'default_order' => -1 ],
+		] as $args ) {
+			try {
+				$bad( $args );
+				$this->fail( 'Accepted ' . wp_json_encode( $args ) );
+			} catch ( \InvalidArgumentException $e ) {
+				$this->assertStringContainsString( 'is invalid', $e->getMessage() );
+			}
+		}
+	}
+
 	public function test_the_client_payload_exposes_no_storage_key(): void {
 		$json = (string) wp_json_encode( ( new FieldsController( new Registry() ) )->payload() );
 		foreach ( self::raw_identifiers() as $identifier ) {

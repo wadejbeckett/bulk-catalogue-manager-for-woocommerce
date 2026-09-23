@@ -4,11 +4,18 @@
  * changes across every batch, newest first, filtered by product (`product`,
  * the changed object's id), field (`field`, a registry key), user (`user`,
  * the batch's user) and the time the row was written (`after`, `before`).
+ * The product filter matches the journal's object id exactly, so a
+ * variation's id lists that variation's own changes (a parent's id lists the
+ * parent's, not its variations'). To find a variation by its SKU the screen
+ * searches `GET /products` in the products_and_variations or variations mode,
+ * where the search matches each row's own SKU and name, and passes the
+ * variation's id here.
  *
  * Each row is the changes feed's row (BatchChangesController::change():
  * `change_id, object_id, object_type, name, field, field_label, old_value,
- * new_value, result, message, detail, applied_gmt`) plus its `batch_id` and
- * the batch's `user_id`; names come from one post-cache prime per page and
+ * new_value, result, message, detail, applied_gmt`) plus its `batch_id`, the
+ * batch's `user_id` and that user's `user_name` (one get_users() call per
+ * page); names come from one post-cache prime per page and
  * each field is shown by its registry label. Answers `{ items, pagination }`
  * with `per_page` capped at 100 by RouteSchema's paging arguments; the field
  * argument's choices are the registry's keys. Behind Access::can_read, like
@@ -125,28 +132,58 @@ final class AuditController implements ReadController {
 	 * @param \WP_REST_Request $request The validated, sanitised request.
 	 */
 	public function get_items( \WP_REST_Request $request ): \WP_REST_Response {
-		$filters = array_filter(
+		$page = (int) ( $request->get_param( 'page' ) ?? 1 );
+		$size = (int) ( $request->get_param( 'per_page' ) ?? 25 );
+		$rows = $this->rows( self::filters( $request->get_params() ), $page, $size );
+		return BatchesController::paged( $rows['items'], $page, $size, $rows['total'] );
+	}
+
+	/**
+	 * The audit log's filters from a request's validated parameters.
+	 *
+	 * @param array<string, mixed> $params Parameters: product, field, user, after, before.
+	 * @return array<string, mixed> Filters for ChangeRepository::audit().
+	 */
+	public static function filters( array $params ): array {
+		return array_filter(
 			[
-				'object_id' => $request->get_param( 'product' ),
-				'prop'      => $request->get_param( 'field' ),
-				'user_id'   => $request->get_param( 'user' ),
-				'after'     => $request->get_param( 'after' ),
-				'before'    => $request->get_param( 'before' ),
+				'object_id' => $params['product'] ?? null,
+				'prop'      => $params['field'] ?? null,
+				'user_id'   => $params['user'] ?? null,
+				'after'     => $params['after'] ?? null,
+				'before'    => $params['before'] ?? null,
 			],
 			[ BatchesController::class, 'is_given' ]
 		);
-		$page    = (int) ( $request->get_param( 'page' ) ?? 1 );
-		$size    = (int) ( $request->get_param( 'per_page' ) ?? 25 );
-		$rows    = $this->changes->audit( $filters, $page, $size );
+	}
+
+	/**
+	 * One page of audit rows and the total (the route and the audit export
+	 * read through this): names from one post-cache prime, user names from
+	 * one get_users() call.
+	 *
+	 * @param array<string, mixed> $filters Filters, as filters() returns them.
+	 * @param int                  $page    Page, from 1.
+	 * @param int                  $size    Rows per page.
+	 * @param bool                 $count   Whether to count the total (an export counts once, on its first page); 0 when not.
+	 * @return array{items: list<array<string, mixed>>, total: int}
+	 */
+	public function rows( array $filters, int $page, int $size, bool $count = true ): array {
+		$rows = $this->changes->audit( $filters, $page, $size );
 		BatchChangesController::prime_names( $rows );
+		$names = BatchesController::user_names( array_column( $rows, 'user_id' ) );
 		$items = [];
 		foreach ( $rows as $row ) {
 			$items[] = [
-				'batch_id' => $row['batch_id'],
-				'user_id'  => $row['user_id'],
+				'batch_id'  => $row['batch_id'],
+				'user_id'   => $row['user_id'],
+				'user_name' => $names[ (int) $row['user_id'] ] ?? '',
 			] + $this->rows->change( $row );
 		}
-		return BatchesController::paged( $items, $page, $size, $this->changes->audit_count( $filters ) );
+		return [
+			'items' => $items,
+			'total' => $count ? $this->changes->audit_count( $filters ) : 0,
+		];
 	}
 
 	/**
@@ -159,8 +196,9 @@ final class AuditController implements ReadController {
 		$schema['title']      = 'bcm-audit-change';
 		$integer              = [ 'type' => 'integer' ];
 		$schema['properties'] = [
-			'batch_id' => $integer,
-			'user_id'  => $integer,
+			'batch_id'  => $integer,
+			'user_id'   => $integer,
+			'user_name' => [ 'type' => 'string' ],
 		] + $schema['properties'];
 		return $schema;
 	}

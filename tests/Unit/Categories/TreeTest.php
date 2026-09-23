@@ -72,13 +72,14 @@ final class TreeTest extends TestCase {
 		);
 	}
 
-	public function test_each_node_carries_id_name_slug_parent_depth_and_order(): void {
+	public function test_each_node_carries_id_name_slug_description_parent_depth_and_order(): void {
 		$flat = CatalogueFixture::flatten( Tree::from_terms( CatalogueFixture::terms(), CatalogueFixture::ORDERS )->to_array() );
 		$this->assertSame(
 			[
 				'id'                   => 4,
 				'name'                 => 'Formal & Office',
 				'slug'                 => 'formal',
+				'description'          => '',
 				'parent'               => 3,
 				'depth'                => 3,
 				'order'                => 0,
@@ -94,6 +95,19 @@ final class TreeTest extends TestCase {
 			$this->assertSame( 0 === $parent ? 0 : $flat[ $parent ]['depth'] + 1, $flat[ $id ]['depth'], "Depth of $id." );
 		}
 		$this->assertCount( count( CatalogueFixture::TERMS ), $flat, 'Every term appears exactly once.' );
+
+		$described = Tree::from_terms(
+			[
+				(object) [
+					'term_id'     => 1,
+					'name'        => 'Hats',
+					'slug'        => 'hats',
+					'description' => '<em>Warm</em> & dry',
+					'parent'      => 0,
+				],
+			]
+		)->node( 1 );
+		$this->assertSame( '<em>Warm</em> & dry', $described['description'], 'The stored description, unchanged, for the pane to show as text.' );
 	}
 
 	public function test_a_removed_parent_or_a_self_parent_puts_the_term_at_the_top(): void {

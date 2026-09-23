@@ -148,3 +148,22 @@ if ( ! class_exists( 'WP_User' ) ) {
 		public $display_name = '';
 	}
 }
+
+// History rows (server follow-ups): get_users() answers from
+// $GLOBALS['bcm_test']['users'] (id => display name) for the ids its
+// `include` names, recording each call's arguments in 'get_users_calls'.
+if ( ! function_exists( 'get_users' ) ) {
+	function get_users( array $args = [] ): array {
+		$GLOBALS['bcm_test']['get_users_calls'][] = $args;
+		$users                                    = [];
+		foreach ( (array) ( $args['include'] ?? [] ) as $id ) {
+			if ( isset( $GLOBALS['bcm_test']['users'][ (int) $id ] ) ) {
+				$users[] = (object) [
+					'ID'           => (int) $id,
+					'display_name' => (string) $GLOBALS['bcm_test']['users'][ (int) $id ],
+				];
+			}
+		}
+		return $users;
+	}
+}

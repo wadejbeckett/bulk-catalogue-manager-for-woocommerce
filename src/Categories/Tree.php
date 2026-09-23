@@ -2,8 +2,9 @@
 /**
  * The product category hierarchy as the category panel reads it (SPEC §7,
  * §4.7): built in PHP from one flat list of terms, each node carrying its
- * id, name, slug, parent, depth and sibling order, then its own product
- * count and its count including descendants.
+ * id, name, slug, description, parent, depth and sibling order, then its
+ * own product count and its count including descendants. The description
+ * is the term's stored text, unchanged, for the details pane to show as text.
  *
  * A term whose parent is not in the list (removed, or in a loop of parents)
  * becomes a top-level node and reports parent 0, so the tree is always a
@@ -35,9 +36,9 @@ defined( 'ABSPATH' ) || exit;
  */
 final class Tree {
 	/**
-	 * Nodes by id: id, name, slug, parent, depth, order.
+	 * Nodes by id: id, name, slug, description, parent, depth, order.
 	 *
-	 * @var array<int, array{id: int, name: string, slug: string, parent: int, depth: int, order: int}>
+	 * @var array<int, array{id: int, name: string, slug: string, description: string, parent: int, depth: int, order: int}>
 	 */
 	private array $nodes = [];
 
@@ -51,7 +52,7 @@ final class Tree {
 	/**
 	 * Build from a flat term list.
 	 *
-	 * @param iterable<object>  $terms       Terms with term_id, name, slug and parent, as get_terms() returns them.
+	 * @param iterable<object>  $terms       Terms with term_id, name, slug, description and parent, as get_terms() returns them.
 	 * @param array<int, mixed> $orders      WooCommerce's stored category order by term id; missing or non-numeric reads as 0.
 	 * @param array<int, mixed> $tree_orders The plugin's tree order (`bcm_order`) by term id; a numeric value places the term ahead of siblings without one.
 	 */
@@ -65,12 +66,13 @@ final class Tree {
 				continue;
 			}
 			$flat[ $id ] = [
-				'id'     => $id,
-				'name'   => html_entity_decode( (string) ( $term->name ?? '' ), ENT_QUOTES, 'UTF-8' ),
-				'slug'   => (string) ( $term->slug ?? '' ),
-				'parent' => (int) ( $term->parent ?? 0 ),
-				'depth'  => 0,
-				'order'  => is_numeric( $orders[ $id ] ?? null ) ? (int) $orders[ $id ] : 0,
+				'id'          => $id,
+				'name'        => html_entity_decode( (string) ( $term->name ?? '' ), ENT_QUOTES, 'UTF-8' ),
+				'slug'        => (string) ( $term->slug ?? '' ),
+				'description' => (string) ( $term->description ?? '' ),
+				'parent'      => (int) ( $term->parent ?? 0 ),
+				'depth'       => 0,
+				'order'       => is_numeric( $orders[ $id ] ?? null ) ? (int) $orders[ $id ] : 0,
 			];
 			if ( is_numeric( $tree_orders[ $id ] ?? null ) ) {
 				$flat[ $id ]['order'] = (int) $tree_orders[ $id ];
@@ -155,7 +157,7 @@ final class Tree {
 	 * One node without children or counts, or null.
 	 *
 	 * @param int $id Term id.
-	 * @return array{id: int, name: string, slug: string, parent: int, depth: int, order: int}|null
+	 * @return array{id: int, name: string, slug: string, description: string, parent: int, depth: int, order: int}|null
 	 */
 	public function node( int $id ): ?array {
 		return $this->nodes[ $id ] ?? null;

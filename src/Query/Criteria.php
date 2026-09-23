@@ -38,6 +38,17 @@ final class Criteria {
 	public const MODE_VARIATIONS              = 'variations';
 
 	/**
+	 * The category filter's optional key (T62, SPEC §7): false filters by the
+	 * chosen categories only, true (the default) by their whole branches.
+	 */
+	public const INCLUDE_CHILDREN = 'include_children';
+
+	/**
+	 * The one filter that takes INCLUDE_CHILDREN.
+	 */
+	public const BRANCH_FILTER = 'category_ids';
+
+	/**
 	 * Every mode.
 	 */
 	public const MODES = [ self::MODE_PRODUCTS, self::MODE_PRODUCTS_AND_VARIATIONS, self::MODE_VARIATIONS ];
@@ -261,10 +272,18 @@ final class Criteria {
 	/**
 	 * One filter.
 	 *
-	 * @param mixed $filter [ field, operator, value ].
+	 * @param mixed $filter [ field, operator, value ], and for the category filter optionally include_children (a boolean).
 	 * @throws \InvalidArgumentException When it is not allowed or malformed.
 	 */
 	private static function filter( mixed $filter ): Filter {
+		$children = true;
+		if ( is_array( $filter ) && array_key_exists( self::INCLUDE_CHILDREN, $filter ) ) {
+			if ( self::BRANCH_FILTER !== ( $filter['field'] ?? null ) || ! is_bool( $filter[ self::INCLUDE_CHILDREN ] ) ) {
+				throw new \InvalidArgumentException( 'Only the category filter takes include_children, as true or false.' );
+			}
+			$children = $filter[ self::INCLUDE_CHILDREN ];
+			unset( $filter[ self::INCLUDE_CHILDREN ] );
+		}
 		if ( ! is_array( $filter ) || [ 'field', 'operator', 'value' ] !== array_keys( self::sorted( $filter ) ) ) {
 			throw new \InvalidArgumentException( 'A filter must have a field, an operator and a value.' );
 		}
@@ -290,7 +309,7 @@ final class Criteria {
 		if ( null === $clean ) {
 			throw new \InvalidArgumentException( esc_html( sprintf( 'Filter "%s" has an invalid value.', $field ) ) );
 		}
-		return new Filter( $field, $operator, $clean );
+		return new Filter( $field, $operator, $clean, $children );
 	}
 
 	/**

@@ -69,7 +69,7 @@ final class CategoriesRouteTest extends TestCase {
 
 		$item = call_user_func( $route['schema'] );
 		$this->assertSame( 'bcm-category', $item['title'] );
-		$this->assertSame( [ 'id', 'name', 'slug', 'parent', 'depth', 'order', 'count', 'countWithDescendants', 'children' ], array_keys( $item['properties'] ) );
+		$this->assertSame( [ 'id', 'name', 'slug', 'description', 'parent', 'depth', 'order', 'count', 'countWithDescendants', 'children' ], array_keys( $item['properties'] ) );
 		$this->assertSame( [], $GLOBALS['bcm_test']['wrong'] );
 	}
 

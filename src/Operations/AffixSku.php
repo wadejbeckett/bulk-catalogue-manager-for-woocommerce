@@ -2,8 +2,14 @@
 /**
  * Add a prefix or suffix (SPEC §6): put the same text at the start or the
  * end of each SKU. Accepts the fields allowing a prefix or a suffix; the
- * chosen position has to be one the chosen field allows. compute() lands in
- * T25.
+ * chosen position has to be one the chosen field allows.
+ *
+ * An object with no SKU is skipped and counted, since adding the same text
+ * to many empty SKUs would give them all one SKU. A SKU that already starts
+ * (or ends) with the text is already correct, so running the same batch
+ * twice never doubles it. The new SKU then takes the same path as setting a
+ * value (SetValue::outcome()), so the field's length rule applies; a clash
+ * with another product's SKU is T28's check and the write-time refusal's.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -104,13 +110,32 @@ final class AffixSku extends BaseOperation {
 	}
 
 	/**
-	 * Implemented in T25.
+	 * The SKU with the text added at the chosen end.
 	 *
 	 * @param object               $subject A product or variation.
 	 * @param array<string, mixed> $args    Normalised arguments.
 	 */
 	public function compute( object $subject, array $args ): Result {
-		unset( $subject, $args );
-		$this->not_yet( 'T25' );
+		$field  = $this->field( $args );
+		$old    = $field->read( $subject );
+		$text   = is_scalar( $old ) ? (string) $old : '';
+		$affix  = (string) ( $args['text'] ?? '' );
+		$prefix = Field::PREFIX === ( $args['position'] ?? '' );
+
+		if ( '' === $text ) {
+			return Result::skipped(
+				$field->key(),
+				$old,
+				sprintf(
+					/* translators: %s: a field's name, such as "SKU". */
+					__( 'This product has no %s to add to, so it was skipped. Give it one first.', 'bulk-catalogue-manager-for-woocommerce' ),
+					$field->label()
+				)
+			);
+		}
+		if ( '' === $affix || ( $prefix ? str_starts_with( $text, $affix ) : str_ends_with( $text, $affix ) ) ) {
+			return Result::already( $field->key(), $old );
+		}
+		return SetValue::outcome( $field, $subject, $prefix ? $affix . $text : $text . $affix );
 	}
 }

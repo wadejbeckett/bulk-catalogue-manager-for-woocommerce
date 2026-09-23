@@ -462,3 +462,11 @@ if ( ! function_exists( 'wp_salt' ) ) {
 		return number_format( $number, $decimals );
 	}
 }
+
+// T25: core's wp_filter_post_kses() — kses with the post rules over slashed
+// data, as core defines it — over the wp_kses_post() stub above.
+if ( ! function_exists( 'wp_filter_post_kses' ) ) {
+	function wp_filter_post_kses( string $data ): string {
+		return addslashes( wp_kses_post( stripslashes( $data ) ) );
+	}
+}

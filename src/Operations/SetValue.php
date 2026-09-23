@@ -4,8 +4,17 @@
  * field. Accepts every field allowing set except the term lists, whose
  * whole-list set is replace_terms (T27). The value is checked and put in
  * canonical form by the field's own validator and sanitiser, so what is
- * validated here is exactly what the field would write. compute() lands
- * in T25.
+ * validated here is exactly what the field would write.
+ *
+ * compute() reads the current value through the field, refuses an object
+ * the field does not apply to (a parent-only field on a variation, a price
+ * on a variable parent, stock quantity where stock is not managed) as
+ * failed with the field's own sentence, runs the value through the field
+ * again under the current user — so a name written without unfiltered_html
+ * is filtered here, and the preview shows what will be stored — and answers
+ * already when the object holds that value. The other actions that end in
+ * "write this value" (clear, find and replace, prefix or suffix) share this
+ * through outcome(). The cross-field and uniqueness checks are T28's.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -112,13 +121,43 @@ final class SetValue extends BaseOperation {
 	}
 
 	/**
-	 * Implemented in T25.
+	 * The object's value would become the chosen value.
 	 *
 	 * @param object               $subject A product or variation.
 	 * @param array<string, mixed> $args    Normalised arguments.
 	 */
 	public function compute( object $subject, array $args ): Result {
-		unset( $subject, $args );
-		$this->not_yet( 'T25' );
+		return self::outcome( $this->field( $args ), $subject, $args['value'] ?? null );
+	}
+
+	/**
+	 * What writing a target value to one object would do, without writing:
+	 * failed when the field does not apply to the object or refuses the
+	 * value (the field's sentence and code), already when the object holds
+	 * it, otherwise a change from the value read to the canonical target.
+	 *
+	 * Prices and decimals compare in canonical form, so 10 and 10.00 are
+	 * the same price; every other type compares exactly as read.
+	 *
+	 * @param Field  $field   The field written.
+	 * @param object $subject A product or variation.
+	 * @param mixed  $target  The value to write, before cleaning.
+	 */
+	public static function outcome( Field $field, object $subject, mixed $target ): Result {
+		$old    = $field->read( $subject );
+		$reason = $field->unavailable_reason( $subject );
+		if ( null !== $reason ) {
+			return Result::failed( $field->key(), $old, $reason, 'bcm_not_available' );
+		}
+		$clean = $field->clean( $target );
+		if ( $clean instanceof \WP_Error ) {
+			return Result::failed( $field->key(), $old, $clean->get_error_message(), (string) $clean->get_error_code() );
+		}
+		$current = $old;
+		if ( Field::MONEY === $field->type() || Field::DECIMAL === $field->type() ) {
+			$canonical = $field->clean( $old );
+			$current   = $canonical instanceof \WP_Error ? $old : $canonical;
+		}
+		return $current === $clean ? Result::already( $field->key(), $old ) : Result::changed( $field->key(), $old, $clean );
 	}
 }

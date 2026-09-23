@@ -2,7 +2,9 @@
 /**
  * Clear (SPEC §5.4, §6): empty one nullable field, such as ending a sale
  * by clearing the sale price. Clearing writes an empty value, which is
- * distinct from zero. compute() lands in T25.
+ * distinct from zero: a sale price of 0.00 is cleared to '', and one that
+ * is already empty is already cleared. compute() goes through the same
+ * path as setting a value (SetValue::outcome()).
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -67,13 +69,12 @@ final class Clear extends BaseOperation {
 	}
 
 	/**
-	 * Implemented in T25.
+	 * The object's value would become empty.
 	 *
 	 * @param object               $subject A product or variation.
 	 * @param array<string, mixed> $args    Normalised arguments.
 	 */
 	public function compute( object $subject, array $args ): Result {
-		unset( $subject, $args );
-		$this->not_yet( 'T25' );
+		return SetValue::outcome( $this->field( $args ), $subject, '' );
 	}
 }

@@ -968,7 +968,7 @@ final class RegistryTest extends TestCase {
 	public function test_compute_on_a_placeholder_throws_and_writes_nothing(): void {
 		$registry = self::registry();
 		foreach ( self::ACTIONS as $id => [ , , $ticket ] ) {
-			if ( in_array( $ticket, [ 'T25' ], true ) ) {
+			if ( in_array( $ticket, [ 'T25', 'T26' ], true ) ) {
 				continue; // Implemented; covered by its own tests.
 			}
 			$product   = new FakeProduct(

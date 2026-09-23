@@ -470,3 +470,10 @@ if ( ! function_exists( 'wp_filter_post_kses' ) ) {
 		return addslashes( wp_kses_post( stripslashes( $data ) ) );
 	}
 }
+
+// T26: WooCommerce's rounding precision, the price decimals plus two and at least 6.
+if ( ! function_exists( 'wc_get_rounding_precision' ) ) {
+	function wc_get_rounding_precision(): int {
+		return max( 6, wc_get_price_decimals() + 2 );
+	}
+}

@@ -2,9 +2,13 @@
 /**
  * Increase or decrease (SPEC §5.4, §6): raise or lower each object's own
  * current value — a price, stock quantity, weight or any field allowing an
- * adjustment — by a fixed amount or a percentage. compute() lands in T26:
- * an object with no current value is skipped and counted, and a result
- * below zero is refused, never clamped.
+ * adjustment — by a fixed amount or a percentage. An object with no current
+ * value is skipped and counted, never read as zero; a result below zero is
+ * refused and the row skipped, never clamped (SPEC §5.4). A price is stored
+ * at the shop's precision through wc_format_decimal() (half up). A whole-
+ * number field moves by whole amounts (normalise() refuses a fraction), and
+ * a percentage of it is rounded to the nearest whole number, half up, so
+ * stock quantities stay integers and the preview shows the rounded count.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -120,13 +124,27 @@ final class Adjust extends BaseOperation {
 	}
 
 	/**
-	 * Implemented in T26.
+	 * Raise or lower one object's current value. Writes nothing.
 	 *
 	 * @param object               $subject A product or variation.
 	 * @param array<string, mixed> $args    Normalised arguments.
 	 */
 	public function compute( object $subject, array $args ): Result {
-		unset( $subject, $args );
-		$this->not_yet( 'T26' );
+		$field  = $this->field( $args );
+		$old    = $field->read( $subject );
+		$number = Round::current_number( $field, $subject, $old );
+		if ( $number instanceof Result ) {
+			return $number;
+		}
+		$amount = 'increase' === $args['direction'] ? (float) $args['amount'] : - (float) $args['amount'];
+		$result = Round::decimal_of(
+			'percent' === $args['by']
+				? (float) $number * ( 100 + $amount ) / 100
+				: (float) $number + $amount
+		);
+		if ( Round::below_zero( $result ) ) {
+			return Round::refuse_below_zero( $field, $old, $result );
+		}
+		return Round::outcome( $field, $old, $result );
 	}
 }

@@ -463,23 +463,108 @@ final class ProductsCatalogueTest extends TestCase {
 				'sku'               => 'JACKET-BL-L',
 				'parent_name'       => 'Rain Jacket',
 				'attribute_summary' => 'Blue / Large',
+				'attributes'        => [
+					[
+						'label' => 'Colour',
+						'value' => 'Blue',
+					],
+					[
+						'label' => 'Size',
+						'value' => 'Large',
+					],
+				],
 			],
 			$by_id[201]
 		);
-		$this->assertArrayNotHasKey( 'parent_name', $by_id[103], 'A product row carries neither.' );
+		$this->assertArrayNotHasKey( 'parent_name', $by_id[103], 'A product row carries none of them.' );
 		$this->assertArrayNotHasKey( 'attribute_summary', $by_id[103] );
+		$this->assertArrayNotHasKey( 'attributes', $by_id[103] );
 	}
 
-	public function test_a_parent_argument_on_the_products_route_is_ignored(): void {
+	public function test_a_parent_argument_lists_one_product_s_variations_paged_sorted_and_narrowed(): void {
 		$this->assertSame(
-			SeededCatalogue::PRODUCTS,
+			[ 202, 201 ],
 			$this->ids(
 				[
-					'orderby' => 'id',
+					'mode'   => 'variations',
+					'parent' => 103,
+				]
+			),
+			'WooCommerce\'s order without a sort; the trashed variation is left out.'
+		);
+		$this->assertSame(
+			[ 201, 202 ],
+			$this->ids(
+				[
+					'mode'    => 'variations',
 					'parent'  => 103,
+					'orderby' => 'id',
 				]
 			)
 		);
+
+		$page = self::get(
+			[
+				'mode'     => 'variations',
+				'parent'   => '103',
+				'orderby'  => 'sku',
+				'order'    => 'desc',
+				'per_page' => 1,
+				'page'     => 2,
+				'fields'   => 'sku',
+			]
+		)->get_data();
+		$this->assertSame(
+			[
+				'page'       => 2,
+				'perPage'    => 1,
+				'total'      => 2,
+				'totalPages' => 2,
+			],
+			$page['pagination']
+		);
+		$this->assertSame( [ 'id', 'parent_id', 'sku', 'parent_name', 'attribute_summary', 'attributes' ], array_keys( $page['items'][0] ) );
+		$this->assertSame( 103, $page['items'][0]['parent_id'] );
+
+		$this->assertSame(
+			[],
+			$this->ids(
+				[
+					'mode'   => 'variations',
+					'parent' => 107,
+				]
+			),
+			'A variable product with no variations lists nothing.'
+		);
+		$this->assertSame(
+			[],
+			$this->ids(
+				[
+					'mode'   => 'variations',
+					'parent' => 101,
+				]
+			),
+			'A simple product lists nothing.'
+		);
+	}
+
+	public function test_a_parent_argument_needs_the_variations_mode(): void {
+		foreach ( [ [], [ 'mode' => 'products' ], [ 'mode' => 'products_and_variations' ] ] as $mode ) {
+			$refused = self::get( $mode + [ 'parent' => 103 ] );
+			$this->assertInstanceOf( \WP_Error::class, $refused, (string) wp_json_encode( $mode ) );
+			$this->assertSame( 'bcm_invalid_value', $refused->get_error_code() );
+			$this->assertSame( 400, $refused->get_error_data()['status'] );
+		}
+		foreach ( [ 0, -3, 'abc' ] as $bad ) {
+			$refused = self::get(
+				[
+					'mode'   => 'variations',
+					'parent' => $bad,
+				]
+			);
+			$this->assertInstanceOf( \WP_Error::class, $refused, (string) wp_json_encode( $bad ) );
+			$this->assertSame( 'rest_invalid_param', $refused->get_error_code() );
+		}
 	}
 
 	public function test_each_variable_row_carries_its_variation_count_from_one_grouped_statement(): void {

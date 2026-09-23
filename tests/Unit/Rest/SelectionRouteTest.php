@@ -129,6 +129,27 @@ final class SelectionRouteTest extends TestCase {
 		$this->assertSame( 4, ( new ProductQuery( $selection->criteria ) )->total(), 'The materialised conditions match the same rows.' );
 	}
 
+	public function test_a_parent_selects_one_product_s_variations_only_in_the_variations_mode(): void {
+		$response = self::send(
+			'POST',
+			'/selection',
+			[
+				'mode'   => Criteria::MODE_VARIATIONS,
+				'parent' => 103,
+			]
+		);
+		$this->assertInstanceOf( \WP_REST_Response::class, $response );
+		$this->assertSame( 2, $response->get_data()['count'] );
+		$selection = SelectionToken::parse( $response->get_data()['token'] );
+		$this->assertInstanceOf( Selection::class, $selection );
+		$this->assertSame( 103, $selection->criteria->conditions()['parent'] );
+
+		$refused = self::send( 'POST', '/selection', [ 'parent' => 103 ] );
+		$this->assertInstanceOf( \WP_Error::class, $refused );
+		$this->assertSame( 'bcm_invalid_value', $refused->get_error_code() );
+		$this->assertSame( 400, $refused->get_error_data()['status'] );
+	}
+
 	/**
 	 * A page's ids, ascending.
 	 *

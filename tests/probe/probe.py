@@ -361,6 +361,7 @@ def read_routes(p: Probe) -> list[tuple[str, str, str, Any, Any, Callable[[Respo
     """(surface, method, route, params, body, shape check returning '' when good)."""
     root = p.seed["categories"]["root"]
     variable = p.seed["variable"]["id"]
+    simple = p.simple(1)["id"]
     cols = ["id", "sku", "name", "regular_price"]
 
     def fields_shape(r: Response) -> str:
@@ -422,6 +423,38 @@ def read_routes(p: Probe) -> list[tuple[str, str, str, Any, Any, Callable[[Respo
             rows = list(csv.reader(io.StringIO(r.body.decode("utf-8-sig"))))
             return "" if rows and rows[0] == want else f"header {rows[0] if rows else None} want {want}"
         return shape
+    def item_shape(want_id: int) -> Callable[[Response], str]:
+        def shape(r: Response) -> str:
+            d = r.json()
+            if not isinstance(d, dict) or set(d) != {"item"} or not isinstance(d["item"], dict):
+                return f"{str(d)[:120]}"
+            item = d["item"]
+            return "" if item.get("id") == want_id and {"id", "parent_id", "sku", "name"} <= set(item) else f"item keys {sorted(item)[:8]}"
+        return shape
+
+    def terms_shape(r: Response) -> str:
+        d = r.json()
+        if not isinstance(d, list):
+            return f"not a flat array: {type(d).__name__}"
+        if not all(isinstance(t, dict) and set(t) == {"id", "name", "count"} for t in d):
+            return f"entries {d[:2]}"
+        names = [t["name"] for t in d]
+        # The route sorts as PHP's strnatcasecmp: case-insensitive, digit runs as numbers.
+        natural = lambda n: [(0, int(x), "") if x.isdigit() else (1, 0, x.casefold()) for x in re.split(r"(\d+)", n)]  # noqa: E731
+        return "" if names == sorted(names, key=natural) else f"not by name: {names[:5]}"
+
+    def parent_shape(r: Response) -> str:
+        d = r.json()
+        problem = paged_shape(r)
+        if problem:
+            return problem
+        rows = d["items"]
+        if not rows or d["pagination"]["total"] < 1:
+            return "no variations"
+        if not all(row.get("parent_id") == variable and isinstance(row.get("attributes"), list) for row in rows):
+            return f"rows {[(row.get('id'), row.get('parent_id')) for row in rows][:5]}"
+        return "" if all(set(row) <= {"id", "parent_id", "sku", "parent_name", "attribute_summary", "attributes"} for row in rows) else f"row keys {sorted(rows[0])}"
+
     def views_shape(r: Response) -> str:
         d = r.json()
         if not isinstance(d, dict) or not isinstance(d.get("items"), list) or d.get("max") != 50 or "default" not in d:
@@ -445,6 +478,11 @@ def read_routes(p: Probe) -> list[tuple[str, str, str, Any, Any, Callable[[Respo
         ("export-batches", "GET", "/export", [("source", "batches"), ("columns[]", "batch_id"), ("columns[]", "user_name")], None, csv_header(["Change number", "Who"])),
         # T52's saved views: the current user's own list.
         ("views", "GET", "/views", None, None, views_shape),
+        # Server wire-ins 2026-09-23: one row, the flat term lists and a parent-filtered list.
+        ("product", "GET", f"/products/{simple}", [("fields[]", "sku"), ("fields[]", "name")], None, item_shape(simple)),
+        ("terms-tags", "GET", "/terms/product_tag", None, None, terms_shape),
+        ("terms-shipping-classes", "GET", "/terms/product_shipping_class", None, None, terms_shape),
+        ("products-parent", "GET", "/products", [("mode", "variations"), ("parent", str(variable)), ("fields[]", "sku"), ("per_page", "100")], None, parent_shape),
     ]
 
 

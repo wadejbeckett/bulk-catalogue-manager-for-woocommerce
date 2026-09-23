@@ -51,7 +51,7 @@ final class RouteSchema {
 	/**
 	 * The query arguments besides paging and the per-field filters.
 	 */
-	public const QUERY = [ 'search', 'orderby', 'order', 'mode', 'fields' ];
+	public const QUERY = [ 'search', 'orderby', 'order', 'mode', 'parent', 'fields' ];
 
 	/**
 	 * Build over a registry.
@@ -136,6 +136,25 @@ final class RouteSchema {
 	}
 
 	/**
+	 * Every argument of a single row read (`GET /products/{id}`): the
+	 * product or variation id from the path and fields.
+	 *
+	 * @return array<string, array<string, mixed>>
+	 */
+	public function row_args(): array {
+		return [
+			'id' => self::arg(
+				[
+					'type'     => 'integer',
+					'minimum'  => 1,
+					'required' => true,
+				],
+				static fn( mixed $value ): int => max( 0, (int) $value )
+			),
+		] + $this->fields_arg();
+	}
+
+	/**
 	 * The properties a hydrated row carries besides its registry fields
 	 * (Query\Hydrator), for every row route's item schema.
 	 *
@@ -165,12 +184,28 @@ final class RouteSchema {
 				'description' => __( 'On a variation, its attribute values, such as "Blue / Large".', 'bulk-catalogue-manager-for-woocommerce' ),
 				'type'        => 'string',
 			] + $read_only,
+			Hydrator::ATTRIBUTES        => [
+				'type'  => 'array',
+				'items' => [
+					'type'       => 'object',
+					'properties' => [
+						'label' => [ 'type' => 'string' ],
+						'value' => [ 'type' => 'string' ],
+					],
+				],
+			] + $read_only,
 		];
 	}
 
 	/**
 	 * Every argument of a catalogue read (`GET /products`): paging, search,
-	 * sort, mode, fields and one argument per filterable field.
+	 * sort, mode, parent, fields and one argument per filterable field.
+	 *
+	 * `parent` (a product id) lists only that product's variations. It is
+	 * taken only with `mode=variations`: in any other mode Criteria refuses
+	 * it, and the route answers 400 `bcm_invalid_value`. Without `orderby`
+	 * such a read keeps WooCommerce's variation order (`menu_order`, then
+	 * id); an id that is not a variable product lists nothing.
 	 *
 	 * @return array<string, array<string, mixed>>
 	 */
@@ -216,21 +251,29 @@ final class RouteSchema {
 					'enum'        => Criteria::MODES,
 					'default'     => Criteria::MODE_PRODUCTS,
 				],
-				static fn( mixed $value ): string => (string) $value
+				'strval'
+			),
+			'parent'  => self::arg(
+				[
+					'description' => __( 'The product whose variations are listed.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'type'        => 'integer',
+					'minimum'     => 1,
+				],
+				static fn( mixed $value ): int => max( 0, (int) $value )
 			),
 		] + $this->fields_arg() + $this->filter_args();
 	}
 
 	/**
 	 * The arguments of `POST /selection` (T19): the grid's conditions —
-	 * search, mode and one argument per filterable field, as `/products`
+	 * search, mode, parent and one argument per filterable field, as `/products`
 	 * takes them — or an explicit `ids` list of positive object ids. Sort,
 	 * paging and columns do not change which rows match, so they are not taken.
 	 *
 	 * @return array<string, array<string, mixed>>
 	 */
 	public function selection_args(): array {
-		return array_intersect_key( $this->query_args(), array_flip( [ 'search', 'mode' ] ) ) + $this->filter_args() + [
+		return array_intersect_key( $this->query_args(), array_flip( [ 'search', 'mode', 'parent' ] ) ) + $this->filter_args() + [
 			'ids' => self::arg(
 				[
 					'description' => __( 'The chosen products or variations, by id, instead of a filter.', 'bulk-catalogue-manager-for-woocommerce' ),

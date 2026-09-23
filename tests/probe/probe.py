@@ -1,0 +1,921 @@
+#!/usr/bin/env python3
+"""Live probe of Bulk Catalogue Manager on a seeded WordPress + WooCommerce site.
+
+Run ``tests/probe/seed.sh`` first; it writes ``tests/probe/seed.json`` (the
+fixture ids, the three probe users and their password), which this probe
+reads. The probe logs in with a cookie jar per user, takes the ``wp_rest``
+nonce from the admin page (falling back to core's ``admin-ajax.php?action=
+rest-nonce`` where the admin page carries none, as for a subscriber), and
+prints one PASS, FAIL or SKIP row per surface. It exits 1 on any FAIL, 0
+otherwise.
+
+Chapters (``--chapters``, comma separated, default all, run in this order):
+
+  screen     T10. The Products -> Bulk Catalogue Manager screen renders its
+             mount element for an administrator and refuses a subscriber.
+             Documented SKIP until T8 registers the screen.
+  read       T23. Every read route (/fields, /products with filters, search,
+             sort and paging, /products/{id}/variations, /selection,
+             /categories, /export) answered four ways: anonymous 401,
+             subscriber 403, shop manager 200 with the documented shape, and
+             the shop manager's cookie with a stale nonce 403
+             rest_cookie_invalid_nonce (core) while the same cookie with no
+             nonce is anonymous to core and refused 401. Id sets, totals and
+             the export are checked against WooCommerce itself under wp eval.
+  write      The engine live: selection -> preview (nothing saved) -> batch
+             (apply, replay) -> Action Scheduler run through ``wp
+             action-scheduler run`` -> progress until complete -> values
+             checked with wc_get_product() -> undo preview -> undo apply ->
+             run -> values restored; a skip-already batch leaving
+             post_modified_gmt alone; PATCH /products/{id}; category create,
+             edit and move; the write routes' refusals.
+  access     The administrators-only setting flips a shop manager to 403
+             while an administrator keeps 200.
+  lifecycle  Activation created the three tables with every documented
+             index; WooCommerce lists the plugin compatible with HPOS and the
+             Cart and Checkout Blocks; a bcm_db_version bump re-runs dbDelta on
+             admin_init keeping every row; deactivate/activate is idempotent;
+             ``wp plugin uninstall --deactivate --skip-delete`` keeps every
+             bcm_ row with "Remove all data" off and leaves none with it on;
+             the plugin is activated again after each uninstall. Destructive:
+             run it last, and re-run seed.sh afterwards.
+
+Every ``wp`` call goes through ``--wp-cmd`` (default: $WP_CMD, else ``wp``),
+word-split like seed.sh's. ``--no-wp`` turns every row needing WP-CLI into a
+documented SKIP. ``uninstall`` always passes ``--skip-delete``: in wp-env and
+the docker stack the plugin directory is the repository itself.
+
+Adding a surface: write a function ``def check_<name>(p: Probe) -> None``
+that calls ``p.row(chapter, surface, ok, detail)`` (or ``p.skip(...)``) once
+per surface, using ``p.http(user, method, path, ...)`` for REST calls
+(``user`` is None, "subscriber", "manager" or "admin"; ``nonce`` is "valid",
+"stale" or "none") and ``p.wp_eval(php)`` / ``p.wp(*args)`` for ground truth;
+then append it to its chapter's list in ``CHAPTERS``. A new chapter is a new
+key there and a line in this text. Keep SURFACE names stable
+(``chapter:route:leg``): CI and the ticket notes quote them.
+
+Usage:
+    WP_CMD="wp" python3 tests/probe/probe.py --base-url http://localhost:8888
+    python3 tests/probe/probe.py --base-url URL [--seed tests/probe/seed.json]
+        [--wp-cmd "CMD"] [--no-wp] [--chapters read,write] [--verbose]
+
+Standard library only, on purpose: it has to run anywhere with Python 3.
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import http.cookiejar
+import io
+import json
+import os
+import re
+import shlex
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+import uuid
+from dataclasses import dataclass
+from typing import Any, Callable
+
+TIMEOUT_SECONDS = 60
+NS = "/wp-json/bcm/v1"
+PLUGIN = "bulk-catalogue-manager-for-woocommerce"
+STALE_NONCE = "0123456789"
+
+
+@dataclass
+class Response:
+    status: int
+    body: bytes
+    headers: dict[str, str]
+
+    def json(self) -> Any:
+        try:
+            return json.loads(self.body.decode("utf-8"))
+        except ValueError:
+            return None
+
+    def code(self) -> str:
+        data = self.json()
+        return data.get("code", "") if isinstance(data, dict) else ""
+
+    def brief(self) -> str:
+        if self.code() or self.status < 300:
+            return f"{self.status} {self.code()}".rstrip()
+        return f"{self.status} {self.body[:120].decode('utf-8', 'replace')}"
+
+
+class WpCliError(RuntimeError):
+    pass
+
+
+class Probe:
+    def __init__(self, args: argparse.Namespace) -> None:
+        self.base = args.base_url.rstrip("/")
+        self.verbose = args.verbose
+        self.wp_cmd = None if args.no_wp else shlex.split(args.wp_cmd)
+        with open(args.seed, encoding="utf-8") as handle:
+            self.seed = json.load(handle)
+        self.rows: list[tuple[str, str, str, str]] = []
+        self.sessions: dict[str, tuple[urllib.request.OpenerDirector, str]] = {}
+
+    # ---- reporting -------------------------------------------------------
+
+    def row(self, chapter: str, surface: str, ok: bool, detail: str = "") -> bool:
+        self.rows.append((chapter, surface, "PASS" if ok else "FAIL", detail))
+        return ok
+
+    def skip(self, chapter: str, surface: str, reason: str) -> None:
+        self.rows.append((chapter, surface, "SKIP", reason))
+
+    def guard(self, chapter: str, surface: str, fn: Callable[[], None]) -> None:
+        """Runs fn; an exception becomes a FAIL row for the surface."""
+        try:
+            fn()
+        except WpCliError as error:
+            self.row(chapter, surface, False, f"wp-cli: {error}")
+        except (AssertionError, KeyError, TypeError, ValueError, IndexError) as error:
+            self.row(chapter, surface, False, f"{type(error).__name__}: {error}")
+
+    # ---- HTTP -------------------------------------------------------------
+
+    def _opener(self, jar: http.cookiejar.CookieJar | None) -> urllib.request.OpenerDirector:
+        handlers: list[Any] = [NoRedirect()]
+        if jar is not None:
+            handlers.append(urllib.request.HTTPCookieProcessor(jar))
+        return urllib.request.build_opener(*handlers)
+
+    def session(self, user: str) -> tuple[urllib.request.OpenerDirector, str]:
+        """A logged-in opener and its wp_rest nonce, per probe user."""
+        if user in self.sessions:
+            return self.sessions[user]
+        login = self.seed["users"][user]["login"]
+        jar = http.cookiejar.CookieJar()
+        opener = self._opener(jar)
+        self._raw(opener, "GET", "/wp-login.php")
+        form = urllib.parse.urlencode(
+            {"log": login, "pwd": self.seed["password"], "wp-submit": "Log In", "testcookie": "1"}
+        ).encode()
+        self._raw(opener, "POST", "/wp-login.php", form, {"Content-Type": "application/x-www-form-urlencoded"})
+        if not any(c.name.startswith("wordpress_logged_in_") for c in jar):
+            raise RuntimeError(f"could not log in as {login}; re-run seed.sh")
+        page = self._raw(opener, "GET", "/wp-admin/").body.decode("utf-8", "replace")
+        match = re.search(r'createNonceMiddleware\(\s*"([0-9a-f]{10})"', page) or re.search(
+            r'wpApiSettings\s*=\s*\{[^}]*"nonce":"([0-9a-f]{10})"', page
+        )
+        nonce = match.group(1) if match else ""
+        if not nonce:
+            nonce = self._raw(opener, "GET", "/wp-admin/admin-ajax.php?action=rest-nonce").body.decode().strip()
+        if not re.fullmatch(r"[0-9a-f]{10}", nonce):
+            raise RuntimeError(f"no wp_rest nonce for {login}")
+        self.sessions[user] = (opener, nonce)
+        return self.sessions[user]
+
+    def _raw(self, opener, method: str, path: str, data: bytes | None = None, headers: dict | None = None) -> Response:
+        request = urllib.request.Request(self.base + path, data=data, method=method, headers=headers or {})
+        try:
+            with opener.open(request, timeout=TIMEOUT_SECONDS) as reply:
+                return Response(reply.status, reply.read(), dict(reply.headers))
+        except urllib.error.HTTPError as error:
+            return Response(error.code, error.read(), dict(error.headers or {}))
+
+    def http(
+        self,
+        user: str | None,
+        method: str,
+        route: str,
+        params: dict | list | None = None,
+        body: Any = None,
+        nonce: str = "valid",
+    ) -> Response:
+        """A REST call under bcm/v1 as a probe user (None: anonymous)."""
+        path = NS + route
+        if params:
+            path += "?" + urllib.parse.urlencode(params, doseq=True)
+        headers = {"Accept": "application/json"}
+        data = None
+        if body is not None:
+            data = json.dumps(body).encode()
+            headers["Content-Type"] = "application/json"
+        if user is None:
+            opener = self._opener(None)
+        else:
+            opener, valid = self.session(user)
+            if nonce == "valid":
+                headers["X-WP-Nonce"] = valid
+            elif nonce == "stale":
+                headers["X-WP-Nonce"] = STALE_NONCE
+        reply = self._raw(opener, method, path, data, headers)
+        if self.verbose:
+            print(f"  {user or 'anonymous'} {method} {path} -> {reply.brief()}", file=sys.stderr)
+        return reply
+
+    # ---- WP-CLI -------------------------------------------------------------
+
+    def wp(self, *args: str, check: bool = True) -> str:
+        if self.wp_cmd is None:
+            raise WpCliError("--no-wp given")
+        done = subprocess.run([*self.wp_cmd, *args], capture_output=True, text=True, timeout=600)
+        if check and done.returncode != 0:
+            raise WpCliError(f"{' '.join(args[:3])} exited {done.returncode}: {done.stderr.strip()[-400:]}")
+        return done.stdout
+
+    def wp_eval(self, php: str) -> Any:
+        """Runs PHP under wp eval; the PHP echoes one JSON value via bcm_out()."""
+        out = self.wp("eval", "function bcm_out( $v ) { echo \"\\nBCM_OUT \" . wp_json_encode( $v ) . \"\\n\"; } " + php)
+        for line in out.splitlines():
+            if line.startswith("BCM_OUT "):
+                return json.loads(line[8:])
+        raise WpCliError(f"no BCM_OUT in: {out.strip()[-400:]}")
+
+    def run_queue(self, batch_id: int, rounds: int = 20) -> dict:
+        """Drives Action Scheduler until the batch leaves queued/running/undoing."""
+        report: dict = {}
+        for _ in range(rounds):
+            # --hooks, not --group=bcm: on a fresh site Action Scheduler's hybrid store
+            # asks the old post store for the group first and refuses "bcm".
+            self.wp("action-scheduler", "run", "--hooks=bcm_run_chunk", "--batch-size=25", check=False)
+            report = self.http("manager", "GET", f"/batches/{batch_id}").json() or {}
+            if report.get("status") not in ("queued", "running"):
+                return report
+            time.sleep(1)
+        return report
+
+    # ---- shared fixtures ---------------------------------------------------------
+
+    def simple(self, n: int) -> dict:
+        return self.seed["simple"][n - 1]
+
+    def prices(self, ids: list[int]) -> dict[str, str]:
+        return self.wp_eval(
+            "$o = array(); foreach ( " + php_list(ids) + " as $id ) { $p = wc_get_product( $id ); "
+            "$o[ $id ] = $p ? $p->get_regular_price( 'edit' ) : null; } bcm_out( $o );"
+        )
+
+    def modified(self, ids: list[int]) -> dict[str, str]:
+        return self.wp_eval(
+            "$o = array(); foreach ( " + php_list(ids) + " as $id ) { $o[ $id ] = get_post( $id )->post_modified_gmt; } bcm_out( $o );"
+        )
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):  # noqa: D401 - keep the 302 visible
+        return None
+
+
+def php_list(ids: list[int]) -> str:
+    return "array( " + ", ".join(str(int(i)) for i in ids) + " )"
+
+
+def filter_params(field: str, operator: str, value: Any) -> list[tuple[str, str]]:
+    """A {operator, value} filter as PHP-style query parameters."""
+    out = [(f"{field}[operator]", operator)]
+    for item in value if isinstance(value, list) else [value]:
+        out.append((f"{field}[value][]" if isinstance(value, list) else f"{field}[value]", str(item)))
+    return out
+
+
+# ---------------------------------------------------------------------------
+# screen (T10)
+# ---------------------------------------------------------------------------
+
+
+def check_screen(p: Probe) -> None:
+    for leg in ("admin-mount", "subscriber-refused"):
+        p.skip("screen", f"screen:{leg}", "documented: the admin screen and its mount element land in T8 (needs Node 20)")
+
+
+# ---------------------------------------------------------------------------
+# read (T23)
+# ---------------------------------------------------------------------------
+
+
+def read_routes(p: Probe) -> list[tuple[str, str, str, Any, Any, Callable[[Response], str]]]:
+    """(surface, method, route, params, body, shape check returning '' when good)."""
+    root = p.seed["categories"]["root"]
+    variable = p.seed["variable"]["id"]
+    cols = ["id", "sku", "name", "regular_price"]
+
+    def fields_shape(r: Response) -> str:
+        d = r.json()
+        if not isinstance(d, dict) or set(d) != {"fields", "actions", "groups"}:
+            return f"keys {sorted(d) if isinstance(d, dict) else type(d)}"
+        keys = [f["key"] for f in d["fields"]]
+        return "" if "regular_price" in keys and len(d["actions"]) >= 10 else f"fields {keys[:5]}.. actions {len(d['actions'])}"
+
+    def list_shape(r: Response) -> str:
+        d = r.json()
+        if not isinstance(d, dict) or not isinstance(d.get("items"), list):
+            return "no items list"
+        pag = d.get("pagination", {})
+        if set(pag) != {"page", "perPage", "total", "totalPages"}:
+            return f"pagination {pag}"
+        if d["items"] and not {"id", "name", "sku", "regular_price"} <= set(d["items"][0]):
+            return f"row keys {sorted(d['items'][0])}"
+        return "" if pag["total"] > 0 else "empty"
+
+    def paged_shape(r: Response) -> str:
+        d = r.json()
+        if not isinstance(d, dict) or not isinstance(d.get("items"), list):
+            return "no items list"
+        return "" if set(d.get("pagination", {})) == {"page", "perPage", "total", "totalPages"} else f"pagination {d.get('pagination')}"
+
+    def selection_shape(r: Response) -> str:
+        d = r.json()
+        return "" if isinstance(d, dict) and d.get("count") == 12 and isinstance(d.get("token"), str) else f"{d}"
+
+    def tree_shape(r: Response) -> str:
+        d = r.json()
+        items = d.get("items", d) if isinstance(d, dict) else d
+        node = find_node(items, root)
+        if node is None:
+            return "probe root category missing from the tree"
+        kids = sorted(c["id"] for c in node.get("children", []))
+        want = sorted([p.seed["categories"]["shirts"], p.seed["categories"]["hats"]])
+        return "" if kids == want else f"children {kids} != {want}"
+
+    def export_shape(r: Response) -> str:
+        ctype = r.headers.get("Content-Type", "")
+        if "text/csv" not in ctype:
+            return f"content-type {ctype}"
+        rows = list(csv.reader(io.StringIO(r.body.decode("utf-8-sig"))))
+        return "" if len(rows) == 13 else f"{len(rows)} lines (want header + 12)"
+
+    cat = filter_params("category_ids", "isAny", [root])
+    return [
+        ("fields", "GET", "/fields", None, None, fields_shape),
+        ("products", "GET", "/products", cat + [("per_page", "100")], None, list_shape),
+        ("variations", "GET", f"/products/{variable}/variations", None, None, list_shape),
+        ("selection", "POST", "/selection", None, {"category_ids": {"operator": "isAny", "value": [root]}}, selection_shape),
+        ("categories", "GET", "/categories", None, None, tree_shape),
+        ("export", "GET", "/export", cat + [("columns[]", c) for c in cols], None, export_shape),
+        # T54's history and audit routes carry the same four legs.
+        ("batches", "GET", "/batches", None, None, paged_shape),
+        ("audit", "GET", "/audit", None, None, paged_shape),
+    ]
+
+
+def find_node(nodes: Any, term_id: int) -> dict | None:
+    for node in nodes if isinstance(nodes, list) else []:
+        if node.get("id") == term_id:
+            return node
+        found = find_node(node.get("children", []), term_id)
+        if found:
+            return found
+    return None
+
+
+def check_read_matrix(p: Probe) -> None:
+    for name, method, route, params, body, shape in read_routes(p):
+        base = f"read:{name}"
+        r = p.http(None, method, route, params, body)
+        p.row("read", f"{base}:anonymous", r.status == 401 and r.code() == "bcm_forbidden", r.brief())
+        r = p.http("subscriber", method, route, params, body)
+        p.row("read", f"{base}:subscriber", r.status == 403 and r.code() == "bcm_forbidden", r.brief())
+        r = p.http("manager", method, route, params, body)
+        problem = shape(r) if r.status == 200 else r.brief()
+        p.row("read", f"{base}:manager", r.status == 200 and problem == "", problem or "200, documented shape")
+        stale = p.http("manager", method, route, params, body, nonce="stale")
+        bare = p.http("manager", method, route, params, body, nonce="none")
+        p.row(
+            "read",
+            f"{base}:no-valid-nonce",
+            stale.status == 403 and stale.code() == "rest_cookie_invalid_nonce" and bare.status == 401,
+            f"stale {stale.brief()}; none {bare.brief()}",
+        )
+
+
+def all_ids(p: Probe, params: list[tuple[str, str]], per_page: int = 100) -> tuple[list[int], dict]:
+    ids: list[int] = []
+    page, pag = 1, {}
+    while True:
+        r = p.http("manager", "GET", "/products", params + [("per_page", str(per_page)), ("page", str(page))])
+        d = r.json()
+        if r.status != 200:
+            raise AssertionError(r.brief())
+        ids += [row["id"] for row in d["items"]]
+        pag = d["pagination"]
+        if page >= pag["totalPages"]:
+            return ids, pag
+        page += 1
+
+
+def truth(p: Probe, args_php: str) -> list[int]:
+    """Product ids from wc_get_products() with the given query args."""
+    return sorted(p.wp_eval(f"bcm_out( wc_get_products( array_merge( array( 'limit' => -1, 'return' => 'ids', 'status' => array( 'publish', 'draft', 'pending', 'private' ) ), {args_php} ) ) );"))
+
+
+def check_read_queries(p: Probe) -> None:
+    root, shirts = p.seed["categories"]["root"], p.seed["categories"]["shirts"]
+    cat = filter_params("category_ids", "isAny", [root])
+
+    def category() -> None:
+        ids, pag = all_ids(p, cat)
+        want = truth(p, "array( 'category' => array( 'bcm-probe', 'bcm-probe-shirts', 'bcm-probe-hats' ) )")
+        p.row("read", "read:products:filter-category", sorted(ids) == want and pag["total"] == len(want),
+              f"{len(ids)} ids, total {pag['total']}, WooCommerce {len(want)}")
+
+    def search() -> None:
+        ids, _ = all_ids(p, cat + [("search", "Probe Simple 0")])
+        want = sorted(p.simple(n)["id"] for n in range(1, 10))
+        p.row("read", "read:products:search", sorted(ids) == want, f"{len(ids)} ids for 'Probe Simple 0' (want 9)")
+
+    def price_range() -> None:
+        ids, _ = all_ids(p, cat + filter_params("regular_price", "between", [12, 15]))
+        want = sorted(p.simple(n)["id"] for n in range(2, 6))
+        p.row("read", "read:products:filter-price", sorted(ids) == want, f"{ids} want {want}")
+
+    def status() -> None:
+        ids, _ = all_ids(p, cat + filter_params("status", "isAny", ["draft"]))
+        p.row("read", "read:products:filter-status", ids == [p.seed["draft"]["id"]], f"{ids}")
+
+    def sort() -> None:
+        params = filter_params("category_ids", "isAny", [shirts]) + [("orderby", "regular_price"), ("order", "desc")]
+        ids, _ = all_ids(p, params + filter_params("type", "isAny", ["simple"]))
+        want = [p.simple(n)["id"] for n in (9, 7, 5, 3, 1)]
+        p.row("read", "read:products:sort", ids == want, f"{ids} want {want}")
+
+    def paging() -> None:
+        ids, pag = all_ids(p, cat, per_page=4)
+        whole, _ = all_ids(p, cat)
+        ok = ids == whole and len(set(ids)) == len(ids) and pag["totalPages"] == 3 and pag["perPage"] == 4
+        p.row("read", "read:products:paging", ok, f"3 pages of 4: {len(ids)} ids, {len(set(ids))} distinct, pagination {pag}")
+
+    def variations() -> None:
+        vid = p.seed["variable"]["id"]
+        r = p.http("manager", "GET", f"/products/{vid}/variations", [("per_page", "100")])
+        d = r.json()
+        want = p.wp_eval(f"bcm_out( wc_get_product( {vid} )->get_children() );")
+        got = [row["id"] for row in d["items"]]
+        ok = sorted(got) == sorted(want) and d["pagination"]["total"] == len(want)
+        ok = ok and all(row.get("parent_id") == vid and row.get("attribute_summary") for row in d["items"])
+        p.row("read", "read:variations:children", ok, f"{got} vs get_children() {want}")
+        miss = p.http("manager", "GET", f"/products/{p.simple(1)['id'] + 100000}/variations")
+        p.row("read", "read:variations:not-found", miss.status == 404 and miss.code() == "bcm_not_found", miss.brief())
+
+    def selection_ids() -> None:
+        ids = [p.simple(1)["id"], p.simple(2)["id"], p.simple(1)["id"]]
+        r = p.http("manager", "POST", "/selection", body={"ids": ids})
+        d = r.json() or {}
+        p.row("read", "read:selection:ids", r.status == 200 and d.get("count") == 2, r.brief() + f" count {d.get('count')}")
+
+    def categories_counts() -> None:
+        d = p.http("manager", "GET", "/categories").json()
+        node = find_node(d.get("items", d) if isinstance(d, dict) else d, shirts)
+        want = len(truth(p, "array( 'category' => array( 'bcm-probe-shirts' ) )"))
+        count = {k: v for k, v in (node or {}).items() if "count" in k}
+        p.row("read", "read:categories:counts", node is not None and want in count.values(), f"shirts {count}, WooCommerce {want}")
+
+    def export_diff() -> None:
+        cols = ["id", "sku", "name", "regular_price"]
+        r = p.http("manager", "GET", "/export", cat + [("columns[]", c) for c in cols] + [("per_page", "4")])
+        lines = list(csv.reader(io.StringIO(r.body.decode("utf-8-sig"))))
+        rows = [[p_ for p_ in line] for line in lines[1:]]
+        grid: list[list[str]] = []
+        page = 1
+        while True:
+            d = p.http("manager", "GET", "/products", cat + [("per_page", "4"), ("page", str(page))]).json()
+            grid += [[str(item["id"]), item["sku"], item["name"], item["regular_price"] or ""] for item in d["items"]]
+            if page >= d["pagination"]["totalPages"]:
+                break
+            page += 1
+        norm = lambda table: [[cell.strip() for cell in row] for row in table]  # noqa: E731
+        p.row("read", "read:export:diff-products", r.status == 200 and page == 3 and norm(rows) == norm(grid),
+              f"{len(rows)} CSV rows vs {len(grid)} grid rows over {page} pages; header {lines[0] if lines else None}")
+
+    def hydration() -> None:
+        found = p.wp_eval(HYDRATION_PHP % {"user": p.seed["users"]["manager"]["id"]})
+        spread = {mode: sorted({v["queries"] for v in sizes.values()}) for mode, sizes in found["modes"].items()}
+        rows = {mode: [v["rows"] for v in sizes.values()] for mode, sizes in found["modes"].items()}
+        invalid = sum(v["invalid"] for sizes in found["modes"].values() for v in sizes.values())
+        p.row("read", "read:products:fixed-query-count", all(len(q) == 1 for q in spread.values()),
+              f"queries per page at 25/50/100 rows, cold object cache: {spread}; rows {rows}")
+        p.row("read", "read:products:no-product-objects", found["product_reads"] == 0, f"woocommerce_product_read fired {found['product_reads']} times")
+        p.row("read", "read:products:live-schema", invalid == 0, f"{invalid} rows invalid against the registered schema (rest_validate_value_from_schema)")
+
+    for name, fn in [("hydration", hydration), ("filter-category", category), ("search", search), ("filter-price", price_range),
+                     ("filter-status", status), ("sort", sort), ("paging", paging), ("variations", variations),
+                     ("selection-ids", selection_ids), ("categories-counts", categories_counts), ("export-diff", export_diff)]:
+        p.guard("read", f"read:{name}", fn)
+
+
+# ---------------------------------------------------------------------------
+# write
+# ---------------------------------------------------------------------------
+
+ADJUST = [{"action": "adjust", "args": {"field": "regular_price", "direction": "increase", "by": "percent", "amount": "10"}}]
+
+
+def check_write_engine(p: Probe) -> None:
+    shirts = p.seed["categories"]["shirts"]
+    targets = [p.simple(n) for n in (1, 3, 5, 7, 9)]
+    ids = [t["id"] for t in targets]
+    state: dict[str, Any] = {}
+
+    def refusals() -> None:
+        bodies = [("POST", "/preview", {"ids": ids, "operations": ADJUST}),
+                  ("POST", "/batches", {"uuid": str(uuid.uuid4()), "ids": ids, "operations": ADJUST}),
+                  ("PATCH", f"/products/{ids[0]}", {"regular_price": "1.00"})]
+        bad = []
+        for method, route, body in bodies:
+            anon, sub = p.http(None, method, route, body=body), p.http("subscriber", method, route, body=body)
+            if anon.status != 401 or sub.status != 403:
+                bad.append(f"{route}: {anon.status}/{sub.status}")
+        p.row("write", "write:refusals", not bad, "; ".join(bad) or "anonymous 401, subscriber 403 on preview, batches, PATCH")
+
+    def preview() -> None:
+        before = p.modified(ids)
+        sel = p.http("manager", "POST", "/selection", body={"category_ids": {"operator": "isAny", "value": [shirts]}}).json()
+        r = p.http("manager", "POST", "/preview", body={"token": sel["token"], "operations": ADJUST})
+        d = r.json() or {}
+        state.update(token=sel["token"], hash=d.get("hash"), count=sel["count"])
+        totals = d.get("totals", {})
+        untouched = p.modified(ids) == before and p.prices(ids) == {str(t["id"]): t["regular_price"] for t in targets}
+        ok = r.status == 200 and totals.get("would_change") == 5 and re.fullmatch(r"[0-9a-f]{64}", d.get("hash") or "") and untouched
+        p.row("write", "write:preview", bool(ok), f"{r.status} would_change {totals.get('would_change')} matched {totals.get('matched')}, nothing saved: {untouched}")
+
+    def apply() -> None:
+        body = {"uuid": str(uuid.uuid4()), "token": state["token"], "operations": ADJUST,
+                "preview_hash": state["hash"], "preview_count": state["count"]}
+        r = p.http("manager", "POST", "/batches", body=body)
+        d = r.json() or {}
+        again = p.http("manager", "POST", "/batches", body=body).json() or {}
+        state["batch"] = d.get("batch_id")
+        ok = r.status == 201 and d.get("status") == "queued" and again.get("replayed") is True and again.get("batch_id") == d.get("batch_id")
+        p.row("write", "write:batch-create", ok, f"{r.brief()} {d}; replay {again}")
+
+    def run() -> None:
+        report = p.run_queue(state["batch"])
+        # Six matched (five simple shirts and the variable parent, which has no
+        # regular price of its own and is skipped with a reason): partial, by design.
+        ok = report.get("status") == "partial" and report.get("changed_items") == 5 and report.get("failed_items") == 0 and report.get("pending_items") == 0
+        p.row("write", "write:batch-run", ok, f"status {report.get('status')} total {report.get('total_items')} changed {report.get('changed_items')} failed {report.get('failed_items')} summary {[s.get('sentence') for s in report.get('summary') or []]}")
+        rev = (report.get("reversibility") or {}).get("state")
+        p.row("write", "write:batch-reversible", rev in ("reversible", "completed_with_errors"), f"reversibility {report.get('reversibility')}")
+
+    def verify() -> None:
+        want = {str(t["id"]): f"{round(float(t['regular_price']) * 1.1 + 1e-9, 2):.2f}" for t in targets}
+        got = p.prices(ids)
+        p.row("write", "write:batch-values", got == want, f"{got} want {want}")
+        feed = p.http("manager", "GET", f"/batches/{state['batch']}/changes", [("per_page", "100")]).json() or {}
+        applied = [c for c in feed.get("items", []) if c.get("result") == "applied"]
+        p.row("write", "write:batch-changes-feed", len(applied) == 5 and all(c.get("field") == "regular_price" for c in applied),
+              f"{len(applied)} applied rows of {feed.get('pagination')}")
+
+    def undo() -> None:
+        route = f"/batches/{state['batch']}/undo"
+        pre = p.http("manager", "POST", route, body={"preview": True})
+        d = pre.json() or {}
+        p.row("write", "write:undo-preview", pre.status == 200 and d.get("preview") is True and re.fullmatch(r"[0-9a-f]{64}", d.get("plan_hash") or "") is not None,
+              f"{pre.brief()} counts {d.get('counts')}")
+        r = p.http("manager", "POST", route, body={"uuid": str(uuid.uuid4()), "plan_hash": d.get("plan_hash")})
+        u = r.json() or {}
+        p.row("write", "write:undo-apply", r.status == 201 and bool(u.get("batch_id")), f"{r.brief()} {u.get('batch_id')}")
+        report = p.run_queue(u["batch_id"])
+        original = p.http("manager", "GET", f"/batches/{state['batch']}").json() or {}
+        p.row("write", "write:undo-run", report.get("status") == "complete" and original.get("status") == "undone",
+              f"undo batch {report.get('status')}, original {original.get('status')}, undo {(report.get('undo') or {}).get('label')}")
+        got = p.prices(ids)
+        want = {str(t["id"]): t["regular_price"] for t in targets}
+        p.row("write", "write:undo-values", got == want, f"{got} want {want}")
+
+    def skip_already() -> None:
+        target = p.simple(4)
+        before = p.modified([target["id"]])
+        body = {"uuid": str(uuid.uuid4()), "ids": [target["id"]],
+                "operations": [{"action": "set_value", "args": {"field": "regular_price", "value": target["regular_price"]}}]}
+        d = p.http("manager", "POST", "/batches", body=body).json() or {}
+        report = p.run_queue(d.get("batch_id", 0))
+        same = p.modified([target["id"]]) == before
+        p.row("write", "write:skip-already", report.get("status") in ("complete", "partial") and report.get("changed_items") == 0 and same,
+              f"status {report.get('status')} changed {report.get('changed_items')}, post_modified_gmt untouched: {same}")
+
+    for name, fn in [("refusals", refusals), ("preview", preview), ("batch", apply), ("batch-run", run),
+                     ("batch-values", verify), ("undo", undo), ("skip-already", skip_already)]:
+        if name not in ("refusals", "preview") and not state.get("token"):
+            p.row("write", f"write:{name}", False, "no selection token from the preview step")
+            continue
+        if name in ("batch-run", "batch-values", "undo") and not state.get("batch"):
+            p.row("write", f"write:{name}", False, "no batch from the batch step")
+            continue
+        p.guard("write", f"write:{name}", fn)
+
+
+def check_write_stale(p: Probe) -> None:
+    hats, root = p.seed["categories"]["hats"], p.seed["categories"]["root"]
+    draft = p.seed["draft"]["id"]
+    ops = [{"action": "set_value", "args": {"field": "weight", "value": "1"}}]
+    hat_filter = {"category_ids": {"operator": "isAny", "value": [hats]}}
+    grid = filter_params("category_ids", "isAny", [hats])
+
+    def run() -> None:
+        sel = p.http("manager", "POST", "/selection", body=hat_filter).json()
+        pre = p.http("manager", "POST", "/preview", body={"token": sel["token"], "operations": ops}).json()
+        total_before = p.http("manager", "GET", "/products", grid).json()["pagination"]["total"]
+        p.wp_eval(f"$p = wc_get_product( {draft} ); $p->set_category_ids( array( {hats} ) ); $p->save(); bcm_out( 1 );")
+        try:
+            total_after = p.http("manager", "GET", "/products", grid).json()["pagination"]["total"]
+            p.row("write", "write:count-cache-renewed", total_after == total_before + 1, f"hats total {total_before} -> {total_after} after a product save")
+            body = {"uuid": str(uuid.uuid4()), "token": sel["token"], "operations": ops, "preview_hash": pre["hash"], "preview_count": sel["count"]}
+            first = p.http("manager", "POST", "/batches", body=body)
+            p.row("write", "write:stale-selection-refused", first.status == 409 and first.code() == "bcm_selection_changed", first.brief())
+            body["uuid"] = str(uuid.uuid4())
+            body["confirm_changed"] = True
+            second = p.http("manager", "POST", "/batches", body=body)
+            d = second.json() or {}
+            report = p.http("manager", "GET", f"/batches/{d.get('batch_id', 0)}").json() or {}
+            p.row("write", "write:stale-selection-confirmed", second.status == 201 and report.get("previewed_count") == sel["count"] and report.get("total_items") == sel["count"] + 1,
+                  f"{second.brief()} previewed {report.get('previewed_count')} total {report.get('total_items')}: {report.get('selection_difference')}")
+            before = p.modified([t["id"] for t in p.seed["simple"]] + [draft])
+            cancel = p.http("manager", "POST", f"/batches/{d.get('batch_id', 0)}/cancel")
+            p.run_queue(d.get("batch_id", 0), rounds=2)
+            final = p.http("manager", "GET", f"/batches/{d.get('batch_id', 0)}").json() or {}
+            untouched = p.modified([t["id"] for t in p.seed["simple"]] + [draft]) == before
+            p.row("write", "write:cancel-before-run", cancel.status == 200 and final.get("status") == "cancelled" and final.get("done_items") == 0 and untouched,
+                  f"{cancel.brief()} status {final.get('status')} done {final.get('done_items')}, nothing written: {untouched}")
+        finally:
+            p.wp_eval(f"$p = wc_get_product( {draft} ); $p->set_category_ids( array( {root} ) ); $p->save(); bcm_out( 1 );")
+
+    p.guard("write", "write:stale-selection", run)
+
+
+def check_write_inline(p: Probe) -> None:
+    target = p.simple(2)
+
+    def patch() -> None:
+        r = p.http("manager", "PATCH", f"/products/{target['id']}", body={"regular_price": "99.00"})
+        d = r.json() or {}
+        live = p.prices([target["id"]])[str(target["id"])]
+        ok = r.status == 200 and d.get("status") == "complete" and (d.get("item") or {}).get("regular_price") == "99.00" and live == "99.00"
+        p.row("write", "write:patch-product", ok, f"{r.brief()} status {d.get('status')} batch {d.get('batch_id')} live {live}")
+        back = p.http("manager", "PATCH", f"/products/{target['id']}", body={"regular_price": target["regular_price"]})
+        live = p.prices([target["id"]])[str(target["id"])]
+        p.row("write", "write:patch-product-back", back.status == 200 and live == target["regular_price"], f"{back.brief()} live {live}")
+
+    p.guard("write", "write:patch-product", patch)
+
+
+def check_write_categories(p: Probe) -> None:
+    root, shirts = p.seed["categories"]["root"], p.seed["categories"]["shirts"]
+    name = f"Probe New {uuid.uuid4().hex[:8]}"
+
+    def run() -> None:
+        r = p.http("manager", "POST", "/categories", body={"name": name, "parent": root})
+        d = r.json() or {}
+        term_id = d.get("id") or (d.get("item") or {}).get("id") or (d.get("term") or {}).get("id")
+        live = p.wp_eval(f"$t = get_term_by( 'name', '{name}', 'product_cat' ); bcm_out( $t ? array( $t->term_id, $t->parent ) : null );")
+        tree = p.http("manager", "GET", "/categories").json()
+        in_tree = live is not None and find_node(tree.get("items", tree) if isinstance(tree, dict) else tree, live[0]) is not None
+        p.row("write", "write:category-create", r.status in (200, 201) and live is not None and live[1] == root and in_tree,
+              f"{r.brief()} live {live} answer id {term_id}, in the cached tree at once: {in_tree}")
+        if live is None:
+            return
+        term_id = live[0]
+        r = p.http("manager", "PATCH", f"/categories/{term_id}", body={"name": name + " Edited", "description": "Edited by the probe"})
+        got = p.wp_eval(f"$t = get_term( {term_id}, 'product_cat' ); bcm_out( array( $t->name, $t->description ) );")
+        p.row("write", "write:category-edit", r.status == 200 and got == [name + " Edited", "Edited by the probe"], f"{r.brief()} live {got}")
+        r = p.http("manager", "POST", f"/categories/{term_id}/move", body={"parent": shirts, "position": 0})
+        parent = p.wp_eval(f"bcm_out( get_term( {term_id}, 'product_cat' )->parent );")
+        p.row("write", "write:category-move", r.status == 200 and parent == shirts, f"{r.brief()} parent {parent} want {shirts}")
+        sub = p.http("subscriber", "POST", "/categories", body={"name": name + " sub"})
+        p.row("write", "write:category-refusal", sub.status == 403, sub.brief())
+        p.wp("term", "delete", "product_cat", str(term_id), check=False)
+
+    p.guard("write", "write:categories", run)
+
+
+# ---------------------------------------------------------------------------
+# access
+# ---------------------------------------------------------------------------
+
+SET_ADMIN_ONLY = (
+    "$s = get_option( 'bcm_settings', array() ); if ( ! is_array( $s ) ) { $s = array(); } "
+    "$s['administrators_only'] = %s; update_option( 'bcm_settings', $s ); bcm_out( get_option( 'bcm_settings' )['administrators_only'] );"
+)
+
+
+def check_access(p: Probe) -> None:
+    def run() -> None:
+        p.wp_eval(SET_ADMIN_ONLY % "true")
+        try:
+            manager = p.http("manager", "GET", "/fields")
+            admin = p.http("admin", "GET", "/fields")
+            p.row("access", "access:administrators-only:manager", manager.status == 403 and manager.code() == "bcm_forbidden", manager.brief())
+            p.row("access", "access:administrators-only:admin", admin.status == 200, admin.brief())
+        finally:
+            p.wp_eval(SET_ADMIN_ONLY % "false")
+        back = p.http("manager", "GET", "/fields")
+        p.row("access", "access:administrators-only:off-again", back.status == 200, back.brief())
+
+    p.guard("access", "access:administrators-only", run)
+
+
+# ---------------------------------------------------------------------------
+# lifecycle
+# ---------------------------------------------------------------------------
+
+HYDRATION_PHP = r"""
+wp_set_current_user( %(user)d );
+$get = function ( $params ) { $r = new WP_REST_Request( 'GET', '/bcm/v1/products' ); foreach ( $params as $k => $v ) { $r->set_param( $k, $v ); } return rest_do_request( $r ); };
+$reads = 0;
+add_action( 'woocommerce_product_read', function () use ( &$reads ) { $reads++; } );
+$opts   = rest_get_server()->get_route_options( '/bcm/v1/products' );
+$schema = call_user_func( $opts['schema'] );
+global $wpdb;
+$out = array();
+foreach ( array( 'products', 'products_and_variations', 'variations' ) as $mode ) {
+	$get( array( 'per_page' => 10, 'mode' => $mode ) ); // warms the shared count, which paging does not change
+	foreach ( array( 25, 50, 100 ) as $n ) {
+		wp_cache_flush();
+		$get( array() ); // re-reads options and WooCommerce state outside the measured window
+		wp_cache_flush();
+		$before = $wpdb->num_queries;
+		// Id order keeps every page's make-up alike (products and variations mixed), since the
+		// variation lookups run only for a page that holds variation rows.
+		$res    = $get( array( 'per_page' => $n, 'mode' => $mode, 'orderby' => array( 'id' ), 'order' => array( 'asc' ) ) );
+		$errors = 0;
+		foreach ( $res->get_data()['items'] as $item ) {
+			$errors += is_wp_error( rest_validate_value_from_schema( $item, $schema, 'item' ) ) ? 1 : 0;
+		}
+		$out[ $mode ][ $n ] = array( 'queries' => $wpdb->num_queries - $before, 'rows' => count( $res->get_data()['items'] ), 'invalid' => $errors );
+	}
+}
+bcm_out( array( 'modes' => $out, 'product_reads' => $reads ) );
+"""
+
+INDEXES_PHP = r"""
+global $wpdb;
+$out = array();
+foreach ( \BulkCatalogueManager\Data\Registry::plugin()->tables() as $name => $body ) {
+	$table = $wpdb->prefix . $name;
+	preg_match_all( '/^\s*(PRIMARY KEY|UNIQUE KEY \w+|KEY \w+)\s*\(([^)]*)\)/m', $body, $m, PREG_SET_ORDER );
+	$want = array();
+	foreach ( $m as $k ) {
+		$key = 'PRIMARY KEY' === $k[1] ? 'PRIMARY' : preg_replace( '/^(UNIQUE )?KEY /', '', $k[1] );
+		$want[ $key ] = array_map( 'trim', explode( ',', $k[2] ) );
+	}
+	$have = array();
+	$exists = $table === $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $table ) );
+	if ( $exists ) {
+		foreach ( $wpdb->get_results( "SHOW INDEX FROM `$table`", ARRAY_A ) as $row ) {
+			$have[ $row['Key_name'] ][ (int) $row['Seq_in_index'] - 1 ] = $row['Column_name'];
+		}
+	}
+	ksort( $want );
+	ksort( $have );
+	$out[ $name ] = array( 'exists' => $exists, 'want' => $want, 'have' => array_map( 'array_values', $have ) );
+}
+bcm_out( $out );
+"""
+
+FOOTPRINT_PHP = r"""
+global $wpdb;
+$like = $wpdb->esc_like( $wpdb->prefix . 'bcm_' ) . '%';
+$tables = $wpdb->get_col( $wpdb->prepare( 'SHOW TABLES LIKE %s', $like ) );
+$rows = array();
+foreach ( $tables as $t ) { $rows[ $t ] = (int) $wpdb->get_var( "SELECT COUNT(*) FROM `$t`" ); }
+bcm_out( array(
+	'tables'    => $rows,
+	'options'   => $wpdb->get_col( "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE 'bcm\\_%' OR option_name LIKE '\\_transient\\_bcm\\_%' OR option_name LIKE '\\_transient\\_timeout\\_bcm\\_%' ORDER BY option_name" ),
+	'usermeta'  => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->usermeta} WHERE meta_key LIKE 'bcm\\_%'" ),
+	'termmeta'  => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->termmeta} WHERE meta_key LIKE 'bcm\\_%'" ),
+	'actions'   => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}actionscheduler_actions a JOIN {$wpdb->prefix}actionscheduler_groups g ON g.group_id = a.group_id WHERE g.slug = 'bcm' AND a.status = 'pending'" ),
+	'version'   => get_option( 'bcm_db_version', null ),
+) );
+"""
+
+COMPAT_PHP = r"""
+$c = wc_get_container()->get( \Automattic\WooCommerce\Internal\Features\FeaturesController::class );
+$file = 'bulk-catalogue-manager-for-woocommerce/bulk-catalogue-manager-for-woocommerce.php';
+$o = array();
+foreach ( array( 'custom_order_tables', 'cart_checkout_blocks' ) as $f ) {
+	$l = $c->get_compatible_plugins_for_feature( $f, true );
+	$o[ $f ] = array( 'compatible' => in_array( $file, $l['compatible'], true ), 'incompatible' => in_array( $file, $l['incompatible'], true ), 'uncertain' => in_array( $file, $l['uncertain'] ?? array(), true ) );
+}
+bcm_out( $o );
+"""
+
+
+def set_remove_data(p: Probe, on: bool) -> None:
+    p.wp_eval(
+        "$s = get_option( 'bcm_settings', array() ); if ( ! is_array( $s ) ) { $s = array(); } "
+        f"$s['remove_data_on_delete'] = {'true' if on else 'false'}; update_option( 'bcm_settings', $s ); bcm_out( 1 );"
+    )
+
+
+def check_lifecycle(p: Probe) -> None:
+    def tables() -> None:
+        found = p.wp_eval(INDEXES_PHP)
+        bad = [f"{n}: want {t['want']} have {t['have']}" for n, t in found.items() if not t["exists"] or t["want"] != t["have"]]
+        p.row("lifecycle", "lifecycle:tables-and-indexes", len(found) == 3 and not bad, "; ".join(bad) or f"{sorted(found)} with every documented index")
+
+    def compat() -> None:
+        found = p.wp_eval(COMPAT_PHP)
+        ok = all(v["compatible"] and not v["incompatible"] and not v["uncertain"] for v in found.values())
+        p.row("lifecycle", "lifecycle:woocommerce-compatibility", ok, json.dumps(found))
+
+    def bump() -> None:
+        before = p.wp_eval(FOOTPRINT_PHP)
+        p.wp("option", "update", "bcm_db_version", "5")
+        p.http("admin", "GET", "/fields")  # a REST request does not run admin_init; the admin page does
+        p._raw(p.session("admin")[0], "GET", "/wp-admin/")
+        after = p.wp_eval(FOOTPRINT_PHP)
+        ok = after["version"] == before["version"] and after["tables"] == before["tables"] and sum(before["tables"].values()) > 0
+        p.row("lifecycle", "lifecycle:version-bump-keeps-rows", ok, f"version {before['version']} -> 5 -> {after['version']}; rows {before['tables']} -> {after['tables']}")
+
+    def reactivate() -> None:
+        before = p.wp_eval(FOOTPRINT_PHP)
+        p.wp("plugin", "deactivate", PLUGIN)
+        mid = p.wp_eval(FOOTPRINT_PHP)
+        p.wp("plugin", "activate", PLUGIN)
+        p.wp("plugin", "activate", PLUGIN, check=False)  # activating an active plugin is a no-op
+        after = p.wp_eval(FOOTPRINT_PHP)
+        ok = after == before and mid["actions"] == 0 and mid["tables"] == before["tables"] and before["actions"] == 1
+        p.row("lifecycle", "lifecycle:deactivate-activate-idempotent", ok,
+              f"prune actions {before['actions']} -> {mid['actions']} -> {after['actions']}; rows kept {after['tables'] == before['tables']}")
+
+    def uninstall(on: bool) -> None:
+        set_remove_data(p, on)
+        before = p.wp_eval(FOOTPRINT_PHP)
+        p.wp("plugin", "uninstall", PLUGIN, "--deactivate", "--skip-delete")
+        after = p.wp_eval(FOOTPRINT_PHP)
+        if on:
+            ok = not after["tables"] and not after["options"] and after["usermeta"] == 0 and after["termmeta"] == 0 and after["actions"] == 0
+            surface, detail = "lifecycle:uninstall-remove-data-on", f"left {after}"
+        else:
+            kept = {k: v for k, v in before.items() if k != "actions"} == {k: v for k, v in after.items() if k != "actions"}
+            ok = kept and sum(before["tables"].values()) > 0 and after["actions"] == 0
+            surface, detail = "lifecycle:uninstall-remove-data-off", f"rows {after['tables']}, {len(after['options'])} options kept, termmeta {after['termmeta']}"
+        p.row("lifecycle", surface, ok, detail)
+        p.wp("plugin", "activate", PLUGIN)
+        again = p.wp_eval(FOOTPRINT_PHP)
+        p.row("lifecycle", surface + ":reinstalled", len(again["tables"]) == 3 and again["version"] is not None and again["actions"] == 1,
+              f"tables {sorted(again['tables'])} version {again['version']} prune actions {again['actions']}")
+
+    for name, fn in [("tables-and-indexes", tables), ("woocommerce-compatibility", compat), ("version-bump", bump),
+                     ("reactivate", reactivate), ("uninstall-off", lambda: uninstall(False)), ("uninstall-on", lambda: uninstall(True))]:
+        p.guard("lifecycle", f"lifecycle:{name}", fn)
+    p.guard("lifecycle", "lifecycle:remove-data-reset", lambda: set_remove_data(p, False))
+
+
+# ---------------------------------------------------------------------------
+
+CHAPTERS: dict[str, list[Callable[[Probe], None]]] = {
+    "screen": [check_screen],
+    "read": [check_read_matrix, check_read_queries],
+    "write": [check_write_engine, check_write_stale, check_write_inline, check_write_categories],
+    "access": [check_access],
+    "lifecycle": [check_lifecycle],
+}
+NEEDS_WP = {"write", "access", "lifecycle"}
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--base-url", required=True)
+    parser.add_argument("--seed", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "seed.json"))
+    parser.add_argument("--wp-cmd", default=os.environ.get("WP_CMD", "wp"))
+    parser.add_argument("--no-wp", action="store_true", help="skip every surface that needs WP-CLI (documented SKIP)")
+    parser.add_argument("--chapters", default=",".join(CHAPTERS))
+    parser.add_argument("--verbose", action="store_true")
+    args = parser.parse_args()
+
+    p = Probe(args)
+    chosen = [c.strip() for c in args.chapters.split(",") if c.strip()]
+    unknown = [c for c in chosen if c not in CHAPTERS]
+    if unknown:
+        parser.error(f"unknown chapter(s): {', '.join(unknown)}")
+    for chapter in chosen:
+        if args.no_wp and chapter in NEEDS_WP:
+            p.skip(chapter, f"{chapter}:*", "documented: --no-wp given, this chapter needs WP-CLI")
+            continue
+        for check in CHAPTERS[chapter]:
+            if args.no_wp and check is check_read_queries:
+                p.skip(chapter, "read:queries:*", "documented: --no-wp given, ground truth needs WP-CLI")
+                continue
+            try:
+                check(p)
+            except RuntimeError as error:
+                p.row(chapter, f"{chapter}:{check.__name__}", False, str(error))
+
+    width = max(len(r[1]) for r in p.rows) if p.rows else 10
+    print(f"{'CHAPTER':<10} {'SURFACE':<{width}} RESULT  DETAIL")
+    for chapter, surface, result, detail in p.rows:
+        print(f"{chapter:<10} {surface:<{width}} {result:<7} {detail}")
+    print()
+    for chapter in chosen:
+        mine = [r for r in p.rows if r[0] == chapter]
+        counts = {k: sum(1 for r in mine if r[2] == k) for k in ("PASS", "FAIL", "SKIP")}
+        print(f"{chapter}: {counts['PASS']} passed / {counts['FAIL']} failed / {counts['SKIP']} skipped")
+    failed = sum(1 for r in p.rows if r[2] == "FAIL")
+    print(f"total: {sum(1 for r in p.rows if r[2] == 'PASS')} passed / {failed} failed / {sum(1 for r in p.rows if r[2] == 'SKIP')} skipped")
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

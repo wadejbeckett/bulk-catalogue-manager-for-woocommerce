@@ -29,13 +29,32 @@ const isBlank = ( value ) =>
 const SUMMARY_SEPARATOR = ' / ';
 
 /**
- * The attribute chips of a variation: one per attribute value of its
- * summary, such as "Blue / Large".
+ * The attribute chips of a variation: one per attribute, labelled from the
+ * row's attribute pairs ("Size: M"), else one per value of its summary
+ * ("Blue / Large").
  *
  * @param {Object} row Variation row.
  * @return {Array<string>} Chip texts.
  */
 export function chipsOf( row ) {
+	const pairs = row?.[ ROW.attributes ];
+	if ( Array.isArray( pairs ) && pairs.length ) {
+		return pairs
+			.filter( ( pair ) => pair && ! isBlank( pair.label ) )
+			.map( ( pair ) =>
+				sprintf(
+					/* translators: 1: an attribute, such as "Size"; 2: its value, such as "M". */
+					__(
+						'%1$s: %2$s',
+						'bulk-catalogue-manager-for-woocommerce'
+					),
+					pair.label,
+					isBlank( pair.value )
+						? __( 'Any', 'bulk-catalogue-manager-for-woocommerce' )
+						: pair.value
+				)
+			);
+	}
 	const summary = row?.[ ROW.attributeSummary ];
 	return isBlank( summary )
 		? []

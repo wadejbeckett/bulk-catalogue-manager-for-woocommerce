@@ -21,6 +21,11 @@ import {
 	offSiteChoices,
 } from '../../assets/src/panels/catalogue/defaults';
 import { alwaysConfirmReasons } from '../../assets/src/panels/bulk';
+import { withFilters } from '../../assets/src/panels/catalogue/toolbar';
+import {
+	descriptorsOf,
+	fieldsFromRegistry,
+} from '../../assets/src/panels/catalogue/fields';
 
 jest.mock( '@wordpress/api-fetch', () => {
 	const apiFetch = jest.fn();
@@ -178,6 +183,38 @@ describe( 'catalogue wire-ins', () => {
 		expect(
 			calls( apiFetch, 'products/21/variations' ).length
 		).toBeGreaterThanOrEqual( 1 );
+	} );
+} );
+
+describe( 'tag and shipping class filters', () => {
+	it( 'read their names from GET /terms/{taxonomy} and offer the filters', async () => {
+		routes( {
+			'terms/product_tag': () => [ { id: 7, name: 'Sale', count: 2 } ],
+			'terms/product_shipping_class': () => [
+				{ id: 9, name: 'Bulky', count: 1 },
+			],
+		} );
+		await renderLoaded();
+		await waitFor( () =>
+			expect( calls( apiFetch, 'terms/product_tag' ) ).toHaveLength( 1 )
+		);
+		expect(
+			calls( apiFetch, 'terms/product_shipping_class' )
+		).toHaveLength( 1 );
+		const names = {
+			tags: new Map( [ [ 7, 'Sale' ] ] ),
+			shipping_classes: new Map( [ [ 9, 'Bulky' ] ] ),
+		};
+		const fields = withFilters(
+			fieldsFromRegistry( REGISTRY ),
+			descriptorsOf( REGISTRY ),
+			names
+		);
+		const byId = ( id ) => fields.find( ( field ) => field.id === id );
+		expect( byId( 'tag_ids' ).elements ).toEqual( [
+			{ value: 7, label: 'Sale' },
+		] );
+		expect( byId( 'shipping_class_id' ).filterBy ).toBeTruthy();
 	} );
 } );
 

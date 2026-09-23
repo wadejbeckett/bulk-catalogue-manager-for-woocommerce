@@ -7,7 +7,8 @@
  */
 
 /** View keys never saved. */
-const TRANSIENT = [ 'page' ];
+// The page, and Show all's one product (T67), are never saved.
+const TRANSIENT = [ 'page', 'parent' ];
 
 /**
  * The stored form of the current state.

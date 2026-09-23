@@ -168,6 +168,10 @@ export function withVariations( query, view, descriptors ) {
 	if ( mode !== MODES.products ) {
 		next.mode = mode;
 	}
+	// Show all: one product's options (the route's `parent`, Variations only).
+	if ( mode === MODES.variations && Number( view?.parent ) > 0 ) {
+		next.parent = Number( view.parent );
+	}
 	const shown = new Set( query.fields || [] );
 	const visible = descriptors.filter( ( field ) => shown.has( field.key ) );
 	const roles = variationRoles( descriptors );

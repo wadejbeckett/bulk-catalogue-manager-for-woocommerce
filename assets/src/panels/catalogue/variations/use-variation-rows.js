@@ -103,9 +103,19 @@ export function useVariationRows( {
 	const mode = modeOf( view );
 	const titleKey = view.titleField;
 	const [ state, dispatch ] = useReducer( reducer, INITIAL );
-	const [ focus, setFocus ] = useState( null );
-	const [ focusPage, setFocusPage ] = useState( null );
-	const activeFocus = mode === MODES.variations ? focus : null;
+	// Show all: the view's `parent` narrows the Variations list to one
+	// product's options (GET /products?mode=variations&parent=ID, through
+	// withVariations()), so the grid's own read is the only one. `named`
+	// keeps the product's name and count for the notice.
+	const [ named, setNamed ] = useState( null );
+	const parentId = mode === MODES.variations ? Number( view.parent ) || 0 : 0;
+	const activeFocus = parentId
+		? {
+				id: parentId,
+				name: named?.id === parentId ? named.name : '',
+				total: named?.id === parentId ? named.total : 0,
+			}
+		: null;
 	const fieldsKey = JSON.stringify(
 		toQuery( view, descriptors ).fields || []
 	);
@@ -202,47 +212,7 @@ export function useVariationRows( {
 		} );
 	}, [ state, fieldsKey ] );
 
-	// Show all: Variations mode read for that one product, page by page.
-	useEffect( () => {
-		if ( ! activeFocus ) {
-			setFocusPage( null );
-			return undefined;
-		}
-		let current = true;
-		request( `products/${ activeFocus.id }/variations`, {
-			query: {
-				page: view.page || 1,
-				per_page: Math.min( view.perPage || CAP, 100 ),
-				fields: JSON.parse( fieldsKey ),
-			},
-		} )
-			.then( ( answer ) => {
-				if ( current && live.current ) {
-					setFocusPage( {
-						items: Array.isArray( answer?.items )
-							? answer.items
-							: [],
-						pagination: {
-							totalItems:
-								Number( answer?.pagination?.total ) || 0,
-							totalPages:
-								Number( answer?.pagination?.totalPages ) || 0,
-						},
-					} );
-				}
-			} )
-			.catch( ( error ) => {
-				if ( current && live.current ) {
-					setFocusPage( { error } );
-				}
-			} );
-		return () => {
-			current = false;
-		};
-	}, [ activeFocus, view.page, view.perPage, fieldsKey ] );
-
-	const focused = activeFocus && focusPage?.items ? focusPage : null;
-	const base = focused ? focused.items : items;
+	const base = items;
 	const rows = useMemo(
 		() => buildRows( base, state, roles, mode ),
 		[ base, state, roles, mode ]
@@ -269,13 +239,17 @@ export function useVariationRows( {
 
 	const setMode = useCallback(
 		( next ) => {
-			setFocus( null );
 			if ( next !== mode ) {
-				onChangeView( { ...view, mode: next, page: 1 } );
+				const { parent, ...rest } = view;
+				onChangeView( { ...rest, mode: next, page: 1 } );
 			}
 		},
 		[ mode, onChangeView, view ]
 	);
+	const clearFocus = () => {
+		const { parent, ...rest } = view;
+		onChangeView( { ...rest, page: 1 } );
+	};
 
 	const parents = rows.filter(
 		( row ) => metaOf( row ).kind === KINDS.parent
@@ -335,12 +309,17 @@ export function useVariationRows( {
 			change( [ ...new Set( [ ...( selection || [] ), ...ids ] ) ] );
 		},
 		showAll: ( row, total ) => {
-			setFocus( {
+			setNamed( {
 				id: Number( row.id ),
 				name: nameOf( row, titleKey ),
 				total,
 			} );
-			onChangeView( { ...view, mode: MODES.variations, page: 1 } );
+			onChangeView( {
+				...view,
+				mode: MODES.variations,
+				parent: Number( row.id ),
+				page: 1,
+			} );
 		},
 	};
 	const ctxRef = useRef( ctx );
@@ -431,7 +410,7 @@ export function useVariationRows( {
 		ctx.showAll( product, countOf( product, roles ) || 0 );
 	};
 
-	const paginationInfo = focused ? focused.pagination : pagination;
+	const paginationInfo = pagination;
 	return {
 		expand,
 		props: {
@@ -457,8 +436,8 @@ export function useVariationRows( {
 				{ activeFocus && (
 					<FocusNotice
 						focus={ activeFocus }
-						failed={ !! focusPage?.error }
-						onClear={ () => setFocus( null ) }
+						failed={ false }
+						onClear={ clearFocus }
 					/>
 				) }
 			</>

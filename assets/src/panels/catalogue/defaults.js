@@ -73,6 +73,7 @@ export const ROW = {
 	parentId: 'parent_id',
 	parentName: 'parent_name',
 	attributeSummary: 'attribute_summary',
+	attributes: 'attributes', // [ { label, value } ] of a variation.
 };
 
 /**
@@ -87,6 +88,8 @@ export const PER_PAGE_SIZES = [ 25, 50, 100 ];
 /** Term sources the client can name through a bcm/v1 route: source => route. */
 export const TERM_ROUTES = {
 	categories: 'categories',
+	tags: 'terms/product_tag',
+	shipping_classes: 'terms/product_shipping_class',
 };
 
 /**

@@ -157,6 +157,10 @@ function variationsPage( all, query ) {
 }
 
 function productsPage( query ) {
+	// Show all: one product's options through the route's parent filter.
+	if ( query.mode === 'variations' && query.parent === '21' ) {
+		return variationsPage( TEE_VARIATIONS, query );
+	}
 	if ( query.mode === 'variations' ) {
 		return {
 			items: POLO_VARIATIONS,
@@ -427,9 +431,15 @@ describe( 'expandable variation rows (T67)', () => {
 		);
 		await screen.findByText( 'Showing the options of Classic Tee.' );
 		await screen.findByText( '60 options' );
-		expect( calls( apiFetch, 'products' ).pop().mode ).toBe( 'variations' );
-		const focused = calls( apiFetch, 'products/21/variations' ).pop();
-		expect( focused ).toMatchObject( { page: '1', per_page: '25' } );
+		// One read: the grid's own, narrowed by parent (no second request).
+		const focused = calls( apiFetch, 'products' ).pop();
+		expect( focused ).toMatchObject( {
+			mode: 'variations',
+			parent: '21',
+			page: '1',
+			per_page: '25',
+		} );
+		expect( calls( apiFetch, 'products/21/variations' ) ).toHaveLength( 1 );
 		await waitFor( () =>
 			expect(
 				document.querySelectorAll( '.bcm-vrow.is-flat' )
@@ -669,5 +679,28 @@ describe( 'row tree model', () => {
 		expect(
 			toQuery( { ...view, mode: 'products_and_variations' }, descriptors )
 		).toMatchObject( { mode: 'products_and_variations' } );
+	} );
+} );
+
+describe( 'attribute chips', () => {
+	const {
+		chipsOf,
+	} = require( '../../assets/src/panels/catalogue/variations/cells' );
+
+	it( 'label each chip from the attribute pairs, else split the summary', () => {
+		expect(
+			chipsOf( {
+				attribute_summary: 'M / Navy',
+				attributes: [
+					{ label: 'Size', value: 'M' },
+					{ label: 'Colour', value: 'Navy' },
+					{ label: 'Fit', value: '' },
+				],
+			} )
+		).toEqual( [ 'Size: M', 'Colour: Navy', 'Fit: Any' ] );
+		expect( chipsOf( { attribute_summary: 'M / Navy' } ) ).toEqual( [
+			'M',
+			'Navy',
+		] );
 	} );
 } );

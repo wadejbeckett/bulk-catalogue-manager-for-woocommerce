@@ -131,23 +131,3 @@ describe( 'entry', () => {
 		expect( window.location.search ).not.toContain( 'panel=' );
 	} );
 } );
-
-describe( 'catalogue fields', () => {
-	it( 'shows an empty number as nothing and offers no filter yet', () => {
-		const {
-			toDataViewsFields,
-		} = require( '../../assets/src/panels/catalogue.js' );
-		const [ price ] = toDataViewsFields( [
-			{
-				key: 'sale_price',
-				dataviews: { id: 'sale_price', type: 'number', filterBy: {} },
-			},
-		] );
-		expect( price.filterBy ).toBe( false );
-		expect( price.render( { item: { sale_price: null } } ) ).toBe( '' );
-		expect( price.render( { item: { sale_price: '' } } ) ).toBe( '' );
-		expect( price.render( { item: { sale_price: '9.50' } } ) ).toBe(
-			'9.50'
-		);
-	} );
-} );

@@ -224,7 +224,8 @@ final class ProductQueryTest extends TestCase {
 				<<<'SQL'
 				SELECT p.ID AS id, p.post_parent AS parent_id, l.max_price AS regular_price {FROM}
 				WHERE p.post_type IN ('product_variation') AND {STATUS}
-				AND (SELECT COUNT(DISTINCT tt.term_id) {TERM} WHERE tr.object_id = p.post_parent AND tt.taxonomy = 'product_cat' AND tt.term_id IN (3, 7)) = 2
+				AND EXISTS (SELECT 1 {TERM} WHERE tr.object_id = p.post_parent AND tt.taxonomy = 'product_cat' AND tt.term_id IN (3))
+				AND EXISTS (SELECT 1 {TERM} WHERE tr.object_id = p.post_parent AND tt.taxonomy = 'product_cat' AND tt.term_id IN (7))
 				AND EXISTS (SELECT 1 {TERM} WHERE tr.object_id = p.ID AND tt.taxonomy = 'product_shipping_class' AND tt.term_id IN (9))
 				AND p.post_status NOT IN ('private') AND l.max_price >= 5
 				ORDER BY l.max_price DESC, p.ID DESC LIMIT 25 OFFSET 0
@@ -592,6 +593,70 @@ final class ProductQueryTest extends TestCase {
 			'orderby' => 'sku',
 		];
 		$this->assertSame( self::query( $args )->count_statement(), ProductQuery::from_array( $args )->count_statement() );
+	}
+
+	public function test_a_category_filter_includes_every_category_below_the_chosen_ones(): void {
+		// Clothing (1) > Men (2) > Shirts (3), Clothing > Women (5); Shoes (6) > Boots (7); tag 9 below tag 8 is ignored.
+		$GLOBALS['bcm_test']['term_list'] = [];
+		foreach ( [ [ 1, 0, 'product_cat' ], [ 2, 1, 'product_cat' ], [ 3, 2, 'product_cat' ], [ 5, 1, 'product_cat' ], [ 6, 0, 'product_cat' ], [ 7, 6, 'product_cat' ], [ 8, 0, 'product_tag' ], [ 9, 8, 'product_tag' ] ] as [ $id, $parent, $taxonomy ] ) {
+			$GLOBALS['bcm_test']['term_list'][] = (object) [
+				'term_id'  => $id,
+				'parent'   => $parent,
+				'taxonomy' => $taxonomy,
+			];
+		}
+		$where  = static fn( string $field, string $operator, array $ids ): string => self::normalise(
+			(string) preg_replace(
+				'/^.* AND p\.post_status IN \([^)]*\) AND (.*) ORDER BY .*$/',
+				'$1',
+				self::query(
+					[
+						'filters' => [
+							[
+								'field'    => $field,
+								'operator' => $operator,
+								'value'    => $ids,
+							],
+						],
+					]
+				)->statement()
+			)
+		);
+		$exists = static fn( string $taxonomy, string $ids ): string => self::normalise( strtr( "EXISTS (SELECT 1 {TERM} WHERE tr.object_id = p.ID AND tt.taxonomy = '$taxonomy' AND tt.term_id IN ($ids))", self::FRAGMENTS ) );
+
+		$this->assertSame( $exists( 'product_cat', '1, 2, 3, 5' ), $where( 'category_ids', 'isAny', [ 1 ] ), 'A branch is the category and everything below it.' );
+		$this->assertSame( $exists( 'product_cat', '2, 3, 6, 7' ), $where( 'category_ids', 'isAny', [ 6, 2 ] ) );
+		$this->assertSame( $exists( 'product_cat', '3' ), $where( 'category_ids', 'isAny', [ 3 ] ), 'A leaf is itself.' );
+		$this->assertSame( 'NOT ' . $exists( 'product_cat', '1, 2, 3, 5' ), $where( 'category_ids', 'isNone', [ 1 ] ) );
+		$this->assertSame( $exists( 'product_cat', '2, 3' ) . ' AND ' . $exists( 'product_cat', '6, 7' ), $where( 'category_ids', 'isAll', [ 2, 6 ] ), 'All of: each chosen branch.' );
+		$this->assertSame( $exists( 'product_tag', '8' ), $where( 'tag_ids', 'isAny', [ 8 ] ), 'Tags are flat.' );
+		$this->assertSame( [ [ 1, 'product_cat' ], [ 2, 'product_cat' ], [ 3, 'product_cat' ], [ 5, 'product_cat' ] ], array_slice( $GLOBALS['bcm_test']['term_children_calls'], 0, 4 ) );
+		$this->assertSame( [], self::db()->queries, 'The hierarchy is read without a query.' );
+	}
+
+	public function test_a_one_product_variations_read_lists_its_children_in_woocommerce_order(): void {
+		$query = self::query(
+			[
+				'mode'     => 'variations',
+				'parent'   => 103,
+				'per_page' => 500,
+				'page'     => 2,
+			]
+		);
+		$this->assertSame(
+			self::normalise(
+				strtr(
+					<<<'SQL'
+					SELECT p.ID AS id, p.post_parent AS parent_id {FROM}
+					WHERE p.post_type IN ('product_variation') AND p.post_status IN ('publish', 'private') AND p.post_parent = 103
+					ORDER BY p.menu_order ASC, p.ID ASC LIMIT 100 OFFSET 100
+					SQL,
+					self::FRAGMENTS
+				)
+			),
+			self::normalise( $query->statement() )
+		);
+		$this->assertStringEndsWith( 'p.post_parent = 103 LIMIT 1', self::normalise( $query->count_statement() ) );
 	}
 
 	public function test_invalid_input_never_reaches_sql(): void {

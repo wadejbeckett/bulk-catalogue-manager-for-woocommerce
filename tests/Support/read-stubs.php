@@ -119,14 +119,51 @@ if ( ! function_exists( 'wp_cache_get' ) ) {
 
 	/**
 	 * A fixture meta value, costing a query when the object is not yet primed.
+	 * Without a key, every key's values in stored order, as core returns them.
 	 */
 	function get_post_meta( int $id, string $key = '', bool $single = false ): mixed {
 		if ( ! isset( $GLOBALS['bcm_test']['primed_meta'][ $id ] ) ) {
 			bcm_test_record( 'get_post_meta', [ $id, $key ], true );
 			$GLOBALS['bcm_test']['primed_meta'][ $id ] = true;
 		}
+		if ( '' === $key ) {
+			return array_map( static fn( mixed $value ): array => [ $value ], $GLOBALS['bcm_test']['meta'][ $id ] ?? [] );
+		}
 		$value = $GLOBALS['bcm_test']['meta'][ $id ][ $key ] ?? '';
 		return $single ? $value : [ $value ];
+	}
+
+	/**
+	 * Whether a taxonomy is registered: WooCommerce's attribute taxonomies
+	 * (`pa_`) and any listed in $GLOBALS['bcm_test']['taxonomies'].
+	 */
+	function taxonomy_exists( string $taxonomy ): bool {
+		return str_starts_with( $taxonomy, 'pa_' ) || in_array( $taxonomy, $GLOBALS['bcm_test']['taxonomies'] ?? [], true );
+	}
+
+	/**
+	 * An attribute taxonomy's label, as WooCommerce's registered attributes give it.
+	 */
+	function wc_attribute_label( string $name, mixed $product = '' ): string {
+		return $GLOBALS['bcm_test']['attribute_labels'][ $name ] ?? ucfirst( (string) preg_replace( '/^pa_/', '', $name ) );
+	}
+
+	/**
+	 * Every term below a term, from the parents in $GLOBALS['bcm_test']['term_list'],
+	 * as core reads them from its cached hierarchy option: no query.
+	 *
+	 * @return int[]
+	 */
+	function get_term_children( int $term_id, string $taxonomy ): array {
+		$GLOBALS['bcm_test']['term_children_calls'][] = [ $term_id, $taxonomy ];
+		$children                                     = [];
+		foreach ( $GLOBALS['bcm_test']['term_list'] ?? [] as $term ) {
+			if ( $taxonomy === $term->taxonomy && $term_id === (int) $term->parent && ! in_array( (int) $term->term_id, $children, true ) ) {
+				$children[] = (int) $term->term_id;
+				$children   = array_merge( $children, get_term_children( (int) $term->term_id, $taxonomy ) );
+			}
+		}
+		return $children;
 	}
 
 	/**

@@ -6,6 +6,12 @@
  * filter field, operator or sort key, or a value of the wrong shape, throws.
  * Paging is clamped rather than refused, with `per_page` capped at 100.
  *
+ * `parent` restricts a variations read to one product's variations (the
+ * `/products/{id}/variations` route, T20). It is not a `/products` argument:
+ * RouteSchema never passes it from a request, and it is accepted only with
+ * the variations mode. Without an explicit sort such a read is in the order
+ * WooCommerce keeps variations in, `menu_order` then id.
+ *
  * Filter fields and their operators mirror the field registry's `filterBy`
  * declarations, and sort keys its sortable fields; a unit test holds the two
  * lists together.
@@ -69,7 +75,12 @@ final class Criteria {
 	/**
 	 * The arguments a read accepts.
 	 */
-	public const ARGS = [ 'mode', 'search', 'filters', 'orderby', 'order', 'page', 'per_page' ];
+	public const ARGS = [ 'mode', 'search', 'filters', 'orderby', 'order', 'page', 'per_page', 'parent' ];
+
+	/**
+	 * The arguments only code sets, never a request (RouteSchema::criteria_input()).
+	 */
+	public const INTERNAL_ARGS = [ 'filters', 'parent' ];
 
 	/*
 	 * Filter value kinds.
@@ -125,6 +136,7 @@ final class Criteria {
 	 * @param Sort[]   $sorts    Sort keys, most significant first.
 	 * @param int      $page     Page, from 1.
 	 * @param int      $per_page Rows per page, 1 to MAX_PER_PAGE.
+	 * @param int      $parent_id The product whose variations are read; 0 for no restriction.
 	 */
 	private function __construct(
 		public readonly string $mode,
@@ -132,7 +144,8 @@ final class Criteria {
 		public readonly array $filters,
 		public readonly array $sorts,
 		public readonly int $page,
-		public readonly int $per_page
+		public readonly int $per_page,
+		public readonly int $parent_id = 0
 	) {}
 
 	/**
@@ -170,13 +183,23 @@ final class Criteria {
 			throw new \InvalidArgumentException( 'Filters must be a list.' );
 		}
 
+		$parent = $args['parent'] ?? 0;
+		$parent = is_int( $parent ) || ( is_string( $parent ) && 1 === preg_match( '/^\d{1,18}$/', $parent ) ) ? (int) $parent : -1;
+		if ( $parent < 0 || ( $parent > 0 && self::MODE_VARIATIONS !== $mode ) ) {
+			throw new \InvalidArgumentException( 'A parent restriction needs a product id and the variations mode.' );
+		}
+
+		// A product's variations keep WooCommerce's own order unless a sort is asked for.
+		$sorts = $parent > 0 && ! isset( $args['orderby'] ) ? [] : self::sorts( $args['orderby'] ?? 'date_created', $args['order'] ?? ( isset( $args['orderby'] ) ? Sort::ASC : Sort::DESC ) );
+
 		return new self(
 			$mode,
 			$search,
 			array_map( [ self::class, 'filter' ], $filters ),
-			self::sorts( $args['orderby'] ?? 'date_created', $args['order'] ?? ( isset( $args['orderby'] ) ? Sort::ASC : Sort::DESC ) ),
+			$sorts,
 			self::clamp( $args['page'] ?? 1, 1, self::MAX_PAGE, 'page' ),
-			self::clamp( $args['per_page'] ?? self::DEFAULT_PER_PAGE, 1, self::MAX_PER_PAGE, 'per_page' )
+			self::clamp( $args['per_page'] ?? self::DEFAULT_PER_PAGE, 1, self::MAX_PER_PAGE, 'per_page' ),
+			$parent
 		);
 	}
 
@@ -184,13 +207,14 @@ final class Criteria {
 	 * The conditions that decide which rows match — mode, search and filters,
 	 * not sort or paging — as a plain array, so a count can be keyed on them (T19).
 	 *
-	 * @return array{mode: string, search: string, filters: array<int, array<string, mixed>>}
+	 * @return array{mode: string, search: string, filters: array<int, array<string, mixed>>, parent: int}
 	 */
 	public function conditions(): array {
 		return [
 			'mode'    => $this->mode,
 			'search'  => $this->search,
 			'filters' => array_map( static fn( Filter $filter ): array => $filter->to_array(), $this->filters ),
+			'parent'  => $this->parent_id,
 		];
 	}
 

@@ -436,12 +436,14 @@ final class HydratorTest extends TestCase {
 		);
 		$this->assertSame(
 			[
-				'id'           => 9001,
-				'parent_id'    => 3,
-				'name'         => 'Product 3 - Blue',
-				'status'       => 'private',
-				'stock_status' => 'outofstock',
-				'type'         => 'variation',
+				'id'                => 9001,
+				'parent_id'         => 3,
+				'name'              => 'Product 3 - Blue',
+				'status'            => 'private',
+				'stock_status'      => 'outofstock',
+				'type'              => 'variation',
+				'parent_name'       => 'Product 3',
+				'attribute_summary' => '',
 			],
 			$items[0]
 		);

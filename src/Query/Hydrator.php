@@ -11,13 +11,19 @@
  * 3. one `wp_get_object_terms()` across the visible columns' taxonomies —
  *    `product_cat`, `product_tag`, `product_visibility`,
  *    `product_shipping_class` and, for the type column, `product_type`;
- * 4. one grouped variation count on `post_parent`, when that column shows;
+ * 4. one grouped variation count on `post_parent` over the page's product
+ *    rows, when that column shows (a variation has none, so a page of
+ *    variations skips it);
  * 5. one read of the lookup table's minimum and maximum price, when the
  *    rendered price shows, composed with `wc_price()` and the shop's
  *    formatting — never `WC_Product::get_price_html()` (SPEC §4.1);
  * 6. for thumbnails, the `_thumbnail_id` values out of the page's meta cache,
  *    then `_prime_post_caches()` and one `update_meta_cache()` over the
- *    attachment ids, falling back to WooCommerce's placeholder image.
+ *    attachment ids, falling back to WooCommerce's placeholder image;
+ * 7. when the page holds variation rows (T20): the page's meta cache (primed
+ *    in step 2 whatever the columns), one `_prime_post_caches()` over their
+ *    products for `parent_name`, and at most one `get_terms()` naming the
+ *    attribute terms for `attribute_summary`, such as "Blue / Large".
  *
  * Each value then comes through the field registry's read contract,
  * `Field::read()`, over a Snapshot answering the CRUD getters from those
@@ -64,9 +70,24 @@ final class Hydrator {
 	public const PARENT_ID = 'parent_id';
 
 	/**
-	 * Statuses a counted variation may have, as WooCommerce counts a product's children.
+	 * Extra item property on a variation row: its product's name.
 	 */
-	private const CHILD_STATUSES = [ 'publish', 'private' ];
+	public const PARENT_NAME = 'parent_name';
+
+	/**
+	 * Extra item property on a variation row: its attribute values, such as "Blue / Large".
+	 */
+	public const ATTRIBUTE_SUMMARY = 'attribute_summary';
+
+	/**
+	 * Separator between attribute values in a summary.
+	 */
+	public const SUMMARY_SEPARATOR = ' / ';
+
+	/**
+	 * Prefix of a variation's attribute meta keys.
+	 */
+	private const ATTRIBUTE_META = 'attribute_';
 
 	/**
 	 * Build over a registry.
@@ -101,19 +122,23 @@ final class Hydrator {
 		if ( [] === $rows ) {
 			return [];
 		}
-		$fields = $this->fields( $keys );
-		$ids    = array_values( array_unique( array_map( static fn( array $row ): int => (int) $row['id'], $rows ) ) );
+		$fields  = $this->fields( $keys );
+		$ids     = array_values( array_unique( array_map( static fn( array $row ): int => (int) $row['id'], $rows ) ) );
+		$parents = array_values( array_unique( array_filter( array_map( static fn( array $row ): int => (int) $row['parent_id'], $rows ) ) ) );
 
 		_prime_post_caches( $ids, false, false );
 
 		$getters = array_map( static fn( Field $field ): string => $field->getter(), $fields );
-		if ( [] !== array_filter( $fields, static fn( Field $field ): bool => Storage::META === $field->storage()->kind() ) ) {
+		if ( [] !== $parents || [] !== array_filter( $fields, static fn( Field $field ): bool => Storage::META === $field->storage()->kind() ) ) {
 			update_meta_cache( 'post', $ids );
 		}
-		$terms    = $this->terms( $ids, $fields );
-		$children = in_array( 'get_children', $getters, true ) ? $this->children( $ids ) : [];
+		$terms = $this->terms( $ids, $fields );
+		// Only a product has variations: a page of variation rows skips the grouped count.
+		$products = array_values( array_unique( array_map( static fn( array $row ): int => (int) $row['id'], array_filter( $rows, static fn( array $row ): bool => 0 === (int) $row['parent_id'] ) ) ) );
+		$children = [] !== $products && in_array( 'get_children', $getters, true ) ? $this->children( $products ) : [];
 		$prices   = in_array( 'get_price_html', $getters, true ) ? $this->prices( $ids ) : [];
 		$images   = isset( $fields['thumbnail'] ) ? $this->thumbnails( $ids ) : null;
+		$variants = [] === $parents ? [] : $this->variations( $rows, $parents );
 
 		$items = [];
 		foreach ( $rows as $row ) {
@@ -133,6 +158,9 @@ final class Hydrator {
 			}
 			if ( null !== $images ) {
 				$item[ self::THUMBNAIL_URL ] = $images[ $id ];
+			}
+			if ( isset( $variants[ $id ] ) ) {
+				$item += $variants[ $id ];
 			}
 			$items[] = $item;
 		}
@@ -154,6 +182,100 @@ final class Hydrator {
 			return (string) wc_price( (float) $min );
 		}
 		return (string) wc_format_price_range( (float) $min, (float) $max );
+	}
+
+	/**
+	 * An attribute summary, such as "Blue / Large": each attribute's value in
+	 * order, joined by SUMMARY_SEPARATOR; an attribute a variation leaves open
+	 * ("any") reads "Any Size".
+	 *
+	 * @param array<int, array{0: string, 1: string}> $attributes [ label, value ] per attribute; value '' for any.
+	 */
+	public static function attribute_summary( array $attributes ): string {
+		$parts = [];
+		foreach ( $attributes as [ $label, $value ] ) {
+			$parts[] = '' === $value
+				/* translators: %s: an attribute's name, such as "Size". */
+				? sprintf( __( 'Any %s', 'bulk-catalogue-manager-for-woocommerce' ), $label )
+				: $value;
+		}
+		return implode( self::SUMMARY_SEPARATOR, $parts );
+	}
+
+	/**
+	 * The parent name and attribute summary of each variation row, from the
+	 * page's primed meta, one prime of the products' posts and at most one
+	 * term read naming the attribute values stored as term slugs.
+	 *
+	 * @param array<int, array{id: int, parent_id: int}> $rows    The page's rows.
+	 * @param int[]                                      $parents The variation rows' products.
+	 * @return array<int, array<string, string>> Variation id => extra properties.
+	 */
+	private function variations( array $rows, array $parents ): array {
+		_prime_post_caches( $parents, false, false );
+
+		// Id => list of [ attribute name, stored value ], in the order the meta is stored.
+		$stored = [];
+		$slugs  = [];
+		foreach ( $rows as $row ) {
+			if ( (int) $row['parent_id'] <= 0 ) {
+				continue;
+			}
+			$id            = (int) $row['id'];
+			$stored[ $id ] = [];
+			$meta          = get_post_meta( $id );
+			foreach ( is_array( $meta ) ? $meta : [] as $key => $values ) {
+				$key = (string) $key;
+				if ( ! str_starts_with( $key, self::ATTRIBUTE_META ) || strlen( $key ) === strlen( self::ATTRIBUTE_META ) ) {
+					continue;
+				}
+				$name            = substr( $key, strlen( self::ATTRIBUTE_META ) );
+				$value           = is_array( $values ) ? ( $values[0] ?? '' ) : $values;
+				$value           = is_scalar( $value ) ? (string) $value : '';
+				$stored[ $id ][] = [ $name, $value ];
+				if ( '' !== $value && taxonomy_exists( $name ) ) {
+					$slugs[ $name ][ $value ] = true;
+				}
+			}
+		}
+
+		$names = [];
+		if ( [] !== $slugs ) {
+			$terms = get_terms(
+				[
+					'taxonomy'               => array_keys( $slugs ),
+					'slug'                   => array_values( array_unique( array_merge( ...array_map( 'array_keys', array_values( $slugs ) ) ) ) ),
+					'hide_empty'             => false,
+					'update_term_meta_cache' => false,
+				]
+			);
+			foreach ( is_array( $terms ) ? $terms : [] as $term ) {
+				if ( is_object( $term ) && isset( $slugs[ (string) $term->taxonomy ][ (string) $term->slug ] ) ) {
+					$names[ (string) $term->taxonomy ][ (string) $term->slug ] = (string) $term->name;
+				}
+			}
+		}
+
+		$labels = [];
+		$extras = [];
+		foreach ( $rows as $row ) {
+			$id = (int) $row['id'];
+			if ( ! isset( $stored[ $id ] ) ) {
+				continue;
+			}
+			$attributes = [];
+			foreach ( $stored[ $id ] as [ $name, $value ] ) {
+				$labels[ $name ] ??= taxonomy_exists( $name ) ? (string) wc_attribute_label( $name ) : ucfirst( str_replace( '-', ' ', $name ) );
+				// A term slug reads as its term's name; a deleted term, as its slug; a custom value, as typed.
+				$attributes[] = [ $labels[ $name ], $names[ $name ][ $value ] ?? $value ];
+			}
+			$parent        = get_post( (int) $row['parent_id'] );
+			$extras[ $id ] = [
+				self::PARENT_NAME       => is_object( $parent ) ? (string) $parent->post_title : '',
+				self::ATTRIBUTE_SUMMARY => self::attribute_summary( $attributes ),
+			];
+		}
+		return $extras;
 	}
 
 	/**
@@ -200,7 +322,7 @@ final class Hydrator {
 	private function children( array $ids ): array {
 		global $wpdb;
 		$sql  = 'SELECT post_parent AS parent_id, COUNT(*) AS children FROM %i WHERE post_parent IN (' . self::placeholders( $ids ) . ') AND post_type = %s AND post_status IN (%s, %s) GROUP BY post_parent LIMIT %d';
-		$args = [ $wpdb->prefix . ProductQuery::TABLES['posts'], ...$ids, 'product_variation', ...self::CHILD_STATUSES, count( $ids ) ];
+		$args = [ $wpdb->prefix . ProductQuery::TABLES['posts'], ...$ids, 'product_variation', ...ProductQuery::CHILD_STATUSES, count( $ids ) ];
 		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Literal template with placeholders only; every value is an argument.
 		$rows   = $wpdb->get_results( $wpdb->prepare( $sql, ...$args ), ARRAY_A );
 		$counts = [];

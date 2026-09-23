@@ -24,6 +24,19 @@
  * catalogue visibility) resolve against the parent (`post_parent`); every
  * other filter resolves against the row itself (SPEC §4.2).
  *
+ * A category filter includes the chosen categories' descendants (T18):
+ * choosing a branch in the category panel means everything filed anywhere
+ * under it, which is how the shop's own category pages list products. The
+ * ids are expanded through `get_term_children()`, which reads WordPress's
+ * cached `product_cat_children` hierarchy option rather than the database,
+ * before the statement is built; "any of" and "none of" test the whole
+ * expanded set, and "all of" needs each chosen category or one of its
+ * descendants. Tags and shipping classes are flat, so they match exactly.
+ *
+ * A read restricted to one product (`Criteria::$parent_id`, T20) lists that
+ * product's variations in the statuses WooCommerce counts as its children,
+ * published and private, in WooCommerce's order: `menu_order`, then id.
+ *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
  */
@@ -56,6 +69,12 @@ final class ProductQuery {
 	 * inherit never list.
 	 */
 	public const STATUSES = [ 'publish', 'future', 'draft', 'pending', 'private' ];
+
+	/**
+	 * Statuses a product's variations are listed and counted in, as
+	 * WooCommerce reads a variable product's children.
+	 */
+	public const CHILD_STATUSES = [ 'publish', 'private' ];
 
 	/**
 	 * Post types per mode.
@@ -178,6 +197,10 @@ final class ProductQuery {
 		$order   = [];
 		$ids     = false;
 		$keyword = 'ASC';
+		if ( [] === $this->criteria->sorts ) {
+			// Only a one-product variations read has no sort keys: WooCommerce's own order.
+			$order[] = 'p.menu_order ASC';
+		}
 		foreach ( $this->criteria->sorts as $sort ) {
 			$column  = self::SORT_COLUMNS[ $sort->field ][ Sort::DESC === $sort->direction ? 1 : 0 ];
 			$keyword = Sort::DESC === $sort->direction ? 'DESC' : 'ASC';
@@ -285,9 +308,13 @@ final class ProductQuery {
 	 * Build the WHERE clause and its arguments from the criteria.
 	 */
 	private function build_where(): void {
-		$types = self::POST_TYPES[ $this->criteria->mode ];
+		$types    = self::POST_TYPES[ $this->criteria->mode ];
+		$statuses = $this->criteria->parent_id > 0 ? self::CHILD_STATUSES : self::STATUSES;
 		$this->add( 'p.post_type IN (' . self::placeholders( $types, '%s' ) . ')', $types );
-		$this->add( 'p.post_status IN (' . self::placeholders( self::STATUSES, '%s' ) . ')', self::STATUSES );
+		$this->add( 'p.post_status IN (' . self::placeholders( $statuses, '%s' ) . ')', $statuses );
+		if ( $this->criteria->parent_id > 0 ) {
+			$this->add( 'p.post_parent = %d', [ $this->criteria->parent_id ] );
+		}
 
 		if ( '' !== $this->criteria->search ) {
 			global $wpdb;
@@ -455,14 +482,82 @@ final class ProductQuery {
 	 * @param array<int, string> $owner_args Its arguments.
 	 */
 	private function terms( string $taxonomy, Filter $filter, string $owner, array $owner_args ): void {
-		$ids  = $filter->value;
-		$body = 'FROM %i AS tr INNER JOIN %i AS tt ON tt.term_taxonomy_id = tr.term_taxonomy_id WHERE tr.object_id = ' . $owner . ' AND tt.taxonomy = %s AND tt.term_id IN (' . self::placeholders( $ids, '%d' ) . ')';
-		$args = [ self::table( 'relationships' ), self::table( 'taxonomy' ), ...$owner_args, $taxonomy, ...$ids ];
+		$ids = $filter->value;
+		if ( 'product_cat' === $taxonomy ) {
+			$this->categories( $filter, $owner, $owner_args );
+			return;
+		}
+		[ $body, $args ] = self::term_body( $taxonomy, $ids, $owner, $owner_args );
 		if ( 'isAll' === $filter->operator ) {
 			$this->add( '(SELECT COUNT(DISTINCT tt.term_id) ' . $body . ') = %d', [ ...$args, count( $ids ) ] );
 			return;
 		}
 		$this->add( ( 'isNone' === $filter->operator ? 'NOT ' : '' ) . 'EXISTS (SELECT 1 ' . $body . ')', $args );
+	}
+
+	/**
+	 * A category filter, each chosen category standing for itself and every
+	 * category below it: any of or none of the whole expanded set, or for
+	 * "all of" one EXISTS per chosen category over that category's branch.
+	 *
+	 * @param Filter             $filter     Category filter; the value is a list of term ids.
+	 * @param string             $owner      Owner expression.
+	 * @param array<int, string> $owner_args Its arguments.
+	 */
+	private function categories( Filter $filter, string $owner, array $owner_args ): void {
+		$branches = array_map( static fn( int $id ): array => self::branch( $id ), $filter->value );
+		if ( 'isAll' === $filter->operator ) {
+			$parts = [];
+			$args  = [];
+			foreach ( $branches as $branch ) {
+				[ $body, $body_args ] = self::term_body( 'product_cat', $branch, $owner, $owner_args );
+				$parts[]              = 'EXISTS (SELECT 1 ' . $body . ')';
+				$args                 = [ ...$args, ...$body_args ];
+			}
+			$this->add( implode( ' AND ', $parts ), $args );
+			return;
+		}
+		$ids = array_values( array_unique( array_merge( ...$branches ) ) );
+		sort( $ids );
+		[ $body, $args ] = self::term_body( 'product_cat', $ids, $owner, $owner_args );
+		$this->add( ( 'isNone' === $filter->operator ? 'NOT ' : '' ) . 'EXISTS (SELECT 1 ' . $body . ')', $args );
+	}
+
+	/**
+	 * A category and every category below it, in ascending order. The
+	 * hierarchy comes from WordPress's cached option, not a query.
+	 *
+	 * @param int $id Category id.
+	 * @return int[]
+	 */
+	private static function branch( int $id ): array {
+		$children = get_term_children( $id, 'product_cat' );
+		$ids      = [ $id ];
+		foreach ( is_array( $children ) ? $children : [] as $child ) {
+			if ( is_numeric( $child ) && (int) $child > 0 ) {
+				$ids[] = (int) $child;
+			}
+		}
+		$ids = array_values( array_unique( $ids ) );
+		sort( $ids );
+		return $ids;
+	}
+
+	/**
+	 * The FROM and WHERE of a term sub-query: the owner has one of these
+	 * term ids in the taxonomy.
+	 *
+	 * @param string             $taxonomy   Taxonomy.
+	 * @param int[]              $ids        Term ids.
+	 * @param string             $owner      Owner expression.
+	 * @param array<int, string> $owner_args Its arguments.
+	 * @return array{0: string, 1: array<int, int|string>} Template and its arguments.
+	 */
+	private static function term_body( string $taxonomy, array $ids, string $owner, array $owner_args ): array {
+		return [
+			'FROM %i AS tr INNER JOIN %i AS tt ON tt.term_taxonomy_id = tr.term_taxonomy_id WHERE tr.object_id = ' . $owner . ' AND tt.taxonomy = %s AND tt.term_id IN (' . self::placeholders( $ids, '%d' ) . ')',
+			[ self::table( 'relationships' ), self::table( 'taxonomy' ), ...$owner_args, $taxonomy, ...$ids ],
+		];
 	}
 
 	/**

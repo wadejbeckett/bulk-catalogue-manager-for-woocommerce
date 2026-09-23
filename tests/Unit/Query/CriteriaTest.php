@@ -233,6 +233,7 @@ final class CriteriaTest extends TestCase {
 						'value'    => [ 3, 9 ],
 					],
 				],
+				'parent'  => 0,
 			],
 			$one->conditions()
 		);
@@ -240,6 +241,50 @@ final class CriteriaTest extends TestCase {
 
 		$base['filters'][0]['operator'] = 'isNone';
 		$this->assertNotSame( $one->conditions(), Criteria::from_array( $base )->conditions() );
+	}
+
+	public function test_a_parent_restriction_needs_the_variations_mode_and_keeps_woocommerce_order(): void {
+		$criteria = Criteria::from_array(
+			[
+				'mode'   => 'variations',
+				'parent' => '103',
+			]
+		);
+		$this->assertSame( 103, $criteria->parent_id );
+		$this->assertSame( [], $criteria->sorts, 'No sort keys: the builder uses menu_order, then id.' );
+		$this->assertSame( 103, $criteria->conditions()['parent'] );
+
+		$sorted = Criteria::from_array(
+			[
+				'mode'    => 'variations',
+				'parent'  => 103,
+				'orderby' => 'sku',
+			]
+		);
+		$this->assertSame( [ 'sku' ], array_map( static fn( $sort ): string => $sort->field, $sorted->sorts ) );
+		$this->assertSame( 0, Criteria::from_array( [] )->parent_id );
+
+		foreach ( [
+			[ 'parent' => 103 ],
+			[
+				'mode'   => 'products_and_variations',
+				'parent' => 103,
+			],
+			[
+				'mode'   => 'variations',
+				'parent' => -1,
+			],
+			[
+				'mode'   => 'variations',
+				'parent' => '1 OR 1',
+			],
+			[
+				'mode'   => 'variations',
+				'parent' => 1.5,
+			],
+		] as $args ) {
+			$this->assertTrue( self::refuses( $args ), (string) wp_json_encode( $args ) );
+		}
 	}
 
 	public function test_accepted_value_forms_normalise(): void {

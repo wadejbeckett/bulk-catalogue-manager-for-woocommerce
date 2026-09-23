@@ -29,6 +29,7 @@ namespace BulkCatalogueManager\Rest;
 use BulkCatalogueManager\Fields\Field;
 use BulkCatalogueManager\Fields\Registry;
 use BulkCatalogueManager\Query\Criteria;
+use BulkCatalogueManager\Query\Hydrator;
 use BulkCatalogueManager\Query\Sort;
 
 defined( 'ABSPATH' ) || exit;
@@ -110,6 +111,60 @@ final class RouteSchema {
 				],
 				[ self::class, 'as_list' ]
 			),
+		];
+	}
+
+	/**
+	 * Every argument of a product's variations read
+	 * (`GET /products/{id}/variations`): the product id from the path,
+	 * paging and fields.
+	 *
+	 * @return array<string, array<string, mixed>>
+	 */
+	public function variation_args(): array {
+		return [
+			'id' => self::arg(
+				[
+					'description' => __( 'The product whose variations are listed.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'type'        => 'integer',
+					'minimum'     => 1,
+					'required'    => true,
+				],
+				static fn( mixed $value ): int => max( 0, (int) $value )
+			),
+		] + $this->paging_args() + $this->fields_arg();
+	}
+
+	/**
+	 * The properties a hydrated row carries besides its registry fields
+	 * (Query\Hydrator), for every row route's item schema.
+	 *
+	 * @return array<string, array<string, mixed>>
+	 */
+	public static function row_extras(): array {
+		$read_only = [
+			'context'  => [ 'view', 'edit' ],
+			'readonly' => true,
+		];
+		return [
+			Hydrator::PARENT_ID         => [
+				'description' => __( 'The product a variation belongs to; 0 for a product.', 'bulk-catalogue-manager-for-woocommerce' ),
+				'type'        => 'integer',
+				'minimum'     => 0,
+			] + $read_only,
+			Hydrator::THUMBNAIL_URL     => [
+				'description' => __( 'Address of the product image, or of the shop\'s placeholder image when there is none.', 'bulk-catalogue-manager-for-woocommerce' ),
+				'type'        => 'string',
+				'format'      => 'uri',
+			] + $read_only,
+			Hydrator::PARENT_NAME       => [
+				'description' => __( 'On a variation, the name of its product.', 'bulk-catalogue-manager-for-woocommerce' ),
+				'type'        => 'string',
+			] + $read_only,
+			Hydrator::ATTRIBUTE_SUMMARY => [
+				'description' => __( 'On a variation, its attribute values, such as "Blue / Large".', 'bulk-catalogue-manager-for-woocommerce' ),
+				'type'        => 'string',
+			] + $read_only,
 		];
 	}
 
@@ -258,8 +313,8 @@ final class RouteSchema {
 	 */
 	public function criteria_input( array $params ): array {
 		$input = [];
-		foreach ( Criteria::ARGS as $arg ) {
-			if ( 'filters' !== $arg && isset( $params[ $arg ] ) ) {
+		foreach ( array_diff( Criteria::ARGS, Criteria::INTERNAL_ARGS ) as $arg ) {
+			if ( isset( $params[ $arg ] ) ) {
 				$input[ $arg ] = $params[ $arg ];
 			}
 		}

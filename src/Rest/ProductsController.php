@@ -9,7 +9,13 @@
  * and page statements, hydrated by Query\Hydrator in a fixed number of
  * queries without instantiating a product, cached per last-changed window.
  * Each item carries the requested `fields[]` (every field when absent) plus
- * `parent_id` and, with the thumbnail column, `thumbnail_url`.
+ * `parent_id`, with the thumbnail column `thumbnail_url`, and on a variation
+ * row `parent_name` and `attribute_summary` (RouteSchema::row_extras()).
+ *
+ * `mode` switches between products, products and variations, and variations
+ * only; any other value is refused 400 by its generated enum before the
+ * handler runs. A `category_ids` filter includes the chosen categories'
+ * descendants (Query\ProductQuery).
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -99,8 +105,18 @@ final class ProductsController implements ReadController {
 			);
 		}
 		$fields = $request->get_param( 'fields' );
-		$page   = $this->catalogue->page( $criteria, is_array( $fields ) ? array_values( array_filter( $fields, 'is_string' ) ) : [] );
-		$total  = $page['total'];
+		return self::response( $criteria, $this->catalogue->page( $criteria, is_array( $fields ) ? array_values( array_filter( $fields, 'is_string' ) ) : [] ) );
+	}
+
+	/**
+	 * A page as every list route answers it: `{ items, pagination: { page, perPage, total, totalPages } }`.
+	 * A page past the last has no items and the same truthful totals.
+	 *
+	 * @param Criteria                                                         $criteria The read's criteria.
+	 * @param array{items: array<int, array<string, mixed>>, total: int} $page     Catalogue::page().
+	 */
+	public static function response( Criteria $criteria, array $page ): \WP_REST_Response {
+		$total = $page['total'];
 		return new \WP_REST_Response(
 			[
 				'items'      => $page['items'],
@@ -121,24 +137,6 @@ final class ProductsController implements ReadController {
 	 * @return array<string, mixed>
 	 */
 	public function get_item_schema(): array {
-		return $this->schema->item_schema(
-			self::TITLE,
-			[
-				Hydrator::PARENT_ID     => [
-					'description' => __( 'The product a variation belongs to; 0 for a product.', 'bulk-catalogue-manager-for-woocommerce' ),
-					'type'        => 'integer',
-					'minimum'     => 0,
-					'context'     => [ 'view', 'edit' ],
-					'readonly'    => true,
-				],
-				Hydrator::THUMBNAIL_URL => [
-					'description' => __( 'Address of the product image, or of the shop\'s placeholder image when there is none.', 'bulk-catalogue-manager-for-woocommerce' ),
-					'type'        => 'string',
-					'format'      => 'uri',
-					'context'     => [ 'view', 'edit' ],
-					'readonly'    => true,
-				],
-			]
-		);
+		return $this->schema->item_schema( self::TITLE, RouteSchema::row_extras() );
 	}
 }

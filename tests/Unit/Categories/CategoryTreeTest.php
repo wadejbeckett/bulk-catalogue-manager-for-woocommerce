@@ -131,6 +131,7 @@ final class CategoryTreeTest extends TestCase {
 						'value'    => [ 'instock' ],
 					],
 				],
+				'parent'  => 0,
 			],
 			$criteria->conditions()
 		);

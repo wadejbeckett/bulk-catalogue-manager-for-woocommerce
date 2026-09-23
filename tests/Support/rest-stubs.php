@@ -128,17 +128,28 @@ if ( ! class_exists( 'WP_Error' ) ) {
 
 		/**
 		 * Core's dispatch order for one request on a recorded route: match the
-		 * endpoint, fill defaults, refuse a missing required argument, run
+		 * endpoint (a route is a pattern; its named groups become parameters), fill defaults, refuse a missing required argument, run
 		 * every present argument's validate_callback (any failure answers 400
 		 * `rest_invalid_param` naming each), run the sanitize_callbacks, then
 		 * the permission callback, then the handler.
 		 */
 		public function dispatch( WP_REST_Request $request ): WP_REST_Response|WP_Error {
 			$handler = null;
-			foreach ( $this->get_routes()[ $request->get_route() ] ?? [] as $candidate ) {
-				if ( isset( $candidate['methods'][ $request->get_method() ] ) ) {
-					$handler = $candidate;
-					break;
+			foreach ( $this->get_routes() as $route => $candidates ) {
+				// Core matches each route as a case-insensitive pattern and passes its named groups as URL parameters.
+				if ( 1 !== preg_match( '@^' . $route . '$@i', $request->get_route(), $matches ) ) {
+					continue;
+				}
+				foreach ( $candidates as $candidate ) {
+					if ( isset( $candidate['methods'][ $request->get_method() ] ) ) {
+						$handler = $candidate;
+						foreach ( $matches as $name => $value ) {
+							if ( is_string( $name ) ) {
+								$request->set_param( $name, $value );
+							}
+						}
+						break 2;
+					}
 				}
 			}
 			if ( null === $handler ) {

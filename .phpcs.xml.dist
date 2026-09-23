@@ -28,7 +28,10 @@
 	<rule ref="Universal.NamingConventions.NoReservedKeywordParameterNames"><exclude-pattern>tests/*</exclude-pattern></rule>
 	<rule ref="Generic.CodeAnalysis.UnusedFunctionParameter"><exclude-pattern>tests/*</exclude-pattern></rule>
 
+	<!-- Translation readiness (T74): every I18n message, including the missing translators comment and the
+	     unordered-placeholder warnings, is an error, so `composer lint` fails on any of them. -->
 	<rule ref="WordPress.WP.I18n">
+		<type>error</type>
 		<properties>
 			<property name="text_domain" type="array">
 				<element value="bulk-catalogue-manager-for-woocommerce"/>

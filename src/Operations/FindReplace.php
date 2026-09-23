@@ -83,7 +83,7 @@ final class FindReplace extends BaseOperation {
 				'type'       => 'text',
 				'label'      => __( 'Find', 'bulk-catalogue-manager-for-woocommerce' ),
 				/* translators: %d: the most characters it takes. */
-				'rule'       => sprintf( __( 'Enter the text to find, up to %d characters.', 'bulk-catalogue-manager-for-woocommerce' ), self::MAX_LENGTH ),
+				'rule'       => sprintf( _n( 'Enter the text to find, up to %d character.', 'Enter the text to find, up to %d characters.', self::MAX_LENGTH, 'bulk-catalogue-manager-for-woocommerce' ), self::MAX_LENGTH ),
 				'required'   => true,
 				'max_length' => self::MAX_LENGTH,
 			],
@@ -91,7 +91,7 @@ final class FindReplace extends BaseOperation {
 				'type'        => 'text',
 				'label'       => __( 'Replace with', 'bulk-catalogue-manager-for-woocommerce' ),
 				/* translators: %d: the most characters it takes. */
-				'rule'        => sprintf( __( 'The replacement has to be text of up to %d characters, or left empty to remove what was found.', 'bulk-catalogue-manager-for-woocommerce' ), self::MAX_LENGTH ),
+				'rule'        => sprintf( _n( 'The replacement has to be text of up to %d character, or left empty to remove what was found.', 'The replacement has to be text of up to %d characters, or left empty to remove what was found.', self::MAX_LENGTH, 'bulk-catalogue-manager-for-woocommerce' ), self::MAX_LENGTH ),
 				'allow_empty' => true,
 				'max_length'  => self::MAX_LENGTH,
 				'default'     => '',

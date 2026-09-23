@@ -1,0 +1,1237 @@
+# Copyright (C) 2026 Wade Beckett
+# This file is distributed under the GPL-3.0-or-later.
+msgid ""
+msgstr ""
+"Project-Id-Version: Bulk Catalogue Manager for WooCommerce 0.1.0\n"
+"Report-Msgid-Bugs-To: https://wordpress.org/support/plugin/bulk-catalogue-manager-for-woocommerce\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"POT-Creation-Date: 2026-09-23T10:14:45+00:00\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"X-Generator: WP-CLI 2.12.0\n"
+"X-Domain: bulk-catalogue-manager-for-woocommerce\n"
+
+#. Plugin Name of the plugin
+msgid "Bulk Catalogue Manager for WooCommerce"
+msgstr ""
+
+#. Plugin URI of the plugin
+msgid "https://github.com/wadejbeckett/bulk-catalogue-manager-for-woocommerce"
+msgstr ""
+
+#. Description of the plugin
+msgid "Manage many WooCommerce products at once from one simple screen. Every bulk change is previewed first, recorded and reversible."
+msgstr ""
+
+#. Author of the plugin
+msgid "Wade Beckett"
+msgstr ""
+
+msgid "Something went wrong while changing this category, so it may not have been finished. Reload the categories to check it."
+msgstr ""
+
+msgid "The chosen parent category could not be found. It may have been deleted; reload the categories and choose another."
+msgstr ""
+
+msgid "A category cannot be moved inside itself."
+msgstr ""
+
+#. translators: %s: category name, such as "Shirts".
+#, php-format
+msgid "A category called \"%s\" already exists at the top level. Choose a different name, or put it somewhere else."
+msgstr ""
+
+#. translators: 1: category name, such as "Shirts"; 2: the parent category's name, such as "Clothing".
+#, php-format
+msgid "A category called \"%1$s\" already exists in \"%2$s\". Choose a different name, or put it somewhere else."
+msgstr ""
+
+#. translators: 1: slug, such as "shirts"; 2: the category using it, such as "Shirts".
+#, php-format
+msgid "The slug \"%1$s\" is already used by the category \"%2$s\". Choose a different slug."
+msgstr ""
+
+msgid "A slug needs at least one letter or number. Enter a slug like summer-sale."
+msgstr ""
+
+msgid "A category needs a name. Enter a name and try again."
+msgstr ""
+
+msgid "That category could not be found. It may have been deleted; reload the categories and try again."
+msgstr ""
+
+msgid "The category could not be saved, so nothing was changed. Check the name and slug, then try again."
+msgstr ""
+
+msgid "This change no longer matches its preview: the products, the change or the settings have moved on since. Preview the change again, then apply it."
+msgstr ""
+
+msgid "None of the chosen products can be changed now: they have been deleted or no longer match the filters. Choose the products again and try again."
+msgstr ""
+
+msgid "The change could not be saved, so nothing was changed. Try again in a moment."
+msgstr ""
+
+msgid "That batch could not be found. It may have been removed. Reload the history and try again."
+msgstr ""
+
+msgid "Everything this batch changed has been changed again since, so nothing was undone. Choose Revert anyway to put the old values back regardless."
+msgstr ""
+
+msgid "Nothing this batch changed can be put back now, so nothing was undone. The preview lists why for each product."
+msgstr ""
+
+#. translators: 1: number of products the preview showed, such as "120"; 2: number that match the filters now, such as "123".
+#, php-format
+msgid "The products matching your filters have changed since the preview: it showed %1$s, and %2$s matches now. Check the change and apply it again, or preview it again first."
+msgid_plural "The products matching your filters have changed since the preview: it showed %1$s, and %2$s match now. Check the change and apply it again, or preview it again first."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: 1: how many products the selection holds, such as "100,001"; 2: the most one change may hold, "100,000".
+#, php-format
+msgid "This selection holds %1$s product, more than the %2$s one change can include. Add a filter to narrow it and try again."
+msgid_plural "This selection holds %1$s products, more than the %2$s one change can include. Add a filter to narrow it and try again."
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "Category changes cannot run in the background yet, so this change was not made."
+msgstr ""
+
+#. translators: 1: number of products in the chunk, 2: seconds it took, 3: seconds allowed, 4: new number of products per chunk.
+#, php-format
+msgid "The last group of %1$d products took %2$d of the %3$d seconds the server allows, so this change now works on %4$d products at a time."
+msgstr ""
+
+#. translators: %d: new number of products per chunk.
+#, php-format
+msgid "Groups of products were finishing well within the time the server allows, so this change now works on %d product at a time again."
+msgid_plural "Groups of products were finishing well within the time the server allows, so this change now works on %d products at a time again."
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "This product could not be finished after three tries, so it was not changed. Open it to check it, then try the change again."
+msgstr ""
+
+msgid "The record of what to put back on this product is missing, so it was left alone."
+msgstr ""
+
+msgid "Something went wrong while changing this product, so it may not have been finished. Open the product to check it."
+msgstr ""
+
+msgid "You do not have permission to edit this product, so nothing was changed. Ask an administrator for access to it."
+msgstr ""
+
+msgid "That product could not be found. It may have been deleted; reload the list and try again."
+msgstr ""
+
+msgid "This was already at the value asked for, so it was left alone."
+msgstr ""
+
+msgid "WooCommerce did not accept this value. Check it and try again."
+msgstr ""
+
+#. translators: 1: number of products left alone, such as "12"; 2: number of products the batch changed, such as "1,284".
+#, php-format
+msgid "%1$s of %2$s was changed again after this batch and was left alone."
+msgid_plural "%1$s of %2$s were changed again after this batch and were left alone."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: 1: number of products put back although they changed since, such as "12"; 2: number of products the batch changed, such as "1,284".
+#, php-format
+msgid "%1$s of %2$s was changed again after this batch and was put back anyway, because Revert anyway was chosen."
+msgid_plural "%1$s of %2$s were changed again after this batch and were put back anyway, because Revert anyway was chosen."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: the number of the batch undone, such as "418".
+#, php-format
+msgid "Undo of #%s"
+msgstr ""
+
+#. translators: The exact ending shared by reasons such as "… so this SKU was not applied.". Translate it as those reasons end, so their counted form below can replace it; a reason that does not end with it is shown after its count instead.
+msgid "was not applied."
+msgstr ""
+
+#. translators: %s: number of products.
+#, php-format
+msgid "was not applied to %s product."
+msgid_plural "was not applied to %s products."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: 1: number of products, 2: the reason, a full sentence.
+#, php-format
+msgid "%1$s product: %2$s"
+msgid_plural "%1$s products: %2$s"
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "This edit stopped before it was saved. Check the product and make the edit again."
+msgstr ""
+
+msgid "This edit stopped before it finished and nothing happened for ten minutes, so it was marked as failed. Check the product and make the edit again if it is not right."
+msgstr ""
+
+#. translators: 1: number of products the preview showed; 2: number the change included; 3: the difference.
+#, php-format
+msgid "The preview showed %1$s products, but %2$s matched the filters when the change started, so %3$s more product was included."
+msgid_plural "The preview showed %1$s products, but %2$s matched the filters when the change started, so %3$s more products were included."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: 1: number of products the preview showed; 2: number the change included; 3: the difference.
+#, php-format
+msgid "The preview showed %1$s products, but %2$s matched the filters when the change started, so %3$s fewer product was included."
+msgid_plural "The preview showed %1$s products, but %2$s matched the filters when the change started, so %3$s fewer products were included."
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "This change has not moved for five minutes because the site's background tasks are not running, so nothing more has been changed. Open WooCommerce > Status > Scheduled Actions to check them."
+msgstr ""
+
+#. translators: %d: number of days history is kept for.
+#, php-format
+msgid "This change is more than %d day old, so its detailed record was removed as the history setting asks and it can no longer be undone."
+msgid_plural "This change is more than %d days old, so its detailed record was removed as the history setting asks and it can no longer be undone."
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "WooCommerce could not save this product, so this change was not made. Try again, or open the product to see why."
+msgstr ""
+
+msgid "This product was already updated by this change, so it was not changed again."
+msgstr ""
+
+msgid "Yes"
+msgstr ""
+
+msgid "No"
+msgstr ""
+
+#. translators: %s: the SKU that is already in use.
+#, php-format
+msgid "A product with the SKU %s already exists, so this SKU was not applied."
+msgstr ""
+
+#. translators: %s: a field's name, such as "Total sales".
+#, php-format
+msgid "%s cannot be changed here. It is shown for information only."
+msgstr ""
+
+#. translators: 1: a field's name, such as "SKU", 2: the most characters it takes.
+#, php-format
+msgid "%1$s has to be text of up to %2$d character, or left empty."
+msgid_plural "%1$s has to be text of up to %2$d characters, or left empty."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: 1: a field's name, such as "Name", 2: the most characters it takes.
+#, php-format
+msgid "%1$s cannot be empty and has to be up to %2$d character."
+msgid_plural "%1$s cannot be empty and has to be up to %2$d characters."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: 1: a field's name, such as "Stock status", 2: the choices, separated by commas.
+#, php-format
+msgid "%1$s has to be one of: %2$s."
+msgstr ""
+
+#. translators: %s: a field's name, such as "Featured".
+#, php-format
+msgid "%s has to be on or off."
+msgstr ""
+
+#. translators: %s: a field's name, such as "Regular price".
+#, php-format
+msgid "%s has to be a price of 0 or more, like 12.50, or left empty."
+msgstr ""
+
+#. translators: %s: a field's name, such as "Weight".
+#, php-format
+msgid "%s has to be a number of 0 or more, like 1.5, or left empty."
+msgstr ""
+
+#. translators: %s: a field's name, such as "Stock quantity".
+#, php-format
+msgid "%s has to be a whole number. Enter a number like 12."
+msgstr ""
+
+#. translators: 1: a field's name, such as "Categories", 2: the most items allowed.
+#, php-format
+msgid "%1$s has to be a list of up to %2$d that already exists. Choose it from the list."
+msgid_plural "%1$s has to be a list of up to %2$d that already exist. Choose them from the list."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a field's name, such as "Shipping class".
+#, php-format
+msgid "%s has to be one that already exists. Choose it from the list."
+msgstr ""
+
+#. translators: 1: a field's name, such as "Status", 2: the choices, separated by commas.
+#, php-format
+msgid "On a variation, %1$s can only be: %2$s."
+msgstr ""
+
+#. translators: 1: a field's name, such as "Tax class", 2: the choices, separated by commas.
+#, php-format
+msgid "On a product, %1$s can only be: %2$s."
+msgstr ""
+
+msgid "The sale price has to be below the regular price, so this product was skipped. Lower the sale price, or choose to clear it where it is not below the regular price."
+msgstr ""
+
+#. translators: %s: a field's name, such as "Featured".
+#, php-format
+msgid "%s belongs to the product, not to each variation."
+msgstr ""
+
+msgid "A variable product takes its price from its variations. Change the variations instead."
+msgstr ""
+
+msgid "Catalogue visibility"
+msgstr ""
+
+msgid "Visible on site"
+msgstr ""
+
+msgid "Featured"
+msgstr ""
+
+msgid "Sold individually"
+msgstr ""
+
+msgid "Reviews"
+msgstr ""
+
+msgid "Name"
+msgstr ""
+
+msgid "A variation takes its name from its product and its attributes, so it cannot be changed here."
+msgstr ""
+
+msgid "Status"
+msgstr ""
+
+msgid "Published"
+msgstr ""
+
+msgid "Draft"
+msgstr ""
+
+msgid "Pending review"
+msgstr ""
+
+msgid "Private"
+msgstr ""
+
+msgid "A variation can only be published or private."
+msgstr ""
+
+msgid "Shop and search results"
+msgstr ""
+
+msgid "Shop only"
+msgstr ""
+
+msgid "Search results only"
+msgstr ""
+
+msgid "Hidden"
+msgstr ""
+
+msgid "Visible"
+msgstr ""
+
+msgid "Partly"
+msgstr ""
+
+msgid "Categories"
+msgstr ""
+
+msgid "Categories belong to the product, not to each variation."
+msgstr ""
+
+msgid "Tags"
+msgstr ""
+
+msgid "Tags belong to the product, not to each variation."
+msgstr ""
+
+msgid "Regular price"
+msgstr ""
+
+msgid "Sale price"
+msgstr ""
+
+msgid "Stock status"
+msgstr ""
+
+msgid "In stock"
+msgstr ""
+
+msgid "Out of stock"
+msgstr ""
+
+msgid "On backorder"
+msgstr ""
+
+msgid "Manage stock"
+msgstr ""
+
+msgid "Stock quantity"
+msgstr ""
+
+msgid "Stock quantity only applies where stock is managed, so it was not changed here. Turn on Manage stock first."
+msgstr ""
+
+msgid "SKU"
+msgstr ""
+
+msgid "Weight"
+msgstr ""
+
+msgid "Length"
+msgstr ""
+
+msgid "Width"
+msgstr ""
+
+msgid "Height"
+msgstr ""
+
+msgid "Shipping class"
+msgstr ""
+
+msgid "Tax status"
+msgstr ""
+
+msgid "Taxable"
+msgstr ""
+
+msgid "Shipping only"
+msgstr ""
+
+msgid "None"
+msgstr ""
+
+msgid "Tax class"
+msgstr ""
+
+msgid "ID"
+msgstr ""
+
+msgid "Type"
+msgstr ""
+
+msgid "Image"
+msgstr ""
+
+msgid "Price"
+msgstr ""
+
+msgid "Date created"
+msgstr ""
+
+msgid "Last modified"
+msgstr ""
+
+msgid "Total sales"
+msgstr ""
+
+msgid "Variations"
+msgstr ""
+
+msgid "Standard"
+msgstr ""
+
+msgid "Same as product"
+msgstr ""
+
+msgid "Simple product"
+msgstr ""
+
+msgid "Grouped product"
+msgstr ""
+
+msgid "External/Affiliate product"
+msgstr ""
+
+msgid "Variable product"
+msgstr ""
+
+msgid "Variation"
+msgstr ""
+
+msgid "Increase or decrease"
+msgstr ""
+
+msgid "Takes each product's current value and raises or lowers it by an amount or a percentage. Products with no current value are skipped and counted."
+msgstr ""
+
+msgid "Choose whether to increase or decrease, then try again."
+msgstr ""
+
+msgid "Increase"
+msgstr ""
+
+msgid "Decrease"
+msgstr ""
+
+msgid "By"
+msgstr ""
+
+msgid "Choose an amount or a percentage, then try again."
+msgstr ""
+
+msgid "An amount"
+msgstr ""
+
+msgid "A percentage"
+msgstr ""
+
+msgid "How much"
+msgstr ""
+
+msgid "Enter how much to change it by, as a number above 0 like 10 or 2.5."
+msgstr ""
+
+msgid "A decrease cannot be more than 100 per cent. Enter a smaller percentage and try again."
+msgstr ""
+
+#. translators: %s: a field's name, such as "Stock quantity".
+#, php-format
+msgid "%s changes by whole numbers. Enter a number like 5."
+msgstr ""
+
+msgid "Add a prefix or suffix"
+msgstr ""
+
+msgid "Adds the same text to the start or the end of each SKU."
+msgstr ""
+
+msgid "Where"
+msgstr ""
+
+msgid "Choose whether the text goes at the start or the end, then try again."
+msgstr ""
+
+msgid "At the start"
+msgstr ""
+
+msgid "At the end"
+msgstr ""
+
+msgid "Text to add"
+msgstr ""
+
+msgid "Enter the text to add, up to 100 characters, with no spaces at either end."
+msgstr ""
+
+#. translators: %s: a field's name, such as "SKU".
+#, php-format
+msgid "This product has no %s to add to, so it was skipped. Give it one first."
+msgstr ""
+
+#. translators: 1: an action's name, such as "Round prices", 2: the name of a setting it was sent.
+#, php-format
+msgid "%1$s has no setting called \"%2$s\". Choose the action again and try again."
+msgstr ""
+
+#. translators: %s: an action's name, such as "Round prices".
+#, php-format
+msgid "%s was asked to change a field that does not exist. Choose one of the fields it offers and try again."
+msgstr ""
+
+#. translators: 1: an action's name, such as "Round prices", 2: a field's name, such as "Status".
+#, php-format
+msgid "%1$s cannot change %2$s. Choose one of the fields it offers and try again."
+msgstr ""
+
+#. translators: %s: a field's name, such as "Regular price".
+#, php-format
+msgid "%s is empty, so there was nothing to change."
+msgstr ""
+
+#. translators: %s: a field's name, such as "Weight".
+#, php-format
+msgid "%s does not hold a number, so it was not changed."
+msgstr ""
+
+#. translators: 1: a field's name, such as "Regular price", 2: the value it would have had, such as -2.50.
+#, php-format
+msgid "%1$s would go below zero (%2$s), so it was not changed."
+msgstr ""
+
+msgid "Field"
+msgstr ""
+
+#. translators: %s: an action's name, such as "Round prices".
+#, php-format
+msgid "Choose the field %s should change, then try again."
+msgstr ""
+
+msgid "Skip rows where the value is already correct"
+msgstr ""
+
+msgid "Skip rows where the value is already correct has to be on or off."
+msgstr ""
+
+msgid "Clear a value"
+msgstr ""
+
+msgid "Empties one field on every chosen product, such as ending a sale by clearing the sale price. Empty is not the same as zero."
+msgstr ""
+
+msgid "Copy between regular and sale price"
+msgstr ""
+
+msgid "Copies the regular price into the sale price, optionally less a percentage discount, or copies the sale price back into the regular price."
+msgstr ""
+
+msgid "Discount (per cent)"
+msgstr ""
+
+msgid "Enter a discount of 0 or more and below 100 per cent, like 20."
+msgstr ""
+
+msgid "Clear the sale price where it is not below the regular price"
+msgstr ""
+
+msgid "Clear the sale price where it is not below the regular price has to be on or off."
+msgstr ""
+
+msgid "A discount only applies when copying the regular price into the sale price. Set the discount to 0 and try again."
+msgstr ""
+
+#. translators: 1: the price copied from, such as "Regular price", 2: the price copied into, such as "Sale price".
+#, php-format
+msgid "%1$s is empty, so there was nothing to copy into %2$s."
+msgstr ""
+
+#. translators: 1: the price copied from, such as "Regular price", 2: the price copied into, such as "Sale price".
+#, php-format
+msgid "%1$s is not a price of 0 or more, so it was not copied into %2$s."
+msgstr ""
+
+#. translators: 1: the sale price field's name, 2: the regular price field's name.
+#, php-format
+msgid "%1$s would not be below %2$s, so it was not changed. Enter a discount, or choose to clear the sale price where it is not below the regular price."
+msgstr ""
+
+msgid "Find and replace"
+msgstr ""
+
+msgid "Swaps a word or phrase for another in product names or SKUs. Plain text only, optionally matching whole words or exact capitals."
+msgstr ""
+
+msgid "Find"
+msgstr ""
+
+#. translators: %d: the most characters it takes.
+#, php-format
+msgid "Enter the text to find, up to %d character."
+msgid_plural "Enter the text to find, up to %d characters."
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "Replace with"
+msgstr ""
+
+#. translators: %d: the most characters it takes.
+#, php-format
+msgid "The replacement has to be text of up to %d character, or left empty to remove what was found."
+msgid_plural "The replacement has to be text of up to %d characters, or left empty to remove what was found."
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "Match whole words only"
+msgstr ""
+
+msgid "Match whole words only has to be on or off."
+msgstr ""
+
+msgid "Match capitals exactly"
+msgstr ""
+
+msgid "Match capitals exactly has to be on or off."
+msgstr ""
+
+msgid "The replacement is the same as the text to find, so nothing would change. Enter different text and try again."
+msgstr ""
+
+#. translators: %s: a field's name, such as "Name".
+#, php-format
+msgid "The %s on this product contains characters that could not be searched, so it was not changed. Edit it by hand."
+msgstr ""
+
+msgid "Pricing"
+msgstr ""
+
+msgid "Stock"
+msgstr ""
+
+msgid "Organisation"
+msgstr ""
+
+msgid "Shipping and tax"
+msgstr ""
+
+msgid "Publishing"
+msgstr ""
+
+msgid "The list of changes could not be read. Choose the changes again and try again."
+msgstr ""
+
+msgid "Choose at least one change to make, then try again."
+msgstr ""
+
+#. translators: 1: the most changes one batch may hold, 2: how many were asked for.
+#, php-format
+msgid "One change can hold at most %1$d step, and this one has %2$d. Remove some steps, or split them into two changes, and try again."
+msgid_plural "One change can hold at most %1$d steps, and this one has %2$d. Remove some steps, or split them into two changes, and try again."
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "This step could not be read. Choose the action again and try again."
+msgstr ""
+
+msgid "This step asks for an action that is not available. Choose an action from the list and try again."
+msgstr ""
+
+msgid "This action cannot change that field. Choose one of the fields it offers and try again."
+msgstr ""
+
+#. translators: 1: the step's position, such as 2, 2: how many steps there are, 3: what is wrong with it and what to do.
+#, php-format
+msgid "Step %1$d of %2$d: %3$s"
+msgstr ""
+
+msgid "Round prices"
+msgstr ""
+
+msgid "Rounds each price to a number of decimals, to the nearest step, or to a tidy ending such as .95 or .99, going up, down or to the nearest."
+msgstr ""
+
+msgid "Round to"
+msgstr ""
+
+msgid "Choose how to round, then try again."
+msgstr ""
+
+msgid "A number of decimals"
+msgstr ""
+
+msgid "The nearest step, such as 5 or 0.50"
+msgstr ""
+
+msgid "An ending, such as .95 or .99"
+msgstr ""
+
+msgid "Which way"
+msgstr ""
+
+msgid "Choose up, down or nearest, then try again."
+msgstr ""
+
+msgid "To the nearest"
+msgstr ""
+
+msgid "Up"
+msgstr ""
+
+msgid "Down"
+msgstr ""
+
+msgid "Decimals"
+msgstr ""
+
+#. translators: %d: the number of decimals the shop's prices have.
+#, php-format
+msgid "Enter a whole number of decimals from 0 to %d."
+msgstr ""
+
+msgid "Step"
+msgstr ""
+
+msgid "Enter the step to round to, as a number above 0 like 5 or 0.50."
+msgstr ""
+
+msgid "Ending"
+msgstr ""
+
+msgid "Enter the ending as the part after the decimal point, like .95 or .99."
+msgstr ""
+
+msgid "Enter how many decimals to round to, then try again."
+msgstr ""
+
+#. translators: %d: the number of decimals the shop's prices have.
+#, php-format
+msgid "Your prices have %d decimal, so the step cannot have more. Enter a step like 0.50 or 5."
+msgid_plural "Your prices have %d decimals, so the step cannot have more. Enter a step like 0.50 or 5."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %d: the number of decimals the shop's prices have.
+#, php-format
+msgid "Your prices have %d decimal, so the ending cannot have more. Enter an ending like .95."
+msgid_plural "Your prices have %d decimals, so the ending cannot have more. Enter an ending like .95."
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "Set a value"
+msgstr ""
+
+msgid "Gives every chosen product the same value for one field, replacing what is there now."
+msgstr ""
+
+msgid "New value"
+msgstr ""
+
+msgid "Enter the new value, then try again."
+msgstr ""
+
+msgid "Add categories or tags"
+msgstr ""
+
+msgid "Remove categories or tags"
+msgstr ""
+
+msgid "Replace categories or tags"
+msgstr ""
+
+msgid "Adds the categories or tags you choose, leaving every other one in place."
+msgstr ""
+
+msgid "Takes away the categories or tags you choose, leaving every other one in place."
+msgstr ""
+
+msgid "Sets exactly the categories or tags you choose, taking away any others."
+msgstr ""
+
+msgid "Categories or tags"
+msgstr ""
+
+#. translators: %d: the most terms one change may name.
+#, php-format
+msgid "Choose between 1 and %d category or tag, then try again."
+msgid_plural "Choose between 1 and %d categories or tags, then try again."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: 1: a field's name, such as "Categories", 2: a term id.
+#, php-format
+msgid "%1$s: the one with ID %2$d does not exist, so nothing was changed. Choose from the list and try again."
+msgstr ""
+
+#. translators: 1: a field's name, such as "Categories", 2: the most one product may hold here.
+#, php-format
+msgid "%1$s would go over %2$d on this product, so nothing was changed. Remove some first, then try again."
+msgstr ""
+
+#. translators: %s: a field's name, such as "Categories".
+#, php-format
+msgid "%s could not be saved on this product. Try again in a moment."
+msgstr ""
+
+msgid "Bulk Catalogue Manager for WooCommerce needs WooCommerce 10.0 or later. Install or update WooCommerce to use it."
+msgstr ""
+
+#. translators: %s: an attribute's name, such as "Size".
+#, php-format
+msgid "Any %s"
+msgstr ""
+
+msgid "Your account does not have permission to use Bulk Catalogue Manager. Ask an administrator for access."
+msgstr ""
+
+msgid "Your account can see products here but not change them. Ask an administrator for permission to edit products."
+msgstr ""
+
+msgid "Your account can see categories here but not change them. Ask an administrator for permission to manage categories."
+msgstr ""
+
+msgid "Only an administrator can change the Bulk Catalogue Manager settings. Ask an administrator to change them."
+msgstr ""
+
+msgid "You do not have permission to edit this product, so it was skipped. Ask an administrator for access to it."
+msgstr ""
+
+msgid "Only changes to this product or variation, by id."
+msgstr ""
+
+msgid "Only changes to this field."
+msgstr ""
+
+msgid "Only changes written at or after this time (UTC unless it names a zone)."
+msgstr ""
+
+msgid "Only changes written before this time (UTC unless it names a zone)."
+msgstr ""
+
+msgid "Only rows with these results: applied, skipped or failed."
+msgstr ""
+
+#. translators: 1: object type (product, variation or term), 2: its id, 3: the field key, 4: the result, 5: the object's modified time before the write, GMT.
+#, php-format
+msgid "%1$s %2$d, field %3$s, result %4$s; last modified %5$s GMT before this change."
+msgstr ""
+
+#. translators: %d: the id of a product, variation or category that no longer has a name.
+#, php-format
+msgid "Category %d"
+msgstr ""
+
+#. translators: %d: the id of a product, variation or category that no longer has a name.
+#, php-format
+msgid "Product %d"
+msgstr ""
+
+msgid "The change, by its number."
+msgstr ""
+
+msgid "Dates have to look like 2026-09-23, optionally with a time. Choose the dates again."
+msgstr ""
+
+msgid "Only changes made by this user, by id."
+msgstr ""
+
+msgid "Only changes with this outcome."
+msgstr ""
+
+msgid "Only changes made at or after this time (UTC unless it names a zone)."
+msgstr ""
+
+msgid "Only changes made before this time (UTC unless it names a zone)."
+msgstr ""
+
+msgid "Only changes that used this action."
+msgstr ""
+
+msgid "This change has already finished, so it cannot be cancelled. Use Undo in the history to reverse it."
+msgstr ""
+
+msgid "That change could not be found. It may have been removed from the history; reload the page and try again."
+msgstr ""
+
+msgid "A request id the screen makes once per change, so sending it twice creates one change."
+msgstr ""
+
+msgid "This change could not be sent because its request id is missing or damaged. Reload the page and try again."
+msgstr ""
+
+msgid "The changes to make, in order: each an action and its arguments."
+msgstr ""
+
+msgid "The chosen products or variations, by id, instead of a selection token."
+msgstr ""
+
+msgid "The selection token from the selection route, instead of ids."
+msgstr ""
+
+msgid "Where the change was made: the bulk panel, a grid cell or the category manager."
+msgstr ""
+
+msgid "The hash the preview answered; required with a filter selection token."
+msgstr ""
+
+msgid "How many products the preview showed for a filter selection; the selection's own count by default."
+msgstr ""
+
+msgid "Apply even though the filter now matches a different number of products than the preview showed."
+msgstr ""
+
+msgid "This change does not say which products to change. Choose the products again and try again."
+msgstr ""
+
+msgid "These products could not be selected. Choose the products again and try again."
+msgstr ""
+
+msgid "The category counts could not use the current filters. Clear the filters and try again."
+msgstr ""
+
+msgid "Parent category id; 0 at the top level, including a category whose parent no longer exists."
+msgstr ""
+
+msgid "Level in the tree, from 0 at the top."
+msgstr ""
+
+msgid "Position among its siblings: the order set by moving categories here, or WooCommerce's stored category order for a category never moved here. Moved categories come first, then the rest in this order, then by name."
+msgstr ""
+
+msgid "Products in this category that match the other active filters."
+msgstr ""
+
+msgid "Products in this category or any category below it that match the other active filters, each counted once."
+msgstr ""
+
+msgid "Categories directly below this one, in order, each of the same shape."
+msgstr ""
+
+msgid "The category to move it into; 0 for the top level."
+msgstr ""
+
+msgid "Its place among its new siblings, counted from 0; last when omitted."
+msgstr ""
+
+msgid "The category name."
+msgstr ""
+
+msgid "The category slug, used in its web address; made from the name when empty."
+msgstr ""
+
+msgid "The category description."
+msgstr ""
+
+msgid "The parent category; 0 for the top level."
+msgstr ""
+
+msgid "The category."
+msgstr ""
+
+msgid "Columns to export, in order: the visible columns of the view."
+msgstr ""
+
+msgid "These columns could not be exported. Choose the columns again and try again."
+msgstr ""
+
+msgid "These filters or this sort could not be used. Clear them and try again."
+msgstr ""
+
+msgid "How many rows of the preview to return: 25, 100, or all for every row up to 1,000."
+msgstr ""
+
+msgid "This preview does not say which products to change. Choose the products again and try again."
+msgstr ""
+
+msgid "The product or variation to change."
+msgstr ""
+
+msgid "How the change is recorded in the history: an edit in the list, or a change made in bulk."
+msgstr ""
+
+msgid "The batch of one this change is recorded as."
+msgstr ""
+
+msgid "How the change ended: complete, partial or failed."
+msgstr ""
+
+msgid "What happened to each field."
+msgstr ""
+
+msgid "You need to log in to use Bulk Catalogue Manager. Log in and try again."
+msgstr ""
+
+msgid "Page of results, from 1."
+msgstr ""
+
+#. translators: %1$d: the most rows one page returns.
+#, php-format
+msgid "Rows per page; more than %1$d is read as %1$d."
+msgstr ""
+
+msgid "Fields each row carries; every field when absent."
+msgstr ""
+
+msgid "The product whose variations are listed."
+msgstr ""
+
+msgid "The product a variation belongs to; 0 for a product."
+msgstr ""
+
+msgid "Address of the product image, or of the shop's placeholder image when there is none."
+msgstr ""
+
+msgid "On a variation, the name of its product."
+msgstr ""
+
+msgid "On a variation, its attribute values, such as \"Blue / Large\"."
+msgstr ""
+
+msgid "Text to find in the name or SKU."
+msgstr ""
+
+msgid "Field or fields to sort by, most significant first; newest first when absent."
+msgstr ""
+
+msgid "Direction of each sort field, in the same order; ascending when absent."
+msgstr ""
+
+msgid "Which rows to list: products, products and variations, or variations only."
+msgstr ""
+
+msgid "The chosen products or variations, by id, instead of a filter."
+msgstr ""
+
+#. translators: %s: a field's name, such as "Stock status".
+#, php-format
+msgid "Filter on %s."
+msgstr ""
+
+#. translators: %s: a field's name, such as "Stock status".
+#, php-format
+msgid "The %s filter could not be used. Clear it and choose it again."
+msgstr ""
+
+msgid "These products or filters could not be selected. Clear the filters, choose the products again and try again."
+msgstr ""
+
+msgid "A request id the screen makes once per undo, so sending it twice undoes once; required unless previewing."
+msgstr ""
+
+msgid "Plan the undo and show it, changing nothing."
+msgstr ""
+
+msgid "Revert anyway: also put back products that were changed again after this batch."
+msgstr ""
+
+msgid "The hash the undo preview answered; required to undo."
+msgstr ""
+
+msgid "This undo could not be sent because its preview is missing or damaged. Preview the undo again, then confirm it."
+msgstr ""
+
+msgid "This undo could not be sent because its request id is missing or damaged. Reload the page and try again."
+msgstr ""
+
+msgid "This undo no longer matches its preview: the products or the settings have changed since. Preview the undo again, then confirm it."
+msgstr ""
+
+#. translators: 1: number of products changed since the batch, such as "12"; 2: number of products the batch changed, such as "1,284".
+#, php-format
+msgid "%1$s of %2$s was changed again after this batch and will be left alone unless you choose Revert anyway."
+msgid_plural "%1$s of %2$s were changed again after this batch and will be left alone unless you choose Revert anyway."
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "This selection has expired or can no longer be used. Choose the products again and try again."
+msgstr ""
+
+msgid "Only administrators can use this screen"
+msgstr ""
+
+msgid "Rows per page"
+msgstr ""
+
+msgid "Products per background batch"
+msgstr ""
+
+msgid "Keep history for"
+msgstr ""
+
+msgid "Confirm above this many rows"
+msgstr ""
+
+msgid "Apply status changes to variations by default"
+msgstr ""
+
+msgid "Apply visibility changes to variations by default"
+msgstr ""
+
+msgid "Apply price changes to variations by default"
+msgstr ""
+
+msgid "Apply stock changes to variations by default"
+msgstr ""
+
+msgid "Record unchanged rows in the audit log"
+msgstr ""
+
+msgid "Show the category panel by default"
+msgstr ""
+
+msgid "CSV separator"
+msgstr ""
+
+msgid "Remove all data when the plugin is deleted"
+msgstr ""
+
+msgid "Unknown setting"
+msgstr ""
+
+msgid "choose 25, 50 or 100."
+msgstr ""
+
+msgid "enter a whole number from 10 to 100."
+msgstr ""
+
+msgid "enter a number of days from 7 to 730, or 0 to keep history indefinitely."
+msgstr ""
+
+msgid "enter a whole number of rows, 0 or more."
+msgstr ""
+
+msgid "choose comma or semicolon."
+msgstr ""
+
+msgid "choose on or off."
+msgstr ""
+
+#. translators: %s: the name that was sent, which is not a setting.
+#, php-format
+msgid "\"%s\" is not a setting this plugin has, so it was not saved."
+msgstr ""
+
+#. translators: 1: a setting's name, 2: what it accepts, such as "choose 25, 50 or 100."
+#, php-format
+msgid "%1$s was not saved: %2$s"
+msgstr ""
+
+msgid "The settings were not saved because they did not arrive as a list of settings."
+msgstr ""
+
+msgid "Bulk Catalogue Manager settings."
+msgstr ""
+
+msgid "This batch is still running, so it cannot be undone yet. Wait for it to finish, then try again."
+msgstr ""
+
+#. translators: %d: how many days of history the shop keeps.
+#, php-format
+msgid "This batch is older than the %d day of history the shop keeps, so it can no longer be undone."
+msgid_plural "This batch is older than the %d days of history the shop keeps, so it can no longer be undone."
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "This batch did not change this variation, so there is nothing to undo."
+msgstr ""
+
+msgid "This batch did not change this product, so there is nothing to undo."
+msgstr ""
+
+msgid "This change cannot be undone here, so it was left alone."
+msgstr ""
+
+msgid "This variation no longer exists, so it was left alone."
+msgstr ""
+
+msgid "This product no longer exists, so it was left alone."
+msgstr ""
+
+msgid "The person who ran this batch can no longer edit this product, so it was left alone."
+msgstr ""
+
+msgid "One of the values this batch changed can no longer be changed here, so this product was left alone."
+msgstr ""
+
+msgid "This variation was changed since this batch ran, so it is left alone unless you choose Revert anyway."
+msgstr ""
+
+msgid "This product was changed since this batch ran, so it is left alone unless you choose Revert anyway."
+msgstr ""
+
+msgid "This batch has already been undone. To put its changes back, undo the undo instead."
+msgstr ""
+
+msgid "This batch is being undone now. Wait for that to finish, then check the history."
+msgstr ""
+
+msgid "The record of this batch's changes has been cleared by the history clean-up, so it can no longer be undone."
+msgstr ""

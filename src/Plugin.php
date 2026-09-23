@@ -143,7 +143,7 @@ final class Plugin {
 		}
 		printf(
 			'<div class="notice notice-error"><p>%s</p></div>',
-			esc_html( __( 'Bulk Catalogue Manager for WooCommerce needs WooCommerce 10.0 or later. Install or update WooCommerce to use it.', 'bulk-catalogue-manager-for-woocommerce' ) )
+			esc_html__( 'Bulk Catalogue Manager for WooCommerce needs WooCommerce 10.0 or later. Install or update WooCommerce to use it.', 'bulk-catalogue-manager-for-woocommerce' )
 		);
 	}
 

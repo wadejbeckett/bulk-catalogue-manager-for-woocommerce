@@ -450,7 +450,7 @@ final class BatchFactory {
 			self::CHANGED,
 			sprintf(
 				/* translators: 1: number of products the preview showed, such as "120"; 2: number that match the filters now, such as "123". */
-				__( 'The products matching your filters have changed since the preview: it showed %1$s, and %2$s match now. Check the change and apply it again, or preview it again first.', 'bulk-catalogue-manager-for-woocommerce' ),
+				_n( 'The products matching your filters have changed since the preview: it showed %1$s, and %2$s matches now. Check the change and apply it again, or preview it again first.', 'The products matching your filters have changed since the preview: it showed %1$s, and %2$s match now. Check the change and apply it again, or preview it again first.', $current, 'bulk-catalogue-manager-for-woocommerce' ),
 				number_format_i18n( $previewed ),
 				number_format_i18n( $current )
 			),
@@ -660,7 +660,7 @@ final class BatchFactory {
 			self::TOO_LARGE,
 			sprintf(
 				/* translators: 1: how many products the selection holds, such as "100,001"; 2: the most one change may hold, "100,000". */
-				__( 'This selection holds %1$s products, more than the %2$s one change can include. Add a filter to narrow it and try again.', 'bulk-catalogue-manager-for-woocommerce' ),
+				_n( 'This selection holds %1$s product, more than the %2$s one change can include. Add a filter to narrow it and try again.', 'This selection holds %1$s products, more than the %2$s one change can include. Add a filter to narrow it and try again.', $count, 'bulk-catalogue-manager-for-woocommerce' ),
 				number_format_i18n( $count ),
 				number_format_i18n( Selection::MAX_OBJECTS )
 			),

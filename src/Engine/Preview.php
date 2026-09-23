@@ -467,7 +467,7 @@ final class Preview {
 			SelectionController::TOO_LARGE,
 			sprintf(
 				/* translators: 1: how many products the selection holds, such as "100,001"; 2: the most one change may hold, "100,000". */
-				__( 'This selection holds %1$s products, more than the %2$s one change can include. Add a filter to narrow it and try again.', 'bulk-catalogue-manager-for-woocommerce' ),
+				_n( 'This selection holds %1$s product, more than the %2$s one change can include. Add a filter to narrow it and try again.', 'This selection holds %1$s products, more than the %2$s one change can include. Add a filter to narrow it and try again.', $count, 'bulk-catalogue-manager-for-woocommerce' ),
 				number_format_i18n( $count ),
 				number_format_i18n( Selection::MAX_OBJECTS )
 			),

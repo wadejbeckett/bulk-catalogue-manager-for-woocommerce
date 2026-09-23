@@ -148,7 +148,7 @@ final class Round extends BaseOperation {
 		if ( 'step' === $args['to'] && Field::MONEY === $field->type() && self::places_of( $args['step'] ) > wc_get_price_decimals() ) {
 			return sprintf(
 				/* translators: %d: the number of decimals the shop's prices have. */
-				__( 'Your prices have %d decimals, so the step cannot have more. Enter a step like 0.50 or 5.', 'bulk-catalogue-manager-for-woocommerce' ),
+				_n( 'Your prices have %d decimal, so the step cannot have more. Enter a step like 0.50 or 5.', 'Your prices have %d decimals, so the step cannot have more. Enter a step like 0.50 or 5.', wc_get_price_decimals(), 'bulk-catalogue-manager-for-woocommerce' ),
 				wc_get_price_decimals()
 			);
 		}
@@ -158,7 +158,7 @@ final class Round extends BaseOperation {
 			if ( strlen( $fraction ) > wc_get_price_decimals() ) {
 				return sprintf(
 					/* translators: %d: the number of decimals the shop's prices have. */
-					__( 'Your prices have %d decimals, so the ending cannot have more. Enter an ending like .95.', 'bulk-catalogue-manager-for-woocommerce' ),
+					_n( 'Your prices have %d decimal, so the ending cannot have more. Enter an ending like .95.', 'Your prices have %d decimals, so the ending cannot have more. Enter an ending like .95.', wc_get_price_decimals(), 'bulk-catalogue-manager-for-woocommerce' ),
 					wc_get_price_decimals()
 				);
 			}

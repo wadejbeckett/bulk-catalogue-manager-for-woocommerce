@@ -134,7 +134,7 @@ final class Terms extends BaseOperation {
 				'type'      => 'ids',
 				'label'     => __( 'Categories or tags', 'bulk-catalogue-manager-for-woocommerce' ),
 				/* translators: %d: the most terms one change may name. */
-				'rule'      => sprintf( __( 'Choose between 1 and %d categories or tags, then try again.', 'bulk-catalogue-manager-for-woocommerce' ), Values::MAX_TERMS ),
+				'rule'      => sprintf( _n( 'Choose between 1 and %d category or tag, then try again.', 'Choose between 1 and %d categories or tags, then try again.', Values::MAX_TERMS, 'bulk-catalogue-manager-for-woocommerce' ), Values::MAX_TERMS ),
 				'required'  => true,
 				'min_items' => 1,
 				'max_items' => Values::MAX_TERMS,

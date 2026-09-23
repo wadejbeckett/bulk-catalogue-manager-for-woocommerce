@@ -11,7 +11,8 @@
         "phpunit/phpunit": "^10.5",
         "wp-coding-standards/wpcs": "^3.1",
         "dealerdirect/phpcodesniffer-composer-installer": "^1.0",
-        "phpcompatibility/phpcompatibility-wp": "^2.1"
+        "phpcompatibility/phpcompatibility-wp": "^2.1",
+        "wp-cli/i18n-command": "^2.7"
     },
     "autoload": {
         "psr-4": { "BulkCatalogueManager\\": "src/" }
@@ -23,7 +24,13 @@
         "test": "phpunit",
         "test:standalone": "php tests/run-tests.php",
         "lint": "phpcs",
-        "lint:fix": "phpcbf"
+        "lint:fix": "phpcbf",
+        "make-pot": "wp i18n make-pot . languages/bulk-catalogue-manager-for-woocommerce.pot --slug=bulk-catalogue-manager-for-woocommerce --domain=bulk-catalogue-manager-for-woocommerce --exclude=tests,docs,bin,dist,languages --no-location",
+        "i18n": [ "@make-pot" ]
+    },
+    "scripts-descriptions": {
+        "make-pot": "Regenerate languages/bulk-catalogue-manager-for-woocommerce.pot with wp i18n make-pot (wp-cli/i18n-command, a dev dependency; no WordPress install needed).",
+        "i18n": "Regenerate every translation file: the .pot now; the JavaScript JSON files (wp i18n make-json) join when the screen's scripts land (T8)."
     },
     "config": {
         "allow-plugins": { "dealerdirect/phpcodesniffer-composer-installer": true },

@@ -211,6 +211,10 @@ if ( ! function_exists( 'add_filter' ) ) {
 		return htmlspecialchars( $text, ENT_QUOTES, 'UTF-8' );
 	}
 
+	function esc_html__( string $text, string $domain = 'default' ): string {
+		return esc_html( __( $text, $domain ) ); // phpcs:ignore WordPress.WP.I18n -- The stub passes its caller's literals through.
+	}
+
 	/**
 	 * A capability from $GLOBALS['bcm_test']['caps']; with an object id, the
 	 * key "capability:id" wins when set, as map_meta_cap decides per object.

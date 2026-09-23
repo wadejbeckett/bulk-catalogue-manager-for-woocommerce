@@ -297,6 +297,7 @@ final class Progress {
 	 * @param int    $count   Objects carrying it.
 	 */
 	public static function sentence( string $message, int $count ): string {
+		/* translators: The exact ending shared by reasons such as "… so this SKU was not applied.". Translate it as those reasons end, so their counted form below can replace it; a reason that does not end with it is shown after its count instead. */
 		$tail = __( 'was not applied.', 'bulk-catalogue-manager-for-woocommerce' );
 		if ( str_ends_with( $message, ' ' . $tail ) ) {
 			return substr( $message, 0, -strlen( $tail ) ) . sprintf(

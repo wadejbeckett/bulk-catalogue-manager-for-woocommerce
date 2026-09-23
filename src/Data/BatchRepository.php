@@ -314,6 +314,41 @@ final class BatchRepository {
 	}
 
 	/**
+	 * The earliest batch before `$before_id` that the same user created with
+	 * the same request id since a moment, or null (T31: two submissions of
+	 * one request that raced past the replay check; the earlier one wins).
+	 *
+	 * @param string $uuid      Client request id.
+	 * @param int    $user_id   Initiating user.
+	 * @param int    $before_id Only batches with a lower id.
+	 * @param string $since_gmt Only batches created at or after this GMT time, `Y-m-d H:i:s`.
+	 */
+	public function earlier_request( string $uuid, int $user_id, int $before_id, string $since_gmt ): ?int {
+		global $wpdb;
+		$id = $wpdb->get_var( $wpdb->prepare( 'SELECT batch_id FROM %i WHERE uuid = %s AND user_id = %d AND batch_id < %d AND created_gmt >= %s ORDER BY batch_id ASC LIMIT 1', $this->registry->table( Schema::BATCHES ), strtolower( $uuid ), $user_id, $before_id, $since_gmt ) );
+		return null === $id ? null : (int) $id;
+	}
+
+	/**
+	 * Remove a batch and its items. Only for undoing a creation that did not
+	 * complete (T31), before any work was queued for it; a batch that has
+	 * run is kept for its history.
+	 *
+	 * @param int $batch_id Batch.
+	 * @throws \InvalidArgumentException On an invalid id.
+	 * @throws \RuntimeException When a statement fails.
+	 */
+	public function discard( int $batch_id ): void {
+		global $wpdb;
+		self::assert_ids( [ $batch_id ], 'batch id' );
+		foreach ( [ Schema::ITEMS, Schema::BATCHES ] as $table ) {
+			if ( false === $wpdb->query( $wpdb->prepare( 'DELETE FROM %i WHERE batch_id = %d', $this->registry->table( $table ), $batch_id ) ) ) {
+				throw new \RuntimeException( 'The unfinished batch could not be removed.' );
+			}
+		}
+	}
+
+	/**
 	 * Encode a structure for a LONGTEXT column.
 	 *
 	 * @param array $value Value.

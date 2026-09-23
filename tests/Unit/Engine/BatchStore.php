@@ -1,0 +1,146 @@
+<?php
+/**
+ * The two batch tables in memory for the T31 tests, alongside the seeded
+ * catalogue: batch rows come from the recording `$wpdb`'s insert() calls,
+ * item rows from the INSERT statements BatchRepository::materialise_items()
+ * prepares, and DELETE and SELECT statements on either table answer from
+ * them — the dedupe lookup through the SqlEvaluator, a `SELECT *` by id
+ * directly. Every write is logged in order in $log, so a test can say which
+ * came first.
+ *
+ * @package BulkCatalogueManager
+ * @license GPL-3.0-or-later
+ */
+
+declare( strict_types = 1 );
+
+namespace BulkCatalogueManager\Tests\Unit\Engine;
+
+use BulkCatalogueManager\Tests\Support\SqlEvaluator;
+
+final class BatchStore {
+	/**
+	 * Batch rows by id.
+	 *
+	 * @var array<int, array<string, mixed>>
+	 */
+	public array $batches = [];
+
+	/**
+	 * Item rows, in insertion order.
+	 *
+	 * @var list<array{batch_id: int, object_id: int, object_type: string, state: string, attempts: int}>
+	 */
+	public array $items = [];
+
+	/**
+	 * Writes in order: 'batch:<id>', 'items:<id>:<count>', 'discard:<table>:<id>'.
+	 *
+	 * @var list<string>
+	 */
+	public array $log = [];
+
+	/**
+	 * insert() calls already turned into rows.
+	 */
+	private int $seen = 0;
+
+	/**
+	 * insert() calls so far: the stub's insert_id, counted from zero.
+	 */
+	private int $inserts = 0;
+
+	/**
+	 * Answer the batch tables' statements ahead of the catalogue's.
+	 *
+	 * @param SqlEvaluator $db The seeded catalogue's evaluator.
+	 */
+	public function __construct( private SqlEvaluator $db ) {
+		global $wpdb;
+		$wpdb->responses = [
+			'/^INSERT INTO `wp_bcm_batch_items`/'      => fn( string $sql ): int => $this->insert_items( $sql ),
+			'/^DELETE FROM `(wp_bcm_batches|wp_bcm_batch_items)`/' => fn( string $sql ): int => $this->delete( $sql ),
+			'/^SELECT \* FROM `wp_bcm_batches` WHERE batch_id = (\d+)$/' => fn( string $sql ): ?array => $this->find( $sql ),
+			'/^SELECT batch_id FROM `wp_bcm_batches`/' => fn( string $sql ): ?string => $this->lookup( $sql ),
+		] + $wpdb->responses;
+	}
+
+	/**
+	 * Turn new insert() calls on the batches table into rows, ids from 1 as the stub counts them.
+	 */
+	public function sync(): void {
+		global $wpdb;
+		foreach ( array_slice( $wpdb->writes, $this->seen ) as $write ) {
+			++$this->seen;
+			if ( 'insert' !== $write[0] ) {
+				continue;
+			}
+			$id = ++$this->inserts;
+			if ( 'wp_bcm_batches' !== $write[1] ) {
+				continue;
+			}
+			$this->batches[ $id ] = [ 'batch_id' => $id ] + $write[2] + [
+				'finished_gmt'  => null,
+				'undo_of'       => null,
+				'done_items'    => 0,
+				'changed_items' => 0,
+				'failed_items'  => 0,
+			];
+			$this->log[]          = 'batch:' . $id;
+		}
+	}
+
+	/**
+	 * Object ids of a batch's items, in order.
+	 *
+	 * @return list<int>
+	 */
+	public function object_ids( int $batch_id ): array {
+		$this->sync();
+		return array_values( array_map( static fn( array $item ): int => $item['object_id'], array_filter( $this->items, static fn( array $item ): bool => $item['batch_id'] === $batch_id ) ) );
+	}
+
+	private function insert_items( string $sql ): int {
+		$this->sync();
+		preg_match_all( "/\((\d+), (\d+), '([a-z]+)', 'pending', 0\)/", $sql, $rows, PREG_SET_ORDER );
+		foreach ( $rows as [ , $batch, $object, $type ] ) {
+			$this->items[] = [
+				'batch_id'    => (int) $batch,
+				'object_id'   => (int) $object,
+				'object_type' => $type,
+				'state'       => 'pending',
+				'attempts'    => 0,
+			];
+		}
+		$this->log[] = 'items:' . $rows[0][1] . ':' . count( $rows );
+		return count( $rows );
+	}
+
+	private function delete( string $sql ): int {
+		$this->sync();
+		preg_match( '/^DELETE FROM `(wp_bcm_batches|wp_bcm_batch_items)` WHERE batch_id = (\d+)$/', $sql, $m );
+		$id          = (int) $m[2];
+		$this->log[] = 'discard:' . $m[1] . ':' . $id;
+		if ( 'wp_bcm_batches' === $m[1] ) {
+			$gone = isset( $this->batches[ $id ] ) ? 1 : 0;
+			unset( $this->batches[ $id ] );
+			return $gone;
+		}
+		$before      = count( $this->items );
+		$this->items = array_values( array_filter( $this->items, static fn( array $item ): bool => $item['batch_id'] !== $id ) );
+		return $before - count( $this->items );
+	}
+
+	private function find( string $sql ): ?array {
+		$this->sync();
+		preg_match( '/batch_id = (\d+)$/', $sql, $m );
+		$row = $this->batches[ (int) $m[1] ] ?? null;
+		return null === $row ? null : array_map( static fn( mixed $value ): ?string => null === $value ? null : (string) $value, $row );
+	}
+
+	private function lookup( string $sql ): ?string {
+		$this->sync();
+		$this->db->tables['wp_bcm_batches'] = array_values( $this->batches );
+		return $this->db->value( $sql );
+	}
+}

@@ -39,6 +39,10 @@ final class RegistryTest extends TestCase {
 		'bcm_too_many_operations' => 'refusal code for an operation list above twenty operations',
 		'bcm_unknown_action'      => 'refusal code for an action id no operation has',
 		'bcm_catalogue'           => 'object-cache group for hydrated catalogue pages; keys carry the last-changed values and expire, so nothing is left to remove',
+		'bcm_batch_created'       => 'action fired once a batch and its pending items are written; the chunk runner enqueues its first chunk there',
+		'bcm_selection_empty'     => 'refusal code for a batch whose selection no longer holds any product or variation',
+		'bcm_selection_required'  => 'refusal code for a batch request naming neither or both of an id list and a selection token',
+		'bcm_batch_not_recorded'  => 'refusal code for a batch the database would not take; nothing is left written',
 	];
 
 	/**

@@ -10,8 +10,8 @@
     "build": "wp-scripts build && npm run check:size",
     "check:size": "bytes=$(gzip -c assets/build/index.js | wc -c) && echo \"assets/build/index.js: $bytes bytes compressed (limit 409600)\" && test \"$bytes\" -lt 409600",
     "start": "wp-scripts start",
-    "lint:js": "wp-scripts lint-js assets/src tests/js webpack.config.js --max-warnings=0",
-    "format": "wp-scripts format assets/src tests/js webpack.config.js",
+    "lint:js": "wp-scripts lint-js assets/src tests/js webpack.config.js eslint.config.cjs --max-warnings=0",
+    "format": "wp-scripts format assets/src tests/js webpack.config.js eslint.config.cjs",
     "test": "wp-scripts test-unit-js"
   },
   "dependencies": {

@@ -106,7 +106,7 @@ final class Migrator {
 	private static function table_exists( string $table ): bool {
 		global $wpdb;
 		// Schema check after dbDelta(); nothing to cache. The table name is a prepared value.
-		$found = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $table ) ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+		$found = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $table ) ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Whether the plugin's own table exists must be read live from the database, which no WordPress API answers, and the pattern is escaped and prepared.
 		return $table === $found;
 	}
 }

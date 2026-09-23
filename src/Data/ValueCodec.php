@@ -52,7 +52,7 @@ final class ValueCodec {
 			return json_decode( $json, true, 512, JSON_THROW_ON_ERROR );
 		} catch ( \JsonException $e ) {
 			// $e is the chained cause, not output.
-			throw new \UnexpectedValueException( 'A stored journal value is not valid JSON.', 0, $e ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
+			throw new \UnexpectedValueException( 'A stored journal value is not valid JSON.', 0, $e ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- The message is a fixed literal with nothing interpolated, so there is nothing to escape.
 		}
 	}
 

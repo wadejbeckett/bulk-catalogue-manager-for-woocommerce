@@ -125,7 +125,7 @@ final class Cleanup {
 			}
 			// Uninstall removes the plugin's own tables: the site prefix plus a registry name
 			// validated as bcm_[a-z0-9_]+, passed to prepare() as a %i identifier.
-			$wpdb->query( $wpdb->prepare( 'DROP TABLE IF EXISTS %i', $wpdb->prefix . $name ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.DirectDatabaseQuery.SchemaChange
+			$wpdb->query( $wpdb->prepare( 'DROP TABLE IF EXISTS %i', $wpdb->prefix . $name ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.DirectDatabaseQuery.SchemaChange -- Uninstall drops the plugin's own registry tables, which no WordPress API can do, and the name is an %i identifier.
 		}
 	}
 
@@ -139,7 +139,7 @@ final class Cleanup {
 		foreach ( $this->registry->transient_prefixes() as $prefix ) {
 			foreach ( [ '_transient_', '_site_transient_' ] as $store ) {
 				// Uninstall only; the names are listed once to be deleted, so nothing is cached.
-				$names = $wpdb->get_col( $wpdb->prepare( "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s", $wpdb->esc_like( $store . $prefix ) . '%' ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+				$names = $wpdb->get_col( $wpdb->prepare( "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s", $wpdb->esc_like( $store . $prefix ) . '%' ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Uninstall must find every stored transient under a registry prefix, which no WordPress API lists, and the LIKE pattern is escaped and prepared.
 				foreach ( (array) $names as $option_name ) {
 					$transient = substr( (string) $option_name, strlen( $store ) );
 					if ( '_site_transient_' === $store ) {

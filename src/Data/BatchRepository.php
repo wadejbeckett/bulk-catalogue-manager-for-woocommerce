@@ -228,11 +228,11 @@ final class BatchRepository {
 			if ( true === $own ) {
 				$rows = implode( ', ', array_fill( 0, count( $chunk ), "(%d, %d, %s, 'pending', 0, %s)" ) );
 				// $rows is only a repeated placeholder group; every value is a prepared argument.
-				$result = $wpdb->query( $wpdb->prepare( "INSERT INTO %i (batch_id, object_id, object_type, state, attempts, operations) VALUES {$rows}", $args ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+				$result = $wpdb->query( $wpdb->prepare( "INSERT INTO %i (batch_id, object_id, object_type, state, attempts, operations) VALUES {$rows}", $args ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $rows is only literal value tuples of placeholders; every value is an argument.
 			} else {
 				$rows = implode( ', ', array_fill( 0, count( $chunk ), "(%d, %d, %s, 'pending', 0)" ) );
 				// $rows is only a repeated placeholder group; every value is a prepared argument.
-				$result = $wpdb->query( $wpdb->prepare( "INSERT INTO %i (batch_id, object_id, object_type, state, attempts) VALUES {$rows}", $args ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+				$result = $wpdb->query( $wpdb->prepare( "INSERT INTO %i (batch_id, object_id, object_type, state, attempts) VALUES {$rows}", $args ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $rows is only literal value tuples of placeholders; every value is an argument.
 			}
 			if ( false === $result ) {
 				throw new \RuntimeException( 'The batch items could not be recorded.' );
@@ -693,7 +693,7 @@ final class BatchRepository {
 		$args[]           = ( max( 1, $page ) - 1 ) * $per_page;
 		// Every column but the selection snapshot, which can hold 100,000 ids and is not shown in a list.
 		// $where holds only fixed column conditions with placeholders; every value is a prepared argument.
-		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT batch_id, uuid, user_id, created_gmt, finished_gmt, status, source, undo_of, operations, total_items, previewed_items, done_items, changed_items, failed_items, chunk_size, note, actions, pruned_gmt FROM %i WHERE {$where} ORDER BY batch_id DESC LIMIT %d OFFSET %d", $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
+		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT batch_id, uuid, user_id, created_gmt, finished_gmt, status, source, undo_of, operations, total_items, previewed_items, done_items, changed_items, failed_items, chunk_size, note, actions, pruned_gmt FROM %i WHERE {$where} ORDER BY batch_id DESC LIMIT %d OFFSET %d", $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $where holds only literal conditions and placeholders from conditions(); every value is an argument.
 		return array_map( [ self::class, 'typed' ], is_array( $rows ) ? $rows : [] );
 	}
 
@@ -707,7 +707,7 @@ final class BatchRepository {
 		global $wpdb;
 		[ $where, $args ] = $this->conditions( $filters );
 		// $where holds only fixed column conditions with placeholders; every value is a prepared argument.
-		return (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM %i WHERE {$where}", $args ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
+		return (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM %i WHERE {$where}", $args ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $where holds only literal conditions and placeholders from conditions(); every value is an argument.
 	}
 
 	/**
@@ -740,7 +740,7 @@ final class BatchRepository {
 		$in   = implode( ', ', array_fill( 0, count( $batch_ids ), '%d' ) );
 		$args = array_merge( [ $this->registry->table( Schema::BATCHES ) ], $batch_ids );
 		// $in holds only %d placeholders, one per id; every id is a prepared argument.
-		$rows   = $wpdb->get_results( $wpdb->prepare( "SELECT batch_id, undo_of FROM %i WHERE undo_of IN ({$in}) AND source = 'undo' AND status = 'complete' ORDER BY batch_id ASC", $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
+		$rows   = $wpdb->get_results( $wpdb->prepare( "SELECT batch_id, undo_of FROM %i WHERE undo_of IN ({$in}) AND source = 'undo' AND status = 'complete' ORDER BY batch_id ASC", $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in is only %d placeholders; every id is an argument.
 		$undone = [];
 		foreach ( is_array( $rows ) ? $rows : [] as $row ) {
 			$undone[ (int) $row['undo_of'] ] = (int) $row['batch_id'];

@@ -254,7 +254,7 @@ final class ChangeRepository {
 		$args[]           = $per_page;
 		$args[]           = ( max( 1, $page ) - 1 ) * $per_page;
 		// $where holds only fixed conditions with placeholders; every value is a prepared argument.
-		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT change_id, batch_id, object_id, object_type, prop, old_value, new_value, modified_gmt, applied_gmt, result, message FROM %i WHERE {$where} ORDER BY change_id ASC LIMIT %d OFFSET %d", $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
+		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT change_id, batch_id, object_id, object_type, prop, old_value, new_value, modified_gmt, applied_gmt, result, message FROM %i WHERE {$where} ORDER BY change_id ASC LIMIT %d OFFSET %d", $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $where holds only literal conditions and placeholders from feed_conditions(); every value is an argument.
 		return array_map( [ self::class, 'row' ], is_array( $rows ) ? $rows : [] );
 	}
 
@@ -269,7 +269,7 @@ final class ChangeRepository {
 		global $wpdb;
 		[ $where, $args ] = $this->feed_conditions( $batch_id, $results );
 		// $where holds only fixed conditions with placeholders; every value is a prepared argument.
-		return (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM %i WHERE {$where}", $args ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
+		return (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM %i WHERE {$where}", $args ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $where holds only literal conditions and placeholders from feed_conditions(); every value is an argument.
 	}
 
 	/**
@@ -315,7 +315,7 @@ final class ChangeRepository {
 		$in   = implode( ', ', array_fill( 0, count( $batch_ids ), '%d' ) );
 		$args = array_merge( [ $this->registry->table( Schema::CHANGES ) ], $batch_ids );
 		// $in holds only %d placeholders, one per id; every id is a prepared argument.
-		$rows   = $wpdb->get_results( $wpdb->prepare( "SELECT batch_id, COUNT(*) AS applied FROM %i WHERE batch_id IN ({$in}) AND result = 'applied' GROUP BY batch_id", $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
+		$rows   = $wpdb->get_results( $wpdb->prepare( "SELECT batch_id, COUNT(*) AS applied FROM %i WHERE batch_id IN ({$in}) AND result = 'applied' GROUP BY batch_id", $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in is only %d placeholders; every id is an argument.
 		$counts = [];
 		foreach ( is_array( $rows ) ? $rows : [] as $row ) {
 			$counts[ (int) $row['batch_id'] ] = (int) $row['applied'];
@@ -341,7 +341,7 @@ final class ChangeRepository {
 		$args[]           = $per_page;
 		$args[]           = ( max( 1, $page ) - 1 ) * $per_page;
 		// $where holds only fixed conditions with placeholders; every value is a prepared argument.
-		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT c.change_id, c.batch_id, c.object_id, c.object_type, c.prop, c.old_value, c.new_value, c.modified_gmt, c.applied_gmt, c.result, c.message, b.user_id FROM %i AS c INNER JOIN %i AS b ON b.batch_id = c.batch_id WHERE {$where} ORDER BY c.change_id DESC LIMIT %d OFFSET %d", $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
+		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT c.change_id, c.batch_id, c.object_id, c.object_type, c.prop, c.old_value, c.new_value, c.modified_gmt, c.applied_gmt, c.result, c.message, b.user_id FROM %i AS c INNER JOIN %i AS b ON b.batch_id = c.batch_id WHERE {$where} ORDER BY c.change_id DESC LIMIT %d OFFSET %d", $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $where holds only literal conditions and placeholders from audit_conditions(); every value is an argument.
 		return array_map( static fn( array $row ): array => self::row( $row ) + [ 'user_id' => (int) $row['user_id'] ], is_array( $rows ) ? $rows : [] );
 	}
 
@@ -355,7 +355,7 @@ final class ChangeRepository {
 		global $wpdb;
 		[ $where, $args ] = $this->audit_conditions( $filters );
 		// $where holds only fixed conditions with placeholders; every value is a prepared argument.
-		return (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM %i AS c INNER JOIN %i AS b ON b.batch_id = c.batch_id WHERE {$where}", $args ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
+		return (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM %i AS c INNER JOIN %i AS b ON b.batch_id = c.batch_id WHERE {$where}", $args ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $where holds only literal conditions and placeholders from audit_conditions(); every value is an argument.
 	}
 
 	/**

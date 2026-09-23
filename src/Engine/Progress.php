@@ -18,6 +18,18 @@
  *   are grouped per object; items that failed without a journal row (given
  *   up on after three tries, a write that threw) are added from the items.
  *
+ * - `previewed_count` and `selection_difference` (T38, §12.6): for a filter
+ *   selection, the count its preview showed, and, when that differs from the
+ *   materialised `total_items`, one §4.8 sentence stating both numbers and
+ *   the difference; '' otherwise. The history list carries both too.
+ *
+ * Stale inline batches (T38, from T37): an inline batch is written in the
+ * request that opened it, with no runner behind it, so one whose request
+ * died stays `running`. Reading it (the progress read or the history list)
+ * with no activity for INLINE_STALE_SECONDS (ten minutes) sweeps it: it moves
+ * running -> failed, its pending items are marked failed with a plain
+ * reason and counted, and its note says why. Nothing else is written.
+ *
  * cancel() moves a queued or running batch to `cancelled`. The runner reads
  * the status before claiming, again after claiming (releasing the claim when
  * it sees the cancellation) and before enqueueing a successor, so the next
@@ -45,6 +57,11 @@ final class Progress {
 	 * Seconds without a claim after which a batch with pending items is stalled.
 	 */
 	public const STALL_SECONDS = BatchRepository::LEASE_SECONDS;
+
+	/**
+	 * Seconds without activity after which a running inline batch is given up on (T38).
+	 */
+	public const INLINE_STALE_SECONDS = 600;
 
 	/**
 	 * Most grouped reasons a report carries.
@@ -109,30 +126,33 @@ final class Progress {
 	 * @return array<string, mixed>
 	 */
 	public function report_for( array $batch, bool $summary = true ): array {
+		$batch   = $this->sweep( $batch );
 		$active  = in_array( $batch['status'], self::ACTIVE, true );
 		$pending = $active ? $this->batches->count_items( $batch['batch_id'], 'pending' ) : 0;
 		$last    = $active ? $this->last_activity( $batch ) : null;
 		$stalled = $active && $pending > 0 && null !== $last && self::seconds( $last ) < (int) ( $this->clock )() - self::STALL_SECONDS;
 		$report  = [
-			'batch_id'          => $batch['batch_id'],
-			'status'            => $batch['status'],
-			'source'            => $batch['source'],
-			'user_id'           => $batch['user_id'],
-			'undo_of'           => $batch['undo_of'],
-			'created_gmt'       => $batch['created_gmt'],
-			'finished_gmt'      => $batch['finished_gmt'],
-			'total_items'       => $batch['total_items'],
-			'done_items'        => $batch['done_items'],
-			'changed_items'     => $batch['changed_items'],
-			'failed_items'      => $batch['failed_items'],
-			'pending_items'     => $pending,
-			'chunk_size'        => $batch['chunk_size'],
-			'note'              => $batch['note'],
-			'operations'        => $batch['operations'],
-			'cancellable'       => $active,
-			'stalled'           => $stalled,
-			'stalled_message'   => $stalled ? self::stalled_message() : '',
-			'last_activity_gmt' => $last,
+			'batch_id'             => $batch['batch_id'],
+			'status'               => $batch['status'],
+			'source'               => $batch['source'],
+			'user_id'              => $batch['user_id'],
+			'undo_of'              => $batch['undo_of'],
+			'created_gmt'          => $batch['created_gmt'],
+			'finished_gmt'         => $batch['finished_gmt'],
+			'total_items'          => $batch['total_items'],
+			'done_items'           => $batch['done_items'],
+			'changed_items'        => $batch['changed_items'],
+			'failed_items'         => $batch['failed_items'],
+			'pending_items'        => $pending,
+			'chunk_size'           => $batch['chunk_size'],
+			'note'                 => $batch['note'],
+			'operations'           => $batch['operations'],
+			'cancellable'          => $active,
+			'stalled'              => $stalled,
+			'stalled_message'      => $stalled ? self::stalled_message() : '',
+			'last_activity_gmt'    => $last,
+			'previewed_count'      => $batch['previewed_items'] ?? null,
+			'selection_difference' => self::difference( $batch['previewed_items'] ?? null, $batch['total_items'] ),
 		];
 		if ( $summary ) {
 			$report['summary'] = $this->summary( $batch['batch_id'] );
@@ -211,6 +231,60 @@ final class Progress {
 			$batch = $this->batches->find( $batch_id ) ?? $batch;
 		}
 		return 'cancelled' === $batch['status'] ? $this->report_for( $batch ) : 'finished';
+	}
+
+	/**
+	 * A running inline batch with no activity for INLINE_STALE_SECONDS, given
+	 * up on: moved to failed (only if still running), its pending items
+	 * failed with a plain reason and counted, and a note saying why. Any other
+	 * batch is answered as it is.
+	 *
+	 * @param array<string, mixed> $batch Typed batch row.
+	 * @return array<string, mixed> The row as it stands after the sweep.
+	 */
+	private function sweep( array $batch ): array {
+		if ( 'running' !== $batch['status'] || 'inline' !== $batch['source'] ) {
+			return $batch;
+		}
+		$last = $this->last_activity( $batch );
+		if ( null === $last || self::seconds( $last ) >= (int) ( $this->clock )() - self::INLINE_STALE_SECONDS ) {
+			return $batch;
+		}
+		$batch_id = $batch['batch_id'];
+		if ( ! $this->batches->transition( $batch_id, 'running', 'failed' ) ) {
+			return $this->batches->find( $batch_id ) ?? $batch;
+		}
+		$failed = $this->batches->fail_pending( $batch_id, __( 'This edit stopped before it was saved. Check the product and make the edit again.', 'bulk-catalogue-manager-for-woocommerce' ) );
+		if ( $failed > 0 ) {
+			$this->batches->increment_counters( $batch_id, $failed, 0, $failed );
+		}
+		$this->batches->record_note( $batch_id, __( 'This edit stopped before it finished and nothing happened for ten minutes, so it was marked as failed. Check the product and make the edit again if it is not right.', 'bulk-catalogue-manager-for-woocommerce' ) );
+		return $this->batches->find( $batch_id ) ?? $batch;
+	}
+
+	/**
+	 * The difference between the count a filter's preview showed and the
+	 * objects the batch materialised, as one §4.8 sentence; '' when they are
+	 * the same or no count was previewed.
+	 *
+	 * @param int|null $previewed The count the preview showed.
+	 * @param int      $total     Objects materialised.
+	 */
+	public static function difference( ?int $previewed, int $total ): string {
+		if ( null === $previewed || $previewed === $total ) {
+			return '';
+		}
+		$gap = abs( $total - $previewed );
+		return sprintf(
+			$total > $previewed
+				/* translators: 1: number of products the preview showed; 2: number the change included; 3: the difference. */
+				? _n( 'The preview showed %1$s products, but %2$s matched the filters when the change started, so %3$s more product was included.', 'The preview showed %1$s products, but %2$s matched the filters when the change started, so %3$s more products were included.', $gap, 'bulk-catalogue-manager-for-woocommerce' )
+				/* translators: 1: number of products the preview showed; 2: number the change included; 3: the difference. */
+				: _n( 'The preview showed %1$s products, but %2$s matched the filters when the change started, so %3$s fewer product was included.', 'The preview showed %1$s products, but %2$s matched the filters when the change started, so %3$s fewer products were included.', $gap, 'bulk-catalogue-manager-for-woocommerce' ),
+			number_format_i18n( $previewed ),
+			number_format_i18n( $total ),
+			number_format_i18n( $gap )
+		);
 	}
 
 	/**

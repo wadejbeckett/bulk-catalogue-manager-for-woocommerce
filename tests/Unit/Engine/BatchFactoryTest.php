@@ -120,10 +120,11 @@ final class BatchFactoryTest extends TestCase {
 
 		$this->assertSame(
 			[
-				'batch_id'    => 1,
-				'status'      => 'queued',
-				'total_items' => 3,
-				'replayed'    => false,
+				'batch_id'        => 1,
+				'status'          => 'queued',
+				'total_items'     => 3,
+				'previewed_items' => null,
+				'replayed'        => false,
 			],
 			$result
 		);
@@ -274,10 +275,11 @@ final class BatchFactoryTest extends TestCase {
 		$again      = $this->factory()->create( strtoupper( self::UUID ), self::USER, self::operations(), Selection::of_ids( [ 103, 104, 105 ] ) );
 		$this->assertSame(
 			[
-				'batch_id'    => $first['batch_id'],
-				'status'      => 'queued',
-				'total_items' => 2,
-				'replayed'    => true,
+				'batch_id'        => $first['batch_id'],
+				'status'          => 'queued',
+				'total_items'     => 2,
+				'previewed_items' => null,
+				'replayed'        => true,
 			],
 			$again
 		);

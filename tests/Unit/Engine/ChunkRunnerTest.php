@@ -450,9 +450,10 @@ final class ChunkRunnerTest extends TestCase {
 				"Engine/InlineWrite.php: 'running' -> \$status",
 				"Engine/Progress.php: 'queued' -> 'cancelled'",
 				"Engine/Progress.php: 'running' -> 'cancelled'",
+				"Engine/Progress.php: 'running' -> 'failed'",
 			],
 			$calls,
-			'The engine writes queued -> running -> complete, partial, failed or cancelled, and nothing else.'
+			'The engine writes queued -> running -> complete, partial, failed or cancelled (and a stale inline batch running -> failed), and nothing else.'
 		);
 
 		// The one variable target is the final status, which is only ever complete, partial or failed.

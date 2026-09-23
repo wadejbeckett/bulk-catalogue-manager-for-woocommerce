@@ -33,6 +33,20 @@
  *    batch id: the point where the chunk runner (T34) enqueues its first
  *    chunk. Nothing is enqueued here.
  *
+ * Applying a filter selection (T38, §9.1, §12.6). When the caller passes the
+ * apply check (`$apply`: the token as sent, the preview's hash, the count the
+ * preview showed and whether the owner confirmed a changed count), a filter
+ * selection is held to its preview: after the operation list is validated,
+ * Preview::hash() over the token, the normalised list and the stored
+ * settings must equal the hash the request carries, or the request is
+ * refused 409 `bcm_preview_stale` (a missing hash included); after
+ * materialising, a count other than the previewed one (the request's, else
+ * the token's own) is refused 409 `bcm_selection_changed`, naming both
+ * numbers, unless the owner confirmed it. The previewed count is stored on
+ * the batch as `previewed_items`, and Engine\Progress states any difference
+ * from `total_items` in the batch's report and history row. The REST route
+ * always passes the check for a token; an id selection ignores it.
+ *
  * open() (T37) is the synchronous variant for a batch its caller writes in
  * the same request: validated operations, the row and its items, the
  * status moved straight to running, and no `bcm_batch_created`, so no
@@ -52,6 +66,7 @@ use BulkCatalogueManager\Query\ProductQuery;
 use BulkCatalogueManager\Rest\Refusal;
 use BulkCatalogueManager\Rest\SelectionController;
 use BulkCatalogueManager\Selection\Selection;
+use BulkCatalogueManager\Settings\Settings;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -90,6 +105,16 @@ final class BatchFactory {
 	 * Refusal code for a selection above Selection::MAX_OBJECTS.
 	 */
 	public const TOO_LARGE = SelectionController::TOO_LARGE;
+
+	/**
+	 * Refusal code for a filter whose count moved since the preview (T38).
+	 */
+	public const CHANGED = 'bcm_selection_changed';
+
+	/**
+	 * Refusal code for a filter apply whose preview hash is missing or no longer matches (T38).
+	 */
+	public const STALE_PREVIEW = 'bcm_preview_stale';
 
 	/**
 	 * Refusal code for a batch the database would not take.
@@ -161,9 +186,10 @@ final class BatchFactory {
 	 * @param Selection $selection  The selection, from an id list or a parsed token.
 	 * @param string    $source     bulk, inline, tree or undo.
 	 * @param int|null  $undo_of    The batch an undo batch reverses.
-	 * @return array{batch_id: int, status: string, total_items: int, replayed: bool}|\WP_Error
+	 * @param array{token: string, hash: string, previewed?: int|null, confirmed?: bool, settings?: Settings}|null $apply The apply check for a filter selection (T38), or null for none.
+	 * @return array{batch_id: int, status: string, total_items: int, previewed_items: int|null, replayed: bool}|\WP_Error
 	 */
-	public function create( string $uuid, int $user_id, mixed $operations, Selection $selection, string $source = 'bulk', ?int $undo_of = null ): array|\WP_Error {
+	public function create( string $uuid, int $user_id, mixed $operations, Selection $selection, string $source = 'bulk', ?int $undo_of = null, ?array $apply = null ): array|\WP_Error {
 		$existing = $this->replayed( $uuid, $user_id );
 		if ( null !== $existing ) {
 			return $this->replay( $existing );
@@ -176,6 +202,14 @@ final class BatchFactory {
 		if ( $selection->too_large() ) {
 			return self::too_large( $selection->count );
 		}
+		$checked = null !== $apply && $selection->is_filter();
+		if ( $checked && ! self::preview_matches( $apply, $operations ) ) {
+			return Refusal::create(
+				self::STALE_PREVIEW,
+				__( 'This change no longer matches its preview: the products, the change or the settings have moved on since. Preview the change again, then apply it.', 'bulk-catalogue-manager-for-woocommerce' ),
+				409
+			);
+		}
 		$objects = $this->materialise( $selection );
 		if ( count( $objects ) > Selection::MAX_OBJECTS ) {
 			return self::too_large( count( $objects ) );
@@ -186,10 +220,14 @@ final class BatchFactory {
 				__( 'None of the chosen products can be changed now: they have been deleted or no longer match the filters. Choose the products again and try again.', 'bulk-catalogue-manager-for-woocommerce' )
 			);
 		}
+		$previewed = $checked ? (int) ( $apply['previewed'] ?? $selection->count ) : null;
+		if ( null !== $previewed && count( $objects ) !== $previewed && true !== ( $apply['confirmed'] ?? false ) ) {
+			return self::changed( $previewed, count( $objects ) );
+		}
 
 		$now = ( $this->clock )();
 		try {
-			$batch_id = $this->batches->create( $uuid, $user_id, $source, $operations, self::snapshot( $selection, count( $objects ) ), count( $objects ), $undo_of );
+			$batch_id = $this->batches->create( $uuid, $user_id, $source, $operations, self::snapshot( $selection, count( $objects ) ), count( $objects ), $undo_of, $previewed );
 			$earlier  = $this->batches->earlier_request( $uuid, $user_id, $batch_id, gmdate( 'Y-m-d H:i:s', $now - self::REPLAY_TTL ) );
 			if ( null !== $earlier ) {
 				$this->batches->discard( $batch_id );
@@ -226,11 +264,52 @@ final class BatchFactory {
 		 */
 		do_action( 'bcm_batch_created', $batch_id );
 		return [
-			'batch_id'    => $batch_id,
-			'status'      => 'queued',
-			'total_items' => count( $objects ),
-			'replayed'    => false,
+			'batch_id'        => $batch_id,
+			'status'          => 'queued',
+			'total_items'     => count( $objects ),
+			'previewed_items' => $previewed,
+			'replayed'        => false,
 		];
+	}
+
+	/**
+	 * Whether the hash an apply carries is the one a preview of the same
+	 * token, normalised operation list and current settings gives now.
+	 *
+	 * @param array<string, mixed> $apply      The apply check.
+	 * @param array<mixed>         $operations The normalised operation list.
+	 */
+	private static function preview_matches( array $apply, array $operations ): bool {
+		$hash = $apply['hash'] ?? '';
+		if ( ! is_string( $hash ) || '' === $hash ) {
+			return false;
+		}
+		$settings = $apply['settings'] ?? null;
+		return hash_equals( Preview::hash( (string) $apply['token'], $operations, $settings instanceof Settings ? $settings : Settings::load() ), $hash );
+	}
+
+	/**
+	 * The refusal of a filter whose count moved between the preview and
+	 * apply, naming both numbers so the screen can ask again (§9.1, §4.8).
+	 *
+	 * @param int $previewed The count the preview showed.
+	 * @param int $current   The count that matches now.
+	 */
+	private static function changed( int $previewed, int $current ): \WP_Error {
+		return Refusal::create(
+			self::CHANGED,
+			sprintf(
+				/* translators: 1: number of products the preview showed, such as "120"; 2: number that match the filters now, such as "123". */
+				__( 'The products matching your filters have changed since the preview: it showed %1$s, and %2$s match now. Check the change and apply it again, or preview it again first.', 'bulk-catalogue-manager-for-woocommerce' ),
+				number_format_i18n( $previewed ),
+				number_format_i18n( $current )
+			),
+			409,
+			[
+				'previewed' => $previewed,
+				'current'   => $current,
+			]
+		);
 	}
 
 	/**
@@ -380,15 +459,16 @@ final class BatchFactory {
 	 * The answer for a batch an earlier submission of the same request created.
 	 *
 	 * @param int $batch_id The batch.
-	 * @return array{batch_id: int, status: string, total_items: int, replayed: bool}
+	 * @return array{batch_id: int, status: string, total_items: int, previewed_items: int|null, replayed: bool}
 	 */
 	public function replay( int $batch_id ): array {
 		$batch = $this->batches->find( $batch_id );
 		return [
-			'batch_id'    => $batch_id,
-			'status'      => null === $batch ? 'queued' : $batch['status'],
-			'total_items' => null === $batch ? 0 : $batch['total_items'],
-			'replayed'    => true,
+			'batch_id'        => $batch_id,
+			'status'          => null === $batch ? 'queued' : $batch['status'],
+			'total_items'     => null === $batch ? 0 : $batch['total_items'],
+			'previewed_items' => null === $batch ? null : $batch['previewed_items'],
+			'replayed'        => true,
 		];
 	}
 

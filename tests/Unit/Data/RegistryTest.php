@@ -41,6 +41,8 @@ final class RegistryTest extends TestCase {
 		'bcm_catalogue'           => 'object-cache group for hydrated catalogue pages; keys carry the last-changed values and expire, so nothing is left to remove',
 		'bcm_batch_created'       => 'action fired once a batch and its pending items are written; the chunk runner enqueues its first chunk there',
 		'bcm_selection_empty'     => 'refusal code for a batch whose selection no longer holds any product or variation',
+		'bcm_selection_changed'   => 'REST refusal code for applying a filter whose count moved since the preview',
+		'bcm_preview_stale'       => 'REST refusal code for applying a filter without the hash of a current preview',
 		'bcm_selection_required'  => 'refusal code for a batch request naming neither or both of an id list and a selection token',
 		'bcm_batch_not_recorded'  => 'refusal code for a batch the database would not take; nothing is left written',
 		'bcm_already_done'        => 'result code for an object a retried chunk skips because its batch already journalled it',

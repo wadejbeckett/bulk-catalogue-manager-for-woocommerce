@@ -457,22 +457,23 @@ final class BatchProgressRouteTest extends TestCase {
 		$rows = [];
 		foreach ( [ [ 1, 3, 'complete', '2026-09-01 10:00:00' ], [ 2, 4, 'partial', '2026-09-10 10:00:00' ], [ 3, 3, 'partial', '2026-09-20 10:00:00' ], [ 4, 3, 'running', '2026-09-23 07:59:00' ] ] as [ $id, $user, $status, $created ] ) {
 			$rows[] = [
-				'batch_id'      => $id,
-				'uuid'          => sprintf( '00000000-0000-4000-8000-%012d', $id ),
-				'user_id'       => $user,
-				'created_gmt'   => $created,
-				'finished_gmt'  => 'running' === $status ? null : $created,
-				'status'        => $status,
-				'source'        => 'bulk',
-				'undo_of'       => null,
-				'operations'    => ValueCodec::encode( [] ),
-				'selection'     => ValueCodec::encode( [ 'ids' => range( 1, 1000 ) ] ),
-				'total_items'   => 10,
-				'done_items'    => 'running' === $status ? 4 : 10,
-				'changed_items' => 4,
-				'failed_items'  => 'partial' === $status ? 1 : 0,
-				'chunk_size'    => 50,
-				'note'          => '',
+				'batch_id'        => $id,
+				'uuid'            => sprintf( '00000000-0000-4000-8000-%012d', $id ),
+				'user_id'         => $user,
+				'created_gmt'     => $created,
+				'finished_gmt'    => 'running' === $status ? null : $created,
+				'status'          => $status,
+				'source'          => 'bulk',
+				'undo_of'         => null,
+				'operations'      => ValueCodec::encode( [] ),
+				'selection'       => ValueCodec::encode( [ 'ids' => range( 1, 1000 ) ] ),
+				'total_items'     => 10,
+				'previewed_items' => 3 === $id ? 8 : null,
+				'done_items'      => 'running' === $status ? 4 : 10,
+				'changed_items'   => 4,
+				'failed_items'    => 'partial' === $status ? 1 : 0,
+				'chunk_size'      => 50,
+				'note'            => '',
 			];
 		}
 		$db              = new SqlEvaluator(
@@ -507,6 +508,9 @@ final class BatchProgressRouteTest extends TestCase {
 		$this->assertArrayNotHasKey( 'summary', $page['items'][0], 'The list leaves the grouped reasons to the batch read.' );
 		$this->assertSame( [ 1, false ], [ $page['items'][0]['pending_items'], $page['items'][0]['stalled'] ] );
 		$this->assertArrayNotHasKey( 'selection', $page['items'][0] );
+		$this->assertSame( [ null, '' ], [ $page['items'][0]['previewed_count'], $page['items'][0]['selection_difference'] ] );
+		$this->assertSame( 8, $page['items'][1]['previewed_count'] );
+		$this->assertSame( 'The preview showed 8 products, but 10 matched the filters when the change started, so 2 more products were included.', $page['items'][1]['selection_difference'], 'The history row states the difference.' );
 
 		$ids = static fn( array $params ): array => array_column( self::dispatch( 'GET', '/batches', $params )->get_data()['items'], 'batch_id' );
 		$this->assertSame( [ 3, 2 ], $ids( [ 'status' => 'partial' ] ) );
@@ -534,5 +538,75 @@ final class BatchProgressRouteTest extends TestCase {
 		$this->refused( self::dispatch( 'GET', '/batches', [ 'status' => 'lost' ] ), 'rest_invalid_param', 400 );
 		$this->refused( self::dispatch( 'GET', '/batches', [ 'after' => 'last week' ] ), 'rest_invalid_param', 400 );
 		$this->refused( self::dispatch( 'GET', '/batches', [ 'user' => 0 ] ), 'rest_invalid_param', 400 );
+	}
+
+	public function test_a_batch_states_the_difference_from_its_previewed_count(): void {
+		$store                           = new RunnerStore( self::BATCH, self::products( 3 ), $this->increase(), self::OWNER );
+		$store->batch['previewed_items'] = 2;
+		$this->runner()->run( self::BATCH );
+		$report = $this->ok( self::dispatch( 'GET', '/batches/12' ) );
+		$this->assertSame( 'complete', $report['status'] );
+		$this->assertSame( 2, $report['previewed_count'] );
+		$this->assertSame( 3, $report['total_items'] );
+		$this->assertSame( 'The preview showed 2 products, but 3 matched the filters when the change started, so 1 more product was included.', $report['selection_difference'] );
+
+		$this->assertSame( 'The preview showed 5 products, but 3 matched the filters when the change started, so 2 fewer products were included.', Progress::difference( 5, 3 ) );
+		$this->assertSame( '', Progress::difference( 3, 3 ), 'No difference, no sentence.' );
+		$this->assertSame( '', Progress::difference( null, 3 ), 'An id selection has no previewed count.' );
+	}
+
+	/**
+	 * A running inline batch of one whose request died after claiming its item.
+	 */
+	private function dead_inline_edit(): RunnerStore {
+		$store                  = new RunnerStore( self::BATCH, self::products( 1 ), $this->increase(), self::OWNER );
+		$store->batch['status'] = 'running';
+		$store->batch['source'] = 'inline';
+		foreach ( array_keys( $store->items ) as $id ) {
+			$store->items[ $id ]['claim_token'] = str_repeat( 'a', 32 );
+			$store->items[ $id ]['claimed_gmt'] = '2026-09-23 08:00:05';
+			$store->items[ $id ]['attempts']    = 1;
+		}
+		return $store;
+	}
+
+	public function test_a_stale_inline_batch_is_swept_to_failed_on_read(): void {
+		$store = $this->dead_inline_edit();
+
+		$this->now = self::CREATED + 5 + Progress::INLINE_STALE_SECONDS;
+		$report    = $this->ok( self::dispatch( 'GET', '/batches/12' ) );
+		$this->assertSame( 'running', $report['status'], 'Ten minutes exactly is not yet stale.' );
+		$this->assertSame( 'pending', $store->item( 1001 )['state'] );
+
+		$this->now = self::CREATED + 5 + Progress::INLINE_STALE_SECONDS + 1;
+		$report    = $this->ok( self::dispatch( 'GET', '/batches/12' ) );
+		$this->assertSame( 'failed', $report['status'] );
+		$this->assertFalse( $report['cancellable'] );
+		$this->assertNotNull( $report['finished_gmt'] );
+		$this->assertSame( [ 1, 0, 1, 0 ], [ $report['done_items'], $report['changed_items'], $report['failed_items'], $report['pending_items'] ] );
+		$this->assertStringContainsString( 'marked as failed', $report['note'] );
+		$this->assertStringNotContainsString( 'bcm_', $report['note'] );
+		$this->assertSame( 'failed', $store->item( 1001 )['state'] );
+		$this->assertStringContainsString( 'stopped before it was saved', $store->item( 1001 )['message'] );
+		$this->assertSame( [ '1 product: This edit stopped before it was saved. Check the product and make the edit again.' ], array_column( $report['summary'], 'sentence' ) );
+		$this->assertSame( '10.00', number_format( (float) self::price( 1001 ), 2 ), 'Nothing was written to the product.' );
+
+		// A second read changes nothing more.
+		$writes = count( $GLOBALS['wpdb']->writes );
+		$this->ok( self::dispatch( 'GET', '/batches/12' ) );
+		$this->assertCount( $writes, $GLOBALS['wpdb']->writes );
+		$this->assertSame( 1, $store->batch()['failed_items'] );
+	}
+
+	public function test_only_a_running_inline_batch_is_swept(): void {
+		foreach ( [ [ 'running', 'bulk' ], [ 'queued', 'inline' ], [ 'complete', 'inline' ] ] as [ $status, $source ] ) {
+			$store                  = $this->dead_inline_edit();
+			$store->batch['status'] = $status;
+			$store->batch['source'] = $source;
+			$this->now              = self::CREATED + 86400;
+			$report                 = $this->ok( self::dispatch( 'GET', '/batches/12' ) );
+			$this->assertSame( $status, $report['status'], "A $status $source batch is left alone." );
+			$this->assertSame( 'pending', $store->item( 1001 )['state'] );
+		}
 	}
 }

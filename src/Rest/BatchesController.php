@@ -15,6 +15,15 @@
  * seconds answers 200 with the same batch, both as
  * `{ batch_id, status, total_items, replayed }`.
  *
+ * Applying a filter selection (T38, §9.1): a body with a `token` carries the
+ * preview's `preview_hash` and the count the preview showed
+ * (`preview_count`; the token's own count when absent). BatchFactory refuses
+ * 409 `bcm_preview_stale` when the hash is missing or no longer what a
+ * preview gives now, and 409 `bcm_selection_changed` with `data.previewed`
+ * and `data.current` when the filter now matches another number of objects,
+ * unless the body carries `confirm_changed: true` — the owner's answer after
+ * the screen stated both numbers.
+ *
  * `GET /bcm/v1/batches` (T35) pages the batches newest first, filtered by
  * status, user and creation time, for the history screen; T54 adds the
  * action-type filter and the reversibility state.
@@ -236,16 +245,18 @@ final class BatchesController implements ReadController {
 				'created_gmt'  => $text,
 				'finished_gmt' => $time,
 			] + $counters + [
-				'note'              => $text,
-				'operations'        => [
+				'note'                 => $text,
+				'operations'           => [
 					'type'  => 'array',
 					'items' => [ 'type' => 'object' ],
 				],
-				'cancellable'       => [ 'type' => 'boolean' ],
-				'stalled'           => [ 'type' => 'boolean' ],
-				'stalled_message'   => $text,
-				'last_activity_gmt' => $time,
-				'summary'           => [
+				'cancellable'          => [ 'type' => 'boolean' ],
+				'stalled'              => [ 'type' => 'boolean' ],
+				'stalled_message'      => $text,
+				'last_activity_gmt'    => $time,
+				'previewed_count'      => [ 'type' => [ 'integer', 'null' ] ],
+				'selection_difference' => $text,
+				'summary'              => [
 					'type'  => 'array',
 					'items' => [
 						'type'       => 'object',
@@ -429,7 +440,7 @@ final class BatchesController implements ReadController {
 	 */
 	public static function args(): array {
 		return [
-			'uuid'       => [
+			'uuid'            => [
 				'description'       => __( 'A request id the screen makes once per change, so sending it twice creates one change.', 'bulk-catalogue-manager-for-woocommerce' ),
 				'type'              => 'string',
 				'format'            => 'uuid',
@@ -442,7 +453,7 @@ final class BatchesController implements ReadController {
 				},
 				'sanitize_callback' => static fn( mixed $value ): string => strtolower( (string) $value ),
 			],
-			'operations' => [
+			'operations'      => [
 				'description'       => __( 'The changes to make, in order: each an action and its arguments.', 'bulk-catalogue-manager-for-woocommerce' ),
 				'type'              => 'array',
 				'items'             => [ 'type' => 'object' ],
@@ -451,7 +462,7 @@ final class BatchesController implements ReadController {
 				'validate_callback' => static fn(): bool => true,
 				'sanitize_callback' => static fn( mixed $value ): mixed => $value,
 			],
-			'ids'        => self::arg(
+			'ids'             => self::arg(
 				[
 					'description' => __( 'The chosen products or variations, by id, instead of a selection token.', 'bulk-catalogue-manager-for-woocommerce' ),
 					'type'        => 'array',
@@ -463,14 +474,14 @@ final class BatchesController implements ReadController {
 				],
 				[ self::class, 'ids' ]
 			),
-			'token'      => self::arg(
+			'token'           => self::arg(
 				[
 					'description' => __( 'The selection token from the selection route, instead of ids.', 'bulk-catalogue-manager-for-woocommerce' ),
 					'type'        => 'string',
 				],
 				'strval'
 			),
-			'source'     => self::arg(
+			'source'          => self::arg(
 				[
 					'description' => __( 'Where the change was made: the bulk panel, a grid cell or the category manager.', 'bulk-catalogue-manager-for-woocommerce' ),
 					'type'        => 'string',
@@ -478,6 +489,30 @@ final class BatchesController implements ReadController {
 					'default'     => 'bulk',
 				],
 				'strval'
+			),
+			'preview_hash'    => self::arg(
+				[
+					'description' => __( 'The hash the preview answered; required with a filter selection token.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'type'        => 'string',
+					'pattern'     => '^[0-9a-f]{64}$',
+				],
+				'strval'
+			),
+			'preview_count'   => self::arg(
+				[
+					'description' => __( 'How many products the preview showed for a filter selection; the selection\'s own count by default.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'type'        => 'integer',
+					'minimum'     => 0,
+				],
+				'intval'
+			),
+			'confirm_changed' => self::arg(
+				[
+					'description' => __( 'Apply even though the filter now matches a different number of products than the preview showed.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'type'        => 'boolean',
+					'default'     => false,
+				],
+				static fn( mixed $value ): bool => true === $value || 1 === $value || in_array( is_string( $value ) ? strtolower( $value ) : '', [ '1', 'true' ], true )
 			),
 		];
 	}
@@ -499,7 +534,15 @@ final class BatchesController implements ReadController {
 			if ( $selection instanceof \WP_Error ) {
 				return $selection;
 			}
-			$result = $factory->create( $uuid, $user_id, $request->get_param( 'operations' ), $selection, (string) ( $request->get_param( 'source' ) ?? 'bulk' ) );
+			$token  = $request->get_param( 'token' );
+			$count  = $request->get_param( 'preview_count' );
+			$apply  = null === $token ? null : [
+				'token'     => (string) $token,
+				'hash'      => (string) ( $request->get_param( 'preview_hash' ) ?? '' ),
+				'previewed' => null === $count ? null : (int) $count,
+				'confirmed' => true === $request->get_param( 'confirm_changed' ),
+			];
+			$result = $factory->create( $uuid, $user_id, $request->get_param( 'operations' ), $selection, (string) ( $request->get_param( 'source' ) ?? 'bulk' ), null, $apply );
 		} else {
 			$result = $factory->replay( $existing );
 		}

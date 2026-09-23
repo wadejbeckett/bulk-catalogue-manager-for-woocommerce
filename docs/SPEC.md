@@ -196,7 +196,7 @@ A parent carries its variation count from a grouped count query, so variation ro
 
 ### 9.1 Preview
 
-`POST /bcm/v1/preview` returns the computed change for the sample plus totals: matched, would change, already at target, would fail validation. It uses the same lean query and operation classes as the writer and writes nothing. A result is bound to a hash of the selection and settings; changing either invalidates it. For a filter selection it also returns the filter's current count, and if that has moved by the time Apply is pressed the dialog says so and asks again.
+`POST /bcm/v1/preview` returns the computed change for the sample plus totals: matched, would change, already at target, would fail validation. It uses the same lean query and operation classes as the writer and writes nothing. A result is bound to a hash of the selection and settings; changing either invalidates it. For a filter selection it also returns the filter's current count, and if that has moved by the time Apply is pressed the dialog says so and asks again. Applying a filter selection sends the preview's hash and the count it showed; the server refuses 409 `bcm_preview_stale` when the hash is missing or no longer what a preview gives now, and 409 `bcm_selection_changed`, naming the previewed and the current count, when the filter now matches a different number of products, unless the request carries `confirm_changed: true`. The previewed count is stored on the batch.
 
 ### 9.2 Schema
 
@@ -215,6 +215,7 @@ Applying creates a batch row and materialises the selection into `bcm_batch_item
   operations    LONGTEXT            -- JSON
   selection     LONGTEXT            -- JSON snapshot of the filter or id list
   total_items   INT UNSIGNED
+  previewed_items INT UNSIGNED NULL -- the count the preview of a filter selection showed; NULL for an id selection
   done_items    INT UNSIGNED
   changed_items INT UNSIGNED
   failed_items  INT UNSIGNED
@@ -292,9 +293,9 @@ One option, `bcm_settings`, an array sanitised on save against an explicit schem
 
 Routes are registered under `bcm/v1` with `register_rest_route()`. Every route declares an explicit `permission_callback`; none returns `true`. Authentication is the logged-in cookie plus the `wp_rest` nonce through `apiFetch`'s nonce middleware. There is no REST API key or application password path, and no request outside the site. The plugin does not extend the WooCommerce REST namespace.
 
-The routes are `/fields`; `GET /products` returning `{ items, pagination: { page, perPage, total, totalPages } }`; `PATCH /products/{id}`, recorded as a one-item batch; `GET /products/{id}/variations`, returning `{ items, pagination }` in WooCommerce's variation order with each variation's parent name and attribute summary, and 404 for an id that is not a product; `POST /selection`, resolving a filter to a count and a signed token; `POST /preview`; `/batches` to queue and to list, `/batches/{id}` for live progress, `/batches/{id}/changes`, and `/batches/{id}/cancel` and `/undo`, the latter accepting `force`; `/audit`; `/categories`, `/categories/{id}` and `/categories/{id}/move`; `/views` and `/views/{id}`; `/export`; and `/settings`.
+The routes are `/fields`; `GET /products` returning `{ items, pagination: { page, perPage, total, totalPages } }`; `PATCH /products/{id}`, recorded as a one-item batch and answering `{ item, batch_id, status, results }` — the updated row in the `/products` item shape, the batch's id, its final status (complete, partial or failed) and one result per step; `GET /products/{id}/variations`, returning `{ items, pagination }` in WooCommerce's variation order with each variation's parent name and attribute summary, and 404 for an id that is not a product; `POST /selection`, resolving a filter to a count and a signed token; `POST /preview`; `/batches` to queue and to list, `/batches/{id}` for live progress, `/batches/{id}/changes`, and `/batches/{id}/cancel` and `/undo`, the latter accepting `force`; `/audit`; `/categories`, `/categories/{id}` and `/categories/{id}/move`; `/views` and `/views/{id}`; `/export`; and `/settings`.
 
-`/products` accepts paging with `per_page` capped at 100, `search`, `orderby`, `order`, `mode`, `fields[]` and one argument per filter in §4.1. Every argument is generated from the registry with its own type, sanitise and validate callbacks, so a malformed or unknown parameter is rejected before any handler runs. The batch body carries a client-supplied `uuid`. Other limits: 20 operations per batch, 100,000 objects per selection, 100 terms per term operation.
+`/products` accepts paging with `per_page` capped at 100, `search`, `orderby`, `order`, `mode`, `fields[]` and one argument per filter in §4.1. Every argument is generated from the registry with its own type, sanitise and validate callbacks, so a malformed or unknown parameter is rejected before any handler runs. The batch body carries a client-supplied `uuid`, and with a filter selection token the preview's `preview_hash` and `preview_count` and, after the owner has seen a changed count, `confirm_changed` (§9.1). Other limits: 20 operations per batch, 100,000 objects per selection, 100 terms per term operation.
 
 ### 12.2 Reads
 
@@ -334,6 +335,7 @@ On 20,000 seeded products and 70,000 variations, PHP 8.3, MySQL 8, no persistent
 - **Concurrent edits.** Batches touching the same product are serialised by the queue's single concurrency. A product edited in the native editor is not locked; the journal records the value immediately before the plugin's write, which is what undo needs.
 - **Undo conflicts.** Reported, not overwritten, unless **Revert anyway** is chosen.
 - **Stale selection.** A view-based selection resolved at batch start may include products created after the preview; the difference from the previewed count is stated on the result.
+- **Abandoned inline edit.** An inline batch is written in the request that opened it; if that request dies, the batch stays running with no runner behind it. The next read of it after ten minutes without activity marks it failed, its unwritten item failed with a plain reason, and says why in its note.
 - **Scheduler stalled.** If the queue has not run for five minutes while a batch is pending, the screen says so and points at the scheduled actions tool rather than showing false progress; the batch applies nothing.
 - **Duplicate submission.** Batch creation is idempotent over the `uuid` for sixty seconds, so a double-click creates one batch.
 

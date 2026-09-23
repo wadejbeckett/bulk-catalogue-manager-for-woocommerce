@@ -80,11 +80,12 @@ final class BatchStore {
 				continue;
 			}
 			$this->batches[ $id ] = [ 'batch_id' => $id ] + $write[2] + [
-				'finished_gmt'  => null,
-				'undo_of'       => null,
-				'done_items'    => 0,
-				'changed_items' => 0,
-				'failed_items'  => 0,
+				'finished_gmt'    => null,
+				'undo_of'         => null,
+				'previewed_items' => null,
+				'done_items'      => 0,
+				'changed_items'   => 0,
+				'failed_items'    => 0,
 			];
 			$this->log[]          = 'batch:' . $id;
 		}

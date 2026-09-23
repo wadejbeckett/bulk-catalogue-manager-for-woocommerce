@@ -38,7 +38,8 @@
  * The hash (hash()) binds the answer to the selection (the token as sent,
  * or the id list), the normalised operation list and the settings that
  * change what a batch does or who may run it; changing any of them gives a
- * different hash, and apply (T31) will require it.
+ * different hash, and applying a filter selection requires it (T38,
+ * BatchFactory::create()'s apply check).
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later

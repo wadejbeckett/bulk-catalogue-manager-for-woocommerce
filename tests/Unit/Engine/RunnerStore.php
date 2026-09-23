@@ -57,22 +57,23 @@ final class RunnerStore {
 	public function __construct( int $batch_id, array $objects, array $operations, int $user_id = 3 ) {
 		global $wpdb;
 		$this->batch = [
-			'batch_id'      => $batch_id,
-			'uuid'          => '6f1c1a8e-8a3b-4c61-9f5e-2b7d1d2c3a40',
-			'user_id'       => $user_id,
-			'created_gmt'   => '2026-09-23 08:00:00',
-			'finished_gmt'  => null,
-			'status'        => 'queued',
-			'source'        => 'bulk',
-			'undo_of'       => null,
-			'operations'    => ValueCodec::encode( $operations ),
-			'selection'     => ValueCodec::encode( [ 'ids' => [] ] ),
-			'total_items'   => count( $objects ),
-			'done_items'    => 0,
-			'changed_items' => 0,
-			'failed_items'  => 0,
-			'chunk_size'    => 0,
-			'note'          => '',
+			'batch_id'        => $batch_id,
+			'uuid'            => '6f1c1a8e-8a3b-4c61-9f5e-2b7d1d2c3a40',
+			'user_id'         => $user_id,
+			'created_gmt'     => '2026-09-23 08:00:00',
+			'finished_gmt'    => null,
+			'status'          => 'queued',
+			'source'          => 'bulk',
+			'undo_of'         => null,
+			'operations'      => ValueCodec::encode( $operations ),
+			'selection'       => ValueCodec::encode( [ 'ids' => [] ] ),
+			'total_items'     => count( $objects ),
+			'previewed_items' => null,
+			'done_items'      => 0,
+			'changed_items'   => 0,
+			'failed_items'    => 0,
+			'chunk_size'      => 0,
+			'note'            => '',
 		];
 		$id          = 100;
 		foreach ( $objects as $object ) {
@@ -101,6 +102,7 @@ final class RunnerStore {
 			"/^UPDATE $items SET claim_token = NULL/" => fn( string $sql ): int => $this->release( $sql ),
 			"/^UPDATE $items SET state = 'failed', message = .* AND attempts >= /s" => fn( string $sql ): int => $this->exhaust( $sql ),
 			"/^UPDATE $items SET state = '\\w+', message = .* AND item_id IN /s" => fn( string $sql ): int => $this->mark( $sql ),
+			"/^UPDATE $items SET state = 'failed', message = .* AND state = 'pending'$/s" => fn( string $sql ): int => $this->fail_pending( $sql ),
 			"/^UPDATE $batches SET done_items = /"    => fn( string $sql ): int => $this->count_up( $sql ),
 			"/^SELECT COUNT\\(\\*\\) FROM $items WHERE batch_id = \\d+ AND state = '/" => fn( string $sql ): string => $this->count_state( $sql ),
 			"/^SELECT COUNT\\(\\*\\) FROM $items WHERE batch_id = \\d+ AND state <> 'pending'/" => fn(): string => $this->count_reported(),
@@ -283,6 +285,19 @@ final class RunnerStore {
 			}
 		}
 		return $marked;
+	}
+
+	private function fail_pending( string $sql ): int {
+		preg_match( "/message = '(.*)' WHERE batch_id = (\\d+) AND state = 'pending'$/s", $sql, $m );
+		$failed = 0;
+		foreach ( $this->items as $id => $item ) {
+			if ( (int) $m[2] === $item['batch_id'] && 'pending' === $item['state'] ) {
+				$this->items[ $id ]['state']   = 'failed';
+				$this->items[ $id ]['message'] = stripslashes( $m[1] );
+				++$failed;
+			}
+		}
+		return $failed;
 	}
 
 	private function count_up( string $sql ): int {

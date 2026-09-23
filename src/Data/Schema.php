@@ -18,6 +18,10 @@
  * items, the claim lease `claim_token` and `claimed_gmt` (one locking UPDATE
  * claims a chunk and stamps both; a lease older than the timeout is released)
  * and `message` (the plain reason an item failed or was skipped).
+ * Schema version 4 (T38, stale selection) adds `previewed_items` on batches:
+ * the count the owner saw in the preview of a filter selection, NULL for an
+ * id selection, so a batch whose materialised `total_items` differs can say
+ * so in its history row as well as in its report.
  * Bump Migrator::SCHEMA_VERSION whenever a body here changes.
  *
  * @package BulkCatalogueManager
@@ -88,6 +92,7 @@ undo_of bigint(20) unsigned NULL,
 operations longtext NOT NULL,
 selection longtext NOT NULL,
 total_items int(10) unsigned NOT NULL DEFAULT 0,
+previewed_items int(10) unsigned NULL,
 done_items int(10) unsigned NOT NULL DEFAULT 0,
 changed_items int(10) unsigned NOT NULL DEFAULT 0,
 failed_items int(10) unsigned NOT NULL DEFAULT 0,

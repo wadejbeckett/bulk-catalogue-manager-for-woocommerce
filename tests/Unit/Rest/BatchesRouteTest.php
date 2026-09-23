@@ -9,6 +9,14 @@
  * token, a bad request id, too many operations or an `undo` source is
  * refused with nothing written.
  *
+ * Stale selection (T38; §9.1, §12.6): a filter token needs the hash of a
+ * current preview (missing, altered or bound to another operation list is
+ * 409 `bcm_preview_stale`); when a product that matches is published between
+ * the preview and apply, apply is refused 409 `bcm_selection_changed` naming
+ * the previewed and the current count in plain words, with nothing written,
+ * and applies with `confirm_changed`, keeping the previewed count on the
+ * batch; an id token needs no hash.
+ *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
  */
@@ -17,12 +25,17 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Tests\Unit\Rest;
 
+use BulkCatalogueManager\Engine\BatchFactory;
+use BulkCatalogueManager\Engine\Preview;
+use BulkCatalogueManager\Operations\Registry as Actions;
 use BulkCatalogueManager\Plugin;
 use BulkCatalogueManager\Query\Criteria;
 use BulkCatalogueManager\Rest\Access;
 use BulkCatalogueManager\Rest\BatchesController;
 use BulkCatalogueManager\Selection\Selection;
 use BulkCatalogueManager\Selection\SelectionToken;
+use BulkCatalogueManager\Settings\Settings;
+use BulkCatalogueManager\Tests\Support\SqlEvaluator;
 use BulkCatalogueManager\Tests\Unit\Engine\BatchStore;
 use BulkCatalogueManager\Tests\Unit\Query\SeededCatalogue;
 use PHPUnit\Framework\TestCase;
@@ -35,6 +48,8 @@ final class BatchesRouteTest extends TestCase {
 
 	private BatchStore $store;
 
+	private SqlEvaluator $db;
+
 	protected function setUp(): void {
 		bcm_test_reset();
 		$GLOBALS['bcm_test']['logged_in']                  = true;
@@ -43,7 +58,8 @@ final class BatchesRouteTest extends TestCase {
 		$GLOBALS['bcm_test']['caps']['edit_products']      = true;
 		( new Plugin() )->boot();
 		do_action( 'rest_api_init' );
-		$this->store = new BatchStore( SeededCatalogue::seed() );
+		$this->db    = SeededCatalogue::seed();
+		$this->store = new BatchStore( $this->db );
 	}
 
 	/**
@@ -94,7 +110,7 @@ final class BatchesRouteTest extends TestCase {
 		$this->assertTrue( is_array( $route ), 'The route is registered.' );
 		$this->assertSame( [ Access::class, 'can_write' ], $route[0]['permission_callback'] );
 		$this->assertSame( 'POST', $route[0]['methods'] );
-		$this->assertSame( [ 'uuid', 'operations', 'ids', 'token', 'source' ], array_keys( $route[0]['args'] ) );
+		$this->assertSame( [ 'uuid', 'operations', 'ids', 'token', 'source', 'preview_hash', 'preview_count', 'confirm_changed' ], array_keys( $route[0]['args'] ) );
 		$this->assertTrue( $route[0]['args']['uuid']['required'] );
 		$this->assertSame( BatchesController::SOURCES, $route[0]['args']['source']['enum'] );
 	}
@@ -129,10 +145,113 @@ final class BatchesRouteTest extends TestCase {
 		$this->assertCount( 2, $this->store->items );
 	}
 
+	/**
+	 * The hash a preview of this token and operation list answers.
+	 *
+	 * @param string $token      The selection token.
+	 * @param array  $operations The operation list as posted.
+	 */
+	private static function preview_hash( string $token, array $operations ): string {
+		$list = Actions::instance()->validate_list( $operations );
+		return Preview::hash( $token, is_array( $list ) ? $list : [], Settings::load() );
+	}
+
+	/**
+	 * A body applying a filter token with its preview's hash.
+	 *
+	 * @param string $token The selection token.
+	 * @return array<string, mixed>
+	 */
+	private static function filter_body( string $token ): array {
+		$body = array_diff_key( self::body(), [ 'ids' => 0 ] );
+		return [
+			'token'        => $token,
+			'preview_hash' => self::preview_hash( $token, $body['operations'] ),
+		] + $body;
+	}
+
+	/**
+	 * Publish a product the "Shirt" search matches, after the preview.
+	 */
+	private function publish_a_shirt(): void {
+		$this->db->tables['wp_posts'][] = [
+			'ID'                => 109,
+			'post_type'         => 'product',
+			'post_title'        => 'Linen Shirt',
+			'post_status'       => 'publish',
+			'post_parent'       => 0,
+			'menu_order'        => 0,
+			'post_date_gmt'     => '2026-09-23 08:00:00',
+			'post_modified_gmt' => '2026-09-23 08:00:00',
+		];
+	}
+
+	public function test_a_filter_whose_count_moved_since_the_preview_is_refused_with_both_numbers(): void {
+		$token = SelectionToken::mint( Selection::of_filter( Criteria::from_array( [ 'search' => 'Shirt' ] ), 2 ), 12 );
+		$this->publish_a_shirt();
+
+		$response = self::post( [ 'preview_count' => 2 ] + self::filter_body( $token ) );
+		$this->assert_refused( $response, BatchFactory::CHANGED, 409 );
+		$this->assertSame( 2, $response->get_error_data()['previewed'] );
+		$this->assertSame( 3, $response->get_error_data()['current'] );
+		$this->assertStringContainsString( 'it showed 2, and 3 match now', $response->get_error_message() );
+		$this->assertStringNotContainsString( 'bcm_', $response->get_error_message() );
+
+		// Without preview_count the token's own count is the one the owner saw.
+		$this->assert_refused( self::post( self::filter_body( $token ) ), BatchFactory::CHANGED, 409 );
+		// A preview that already showed 3 applies as it is.
+		$response = self::post( [ 'preview_count' => 3 ] + self::filter_body( $token ) );
+		$this->assertSame( 201, $response->get_status() );
+		$this->assertSame( 3, $this->store->batches[1]['previewed_items'] );
+	}
+
+	public function test_confirming_the_changed_count_applies_and_keeps_the_previewed_count(): void {
+		$token = SelectionToken::mint( Selection::of_filter( Criteria::from_array( [ 'search' => 'Shirt' ] ), 2 ), 12 );
+		$this->publish_a_shirt();
+
+		$response = self::post(
+			[
+				'preview_count'   => 2,
+				'confirm_changed' => true,
+			] + self::filter_body( $token )
+		);
+		$this->assertInstanceOf( \WP_REST_Response::class, $response );
+		$this->assertSame( 201, $response->get_status() );
+		$this->assertSame( 3, $response->get_data()['total_items'] );
+		$this->assertSame( [ 101, 102, 109 ], $this->store->object_ids( 1 ) );
+		$this->assertSame( 2, $this->store->batches[1]['previewed_items'], 'The previewed count is stored on the batch.' );
+		$this->assertSame( 3, $this->store->batches[1]['total_items'] );
+	}
+
+	public function test_a_filter_apply_needs_the_hash_of_a_current_preview(): void {
+		$token = SelectionToken::mint( Selection::of_filter( Criteria::from_array( [ 'search' => 'Shirt' ] ), 2 ), 12 );
+		$body  = self::filter_body( $token );
+
+		$response = self::post( array_diff_key( $body, [ 'preview_hash' => 0 ] ) );
+		$this->assert_refused( $response, BatchFactory::STALE_PREVIEW, 409 );
+		$this->assertStringContainsString( 'Preview the change again', $response->get_error_message() );
+		$this->assert_refused( self::post( [ 'preview_hash' => str_repeat( '0', 64 ) ] + $body ), BatchFactory::STALE_PREVIEW, 409 );
+
+		// A preview of another change, or of another selection, does not match.
+		$other                     = $body['operations'];
+		$other[0]['args']['value'] = 'private';
+		$this->assert_refused( self::post( [ 'preview_hash' => self::preview_hash( $token, $other ) ] + $body ), BatchFactory::STALE_PREVIEW, 409 );
+		$again = SelectionToken::mint( Selection::of_filter( Criteria::from_array( [ 'search' => 'Shirt' ] ), 2 ), 12, time() + 1 );
+		$this->assertNotSame( $token, $again );
+		$this->assert_refused( self::post( [ 'preview_hash' => self::preview_hash( $again, $body['operations'] ) ] + $body ), BatchFactory::STALE_PREVIEW, 409 );
+		$this->assertSame( 201, self::post( $body )->get_status(), 'The current preview\'s hash applies.' );
+	}
+
+	public function test_an_id_token_needs_no_preview_hash(): void {
+		$token    = SelectionToken::mint( Selection::of_ids( [ 104, 201 ] ), 12 );
+		$response = self::post( [ 'token' => $token ] + array_diff_key( self::body(), [ 'ids' => 0 ] ) );
+		$this->assertSame( 201, $response->get_status() );
+		$this->assertNull( $this->store->batches[1]['previewed_items'] ?? null );
+	}
+
 	public function test_a_selection_token_is_materialised_through_its_filter(): void {
 		$token    = SelectionToken::mint( Selection::of_filter( Criteria::from_array( [ 'mode' => Criteria::MODE_VARIATIONS ] ), 2 ), 12 );
-		$body     = self::body();
-		$response = self::post( [ 'token' => $token ] + array_diff_key( $body, [ 'ids' => 0 ] ) + [ 'source' => 'inline' ] );
+		$response = self::post( self::filter_body( $token ) + [ 'source' => 'inline' ] );
 		$this->assertSame( 201, $response->get_status() );
 		$this->assertSame( 2, $response->get_data()['total_items'] );
 		$this->assertSame( SeededCatalogue::VARIATIONS, $this->store->object_ids( 1 ) );

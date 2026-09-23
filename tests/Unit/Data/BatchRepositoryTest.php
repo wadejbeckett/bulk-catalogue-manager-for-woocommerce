@@ -447,7 +447,7 @@ final class BatchRepositoryTest extends TestCase {
 		$this->assertSame( 41, $repo->history_count( $filters ) );
 		$this->assertSame( [], $repo->history( $filters, 3, 20 ) );
 		$list = end( self::db()->queries );
-		$this->assertSame( "SELECT batch_id, uuid, user_id, created_gmt, finished_gmt, status, source, undo_of, operations, total_items, done_items, changed_items, failed_items, chunk_size, note FROM `wp_bcm_batches` WHERE batch_id > 0 AND status = 'partial' AND user_id = 3 AND created_gmt >= '2026-09-01 00:00:00' AND created_gmt < '2026-10-01 00:00:00' ORDER BY batch_id DESC LIMIT 20 OFFSET 40", $list );
+		$this->assertSame( "SELECT batch_id, uuid, user_id, created_gmt, finished_gmt, status, source, undo_of, operations, total_items, previewed_items, done_items, changed_items, failed_items, chunk_size, note FROM `wp_bcm_batches` WHERE batch_id > 0 AND status = 'partial' AND user_id = 3 AND created_gmt >= '2026-09-01 00:00:00' AND created_gmt < '2026-10-01 00:00:00' ORDER BY batch_id DESC LIMIT 20 OFFSET 40", $list );
 		$this->assertStringNotContainsString( 'selection', $list, 'A list never reads the selection snapshot.' );
 		$repo->history( [], 1, 500 );
 		$this->assertStringEndsWith( 'WHERE batch_id > 0 ORDER BY batch_id DESC LIMIT 100 OFFSET 0', end( self::db()->queries ) );

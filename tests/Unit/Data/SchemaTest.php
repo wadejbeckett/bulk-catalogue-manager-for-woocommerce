@@ -25,22 +25,23 @@ final class SchemaTest extends TestCase {
 	private const SPEC = [
 		'bcm_batches'     => [
 			'columns' => [
-				'batch_id'      => [ 'bigint unsigned', false ],
-				'uuid'          => [ 'char(36)', false ],
-				'user_id'       => [ 'bigint unsigned', false ],
-				'created_gmt'   => [ 'datetime', false ],
-				'finished_gmt'  => [ 'datetime', true ],
-				'status'        => [ 'varchar(20)', false ],
-				'source'        => [ 'varchar(20)', false ],
-				'undo_of'       => [ 'bigint unsigned', true ],
-				'operations'    => [ 'longtext', false ],
-				'selection'     => [ 'longtext', false ],
-				'total_items'   => [ 'int unsigned', false ],
-				'done_items'    => [ 'int unsigned', false ],
-				'changed_items' => [ 'int unsigned', false ],
-				'failed_items'  => [ 'int unsigned', false ],
-				'chunk_size'    => [ 'smallint unsigned', false ],
-				'note'          => [ 'varchar(255)', false ],
+				'batch_id'        => [ 'bigint unsigned', false ],
+				'uuid'            => [ 'char(36)', false ],
+				'user_id'         => [ 'bigint unsigned', false ],
+				'created_gmt'     => [ 'datetime', false ],
+				'finished_gmt'    => [ 'datetime', true ],
+				'status'          => [ 'varchar(20)', false ],
+				'source'          => [ 'varchar(20)', false ],
+				'undo_of'         => [ 'bigint unsigned', true ],
+				'operations'      => [ 'longtext', false ],
+				'selection'       => [ 'longtext', false ],
+				'total_items'     => [ 'int unsigned', false ],
+				'previewed_items' => [ 'int unsigned', true ],
+				'done_items'      => [ 'int unsigned', false ],
+				'changed_items'   => [ 'int unsigned', false ],
+				'failed_items'    => [ 'int unsigned', false ],
+				'chunk_size'      => [ 'smallint unsigned', false ],
+				'note'            => [ 'varchar(255)', false ],
 			],
 			'indexes' => [
 				'PRIMARY'     => 'batch_id',
@@ -162,7 +163,7 @@ final class SchemaTest extends TestCase {
 			$this->assertSame( "CREATE TABLE wp_7_{$name} (\n" . Schema::TABLES[ $name ] . "\n) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci;", $statements[ $i ] );
 		}
 		$this->assertSame( [ 'wp_7_bcm_batches', 'wp_7_bcm_batch_items', 'wp_7_bcm_changes' ], array_keys( $GLOBALS['wpdb']->tables ) );
-		$this->assertSame( '3', Migrator::SCHEMA_VERSION, 'T34\'s claim lease, item message, chunk size and note bumped the schema version, so a site migrated at 2 gains the columns.' );
+		$this->assertSame( '4', Migrator::SCHEMA_VERSION, 'T38\'s previewed count bumped the schema version, so a site migrated at 3 gains the column.' );
 	}
 
 	public function test_table_names_come_only_from_the_registry_with_the_site_prefix(): void {

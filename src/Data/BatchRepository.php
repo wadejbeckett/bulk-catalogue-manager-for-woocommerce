@@ -80,11 +80,12 @@ final class BatchRepository {
 	 * @param array    $selection   Snapshot of the filter or id list, stored as JSON.
 	 * @param int      $total_items Number of items to materialise.
 	 * @param int|null $undo_of     The batch this one undoes, for source `undo`.
+	 * @param int|null $previewed   The count the preview of a filter selection showed (T38), or null.
 	 * @return int The new batch_id.
 	 * @throws \InvalidArgumentException On an invalid argument.
 	 * @throws \RuntimeException When the row is not written.
 	 */
-	public function create( string $uuid, int $user_id, string $source, array $operations, array $selection, int $total_items, ?int $undo_of = null ): int {
+	public function create( string $uuid, int $user_id, string $source, array $operations, array $selection, int $total_items, ?int $undo_of = null, ?int $previewed = null ): int {
 		global $wpdb;
 		if ( 1 !== preg_match( '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $uuid ) ) {
 			throw new \InvalidArgumentException( 'The request id must be a UUID.' );
@@ -113,6 +114,11 @@ final class BatchRepository {
 			$data['undo_of'] = $undo_of;
 			$format[]        = '%d';
 		}
+		if ( null !== $previewed ) {
+			self::assert_ids( [ $previewed ], 'previewed count', true );
+			$data['previewed_items'] = $previewed;
+			$format[]                = '%d';
+		}
 		// insert() prepares the statement from $format.
 		if ( false === $wpdb->insert( $this->registry->table( Schema::BATCHES ), $data, $format ) ) {
 			throw new \RuntimeException( 'The batch could not be recorded.' );
@@ -124,7 +130,7 @@ final class BatchRepository {
 	 * Read a batch back, typed, with operations and selection decoded.
 	 *
 	 * @param int $batch_id Batch.
-	 * @return array{batch_id: int, uuid: string, user_id: int, created_gmt: string, finished_gmt: ?string, status: string, source: string, undo_of: ?int, operations: array, selection: array, total_items: int, done_items: int, changed_items: int, failed_items: int, chunk_size: int, note: string}|null
+	 * @return array{batch_id: int, uuid: string, user_id: int, created_gmt: string, finished_gmt: ?string, status: string, source: string, undo_of: ?int, operations: array, selection: array, total_items: int, previewed_items: ?int, done_items: int, changed_items: int, failed_items: int, chunk_size: int, note: string}|null
 	 */
 	public function find( int $batch_id ): ?array {
 		global $wpdb;
@@ -450,6 +456,38 @@ final class BatchRepository {
 	}
 
 	/**
+	 * Replace a batch's note, the plain sentence its report and history row
+	 * show (T38: why an inline batch was given up on).
+	 *
+	 * @param int    $batch_id Batch.
+	 * @param string $note     The plain sentence, cut to MESSAGE_LENGTH.
+	 * @return bool Whether the batch row was updated.
+	 */
+	public function record_note( int $batch_id, string $note ): bool {
+		global $wpdb;
+		// update() prepares the statement from the formats.
+		return 1 === $wpdb->update( $this->registry->table( Schema::BATCHES ), [ 'note' => self::cut( $note ) ], [ 'batch_id' => $batch_id ], [ '%s' ], [ '%d' ] );
+	}
+
+	/**
+	 * Mark failed, with a plain reason, every item of a batch still pending,
+	 * claimed or not (T38: an inline batch whose request died mid-write).
+	 *
+	 * @param int    $batch_id Batch.
+	 * @param string $message  The plain reason stored with each item.
+	 * @return int Items marked.
+	 * @throws \RuntimeException When the statement fails.
+	 */
+	public function fail_pending( int $batch_id, string $message ): int {
+		global $wpdb;
+		$result = $wpdb->query( $wpdb->prepare( "UPDATE %i SET state = 'failed', message = %s WHERE batch_id = %d AND state = 'pending'", $this->registry->table( Schema::ITEMS ), self::cut( $message ), $batch_id ) );
+		if ( false === $result ) {
+			throw new \RuntimeException( 'The batch items could not be updated.' );
+		}
+		return (int) $result;
+	}
+
+	/**
 	 * Record the chunk size the runner uses for the rest of a batch, and why.
 	 *
 	 * @param int         $batch_id Batch.
@@ -571,7 +609,7 @@ final class BatchRepository {
 		$args[]           = ( max( 1, $page ) - 1 ) * $per_page;
 		// Every column but the selection snapshot, which can hold 100,000 ids and is not shown in a list.
 		// $where holds only fixed column conditions with placeholders; every value is a prepared argument.
-		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT batch_id, uuid, user_id, created_gmt, finished_gmt, status, source, undo_of, operations, total_items, done_items, changed_items, failed_items, chunk_size, note FROM %i WHERE {$where} ORDER BY batch_id DESC LIMIT %d OFFSET %d", $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
+		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT batch_id, uuid, user_id, created_gmt, finished_gmt, status, source, undo_of, operations, total_items, previewed_items, done_items, changed_items, failed_items, chunk_size, note FROM %i WHERE {$where} ORDER BY batch_id DESC LIMIT %d OFFSET %d", $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
 		return array_map( [ self::class, 'typed' ], is_array( $rows ) ? $rows : [] );
 	}
 
@@ -631,26 +669,27 @@ final class BatchRepository {
 	 * A batch row typed, operations and selection decoded (an absent selection as empty).
 	 *
 	 * @param array $row Row from the database.
-	 * @return array{batch_id: int, uuid: string, user_id: int, created_gmt: string, finished_gmt: ?string, status: string, source: string, undo_of: ?int, operations: array, selection: array, total_items: int, done_items: int, changed_items: int, failed_items: int, chunk_size: int, note: string}
+	 * @return array{batch_id: int, uuid: string, user_id: int, created_gmt: string, finished_gmt: ?string, status: string, source: string, undo_of: ?int, operations: array, selection: array, total_items: int, previewed_items: ?int, done_items: int, changed_items: int, failed_items: int, chunk_size: int, note: string}
 	 */
 	private static function typed( array $row ): array {
 		return [
-			'batch_id'      => (int) $row['batch_id'],
-			'uuid'          => (string) $row['uuid'],
-			'user_id'       => (int) $row['user_id'],
-			'created_gmt'   => (string) $row['created_gmt'],
-			'finished_gmt'  => null === ( $row['finished_gmt'] ?? null ) ? null : (string) $row['finished_gmt'],
-			'status'        => (string) $row['status'],
-			'source'        => (string) $row['source'],
-			'undo_of'       => null === ( $row['undo_of'] ?? null ) ? null : (int) $row['undo_of'],
-			'operations'    => (array) ValueCodec::decode( (string) $row['operations'] ),
-			'selection'     => isset( $row['selection'] ) ? (array) ValueCodec::decode( (string) $row['selection'] ) : [],
-			'total_items'   => (int) $row['total_items'],
-			'done_items'    => (int) $row['done_items'],
-			'changed_items' => (int) $row['changed_items'],
-			'failed_items'  => (int) $row['failed_items'],
-			'chunk_size'    => (int) ( $row['chunk_size'] ?? 0 ),
-			'note'          => (string) ( $row['note'] ?? '' ),
+			'batch_id'        => (int) $row['batch_id'],
+			'uuid'            => (string) $row['uuid'],
+			'user_id'         => (int) $row['user_id'],
+			'created_gmt'     => (string) $row['created_gmt'],
+			'finished_gmt'    => null === ( $row['finished_gmt'] ?? null ) ? null : (string) $row['finished_gmt'],
+			'status'          => (string) $row['status'],
+			'source'          => (string) $row['source'],
+			'undo_of'         => null === ( $row['undo_of'] ?? null ) ? null : (int) $row['undo_of'],
+			'operations'      => (array) ValueCodec::decode( (string) $row['operations'] ),
+			'selection'       => isset( $row['selection'] ) ? (array) ValueCodec::decode( (string) $row['selection'] ) : [],
+			'total_items'     => (int) $row['total_items'],
+			'previewed_items' => null === ( $row['previewed_items'] ?? null ) ? null : (int) $row['previewed_items'],
+			'done_items'      => (int) $row['done_items'],
+			'changed_items'   => (int) $row['changed_items'],
+			'failed_items'    => (int) $row['failed_items'],
+			'chunk_size'      => (int) ( $row['chunk_size'] ?? 0 ),
+			'note'            => (string) ( $row['note'] ?? '' ),
 		];
 	}
 

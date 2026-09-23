@@ -1,6 +1,8 @@
 <?php
 /**
- * The three tables match SPEC §9.2 column for column and index for index,
+ * The three tables match SPEC §9.2 column for column and index for index
+ * (plus T34's chunk_size and note on batches and claim_token, claimed_gmt
+ * and message on items),
  * are in the form dbDelta() requires, and are in the registry.
  *
  * @package BulkCatalogueManager
@@ -37,6 +39,8 @@ final class SchemaTest extends TestCase {
 				'done_items'    => [ 'int unsigned', false ],
 				'changed_items' => [ 'int unsigned', false ],
 				'failed_items'  => [ 'int unsigned', false ],
+				'chunk_size'    => [ 'smallint unsigned', false ],
+				'note'          => [ 'varchar(255)', false ],
 			],
 			'indexes' => [
 				'PRIMARY'     => 'batch_id',
@@ -54,6 +58,9 @@ final class SchemaTest extends TestCase {
 				'object_type' => [ 'varchar(16)', false ],
 				'state'       => [ 'varchar(12)', false ],
 				'attempts'    => [ 'tinyint unsigned', false ],
+				'claim_token' => [ 'char(32)', true ],
+				'claimed_gmt' => [ 'datetime', true ],
+				'message'     => [ 'varchar(255)', false ],
 			],
 			'indexes' => [
 				'PRIMARY'     => 'item_id',
@@ -107,7 +114,7 @@ final class SchemaTest extends TestCase {
 			} elseif ( 1 === preg_match( '/^KEY ([a-z_]+) \(([a-z_,]+)\),?$/', $line, $m ) ) {
 				$parsed['indexes'][ $m[1] ] = $m[2];
 			} elseif ( 1 === preg_match( '/^([a-z_]+) ([a-z]+(?:\(\d+\))?(?: unsigned)?) (NOT NULL|NULL)( DEFAULT \S+)?( AUTO_INCREMENT)?,$/', $line, $m ) ) {
-				$type                       = preg_replace( '/^(tinyint|int|bigint)\(\d+\)/', '$1', $m[2] );
+				$type                       = preg_replace( '/^(tinyint|smallint|int|bigint)\(\d+\)/', '$1', $m[2] );
 				$parsed['columns'][ $m[1] ] = [ $type, 'NULL' === $m[3] ];
 				$parsed['auto']           ??= isset( $m[5] ) && '' !== $m[5] ? $m[1] : null;
 			} else {
@@ -155,7 +162,7 @@ final class SchemaTest extends TestCase {
 			$this->assertSame( "CREATE TABLE wp_7_{$name} (\n" . Schema::TABLES[ $name ] . "\n) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci;", $statements[ $i ] );
 		}
 		$this->assertSame( [ 'wp_7_bcm_batches', 'wp_7_bcm_batch_items', 'wp_7_bcm_changes' ], array_keys( $GLOBALS['wpdb']->tables ) );
-		$this->assertSame( '2', Migrator::SCHEMA_VERSION, 'Adding the tables bumped the schema version, so a site migrated at 1 creates them.' );
+		$this->assertSame( '3', Migrator::SCHEMA_VERSION, 'T34\'s claim lease, item message, chunk size and note bumped the schema version, so a site migrated at 2 gains the columns.' );
 	}
 
 	public function test_table_names_come_only_from_the_registry_with_the_site_prefix(): void {

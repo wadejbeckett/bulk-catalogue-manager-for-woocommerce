@@ -39,6 +39,17 @@ final class BatchRepository {
 	public const MAX_ATTEMPTS = 3;
 
 	/**
+	 * Seconds after which a claim on a still-pending item is stale and the
+	 * item may be claimed again (§12.4: a chunk that died mid-way).
+	 */
+	public const LEASE_SECONDS = 300;
+
+	/**
+	 * Longest stored item message or batch note (the column width).
+	 */
+	public const MESSAGE_LENGTH = 255;
+
+	/**
 	 * Where table names come from.
 	 *
 	 * @var Registry
@@ -108,7 +119,7 @@ final class BatchRepository {
 	 * Read a batch back, typed, with operations and selection decoded.
 	 *
 	 * @param int $batch_id Batch.
-	 * @return array{batch_id: int, uuid: string, user_id: int, created_gmt: string, finished_gmt: ?string, status: string, source: string, undo_of: ?int, operations: array, selection: array, total_items: int, done_items: int, changed_items: int, failed_items: int}|null
+	 * @return array{batch_id: int, uuid: string, user_id: int, created_gmt: string, finished_gmt: ?string, status: string, source: string, undo_of: ?int, operations: array, selection: array, total_items: int, done_items: int, changed_items: int, failed_items: int, chunk_size: int, note: string}|null
 	 */
 	public function find( int $batch_id ): ?array {
 		global $wpdb;
@@ -131,6 +142,8 @@ final class BatchRepository {
 			'done_items'    => (int) $row['done_items'],
 			'changed_items' => (int) $row['changed_items'],
 			'failed_items'  => (int) $row['failed_items'],
+			'chunk_size'    => (int) ( $row['chunk_size'] ?? 0 ),
+			'note'          => (string) ( $row['note'] ?? '' ),
 		];
 	}
 
@@ -200,6 +213,8 @@ final class BatchRepository {
 	 * marked, so a claim abandoned by a chunk that died is simply claimed
 	 * again by the next run, up to MAX_ATTEMPTS times; see fail_exhausted().
 	 * Action Scheduler runs one chunk at a time, so two claims do not race.
+	 * The chunk runner (T34) uses claim_chunk() instead: one locking UPDATE
+	 * with a lease, so a live claim is never taken twice.
 	 *
 	 * @param int $batch_id Batch.
 	 * @param int $limit    Most items to claim, 1 to MAX_CLAIM.
@@ -242,21 +257,26 @@ final class BatchRepository {
 	/**
 	 * Mark items of a batch with a state.
 	 *
-	 * @param int   $batch_id Batch.
-	 * @param int[] $item_ids Items.
-	 * @param string $state   One of Schema::ITEM_STATES.
+	 * @param int         $batch_id Batch.
+	 * @param int[]       $item_ids Items.
+	 * @param string      $state    One of Schema::ITEM_STATES.
+	 * @param string|null $message  The plain reason stored with the items (cut to MESSAGE_LENGTH), or null to leave it.
 	 * @return int Rows updated.
 	 * @throws \InvalidArgumentException On an invalid id or state.
 	 * @throws \RuntimeException When the statement fails.
 	 */
-	public function mark_items( int $batch_id, array $item_ids, string $state ): int {
+	public function mark_items( int $batch_id, array $item_ids, string $state, ?string $message = null ): int {
 		global $wpdb;
 		self::assert_in( $state, Schema::ITEM_STATES, 'item state' );
 		if ( [] === $item_ids ) {
 			return 0;
 		}
 		self::assert_ids( $item_ids, 'item id' );
-		$result = $wpdb->query( $wpdb->prepare( 'UPDATE %i SET state = %s WHERE batch_id = %d AND item_id IN (' . implode( ', ', array_fill( 0, count( $item_ids ), '%d' ) ) . ')', array_merge( [ $this->registry->table( Schema::ITEMS ), $state, $batch_id ], array_values( $item_ids ) ) ) );
+		if ( null === $message ) {
+			$result = $wpdb->query( $wpdb->prepare( 'UPDATE %i SET state = %s WHERE batch_id = %d AND item_id IN (' . implode( ', ', array_fill( 0, count( $item_ids ), '%d' ) ) . ')', array_merge( [ $this->registry->table( Schema::ITEMS ), $state, $batch_id ], array_values( $item_ids ) ) ) );
+		} else {
+			$result = $wpdb->query( $wpdb->prepare( 'UPDATE %i SET state = %s, message = %s WHERE batch_id = %d AND item_id IN (' . implode( ', ', array_fill( 0, count( $item_ids ), '%d' ) ) . ')', array_merge( [ $this->registry->table( Schema::ITEMS ), $state, self::cut( $message ), $batch_id ], array_values( $item_ids ) ) ) );
+		}
 		if ( false === $result ) {
 			throw new \RuntimeException( 'The batch items could not be updated.' );
 		}
@@ -265,14 +285,24 @@ final class BatchRepository {
 
 	/**
 	 * Mark failed every pending item of a batch that has been claimed MAX_ATTEMPTS times.
+	 * With `$stale_before`, only items whose last claim is older than that
+	 * time (or that hold none), so an item a live chunk is still working on
+	 * is left alone; `$message` is then stored as the plain reason.
 	 *
-	 * @param int $batch_id Batch.
+	 * @param int         $batch_id     Batch.
+	 * @param string|null $stale_before GMT `Y-m-d H:i:s`: claims before it are stale; null for any item.
+	 * @param string      $message      The plain reason stored with each item given up on.
 	 * @return int Items given up on.
 	 * @throws \RuntimeException When the statement fails.
 	 */
-	public function fail_exhausted( int $batch_id ): int {
+	public function fail_exhausted( int $batch_id, ?string $stale_before = null, string $message = '' ): int {
 		global $wpdb;
-		$result = $wpdb->query( $wpdb->prepare( "UPDATE %i SET state = 'failed' WHERE batch_id = %d AND state = 'pending' AND attempts >= %d", $this->registry->table( Schema::ITEMS ), $batch_id, self::MAX_ATTEMPTS ) );
+		$table = $this->registry->table( Schema::ITEMS );
+		if ( null === $stale_before ) {
+			$result = $wpdb->query( $wpdb->prepare( "UPDATE %i SET state = 'failed' WHERE batch_id = %d AND state = 'pending' AND attempts >= %d", $table, $batch_id, self::MAX_ATTEMPTS ) );
+		} else {
+			$result = $wpdb->query( $wpdb->prepare( "UPDATE %i SET state = 'failed', message = %s WHERE batch_id = %d AND state = 'pending' AND attempts >= %d AND (claimed_gmt IS NULL OR claimed_gmt < %s)", $table, self::cut( $message ), $batch_id, self::MAX_ATTEMPTS, $stale_before ) );
+		}
 		if ( false === $result ) {
 			throw new \RuntimeException( 'The batch items could not be updated.' );
 		}
@@ -314,6 +344,139 @@ final class BatchRepository {
 	}
 
 	/**
+	 * Claim the next chunk of a batch's pending items with ONE locking UPDATE
+	 * (§12.4, T34): up to `$limit` items, oldest first, that are pending,
+	 * under MAX_ATTEMPTS and either unclaimed or holding a claim older than
+	 * `$stale_before` are stamped with `$token` and `$now_gmt` and have their
+	 * attempts incremented, in the one statement, so the row locks InnoDB
+	 * takes for the UPDATE are the claim. The claimed rows are then read back
+	 * by their token. A stale claim is thereby released and retried by the
+	 * next claim; an item under a live claim is not touched.
+	 *
+	 * @param int    $batch_id     Batch.
+	 * @param int    $limit        Most items to claim, 1 to MAX_CLAIM.
+	 * @param string $token        32 lower-case hex characters, unique to this claim.
+	 * @param string $now_gmt      GMT `Y-m-d H:i:s` stamped on the claim.
+	 * @param string $stale_before GMT `Y-m-d H:i:s`: an earlier claim is stale.
+	 * @return array<int, array{item_id: int, object_id: int, object_type: string, attempts: int}> Claimed items, attempts after the claim.
+	 * @throws \InvalidArgumentException On a malformed token.
+	 * @throws \RuntimeException When the claim cannot be written.
+	 */
+	public function claim_chunk( int $batch_id, int $limit, string $token, string $now_gmt, string $stale_before ): array {
+		global $wpdb;
+		if ( 1 !== preg_match( '/^[0-9a-f]{32}$/', $token ) ) {
+			throw new \InvalidArgumentException( 'A claim token is 32 lower-case hex characters.' );
+		}
+		$limit   = max( 1, min( self::MAX_CLAIM, $limit ) );
+		$table   = $this->registry->table( Schema::ITEMS );
+		$claimed = $wpdb->query( $wpdb->prepare( "UPDATE %i SET claim_token = %s, claimed_gmt = %s, attempts = attempts + 1 WHERE batch_id = %d AND state = 'pending' AND attempts < %d AND (claimed_gmt IS NULL OR claimed_gmt < %s) ORDER BY item_id ASC LIMIT %d", $table, $token, $now_gmt, $batch_id, self::MAX_ATTEMPTS, $stale_before, $limit ) );
+		if ( false === $claimed ) {
+			throw new \RuntimeException( 'The batch items could not be claimed.' );
+		}
+		if ( 0 === (int) $claimed ) {
+			return [];
+		}
+		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT item_id, object_id, object_type, attempts FROM %i WHERE batch_id = %d AND state = 'pending' AND claim_token = %s ORDER BY item_id ASC LIMIT %d", $table, $batch_id, $token, $limit ), ARRAY_A );
+		return array_map(
+			static fn( array $row ): array => [
+				'item_id'     => (int) $row['item_id'],
+				'object_id'   => (int) $row['object_id'],
+				'object_type' => (string) $row['object_type'],
+				'attempts'    => (int) $row['attempts'],
+			],
+			is_array( $rows ) ? $rows : []
+		);
+	}
+
+	/**
+	 * Release a claim's still-pending items at once, keeping their attempts,
+	 * so the next run may claim them without waiting for the lease to go stale.
+	 *
+	 * @param int    $batch_id Batch.
+	 * @param string $token    The claim's token.
+	 * @return int Items released.
+	 * @throws \RuntimeException When the statement fails.
+	 */
+	public function release_claim( int $batch_id, string $token ): int {
+		global $wpdb;
+		$result = $wpdb->query( $wpdb->prepare( "UPDATE %i SET claim_token = NULL, claimed_gmt = NULL WHERE batch_id = %d AND state = 'pending' AND claim_token = %s", $this->registry->table( Schema::ITEMS ), $batch_id, $token ) );
+		if ( false === $result ) {
+			throw new \RuntimeException( 'The batch items could not be released.' );
+		}
+		return (int) $result;
+	}
+
+	/**
+	 * Number of a batch's finished items with something to report: failed,
+	 * skipped, or done with a message (a step refused on an object whose other
+	 * changes were applied). Zero means the batch is complete (§12.6).
+	 *
+	 * @param int $batch_id Batch.
+	 */
+	public function count_reported( int $batch_id ): int {
+		global $wpdb;
+		return (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM %i WHERE batch_id = %d AND state <> 'pending' AND (state <> 'done' OR message <> '')", $this->registry->table( Schema::ITEMS ), $batch_id ) );
+	}
+
+	/**
+	 * Move a batch from one status to another only if it is still in the
+	 * first, so a status set meanwhile (a cancellation, T35) is never
+	 * overwritten. A final status also stamps finished_gmt, as set_status() does.
+	 *
+	 * @param int    $batch_id Batch.
+	 * @param string $from     The status the batch must be in.
+	 * @param string $to       The new status.
+	 * @return bool Whether the batch moved.
+	 * @throws \InvalidArgumentException On an unknown status.
+	 */
+	public function transition( int $batch_id, string $from, string $to ): bool {
+		global $wpdb;
+		self::assert_in( $from, Schema::BATCH_STATUSES, 'status' );
+		self::assert_in( $to, Schema::BATCH_STATUSES, 'status' );
+		$data   = [ 'status' => $to ];
+		$format = [ '%s' ];
+		if ( ! in_array( $to, [ 'queued', 'running', 'undoing' ], true ) ) {
+			$data['finished_gmt'] = gmdate( 'Y-m-d H:i:s' );
+			$format[]             = '%s';
+		}
+		// update() prepares the statement from the formats.
+		return 1 === $wpdb->update(
+			$this->registry->table( Schema::BATCHES ),
+			$data,
+			[
+				'batch_id' => $batch_id,
+				'status'   => $from,
+			],
+			$format,
+			[ '%d', '%s' ]
+		);
+	}
+
+	/**
+	 * Record the chunk size the runner uses for the rest of a batch, and why.
+	 *
+	 * @param int         $batch_id Batch.
+	 * @param int         $size     Items per chunk, 1 to MAX_CLAIM.
+	 * @param string|null $note     The plain reason (cut to MESSAGE_LENGTH), or null to leave the note.
+	 * @return bool Whether the batch row was updated.
+	 * @throws \InvalidArgumentException On a size out of range.
+	 */
+	public function record_chunk_size( int $batch_id, int $size, ?string $note = null ): bool {
+		global $wpdb;
+		if ( $size < 1 || $size > self::MAX_CLAIM ) {
+			throw new \InvalidArgumentException( 'A chunk size is 1 to 100 items.' );
+		}
+		$data   = [ 'chunk_size' => $size ];
+		$format = [ '%d' ];
+		if ( null !== $note ) {
+			$data['note'] = self::cut( $note );
+			$format[]     = '%s';
+		}
+		// update() prepares the statement from the formats.
+		return 1 === $wpdb->update( $this->registry->table( Schema::BATCHES ), $data, [ 'batch_id' => $batch_id ], $format, [ '%d' ] );
+	}
+
+	/**
 	 * The earliest batch before `$before_id` that the same user created with
 	 * the same request id since a moment, or null (T31: two submissions of
 	 * one request that raced past the replay check; the earlier one wins).
@@ -346,6 +509,15 @@ final class BatchRepository {
 				throw new \RuntimeException( 'The unfinished batch could not be removed.' );
 			}
 		}
+	}
+
+	/**
+	 * A message cut to the column width.
+	 *
+	 * @param string $message Message.
+	 */
+	private static function cut( string $message ): string {
+		return mb_substr( $message, 0, self::MESSAGE_LENGTH );
 	}
 
 	/**

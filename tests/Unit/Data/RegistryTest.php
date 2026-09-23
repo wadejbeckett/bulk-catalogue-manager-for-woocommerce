@@ -45,6 +45,8 @@ final class RegistryTest extends TestCase {
 		'bcm_batch_not_recorded'  => 'refusal code for a batch the database would not take; nothing is left written',
 		'bcm_already_done'        => 'result code for an object a retried chunk skips because its batch already journalled it',
 		'bcm_save_failed'         => 'result code for changes lost because WooCommerce could not save the object',
+		'bcm_run_chunk'           => 'one-off Action Scheduler action in the bcm group running one chunk of a batch; not recurring, and uninstall unschedules the whole group',
+		'bcm_batch_size'          => 'filter hook over the configured chunk size of a background batch',
 	];
 
 	/**

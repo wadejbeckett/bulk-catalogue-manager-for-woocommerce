@@ -151,6 +151,7 @@ final class BatchRepositoryTest extends TestCase {
 		);
 		$this->assertSame( [ 'ids' => [ 1 ] ], $batch['selection'] );
 		$this->assertSame( 0, $batch['done_items'] );
+		$this->assertSame( [ 0, '' ], [ $batch['chunk_size'], $batch['note'] ], 'A row from before schema 3 reads as no chunk size and no note.' );
 		$this->assertNull( $repo->find( 8 ) );
 		$this->assert_all_prepared();
 	}
@@ -283,6 +284,109 @@ final class BatchRepositoryTest extends TestCase {
 		$this->assertSame( "UPDATE `wp_bcm_batch_items` SET state = 'failed' WHERE batch_id = 6 AND state = 'pending' AND attempts >= 3", self::db()->queries[0] );
 		$this->assertSame( [ 'SELECT COUNT(*) FROM %i WHERE batch_id = %d AND state = %s', [ 'wp_bcm_batch_items', 6, 'pending' ] ], self::db()->prepared[1] );
 		$this->assert_all_prepared();
+	}
+
+	public function test_claim_chunk_claims_with_one_locking_update_then_reads_back_by_token(): void {
+		$token = str_repeat( 'ab', 16 );
+		self::db()->responses['/^UPDATE `wp_bcm_batch_items` SET claim_token/']           = 2;
+		self::db()->responses['/^SELECT item_id, object_id, object_type, attempts FROM/'] = [
+			[
+				'item_id'     => '11',
+				'object_id'   => '501',
+				'object_type' => 'product',
+				'attempts'    => '1',
+			],
+			[
+				'item_id'     => '12',
+				'object_id'   => '502',
+				'object_type' => 'variation',
+				'attempts'    => '2',
+			],
+		];
+		$repo  = new BatchRepository();
+		$items = $repo->claim_chunk( 6, 500, $token, '2026-09-23 10:05:00', '2026-09-23 10:00:00' );
+
+		$this->assertSame( "UPDATE `wp_bcm_batch_items` SET claim_token = '$token', claimed_gmt = '2026-09-23 10:05:00', attempts = attempts + 1 WHERE batch_id = 6 AND state = 'pending' AND attempts < 3 AND (claimed_gmt IS NULL OR claimed_gmt < '2026-09-23 10:00:00') ORDER BY item_id ASC LIMIT 100", self::db()->queries[0], 'One UPDATE, its limit clamped to the ceiling.' );
+		$this->assertSame( "SELECT item_id, object_id, object_type, attempts FROM `wp_bcm_batch_items` WHERE batch_id = 6 AND state = 'pending' AND claim_token = '$token' ORDER BY item_id ASC LIMIT 100", self::db()->queries[1] );
+		$this->assertSame(
+			[
+				[
+					'item_id'     => 11,
+					'object_id'   => 501,
+					'object_type' => 'product',
+					'attempts'    => 1,
+				],
+				[
+					'item_id'     => 12,
+					'object_id'   => 502,
+					'object_type' => 'variation',
+					'attempts'    => 2,
+				],
+			],
+			$items
+		);
+		$this->assert_all_prepared();
+
+		self::db()->responses['/^UPDATE `wp_bcm_batch_items` SET claim_token/'] = 0;
+		$this->assertSame( [], $repo->claim_chunk( 6, 50, $token, '2026-09-23 10:05:00', '2026-09-23 10:00:00' ) );
+		$this->assertCount( 3, self::db()->queries, 'Nothing claimed, nothing read back.' );
+		$this->assert_invalid( static fn() => $repo->claim_chunk( 6, 50, 'not-a-token', '2026-09-23 10:05:00', '2026-09-23 10:00:00' ) );
+
+		self::db()->failing = [ 'query' ];
+		try {
+			$repo->claim_chunk( 6, 50, $token, '2026-09-23 10:05:00', '2026-09-23 10:00:00' );
+			$this->fail( 'A failed claim was swallowed.' );
+		} catch ( \RuntimeException $e ) {
+			$this->assertNotSame( '', $e->getMessage() );
+		}
+	}
+
+	public function test_the_runner_statements_release_mark_fail_and_count(): void {
+		$token = str_repeat( 'cd', 16 );
+		$repo  = new BatchRepository();
+		$repo->release_claim( 6, $token );
+		$repo->mark_items( 6, [ 11, 12 ], 'failed', str_repeat( 'x', 300 ) );
+		$repo->fail_exhausted( 6, '2026-09-23 10:00:00', "It didn't finish." );
+		$repo->count_reported( 6 );
+
+		$this->assertSame( "UPDATE `wp_bcm_batch_items` SET claim_token = NULL, claimed_gmt = NULL WHERE batch_id = 6 AND state = 'pending' AND claim_token = '$token'", self::db()->queries[0] );
+		$this->assertSame( [ 'wp_bcm_batch_items', 'failed', str_repeat( 'x', 255 ), 6, 11, 12 ], self::db()->prepared[1][1], 'The message is cut to the column.' );
+		$this->assertSame( "UPDATE `wp_bcm_batch_items` SET state = 'failed', message = 'It didn\\'t finish.' WHERE batch_id = 6 AND state = 'pending' AND attempts >= 3 AND (claimed_gmt IS NULL OR claimed_gmt < '2026-09-23 10:00:00')", self::db()->queries[2], 'Only items whose last claim is stale.' );
+		$this->assertSame( "SELECT COUNT(*) FROM `wp_bcm_batch_items` WHERE batch_id = 6 AND state <> 'pending' AND (state <> 'done' OR message <> '')", self::db()->queries[3] );
+		$this->assert_all_prepared();
+	}
+
+	public function test_transition_moves_only_from_the_expected_status_and_the_chunk_size_is_recorded(): void {
+		$repo = new BatchRepository();
+		$this->assertTrue( $repo->transition( 6, 'running', 'partial' ) );
+		$this->assertTrue( $repo->transition( 6, 'queued', 'running' ) );
+		$this->assertTrue( $repo->record_chunk_size( 6, 25, 'Why.' ) );
+		$this->assertTrue( $repo->record_chunk_size( 6, 40 ) );
+
+		[ $final, $running, $sized, $unnoted ] = self::db()->writes;
+		$this->assertSame( 'partial', $final[2]['status'] );
+		$this->assert_datetime( $final[2]['finished_gmt'] );
+		$this->assertSame(
+			[
+				'batch_id' => 6,
+				'status'   => 'running',
+			],
+			$final[4],
+			'The move is conditional on the current status.'
+		);
+		$this->assertSame( [ 'status' => 'running' ], $running[2], 'Running is not a finish.' );
+		$this->assertSame(
+			[
+				'chunk_size' => 25,
+				'note'       => 'Why.',
+			],
+			$sized[2]
+		);
+		$this->assertSame( [ 'chunk_size' => 40 ], $unnoted[2] );
+
+		$this->assert_invalid( static fn() => $repo->transition( 6, 'running', 'stalled' ) );
+		$this->assert_invalid( static fn() => $repo->record_chunk_size( 6, 0 ) );
+		$this->assert_invalid( static fn() => $repo->record_chunk_size( 6, 101 ) );
 	}
 
 	public function test_counters_are_incremented_in_one_statement(): void {

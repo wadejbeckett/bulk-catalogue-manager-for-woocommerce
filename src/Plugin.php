@@ -107,6 +107,8 @@ final class Plugin {
 			[ 'init', [ Query\CountCache::class, 'register_hooks' ], 10, 0 ],
 			[ 'admin_init', [ $this, 'migrate' ], 10, 0 ],
 			[ 'rest_api_init', [ $this, 'register_routes' ], 10, 0 ],
+			[ Engine\BatchFactory::CREATED, [ Engine\ChunkRunner::class, 'enqueue' ], 10, 1 ],
+			[ Engine\ChunkRunner::HOOK, [ Engine\ChunkRunner::class, 'handle' ], 10, 2 ],
 		];
 	}
 

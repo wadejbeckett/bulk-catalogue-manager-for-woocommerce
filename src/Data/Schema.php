@@ -11,6 +11,13 @@
  *
  * Columns the specification marks NULL are nullable; every other column is
  * NOT NULL. Counters and attempts default to zero and item state to pending.
+ *
+ * Schema version 3 (T34, the chunk runner) adds to §9.2: on batches,
+ * `chunk_size` (the size the runner settled on for the rest of the batch; 0
+ * until the first chunk) and `note` (why it changed, in plain words); on
+ * items, the claim lease `claim_token` and `claimed_gmt` (one locking UPDATE
+ * claims a chunk and stamps both; a lease older than the timeout is released)
+ * and `message` (the plain reason an item failed or was skipped).
  * Bump Migrator::SCHEMA_VERSION whenever a body here changes.
  *
  * @package BulkCatalogueManager
@@ -84,6 +91,8 @@ total_items int(10) unsigned NOT NULL DEFAULT 0,
 done_items int(10) unsigned NOT NULL DEFAULT 0,
 changed_items int(10) unsigned NOT NULL DEFAULT 0,
 failed_items int(10) unsigned NOT NULL DEFAULT 0,
+chunk_size smallint(5) unsigned NOT NULL DEFAULT 0,
+note varchar(255) NOT NULL DEFAULT \'\',
 PRIMARY KEY  (batch_id),
 KEY created_gmt (created_gmt),
 KEY status (status),
@@ -98,6 +107,9 @@ object_id bigint(20) unsigned NOT NULL,
 object_type varchar(16) NOT NULL,
 state varchar(12) NOT NULL DEFAULT 'pending',
 attempts tinyint(3) unsigned NOT NULL DEFAULT 0,
+claim_token char(32) NULL,
+claimed_gmt datetime NULL,
+message varchar(255) NOT NULL DEFAULT '',
 PRIMARY KEY  (item_id),
 KEY batch_state (batch_id,state),
 KEY object (object_id)";

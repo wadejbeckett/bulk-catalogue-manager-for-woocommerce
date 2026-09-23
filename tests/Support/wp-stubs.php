@@ -168,6 +168,25 @@ if ( ! function_exists( 'add_filter' ) ) {
 		function as_unschedule_all_actions( string $hook, array $args = [], string $group = '' ): void {
 			$GLOBALS['bcm_test']['unscheduled'][] = [ $hook, $args, $group ];
 		}
+
+		/**
+		 * T34: the scheduling calls are recorded in order in
+		 * $GLOBALS['bcm_test']['scheduled'] as [ function, hook, args, group, timestamp or null ].
+		 */
+		function as_enqueue_async_action( string $hook, array $args = [], string $group = '', bool $unique = false, int $priority = 10 ): int {
+			$GLOBALS['bcm_test']['scheduled'][] = [ 'enqueue', $hook, $args, $group, null ];
+			return count( $GLOBALS['bcm_test']['scheduled'] );
+		}
+
+		function as_schedule_single_action( int $timestamp, string $hook, array $args = [], string $group = '', bool $unique = false, int $priority = 10 ): int {
+			$GLOBALS['bcm_test']['scheduled'][] = [ 'single', $hook, $args, $group, $timestamp ];
+			return count( $GLOBALS['bcm_test']['scheduled'] );
+		}
+
+		function as_unschedule_action( string $hook, array $args = [], string $group = '' ): ?int {
+			$GLOBALS['bcm_test']['scheduled'][] = [ 'unschedule', $hook, $args, $group, null ];
+			return null;
+		}
 	}
 
 	/**
@@ -488,6 +507,20 @@ if ( ! function_exists( 'wp_set_object_terms' ) ) {
 	function wp_set_object_terms( int $object_id, string|int|array $terms, string $taxonomy, bool $append = false ): array|\WP_Error {
 		$GLOBALS['bcm_test']['set_object_terms'][] = [ $object_id, $terms, $taxonomy, $append ];
 		return $GLOBALS['bcm_test']['set_object_terms_error'] ?? array_values( (array) $terms );
+	}
+}
+
+if ( ! function_exists( 'wp_defer_term_counting' ) ) {
+	/**
+	 * T34: records each call in $GLOBALS['bcm_test']['term_counting'] as
+	 * [ defer, number of products loaded so far ], so a test can see the
+	 * writes happen between turning deferral on and flushing it.
+	 */
+	function wp_defer_term_counting( ?bool $defer = null ): bool {
+		if ( null !== $defer ) {
+			$GLOBALS['bcm_test']['term_counting'][] = [ $defer, count( $GLOBALS['bcm_test']['products_loaded'] ?? [] ) ];
+		}
+		return (bool) ( $defer ?? false );
 	}
 }
 

@@ -439,8 +439,12 @@ describe( 'saved views row', () => {
 				onApply={ jest.fn() }
 			/>
 		);
+		// The notice's own paragraph: the Notice also speaks it into the
+		// a11y live region, which a slow run can reach first.
 		expect(
-			await screen.findByText( /Your saved views could not be loaded/ )
+			await screen.findByText( /Your saved views could not be loaded/, {
+				selector: 'p',
+			} )
 		).toBeTruthy();
 		// The built-ins still work.
 		expect(

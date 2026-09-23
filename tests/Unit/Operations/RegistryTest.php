@@ -37,7 +37,7 @@ use PHPUnit\Framework\TestCase;
 
 final class RegistryTest extends TestCase {
 	/**
-	 * Every version 1 action: id => [ class, primary group, ticket implementing compute() ].
+	 * Every version 1 action: id => [ class, primary group, ticket implementing compute(), or null once it has landed ].
 	 */
 	private const ACTIONS = [
 		'set_value'     => [ SetValue::class, 'publishing', 'T25' ],
@@ -47,9 +47,9 @@ final class RegistryTest extends TestCase {
 		'copy_price'    => [ \BulkCatalogueManager\Operations\CopyPrice::class, 'pricing', 'T26' ],
 		'find_replace'  => [ \BulkCatalogueManager\Operations\FindReplace::class, 'organisation', 'T25' ],
 		'affix_sku'     => [ \BulkCatalogueManager\Operations\AffixSku::class, 'organisation', 'T25' ],
-		'add_terms'     => [ Terms::class, 'organisation', 'T27' ],
-		'remove_terms'  => [ Terms::class, 'organisation', 'T27' ],
-		'replace_terms' => [ Terms::class, 'organisation', 'T27' ],
+		'add_terms'     => [ Terms::class, 'organisation', null ],
+		'remove_terms'  => [ Terms::class, 'organisation', null ],
+		'replace_terms' => [ Terms::class, 'organisation', null ],
 	];
 
 	protected function setUp(): void {
@@ -968,6 +968,9 @@ final class RegistryTest extends TestCase {
 	public function test_compute_on_a_placeholder_throws_and_writes_nothing(): void {
 		$registry = self::registry();
 		foreach ( self::ACTIONS as $id => [ , , $ticket ] ) {
+			if ( null === $ticket ) {
+				continue;
+			}
 			$product   = new FakeProduct(
 				'simple',
 				[

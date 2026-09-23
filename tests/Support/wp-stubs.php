@@ -462,3 +462,16 @@ if ( ! function_exists( 'wp_salt' ) ) {
 		return number_format( $number, $decimals );
 	}
 }
+
+if ( ! function_exists( 'wp_set_object_terms' ) ) {
+	/**
+	 * Records each call in $GLOBALS['bcm_test']['set_object_terms'] as
+	 * [ object id, terms, taxonomy, append ] and answers the terms given, or
+	 * the WP_Error in $GLOBALS['bcm_test']['set_object_terms_error'] when a
+	 * test sets one (T27).
+	 */
+	function wp_set_object_terms( int $object_id, string|int|array $terms, string $taxonomy, bool $append = false ): array|\WP_Error {
+		$GLOBALS['bcm_test']['set_object_terms'][] = [ $object_id, $terms, $taxonomy, $append ];
+		return $GLOBALS['bcm_test']['set_object_terms_error'] ?? array_values( (array) $terms );
+	}
+}

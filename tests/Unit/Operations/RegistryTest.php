@@ -37,7 +37,7 @@ use PHPUnit\Framework\TestCase;
 
 final class RegistryTest extends TestCase {
 	/**
-	 * Every version 1 action: id => [ class, primary group, ticket implementing compute() ].
+	 * Every version 1 action: id => [ class, primary group, ticket that implemented compute() ].
 	 */
 	private const ACTIONS = [
 		'set_value'     => [ SetValue::class, 'publishing', 'T25' ],
@@ -965,12 +965,9 @@ final class RegistryTest extends TestCase {
 		$this->assertSame( 3, $three->get( 'round' )->describe()->args()['properties']['decimals']['maximum'] );
 	}
 
-	public function test_compute_on_a_placeholder_throws_and_writes_nothing(): void {
+	public function test_every_action_computes_without_the_placeholder_and_writes_nothing(): void {
 		$registry = self::registry();
 		foreach ( self::ACTIONS as $id => [ , , $ticket ] ) {
-			if ( in_array( $ticket, [ 'T25', 'T26' ], true ) ) {
-				continue; // Implemented; covered by its own tests.
-			}
 			$product   = new FakeProduct(
 				'simple',
 				[
@@ -982,12 +979,10 @@ final class RegistryTest extends TestCase {
 			$args      = $operation->validate( self::valid_args()[ $id ] )->args();
 			try {
 				$operation->compute( $product, $args );
-				$this->fail( "$id compute() ran before $ticket." );
 			} catch ( \LogicException $e ) {
-				$this->assertStringContainsString( $ticket, $e->getMessage(), $id );
-				$this->assertStringContainsString( $id, $e->getMessage() );
+				$this->assertStringNotContainsString( 'is implemented in', $e->getMessage(), "$id compute() is still the placeholder; $ticket implemented it." );
 			}
-			$this->assertSame( [], $product->sets, "$id wrote to the product." );
+			$this->assertSame( [], $product->sets, "$id compute() wrote to the product." );
 		}
 	}
 

@@ -4,7 +4,7 @@
  * by clearing the sale price. Clearing writes an empty value, which is
  * distinct from zero: a sale price of 0.00 is cleared to '', and one that
  * is already empty is already cleared. compute() goes through the same
- * path as setting a value (SetValue::outcome()).
+ * path as setting a value (BaseOperation::value_outcome()).
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -75,6 +75,6 @@ final class Clear extends BaseOperation {
 	 * @param array<string, mixed> $args    Normalised arguments.
 	 */
 	public function compute( object $subject, array $args ): Result {
-		return SetValue::outcome( $this->field( $args ), $subject, '' );
+		return self::value_outcome( $this->field( $args ), $subject, '' );
 	}
 }

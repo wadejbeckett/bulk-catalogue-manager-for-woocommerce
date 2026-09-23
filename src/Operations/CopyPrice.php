@@ -138,7 +138,7 @@ final class CopyPrice extends BaseOperation {
 			);
 		}
 		$number = Values::decimal( $from );
-		if ( null === $number || Round::below_zero( $number ) ) {
+		if ( null === $number || self::below_zero( $number ) ) {
 			return Result::skipped(
 				$target->key(),
 				$old,
@@ -151,8 +151,8 @@ final class CopyPrice extends BaseOperation {
 			);
 		}
 
-		$copy = Round::decimal_of( (float) $number * ( 100 - (float) ( $args['discount'] ?? '0' ) ) / 100 );
-		if ( $target->accepts( Field::COPY_FROM_REGULAR ) && (float) Round::settle( $target, $copy ) >= (float) $number ) {
+		$copy = self::decimal_of( (float) $number * ( 100 - (float) ( $args['discount'] ?? '0' ) ) / 100 );
+		if ( $target->accepts( Field::COPY_FROM_REGULAR ) && (float) self::settle( $target, $copy ) >= (float) $number ) {
 			if ( ! empty( $args['clear_invalid_sale'] ) ) {
 				return Values::is_empty( $old ) ? Result::already( $target->key(), $old ) : Result::changed( $target->key(), $old, '' );
 			}
@@ -168,7 +168,7 @@ final class CopyPrice extends BaseOperation {
 				'bcm_invalid_value'
 			);
 		}
-		return Round::outcome( $target, $old, $copy );
+		return self::number_outcome( $target, $old, $copy );
 	}
 
 	/**

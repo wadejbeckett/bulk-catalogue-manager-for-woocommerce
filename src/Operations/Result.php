@@ -77,6 +77,7 @@ final class Result {
 			$needs_reason && '' === trim( $reason )                 => 'a skipped or failed result needs a reason',
 			! $needs_reason && ( '' !== $reason || '' !== $code )   => 'only a skipped or failed result carries a reason',
 			'' !== $code && ! str_starts_with( $code, 'bcm_' )      => 'the code must start with bcm_',
+			str_contains( $reason, 'bcm_' )                         => 'the reason is shown to people, so its code belongs in the code field',
 			self::CHANGED === $state && $old === $new_value               => 'a change must change the value; use already()',
 			$replaces && self::CHANGED !== $state                   => 'only a change can replace a list',
 			default                                                 => '',

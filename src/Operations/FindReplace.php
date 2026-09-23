@@ -10,7 +10,7 @@
  * not joined to a letter, mark, digit or underscore on either side. The
  * replacement is inserted literally ($1 and backslashes mean nothing). No
  * match is state already. The new text then takes the same path as setting
- * a value (SetValue::outcome()), so a name passes the post HTML filter for a
+ * a value (BaseOperation::value_outcome()), so a name passes the post HTML filter for a
  * user without unfiltered_html and the field's length rule; only the name
  * (post_title) is written, never the slug (SPEC §5.4).
  *
@@ -171,7 +171,7 @@ final class FindReplace extends BaseOperation {
 		if ( $replaced === $text ) {
 			return Result::already( $field->key(), $old );
 		}
-		return SetValue::outcome( $field, $subject, $replaced );
+		return self::value_outcome( $field, $subject, $replaced );
 	}
 
 	/**

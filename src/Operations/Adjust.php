@@ -132,19 +132,19 @@ final class Adjust extends BaseOperation {
 	public function compute( object $subject, array $args ): Result {
 		$field  = $this->field( $args );
 		$old    = $field->read( $subject );
-		$number = Round::current_number( $field, $subject, $old );
+		$number = self::current_number( $field, $subject, $old );
 		if ( $number instanceof Result ) {
 			return $number;
 		}
 		$amount = 'increase' === $args['direction'] ? (float) $args['amount'] : - (float) $args['amount'];
-		$result = Round::decimal_of(
+		$result = self::decimal_of(
 			'percent' === $args['by']
 				? (float) $number * ( 100 + $amount ) / 100
 				: (float) $number + $amount
 		);
-		if ( Round::below_zero( $result ) ) {
-			return Round::refuse_below_zero( $field, $old, $result );
+		if ( self::below_zero( $result ) ) {
+			return self::refuse_below_zero( $field, $old, $result );
 		}
-		return Round::outcome( $field, $old, $result );
+		return self::number_outcome( $field, $old, $result );
 	}
 }

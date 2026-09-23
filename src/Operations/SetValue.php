@@ -14,7 +14,8 @@
  * is filtered here, and the preview shows what will be stored — and answers
  * already when the object holds that value. The other actions that end in
  * "write this value" (clear, find and replace, prefix or suffix) share this
- * through outcome(). The cross-field and uniqueness checks are T28's.
+ * through BaseOperation::value_outcome(). The row validator (T28,
+ * Validator) adds the cross-field, uniqueness and permission checks.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -127,37 +128,6 @@ final class SetValue extends BaseOperation {
 	 * @param array<string, mixed> $args    Normalised arguments.
 	 */
 	public function compute( object $subject, array $args ): Result {
-		return self::outcome( $this->field( $args ), $subject, $args['value'] ?? null );
-	}
-
-	/**
-	 * What writing a target value to one object would do, without writing:
-	 * failed when the field does not apply to the object or refuses the
-	 * value (the field's sentence and code), already when the object holds
-	 * it, otherwise a change from the value read to the canonical target.
-	 *
-	 * Prices and decimals compare in canonical form, so 10 and 10.00 are
-	 * the same price; every other type compares exactly as read.
-	 *
-	 * @param Field  $field   The field written.
-	 * @param object $subject A product or variation.
-	 * @param mixed  $target  The value to write, before cleaning.
-	 */
-	public static function outcome( Field $field, object $subject, mixed $target ): Result {
-		$old    = $field->read( $subject );
-		$reason = $field->unavailable_reason( $subject );
-		if ( null !== $reason ) {
-			return Result::failed( $field->key(), $old, $reason, 'bcm_not_available' );
-		}
-		$clean = $field->clean( $target );
-		if ( $clean instanceof \WP_Error ) {
-			return Result::failed( $field->key(), $old, $clean->get_error_message(), (string) $clean->get_error_code() );
-		}
-		$current = $old;
-		if ( Field::MONEY === $field->type() || Field::DECIMAL === $field->type() ) {
-			$canonical = $field->clean( $old );
-			$current   = $canonical instanceof \WP_Error ? $old : $canonical;
-		}
-		return $current === $clean ? Result::already( $field->key(), $old ) : Result::changed( $field->key(), $old, $clean );
+		return self::value_outcome( $this->field( $args ), $subject, $args['value'] ?? null );
 	}
 }

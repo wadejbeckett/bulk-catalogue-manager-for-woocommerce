@@ -271,6 +271,34 @@ final class Field {
 	}
 
 	/**
+	 * Whether the field applies only where the object manages its stock
+	 * (stock quantity, SPEC §8), so a refusal there skips the row.
+	 */
+	public function requires_managed_stock(): bool {
+		return self::REQUIRES_MANAGED_STOCK === $this->requires;
+	}
+
+	/**
+	 * Whether the value must be unique across products and variations (the SKU).
+	 */
+	public function unique(): bool {
+		return $this->unique;
+	}
+
+	/**
+	 * The sentence for a unique value another object already holds (SPEC §4.8).
+	 *
+	 * @param string $value The value in use, such as a SKU.
+	 */
+	public static function clash_reason( string $value ): string {
+		return sprintf(
+			/* translators: %s: the SKU that is already in use. */
+			__( 'A product with the SKU %s already exists, so this SKU was not applied.', 'bulk-catalogue-manager-for-woocommerce' ),
+			$value
+		);
+	}
+
+	/**
 	 * Whether the field is a read-only column.
 	 */
 	public function read_only(): bool {
@@ -493,18 +521,20 @@ final class Field {
 	}
 
 	/**
-	 * The setter path: check the value against the field and the object, then
-	 * set it through the CRUD setter. Does not save.
+	 * The dry run of write(): the WP_Error write() would return for this
+	 * value on this object, or null when it would set it. Preview and the
+	 * row validator call this, so what they report is exactly what the
+	 * write would do. Sets nothing.
 	 *
-	 * @param object $product A WooCommerce product or variation.
+	 * @param object $subject A WooCommerce product or variation.
 	 * @param mixed  $value   Submitted value.
-	 * @return mixed The canonical value set, or a WP_Error saying why nothing was set.
 	 */
-	public function write( object $product, mixed $value ): mixed {
+	public function refusal( object $subject, mixed $value ): ?\WP_Error {
 		if ( $this->read_only() ) {
-			return $this->validate( $value );
+			$valid = $this->validate( $value );
+			return $valid instanceof \WP_Error ? $valid : null;
 		}
-		$reason = $this->unavailable_reason( $product );
+		$reason = $this->unavailable_reason( $subject );
 		if ( null !== $reason ) {
 			return self::error( 'bcm_not_available', $reason );
 		}
@@ -512,10 +542,24 @@ final class Field {
 		if ( $clean instanceof \WP_Error ) {
 			return $clean;
 		}
-		$refusal = $this->object_refusal( $product, $clean );
+		$refusal = $this->object_refusal( $subject, $clean );
+		return null === $refusal ? null : self::error( 'bcm_invalid_value', $refusal );
+	}
+
+	/**
+	 * The setter path: check the value against the field and the object
+	 * (refusal()), then set it through the CRUD setter. Does not save.
+	 *
+	 * @param object $product A WooCommerce product or variation.
+	 * @param mixed  $value   Submitted value.
+	 * @return mixed The canonical value set, or a WP_Error saying why nothing was set.
+	 */
+	public function write( object $product, mixed $value ): mixed {
+		$refusal = $this->refusal( $product, $value );
 		if ( null !== $refusal ) {
-			return self::error( 'bcm_invalid_value', $refusal );
+			return $refusal;
 		}
+		$clean  = $this->clean( $value );
 		$stored = self::ADAPTER_SWITCH === $this->adapter ? self::SWITCH_WRITE[ $clean ] : $clean;
 		$product->{$this->setter}( $stored );
 		return $clean;
@@ -710,11 +754,7 @@ final class Field {
 		if ( $this->unique && is_string( $clean ) && '' !== $clean ) {
 			$id = (int) self::call( $product, 'get_id', false );
 			if ( ! wc_product_has_unique_sku( $id, $clean ) ) {
-				return sprintf(
-					/* translators: %s: the SKU that is already in use. */
-					__( 'A product with the SKU %s already exists, so this SKU was not applied.', 'bulk-catalogue-manager-for-woocommerce' ),
-					$clean
-				);
+				return self::clash_reason( $clean );
 			}
 		}
 		return null;

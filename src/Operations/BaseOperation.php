@@ -13,6 +13,11 @@
  * accept, and any argument its spec refuses, then hands the normalised
  * arguments to normalise() for the rules that span arguments.
  *
+ * The helpers actions share sit here as protected statics: value_outcome()
+ * for every action ending in "write this value", and the decimal-text
+ * helpers of the numeric actions (current_number(), number_outcome(),
+ * refuse_below_zero(), decimal_of(), below_zero(), to_places(), settle()).
+ *
  * An argument spec is an array: `type` (boolean, text, integer, decimal,
  * ids, choice, or value for "whatever the field accepts"), `label`, `rule`
  * (the §4.8 sentence a refusal shows), and optionally `required`, `default`,
@@ -263,14 +268,229 @@ abstract class BaseOperation implements Operation {
 		return $field;
 	}
 
+
 	/**
-	 * Stand-in for compute() until its ticket lands.
+	 * What writing a target value to one object would do, without writing:
+	 * failed when the field does not apply to the object or refuses the
+	 * value (the field's sentence and code), already when the object holds
+	 * it, otherwise a change from the value read to the canonical target.
 	 *
-	 * @param string $ticket The ticket that implements it, such as "T25".
-	 * @throws \LogicException Always.
+	 * Prices and decimals compare in canonical form, so 10 and 10.00 are
+	 * the same price; every other type compares exactly as read.
+	 *
+	 * @param Field  $field   The field written.
+	 * @param object $subject A product or variation.
+	 * @param mixed  $target  The value to write, before cleaning.
 	 */
-	protected function not_yet( string $ticket ): never {
-		throw new \LogicException( esc_html( sprintf( 'compute() for action "%s" is implemented in %s.', $this->id(), $ticket ) ) );
+	protected static function value_outcome( Field $field, object $subject, mixed $target ): Result {
+		$old    = $field->read( $subject );
+		$reason = $field->unavailable_reason( $subject );
+		if ( null !== $reason ) {
+			return Result::failed( $field->key(), $old, $reason, 'bcm_not_available' );
+		}
+		$clean = $field->clean( $target );
+		if ( $clean instanceof \WP_Error ) {
+			return Result::failed( $field->key(), $old, $clean->get_error_message(), (string) $clean->get_error_code() );
+		}
+		$current = $old;
+		if ( Field::MONEY === $field->type() || Field::DECIMAL === $field->type() ) {
+			$canonical = $field->clean( $old );
+			$current   = $canonical instanceof \WP_Error ? $old : $canonical;
+		}
+		return $current === $clean ? Result::already( $field->key(), $old ) : Result::changed( $field->key(), $old, $clean );
+	}
+
+	/**
+	 * The object's current value as a decimal, or the skipped Result saying
+	 * why there is nothing to work on: the field does not apply to this
+	 * object, the value is empty (never read as zero, SPEC §6), or it is not
+	 * a number.
+	 *
+	 * @param Field  $field   The field.
+	 * @param object $subject A product or variation.
+	 * @param mixed  $old     The value Field::read() returned.
+	 */
+	protected static function current_number( Field $field, object $subject, mixed $old ): string|Result {
+		$reason = $field->unavailable_reason( $subject );
+		if ( null !== $reason ) {
+			return Result::skipped( $field->key(), $old, $reason, 'bcm_not_available' );
+		}
+		if ( Values::is_empty( $old ) ) {
+			return Result::skipped(
+				$field->key(),
+				$old,
+				sprintf(
+					/* translators: %s: a field's name, such as "Regular price". */
+					__( '%s is empty, so there was nothing to change.', 'bulk-catalogue-manager-for-woocommerce' ),
+					$field->label()
+				)
+			);
+		}
+		$number = Values::decimal( $old );
+		if ( null === $number ) {
+			return Result::skipped(
+				$field->key(),
+				$old,
+				sprintf(
+					/* translators: %s: a field's name, such as "Weight". */
+					__( '%s does not hold a number, so it was not changed.', 'bulk-catalogue-manager-for-woocommerce' ),
+					$field->label()
+				)
+			);
+		}
+		return $number;
+	}
+
+	/**
+	 * The Result for a computed value: failed when the field refuses it,
+	 * already when it equals the current value, otherwise the change to the
+	 * field's canonical form (prices through wc_format_decimal() at the
+	 * shop's precision, stock as a whole number).
+	 *
+	 * @param Field  $field  The field.
+	 * @param mixed  $old    The current value.
+	 * @param string $number The computed value, zero or more.
+	 */
+	protected static function number_outcome( Field $field, mixed $old, string $number ): Result {
+		$clean = $field->clean( self::settle( $field, $number ) );
+		if ( $clean instanceof \WP_Error ) {
+			return Result::failed( $field->key(), $old, $clean->get_error_message(), (string) $clean->get_error_code() );
+		}
+		return self::same( $old, $clean ) ? Result::already( $field->key(), $old ) : Result::changed( $field->key(), $old, $clean );
+	}
+
+	/**
+	 * The skipped Result for a value that would go below zero: refused,
+	 * never clamped (SPEC §5.4).
+	 *
+	 * @param Field  $field  The field.
+	 * @param mixed  $old    The current value.
+	 * @param string $number The computed value, below zero.
+	 */
+	protected static function refuse_below_zero( Field $field, mixed $old, string $number ): Result {
+		return Result::skipped(
+			$field->key(),
+			$old,
+			sprintf(
+				/* translators: 1: a field's name, such as "Regular price", 2: the value it would have had, such as -2.50. */
+				__( '%1$s would go below zero (%2$s), so it was not changed.', 'bulk-catalogue-manager-for-woocommerce' ),
+				$field->label(),
+				'-' . self::settle( $field, ltrim( $number, '-' ) )
+			),
+			'bcm_invalid_value'
+		);
+	}
+
+	/**
+	 * A computed float as decimal text, cut to nine places so the noise of
+	 * binary arithmetic (0.1 + 0.2) never reaches a rounding decision.
+	 *
+	 * @param float $number The number.
+	 */
+	protected static function decimal_of( float $number ): string {
+		$text = sprintf( '%.9F', round( $number, 9 ) );
+		return str_starts_with( $text, '-' ) && 0.0 === (float) $text ? substr( $text, 1 ) : $text;
+	}
+
+	/**
+	 * Whether decimal text is below zero.
+	 *
+	 * @param string $number Decimal text.
+	 */
+	protected static function below_zero( string $number ): bool {
+		return str_starts_with( $number, '-' ) && 0.0 !== (float) $number;
+	}
+
+	/**
+	 * Round decimal text of zero or more to a number of places, digit by
+	 * digit: nearest (half up), up or down.
+	 *
+	 * @param string $number    Decimal text, zero or more.
+	 * @param int    $places    Places to keep, 0 or more.
+	 * @param string $direction nearest, up or down.
+	 * @throws \InvalidArgumentException When the number is below zero.
+	 */
+	protected static function to_places( string $number, int $places, string $direction ): string {
+		$number = ltrim( $number, '+' );
+		if ( str_starts_with( $number, '-' ) ) {
+			if ( self::below_zero( $number ) ) {
+				throw new \InvalidArgumentException( 'Only a number of zero or more is rounded here.' );
+			}
+			$number = substr( $number, 1 );
+		}
+		$places   = max( 0, $places );
+		$parts    = explode( '.', $number, 2 );
+		$whole    = ltrim( $parts[0], '0' );
+		$fraction = $parts[1] ?? '';
+		$kept     = substr( str_pad( $fraction, $places, '0' ), 0, $places );
+		$rest     = (string) substr( $fraction, $places );
+		$bump     = match ( $direction ) {
+			'up'    => '' !== trim( $rest, '0' ),
+			'down'  => false,
+			default => '' !== $rest && (int) $rest[0] >= 5,
+		};
+		$digits = ( '' === $whole ? '0' : $whole ) . $kept;
+		if ( $bump ) {
+			$digits = self::increment( $digits );
+		}
+		return 0 === $places ? $digits : substr( $digits, 0, -$places ) . '.' . substr( $digits, -$places );
+	}
+
+	/**
+	 * A computed value in the precision the field stores: a price at the
+	 * shop's decimals, a whole number for an integer field (to the nearest,
+	 * half up), any other decimal at WooCommerce's rounding precision.
+	 *
+	 * @param Field  $field  The field.
+	 * @param string $number Decimal text, zero or more.
+	 */
+	protected static function settle( Field $field, string $number ): string|int {
+		return match ( $field->type() ) {
+			Field::INTEGER => (int) self::to_places( $number, 0, 'nearest' ),
+			Field::MONEY   => self::to_places( $number, wc_get_price_decimals(), 'nearest' ),
+			default        => self::trim_zeros( self::to_places( $number, wc_get_rounding_precision(), 'nearest' ) ),
+		};
+	}
+
+	/**
+	 * Whether a computed value equals the current one as a number, so "10"
+	 * and "10.00" are already the target.
+	 *
+	 * @param mixed $old   The current value.
+	 * @param mixed $clean The computed value, canonical.
+	 */
+	private static function same( mixed $old, mixed $clean ): bool {
+		if ( Values::is_empty( $old ) || Values::is_empty( $clean ) ) {
+			return Values::is_empty( $old ) && Values::is_empty( $clean );
+		}
+		$a = Values::decimal( $old );
+		$b = Values::decimal( $clean );
+		return null !== $a && null !== $b && (float) $a === (float) $b;
+	}
+
+	/**
+	 * Add one to a string of digits.
+	 *
+	 * @param string $digits Digits.
+	 */
+	private static function increment( string $digits ): string {
+		for ( $i = strlen( $digits ) - 1; $i >= 0; $i-- ) {
+			if ( '9' !== $digits[ $i ] ) {
+				$digits[ $i ] = (string) ( (int) $digits[ $i ] + 1 );
+				return $digits;
+			}
+			$digits[ $i ] = '0';
+		}
+		return '1' . $digits;
+	}
+
+	/**
+	 * Decimal text without trailing zeros after the point.
+	 *
+	 * @param string $number Decimal text.
+	 */
+	private static function trim_zeros( string $number ): string {
+		return str_contains( $number, '.' ) ? rtrim( rtrim( $number, '0' ), '.' ) : $number;
 	}
 
 	/**

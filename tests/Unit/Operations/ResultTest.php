@@ -76,6 +76,7 @@ final class ResultTest extends TestCase {
 			'failed without a reason'        => static fn() => Result::failed( 'regular_price', '', '' ),
 			'a code without the bcm_ prefix' => static fn() => Result::failed( 'sku', 'A', 'Clash.', 'invalid' ),
 			'a bad field key'                => static fn() => Result::already( '_price', '1' ),
+			'a code in the sentence'         => static fn() => Result::failed( 'sku', 'A', 'Refused (bcm_invalid_value).', 'bcm_invalid_value' ),
 		];
 		foreach ( $cases as $case => $build ) {
 			try {

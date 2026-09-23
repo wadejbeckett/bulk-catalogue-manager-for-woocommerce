@@ -6,17 +6,24 @@ PASS/FAIL/SKIP row per surface (`python3 tests/probe/probe.py --help` lists the
 chapters and how to add a surface). Both take the WP-CLI invocation in
 `WP_CMD`.
 
-## With wp-env (CI; needs Node 20)
+## With wp-env (CI; needs Node 20 and Docker Compose v2)
 
 ```sh
+npm install -g @wordpress/env@11.16.0   # the version CI pins; not a project dependency
 npx wp-env start
-WP_CMD="npx wp-env run --quiet cli wp" bash tests/probe/seed.sh
-WP_CMD="npx wp-env run --quiet cli wp" python3 tests/probe/probe.py --base-url http://localhost:8888
+WP_CMD="npx wp-env run cli wp" bash tests/probe/seed.sh
+WP_CMD="npx wp-env run cli wp" python3 tests/probe/probe.py --base-url http://localhost:8888
 ```
+
+`.wp-env.json` pins WordPress 7.1 and WooCommerce 11.1.0. CI runs each
+WordPress and WooCommerce pair of its matrix by writing a gitignored
+`.wp-env.override.json` with `core` and `plugins`, which wp-env merges over it;
+the same file works locally.
 
 ## With a throwaway docker stack (no Node, no compose)
 
-The local substitute for wp-env on a workstation without Node 20: the official
+The local substitute for wp-env on a workstation without Node 20 or without
+the Docker Compose v2 plugin (wp-env shells out to `docker compose`): the official
 `wordpress:php8.3-apache`, `mariadb:11` and `wordpress:cli-php8.3` images on a
 user-defined network, the repository bind-mounted read-only as the plugin.
 Nothing here is committed as a compose file on purpose.

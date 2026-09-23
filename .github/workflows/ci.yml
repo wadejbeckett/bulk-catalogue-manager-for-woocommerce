@@ -1,0 +1,97 @@
+# Continuous integration (T11, SPEC §16.6). Every job is a release gate: no
+# step is allowed to fail softly. Later tickets add their probe surfaces and
+# jobs here rather than weakening it; Plugin Check and the release job are T78.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  php:
+    name: PHP ${{ matrix.php }} lint and tests
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        php: [ '8.1', '8.2', '8.3', '8.4' ]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          tools: composer:v2
+          coverage: none
+      - run: composer install --no-interaction --no-progress
+      - run: composer lint
+      - run: composer test
+
+  standalone:
+    name: Standalone runner without vendor/
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          tools: composer:v2
+          coverage: none
+      - run: test ! -e vendor
+      - run: composer test:standalone
+
+  js:
+    name: JavaScript lint, tests and build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - run: npm run lint:js
+      - run: npm test
+      # The build script fails when assets/build/index.js is 400 KB or more compressed.
+      - run: npm run build
+      # The committed bundle (what the plugin ships and the wp-env job runs) matches its source.
+      - run: git diff --exit-code -- assets/build
+
+  wp-env:
+    name: Probe on WordPress ${{ matrix.wp }} with WooCommerce ${{ matrix.wc }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        # Current and previous supported WordPress; current WooCommerce and the last 10.x.
+        wp: [ '7.1.2', '7.0.6' ]
+        wc: [ '11.1.2', '10.9.4' ]
+    env:
+      WP_CMD: npx wp-env run cli wp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install wp-env
+        run: npm install -g @wordpress/env@11.16.0
+      - name: Pin WordPress and WooCommerce for this leg
+        run: |
+          cat > .wp-env.override.json <<JSON
+          {
+            "core": "https://wordpress.org/wordpress-${{ matrix.wp }}.zip",
+            "plugins": [ ".", "https://downloads.wordpress.org/plugin/woocommerce.${{ matrix.wc }}.zip" ]
+          }
+          JSON
+          cat .wp-env.override.json
+      - run: npx wp-env start
+      - run: npx wp-env run cli wp core version --extra
+      - run: npx wp-env run cli wp plugin list
+      - run: bash tests/probe/seed.sh
+      - run: python3 tests/probe/probe.py --base-url http://localhost:8888

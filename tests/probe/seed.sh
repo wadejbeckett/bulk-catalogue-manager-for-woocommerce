@@ -28,7 +28,7 @@
 #
 # Usage:
 #   bash tests/probe/seed.sh [SCALE]
-#   WP_CMD="npx wp-env run --quiet cli wp" bash tests/probe/seed.sh          # wp-env
+#   WP_CMD="npx wp-env run cli wp" bash tests/probe/seed.sh                  # wp-env
 #   WP_CMD="docker run --rm -i ... wordpress:cli-php8.3 wp" bash tests/probe/seed.sh
 #     (the throwaway docker stack in tests/probe/README.md)
 #

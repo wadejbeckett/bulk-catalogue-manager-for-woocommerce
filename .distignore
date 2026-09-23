@@ -22,3 +22,4 @@ dist/
 .claude/
 vendor/
 AGENTS.md
+jest.config.js

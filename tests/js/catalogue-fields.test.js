@@ -17,9 +17,12 @@ import {
 } from '../../assets/src/panels/catalogue/fields';
 import { toQuery } from '../../assets/src/panels/catalogue/query';
 import { CellContext, textOf } from '../../assets/src/panels/catalogue/cells';
-import { DEFAULT_COLUMNS } from '../../assets/src/panels/catalogue/defaults';
+import { defaultColumns } from '../../assets/src/panels/catalogue/defaults';
 
 const { REGISTRY, ROWS } = require( './catalogue-fixture' );
+
+// The registry's defaultColumn fields in defaultOrder (Fields\Registry, T40).
+const DEFAULT_COLUMNS = defaultColumns( REGISTRY.fields );
 
 const SOURCE = path.resolve( __dirname, '../../assets/src' );
 const PRESET = path.join( SOURCE, 'panels/catalogue/defaults.js' );
@@ -96,6 +99,15 @@ describe( 'fields from the registry', () => {
 		expect( view.titleField ).toBe( roles.title );
 		expect( view.mediaField ).toBe( roles.media );
 		expect( view.fields ).toEqual( DEFAULT_COLUMNS );
+		expect( DEFAULT_COLUMNS ).toEqual( [
+			'sku',
+			'status',
+			'visible_on_site',
+			'regular_price',
+			'sale_price',
+			'stock_status',
+			'category_ids',
+		] );
 		expect( view.perPage ).toBe( 50 );
 		expect( view.sort ).toBeUndefined();
 		expect( defaultView( REGISTRY, {} ).perPage ).toBe( 25 );

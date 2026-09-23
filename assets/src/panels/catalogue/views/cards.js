@@ -18,7 +18,8 @@ import { useMemo } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 
 import { CellContext } from '../cells';
-import { HIDING_CHOICES, PER_PAGE_SIZES } from '../defaults';
+import { PER_PAGE_SIZES, hidingChoices } from '../defaults';
+import { useEditScope } from '../edit';
 import { LoadingRows } from '../states';
 import CatalogueTable from '../table';
 
@@ -35,7 +36,12 @@ const itemId = ( item ) => String( item.id );
  */
 export function switchFieldId( fields ) {
 	const ids = new Set( fields.map( ( field ) => field.id ) );
-	return Object.keys( HIDING_CHOICES ).find( ( key ) => ids.has( key ) );
+	const descriptors = fields
+		.map( ( field ) => field.descriptor )
+		.filter( Boolean );
+	return Object.keys( hidingChoices( descriptors ) ).find( ( key ) =>
+		ids.has( key )
+	);
 }
 
 /**
@@ -107,9 +113,14 @@ export function CatalogueCards( {
 	onChangeSelection,
 	renderSwitch,
 } ) {
+	// T45–T47: the cards edit as the table does (the switch, the details).
+	const edit = useEditScope( { items, fields, actions, pending } );
 	const context = useMemo(
-		() => ( { termNames: termNames || {}, pending: pending || new Set() } ),
-		[ termNames, pending ]
+		() => ( {
+			termNames: termNames || {},
+			pending: edit.pending || new Set(),
+		} ),
+		[ termNames, edit.pending ]
 	);
 	const grid = useMemo(
 		() => gridOf( fields, view, renderSwitch ),
@@ -123,11 +134,11 @@ export function CatalogueCards( {
 			/>
 		);
 	}
-	return (
+	return edit.wrap(
 		<CellContext.Provider value={ context }>
 			<div className="bcm-catalogue__cards">
 				<DataViews
-					data={ items }
+					data={ edit.items }
 					fields={ grid.fields }
 					view={ grid.view }
 					onChangeView={ ( next ) =>
@@ -146,7 +157,7 @@ export function CatalogueCards( {
 					paginationInfo={ pagination }
 					defaultLayouts={ LAYOUTS }
 					isLoading={ isLoading }
-					actions={ actions }
+					actions={ edit.actions }
 					getItemId={ itemId }
 					{ ...( onChangeSelection
 						? { selection, onChangeSelection }

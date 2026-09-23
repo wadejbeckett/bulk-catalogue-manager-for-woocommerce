@@ -8,7 +8,7 @@
  */
 import { __ } from '@wordpress/i18n';
 
-import { COMPANIONS, HIDING_CHOICES } from '../defaults';
+import { COMPANIONS, hidingChoices } from '../defaults';
 import { descriptorsOf } from '../fields';
 
 /**
@@ -79,7 +79,8 @@ export function builtInViews( registry ) {
 	}
 
 	// Hidden from site: the first hiding choice whose field filters by isAny.
-	const hiding = Object.keys( HIDING_CHOICES ).find( ( key ) =>
+	const hides = hidingChoices( descriptors );
+	const hiding = Object.keys( hides ).find( ( key ) =>
 		operators( byKey.get( key ) ).includes( 'isAny' )
 	);
 	if ( hiding ) {
@@ -93,7 +94,7 @@ export function builtInViews( registry ) {
 				{
 					field: hiding,
 					operator: 'isAny',
-					value: HIDING_CHOICES[ hiding ],
+					value: hides[ hiding ],
 				},
 			],
 		} );

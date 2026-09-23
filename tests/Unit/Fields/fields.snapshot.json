@@ -259,8 +259,8 @@
             "variationNote": "Visible on site belongs to the product, not to each variation.",
             "variableParentNote": "",
             "sortable": false,
-            "defaultColumn": false,
-            "defaultOrder": null,
+            "defaultColumn": true,
+            "defaultOrder": 3,
             "schema": {
                 "description": "Visible on site",
                 "type": "string",
@@ -386,7 +386,7 @@
             "variableParentNote": "",
             "sortable": false,
             "defaultColumn": true,
-            "defaultOrder": 6,
+            "defaultOrder": 7,
             "schema": {
                 "description": "Categories",
                 "type": "array",
@@ -489,7 +489,7 @@
             "variableParentNote": "A variable product takes its price from its variations. Change the variations instead.",
             "sortable": true,
             "defaultColumn": true,
-            "defaultOrder": 3,
+            "defaultOrder": 4,
             "schema": {
                 "description": "Regular price",
                 "type": "string",
@@ -535,7 +535,7 @@
             "variableParentNote": "A variable product takes its price from its variations. Change the variations instead.",
             "sortable": false,
             "defaultColumn": true,
-            "defaultOrder": 4,
+            "defaultOrder": 5,
             "schema": {
                 "description": "Sale price",
                 "type": "string",
@@ -571,7 +571,7 @@
             "variableParentNote": "",
             "sortable": true,
             "defaultColumn": true,
-            "defaultOrder": 5,
+            "defaultOrder": 6,
             "schema": {
                 "description": "Stock status",
                 "type": "string",

@@ -6,8 +6,8 @@
 import {
 	COMPANIONS,
 	CONTEXT,
-	DEFAULT_COLUMNS,
 	PER_PAGE_SIZES,
+	defaultColumns,
 } from './defaults';
 import { renderCell } from './cells';
 import { renderEditable } from './edit';
@@ -137,7 +137,7 @@ export function defaultView( registry, settings ) {
 		titleField: roles.title,
 		mediaField: roles.media,
 		showMedia: !! roles.media,
-		fields: DEFAULT_COLUMNS.filter(
+		fields: defaultColumns( descriptors ).filter(
 			( key ) =>
 				known.has( key ) && key !== roles.title && key !== roles.media
 		),

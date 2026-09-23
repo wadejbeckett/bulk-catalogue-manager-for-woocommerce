@@ -13,17 +13,46 @@
 
 /**
  * Columns shown by default after the product cell, which carries the
- * thumbnail and the name (the registry's image field and its title field).
+ * thumbnail and the name: the fields the registry flags `defaultColumn`, in
+ * its `defaultOrder` (Fields\Registry, T40).
+ *
+ * @param {Array<Object>} descriptors Registry descriptors.
+ * @return {Array<string>} Field keys.
  */
-export const DEFAULT_COLUMNS = [
-	'sku',
-	'status',
-	'visible_on_site',
-	'regular_price',
-	'sale_price',
-	'stock_status',
-	'category_ids',
-];
+export function defaultColumns( descriptors ) {
+	return ( descriptors || [] )
+		.filter( ( field ) => field.defaultColumn === true )
+		.sort(
+			( a, b ) =>
+				( Number( a.defaultOrder ) || 0 ) -
+				( Number( b.defaultOrder ) || 0 )
+		)
+		.map( ( field ) => field.key );
+}
+
+/**
+ * The choices the registry flags as hiding a product (`hidesProduct`),
+ * narrowed to one way of hiding (`hidesAs`): field key => values.
+ *
+ * @param {Array<Object>} descriptors Registry descriptors.
+ * @param {string}        as          'off_site' or 'hidden'.
+ * @return {Object} Field key => choice values.
+ */
+function choicesHidingAs( descriptors, as ) {
+	const out = {};
+	( descriptors || [] ).forEach( ( field ) => {
+		const values = ( field.choices || [] )
+			.filter(
+				( choice ) =>
+					choice.hidesProduct === true && choice.hidesAs === as
+			)
+			.map( ( choice ) => String( choice.value ) );
+		if ( values.length ) {
+			out[ field.key ] = values;
+		}
+	} );
+	return out;
+}
 
 /** A field whose cell also shows another field's value: stock with its quantity. */
 export const COMPANIONS = {
@@ -61,21 +90,28 @@ export const TERM_ROUTES = {
 };
 
 /**
- * Choices that take a product off the site when set in bulk: field key =>
- * values. Setting one always confirms (SPEC §4.5; panels/bulk/confirm.js).
+ * Choices that take a product off the site (`hidesAs: 'off_site'`, such as
+ * Draft): field key => values. Setting one always confirms (SPEC §4.5).
+ *
+ * @param {Array<Object>} descriptors Registry descriptors.
+ * @return {Object} Field key => choice values.
  */
-export const OFF_SITE_CHOICES = {
-	status: [ 'draft', 'pending' ],
-};
+export function offSiteChoices( descriptors ) {
+	return choicesHidingAs( descriptors, 'off_site' );
+}
 
 /**
- * Choices that hide a product from the shop and from search when set in bulk:
- * field key => values. Setting one always confirms (SPEC §4.5).
+ * Choices that hide a product from the shop and from search (`hidesAs:
+ * 'hidden'`): field key => values, the Visible on site switch first.
+ *
+ * @param {Array<Object>} descriptors Registry descriptors.
+ * @return {Object} Field key => choice values.
  */
-export const HIDING_CHOICES = {
-	visible_on_site: [ 'off' ],
-	catalog_visibility: [ 'hidden' ],
-};
+export function hidingChoices( descriptors ) {
+	const all = choicesHidingAs( descriptors, 'hidden' );
+	const { [ VISIBILITY.field ]: first, ...rest } = all;
+	return first ? { [ VISIBILITY.field ]: first, ...rest } : rest;
+}
 
 // T41, T42: filters and the selection bar ---------------------------------
 

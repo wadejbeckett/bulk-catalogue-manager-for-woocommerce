@@ -14,7 +14,6 @@
 import { useEffect, useRef, useState } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 
-import { OFF_SITE_CHOICES, HIDING_CHOICES } from '../catalogue/defaults';
 import { actionById, fieldByKey } from './descriptors';
 import { formatNumber, productsPhrase } from './words';
 
@@ -36,15 +35,18 @@ function choiceLabel( field, value ) {
 }
 
 /**
- * Whether a value is one of the choices a preset table lists for the field.
+ * How setting a field to a value hides the product, from the registry's
+ * choice flags (`hidesProduct`, `hidesAs`): 'off_site', 'hidden' or ''.
  *
- * @param {Object} table Field key => choice values.
  * @param {Object} field Field descriptor.
  * @param {*}      value The value set.
- * @return {boolean} Listed.
+ * @return {string} The way it hides, or '' when it does not.
  */
-function takes( table, field, value ) {
-	return ( table[ field.key ] || [] ).includes( String( value ) );
+function hidesAs( field, value ) {
+	const choice = ( field?.choices || [] ).find(
+		( each ) => String( each.value ) === String( value )
+	);
+	return choice?.hidesProduct === true ? String( choice.hidesAs || '' ) : '';
 }
 
 /**
@@ -90,7 +92,8 @@ export function alwaysConfirmReasons( registry, operations, count ) {
 		if ( ! sets ) {
 			return;
 		}
-		if ( takes( OFF_SITE_CHOICES, field, value ) ) {
+		const hides = hidesAs( field, value );
+		if ( hides === 'off_site' ) {
 			reasons.push(
 				sprintf(
 					/* translators: 1: a field, "Status"; 2: its new value, such as "Draft"; 3: a number of products, such as "24 products". */
@@ -105,7 +108,7 @@ export function alwaysConfirmReasons( registry, operations, count ) {
 			);
 			return;
 		}
-		if ( takes( HIDING_CHOICES, field, value ) ) {
+		if ( hides === 'hidden' ) {
 			reasons.push(
 				sprintf(
 					/* translators: 1: a field, such as "Visible on site"; 2: its new value, such as "Hidden"; 3: a number of products, such as "24 products". */

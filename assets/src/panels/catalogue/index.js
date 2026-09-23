@@ -31,13 +31,13 @@ import { __ } from '@wordpress/i18n';
 import BulkChangePanel from '../bulk';
 import { FINISHED, useBatchProgress } from '../bulk/hooks';
 import { CategoryPanel, useCategoryTree } from '../categories/index';
+import { categorySentence } from '../categories/tree-model';
 import { BatchProgress, StalledNotice } from '../history';
 import { useSettings } from '../settings/store';
 import { rowActions } from './actions';
 import { descriptorsOf, defaultView, fieldsFromRegistry } from './fields';
 import { categoryArgs, clearFilters, isFiltered } from './query';
 import { ErrorNotice, LoadingRows, NoMatches, NoProducts } from './states';
-import CatalogueTable from './table';
 import { useCatalogue, useRegistry, useTermNames } from './use-catalogue';
 // T41, T42: search, filters, chips and the selection.
 import { CATEGORY_FILTER } from './defaults';
@@ -57,6 +57,15 @@ import {
 	visibilityOperation,
 } from './selection';
 // End T41, T42.
+// T51–T53: saved views, the layout switch, the cards and the export.
+import {
+	CatalogueLayout,
+	ExportControl,
+	LayoutSwitch,
+	SavedViewsBar,
+} from './views';
+import { switchFieldId } from './views/cards';
+import { MODES, modeOf } from './variations';
 import './style.scss';
 
 export { fieldsFromRegistry, defaultView } from './fields';
@@ -137,8 +146,15 @@ export function CatalogueGrid( {
 		() => fieldsFromRegistry( registry ),
 		[ registry ]
 	);
+	// The screen's starting view, under a saved view's keys (T52).
+	const baseView = useMemo(
+		() => defaultView( registry, settings ),
+		// A settings save must not reset the screen's view.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+		[ registry ]
+	);
 	const [ view, setView ] = useState( () => ( {
-		...defaultView( registry, settings ),
+		...baseView,
 		...initialView,
 	} ) );
 	const [ category, setCategory ] = useState( null );
@@ -227,6 +243,23 @@ export function CatalogueGrid( {
 			page: 1,
 		} ) );
 	}, [] );
+	// T52: a saved or built-in view sets the view and the category panel.
+	const { byId } = tree;
+	const applyView = useCallback(
+		( next, value ) => {
+			setView( next );
+			setCategory( value || null );
+			setSentence( value ? categorySentence( value, byId ) : '' );
+		},
+		[ byId ]
+	);
+	// T51: the cards' Visible on site slot draws the switch field's own cell.
+	const renderSwitch = useMemo( () => {
+		const slot = switchFieldId( filterFields );
+		const field = filterFields.find( ( each ) => each.id === slot );
+		return field ? ( item ) => field.render( { item, field } ) : undefined;
+	}, [ filterFields ] );
+	const variationsMode = modeOf( view ) === MODES.variations;
 	const { refetch } = catalogue;
 	const finished = useCallback( () => {
 		setApplied( null );
@@ -239,6 +272,7 @@ export function CatalogueGrid( {
 		! catalogue.isLoading &&
 		! catalogue.error &&
 		! filtered &&
+		! variationsMode &&
 		catalogue.pagination.totalItems === 0
 	) {
 		return <NoProducts />;
@@ -254,6 +288,22 @@ export function CatalogueGrid( {
 				settings={ settings }
 			/>
 			<div className="bcm-catalogue__main">
+				{ /* T51–T53 */ }
+				<SavedViewsBar
+					registry={ registry }
+					view={ view }
+					category={ category }
+					baseView={ baseView }
+					onApply={ applyView }
+				/>
+				<div className="bcm-catalogue__toolbar">
+					<LayoutSwitch view={ view } onChangeView={ setView } />
+					<ExportControl
+						query={ catalogue.query }
+						view={ view }
+						registry={ registry }
+					/>
+				</div>
 				{ catalogue.error && (
 					<ErrorNotice
 						message={ __(
@@ -299,7 +349,8 @@ export function CatalogueGrid( {
 						onFinished={ finished }
 					/>
 				) }
-				<CatalogueTable
+				<CatalogueLayout
+					renderSwitch={ renderSwitch }
 					fields={ filterFields }
 					view={ view }
 					onChangeView={ setView }
@@ -315,6 +366,7 @@ export function CatalogueGrid( {
 					empty={
 						catalogue.error ? null : (
 							<NoMatches
+								variations={ variationsMode }
 								filters={ [
 									sentence,
 									...chips.map( ( chip ) => chip.sentence ),

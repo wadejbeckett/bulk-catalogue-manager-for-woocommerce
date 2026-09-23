@@ -141,20 +141,31 @@ export function activeFilters( view, descriptors ) {
  * Nothing matches the filters: the sentence, what is filtering, and a way
  * back to the whole catalogue.
  *
- * @param {Object}        props         Props.
- * @param {Array<string>} props.filters Active filter sentences.
- * @param {Function}      props.onClear Clear every filter.
+ * @param {Object}        props            Props.
+ * @param {Array<string>} props.filters    Active filter sentences.
+ * @param {Function}      props.onClear    Clear every filter.
+ * @param {boolean}       props.variations The grid lists variations only (T67).
  * @return {Element} State.
  */
-export function NoMatches( { filters, onClear } ) {
+export function NoMatches( { filters, onClear, variations = false } ) {
+	let title = __(
+		'No products match these filters.',
+		'bulk-catalogue-manager-for-woocommerce'
+	);
+	if ( variations ) {
+		title = filters.length
+			? __(
+					'No variations match these filters.',
+					'bulk-catalogue-manager-for-woocommerce'
+				)
+			: __(
+					'No variations match.',
+					'bulk-catalogue-manager-for-woocommerce'
+				);
+	}
 	return (
 		<div className="bcm-state">
-			<p className="bcm-state__title">
-				{ __(
-					'No products match these filters.',
-					'bulk-catalogue-manager-for-woocommerce'
-				) }
-			</p>
+			<p className="bcm-state__title">{ title }</p>
 			{ filters.length > 0 && (
 				<ul
 					className="bcm-state__filters"
@@ -168,12 +179,14 @@ export function NoMatches( { filters, onClear } ) {
 					) ) }
 				</ul>
 			) }
-			<Button variant="primary" onClick={ onClear }>
-				{ __(
-					'Clear filters',
-					'bulk-catalogue-manager-for-woocommerce'
-				) }
-			</Button>
+			{ ( ! variations || filters.length > 0 ) && (
+				<Button variant="primary" onClick={ onClear }>
+					{ __(
+						'Clear filters',
+						'bulk-catalogue-manager-for-woocommerce'
+					) }
+				</Button>
+			) }
 		</div>
 	);
 }

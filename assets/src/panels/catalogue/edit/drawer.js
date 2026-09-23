@@ -195,16 +195,11 @@ export default function DetailDrawer( {
 	const report = useRef( false );
 	const id = item.id;
 
-	const skuField = fields.find(
-		( field ) => field.type === 'text' && field.nullable && field.maxLength
-	);
-
 	useEffect( () => {
 		let live = true;
 		loadProduct(
 			item,
-			roles.title,
-			skuField ? item[ skuField.key ] : ''
+			descriptors.map( ( field ) => field.key )
 		).then( ( row ) => {
 			if ( live ) {
 				setSaved( row );

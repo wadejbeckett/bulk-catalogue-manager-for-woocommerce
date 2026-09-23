@@ -23,3 +23,4 @@ vendor/             export-ignore
 # Release archives always use LF, whatever the checkout's autocrlf.
 * text=auto eol=lf
 AGENTS.md           export-ignore
+jest.config.js      export-ignore

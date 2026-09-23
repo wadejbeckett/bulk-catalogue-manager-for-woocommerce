@@ -48,36 +48,27 @@ export function patchProduct( id, values, fields = [] ) {
 }
 
 /**
- * Every field of one row, for the detail panel. There is no single-product
- * read, so the list is searched for the row's SKU (or name) and the row
- * picked out by id; when it cannot be found the grid's row is used as it is.
+ * Every field of one row, for the detail panel: GET /products/{id} (a
+ * product or a variation) with the panel's fields; when it cannot be read
+ * the grid's row is used as it is.
  *
- * @param {Object} item       The grid's row.
- * @param {string} titleField The title field's key (rolesOf()).
- * @param {string} skuText    Text to search by: the SKU when the row has one.
+ * @param {Object}        item   The grid's row.
+ * @param {Array<string>} fields Field keys the panel shows.
  * @return {Promise<Object>} The full row, or the grid's row.
  */
-export function loadProduct( item, titleField, skuText = '' ) {
-	const search = String( skuText || item?.[ titleField ] || '' ).slice(
-		0,
-		200
-	);
-	if ( ! search ) {
+export function loadProduct( item, fields = [] ) {
+	const id = Number( item?.id );
+	if ( ! id ) {
 		return Promise.resolve( item );
 	}
-	return request( 'products', {
-		query: {
-			search,
-			mode: isVariation( item ) ? 'products_and_variations' : 'products',
-			per_page: 100,
-		},
+	return request( `products/${ id }`, {
+		query: fields.length ? { fields } : {},
 	} )
-		.then( ( answer ) => {
-			const found = ( answer?.items || [] ).find(
-				( row ) => Number( row.id ) === Number( item.id )
-			);
-			return found ? { ...item, ...found } : item;
-		} )
+		.then( ( answer ) =>
+			answer?.item && Number( answer.item.id ) === id
+				? { ...item, ...answer.item }
+				: item
+		)
 		.catch( () => item );
 }
 

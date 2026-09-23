@@ -222,3 +222,13 @@
 .bcm-catalogue__progress {
 	margin: 0 0 8px;
 }
+
+// T51, T53: the layout switch and Export beside each other above the grid.
+.bcm-catalogue__toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-start;
+	justify-content: flex-end;
+	gap: 8px;
+	margin: 0 0 8px;
+}

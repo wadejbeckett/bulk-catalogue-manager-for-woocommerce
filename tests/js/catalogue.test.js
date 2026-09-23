@@ -37,6 +37,8 @@ beforeEach( () => {
 	route( apiFetch, {
 		fields: () => REGISTRY,
 		products: () => page(),
+		// T47's detail panel reads its row through GET /products/{id}.
+		'products/11': () => ( { item: ROWS[ 0 ] } ),
 		categories: () => CATEGORIES,
 	} );
 } );

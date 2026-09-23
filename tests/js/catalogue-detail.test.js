@@ -79,9 +79,10 @@ beforeEach( () => {
 			case 'fields':
 				return Promise.resolve( REGISTRY );
 			case 'products':
-				return Promise.resolve(
-					query.search ? page( [ FULL ], 1 ) : page( ROWS )
-				);
+				return Promise.resolve( page( ROWS ) );
+			// T47 reads the full row through GET /products/{id}.
+			case 'products/11':
+				return Promise.resolve( { item: FULL } );
 			case 'products/11/variations':
 				return Promise.resolve( page( VARIATIONS, 1 ) );
 			case 'audit':

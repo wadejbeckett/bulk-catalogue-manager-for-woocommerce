@@ -114,3 +114,55 @@ final class SavedProduct {
 		throw new \BadMethodCallException( $method );
 	}
 }
+
+/**
+ * T30: a stand-in for a loaded WooCommerce product the preview must never
+ * save. Like SavedProduct, get_{prop}() answers the prop and set_{prop}()
+ * stores it; every set, save() and clone — on the object or on any copy of
+ * it — is also recorded in $GLOBALS['bcm_test']['watched'] as
+ * [ 'set' | 'save' | 'clone', id, method or null ], so a test sees a save
+ * made on a detached copy too. A setter named in $refuse throws
+ * WC_Data_Exception with that message.
+ */
+final class WatchedProduct {
+	/**
+	 * Setter => message for setters that throw WC_Data_Exception.
+	 *
+	 * @var array<string, string>
+	 */
+	public array $refuse = [];
+
+	public function __construct( private string $type = 'simple', public array $props = [] ) {}
+
+	public function __clone() {
+		$GLOBALS['bcm_test']['watched'][] = [ 'clone', (int) ( $this->props['id'] ?? 0 ), null ];
+	}
+
+	public function is_type( string $type ): bool {
+		return $type === $this->type;
+	}
+
+	public function get_type(): string {
+		return $this->type;
+	}
+
+	public function save(): int {
+		$GLOBALS['bcm_test']['watched'][] = [ 'save', (int) ( $this->props['id'] ?? 0 ), null ];
+		return (int) ( $this->props['id'] ?? 0 );
+	}
+
+	public function __call( string $method, array $args ): mixed {
+		if ( str_starts_with( $method, 'get_' ) ) {
+			return $this->props[ substr( $method, 4 ) ] ?? null;
+		}
+		if ( str_starts_with( $method, 'set_' ) ) {
+			if ( isset( $this->refuse[ $method ] ) ) {
+				throw new \WC_Data_Exception( 'product_invalid_value', $this->refuse[ $method ] );
+			}
+			$GLOBALS['bcm_test']['watched'][]    = [ 'set', (int) ( $this->props['id'] ?? 0 ), $method ];
+			$this->props[ substr( $method, 4 ) ] = $args[0];
+			return null;
+		}
+		throw new \BadMethodCallException( $method );
+	}
+}

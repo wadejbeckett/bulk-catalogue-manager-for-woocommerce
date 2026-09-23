@@ -968,6 +968,9 @@ final class RegistryTest extends TestCase {
 	public function test_compute_on_a_placeholder_throws_and_writes_nothing(): void {
 		$registry = self::registry();
 		foreach ( self::ACTIONS as $id => [ , , $ticket ] ) {
+			if ( 'T26' === $ticket ) {
+				continue; // Implemented: AdjustTest, RoundTest and CopyPriceTest cover compute().
+			}
 			$product   = new FakeProduct(
 				'simple',
 				[

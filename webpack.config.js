@@ -35,6 +35,19 @@ module.exports = {
 		...defaultConfig.output,
 		path: path.resolve( __dirname, 'assets/build' ),
 	},
+	module: {
+		...defaultConfig.module,
+		rules: [
+			...defaultConfig.module.rules,
+			// @wordpress/dataviews declares `sideEffects: false`, so webpack
+			// would drop index.js's bare import of its stylesheet (the
+			// filters, chips, grid and table rules) from the build.
+			{
+				test: /[\\/]@wordpress[\\/]dataviews[\\/]build-style[\\/]style\.css$/,
+				sideEffects: true,
+			},
+		],
+	},
 	plugins: [
 		...defaultConfig.plugins.filter(
 			( plugin ) =>

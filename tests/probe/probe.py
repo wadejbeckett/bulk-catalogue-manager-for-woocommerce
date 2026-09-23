@@ -660,7 +660,7 @@ def check_read_queries(p: Probe) -> None:
         hiding = {f["key"]: sorted(c["value"] for c in f.get("choices", []) if c.get("hidesProduct")) for f in fields}
         hiding = {k: v for k, v in hiding.items() if v}
         want_hiding = {"status": ["draft", "pending"], "catalog_visibility": ["hidden"], "visible_on_site": ["off"]}
-        ok = default == ["sku", "status", "regular_price", "sale_price", "stock_status", "category_ids"] and hiding == want_hiding
+        ok = default == ["sku", "status", "visible_on_site", "regular_price", "sale_price", "stock_status", "category_ids"] and hiding == want_hiding
         p.row("read", "read:fields:flags", ok, f"default columns {default}; hiding choices {hiding}")
 
     for name, fn in [("hydration", hydration), ("filter-category", category), ("search", search), ("filter-price", price_range),

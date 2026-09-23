@@ -406,3 +406,28 @@ $bcm-bad: #d63638;
 		transition: none;
 	}
 }
+
+// Core's nav-menus stylesheet (loaded on every admin page) draws a menu
+// tree's `[role="treeitem"] span[aria-hidden]` as an absolutely placed
+// dashicon; the tree's own decorative spans (grip, disclosure, count, the
+// kebab's dots) stay in the row's flow.
+[role="treeitem"] .bcm-cat-row span[aria-hidden] {
+	position: static;
+	font-family: inherit;
+	font-size: inherit;
+	pointer-events: auto;
+}
+
+[role="treeitem"] .bcm-cat-row > .bcm-cat-grip[aria-hidden] {
+	display: block;
+	font-size: 0;
+}
+
+[role="treeitem"] .bcm-cat-row > .bcm-cat-twist[aria-hidden] {
+	display: grid;
+}
+
+[role="treeitem"] .bcm-cat-row > .bcm-cat-count[aria-hidden] {
+	display: inline-block;
+	font-size: 11px;
+}

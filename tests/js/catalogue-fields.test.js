@@ -210,6 +210,12 @@ describe( 'cells', () => {
 		expect( textOf( '<span>R<b>12.50</b></span> <img src=x>' ) ).toBe(
 			'R12.50'
 		);
+		// WooCommerce's screen-reader sentence on a range stays out.
+		expect(
+			textOf(
+				'<span>R10</span> – <span>R69</span><span class="screen-reader-text">Price range: R10 through R69</span>'
+			)
+		).toBe( 'R10 – R69' );
 	} );
 
 	it( 'marks a row with a change in flight as pending (T46 placeholder)', () => {

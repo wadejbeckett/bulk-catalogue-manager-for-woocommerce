@@ -232,3 +232,9 @@
 	gap: 8px;
 	margin: 0 0 8px;
 }
+
+// A table wider than the panel scrolls inside it rather than the page.
+.bcm-catalogue__table {
+	max-width: 100%;
+	overflow-x: auto;
+}

@@ -58,6 +58,11 @@ export function textOf( html ) {
 		String( html ),
 		'text/html'
 	);
+	// WooCommerce adds a screen-reader sentence to a price range ("Price
+	// range: $10.00 through $69.00"); the cell shows what is on screen.
+	doc.body
+		.querySelectorAll( '.screen-reader-text' )
+		.forEach( ( node ) => node.remove() );
 	return ( doc.body.textContent || '' ).replace( /\s+/g, ' ' ).trim();
 }
 

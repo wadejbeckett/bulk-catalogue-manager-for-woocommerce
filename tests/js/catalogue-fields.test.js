@@ -276,6 +276,10 @@ const ALLOWED = new Map( [
 		'the product id property of a GET /products item, asked for by fields',
 	],
 	[
+		'panels/categories/category-manager.js:name',
+		'the name property of a category term sent to /categories, not the product name field',
+	],
+	[
 		'panels/history/batches.js:status',
 		'the outcome property of a GET /batches row, not the product status field',
 	],

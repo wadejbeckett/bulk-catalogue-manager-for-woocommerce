@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-09-23T15:30:02+00:00\n"
+"POT-Creation-Date: 2026-09-23T15:34:23+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -1880,6 +1880,242 @@ msgstr ""
 msgid "Clear filters"
 msgstr ""
 
+#. translators: %s: a category name.
+#, js-format
+msgid "Category \"%s\" saved."
+msgstr ""
+
+#. translators: %s: a category name.
+#, js-format
+msgid "Category \"%s\" created."
+msgstr ""
+
+msgid "The category could not be saved. Try again in a moment."
+msgstr ""
+
+#. translators: %s: a category name.
+#, js-format
+msgid "Edit “%s”"
+msgstr ""
+
+msgid "Add a category"
+msgstr ""
+
+msgid "You can browse and filter by categories, but changing them needs permission to manage product categories."
+msgstr ""
+
+msgid "Slug"
+msgstr ""
+
+msgid "Used in the category’s web address. Leave it empty to make one from the name."
+msgstr ""
+
+msgid "Parent category"
+msgstr ""
+
+msgid "Description"
+msgstr ""
+
+msgid "Leave this empty to keep the current description."
+msgstr ""
+
+msgid "Save category"
+msgstr ""
+
+msgid "Add category"
+msgstr ""
+
+msgid "Cancel"
+msgstr ""
+
+msgid "Showing all products."
+msgstr ""
+
+#. translators: %s: the category's new name.
+#, js-format
+msgid "Category renamed to %s."
+msgstr ""
+
+msgid "The category could not be renamed. Try again in a moment."
+msgstr ""
+
+#. translators: 1: a category name, 2: where it now sits, such as "Clothing › T-Shirts" or "Top level".
+#, js-format
+msgid "%1$s moved to %2$s."
+msgstr ""
+
+msgid "the top level"
+msgstr ""
+
+msgid "The category could not be moved. Try again in a moment."
+msgstr ""
+
+msgid "Show all"
+msgstr ""
+
+msgid "Search categories"
+msgstr ""
+
+msgid "Include sub-categories"
+msgstr ""
+
+msgid "The categories could not be loaded."
+msgstr ""
+
+msgid "Loading categories…"
+msgstr ""
+
+msgid "You have no product categories yet."
+msgstr ""
+
+msgid "Create your first category"
+msgstr ""
+
+msgid "+ Add category"
+msgstr ""
+
+msgid "Category details"
+msgstr ""
+
+msgid "Show categories"
+msgstr ""
+
+msgid "Product categories"
+msgstr ""
+
+msgid "Hide categories"
+msgstr ""
+
+msgid "Resize the category panel"
+msgstr ""
+
+msgid "All products"
+msgstr ""
+
+#. translators: %s: a category name.
+#, js-format
+msgid "%s expanded"
+msgstr ""
+
+#. translators: %s: a category name.
+#, js-format
+msgid "%s collapsed"
+msgstr ""
+
+#. translators: %s: a category name.
+#, js-format
+msgid "Drop to add the selected products to “%s”."
+msgstr ""
+
+#. translators: %s: the category's new path, such as "Clothing › T-Shirts".
+#, js-format
+msgid "New place: %s"
+msgstr ""
+
+msgid "Rename"
+msgstr ""
+
+msgid "Edit details…"
+msgstr ""
+
+msgid "Move to…"
+msgstr ""
+
+#. translators: 1: a category name, 2: how many products it holds.
+#, js-format
+msgid "%1$s, %2$s product"
+msgid_plural "%1$s, %2$s products"
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a category name.
+#, js-format
+msgid "New name for %s"
+msgstr ""
+
+#. translators: %s: a category name.
+#, js-format
+msgid "More actions for %s"
+msgstr ""
+
+#. translators: %s: a category name.
+#, js-format
+msgid "Actions for %s"
+msgstr ""
+
+msgid "Press Shift+F10 for a category’s actions, including Move to…, or F2 to rename it."
+msgstr ""
+
+msgid "No categories match this search."
+msgstr ""
+
+#. translators: %d: an HTTP status code such as 400.
+#, js-format
+msgid "HTTP %d"
+msgstr ""
+
+msgid "Hide details"
+msgstr ""
+
+#. translators: %s: a category name.
+#, js-format
+msgid "Before “%s”"
+msgstr ""
+
+#. translators: %s: a category name.
+#, js-format
+msgid "Move “%s”"
+msgstr ""
+
+msgid "Move into"
+msgstr ""
+
+msgid "Position"
+msgstr ""
+
+msgid "Move"
+msgstr ""
+
+#. translators: 1: a category path so far, 2: the next category below it.
+#, js-format
+msgctxt "category path"
+msgid "%1$s › %2$s"
+msgstr ""
+
+#. translators: 1: the choices so far, 2: the next choice.
+#, js-format
+msgctxt "list of choices"
+msgid "%1$s, %2$s"
+msgstr ""
+
+#. translators: 1: every choice but the last, 2: the last choice.
+#, js-format
+msgid "%1$s or %2$s"
+msgstr ""
+
+#. translators: %d: a category id that is no longer in the tree.
+#, js-format
+msgid "category %d"
+msgstr ""
+
+#. translators: %s: one or more category names, such as "Shoes" or "Shoes or Hats".
+#, js-format
+msgid "Category is %s"
+msgstr ""
+
+#. translators: %s: a category name, such as "Shoes".
+#, js-format
+msgid "Category is %s or its sub-categories"
+msgstr ""
+
+#. translators: %s: several category names, such as "Shoes or Hats".
+#, js-format
+msgid "Category is %s, or their sub-categories"
+msgstr ""
+
+msgid "Top level"
+msgstr ""
+
 msgid "When"
 msgstr ""
 
@@ -1979,9 +2215,6 @@ msgstr ""
 msgid "Undo all %s anyway"
 msgstr ""
 
-msgid "Cancel"
-msgstr ""
-
 msgid "Redo this change?"
 msgstr ""
 
@@ -2058,9 +2291,6 @@ msgid "Failed"
 msgstr ""
 
 msgid "Waiting"
-msgstr ""
-
-msgid "Hide details"
 msgstr ""
 
 #. translators: %s: the change's number, such as "401".

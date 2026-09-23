@@ -61,6 +61,11 @@ final class RegistryTest extends TestCase {
 		'bcm_category_not_saved'  => 'REST refusal code for a category write WordPress refused',
 		'bcm_nonce'               => 'Heartbeat data key the screen sends and the key of the fresh REST nonce in the answer; nothing is stored',
 		'bcm_invalid_setting'     => 'REST refusal code for a settings save naming a value a setting does not accept; nothing is saved',
+		'bcm_invalid_view'        => 'REST refusal code for a saved view, category or order that breaks the schema; nothing is saved',
+		'bcm_view_name_required'  => 'REST refusal code for a saved view with no name or a name above 60 characters',
+		'bcm_view_exists'         => 'REST refusal code for a saved view name the same user already has',
+		'bcm_too_many_views'      => 'REST refusal code for saving a 51st view',
+		'bcm_view_not_found'      => 'REST refusal code for a view id not in the current user\'s bcm_views',
 	];
 
 	/**
@@ -111,7 +116,7 @@ final class RegistryTest extends TestCase {
 	public function test_the_scan_would_catch_an_unregistered_key(): void {
 		$this->assertSame( 1, preg_match_all( '/[\'"](bcm_[A-Za-z0-9_\-]*)/', "update_user_meta( \$id, 'bcm_views', \$v );", $m ) );
 		$this->assertSame( [ 'bcm_views' ], $m[1] );
-		$this->assertNotContains( 'bcm_views', Registry::plugin()->user_meta(), 'Adjust this canary when T52 registers bcm_views.' );
+		$this->assertContains( 'bcm_views', Registry::plugin()->user_meta(), 'T52 registers bcm_views.' );
 	}
 
 	public function test_the_plugin_registry_holds_its_options_and_the_prune_action(): void {

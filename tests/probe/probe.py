@@ -23,6 +23,10 @@ Chapters (``--chapters``, comma separated, default all, run in this order):
              rest_cookie_invalid_nonce (core) while the same cookie with no
              nonce is anonymous to core and refused 401. Id sets, totals and
              the export are checked against WooCommerce itself under wp eval.
+             T52/T53: a saved view created, marked default and read back
+             unchanged (page aside), unreachable to another user (404), the
+             schema refusals, deleted; the export with the nonce as a
+             ``_wpnonce`` query argument instead of the header.
   write      The engine live: selection -> preview (nothing saved) -> batch
              (apply, replay) -> Action Scheduler run through ``wp
              action-scheduler run`` -> progress until complete -> values
@@ -418,6 +422,11 @@ def read_routes(p: Probe) -> list[tuple[str, str, str, Any, Any, Callable[[Respo
             rows = list(csv.reader(io.StringIO(r.body.decode("utf-8-sig"))))
             return "" if rows and rows[0] == want else f"header {rows[0] if rows else None} want {want}"
         return shape
+    def views_shape(r: Response) -> str:
+        d = r.json()
+        if not isinstance(d, dict) or not isinstance(d.get("items"), list) or d.get("max") != 50 or "default" not in d:
+            return f"{d}"
+        return ""
 
     cat = filter_params("category_ids", "isAny", [root])
     return [
@@ -434,6 +443,8 @@ def read_routes(p: Probe) -> list[tuple[str, str, str, Any, Any, Callable[[Respo
         ("batches-users", "GET", "/batches/users", None, None, users_shape),
         ("export-audit", "GET", "/export", [("source", "audit"), ("columns[]", "applied_gmt"), ("columns[]", "name")], None, csv_header(["When (UTC)", "Product"])),
         ("export-batches", "GET", "/export", [("source", "batches"), ("columns[]", "batch_id"), ("columns[]", "user_name")], None, csv_header(["Change number", "Who"])),
+        # T52's saved views: the current user's own list.
+        ("views", "GET", "/views", None, None, views_shape),
     ]
 
 
@@ -620,6 +631,71 @@ def check_read_queries(p: Probe) -> None:
                      ("filter-category-only", include_children), ("search-variation-sku", variation_sku),
                      ("categories-description", category_description), ("fields-flags", registry_flags)]:
         p.guard("read", f"read:{name}", fn)
+
+
+def check_saved_views(p: Probe) -> None:
+    """T52, T53: a view saved, marked default and read back into the grid state;
+    another user neither lists nor reaches it; the export downloads with the
+    nonce as a _wpnonce query argument, as the Export control sends it."""
+    name = "Probe saved view"
+    view = {"type": "grid", "perPage": 50, "search": "probe", "fields": ["sku", "regular_price"],
+            "filters": [{"field": "stock_status", "operator": "isAny", "value": ["instock"]}],
+            "sort": {"field": "regular_price", "direction": "desc"}, "page": 4, "futureKey": {"kept": True}}
+    category = {"id": p.seed["categories"]["root"], "includeChildren": True}
+    state: dict = {}
+
+    def create() -> None:
+        for item in (p.http("manager", "GET", "/views").json() or {}).get("items", []):
+            if item["name"] == name:
+                p.http("manager", "DELETE", f"/views/{item['id']}")
+        r = p.http("manager", "POST", "/views", body={"name": name, "view": view, "category": category})
+        item = (r.json() or {}).get("item", {})
+        state["id"] = item.get("id")
+        p.row("read", "read:views:create", r.status == 201 and item.get("name") == name, r.brief())
+
+    def default_and_reload() -> None:
+        r = p.http("manager", "POST", f"/views/{state['id']}/default", body={"default": True})
+        d = p.http("manager", "GET", "/views").json()
+        item = next((i for i in d["items"] if i["id"] == state["id"]), {})
+        want = {k: v for k, v in view.items() if k != "page"}
+        p.row("read", "read:views:default-reload", r.status == 200 and d["default"] == state["id"] and item.get("isDefault") is True
+              and item.get("view") == want and item.get("category") == category,
+              f"default {d['default']}; view {item.get('view')}")
+
+    def isolation() -> None:
+        listed = p.http("admin", "GET", "/views").json()
+        other = [i for i in listed.get("items", []) if i["id"] == state["id"]]
+        patch = p.http("admin", "PATCH", f"/views/{state['id']}", body={"name": "taken"})
+        gone = p.http("admin", "DELETE", f"/views/{state['id']}")
+        p.row("read", "read:views:other-user", not other and patch.status == 404 and gone.status == 404
+              and patch.code() == "bcm_view_not_found", f"listed {len(other)}; PATCH {patch.brief()}; DELETE {gone.brief()}")
+        sub = p.http("subscriber", "POST", "/views", body={"name": "x", "view": view})
+        p.row("read", "read:views:subscriber-write", sub.status == 403, sub.brief())
+
+    def refusals() -> None:
+        bad = p.http("manager", "POST", "/views", body={"name": name + " bad", "view": {"type": "kanban"}})
+        dup = p.http("manager", "POST", "/views", body={"name": name.upper(), "view": view})
+        p.row("read", "read:views:schema", bad.code() == "bcm_invalid_view" and dup.code() == "bcm_view_exists", f"{bad.brief()}; {dup.brief()}")
+
+    def export_query_nonce() -> None:
+        _, nonce = p.session("manager")
+        params = filter_params("category_ids", "isAny", [p.seed["categories"]["root"]]) + [
+            ("columns[]", "name"), ("columns[]", "sku"), ("_wpnonce", nonce)]
+        r = p.http("manager", "GET", "/export", params, nonce="none")
+        ctype = r.headers.get("Content-Type", "")
+        rows = list(csv.reader(io.StringIO(r.body.decode("utf-8-sig")))) if "text/csv" in ctype else []
+        p.row("read", "read:export:query-nonce", r.status == 200 and len(rows) == 13, f"{r.status} {ctype}; {len(rows)} lines")
+
+    def cleanup() -> None:
+        r = p.http("manager", "DELETE", f"/views/{state['id']}")
+        p.row("read", "read:views:delete", r.status == 200 and all(i["id"] != state["id"] for i in r.json()["items"]), r.brief())
+
+    for surface, fn in [("views:create", create), ("views:default-reload", default_and_reload), ("views:other-user", isolation),
+                        ("views:schema", refusals), ("export:query-nonce", export_query_nonce), ("views:delete", cleanup)]:
+        if surface != "views:create" and surface != "export:query-nonce" and not state.get("id"):
+            p.row("read", f"read:{surface}", False, "no view from the create step")
+            continue
+        p.guard("read", f"read:{surface}", fn)
 
 
 # ---------------------------------------------------------------------------
@@ -1269,7 +1345,7 @@ def check_variations(p: Probe) -> None:
 
 CHAPTERS: dict[str, list[Callable[[Probe], None]]] = {
     "screen": [check_screen],
-    "read": [check_read_matrix, check_read_queries],
+    "read": [check_read_matrix, check_read_queries, check_saved_views],
     "write": [check_write_engine, check_write_stale, check_write_inline, check_write_categories, check_write_history],
     "access": [check_access, check_settings],
     "variations": [check_variations],

@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-09-23T17:56:29+00:00\n"
+"POT-Creation-Date: 2026-09-23T17:58:36+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -1412,6 +1412,54 @@ msgid "%1$s of %2$s was changed again after this batch and will be left alone un
 msgid_plural "%1$s of %2$s were changed again after this batch and will be left alone unless you choose Revert anyway."
 msgstr[0] ""
 msgstr[1] ""
+
+msgid "The name the view is saved under."
+msgstr ""
+
+msgid "The catalogue view: layout, page size, search, filters, sort and columns."
+msgstr ""
+
+msgid "The category chosen in the category panel, or null for all products."
+msgstr ""
+
+msgid "Whether the screen opens with this view."
+msgstr ""
+
+msgid "Every saved view id, in the new order."
+msgstr ""
+
+msgid "True to open the screen with this view, false to stop."
+msgstr ""
+
+#. translators: %d: the most saved views one person may keep, 50.
+#, php-format
+msgid "You already have %d saved views, the most you can keep. Delete one you no longer use, then save this one."
+msgstr ""
+
+msgid "Your saved views changed while you were moving them. Reload the page and try again."
+msgstr ""
+
+msgid "A saved view needs a name. Type a name, such as \"Out of stock shirts\"."
+msgstr ""
+
+#. translators: %d: the most characters a view name may have, 60.
+#, php-format
+msgid "A view name can be at most %d characters. Use a shorter name."
+msgstr ""
+
+#. translators: %s: a saved view's name.
+#, php-format
+msgid "You already have a view called \"%s\". Choose another name."
+msgstr ""
+
+msgid "The chosen category could not be saved with this view. Choose the category again and save the view."
+msgstr ""
+
+msgid "This saved view no longer exists. Reload the page to see your saved views."
+msgstr ""
+
+msgid "This view could not be saved because part of it is not valid. Clear the filters, choose the columns again and save it once more."
+msgstr ""
 
 msgid "This selection has expired or can no longer be used. Choose the products again and try again."
 msgstr ""
@@ -2842,4 +2890,105 @@ msgstr ""
 #. translators: %s: a filter as a sentence, such as "Stock quantity is 0 or less".
 #, js-format
 msgid "Clear the filter “%s”"
+msgstr ""
+
+msgid "Keeps the filters, search, sort, columns, layout, page size and category you have on now."
+msgstr ""
+
+msgid "Delete this view?"
+msgstr ""
+
+#. translators: %s: a saved view's name.
+#, js-format
+msgid "\"%s\" will be removed from your saved views. Your products are not changed."
+msgstr ""
+
+msgid "Keep it"
+msgstr ""
+
+msgid "Delete view"
+msgstr ""
+
+#. translators: %s: a saved view's name.
+#, js-format
+msgid "Options for %s"
+msgstr ""
+
+msgid "Update with what is on screen"
+msgstr ""
+
+msgid "Duplicate"
+msgstr ""
+
+msgid "Move earlier"
+msgstr ""
+
+msgid "Move later"
+msgstr ""
+
+msgid "Stop opening the screen with this view"
+msgstr ""
+
+msgid "Open the screen with this view"
+msgstr ""
+
+msgid "Delete"
+msgstr ""
+
+msgid "Your saved views could not be loaded or changed. Check your connection and try again."
+msgstr ""
+
+msgid "Saved views"
+msgstr ""
+
+msgid "(opens first)"
+msgstr ""
+
+msgid "+ Save this view"
+msgstr ""
+
+msgid "Save this view"
+msgstr ""
+
+msgid "Save view"
+msgstr ""
+
+msgid "Rename this view"
+msgstr ""
+
+msgid "The CSV file could not be made. Reload the page and try again."
+msgstr ""
+
+msgid "Preparing CSV…"
+msgstr ""
+
+msgid "Export CSV"
+msgstr ""
+
+msgid "Table"
+msgstr ""
+
+msgid "Grid"
+msgstr ""
+
+msgid "Layout"
+msgstr ""
+
+msgid "On sale"
+msgstr ""
+
+msgid "Hidden from site"
+msgstr ""
+
+msgid "Low stock"
+msgstr ""
+
+#. translators: %s: a saved view's name.
+#, js-format
+msgid "%s (copy)"
+msgstr ""
+
+#. translators: 1: a saved view's name, 2: a number from 2 up.
+#, js-format
+msgid "%1$s (copy %2$d)"
 msgstr ""

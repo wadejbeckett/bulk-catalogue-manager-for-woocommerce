@@ -47,9 +47,11 @@ final class Registry {
 	];
 
 	/**
-	 * User meta keys. T52 adds `bcm_views`.
+	 * User meta keys: each user's saved views (T52).
 	 */
-	private const USER_META = [];
+	private const USER_META = [
+		\BulkCatalogueManager\Rest\ViewsController::META_KEY,
+	];
 
 	/**
 	 * Term meta keys: the category tree's own sibling order (T64).

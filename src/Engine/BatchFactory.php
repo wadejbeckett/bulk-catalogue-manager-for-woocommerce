@@ -33,6 +33,11 @@
  *    batch id: the point where the chunk runner (T34) enqueues its first
  *    chunk. Nothing is enqueued here.
  *
+ * open() (T37) is the synchronous variant for a batch its caller writes in
+ * the same request: validated operations, the row and its items, the
+ * status moved straight to running, and no `bcm_batch_created`, so no
+ * chunk is ever enqueued for it.
+ *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
  */
@@ -226,6 +231,55 @@ final class BatchFactory {
 			'total_items' => count( $objects ),
 			'replayed'    => false,
 		];
+	}
+
+	/**
+	 * Open a batch that its caller works synchronously, in the same request
+	 * (T37: an inline edit or detail-panel save as a batch of one): the
+	 * operation list through validate_list(), the batch row with a fresh
+	 * request id, its items pending, and the batch moved from queued to
+	 * running. There is no replay check, and `bcm_batch_created` is not
+	 * fired, so the chunk runner never enqueues it; the caller claims the
+	 * items, writes them through Writer::for_batch() and finalises the batch
+	 * itself. A row or items the database will not take leave nothing written
+	 * and answer 500 `bcm_batch_not_recorded`.
+	 *
+	 * @param int                            $user_id    Initiating user.
+	 * @param mixed                          $operations The operation list as submitted.
+	 * @param list<array{0: int, 1: string}> $objects    The objects, materialised by the caller, as [ object_id, object_type ] pairs.
+	 * @param string                         $source     inline, bulk or tree; never undo.
+	 * @return int|\WP_Error The running batch's id, or the refusal.
+	 * @throws \InvalidArgumentException When the source is undo or there are no objects: a programming error.
+	 */
+	public function open( int $user_id, mixed $operations, array $objects, string $source = 'inline' ): int|\WP_Error {
+		if ( 'undo' === $source || [] === $objects ) {
+			throw new \InvalidArgumentException( 'A synchronous batch needs objects and is never an undo.' );
+		}
+		$operations = $this->actions->validate_list( $operations );
+		if ( $operations instanceof \WP_Error ) {
+			return $operations;
+		}
+		$ids = array_map( static fn( array $pair ): int => (int) $pair[0], $objects );
+		try {
+			$batch_id = $this->batches->create( wp_generate_uuid4(), $user_id, $source, $operations, self::snapshot( Selection::of_ids( $ids ), count( $objects ) ), count( $objects ) );
+			try {
+				$this->batches->materialise_items( $batch_id, $objects );
+				if ( ! $this->batches->transition( $batch_id, 'queued', 'running' ) ) {
+					throw new \RuntimeException( 'The batch could not be started.' );
+				}
+			} catch ( \RuntimeException $e ) {
+				$this->batches->discard( $batch_id );
+				throw $e;
+			}
+		} catch ( \RuntimeException $e ) {
+			return Refusal::create(
+				self::NOT_RECORDED,
+				__( 'The change could not be saved, so nothing was changed. Try again in a moment.', 'bulk-catalogue-manager-for-woocommerce' ),
+				500,
+				[ 'details' => $e->getMessage() ]
+			);
+		}
+		return $batch_id;
 	}
 
 	/**

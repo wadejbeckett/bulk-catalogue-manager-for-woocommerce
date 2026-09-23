@@ -1,0 +1,292 @@
+<?php
+/**
+ * A single-object write as a batch of one (T37; SPEC §12.1, §9.3, §8, §13):
+ * a price edit is written, journalled as a one-item batch with source
+ * inline, finalised complete in the same call and never enqueued, with the
+ * same journal rows a bulk batch writes for the same change; the submitted
+ * fields become one step each in registry order (clear for an empty value
+ * on a clearable field, both prices deciding the pair); a value the object
+ * cannot take is refused 400 naming the field with nothing written and no
+ * batch; a parent-only field on a variation is refused with its reason while
+ * a variation's own price is written; an object the user may not edit is
+ * refused 403 and a missing or trashed id 404.
+ *
+ * @package BulkCatalogueManager
+ * @license GPL-3.0-or-later
+ */
+
+declare( strict_types = 1 );
+
+namespace BulkCatalogueManager\Tests\Unit\Engine;
+
+use BulkCatalogueManager\Engine\ChunkRunner;
+use BulkCatalogueManager\Engine\InlineWrite;
+use BulkCatalogueManager\Engine\WriteOutcome;
+use BulkCatalogueManager\Fields\Registry as Fields;
+use BulkCatalogueManager\Operations\Registry;
+use BulkCatalogueManager\Operations\Result;
+use BulkCatalogueManager\Plugin;
+use BulkCatalogueManager\Settings\Settings;
+use PHPUnit\Framework\TestCase;
+
+require_once __DIR__ . '/InlineStore.php';
+require_once __DIR__ . '/RunnerStore.php';
+
+final class InlineWriteTest extends TestCase {
+	private const USER = 12;
+
+	private InlineStore $store;
+
+	private Registry $actions;
+
+	protected function setUp(): void {
+		bcm_test_reset();
+		$GLOBALS['bcm_test']['logged_in']         = true;
+		$GLOBALS['bcm_test']['user_id']           = self::USER;
+		$GLOBALS['bcm_test']['caps']['edit_post'] = true;
+		$GLOBALS['bcm_test']['scheduled']         = [];
+		// The chunk runner listens on bcm_batch_created, as it does on a live site.
+		( new Plugin() )->boot();
+		$this->store   = new InlineStore();
+		$this->actions = new Registry( new Fields() );
+		self::product( 101, 'simple', [ 'regular_price' => '20' ] );
+	}
+
+	protected function tearDown(): void {
+		$this->assertSame( [], $GLOBALS['bcm_test']['post_meta_updates'] ?? [], 'The write wrote meta of its own.' );
+	}
+
+	/**
+	 * Register a product for wc_get_product().
+	 *
+	 * @param array<string, mixed> $props Props besides the id.
+	 */
+	private static function product( int $id, string $type, array $props ): StoredProduct {
+		$GLOBALS['bcm_test']['products'][ $id ] = new StoredProduct( $type, [ 'id' => $id ] + $props );
+		return $GLOBALS['bcm_test']['products'][ $id ];
+	}
+
+	private function writes(): InlineWrite {
+		return new InlineWrite( $this->actions, null, null, new Settings( [] ) );
+	}
+
+	/**
+	 * Assert a refusal, and that nothing was written and no batch recorded.
+	 */
+	private function assert_refused( mixed $result, string $code, int $status ): \WP_Error {
+		global $wpdb;
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( $code, $result->get_error_code() );
+		$this->assertSame( $status, $result->get_error_data()['status'] );
+		$this->assertStringNotContainsString( 'bcm_', $result->get_error_message() );
+		$this->assertSame( [], $wpdb->writes, 'No batch, item or journal row was written.' );
+		$this->assertSame( [], $this->store->items );
+		foreach ( $GLOBALS['bcm_test']['products'] as $product ) {
+			$this->assertSame( 0, $product->saves, 'Nothing was saved.' );
+			$this->assertSame( [], $product->sets, 'Nothing was set on the loaded product.' );
+		}
+		return $result;
+	}
+
+	public function test_a_price_edit_is_written_and_journalled_as_a_finished_batch_of_one(): void {
+		$result = $this->writes()->write( 101, [ 'regular_price' => '25' ], 'inline', self::USER );
+
+		$this->assertTrue( is_array( $result ), $result instanceof \WP_Error ? $result->get_error_message() : '' );
+		$this->assertSame( 'complete', $result['status'] );
+		$this->assertInstanceOf( WriteOutcome::class, $result['outcome'] );
+		$this->assertTrue( $result['outcome']->saved() );
+		$this->assertSame( '25.00', $GLOBALS['bcm_test']['products'][101]->props['regular_price'] );
+		$this->assertSame( 1, $GLOBALS['bcm_test']['products'][101]->saves );
+
+		$batch = $this->store->batch( $result['batch_id'] );
+		$this->assertSame( 'inline', $batch['source'] );
+		$this->assertSame( 'complete', $batch['status'] );
+		$this->assertSame( self::USER, $batch['user_id'] );
+		$this->assertSame( [ 1, 1, 1, 0 ], [ $batch['total_items'], $batch['done_items'], $batch['changed_items'], $batch['failed_items'] ] );
+		$this->assertNotNull( $batch['finished_gmt'] );
+		$this->assertSame(
+			[
+				[
+					'kind'         => 'ids',
+					'ids'          => [ 101 ],
+					'count'        => 1,
+					'materialised' => 1,
+				],
+			],
+			[ json_decode( $batch['selection'], true ) ]
+		);
+		$this->assertSame( [ 'set_value' ], array_column( json_decode( $batch['operations'], true ), 'action' ) );
+
+		$this->assertCount( 1, $this->store->items );
+		$item = array_values( $this->store->items )[0];
+		$this->assertSame( [ 101, 'product', 'done', '', 1 ], [ $item['object_id'], $item['object_type'], $item['state'], $item['message'], $item['attempts'] ] );
+		$this->assertSame( [ [ 101, 'regular_price', '20', '25.00', 'applied' ] ], $this->store->journal() );
+
+		$this->assertSame( [], $GLOBALS['bcm_test']['scheduled'], 'Nothing was queued: no chunk, no retry.' );
+		$this->assertSame( 0, did_action( 'bcm_batch_created' ), 'The runner was never told about the batch.' );
+	}
+
+	public function test_it_journals_exactly_what_a_bulk_batch_journals_for_the_same_change(): void {
+		self::product(
+			101,
+			'simple',
+			[
+				'regular_price' => '20',
+				'sale_price'    => '18',
+				'sku'           => 'OLD-1',
+			]
+		);
+		$values = [
+			'sku'           => 'NEW-1',
+			'regular_price' => '15',
+			'sale_price'    => '12',
+		];
+		$result = $this->writes()->write( 101, $values, 'bulk', self::USER );
+		$this->assertTrue( is_array( $result ) );
+		$inline = $this->store->journal();
+		$this->assertSame( 'bulk', $this->store->batch( $result['batch_id'] )['source'] );
+		$this->assertSame( [ 'regular_price', 'sale_price', 'sku' ], array_column( $inline, 1 ), 'One row per field, in registry order.' );
+		$this->assertSame( [ 'applied', 'applied', 'applied' ], array_column( $inline, 4 ) );
+
+		// The same operations as a queued bulk batch, worked by the chunk runner.
+		$operations = json_decode( (string) wp_json_encode( $this->writes()->operations( $values ) ), true );
+		bcm_test_reset();
+		$GLOBALS['bcm_test']['user_caps'] = [ self::USER => [ 'edit_post' => true ] ];
+		self::product(
+			101,
+			'simple',
+			[
+				'regular_price' => '20',
+				'sale_price'    => '18',
+				'sku'           => 'OLD-1',
+			]
+		);
+		$runner = new RunnerStore( 7, [ 101 ], $operations, self::USER );
+		$status = ( new ChunkRunner( null, $this->actions, null, new Settings( [] ), static fn(): float => 1790000000.0, 30 ) )->run( 7 );
+
+		$this->assertSame( 'complete', $status );
+		$this->assertSame( $runner->journal(), $inline, 'Identical journal rows.' );
+	}
+
+	public function test_fields_become_one_step_each_in_registry_order(): void {
+		$operations = $this->writes()->operations(
+			[
+				'sku'            => '',
+				'sale_price'     => null,
+				'stock_quantity' => '',
+				'regular_price'  => '',
+				'name'           => 'Blue Shirt',
+				'id'             => 5,
+			]
+		);
+		$this->assertTrue( is_array( $operations ) );
+		$this->assertSame(
+			[
+				[ 'set_value', 'name' ],
+				[ 'set_value', 'regular_price' ],
+				[ 'clear', 'sale_price' ],
+				[ 'set_value', 'stock_quantity' ],
+				[ 'set_value', 'sku' ],
+			],
+			array_map( static fn( array $step ): array => [ $step['action'], $step['args']['field'] ], $operations ),
+			'A read-only column is never a step; an empty clearable field is cleared.'
+		);
+		$this->assertSame( [ '', null, '' ], [ $operations[1]['args']['value'], $operations[3]['args']['value'], $operations[4]['args']['value'] ] );
+		$this->assertFalse( $this->writes()->operations( [ 'regular_price' => '15' ] )[0]['args']['clear_invalid_sale'], 'One price alone does not touch the other.' );
+
+		$pair = $this->writes()->operations(
+			[
+				'regular_price' => '15',
+				'sale_price'    => '12',
+			]
+		);
+		$this->assertTrue( $pair[0]['args']['clear_invalid_sale'], 'With both prices, the sale price step decides the pair.' );
+
+		$refused = $this->writes()->operations( [ 'status' => '' ] );
+		$this->assertInstanceOf( \WP_Error::class, $refused );
+		$this->assertSame( 'status', $refused->get_error_data()['field'] );
+		$this->assertSame( 400, $refused->get_error_data()['status'] );
+		$this->assertSame( 'bcm_no_operations', $this->writes()->operations( [ 'id' => 5 ] )->get_error_code() );
+	}
+
+	public function test_a_value_the_object_cannot_take_is_refused_naming_the_field_with_nothing_written(): void {
+		$error = $this->assert_refused(
+			$this->writes()->write(
+				101,
+				[
+					'sku'        => 'FINE-1',
+					'sale_price' => '30',
+				],
+				'inline',
+				self::USER
+			),
+			'bcm_invalid_value',
+			400
+		);
+		$this->assertSame( 'sale_price', $error->get_error_data()['field'] );
+		$this->assertSame( [ 'sale_price' ], array_keys( $error->get_error_data()['fields'] ) );
+		$this->assertStringContainsString( 'sale price', strtolower( $error->get_error_message() ) );
+
+		$error = $this->assert_refused( $this->writes()->write( 101, [ 'stock_quantity' => '1.5' ], 'inline', self::USER ), 'bcm_invalid_operation', 400 );
+		$this->assertSame( 'stock_quantity', $error->get_error_data()['field'] );
+		$this->assertSame( ( new Fields() )->get( 'stock_quantity' )->rule_text(), $error->get_error_message() );
+	}
+
+	public function test_a_variation_takes_its_own_fields_and_refuses_parent_only_ones_with_their_reason(): void {
+		self::product(
+			201,
+			'variation',
+			[
+				'regular_price' => '60',
+				'parent_id'     => 103,
+			]
+		);
+		$reason = ( new Fields() )->get( 'featured' )->unavailable_reason( $GLOBALS['bcm_test']['products'][201] );
+		$this->assertNotNull( $reason );
+
+		$error = $this->assert_refused(
+			$this->writes()->write(
+				201,
+				[
+					'regular_price' => '65',
+					'featured'      => true,
+				],
+				'inline',
+				self::USER
+			),
+			'bcm_not_available',
+			400
+		);
+		$this->assertSame( 'featured', $error->get_error_data()['field'] );
+		$this->assertSame( $reason, $error->get_error_message() );
+
+		$result = $this->writes()->write( 201, [ 'regular_price' => '65' ], 'inline', self::USER );
+		$this->assertTrue( is_array( $result ) );
+		$this->assertSame( 'complete', $result['status'] );
+		$this->assertSame( [ [ 201, 'regular_price', '60', '65.00', 'applied' ] ], $this->store->journal() );
+		$this->assertSame( 'variation', array_values( $this->store->items )[0]['object_type'] );
+		$this->assertSame( [ 103 ], $GLOBALS['bcm_test']['variable_syncs'], 'The parent was resynchronised once.' );
+	}
+
+	public function test_an_object_the_user_may_not_edit_is_refused_403(): void {
+		$GLOBALS['bcm_test']['caps']['edit_post:101'] = false;
+		$error                                        = $this->assert_refused( $this->writes()->write( 101, [ 'regular_price' => '25' ], 'inline', self::USER ), 'bcm_cannot_edit', 403 );
+		$this->assertStringContainsString( 'permission', $error->get_error_message() );
+	}
+
+	public function test_a_missing_or_trashed_id_is_refused_404(): void {
+		$this->assert_refused( $this->writes()->write( 999, [ 'regular_price' => '25' ], 'inline', self::USER ), 'bcm_not_found', 404 );
+		self::product( 108, 'simple', [ 'regular_price' => '5' ] );
+		$this->assert_refused( $this->writes()->write( 108, [ 'regular_price' => '25' ], 'inline', self::USER ), 'bcm_not_found', 404 );
+	}
+
+	public function test_a_value_already_in_place_finishes_complete_with_nothing_saved(): void {
+		$result = $this->writes()->write( 101, [ 'regular_price' => '20.00' ], 'inline', self::USER );
+		$this->assertTrue( is_array( $result ) );
+		$this->assertSame( 'complete', $result['status'] );
+		$this->assertSame( [ Result::ALREADY ], array_map( static fn( Result $r ): string => $r->state(), $result['outcome']->results() ) );
+		$this->assertSame( 0, $GLOBALS['bcm_test']['products'][101]->saves );
+		$this->assertSame( [], $this->store->journal(), 'An unchanged value is not journalled.' );
+		$this->assertSame( [ 1, 0, 0 ], [ $this->store->batch( $result['batch_id'] )['done_items'], $this->store->batch( $result['batch_id'] )['changed_items'], $this->store->batch( $result['batch_id'] )['failed_items'] ] );
+	}
+}

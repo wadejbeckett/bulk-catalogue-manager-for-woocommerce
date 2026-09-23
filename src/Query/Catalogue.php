@@ -81,6 +81,36 @@ final class Catalogue {
 	}
 
 	/**
+	 * One product or variation as a page item (T37: the row a single-object
+	 * write answers with, so the grid can replace it in place): hydrated
+	 * through the same Hydrator, never cached, with `parent_id` its post
+	 * parent as ProductQuery reads it. The caller clears the object's caches
+	 * after a write (clean_post_cache()), which also moves the posts'
+	 * last-changed value, so every cached page holding the row is left behind.
+	 * Null when the id is not a post.
+	 *
+	 * @param int      $id   Product or variation id.
+	 * @param string[] $keys Field keys the row carries; empty for every field.
+	 * @return array<string, mixed>|null
+	 */
+	public function row( int $id, array $keys ): ?array {
+		$post = $id > 0 ? get_post( $id ) : null;
+		if ( ! is_object( $post ) ) {
+			return null;
+		}
+		$items = $this->hydrator->hydrate(
+			[
+				[
+					'id'        => $id,
+					'parent_id' => (int) ( $post->post_parent ?? 0 ),
+				],
+			],
+			$keys
+		);
+		return $items[0] ?? null;
+	}
+
+	/**
 	 * The cache key: a hash of the criteria, the fields and the shop's price
 	 * formatting, then the posts' and terms' last-changed values.
 	 *

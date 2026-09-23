@@ -548,3 +548,29 @@ if ( ! function_exists( 'update_post_meta' ) ) {
 		return true;
 	}
 }
+
+if ( ! function_exists( 'wp_generate_uuid4' ) ) {
+	/**
+	 * T37: a version 4 UUID, as core makes one.
+	 */
+	function wp_generate_uuid4(): string {
+		$bytes    = random_bytes( 16 );
+		$bytes[6] = chr( ord( $bytes[6] ) & 0x0f | 0x40 );
+		$bytes[8] = chr( ord( $bytes[8] ) & 0x3f | 0x80 );
+		return vsprintf( '%s%s-%s-%s-%s-%s%s%s', str_split( bin2hex( $bytes ), 4 ) );
+	}
+}
+
+if ( ! function_exists( 'clean_post_cache' ) ) {
+	/**
+	 * T37: forgets a post's primed post and meta caches and moves the posts'
+	 * last-changed value, as core does; records each id in
+	 * $GLOBALS['bcm_test']['cleaned_posts'].
+	 */
+	function clean_post_cache( int|object $post ): void {
+		$id                                     = is_object( $post ) ? (int) $post->ID : $post;
+		$GLOBALS['bcm_test']['cleaned_posts'][] = $id;
+		unset( $GLOBALS['bcm_test']['primed_posts'][ $id ], $GLOBALS['bcm_test']['primed_meta'][ $id ] );
+		wp_cache_set_last_changed( 'posts' );
+	}
+}

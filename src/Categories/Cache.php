@@ -2,18 +2,18 @@
 /**
  * The category tree's cache (SPEC §7, §12.2): one `bcm_category_tree_`
  * transient per set of grid conditions, keyed by a hash of those conditions
- * and of the taxonomy's last-changed value.
+ * and of a version kept in its own transient.
  *
- * WordPress keeps `wp_cache_get_last_changed( 'terms' )` in the object cache,
- * so it only survives between requests on a site with a persistent object
- * cache; without one it is new on every request and a transient keyed on it
- * alone would never be read back. The key therefore also carries a version
- * kept in its own transient, which the term hooks renew: `created_term`,
- * `edited_term` and `delete_term` for a product category, and
- * `set_object_terms` when products gain or lose one. With a persistent object
- * cache the posts' last-changed value joins the key too, so a product edit
- * that changes which products match is seen at once; without one a stored
- * tree lives at most TTL seconds.
+ * The term hooks renew the version: `created_term`, `edited_term` and
+ * `delete_term` for a product category, and `set_object_terms` when products
+ * gain or lose one. With a persistent object cache the terms' and posts'
+ * last-changed values join the key too, so any term or product edit that
+ * changes the tree or which products match is seen at once. Without one
+ * WordPress sets those values afresh on every request, so they stay out of
+ * the key (as in Query\CountCache) or a stored tree would never be read back
+ * and each request would write a new transient; there the version alone
+ * covers category and assignment changes, and a product edit that changes
+ * only which products match the conditions shows within TTL seconds.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -107,8 +107,9 @@ final class Cache {
 	 * @param array<string, mixed> $conditions Criteria::conditions().
 	 */
 	public function key( array $conditions ): string {
-		$parts = [ self::version(), wp_cache_get_last_changed( 'terms' ) ];
+		$parts = [ self::version() ];
 		if ( wp_using_ext_object_cache() ) {
+			$parts[] = wp_cache_get_last_changed( 'terms' );
 			$parts[] = wp_cache_get_last_changed( 'posts' );
 		}
 		return self::PREFIX . md5( (string) wp_json_encode( [ $parts, $conditions ] ) );

@@ -4,7 +4,8 @@
  * one grouped statement per uncached request, none when warm; the grouped
  * statement reuses ProductQuery's conditions and leaves the category filter
  * out; the `bcm_category_tree_` transient is keyed by the conditions, the
- * version the term hooks renew and the last-changed values; each hook busts it.
+ * version the term hooks renew and, with a persistent object cache only, the
+ * last-changed values; each hook busts it.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -242,13 +243,45 @@ final class CategoryTreeTest extends TestCase {
 		$this->assertNotSame( $base, $cache->key( self::with_status( [ 'draft' ] )->conditions() ) );
 
 		$GLOBALS['bcm_test']['last_changed']['terms'] = '2';
-		$terms                                        = $cache->key( CategoryTree::criteria( [] )->conditions() );
-		$this->assertNotSame( $base, $terms, 'The taxonomy\'s last-changed value is in the key.' );
-
 		$GLOBALS['bcm_test']['last_changed']['posts'] = '9';
-		$this->assertSame( $terms, $cache->key( CategoryTree::criteria( [] )->conditions() ), 'Without a persistent object cache the posts value is not.' );
+		$this->assertSame( $base, $cache->key( CategoryTree::criteria( [] )->conditions() ), 'Without a persistent object cache no last-changed value is in the key.' );
+
+		Cache::invalidate();
+		$this->assertNotSame( $base, $cache->key( CategoryTree::criteria( [] )->conditions() ), 'The version is.' );
+	}
+
+	public function test_without_a_persistent_object_cache_a_second_request_reads_the_stored_tree(): void {
+		$criteria = CategoryTree::criteria( [] );
+		$first    = ( new CategoryTree() )->get( $criteria );
+
+		// A new request: without a persistent object cache core sets fresh last-changed values.
+		$GLOBALS['bcm_test']['last_changed'] = [
+			'terms' => '0.5 2',
+			'posts' => '0.5 2',
+		];
+		$this->assertSame( $first, ( new CategoryTree() )->get( $criteria ) );
+
+		$this->assertCount( 1, $GLOBALS['wpdb']->queries, 'The grouped statement runs once.' );
+		$this->assertCount( 1, $GLOBALS['bcm_test']['get_terms_calls'], 'The terms are read once.' );
+		$this->assertCount( 2, $GLOBALS['bcm_test']['transients'], 'The version and one tree; no new row per request.' );
+	}
+
+	public function test_with_a_persistent_object_cache_a_last_changed_bump_misses(): void {
 		$GLOBALS['bcm_test']['ext_object_cache'] = true;
-		$this->assertNotSame( $terms, $cache->key( CategoryTree::criteria( [] )->conditions() ), 'With one it is.' );
+		$criteria                                = CategoryTree::criteria( [] );
+		$service                                 = new CategoryTree();
+
+		$service->get( $criteria );
+		$service->get( $criteria );
+		$this->assertCount( 1, $GLOBALS['wpdb']->queries, 'Unchanged, the stored tree is read.' );
+
+		wp_cache_set_last_changed( 'terms' );
+		$service->get( $criteria );
+		$this->assertCount( 2, $GLOBALS['wpdb']->queries, 'A terms last-changed bump misses.' );
+
+		wp_cache_set_last_changed( 'posts' );
+		$service->get( $criteria );
+		$this->assertCount( 3, $GLOBALS['wpdb']->queries, 'A posts last-changed bump misses.' );
 	}
 
 	public function test_the_invalidation_hooks_are_registered(): void {

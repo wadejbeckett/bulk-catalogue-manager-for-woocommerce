@@ -504,19 +504,22 @@ final class Writer {
 			if ( $sibling === $id || self::fold( (string) $tree->node( $sibling )['name'] ) !== self::fold( $name ) ) {
 				continue;
 			}
-			$where = __( 'the top level', 'bulk-catalogue-manager-for-woocommerce' );
-			if ( 0 !== $parent_id ) {
-				/* translators: %s: parent category name, such as "Clothing". */
-				$where = sprintf( __( '"%s"', 'bulk-catalogue-manager-for-woocommerce' ), (string) $tree->node( $parent_id )['name'] );
-			}
+			$shown   = html_entity_decode( $name, ENT_QUOTES, 'UTF-8' );
+			$message = 0 === $parent_id
+				? sprintf(
+					/* translators: %s: category name, such as "Shirts". */
+					__( 'A category called "%s" already exists at the top level. Choose a different name, or put it somewhere else.', 'bulk-catalogue-manager-for-woocommerce' ),
+					$shown
+				)
+				: sprintf(
+					/* translators: 1: category name, such as "Shirts"; 2: the parent category's name, such as "Clothing". */
+					__( 'A category called "%1$s" already exists in "%2$s". Choose a different name, or put it somewhere else.', 'bulk-catalogue-manager-for-woocommerce' ),
+					$shown,
+					(string) $tree->node( $parent_id )['name']
+				);
 			return Refusal::invalid(
 				self::NAME_TAKEN,
-				sprintf(
-					/* translators: 1: category name, such as "Shirts"; 2: where it is, such as "Clothing" in quotes or "the top level". */
-					__( 'A category called "%1$s" already exists in %2$s. Choose a different name, or put it somewhere else.', 'bulk-catalogue-manager-for-woocommerce' ),
-					html_entity_decode( $name, ENT_QUOTES, 'UTF-8' ),
-					$where
-				),
+				$message,
 				[ 'existing' => $sibling ]
 			);
 		}

@@ -415,7 +415,7 @@ final class ChunkRunner {
 			$next = min( $configured, $size * 2 );
 			$note = sprintf(
 				/* translators: %d: new number of products per chunk. */
-				__( 'Groups of products were finishing well within the time the server allows, so this change now works on %d products at a time again.', 'bulk-catalogue-manager-for-woocommerce' ),
+				_n( 'Groups of products were finishing well within the time the server allows, so this change now works on %d product at a time again.', 'Groups of products were finishing well within the time the server allows, so this change now works on %d products at a time again.', $next, 'bulk-catalogue-manager-for-woocommerce' ),
 				$next
 			);
 			$this->batches->record_chunk_size( $batch_id, $next, $note );

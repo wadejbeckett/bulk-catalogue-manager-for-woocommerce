@@ -703,9 +703,9 @@ final class Field {
 			case self::TEXT:
 				return $this->nullable
 					/* translators: 1: a field's name, such as "SKU", 2: the most characters it takes. */
-					? sprintf( __( '%1$s has to be text of up to %2$d characters, or left empty.', 'bulk-catalogue-manager-for-woocommerce' ), $this->label, $this->max_length )
+					? sprintf( _n( '%1$s has to be text of up to %2$d character, or left empty.', '%1$s has to be text of up to %2$d characters, or left empty.', $this->max_length, 'bulk-catalogue-manager-for-woocommerce' ), $this->label, $this->max_length )
 					/* translators: 1: a field's name, such as "Name", 2: the most characters it takes. */
-					: sprintf( __( '%1$s cannot be empty and has to be up to %2$d characters.', 'bulk-catalogue-manager-for-woocommerce' ), $this->label, $this->max_length );
+					: sprintf( _n( '%1$s cannot be empty and has to be up to %2$d character.', '%1$s cannot be empty and has to be up to %2$d characters.', $this->max_length, 'bulk-catalogue-manager-for-woocommerce' ), $this->label, $this->max_length );
 			case self::ENUM:
 				$labels = array_map( fn( string $value ): string => $this->choices()[ $value ] ?? $value, $this->writable_choices() );
 				/* translators: 1: a field's name, such as "Stock status", 2: the choices, separated by commas. */
@@ -724,7 +724,7 @@ final class Field {
 				return sprintf( __( '%s has to be a whole number. Enter a number like 12.', 'bulk-catalogue-manager-for-woocommerce' ), $this->label );
 			case self::TERMS:
 				/* translators: 1: a field's name, such as "Categories", 2: the most items allowed. */
-				return sprintf( __( '%1$s has to be a list of up to %2$d that already exist. Choose them from the list.', 'bulk-catalogue-manager-for-woocommerce' ), $this->label, Values::MAX_TERMS );
+				return sprintf( _n( '%1$s has to be a list of up to %2$d that already exists. Choose it from the list.', '%1$s has to be a list of up to %2$d that already exist. Choose them from the list.', Values::MAX_TERMS, 'bulk-catalogue-manager-for-woocommerce' ), $this->label, Values::MAX_TERMS );
 			default:
 				/* translators: %s: a field's name, such as "Shipping class". */
 				return sprintf( __( '%s has to be one that already exists. Choose it from the list.', 'bulk-catalogue-manager-for-woocommerce' ), $this->label );

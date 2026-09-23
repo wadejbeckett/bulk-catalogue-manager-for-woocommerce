@@ -191,7 +191,7 @@ final class Registry {
 				self::TOO_MANY,
 				sprintf(
 					/* translators: 1: the most changes one batch may hold, 2: how many were asked for. */
-					__( 'One change can hold at most %1$d steps, and this one has %2$d. Remove some steps, or split them into two changes, and try again.', 'bulk-catalogue-manager-for-woocommerce' ),
+					_n( 'One change can hold at most %1$d step, and this one has %2$d. Remove some steps, or split them into two changes, and try again.', 'One change can hold at most %1$d steps, and this one has %2$d. Remove some steps, or split them into two changes, and try again.', self::MAX_OPERATIONS, 'bulk-catalogue-manager-for-woocommerce' ),
 					self::MAX_OPERATIONS,
 					$count
 				),

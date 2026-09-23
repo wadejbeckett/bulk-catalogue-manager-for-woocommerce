@@ -58,6 +58,7 @@ final class Routes {
 				new CategoriesController( Registry::instance() ),
 				new ExportController( Registry::instance() ),
 				new SelectionController( Registry::instance() ),
+				new BatchesController(),
 			]
 		);
 	}

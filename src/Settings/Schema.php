@@ -140,6 +140,18 @@ final class Schema {
 	}
 
 	/**
+	 * One setting's rule as the Settings tab describes it: `type`, `default`
+	 * and, where they apply, `choices`, `min`, `max` and `also`. Empty for a
+	 * key outside the schema.
+	 *
+	 * @param string $key Setting key.
+	 * @return array<string, mixed>
+	 */
+	public static function rule( string $key ): array {
+		return self::RULES[ $key ] ?? [];
+	}
+
+	/**
 	 * Every setting's default.
 	 *
 	 * @return array<string, bool|int|string>

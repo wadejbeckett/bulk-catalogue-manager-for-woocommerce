@@ -63,6 +63,7 @@ final class Routes {
 				new PreviewController(),
 				new ProductWriteController( Registry::instance() ),
 				new CategoriesWriteController(),
+				new SettingsController(),
 			]
 		);
 	}

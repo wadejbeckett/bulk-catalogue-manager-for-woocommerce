@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-09-23T15:24:26+00:00\n"
+"POT-Creation-Date: 2026-09-23T15:26:11+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -1155,6 +1155,93 @@ msgstr ""
 msgid "These products or filters could not be selected. Clear the filters, choose the products again and try again."
 msgstr ""
 
+msgid "The settings to save, each under its name."
+msgstr ""
+
+msgid "Indefinitely"
+msgstr ""
+
+msgid "Who can use this screen"
+msgstr ""
+
+msgid "When this is on, deleting the plugin permanently removes its settings, history and undo records. They cannot be brought back, even by installing the plugin again."
+msgstr ""
+
+msgid "Shop managers and administrators"
+msgstr ""
+
+msgid "Administrators only"
+msgstr ""
+
+msgid "Comma"
+msgstr ""
+
+msgid "Semicolon"
+msgstr ""
+
+msgid "products"
+msgstr ""
+
+msgid "variations"
+msgstr ""
+
+msgid "days"
+msgstr ""
+
+msgid "rows"
+msgstr ""
+
+msgid "Access"
+msgstr ""
+
+msgid "Catalogue"
+msgstr ""
+
+msgid "Bulk changes"
+msgstr ""
+
+msgid "History"
+msgstr ""
+
+msgid "Export"
+msgstr ""
+
+msgid "Your data"
+msgstr ""
+
+msgid "Applies to this screen and everything it can change. Settings can only ever be changed by an administrator."
+msgstr ""
+
+msgid "How many products the catalogue shows at first. Anyone can still change it while they work."
+msgstr ""
+
+msgid "How many products each background run saves, from 10 to 100. Lower this if your host is slow; it is also lowered automatically when a run nears the time limit."
+msgstr ""
+
+msgid "How many variations each background run saves after its products, from 10 to 100. Variations are lighter to save than products, so this can usually stay higher."
+msgstr ""
+
+msgid "Older changes are removed from the history, along with what is needed to undo them."
+msgstr ""
+
+msgid "Above this many rows, Apply shows the count again and needs one more click. Changes that draft, hide or empty a field always ask."
+msgstr ""
+
+msgid "Where the \"Also apply to variations\" switch starts. You can still turn it on or off for each change."
+msgstr ""
+
+msgid "On makes the history complete, listing rows that already had the new value, but much larger."
+msgstr ""
+
+msgid "Whether the category tree is open beside the catalogue when the screen loads."
+msgstr ""
+
+msgid "Choose semicolon if your spreadsheet uses commas in numbers, as many European spreadsheets do."
+msgstr ""
+
+msgid "Off keeps history and undo records if you reinstall the plugin."
+msgstr ""
+
 msgid "A request id the screen makes once per undo, so sending it twice undoes once; required unless previewing."
 msgstr ""
 
@@ -1327,9 +1414,6 @@ msgstr ""
 msgid "Loading products…"
 msgstr ""
 
-msgid "History"
-msgstr ""
-
 msgid "Every change made here will be listed on this page, with a way to undo it."
 msgstr ""
 
@@ -1340,9 +1424,6 @@ msgid "Settings"
 msgstr ""
 
 msgid "The settings for this screen will be changed on this page."
-msgstr ""
-
-msgid "Catalogue"
 msgstr ""
 
 msgid "Bulk Catalogue Manager sections"
@@ -1398,4 +1479,37 @@ msgid "Clear filters"
 msgstr ""
 
 msgid "Show details"
+msgstr ""
+
+msgid "Settings saved."
+msgstr ""
+
+msgid "Nothing was saved. Correct the settings marked below and save again."
+msgstr ""
+
+msgid "The settings could not be saved. Try again in a moment."
+msgstr ""
+
+msgid "The settings could not be loaded."
+msgstr ""
+
+msgid "Loading settings…"
+msgstr ""
+
+msgid "Only an administrator can change these settings. You can see how they are set here."
+msgstr ""
+
+msgid "These settings apply to everyone who uses this screen on this site."
+msgstr ""
+
+msgid "Saving…"
+msgstr ""
+
+msgid "Save settings"
+msgstr ""
+
+msgid "For a set number of days"
+msgstr ""
+
+msgid "Number of days"
 msgstr ""

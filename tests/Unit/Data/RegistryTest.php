@@ -60,6 +60,7 @@ final class RegistryTest extends TestCase {
 		'bcm_category_cycle'      => 'REST refusal code for moving a category inside itself or one of its descendants',
 		'bcm_category_not_saved'  => 'REST refusal code for a category write WordPress refused',
 		'bcm_nonce'               => 'Heartbeat data key the screen sends and the key of the fresh REST nonce in the answer; nothing is stored',
+		'bcm_invalid_setting'     => 'REST refusal code for a settings save naming a value a setting does not accept; nothing is saved',
 	];
 
 	/**

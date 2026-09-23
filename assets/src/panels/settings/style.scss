@@ -1,0 +1,45 @@
+// The Settings tab: a readable column of groups, the admin's own colours.
+.bcm-settings {
+	max-width: 44rem;
+
+	h3 {
+		margin: 24px 0 8px;
+	}
+}
+
+.bcm-settings__row {
+	margin-bottom: 20px;
+}
+
+.bcm-settings__help {
+	margin: 4px 0 0;
+	color: #50575e;
+}
+
+.bcm-settings__number {
+	display: flex;
+	align-items: flex-end;
+	gap: 8px;
+
+	.components-base-control {
+		max-width: 10rem;
+	}
+}
+
+.bcm-settings__unit {
+	line-height: 40px;
+}
+
+.bcm-settings__special .bcm-settings__number {
+	margin-top: 8px;
+}
+
+.bcm-settings__error {
+	margin: 4px 0 0;
+	color: #b32d2e;
+	font-weight: 600;
+}
+
+.bcm-settings__actions {
+	margin-top: 24px;
+}

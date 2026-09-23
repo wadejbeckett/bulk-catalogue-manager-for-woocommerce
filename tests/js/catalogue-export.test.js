@@ -73,8 +73,12 @@ describe( 'export arguments', () => {
 		expect(
 			exportArgs( { ...QUERY, mode: 'products' }, VIEW, REGISTRY ).mode
 		).toBe( 'products' );
+		// toQuery() carries the view's mode since T67; a query without one
+		// and a view without one export without one.
+		const { mode, ...bare } = QUERY;
+		expect( mode ).toBe( 'variations' );
 		expect(
-			exportArgs( QUERY, { ...VIEW, mode: undefined }, REGISTRY ).mode
+			exportArgs( bare, { ...VIEW, mode: undefined }, REGISTRY ).mode
 		).toBeUndefined();
 	} );
 

@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-09-23T17:58:36+00:00\n"
+"POT-Creation-Date: 2026-09-23T18:03:22+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -156,6 +156,7 @@ msgstr ""
 #. translators: %s: a number of products, such as "1,284".
 #. translators: %s: a number of products, such as "4,312".
 #. translators: %s: number of products and variations, such as "1,248".
+#. translators: %s: how many products match.
 #, php-format,js-format
 msgid "%s product"
 msgid_plural "%s products"
@@ -2633,6 +2634,7 @@ msgid "(no name)"
 msgstr ""
 
 #. translators: 1: a choice such as "In stock", 2: a number such as the stock quantity.
+#. translators: 1: a stock status such as "In stock", 2: the variations' quantities added up.
 #, js-format
 msgid "%1$s · %2$s"
 msgstr ""
@@ -2891,6 +2893,146 @@ msgstr ""
 #, js-format
 msgid "Clear the filter “%s”"
 msgstr ""
+
+msgid "Belongs to the product, not to each variation."
+msgstr ""
+
+msgid "This is worked out from the product’s variations. Change the variations instead."
+msgstr ""
+
+#. translators: %s: a field's label, such as "Sale price".
+#, js-format
+msgid "%s differs between this product’s variations, so there is no single value to show or change here."
+msgstr ""
+
+#. translators: %s: a list such as "5 In stock, 3 Out of stock".
+#, js-format
+msgid "The variations are: %s."
+msgstr ""
+
+#. translators: 1: how many variations, 2: a stock status such as "In stock".
+#, js-format
+msgid "%1$d %2$s"
+msgstr ""
+
+msgid "not set"
+msgstr ""
+
+#. translators: 1: how many variations have a value, 2: how many variations there are.
+#, js-format
+msgid "%1$d of %2$d variations have one."
+msgstr ""
+
+#. translators: %s: product name.
+#, js-format
+msgid "Hide the variations of %s"
+msgstr ""
+
+#. translators: %s: product name.
+#, js-format
+msgid "Show the variations of %s"
+msgstr ""
+
+#. translators: %d: how many variations a product has.
+#, js-format
+msgid "%d option"
+msgid_plural "%d options"
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "Hide options"
+msgstr ""
+
+msgid "Loading options…"
+msgstr ""
+
+msgid "The options could not be loaded."
+msgstr ""
+
+msgid "This product has no variations yet."
+msgstr ""
+
+#. translators: 1: how many options (variations), 2: product name.
+#, js-format
+msgid "%1$s option under %2$s"
+msgid_plural "%1$s options under %2$s"
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "Select all options"
+msgstr ""
+
+#. translators: %s: how many options (variations) the product has.
+#, js-format
+msgid "Show all %s options"
+msgstr ""
+
+msgid "Mixed"
+msgstr ""
+
+#. translators: 1: lowest value, 2: highest value.
+#, js-format
+msgid "%1$s – %2$s"
+msgstr ""
+
+msgid "Does not apply"
+msgstr ""
+
+msgid "Set on each option"
+msgstr ""
+
+msgid "What the list shows"
+msgstr ""
+
+msgid "Products"
+msgstr ""
+
+msgid "Open all with variations"
+msgstr ""
+
+msgid "Close all options"
+msgstr ""
+
+#. translators: %s: product name.
+#, js-format
+msgid "Showing the options of %s."
+msgstr ""
+
+msgid "Show every option"
+msgstr ""
+
+#. translators: %s: how many options (variations) match.
+#, js-format
+msgid "%s option"
+msgid_plural "%s options"
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: how many products and options match.
+#, js-format
+msgid "%s product or option"
+msgid_plural "%s products and options"
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: 1: how many options are shown, 2: how many there are.
+#, js-format
+msgid "%1$d of %2$d option shown."
+msgid_plural "%1$d of %2$d options shown."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: product name.
+#, js-format
+msgid "Options of %s hidden."
+msgstr ""
+
+#. translators: %d: how many products were opened.
+#, js-format
+msgid "Opened %d product with options."
+msgid_plural "Opened %d products with options."
+msgstr[0] ""
+msgstr[1] ""
 
 msgid "Keeps the filters, search, sort, columns, layout, page size and category you have on now."
 msgstr ""

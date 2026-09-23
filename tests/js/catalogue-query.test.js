@@ -28,10 +28,17 @@ describe( 'view to route arguments', () => {
 				'regular_price',
 				'sale_price',
 				'stock_status',
+				// T67–T68 (variations/registry.js withVariations()): the
+				// stock quantity's condition, the type and variation count
+				// that mark a variable row, and the price range.
+				'manage_stock',
 				'stock_quantity',
 				'sku',
 				'id',
+				'type',
 				'thumbnail',
+				'price_html',
+				'variation_count',
 			],
 		} );
 	} );

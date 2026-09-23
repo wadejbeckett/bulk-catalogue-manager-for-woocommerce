@@ -4,6 +4,7 @@
  */
 import { CATEGORY_FILTER } from './defaults';
 import { queryFields } from './fields';
+import { withVariations } from './variations/registry';
 
 /**
  * Route arguments for a view.
@@ -27,7 +28,7 @@ export function toQuery( view, descriptors, extra = {} ) {
 		query.orderby = [ view.sort.field ];
 		query.order = [ view.sort.direction === 'desc' ? 'desc' : 'asc' ];
 	}
-	return { ...query, ...extra };
+	return { ...withVariations( query, view, descriptors ), ...extra };
 }
 
 /**

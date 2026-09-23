@@ -67,20 +67,28 @@ export default function useSelection( { conditions, items = NONE } ) {
 		}
 	}, [ key ] );
 
+	// Variation rows the table has reported as selected (T67's second
+	// argument): they are drawn on this page too, so DataViews' answer is
+	// the word on them as it is on the page's products.
+	const variations = useRef( new Set() );
 	const onChangeSelection = useCallback(
-		( next ) => {
+		( next, split ) => {
 			setNotice( '' );
 			setError( null );
+			( split?.selectedVariationIds || [] ).forEach( ( id ) =>
+				variations.current.add( String( id ) )
+			);
+			const drawn = [ ...pageIds, ...variations.current ];
 			if ( matching ) {
 				// Unticking a row of an all-matching selection narrows it to
 				// what is ticked on this page.
 				sequence.current++;
 				setMatching( null );
-				setIds( next.filter( ( id ) => pageIds.includes( id ) ) );
+				setIds( next.filter( ( id ) => drawn.includes( id ) ) );
 				return;
 			}
 			setIds( ( previous ) =>
-				mergePageSelection( previous, next, pageIds )
+				mergePageSelection( previous, next, drawn )
 			);
 		},
 		[ matching, pageIds ]

@@ -444,8 +444,10 @@ final class ChunkRunnerTest extends TestCase {
 		sort( $calls );
 		$this->assertSame(
 			[
+				"Engine/BatchFactory.php: 'queued' -> 'running'",
 				"Engine/ChunkRunner.php: 'queued' -> 'running'",
 				"Engine/ChunkRunner.php: 'running' -> \$status",
+				"Engine/InlineWrite.php: 'running' -> \$status",
 				"Engine/Progress.php: 'queued' -> 'cancelled'",
 				"Engine/Progress.php: 'running' -> 'cancelled'",
 			],

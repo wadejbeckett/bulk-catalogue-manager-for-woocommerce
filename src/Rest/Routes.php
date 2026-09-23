@@ -60,6 +60,7 @@ final class Routes {
 				new SelectionController( Registry::instance() ),
 				new BatchesController(),
 				new PreviewController(),
+				new ProductWriteController( Registry::instance() ),
 			]
 		);
 	}

@@ -11,22 +11,16 @@ import { __, _n, sprintf } from '@wordpress/i18n';
 
 import { request } from '../../api';
 import BatchCard from './batch-card';
-import { resultLabel } from './changes';
-import { exportRows } from './csv';
+import { useHistoryExport } from './export';
 import {
 	DATE_OPERATORS,
 	dateRange,
 	describeBatch,
-	fieldLabel,
-	formatValue,
-	formatWhen,
-	reasonSentence,
 	singleValue,
 	statusElements,
-	statusLabel,
 } from './describe';
 import ErrorNotice from './error-notice';
-import { userName } from './users';
+import { rowUserName } from './users';
 
 export const PER_PAGE_SIZES = [ 10, 25, 50, 100 ];
 
@@ -159,26 +153,15 @@ export function retentionLine( days ) {
 }
 
 /**
- * The CSV separator the settings name.
- *
- * @param {Object} settings Page settings.
- * @return {string} Separator.
- */
-export function separatorOf( settings ) {
-	return settings?.settings?.csv_separator === 'semicolon' ? ';' : ',';
-}
-
-/**
  * The list.
  *
- * @param {Object}   props             Props.
- * @param {Object}   props.settings    Page settings.
- * @param {Object}   props.meta        `{ byKey, actions, actionsById }` from GET /fields.
- * @param {Object}   props.names       User names by id.
- * @param {Array}    props.users       User filter elements.
- * @param {Function} props.onSeenUsers Report the user ids on the page.
- * @param {Function} props.onNotice    Show a screen notice.
- * @param {Element}  props.scope       The scope line.
+ * @param {Object}   props          Props.
+ * @param {Object}   props.settings Page settings.
+ * @param {Object}   props.meta     `{ byKey, actions, actionsById }` from GET /fields.
+ * @param {Object}   props.names    User names by id.
+ * @param {Array}    props.users    User filter elements.
+ * @param {Function} props.onNotice Show a screen notice.
+ * @param {Element}  props.scope    The scope line.
  * @return {Element} List.
  */
 export default function Batches( {
@@ -186,7 +169,6 @@ export default function Batches( {
 	meta,
 	names,
 	users,
-	onSeenUsers,
 	onNotice,
 	scope,
 } ) {
@@ -199,7 +181,7 @@ export default function Batches( {
 	const [ loading, setLoading ] = useState( true );
 	const [ error, setError ] = useState( null );
 	const [ attempt, setAttempt ] = useState( 0 );
-	const [ exporting, setExporting ] = useState( false );
+	const exporter = useHistoryExport( onNotice );
 
 	useEffect( () => {
 		let live = true;
@@ -216,14 +198,13 @@ export default function Batches( {
 					totalPages: answer?.pagination?.totalPages || 0,
 				} );
 				setError( null );
-				onSeenUsers( rows.map( ( row ) => row.user_id ) );
 			} )
 			.catch( ( caught ) => live && setError( caught ) )
 			.finally( () => live && setLoading( false ) );
 		return () => {
 			live = false;
 		};
-	}, [ view, attempt, onSeenUsers ] );
+	}, [ view, attempt ] );
 
 	const reload = useCallback( () => setAttempt( ( n ) => n + 1 ), [] );
 	const fields = useMemo(
@@ -233,97 +214,7 @@ export default function Batches( {
 	const config = useMemo( () => ( { perPageSizes: PER_PAGE_SIZES } ), [] );
 	const what = ( batch ) =>
 		describeBatch( batch, meta.byKey, meta.actionsById );
-	const separator = separatorOf( settings );
-
-	const exportList = async () => {
-		setExporting( true );
-		try {
-			const query = toBatchQuery( view );
-			delete query.page;
-			delete query.per_page;
-			await exportRows( {
-				route: 'batches',
-				query,
-				name: 'change-history.csv',
-				separator,
-				columns: [
-					{
-						label: __(
-							'Number',
-							'bulk-catalogue-manager-for-woocommerce'
-						),
-						value: ( row ) => row.batch_id,
-					},
-					{
-						label: __(
-							'When',
-							'bulk-catalogue-manager-for-woocommerce'
-						),
-						value: ( row ) => formatWhen( row.created_gmt ),
-					},
-					{
-						label: __(
-							'Who',
-							'bulk-catalogue-manager-for-woocommerce'
-						),
-						value: ( row ) => userName( row.user_id, names ),
-					},
-					{
-						label: __(
-							'What',
-							'bulk-catalogue-manager-for-woocommerce'
-						),
-						value: what,
-					},
-					{
-						label: __(
-							'Rows',
-							'bulk-catalogue-manager-for-woocommerce'
-						),
-						value: ( row ) => row.total_items,
-					},
-					{
-						label: __(
-							'Outcome',
-							'bulk-catalogue-manager-for-woocommerce'
-						),
-						value: ( row ) => statusLabel( row.status ),
-					},
-					{
-						label: __(
-							'Can be undone',
-							'bulk-catalogue-manager-for-woocommerce'
-						),
-						value: ( row ) =>
-							row.reversibility?.state === 'not_reversible'
-								? reasonSentence( row.reversibility?.reason )
-								: __(
-										'Yes',
-										'bulk-catalogue-manager-for-woocommerce'
-									),
-					},
-				],
-			} );
-		} catch ( caught ) {
-			onNotice( { status: 'error', error: caught } );
-		} finally {
-			setExporting( false );
-		}
-	};
-
-	const exportBatch = ( batch ) => async () => {
-		try {
-			await exportRows( {
-				route: `batches/${ batch.batch_id }/changes`,
-				query: {},
-				name: `change-${ batch.batch_id }.csv`,
-				separator,
-				columns: changeColumns( meta.byKey ),
-			} );
-		} catch ( caught ) {
-			onNotice( { status: 'error', error: caught } );
-		}
-	};
+	const exportList = () => exporter.run( 'batches', toBatchQuery( view ) );
 
 	return (
 		<div className="bcm-history__list">
@@ -345,8 +236,8 @@ export default function Batches( {
 						<Button
 							variant="secondary"
 							onClick={ exportList }
-							isBusy={ exporting }
-							disabled={ exporting }
+							isBusy={ exporter.busy }
+							disabled={ exporter.busy }
 							accessibleWhenDisabled
 						>
 							{ __(
@@ -399,11 +290,10 @@ export default function Batches( {
 							key={ batch.batch_id }
 							batch={ batch }
 							what={ what( batch ) }
-							who={ userName( batch.user_id, names ) }
+							who={ rowUserName( batch, names ) }
 							byKey={ meta.byKey }
 							onChanged={ reload }
 							onNotice={ onNotice }
-							onExport={ exportBatch( batch ) }
 						/>
 					) ) }
 				</div>
@@ -414,61 +304,4 @@ export default function Batches( {
 			</p>
 		</div>
 	);
-}
-
-/**
- * The columns of a changes or audit export, in the table's order.
- *
- * @param {Object}  byKey     Field descriptors by key.
- * @param {Object}  names     User names by id (audit only).
- * @param {boolean} withBatch Include who and which change (audit).
- * @return {Array<Object>} Columns.
- */
-export function changeColumns( byKey, names = null, withBatch = false ) {
-	const columns = [
-		{
-			label: __( 'When', 'bulk-catalogue-manager-for-woocommerce' ),
-			value: ( row ) => formatWhen( row.applied_gmt ),
-		},
-		{
-			label: __( 'Product', 'bulk-catalogue-manager-for-woocommerce' ),
-			value: ( row ) => row.name,
-		},
-		{
-			label: __( 'Field', 'bulk-catalogue-manager-for-woocommerce' ),
-			value: ( row ) => fieldLabel( row.field, byKey, row.field_label ),
-		},
-		{
-			label: __( 'Before', 'bulk-catalogue-manager-for-woocommerce' ),
-			value: ( row ) => formatValue( row.old_value, byKey[ row.field ] ),
-		},
-		{
-			label: __( 'After', 'bulk-catalogue-manager-for-woocommerce' ),
-			value: ( row ) => formatValue( row.new_value, byKey[ row.field ] ),
-		},
-		{
-			label: __( 'Result', 'bulk-catalogue-manager-for-woocommerce' ),
-			value: ( row ) => resultLabel( row.result ),
-		},
-		{
-			label: __( 'Reason', 'bulk-catalogue-manager-for-woocommerce' ),
-			value: ( row ) => row.message || '',
-		},
-	];
-	if ( withBatch ) {
-		columns.push(
-			{
-				label: __( 'Who', 'bulk-catalogue-manager-for-woocommerce' ),
-				value: ( row ) => userName( row.user_id, names ),
-			},
-			{
-				label: __(
-					'Change number',
-					'bulk-catalogue-manager-for-woocommerce'
-				),
-				value: ( row ) => row.batch_id,
-			}
-		);
-	}
-	return columns;
 }

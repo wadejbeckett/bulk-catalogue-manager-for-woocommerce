@@ -295,6 +295,14 @@ const ALLOWED = new Map( [
 		'panels/history/batches.js:status',
 		'the outcome property of a GET /batches row, not the product status field',
 	],
+	[
+		'panels/history/export.js:name',
+		'the product name column of a history export (src/Export/HistoryColumns.php), not the product name field',
+	],
+	[
+		'panels/history/export.js:status',
+		'the batch outcome column of a history export (src/Export/HistoryColumns.php), not the product status field',
+	],
 ] );
 
 describe( 'no field or storage key in the client', () => {

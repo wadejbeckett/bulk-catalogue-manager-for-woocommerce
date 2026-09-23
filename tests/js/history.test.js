@@ -119,7 +119,7 @@ const base = ( id, extra = {} ) => ( {
 } );
 
 const BATCHES = [
-	base( 1 ),
+	base( 1, { variations_included: true } ),
 	base( 2, {
 		user_id: 2,
 		operations: [
@@ -150,6 +150,8 @@ const BATCHES = [
 		},
 	} ),
 	base( 5, {
+		user_id: 9,
+		user_name: 'Lee Adams',
 		reversibility: {
 			state: 'not_reversible',
 			conflicts: null,
@@ -164,6 +166,7 @@ const BATCHES = [
 	} ),
 	base( 7, {
 		status: 'undone',
+		undone_by: { batch_id: 42, user_id: 2, user_name: 'Sam Naidoo' },
 		reversibility: {
 			state: 'not_reversible',
 			conflicts: null,
@@ -271,10 +274,12 @@ function serve( table ) {
 
 const DEFAULT_ROUTES = () => ( {
 	'GET bcm/v1/fields': FIELDS,
-	'GET wp/v2/users': [
-		{ id: 1, name: 'Mia Fourie' },
-		{ id: 2, name: 'Sam Naidoo' },
-	],
+	'GET bcm/v1/batches/users': {
+		items: [
+			{ id: 1, name: 'Mia Fourie' },
+			{ id: 2, name: 'Sam Naidoo' },
+		],
+	},
 	'GET bcm/v1/batches': {
 		items: BATCHES,
 		pagination: { page: 1, perPage: 25, total: 7, totalPages: 1 },
@@ -604,6 +609,132 @@ describe( 'history states', () => {
 		expect(
 			four.getByText( 'product 601, field regular_price, result failed' )
 		).toBeTruthy();
+	} );
+} );
+
+/**
+ * The hidden export frame's URL, and its `columns[]` in order.
+ *
+ * @return {{url: URL, columns: Array<string>}} URL and columns.
+ */
+function exportFrame() {
+	const frame = document.querySelector( 'iframe.bcm-export__frame' );
+	const url = new URL( frame.src );
+	const columns = [];
+	url.searchParams.forEach( ( value, key ) => {
+		if ( key.startsWith( 'columns[' ) ) {
+			columns.push( value );
+		}
+	} );
+	return { url, columns };
+}
+
+describe( 'history wire-ins', () => {
+	afterEach( () => {
+		document
+			.querySelectorAll( 'iframe.bcm-export__frame' )
+			.forEach( ( frame ) => frame.remove() );
+	} );
+
+	it( "names who from the row, else from GET /batches/users, never core's users route", async () => {
+		await renderHistory();
+		expect( within( card( 5 ) ).getByText( 'Lee Adams' ) ).toBeTruthy();
+		await waitFor( () =>
+			expect( within( card( 2 ) ).getByText( 'Sam Naidoo' ) ).toBeTruthy()
+		);
+		expect(
+			calls.some( ( c ) => c.route === 'bcm/v1/batches/users' )
+		).toBe( true );
+		expect( calls.some( ( c ) => c.route.startsWith( 'wp/v2/' ) ) ).toBe(
+			false
+		);
+	} );
+
+	it( 'marks a batch that reached variations and says who put one back', async () => {
+		await renderHistory();
+		expect(
+			within( card( 1 ) ).getByText( 'Includes variations' )
+		).toBeTruthy();
+		expect(
+			within( card( 2 ) ).queryByText( 'Includes variations' )
+		).toBeNull();
+		expect(
+			within( card( 7 ) ).getByText(
+				'Put back by Sam Naidoo in change #42'
+			)
+		).toBeTruthy();
+		expect( within( card( 1 ) ).queryByText( /Put back by/ ) ).toBeNull();
+	} );
+
+	it( 'downloads the list from GET /export?source=batches with its filters', async () => {
+		await renderHistory();
+		const button = screen.getByRole( 'button', {
+			name: 'Export log (CSV)',
+		} );
+		await act( async () => fireEvent.click( button ) );
+		const { url, columns } = exportFrame();
+		expect( url.pathname ).toBe( '/wp-json/bcm/v1/export' );
+		expect( url.searchParams.get( 'source' ) ).toBe( 'batches' );
+		expect( url.searchParams.get( 'after' ) ).toMatch( /Z$/ );
+		expect( url.searchParams.get( 'page' ) ).toBeNull();
+		expect( columns ).toContain( 'user_name' );
+		expect( columns ).toContain( 'undone_by' );
+		expect( button.getAttribute( 'aria-disabled' ) ).toBe( 'true' );
+	} );
+
+	it( "downloads a batch's changes with the result filter on screen", async () => {
+		await renderHistory();
+		const four = within( card( 4 ) );
+		fireEvent.click(
+			four.getByRole( 'button', { name: 'See every change' } )
+		);
+		const link = await four.findByRole( 'button', {
+			name: 'Download these changes (CSV)',
+		} );
+		await act( async () => fireEvent.click( link ) );
+		const { url, columns } = exportFrame();
+		expect( url.searchParams.get( 'source' ) ).toBe( 'changes' );
+		expect( url.searchParams.get( 'batch' ) ).toBe( '4' );
+		const result = [];
+		url.searchParams.forEach( ( value, key ) => {
+			if ( key.startsWith( 'result[' ) ) {
+				result.push( value );
+			}
+		} );
+		expect( result ).toEqual( [ 'failed', 'skipped' ] );
+		expect( columns[ 0 ] ).toBe( 'applied_gmt' );
+		expect( columns ).not.toContain( 'user_name' );
+	} );
+
+	it( 'shows a refused export as a notice in plain words', async () => {
+		const {
+			useHistoryExport,
+		} = require( '../../assets/src/panels/history/export.js' );
+		const notices = [];
+		let hook;
+		let started = '';
+		function Probe() {
+			hook = useHistoryExport( ( n ) => notices.push( n ), {
+				getNonce: () => 'abc',
+				start: ( url, { onError } ) => {
+					started = url;
+					onError(
+						Object.assign( new Error( 'Too many rows.' ), {
+							code: 'bcm_export_too_large',
+						} )
+					);
+					return () => {};
+				},
+			} );
+			return null;
+		}
+		render( <Probe /> );
+		await act( async () => hook.run( 'audit', { user: 2, page: 3 } ) );
+		expect( notices[ 0 ].error.message ).toBe( 'Too many rows.' );
+		const url = new URL( started );
+		expect( url.searchParams.get( '_wpnonce' ) ).toBe( 'abc' );
+		expect( url.searchParams.get( 'user' ) ).toBe( '2' );
+		expect( url.searchParams.get( 'page' ) ).toBeNull();
 	} );
 } );
 

@@ -12,6 +12,7 @@ import { __, sprintf } from '@wordpress/i18n';
 import { request } from '../../api';
 import { fieldLabel, formatValue, formatWhen } from './describe';
 import ErrorNotice from './error-notice';
+import { useHistoryExport } from './export';
 
 export const CHANGES_PER_PAGE = 25;
 
@@ -32,6 +33,16 @@ export function resultLabel( result ) {
 		default:
 			return __( 'Waiting', 'bulk-catalogue-manager-for-woocommerce' );
 	}
+}
+
+/**
+ * The result filter for what the table shows.
+ *
+ * @param {string} show all, or problems (failed and skipped rows).
+ * @return {Object} `{ result }` or nothing.
+ */
+export function filterOf( show ) {
+	return show === 'problems' ? { result: [ 'failed', 'skipped' ] } : {};
 }
 
 /**
@@ -118,22 +129,20 @@ function Result( { row } ) {
  * @param {Object}   props.batch        The batch row.
  * @param {Object}   props.byKey        Field descriptors by key.
  * @param {boolean}  props.problemsOnly Open on the failing and skipped rows.
- * @param {Function} props.onExport     Export every row of this batch.
+ * @param {Function} props.onNotice     Show a screen notice; with it, the rows can be downloaded.
  * @return {Element} Table.
  */
-export default function Changes( { batch, byKey, problemsOnly, onExport } ) {
+export default function Changes( { batch, byKey, problemsOnly, onNotice } ) {
 	const [ show, setShow ] = useState( problemsOnly ? 'problems' : 'all' );
 	const [ page, setPage ] = useState( 1 );
 	const [ search, setSearch ] = useState( '' );
 	const [ answer, setAnswer ] = useState( null );
 	const [ error, setError ] = useState( null );
+	const exporter = useHistoryExport( onNotice );
 
 	useEffect( () => {
 		let live = true;
-		const query = { page, per_page: CHANGES_PER_PAGE };
-		if ( show === 'problems' ) {
-			query.result = [ 'failed', 'skipped' ];
-		}
+		const query = { page, per_page: CHANGES_PER_PAGE, ...filterOf( show ) };
 		request( `batches/${ batch.batch_id }/changes`, { query } )
 			.then( ( data ) => {
 				if ( live ) {
@@ -202,8 +211,19 @@ export default function Changes( { batch, byKey, problemsOnly, onExport } ) {
 						setPage( 1 );
 					} }
 				/>
-				{ onExport && (
-					<Button variant="link" onClick={ onExport }>
+				{ onNotice && (
+					<Button
+						variant="link"
+						onClick={ () =>
+							exporter.run( 'changes', {
+								batch: batch.batch_id,
+								...filterOf( show ),
+							} )
+						}
+						isBusy={ exporter.busy }
+						disabled={ exporter.busy }
+						accessibleWhenDisabled
+					>
 						{ __(
 							'Download these changes (CSV)',
 							'bulk-catalogue-manager-for-woocommerce'

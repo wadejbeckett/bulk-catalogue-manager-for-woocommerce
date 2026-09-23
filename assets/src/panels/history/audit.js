@@ -6,14 +6,13 @@
  * names are the route's own `name`, primed once per page on the server.
  */
 import { DataViews } from '@wordpress/dataviews';
-import { Button, ComboboxControl } from '@wordpress/components';
+import { Button, ComboboxControl, Notice } from '@wordpress/components';
 import { useEffect, useMemo, useRef, useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 
 import { request } from '../../api';
-import { changeColumns, separatorOf } from './batches';
 import { resultLabel } from './changes';
-import { exportRows } from './csv';
+import { useHistoryExport } from './export';
 import {
 	DATE_OPERATORS,
 	dateRange,
@@ -23,7 +22,7 @@ import {
 	singleValue,
 } from './describe';
 import ErrorNotice from './error-notice';
-import { userName } from './users';
+import { rowUserName } from './users';
 
 const LAYOUTS = { table: {} };
 
@@ -173,7 +172,7 @@ export function auditFields( meta, names, users ) {
 			type: 'integer',
 			elements: users,
 			enableSorting: false,
-			render: ( { item } ) => userName( item.user_id, names ),
+			render: ( { item } ) => rowUserName( item, names ),
 			filterBy: { operators: [ 'is' ], isPrimary: true },
 		},
 		{
@@ -265,27 +264,42 @@ function ProductFilter( { value, onChange } ) {
 /**
  * The audit log tab.
  *
- * @param {Object}   props             Props.
- * @param {Object}   props.settings    Page settings.
- * @param {Object}   props.meta        `{ byKey, fields }` from GET /fields.
- * @param {Object}   props.names       User names by id.
- * @param {Array}    props.users       User filter elements.
- * @param {Function} props.onSeenUsers Report the user ids on the page.
- * @param {Function} props.onNotice    Show a screen notice.
- * @param {Element}  props.scope       The scope line.
+ * @param {Object}   props               Props.
+ * @param {Object}   props.meta          `{ byKey, fields }` from GET /fields.
+ * @param {Object}   props.names         User names by id.
+ * @param {Array}    props.users         User filter elements.
+ * @param {Function} props.onNotice      Show a screen notice.
+ * @param {Element}  props.scope         The scope line.
+ * @param {number}   props.linkedProduct A product id the page URL names, or null.
+ * @param {Function} props.onClearLinked Forget the URL's product.
  * @return {Element} Tab.
  */
 export default function AuditLog( {
-	settings,
 	meta,
 	names,
 	users,
-	onSeenUsers,
 	onNotice,
 	scope,
+	linkedProduct = null,
+	onClearLinked,
 } ) {
 	const [ view, setView ] = useState( defaultAuditView );
-	const [ product, setProduct ] = useState( null );
+	const [ product, setProduct ] = useState( () =>
+		linkedProduct
+			? {
+					id: linkedProduct,
+					linked: true,
+					name: sprintf(
+						/* translators: %s: a product id, such as "55". */
+						__(
+							'Product #%s',
+							'bulk-catalogue-manager-for-woocommerce'
+						),
+						String( linkedProduct )
+					),
+				}
+			: null
+	);
 	const [ items, setItems ] = useState( [] );
 	const [ pagination, setPagination ] = useState( {
 		totalItems: 0,
@@ -293,7 +307,7 @@ export default function AuditLog( {
 	} );
 	const [ loading, setLoading ] = useState( true );
 	const [ error, setError ] = useState( null );
-	const [ exporting, setExporting ] = useState( false );
+	const exporter = useHistoryExport( onNotice );
 
 	const productId = product?.id || null;
 
@@ -312,14 +326,13 @@ export default function AuditLog( {
 					totalPages: answer?.pagination?.totalPages || 0,
 				} );
 				setError( null );
-				onSeenUsers( rows.map( ( row ) => row.user_id ) );
 			} )
 			.catch( ( caught ) => live && setError( caught ) )
 			.finally( () => live && setLoading( false ) );
 		return () => {
 			live = false;
 		};
-	}, [ view, productId, onSeenUsers ] );
+	}, [ view, productId ] );
 
 	const fields = useMemo(
 		() => auditFields( meta, names, users ),
@@ -327,42 +340,27 @@ export default function AuditLog( {
 	);
 	const config = useMemo( () => ( { perPageSizes: PER_PAGE_SIZES } ), [] );
 
-	const exportLog = async () => {
-		setExporting( true );
-		try {
-			const query = toAuditQuery( view, productId );
-			delete query.page;
-			delete query.per_page;
-			await exportRows( {
-				route: 'audit',
-				query,
-				name: 'audit-log.csv',
-				separator: separatorOf( settings ),
-				columns: changeColumns( meta.byKey, names, true ),
-			} );
-		} catch ( caught ) {
-			onNotice( { status: 'error', error: caught } );
-		} finally {
-			setExporting( false );
+	const exportLog = () =>
+		exporter.run( 'audit', toAuditQuery( view, productId ) );
+
+	const chooseProduct = ( chosen ) => {
+		setProduct( chosen );
+		setView( ( was ) => ( { ...was, page: 1 } ) );
+		if ( product?.linked && onClearLinked ) {
+			onClearLinked();
 		}
 	};
 
 	return (
 		<div className="bcm-audit">
 			<div className="bcm-history__bar">
-				<ProductFilter
-					value={ product }
-					onChange={ ( chosen ) => {
-						setProduct( chosen );
-						setView( ( was ) => ( { ...was, page: 1 } ) );
-					} }
-				/>
+				<ProductFilter value={ product } onChange={ chooseProduct } />
 				<div className="bcm-history__bar-right">
 					<Button
 						variant="secondary"
 						onClick={ exportLog }
-						isBusy={ exporting }
-						disabled={ exporting }
+						isBusy={ exporter.busy }
+						disabled={ exporter.busy }
 						accessibleWhenDisabled
 					>
 						{ __(
@@ -372,6 +370,32 @@ export default function AuditLog( {
 					</Button>
 				</div>
 			</div>
+			{ product?.linked && (
+				<Notice
+					status="info"
+					isDismissible={ false }
+					className="bcm-audit__linked"
+					actions={ [
+						{
+							label: __(
+								'Show every product',
+								'bulk-catalogue-manager-for-woocommerce'
+							),
+							onClick: () => chooseProduct( null ),
+							variant: 'link',
+						},
+					] }
+				>
+					{ sprintf(
+						/* translators: %s: a product id, such as "55". */
+						__(
+							'Showing changes to product #%s.',
+							'bulk-catalogue-manager-for-woocommerce'
+						),
+						String( product.id )
+					) }
+				</Notice>
+			) }
 			{ scope }
 			{ error && (
 				<ErrorNotice

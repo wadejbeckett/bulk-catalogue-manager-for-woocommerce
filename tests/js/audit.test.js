@@ -1,10 +1,10 @@
 /**
  * The Audit log tab (T58): its filters' mapping to GET /audit, product
  * search through GET /products?search, fields shown by their registry
- * label and never a storage key, product names from the route, its empty
- * state, and the export — a stopgap in the browser until GET /export takes
- * change rows — following the filter across every page with the writer's
- * rules (byte-order mark, every field quoted, formulas neutralised).
+ * label and never a storage key, product and user names from the route,
+ * its empty state, the export through GET /export?source=audit with the
+ * same filters, and the `product` URL argument the product drawer links
+ * with.
  */
 import {
 	act,
@@ -30,12 +30,6 @@ const {
 	defaultAuditView,
 	fieldElements,
 } = require( '../../assets/src/panels/history/audit.js' );
-const {
-	csvField,
-	toCsv,
-	readAll,
-	MAX_ROWS,
-} = require( '../../assets/src/panels/history/csv.js' );
 
 const ROOT = 'https://example.test/wp-json/bcm/v1/';
 const NOW = Date.UTC( 2026, 8, 23, 12, 0, 0 );
@@ -69,6 +63,7 @@ const ROW = {
 	message: '',
 	detail: '',
 	applied_gmt: '2026-09-23 10:00:01',
+	user_name: 'Sam Naidoo',
 };
 
 let calls;
@@ -190,7 +185,7 @@ describe( 'audit tab', () => {
 			'GET bcm/v1/fields': { fields: FIELDS, actions: [] },
 			'GET bcm/v1/batches': page( [] ),
 			'GET bcm/v1/audit': page( [ ROW ] ),
-			'GET wp/v2/users': [ { id: 2, name: 'Sam Naidoo' } ],
+			'GET bcm/v1/batches/users': { items: [] },
 		} );
 		await openAudit();
 		await waitFor( () =>
@@ -265,41 +260,95 @@ describe( 'audit tab', () => {
 	} );
 } );
 
-describe( 'history export (stopgap)', () => {
-	it( 'quotes every field and neutralises a formula', () => {
-		expect( csvField( '=cmd|calc' ) ).toBe( '"\'=cmd|calc"' );
-		expect( csvField( '+1' ) ).toBe( '"\'+1"' );
-		expect( csvField( '-2' ) ).toBe( '"\'-2"' );
-		expect( csvField( '@SUM' ) ).toBe( '"\'@SUM"' );
-		expect( csvField( 'Say "hi"' ) ).toBe( '"Say ""hi"""' );
-		expect( csvField( null ) ).toBe( '""' );
+describe( 'audit export and product link', () => {
+	afterEach( () => {
+		document
+			.querySelectorAll( 'iframe.bcm-export__frame' )
+			.forEach( ( frame ) => frame.remove() );
+		window.history.replaceState( null, '', '/' );
 	} );
 
-	it( 'writes a byte-order mark, the header and the rows in column order', () => {
-		const csv = toCsv(
-			[
-				{ label: 'Product', value: ( row ) => row.name },
-				{ label: 'After', value: ( row ) => row.after },
-			],
-			[ { name: '=Bad', after: '9.50' } ],
-			';'
-		);
-		expect( csv ).toBe( '﻿"Product";"After"\r\n"\'=Bad";"9.50"\r\n' );
-	} );
-
-	it( 'follows the filter across every page, not only the one on screen', async () => {
+	it( 'downloads GET /export?source=audit with the filters on screen', async () => {
 		serve( {
-			'GET bcm/v1/audit': ( query ) =>
-				page( [ { ...ROW, change_id: Number( query.page ) } ], 3, 3 ),
+			'GET bcm/v1/fields': { fields: FIELDS, actions: [] },
+			'GET bcm/v1/batches': page( [] ),
+			'GET bcm/v1/audit': page( [ ROW ] ),
 		} );
-		const { rows, truncated } = await readAll( 'audit', { field: 'sku' } );
-		expect( rows.map( ( row ) => row.change_id ) ).toEqual( [ 1, 2, 3 ] );
-		expect( truncated ).toBe( false );
-		expect( calls.map( ( c ) => c.query ) ).toEqual( [
-			{ field: 'sku', page: '1', per_page: '100' },
-			{ field: 'sku', page: '2', per_page: '100' },
-			{ field: 'sku', page: '3', per_page: '100' },
-		] );
-		expect( MAX_ROWS ).toBe( 10000 );
+		window.history.replaceState(
+			null,
+			'',
+			'/wp-admin/admin.php?page=bcm&panel=history&product=55'
+		);
+		await openAudit();
+		const button = screen.getByRole( 'button', {
+			name: 'Export log (CSV)',
+		} );
+		await act( async () => fireEvent.click( button ) );
+		const frame = document.querySelector( 'iframe.bcm-export__frame' );
+		expect( frame ).not.toBeNull();
+		const url = new URL( frame.src );
+		expect( url.pathname ).toBe( '/wp-json/bcm/v1/export' );
+		expect( url.searchParams.get( 'source' ) ).toBe( 'audit' );
+		expect( url.searchParams.get( 'product' ) ).toBe( '55' );
+		expect( url.searchParams.get( 'page' ) ).toBeNull();
+		expect( url.searchParams.get( 'per_page' ) ).toBeNull();
+		const columns = [];
+		url.searchParams.forEach( ( value, key ) => {
+			if ( key.startsWith( 'columns[' ) ) {
+				columns.push( value );
+			}
+		} );
+		expect( columns ).toContain( 'user_name' );
+		expect( columns[ 0 ] ).toBe( 'applied_gmt' );
+		expect( button.getAttribute( 'aria-disabled' ) ).toBe( 'true' );
+	} );
+
+	it( 'opens on the product the URL names, and can show every product again', async () => {
+		serve( {
+			'GET bcm/v1/fields': { fields: FIELDS, actions: [] },
+			'GET bcm/v1/batches': page( [] ),
+			'GET bcm/v1/audit': page( [ ROW ] ),
+		} );
+		window.history.replaceState(
+			null,
+			'',
+			'/wp-admin/admin.php?page=bcm&panel=history&product=55'
+		);
+		render(
+			<History
+				settings={ {
+					root: ROOT,
+					user: { id: 1, name: 'Mia Fourie' },
+					settings: {},
+				} }
+			/>
+		);
+		await waitFor( () =>
+			expect(
+				document.querySelector( '.bcm-audit__linked' )?.textContent
+			).toContain( 'Showing changes to product #55.' )
+		);
+		expect(
+			screen
+				.getByRole( 'tab', { name: 'Audit log' } )
+				.getAttribute( 'aria-selected' )
+		).toBe( 'true' );
+		await waitFor( () =>
+			expect(
+				calls.some(
+					( c ) =>
+						c.route === 'bcm/v1/audit' && c.query.product === '55'
+				)
+			).toBe( true )
+		);
+		await act( async () =>
+			fireEvent.click(
+				screen.getByRole( 'button', { name: 'Show every product' } )
+			)
+		);
+		expect( document.querySelector( '.bcm-audit__linked' ) ).toBeNull();
+		expect( window.location.search ).toBe( '?page=bcm&panel=history' );
+		const last = calls.filter( ( c ) => c.route === 'bcm/v1/audit' ).pop();
+		expect( last.query.product ).toBeUndefined();
 	} );
 } );

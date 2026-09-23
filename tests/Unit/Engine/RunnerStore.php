@@ -187,6 +187,14 @@ final class RunnerStore {
 				} elseif ( isset( $this->others[ $where['batch_id'] ] ) && ( ! isset( $where['status'] ) || $where['status'] === $this->others[ $where['batch_id'] ]['status'] ) ) {
 					$this->others[ $where['batch_id'] ] = $data + $this->others[ $where['batch_id'] ];
 				}
+			} elseif ( 'update' === $method && 'wp_bcm_changes' === $table && ! in_array( 'update', $wpdb->failing, true ) ) {
+				// An intent row settled (§12.3).
+				foreach ( $this->changes as $index => $row ) {
+					if ( [] === array_diff_assoc( $where, array_intersect_key( $row, $where ) ) ) {
+						$data['new_value']       = ValueCodec::decode( $data['new_value'] );
+						$this->changes[ $index ] = $data + $row;
+					}
+				}
 			} elseif ( $inserted && 'wp_bcm_changes' === $table ) {
 				++$this->inserts;
 				$data['old_value'] = ValueCodec::decode( $data['old_value'] );

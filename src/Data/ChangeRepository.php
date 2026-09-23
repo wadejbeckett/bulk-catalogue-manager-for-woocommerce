@@ -74,7 +74,7 @@ final class ChangeRepository {
 	 * @param mixed  $old_value    Value before the write.
 	 * @param mixed  $new_value    Value after the write (or the intended value, for a skipped or failed row).
 	 * @param string $modified_gmt The object's post_modified_gmt at write time, `Y-m-d H:i:s`, or UNKNOWN_TIME.
-	 * @param string $result       One of Schema::CHANGE_RESULTS.
+	 * @param string $result       One of Schema::CHANGE_RESULTS, or Schema::CHANGE_INTENT for an intent row.
 	 * @param string $message      Reason for a skip or failure; cut to MESSAGE_LENGTH characters.
 	 * @return int The new change_id.
 	 * @throws \InvalidArgumentException On an invalid argument.
@@ -92,7 +92,7 @@ final class ChangeRepository {
 		if ( 1 !== preg_match( '/^[a-z][a-z0-9_]{0,' . ( self::PROP_LENGTH - 1 ) . '}$/', $prop ) ) {
 			throw new \InvalidArgumentException( esc_html( sprintf( 'Invalid field key "%s".', $prop ) ) );
 		}
-		if ( ! in_array( $result, Schema::CHANGE_RESULTS, true ) ) {
+		if ( ! in_array( $result, Schema::CHANGE_RESULTS, true ) && Schema::CHANGE_INTENT !== $result ) {
 			throw new \InvalidArgumentException( esc_html( sprintf( 'Unknown result "%s".', $result ) ) );
 		}
 		if ( self::UNKNOWN_TIME !== $modified_gmt && ! self::is_datetime( $modified_gmt ) ) {
@@ -149,6 +149,72 @@ final class ChangeRepository {
 	public function has_object( int $batch_id, int $object_id ): bool {
 		global $wpdb;
 		return null !== $wpdb->get_var( $wpdb->prepare( 'SELECT change_id FROM %i WHERE batch_id = %d AND object_id = %d LIMIT 1', $this->registry->table( Schema::CHANGES ), $batch_id, $object_id ) );
+	}
+
+	/**
+	 * A batch's intent rows for one object (§12.3): each field whose write
+	 * was about to be saved when the run that wrote them stopped, with the
+	 * value before and the value it was writing, in the order written.
+	 *
+	 * @param int $batch_id  Batch.
+	 * @param int $object_id Object.
+	 * @return array<string, array{old: mixed, new: mixed}> Field key => values.
+	 */
+	public function intents( int $batch_id, int $object_id ): array {
+		global $wpdb;
+		$rows    = $wpdb->get_results( $wpdb->prepare( 'SELECT prop, old_value, new_value FROM %i WHERE batch_id = %d AND object_id = %d AND result = %s ORDER BY change_id ASC LIMIT %d', $this->registry->table( Schema::CHANGES ), $batch_id, $object_id, Schema::CHANGE_INTENT, self::MAX_PAGE ), ARRAY_A );
+		$intents = [];
+		foreach ( is_array( $rows ) ? $rows : [] as $row ) {
+			$intents[ (string) $row['prop'] ] = [
+				'old' => ValueCodec::decode( (string) $row['old_value'] ),
+				'new' => ValueCodec::decode( (string) $row['new_value'] ),
+			];
+		}
+		return $intents;
+	}
+
+	/**
+	 * Settle one intent row once the write is confirmed or has failed: its
+	 * result, the value after the write and the message, stamped now. Only a
+	 * row still pending is touched.
+	 *
+	 * @param int    $batch_id  Batch.
+	 * @param int    $object_id Object.
+	 * @param string $prop      Field key.
+	 * @param string $result    One of Schema::CHANGE_RESULTS.
+	 * @param mixed  $new_value The value after the write (the old value, for a failure).
+	 * @param string $message   Reason; cut to MESSAGE_LENGTH characters.
+	 * @return int Rows settled.
+	 * @throws \InvalidArgumentException On an unknown result.
+	 * @throws \RuntimeException When the row is not written.
+	 */
+	public function settle( int $batch_id, int $object_id, string $prop, string $result, mixed $new_value, string $message = '' ): int {
+		global $wpdb;
+		if ( ! in_array( $result, Schema::CHANGE_RESULTS, true ) ) {
+			throw new \InvalidArgumentException( esc_html( sprintf( 'Unknown result "%s".', $result ) ) );
+		}
+		// update() prepares the statement from the formats.
+		$updated = $wpdb->update(
+			$this->registry->table( Schema::CHANGES ),
+			[
+				'new_value'   => ValueCodec::encode( $new_value ),
+				'applied_gmt' => gmdate( 'Y-m-d H:i:s' ),
+				'result'      => $result,
+				'message'     => mb_substr( $message, 0, self::MESSAGE_LENGTH ),
+			],
+			[
+				'batch_id'  => $batch_id,
+				'object_id' => $object_id,
+				'prop'      => $prop,
+				'result'    => Schema::CHANGE_INTENT,
+			],
+			[ '%s', '%s', '%s', '%s' ],
+			[ '%d', '%d', '%s', '%s' ]
+		);
+		if ( false === $updated ) {
+			throw new \RuntimeException( 'The change could not be journalled.' );
+		}
+		return (int) $updated;
 	}
 
 	/**

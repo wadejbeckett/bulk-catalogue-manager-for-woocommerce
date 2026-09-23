@@ -48,6 +48,7 @@ namespace BulkCatalogueManager\Undo;
 
 use BulkCatalogueManager\Data\BatchRepository;
 use BulkCatalogueManager\Data\ChangeRepository;
+use BulkCatalogueManager\Data\Schema;
 use BulkCatalogueManager\Engine\Preview;
 use BulkCatalogueManager\Engine\Writer;
 use BulkCatalogueManager\Fields\Field;
@@ -343,7 +344,9 @@ final class Planner {
 					'type'   => $row['object_type'],
 					'fields' => [],
 				];
-				if ( 'applied' !== $row['result'] ) {
+				// An intent row (§12.3) a killed run left unsettled counts as applied: whether its save
+				// landed shows as the object holding the value, or as a conflict when it does not.
+				if ( 'applied' !== $row['result'] && Schema::CHANGE_INTENT !== $row['result'] ) {
 					continue;
 				}
 				$prop = $row['prop'];

@@ -493,6 +493,16 @@ final class PlannerTest extends TestCase {
 		$this->assertSame( Plan::SKIPPED, self::item( $this->planner()->plan( self::BATCH ), 1001 )['state'], 'Without a user, the current user\'s rights apply.' );
 	}
 
+	public function test_an_intent_row_a_killed_run_left_is_planned_like_an_applied_one(): void {
+		// The run died between WooCommerce's save and the journal's settlement, and was never retried (cancelled).
+		$this->change( 1001, 'regular_price', '10.00', '11.00', 'pending' );
+		self::product( 1001, [ 'regular_price' => '11.00' ] );
+
+		$item = self::item( $this->plan(), 1001 );
+		$this->assertSame( Plan::REVERTIBLE, $item['state'], 'The save landed, so the change can be put back.' );
+		$this->assertSame( '10.00', $item['operations'][0]['args']['value'] ?? null );
+	}
+
 	public function test_a_partial_failed_or_cancelled_batch_plans_the_applied_part_only(): void {
 		$this->change( 1001, 'regular_price', '10.00', '11.00' );
 		$this->change( 1001, 'sku', 'A', 'TAKEN', 'failed', 'product', 'A product with the SKU TAKEN already exists, so this SKU was not applied.' );

@@ -119,11 +119,22 @@ final class JournalTest extends TestCase {
 	 */
 	private static function rows(): array {
 		$rows = [];
-		foreach ( $GLOBALS['wpdb']->writes as [ $method, $table, $data ] ) {
-			if ( 'insert' === $method && 'wp_bcm_changes' === $table ) {
+		foreach ( $GLOBALS['wpdb']->writes as [ $method, $table, $data, , $where ] ) {
+			if ( 'wp_bcm_changes' !== $table ) {
+				continue;
+			}
+			if ( 'insert' === $method && ! in_array( 'insert', $GLOBALS['wpdb']->failing, true ) ) {
 				$data['old_value'] = ValueCodec::decode( $data['old_value'] );
 				$data['new_value'] = ValueCodec::decode( $data['new_value'] );
 				$rows[]            = $data;
+			} elseif ( 'update' === $method ) {
+				// An intent row settled (§12.3), as the table would apply it.
+				foreach ( $rows as $index => $row ) {
+					if ( [] === array_diff_assoc( $where, array_intersect_key( $row, $where ) ) ) {
+						$data['new_value'] = ValueCodec::decode( $data['new_value'] );
+						$rows[ $index ]    = $data + $row;
+					}
+				}
 			}
 		}
 		return $rows;
@@ -515,6 +526,142 @@ final class JournalTest extends TestCase {
 		// Another batch is not blocked by this one's rows.
 		self::writer( false, self::BATCH + 1 )->write( 89, $list );
 		$this->assertSame( '12.10', $product->props['regular_price'] );
+	}
+
+	/**
+	 * Answer the intent-row read from the rows written so far, as the table would.
+	 */
+	private static function answer_intents(): void {
+		$GLOBALS['wpdb']->responses["/^SELECT prop, old_value, new_value FROM `wp_bcm_changes` WHERE batch_id = (\\d+) AND object_id = (\\d+) AND result = 'pending'/"] = static function ( string $sql ): array {
+			preg_match( '/batch_id = (\d+) AND object_id = (\d+)/', $sql, $m );
+			$found = [];
+			foreach ( self::rows() as $row ) {
+				if ( (int) $m[1] === $row['batch_id'] && (int) $m[2] === $row['object_id'] && 'pending' === $row['result'] ) {
+					$found[] = [
+						'prop'      => $row['prop'],
+						'old_value' => ValueCodec::encode( $row['old_value'] ),
+						'new_value' => ValueCodec::encode( $row['new_value'] ),
+					];
+				}
+			}
+			return $found;
+		};
+	}
+
+	/**
+	 * A stored product whose save() is the last thing the request does: it
+	 * dies there, after WooCommerce wrote the row ($landed) or before.
+	 */
+	private static function dying( SavedProduct $stored, bool $landed ): object {
+		return new class( $stored, $landed ) {
+			public function __construct( private SavedProduct $stored, private bool $landed ) {}
+
+			public function is_type( string $type ): bool {
+				return $this->stored->is_type( $type );
+			}
+
+			public function save(): int {
+				if ( $this->landed ) {
+					$this->stored->save();
+				}
+				throw new \Error( 'Maximum execution time of 30 seconds exceeded' );
+			}
+
+			public function __call( string $method, array $args ): mixed {
+				return $this->stored->$method( ...$args );
+			}
+		};
+	}
+
+	public function test_a_run_killed_after_the_save_does_not_apply_a_percentage_twice_on_retry(): void {
+		self::answer_intents();
+		$list = $this->steps(
+			[
+				[
+					'adjust',
+					[
+						'field'     => 'regular_price',
+						'direction' => 'increase',
+						'by'        => 'percent',
+						'amount'    => '10',
+					],
+				],
+			]
+		);
+
+		// WooCommerce saves the product, then the request dies before the journal catches up.
+		$stored                              = self::product(
+			[
+				'id'            => 91,
+				'regular_price' => '10',
+			]
+		);
+		$GLOBALS['bcm_test']['products'][91] = self::dying( $stored, true );
+		try {
+			self::writer()->write( 91, $list );
+			$this->fail( 'The request was meant to die in save().' );
+		} catch ( \Error $e ) {
+			$this->assertStringContainsString( 'execution time', $e->getMessage() );
+		}
+		$this->assertSame( '11.00', $stored->props['regular_price'] );
+		$this->assertSame( [ [ 'regular_price', '10', '11.00', 'pending' ] ], self::summary(), 'The value being written is on record before save().' );
+
+		// The retry reloads the product: the recorded value is already there, so nothing is written again.
+		$GLOBALS['bcm_test']['products'][91] = $stored;
+		$retried                             = self::writer()->write( 91, $list );
+		$this->assertSame( '11.00', $stored->props['regular_price'], 'The increase applied once, not 12.10.' );
+		$this->assertCount( 1, $stored->saves );
+		$this->assertTrue( $retried->saved() );
+		$this->assertSame( [ Result::CHANGED ], self::states( $retried ) );
+		$this->assertSame( [ [ 'regular_price', '10', '11.00', 'applied' ] ], self::summary(), 'The intent row is settled, not duplicated.' );
+
+		// Another retry finds a settled row and skips the object.
+		$this->assertSame( Journal::ALREADY_DONE, self::writer()->write( 91, $list )->results()[0]->code() );
+	}
+
+	public function test_a_run_killed_before_the_save_landed_writes_the_recorded_value_on_retry(): void {
+		self::answer_intents();
+		$list                                = $this->steps(
+			[
+				[
+					'adjust',
+					[
+						'field'     => 'regular_price',
+						'direction' => 'increase',
+						'by'        => 'percent',
+						'amount'    => '10',
+					],
+				],
+			]
+		);
+		$GLOBALS['bcm_test']['products'][92] = self::dying(
+			new SavedProduct(
+				'simple',
+				[
+					'id'            => 92,
+					'regular_price' => '10',
+				]
+			),
+			false
+		);
+		try {
+			self::writer()->write( 92, $list );
+			$this->fail( 'The request was meant to die in save().' );
+		} catch ( \Error $e ) {
+			$this->assertNotSame( '', $e->getMessage() );
+		}
+
+		// The row never changed, so the reloaded product still holds 10: the recorded absolute value is written.
+		$fresh = self::product(
+			[
+				'id'            => 92,
+				'regular_price' => '10',
+			]
+		);
+		self::writer()->write( 92, $list );
+		$this->assertSame( '11.00', $fresh->props['regular_price'] );
+		$this->assertCount( 1, $fresh->saves );
+		$this->assertSame( [ [ 'regular_price', '10', '11.00', 'applied' ] ], self::summary() );
 	}
 
 	public function test_skip_already_crossed_with_record_unchanged_rows(): void {

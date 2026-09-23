@@ -85,9 +85,24 @@ final class Schema {
 	public const ITEM_STATES = [ 'pending', 'done', 'skipped', 'failed' ];
 
 	/**
+	 * An item one chunk has claimed for itself and is writing now (§12.4):
+	 * set only by BatchRepository::claim_item(), never a final state, and
+	 * put back to pending when its claim goes stale.
+	 */
+	public const ITEM_WORKING = 'working';
+
+	/**
 	 * Change results.
 	 */
 	public const CHANGE_RESULTS = [ 'applied', 'skipped', 'failed' ];
+
+	/**
+	 * The result of an intent row (§12.3): written before save() with the
+	 * value about to be saved, then settled to one of CHANGE_RESULTS. A row
+	 * still pending means the write was interrupted before it was confirmed;
+	 * a retry of the chunk settles it.
+	 */
+	public const CHANGE_INTENT = 'pending';
 
 	/**
 	 * `{prefix}bcm_batches`.

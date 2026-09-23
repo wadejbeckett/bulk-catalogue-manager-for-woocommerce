@@ -5,18 +5,23 @@
  * path — never from a hook after the fact — so every saved change has its
  * before state beside it and undo can put it back.
  *
- * The writer calls it three times per object:
+ * The writer calls it per object:
  * - already_done() before loading the object: an object that already has
  *   journal rows for this batch was dealt with by an earlier run of the same
  *   chunk, so it is skipped and a retried percentage increase cannot apply
- *   twice;
+ *   twice — unless some of those rows are intent rows (intents()), when the
+ *   writer replays their recorded values instead (Writer, §12.3);
  * - modified_gmt() straight after loading it, before any value is set: the
  *   object's post_modified_gmt, read through the registry's `date_modified`
  *   field, which every row records as the time the object had when the
  *   plugin wrote it;
- * - record() after save() (or instead of it, when nothing was saved), with
- *   every Result and the switch *Skip rows where the value is already
- *   correct* of the step that produced it.
+ * - intend() just before save(), writing every row with each changed field
+ *   as an intent row holding the value about to be saved, then settle()
+ *   after save() returns or throws, turning each intent row into the row
+ *   below — so a run killed after WooCommerce saved but before the journal
+ *   caught up leaves a record of exactly what it was writing; or record()
+ *   instead, when nothing is saved, with every Result and the switch *Skip
+ *   rows where the value is already correct* of the step that produced it.
  *
  * record() writes at most one row per field, and none for a field no step
  * named. For each field, in the order the steps first reached it:
@@ -50,6 +55,7 @@ declare( strict_types = 1 );
 namespace BulkCatalogueManager\Engine;
 
 use BulkCatalogueManager\Data\ChangeRepository;
+use BulkCatalogueManager\Data\Schema;
 use BulkCatalogueManager\Fields\Registry as Fields;
 use BulkCatalogueManager\Operations\Result;
 use BulkCatalogueManager\Settings\Settings;
@@ -128,6 +134,94 @@ final class Journal {
 	}
 
 	/**
+	 * The fields this batch was writing to an object when a run stopped
+	 * between its intent rows and their settlement (§12.3), with the value
+	 * before and the value being written; empty when there are none.
+	 *
+	 * @param int $batch_id  Batch.
+	 * @param int $object_id Object.
+	 * @return array<string, array{old: mixed, new: mixed}>
+	 */
+	public function intents( int $batch_id, int $object_id ): array {
+		return $this->changes->intents( $batch_id, $object_id );
+	}
+
+	/**
+	 * Write one object's rows before save() (§12.3): exactly the rows
+	 * record() would write, in the same order, except that a field with a
+	 * change gets an intent row (Schema::CHANGE_INTENT) holding the value
+	 * about to be saved. settle() turns those into their final rows once
+	 * save() has returned or thrown; a run killed in between leaves them for
+	 * the retry.
+	 *
+	 * @param int                             $batch_id     Batch.
+	 * @param int                             $object_id    Object id.
+	 * @param string                          $object_type  product, variation or term.
+	 * @param string                          $modified_gmt What modified_gmt() answered before the write.
+	 * @param list<array{0: Result, 1: bool}> $entries      Every Result in order, with its step's skip switch.
+	 * @param array<string, mixed>            $before       Each named field's value before the first step.
+	 * @return list<string> The fields given an intent row.
+	 */
+	public function intend( int $batch_id, int $object_id, string $object_type, string $modified_gmt, array $entries, array $before ): array {
+		$intended = [];
+		foreach ( self::by_field( $entries ) as $key => $steps ) {
+			$changes = self::in_state( array_column( $steps, 0 ), Result::CHANGED );
+			if ( [] !== $changes ) {
+				$old = array_key_exists( $key, $before ) ? $before[ $key ] : $changes[0]->old();
+				$this->changes->append( $batch_id, $object_id, $object_type, $key, $old, end( $changes )->new(), $modified_gmt, Schema::CHANGE_INTENT );
+				$intended[] = $key;
+				continue;
+			}
+			$row = $this->row( $key, $steps, $before, null );
+			if ( null !== $row ) {
+				[ $old, $new_value, $state, $message ] = $row;
+				$this->changes->append( $batch_id, $object_id, $object_type, $key, $old, $new_value, $modified_gmt, $state, $message );
+			}
+		}
+		return $intended;
+	}
+
+	/**
+	 * Settle the intent rows intend() wrote, once save() has returned (the
+	 * saved object) or thrown (null, the entries then reporting the failure):
+	 * each becomes the row record() would have written.
+	 *
+	 * @param int                             $batch_id  Batch.
+	 * @param int                             $object_id Object id.
+	 * @param list<array{0: Result, 1: bool}> $entries   Every Result in order, with its step's skip switch.
+	 * @param array<string, mixed>            $before    Each named field's value before the first step.
+	 * @param object|null                     $saved     The saved object, or null.
+	 * @param list<string>                    $intended  What intend() returned.
+	 * @return int Rows settled.
+	 */
+	public function settle( int $batch_id, int $object_id, array $entries, array $before, ?object $saved, array $intended ): int {
+		$settled  = 0;
+		$by_field = self::by_field( $entries );
+		foreach ( $intended as $key ) {
+			$row = isset( $by_field[ $key ] ) ? $this->row( $key, $by_field[ $key ], $before, $saved ) : null;
+			if ( null !== $row ) {
+				[ , $new_value, $state, $message ] = $row;
+				$settled                          += $this->changes->settle( $batch_id, $object_id, $key, $state, $new_value, $message );
+			}
+		}
+		return $settled;
+	}
+
+	/**
+	 * Settle one intent row directly (a retry, Writer::replay()).
+	 *
+	 * @param int    $batch_id  Batch.
+	 * @param int    $object_id Object id.
+	 * @param string $key       Field key.
+	 * @param string $state     applied or failed.
+	 * @param mixed  $new_value The value after the write.
+	 * @param string $message   Reason, for a failure.
+	 */
+	public function settle_one( int $batch_id, int $object_id, string $key, string $state, mixed $new_value, string $message = '' ): int {
+		return $this->changes->settle( $batch_id, $object_id, $key, $state, $new_value, $message );
+	}
+
+	/**
 	 * Write one object's rows.
 	 *
 	 * @param int                           $batch_id     Batch.
@@ -140,13 +234,8 @@ final class Journal {
 	 * @return int The number of rows written.
 	 */
 	public function record( int $batch_id, int $object_id, string $object_type, string $modified_gmt, array $entries, array $before, ?object $saved ): int {
-		$by_field = [];
-		foreach ( $entries as [ $result, $skip_already ] ) {
-			$by_field[ $result->field() ][] = [ $result, $skip_already ];
-		}
-
 		$written = 0;
-		foreach ( $by_field as $key => $steps ) {
+		foreach ( self::by_field( $entries ) as $key => $steps ) {
 			$row = $this->row( $key, $steps, $before, $saved );
 			if ( null === $row ) {
 				continue;
@@ -194,6 +283,20 @@ final class Journal {
 			return null;
 		}
 		return [ $old, $old, 'skipped', __( 'This was already at the value asked for, so it was left alone.', 'bulk-catalogue-manager-for-woocommerce' ) ];
+	}
+
+	/**
+	 * Entries grouped by field, in the order the steps first reached each.
+	 *
+	 * @param list<array{0: Result, 1: bool}> $entries Every Result with its step's skip switch.
+	 * @return array<string, list<array{0: Result, 1: bool}>>
+	 */
+	private static function by_field( array $entries ): array {
+		$by_field = [];
+		foreach ( $entries as [ $result, $skip_already ] ) {
+			$by_field[ $result->field() ][] = [ $result, $skip_already ];
+		}
+		return $by_field;
 	}
 
 	/**

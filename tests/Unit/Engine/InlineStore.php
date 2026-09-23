@@ -101,6 +101,14 @@ final class InlineStore {
 					$data['new_value'] = ValueCodec::decode( $data['new_value'] );
 					$this->changes[]   = $data;
 				}
+			} elseif ( 'update' === $method && 'wp_bcm_changes' === $table ) {
+				// An intent row settled (§12.3).
+				foreach ( $this->changes as $index => $row ) {
+					if ( [] === array_diff_assoc( $where, array_intersect_key( $row, $where ) ) ) {
+						$data['new_value']       = ValueCodec::decode( $data['new_value'] );
+						$this->changes[ $index ] = $data + $row;
+					}
+				}
 			} elseif ( 'update' === $method && 'wp_bcm_batches' === $table && isset( $this->batches[ $where['batch_id'] ] ) ) {
 				$row = $this->batches[ $where['batch_id'] ];
 				if ( ! isset( $where['status'] ) || $where['status'] === $row['status'] ) {

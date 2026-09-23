@@ -55,10 +55,16 @@
  * object this batch already journalled (every step reported skipped with
  * Journal::ALREADY_DONE, nothing loaded, computed or saved), so a retried
  * chunk cannot apply a percentage increase twice; straight after loading it
- * records the object's post_modified_gmt; and after save() — or in its place
- * when nothing is saved — it writes one row per field the steps named
- * through Journal::record(), with each Result and its step's `skip_already`
- * switch. An `already` Result is never saved; whether it is journalled
+ * records the object's post_modified_gmt; just before save() it writes the
+ * object's rows through Journal::intend(), each changed field as an intent
+ * row holding the value about to be saved, and settles them through
+ * Journal::settle() once save() returns or throws — or, when nothing is
+ * saved, it writes one row per field the steps named through
+ * Journal::record() — with each Result and its step's `skip_already`
+ * switch. A retry that finds intent rows (the run was killed between
+ * WooCommerce's save and the settlement) computes nothing: replay() writes
+ * each recorded absolute value, or leaves it when the object already holds
+ * it, and settles the rows (§12.3). An `already` Result is never saved; whether it is journalled
  * follows the switch and the shop's *Record unchanged rows* setting (see
  * Journal). Inline edits, detail-panel saves and term writes use the same
  * writer for their one-item batch, so they journal identically.
@@ -84,6 +90,7 @@ use BulkCatalogueManager\Operations\Registry;
 use BulkCatalogueManager\Operations\Result;
 use BulkCatalogueManager\Operations\Validator;
 use BulkCatalogueManager\Operations\WriteRefused;
+use BulkCatalogueManager\Undo\Planner;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -192,7 +199,8 @@ final class Writer {
 	private function write_one( int $id, array $operations ): WriteOutcome {
 		$steps = $this->resolve( $operations );
 		if ( null !== $this->journal && $this->journal->already_done( $this->batch_id, $id ) ) {
-			return new WriteOutcome( $id, self::done_before( $steps ), false );
+			$intents = $this->journal->intents( $this->batch_id, $id );
+			return [] === $intents ? new WriteOutcome( $id, self::done_before( $steps ), false ) : $this->replay( $id, $intents );
 		}
 
 		$product = wc_get_product( $id );
@@ -229,11 +237,13 @@ final class Writer {
 		if ( null !== $this->before_save ) {
 			( $this->before_save )( $product, $touched, $changed_before );
 		}
+		// Intent rows first (§12.3): a run killed after WooCommerce saved leaves the value it wrote on record.
+		$intended = null === $this->journal ? [] : $this->journal->intend( $this->batch_id, $id, Journal::object_type( $product ), $modified, $entries, $before );
 		try {
 			$product->save();
 		} catch ( \Exception $e ) {
 			$entries = self::save_failed( $entries );
-			$this->journal( $id, $product, $modified, $entries, $before, null );
+			$this->settle( $id, $entries, $before, null, $intended );
 			return new WriteOutcome( $id, array_column( $entries, 0 ), false );
 		}
 
@@ -241,8 +251,93 @@ final class Writer {
 		if ( $parent_id > 0 ) {
 			$this->sync( $parent_id );
 		}
-		$this->journal( $id, $product, $modified, $entries, $before, $product );
+		$this->settle( $id, $entries, $before, $product, $intended );
 		return new WriteOutcome( $id, $results, true, $parent_id, $changed_before );
+	}
+
+	/**
+	 * Finish an object a killed run left with intent rows (§12.3): nothing
+	 * is computed again. Each recorded value is compared, through the
+	 * field's canonical form, with what the object holds now: a value
+	 * already there (the killed run's save landed) is left alone, any other
+	 * is written as the recorded absolute value through Field::write() and
+	 * saved once. Each intent row is then settled — applied with the value
+	 * read back, or failed with the reason — and the variable parent, if
+	 * any, resynchronised. The object counts as changed and saved when any
+	 * recorded value now stands, whichever run saved it.
+	 *
+	 * @param int                                          $id      Object id.
+	 * @param array<string, array{old: mixed, new: mixed}> $intents Field key => the values the killed run recorded.
+	 */
+	private function replay( int $id, array $intents ): WriteOutcome {
+		$product = wc_get_product( $id );
+		$fields  = $this->operations->fields();
+		$results = [];
+		$written = false;
+		if ( ! is_object( $product ) ) {
+			$product = null;
+		}
+		foreach ( $intents as $key => [ 'old' => $old, 'new' => $value ] ) {
+			$field = $fields->get( $key );
+			if ( null === $product || null === $field ) {
+				$results[ $key ] = self::not_found( [ [ null, [ 'field' => $key ] ] ] )[0];
+				continue;
+			}
+			if ( ! Planner::same( $field, $field->read( $product ), $value ) ) {
+				$refused = $field->write( $product, $value );
+				if ( $refused instanceof \WP_Error ) {
+					$code            = (string) $refused->get_error_code();
+					$results[ $key ] = Result::failed( $key, $old, $refused->get_error_message(), str_starts_with( $code, 'bcm_' ) ? $code : '' );
+					continue;
+				}
+				$written = true;
+			}
+			$results[ $key ] = Planner::same( $field, $old, $value ) ? Result::already( $key, $value ) : Result::changed( $key, $old, $value );
+		}
+
+		if ( $written ) {
+			try {
+				$product->save();
+			} catch ( \Exception $e ) {
+				$entries = self::save_failed( array_map( static fn( Result $r ): array => [ $r, true ], array_values( $results ) ) );
+				$results = array_combine( array_keys( $results ), array_column( $entries, 0 ) );
+			}
+		}
+		$saved     = [] !== array_filter( $results, static fn( Result $r ): bool => $r->is_changed() );
+		$parent_id = $saved ? self::variable_parent( $product ) : 0;
+		if ( $parent_id > 0 ) {
+			$this->sync( $parent_id );
+		}
+		foreach ( $results as $key => $result ) {
+			$field = $fields->get( $key );
+			if ( Result::FAILED === $result->state() ) {
+				$this->journal->settle_one( $this->batch_id, $id, $key, 'failed', $intents[ $key ]['old'], $result->reason() );
+			} else {
+				$this->journal->settle_one( $this->batch_id, $id, $key, 'applied', null !== $field && null !== $product ? $field->read( $product ) : $result->new() );
+			}
+		}
+		$before = [];
+		foreach ( $results as $key => $result ) {
+			if ( $result->is_changed() ) {
+				$before[ $key ] = $result->old();
+			}
+		}
+		return new WriteOutcome( $id, array_values( $results ), $saved, $parent_id, $before );
+	}
+
+	/**
+	 * Settle the intent rows of an object that was saved, or failed to save.
+	 *
+	 * @param int                             $id       Object id.
+	 * @param list<array{0: Result, 1: bool}> $entries  Every Result with its step's skip switch.
+	 * @param array<string, mixed>            $before   Before values.
+	 * @param object|null                     $saved    The saved object, or null.
+	 * @param list<string>                    $intended The fields given an intent row.
+	 */
+	private function settle( int $id, array $entries, array $before, ?object $saved, array $intended ): void {
+		if ( null !== $this->journal && [] !== $intended ) {
+			$this->journal->settle( $this->batch_id, $id, $entries, $before, $saved, $intended );
+		}
 	}
 
 	/**

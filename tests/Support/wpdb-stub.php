@@ -66,7 +66,8 @@ if ( ! class_exists( WpdbStub::class ) ) {
 		public array $responses = [];
 
 		/**
-		 * Methods (insert, update, query) that return false, as on a database error.
+		 * Methods (insert, update, query) that return false, as on a database error;
+		 * `insert:<table>` fails only the inserts into that table.
 		 *
 		 * @var string[]
 		 */
@@ -151,7 +152,7 @@ if ( ! class_exists( WpdbStub::class ) ) {
 
 		public function insert( string $table, array $data, array|string|null $format = null ): int|false {
 			$this->writes[] = [ 'insert', $table, $data, $format, null, null ];
-			if ( in_array( 'insert', $this->failing, true ) ) {
+			if ( in_array( 'insert', $this->failing, true ) || in_array( 'insert:' . $table, $this->failing, true ) ) {
 				return false;
 			}
 			++$this->insert_id;

@@ -607,6 +607,24 @@ if ( ! function_exists( 'wc_get_product' ) ) {
 	}
 }
 
+if ( ! function_exists( 'wc_get_logger' ) ) {
+	/**
+	 * WooCommerce's logger: every entry is recorded in
+	 * $GLOBALS['bcm_test']['logged'] as [ level, message, context ].
+	 */
+	function wc_get_logger(): object {
+		return new class() {
+			public function log( string $level, string $message, array $context = [] ): void {
+				$GLOBALS['bcm_test']['logged'][] = [ $level, $message, $context ];
+			}
+
+			public function error( string $message, array $context = [] ): void {
+				$this->log( 'error', $message, $context );
+			}
+		};
+	}
+}
+
 if ( ! function_exists( 'update_post_meta' ) ) {
 	/**
 	 * Records each call in $GLOBALS['bcm_test']['post_meta_updates'] as

@@ -54,6 +54,11 @@ abstract class BaseOperation implements Operation {
 	public const FIELD_NOT_ACCEPTED = 'bcm_field_not_accepted';
 
 	/**
+	 * Most characters of a submitted argument name a refusal repeats.
+	 */
+	private const ECHOED_NAME_LENGTH = 40;
+
+	/**
 	 * The descriptor, built once.
 	 *
 	 * @var Descriptor|null
@@ -155,14 +160,16 @@ abstract class BaseOperation implements Operation {
 		$specs   = $this->specs();
 		$unknown = array_diff_key( $args, $specs );
 		if ( [] !== $unknown ) {
+			// The name came from the request: echo it only as a short plain key.
+			$name = substr( sanitize_key( (string) array_key_first( $unknown ) ), 0, self::ECHOED_NAME_LENGTH );
 			return $this->refuse(
 				sprintf(
 					/* translators: 1: an action's name, such as "Round prices", 2: the name of a setting it was sent. */
 					__( '%1$s has no setting called "%2$s". Choose the action again and try again.', 'bulk-catalogue-manager-for-woocommerce' ),
 					$this->label(),
-					(string) array_key_first( $unknown )
+					$name
 				),
-				(string) array_key_first( $unknown )
+				$name
 			);
 		}
 

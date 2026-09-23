@@ -5,9 +5,11 @@
  * `POST /bcm/v1/batches` (T31) queues a change. The
  * body carries the client's request id (`uuid`), the operation list
  * (`operations`, `[ { action, args } ]`), the selection — an `ids` list, or
- * the signed `token` from `POST /selection`, exactly one of them — and the
- * `source` (bulk by default; inline or tree). Undo batches are created by the
- * undo route through Engine\BatchFactory, not here.
+ * the signed `token` from `POST /selection`, exactly one of them — and
+ * optionally `source`, which may only be `bulk`: inline edits and category
+ * writes open their own one-item batches, so a request cannot label a
+ * queued batch as either (the server sets `bulk`). Undo batches are created
+ * by the undo route through Engine\BatchFactory, not here.
  *
  * It writes products, so it needs the write capability (Access::can_write);
  * each object is checked again as it is written. Engine\BatchFactory does the
@@ -83,9 +85,10 @@ final class BatchesController implements ReadController {
 	public const ROUTE = '/batches';
 
 	/**
-	 * Sources a request may name; `undo` comes only from the undo route.
+	 * Sources a request may name: only `bulk`. Inline and tree batches are
+	 * opened by their own routes, and `undo` comes only from the undo route.
 	 */
-	public const SOURCES = [ 'bulk', 'inline', 'tree' ];
+	public const SOURCES = [ 'bulk' ];
 
 	/**
 	 * Refusal code for a body with neither or both of `ids` and `token`.
@@ -584,7 +587,7 @@ final class BatchesController implements ReadController {
 			),
 			'source'          => self::arg(
 				[
-					'description' => __( 'Where the change was made: the bulk panel, a grid cell or the category manager.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'description' => __( 'Where the change was made: always the bulk panel on this route.', 'bulk-catalogue-manager-for-woocommerce' ),
 					'type'        => 'string',
 					'enum'        => self::SOURCES,
 					'default'     => 'bulk',
@@ -643,7 +646,7 @@ final class BatchesController implements ReadController {
 				'previewed' => null === $count ? null : (int) $count,
 				'confirmed' => true === $request->get_param( 'confirm_changed' ),
 			];
-			$result = $factory->create( $uuid, $user_id, $request->get_param( 'operations' ), $selection, (string) ( $request->get_param( 'source' ) ?? 'bulk' ), null, $apply );
+			$result = $factory->create( $uuid, $user_id, $request->get_param( 'operations' ), $selection, 'bulk', null, $apply );
 		} else {
 			$result = $factory->replay( $existing );
 		}

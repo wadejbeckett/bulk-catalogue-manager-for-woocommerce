@@ -260,12 +260,7 @@ final class BatchFactory {
 				throw $e;
 			}
 		} catch ( \RuntimeException $e ) {
-			return Refusal::create(
-				self::NOT_RECORDED,
-				__( 'The change could not be saved, so nothing was changed. Try again in a moment.', 'bulk-catalogue-manager-for-woocommerce' ),
-				500,
-				[ 'details' => $e->getMessage() ]
-			);
+			return Refusal::unexpected( self::NOT_RECORDED, __( 'The change could not be saved, so nothing was changed. Try again in a moment.', 'bulk-catalogue-manager-for-woocommerce' ), 500, $e );
 		}
 
 		set_transient(
@@ -395,12 +390,7 @@ final class BatchFactory {
 				return Refusal::create( Planner::NOT_REVERSIBLE, Planner::undoing_sentence(), 409, [ 'reason' => Planner::UNDO_IN_PROGRESS ] );
 			}
 		} catch ( \RuntimeException $e ) {
-			return Refusal::create(
-				self::NOT_RECORDED,
-				__( 'The change could not be saved, so nothing was changed. Try again in a moment.', 'bulk-catalogue-manager-for-woocommerce' ),
-				500,
-				[ 'details' => $e->getMessage() ]
-			);
+			return Refusal::unexpected( self::NOT_RECORDED, __( 'The change could not be saved, so nothing was changed. Try again in a moment.', 'bulk-catalogue-manager-for-woocommerce' ), 500, $e );
 		}
 
 		set_transient(
@@ -506,12 +496,7 @@ final class BatchFactory {
 				throw $e;
 			}
 		} catch ( \RuntimeException $e ) {
-			return Refusal::create(
-				self::NOT_RECORDED,
-				__( 'The change could not be saved, so nothing was changed. Try again in a moment.', 'bulk-catalogue-manager-for-woocommerce' ),
-				500,
-				[ 'details' => $e->getMessage() ]
-			);
+			return Refusal::unexpected( self::NOT_RECORDED, __( 'The change could not be saved, so nothing was changed. Try again in a moment.', 'bulk-catalogue-manager-for-woocommerce' ), 500, $e );
 		}
 		return $batch_id;
 	}

@@ -395,15 +395,7 @@ final class Writer {
 			$reason = __( 'Something went wrong while changing this category, so it may not have been finished. Reload the categories to check it.', 'bulk-catalogue-manager-for-woocommerce' );
 			$this->finish( $batch_id, 'failed', $reason, false );
 			Cache::invalidate();
-			return Refusal::create(
-				ProductWriter::SAVE_FAILED,
-				$reason,
-				500,
-				[
-					'batch_id' => $batch_id,
-					'details'  => $e->getMessage(),
-				]
-			);
+			return Refusal::unexpected( ProductWriter::SAVE_FAILED, $reason, 500, $e, [ 'batch_id' => $batch_id ] );
 		}
 
 		if ( null !== $failure ) {

@@ -213,6 +213,19 @@ final class WriterTest extends TestCase {
 		$this->assertSame( [], $this->store->journal() );
 	}
 
+	public function test_a_journal_that_cannot_be_written_is_logged_and_its_text_never_sent(): void {
+		$GLOBALS['wpdb']->failing = [ 'insert:wp_bcm_changes' ];
+
+		$result = self::writer()->create( [ 'name' => 'Hats' ], self::USER );
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 500, $result->get_error_data()['status'] );
+		$this->assertArrayNotHasKey( 'details', $result->get_error_data(), 'The exception text is logged, never sent.' );
+		$this->assertSame( 'error', $GLOBALS['bcm_test']['logged'][0][0] ?? null );
+		$this->assertStringContainsString( 'The change could not be journalled.', $GLOBALS['bcm_test']['logged'][0][1] );
+		$this->assertSame( 'bulk-catalogue-manager-for-woocommerce', $GLOBALS['bcm_test']['logged'][0][2]['source'] );
+	}
+
 	public function test_an_edit_journals_the_old_and_new_name_slug_and_description(): void {
 		$result = self::writer()->update(
 			3,

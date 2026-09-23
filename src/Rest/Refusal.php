@@ -31,6 +31,11 @@ final class Refusal {
 	public const FORBIDDEN = 'bcm_forbidden';
 
 	/**
+	 * The WooCommerce log source unexpected errors are written under.
+	 */
+	public const LOG_SOURCE = 'bulk-catalogue-manager-for-woocommerce';
+
+	/**
 	 * A refusal. Refuses, as a programming error, a code without the `bcm_`
 	 * prefix, an empty message or a status that is not a 4xx or 5xx.
 	 *
@@ -51,6 +56,29 @@ final class Refusal {
 			throw new \InvalidArgumentException( 'A refusal status must be between 400 and 599.' );
 		}
 		return new \WP_Error( $code, $message, [ 'status' => $status ] + $data );
+	}
+
+	/**
+	 * A refusal for something that went wrong unexpectedly: the throwable's
+	 * text (which may name a table, a query or a file path from another
+	 * plugin's save hook or the database) goes to the WooCommerce log under
+	 * the plugin's source, when WooCommerce's logger is there, and never to
+	 * the client, which gets only the plain sentence.
+	 *
+	 * @param string               $code    `bcm_` error code.
+	 * @param string               $message Plain-English sentence, already translated.
+	 * @param int                  $status  HTTP status, 400 to 599.
+	 * @param \Throwable           $error   What went wrong.
+	 * @param array<string, mixed> $data    Extra data that is safe to send.
+	 */
+	public static function unexpected( string $code, string $message, int $status, \Throwable $error, array $data = [] ): \WP_Error {
+		if ( function_exists( 'wc_get_logger' ) ) {
+			wc_get_logger()->error(
+				sprintf( '%s: %s (%s:%d)', get_class( $error ), $error->getMessage(), $error->getFile(), $error->getLine() ),
+				[ 'source' => self::LOG_SOURCE ]
+			);
+		}
+		return self::create( $code, $message, $status, $data );
 	}
 
 	/**

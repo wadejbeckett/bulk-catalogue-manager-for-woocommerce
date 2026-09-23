@@ -6,8 +6,9 @@
  * filter; the same request id again answers 200 with the same batch id and
  * writes nothing; a visitor is refused 401 and a user who may not edit
  * products 403; a body without exactly one of `ids` and `token`, a bad
- * token, a bad request id, too many operations or an `undo` source is
- * refused with nothing written.
+ * token, a bad request id, too many operations or any source but `bulk`
+ * (inline and tree batches come only from their own routes) is refused
+ * with nothing written.
  *
  * Stale selection (T38; §9.1, §12.6): a filter token needs the hash of a
  * current preview (missing, altered or bound to another operation list is
@@ -251,11 +252,20 @@ final class BatchesRouteTest extends TestCase {
 
 	public function test_a_selection_token_is_materialised_through_its_filter(): void {
 		$token    = SelectionToken::mint( Selection::of_filter( Criteria::from_array( [ 'mode' => Criteria::MODE_VARIATIONS ] ), 2 ), 12 );
-		$response = self::post( self::filter_body( $token ) + [ 'source' => 'inline' ] );
+		$response = self::post( self::filter_body( $token ) );
 		$this->assertSame( 201, $response->get_status() );
 		$this->assertSame( 2, $response->get_data()['total_items'] );
 		$this->assertSame( SeededCatalogue::VARIATIONS, $this->store->object_ids( 1 ) );
-		$this->assertSame( 'inline', $this->store->batches[1]['source'] );
+		$this->assertSame( 'bulk', $this->store->batches[1]['source'] );
+	}
+
+	public function test_a_request_cannot_label_its_batch_inline_or_tree(): void {
+		// Inline and tree batches are opened by their own routes; one labelled
+		// inline here would be swept to failed while it waits in the queue.
+		$this->assertSame( [ 'bulk' ], BatchesController::SOURCES );
+		foreach ( [ 'inline', 'tree', 'undo' ] as $source ) {
+			$this->assert_refused( self::post( [ 'source' => $source ] + self::body() ), 'rest_invalid_param', 400 );
+		}
 	}
 
 	public function test_a_visitor_and_a_user_who_cannot_edit_products_are_refused(): void {

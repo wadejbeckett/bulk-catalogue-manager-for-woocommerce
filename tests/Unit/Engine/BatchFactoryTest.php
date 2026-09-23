@@ -328,6 +328,10 @@ final class BatchFactoryTest extends TestCase {
 		$this->assertInstanceOf( \WP_Error::class, $result );
 		$this->assertSame( BatchFactory::NOT_RECORDED, $result->get_error_code() );
 		$this->assertSame( 500, $result->get_error_data()['status'] );
+		$this->assertArrayNotHasKey( 'details', $result->get_error_data(), 'The exception text is logged, never sent.' );
+		$this->assertSame( 'error', $GLOBALS['bcm_test']['logged'][0][0] ?? null );
+		$this->assertStringContainsString( 'The batch items could not be recorded.', $GLOBALS['bcm_test']['logged'][0][1] );
+		$this->assertSame( [ 'source' => 'bulk-catalogue-manager-for-woocommerce' ], $GLOBALS['bcm_test']['logged'][0][2] );
 		$this->assertSame( [], $this->store->batches, 'The batch row was removed again.' );
 		$this->assertSame( [], $GLOBALS['bcm_test']['transients'] ?? [] );
 		$this->assertSame( 0, did_action( BatchFactory::CREATED ) );

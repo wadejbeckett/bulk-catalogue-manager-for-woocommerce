@@ -22,6 +22,7 @@ namespace BulkCatalogueManager\Tests\Unit\Engine;
 use BulkCatalogueManager\Engine\ChunkRunner;
 use BulkCatalogueManager\Engine\InlineWrite;
 use BulkCatalogueManager\Engine\WriteOutcome;
+use BulkCatalogueManager\Engine\Writer;
 use BulkCatalogueManager\Fields\Registry as Fields;
 use BulkCatalogueManager\Operations\Registry;
 use BulkCatalogueManager\Operations\Result;
@@ -278,6 +279,39 @@ final class InlineWriteTest extends TestCase {
 		$this->assert_refused( $this->writes()->write( 999, [ 'regular_price' => '25' ], 'inline', self::USER ), 'bcm_not_found', 404 );
 		self::product( 108, 'simple', [ 'regular_price' => '5' ] );
 		$this->assert_refused( $this->writes()->write( 108, [ 'regular_price' => '25' ], 'inline', self::USER ), 'bcm_not_found', 404 );
+	}
+
+	public function test_an_unexpected_error_is_logged_and_its_text_never_sent(): void {
+		$secret                               = 'SQLSTATE[42S02]: Table wp_secret missing in /var/www/html/wp-content/plugins/other/save-hook.php';
+		$stored                               = self::product( 101, 'simple', [ 'regular_price' => '20' ] );
+		$GLOBALS['bcm_test']['products'][101] = new class( $stored, $secret ) {
+			public function __construct( private StoredProduct $stored, private string $secret ) {}
+
+			public function __clone() {
+				$this->stored = clone $this->stored;
+			}
+
+			public function save(): int {
+				throw new \Error( $this->secret ); // A third-party save hook failing deep inside WooCommerce.
+			}
+
+			public function __call( string $method, array $args ): mixed {
+				return $this->stored->$method( ...$args );
+			}
+		};
+
+		$result = $this->writes()->write( 101, [ 'regular_price' => '25' ], 'inline', self::USER );
+
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( Writer::SAVE_FAILED, $result->get_error_code() );
+		$this->assertSame( 500, $result->get_error_data()['status'] );
+		$this->assertArrayNotHasKey( 'details', $result->get_error_data() );
+		$this->assertStringNotContainsString( 'SQLSTATE', (string) wp_json_encode( [ $result->get_error_message(), $result->get_error_data() ] ) );
+		$this->assertCount( 1, $GLOBALS['bcm_test']['logged'] ?? [] );
+		[ $level, $message, $context ] = $GLOBALS['bcm_test']['logged'][0];
+		$this->assertSame( 'error', $level );
+		$this->assertStringContainsString( $secret, $message, 'The site owner finds the real cause in the WooCommerce log.' );
+		$this->assertSame( 'bulk-catalogue-manager-for-woocommerce', $context['source'] );
 	}
 
 	public function test_a_value_already_in_place_finishes_complete_with_nothing_saved(): void {

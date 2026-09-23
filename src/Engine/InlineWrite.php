@@ -278,15 +278,7 @@ final class InlineWrite {
 		} catch ( \Throwable $e ) {
 			$reason = __( 'Something went wrong while changing this product, so it may not have been finished. Open the product to check it.', 'bulk-catalogue-manager-for-woocommerce' );
 			$this->finish( $batch_id, $item_id, [ 'failed', $reason ], false );
-			return Refusal::create(
-				Writer::SAVE_FAILED,
-				$reason,
-				500,
-				[
-					'batch_id' => $batch_id,
-					'details'  => $e->getMessage(),
-				]
-			);
+			return Refusal::unexpected( Writer::SAVE_FAILED, $reason, 500, $e, [ 'batch_id' => $batch_id ] );
 		}
 		return [
 			'batch_id' => $batch_id,

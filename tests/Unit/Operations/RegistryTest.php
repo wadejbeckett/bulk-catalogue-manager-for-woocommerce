@@ -787,6 +787,27 @@ final class RegistryTest extends TestCase {
 		);
 	}
 
+	public function test_an_unknown_argument_name_is_echoed_only_as_a_short_plain_key(): void {
+		$name    = '<img src=x onerror=alert(1)>' . str_repeat( 'Z', 300 );
+		$refusal = self::registry()->validate_list(
+			[
+				[
+					'action' => 'clear',
+					'args'   => [
+						'field' => 'sale_price',
+						$name   => true,
+					],
+				],
+			]
+		);
+		$this->assertInstanceOf( \WP_Error::class, $refusal );
+		$message = $refusal->get_error_message();
+		$this->assertStringNotContainsString( '<', $message );
+		$this->assertStringNotContainsString( '=', $message );
+		$this->assertStringContainsString( '"imgsrcxonerroralert1zzzzzzzzzzzzzzzzzzzz"', $message, 'sanitize_key() and cut to 40 characters.' );
+		$this->assertSame( 'imgsrcxonerroralert1zzzzzzzzzzzzzzzzzzzz', $refusal->get_error_data()['argument'] );
+	}
+
 	public function test_boundary_arguments_pass(): void {
 		$good = [
 			'adjust decrease of exactly 100%' => [

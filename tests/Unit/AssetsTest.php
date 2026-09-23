@@ -141,9 +141,9 @@ final class AssetsTest extends TestCase {
 		$this->assertCount( 1, $scripts );
 		[ $handle, $src, $deps, $version, $args ] = $scripts[0];
 		$this->assertSame( 'bcm-app', $handle );
-		$this->assertStringEndsWith( '/bulk-catalogue-manager-for-woocommerce/assets/build/index.js', $src );
+		$this->assertStringEndsWith( '/' . basename( self::root() ) . '/assets/build/index.js', $src, 'The plugin directory, whatever the checkout is called.' );
 		$asset = require self::root() . '/assets/build/index.asset.php';
-		$this->assertSame( $asset['dependencies'], $deps );
+		$this->assertSame( [ ...$asset['dependencies'], 'heartbeat' ], $deps, 'The build\'s dependencies plus core\'s Heartbeat API (T39).' );
 		$this->assertSame( $asset['version'], $version );
 		$this->assertSame( [ 'in_footer' => true ], $args );
 		$this->assertSame( [ [ 'bcm-app' ] ], bcm_test_admin_calls( 'wp_enqueue_script' ) );

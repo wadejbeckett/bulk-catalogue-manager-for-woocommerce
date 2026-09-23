@@ -1,27 +1,59 @@
 /**
  * Requests to the plugin's own REST namespace. apiFetch sends the wp_rest
- * nonce through its nonce middleware; every path is resolved against the
- * localised bcm/v1 root, which also works with plain permalinks
- * (index.php?rest_route=), so no route is ever built by hand elsewhere.
+ * nonce through its nonce middleware, kept fresh by the Heartbeat API and
+ * recovered once after an invalid-nonce failure (./nonce.js); every path is
+ * resolved against the localised bcm/v1 root, which also works with plain
+ * permalinks (index.php?rest_route=), so no route is ever built by hand
+ * elsewhere.
  */
 import apiFetch from '@wordpress/api-fetch';
 import { addQueryArgs } from '@wordpress/url';
 
+import { createRetryMiddleware, fetchNonce, subscribeHeartbeat } from './nonce';
+
 let root = '';
 
 /**
- * Wire the nonce middleware and the namespace root. Idempotent per page.
+ * Wire the nonce, the invalid-nonce retry, the Heartbeat refresh and the
+ * namespace root. Registers exactly one middleware.
+ *
+ * On a WordPress admin page apiFetch is the host's, which already carries
+ * core's nonce middleware (`apiFetch.nonceMiddleware`); that one is reused,
+ * since a second nonce middleware would be overwritten by core's. Without it
+ * a nonce middleware is created, published as `apiFetch.nonceMiddleware` and
+ * run inside this screen's middleware.
  *
  * @param {Object} settings Localised settings.
- * @return {Function|null} The nonce middleware (its `nonce` can be refreshed), or null when there is no nonce.
+ * @param {Window} win      The window (Heartbeat's jQuery and fetch).
+ * @return {Object|null} The nonce middleware (its `nonce` is what is sent), or null when there is no nonce.
  */
-export function configureApi( settings ) {
+export function configureApi( settings, win = window ) {
 	root = settings.root || '';
 	if ( ! settings.nonce ) {
 		return null;
 	}
-	const nonceMiddleware = apiFetch.createNonceMiddleware( settings.nonce );
-	apiFetch.use( nonceMiddleware );
+	let nonceMiddleware = apiFetch.nonceMiddleware;
+	let send = ( options, next ) => next( options );
+	if ( ! nonceMiddleware || typeof nonceMiddleware !== 'function' ) {
+		nonceMiddleware = apiFetch.createNonceMiddleware( settings.nonce );
+		apiFetch.nonceMiddleware = nonceMiddleware;
+		send = ( options, next ) => nonceMiddleware( options, next );
+	}
+	const install = ( nonce ) => {
+		nonceMiddleware.nonce = nonce;
+	};
+	apiFetch.use(
+		createRetryMiddleware( {
+			send,
+			install,
+			refresh: () =>
+				fetchNonce(
+					win.fetch && win.fetch.bind( win ),
+					apiFetch.nonceEndpoint
+				),
+		} )
+	);
+	subscribeHeartbeat( win, install );
 	return nonceMiddleware;
 }
 

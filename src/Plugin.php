@@ -99,7 +99,8 @@ final class Plugin {
 	 * update replaces the files without activating the plugin again. The REST
 	 * routes register on rest_api_init. The admin screen registers on
 	 * admin_menu and loads its assets on admin_enqueue_scripts, for its own
-	 * screen id only.
+	 * screen id only; its Heartbeat ticks get a fresh REST nonce on
+	 * heartbeat_received.
 	 *
 	 * @return array<int, array{0: string, 1: callable, 2: int, 3: int}>
 	 */
@@ -118,6 +119,7 @@ final class Plugin {
 			[ 'rest_api_init', [ $this, 'register_routes' ], 10, 0 ],
 			[ 'admin_menu', [ $this->screen(), 'register' ], 10, 0 ],
 			[ 'admin_enqueue_scripts', [ $this->screen(), 'enqueue' ], 10, 1 ],
+			[ Admin\Heartbeat::HOOK, [ Admin\Heartbeat::class, 'received' ], 10, 2 ],
 			[ Engine\BatchFactory::CREATED, [ Engine\ChunkRunner::class, 'enqueue' ], 10, 1 ],
 			[ Engine\ChunkRunner::HOOK, [ Engine\ChunkRunner::class, 'handle' ], 10, 2 ],
 			[ Engine\Pruner::HOOK, [ Engine\Pruner::class, 'handle' ], 10, 0 ],

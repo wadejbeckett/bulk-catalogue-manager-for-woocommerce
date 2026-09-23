@@ -6,7 +6,8 @@
  * administrators only, filtered by `bcm_capability`), rendering one mount
  * element for the React application built into assets/build. Its script and
  * style load on this screen alone, with the bcm/v1 root and the `wp_rest`
- * nonce localised beside them. The bundle carries DataViews at the tag pinned
+ * nonce localised beside them; the script depends on core's `heartbeat`,
+ * through which the nonce is refreshed (Heartbeat). The bundle carries DataViews at the tag pinned
  * for one WordPress major; on any other major the screen shows a notice
  * naming the mismatch instead of mounting.
  *
@@ -156,13 +157,24 @@ final class Screen {
 		}
 		$dir = $this->plugin_dir();
 
-		wp_register_script( 'bcm-app', plugins_url( 'assets/build/index.js', $this->plugin_file ), $asset['dependencies'], $asset['version'], [ 'in_footer' => true ] );
+		wp_register_script( 'bcm-app', plugins_url( 'assets/build/index.js', $this->plugin_file ), self::dependencies( $asset['dependencies'] ), $asset['version'], [ 'in_footer' => true ] );
 		wp_set_script_translations( 'bcm-app', 'bulk-catalogue-manager-for-woocommerce', $dir . 'languages' );
 		wp_add_inline_script( 'bcm-app', 'window.bcmSettings = ' . wp_json_encode( $this->client_settings(), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT ) . ';', 'before' );
 		wp_enqueue_script( 'bcm-app' );
 
 		wp_enqueue_style( 'bcm-app', plugins_url( 'assets/build/style-index.css', $this->plugin_file ), [], $asset['version'] );
 		wp_style_add_data( 'bcm-app', 'rtl', 'replace' );
+	}
+
+	/**
+	 * The script's dependencies: the build's list plus core's Heartbeat API,
+	 * which refreshes the REST nonce (SPEC §13; see Heartbeat).
+	 *
+	 * @param list<string> $build The build's dependency list.
+	 * @return list<string>
+	 */
+	public static function dependencies( array $build ): array {
+		return array_values( array_unique( [ ...$build, Heartbeat::SCRIPT ] ) );
 	}
 
 	/**

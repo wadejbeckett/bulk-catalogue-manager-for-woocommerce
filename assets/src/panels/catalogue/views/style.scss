@@ -1,0 +1,89 @@
+// Saved views row, layout switch and export (T51–T53), as the prototype's
+// segmented chips, in the admin's own palette.
+.bcm-views {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.bcm-views__chips,
+.bcm-views__segmented {
+	display: inline-flex;
+	flex-wrap: wrap;
+	gap: 2px;
+	padding: 2px;
+	border-radius: 4px;
+	background: #e9eaec;
+	align-self: flex-start;
+
+	button {
+		border: 0;
+		background: none;
+		padding: 0 10px;
+		height: 26px;
+		border-radius: 3px;
+		color: #50575e;
+		cursor: pointer;
+		white-space: nowrap;
+
+		&:hover {
+			color: #1d2327;
+		}
+
+		&:focus-visible {
+			outline: 2px solid var(--wp-admin-theme-color, #2271b1);
+			outline-offset: 1px;
+		}
+
+		&[aria-pressed="true"] {
+			background: #fff;
+			color: #1d2327;
+			font-weight: 600;
+			box-shadow: 0 1px 2px rgba(16, 24, 40, 0.12);
+		}
+	}
+
+	.is-save {
+		color: var(--wp-admin-theme-color-darker-10, #135e96);
+	}
+}
+
+.bcm-views__saved {
+	display: inline-flex;
+	align-items: center;
+
+	&.is-dragging {
+		opacity: 0.5;
+	}
+
+	.bcm-views__more {
+		padding: 0 6px;
+	}
+}
+
+.bcm-views__default {
+	margin-left: 4px;
+	font-weight: 400;
+	color: #50575e;
+}
+
+.bcm-views__dialog-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+	margin-top: 16px;
+}
+
+.bcm-views__error {
+	color: #8a2424;
+}
+
+.bcm-export {
+	display: inline-flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.bcm-catalogue__cards .dataviews-view-grid {
+	padding: 12px;
+}

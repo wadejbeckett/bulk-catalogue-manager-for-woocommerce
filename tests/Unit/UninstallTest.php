@@ -104,10 +104,11 @@ final class UninstallTest extends TestCase {
 		// tree cache's transients (T21), the filtered count cache's transients
 		// (T19), the batch request replay transients (T31), the stored
 		// selections behind selection tokens (security review p2), the category tree
-		// order term meta (T64) and no user meta yet (T52 adds it here).
+		// order term meta (T64) and the saved views user meta (T52).
 		$this->assertSame(
 			[
 				'deleted'     => [
+					[ 'metadata', 'user', 0, 'bcm_views', '', true ],
 					[ 'metadata', 'term', 0, 'bcm_order', '', true ],
 					[ 'option', 'bcm_settings' ],
 					[ 'option', 'bcm_db_version' ],
@@ -224,7 +225,7 @@ final class UninstallTest extends TestCase {
 		$this->assertTrue( is_array( $result ), $text );
 		$this->assertFalse( $result['scheduler'] );
 		$this->assertSame( [], $result['unscheduled'] );
-		$this->assertSame( [ [ 'metadata', 'term', 0, 'bcm_order', '', true ], [ 'option', 'bcm_settings' ], [ 'option', 'bcm_db_version' ] ], $result['deleted'] );
+		$this->assertSame( [ [ 'metadata', 'user', 0, 'bcm_views', '', true ], [ 'metadata', 'term', 0, 'bcm_order', '', true ], [ 'option', 'bcm_settings' ], [ 'option', 'bcm_db_version' ] ], $result['deleted'] );
 	}
 
 	public function test_tables_are_dropped_through_prepare_with_an_identifier_placeholder(): void {

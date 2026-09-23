@@ -64,6 +64,7 @@ final class Routes {
 				new ProductWriteController( Registry::instance() ),
 				new CategoriesWriteController(),
 				new SettingsController(),
+				new ViewsController( Registry::instance() ),
 			]
 		);
 	}

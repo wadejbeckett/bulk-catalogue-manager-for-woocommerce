@@ -50,6 +50,11 @@ final class BatchRepository {
 	public const MESSAGE_LENGTH = 255;
 
 	/**
+	 * The filters history() and history_count() accept.
+	 */
+	public const LIST_FILTERS = [ 'status', 'user_id', 'after', 'before' ];
+
+	/**
 	 * Where table names come from.
 	 *
 	 * @var Registry
@@ -124,27 +129,19 @@ final class BatchRepository {
 	public function find( int $batch_id ): ?array {
 		global $wpdb;
 		$row = $wpdb->get_row( $wpdb->prepare( 'SELECT * FROM %i WHERE batch_id = %d', $this->registry->table( Schema::BATCHES ), $batch_id ), ARRAY_A );
-		if ( ! is_array( $row ) ) {
-			return null;
-		}
-		return [
-			'batch_id'      => (int) $row['batch_id'],
-			'uuid'          => (string) $row['uuid'],
-			'user_id'       => (int) $row['user_id'],
-			'created_gmt'   => (string) $row['created_gmt'],
-			'finished_gmt'  => null === $row['finished_gmt'] ? null : (string) $row['finished_gmt'],
-			'status'        => (string) $row['status'],
-			'source'        => (string) $row['source'],
-			'undo_of'       => null === $row['undo_of'] ? null : (int) $row['undo_of'],
-			'operations'    => (array) ValueCodec::decode( (string) $row['operations'] ),
-			'selection'     => (array) ValueCodec::decode( (string) $row['selection'] ),
-			'total_items'   => (int) $row['total_items'],
-			'done_items'    => (int) $row['done_items'],
-			'changed_items' => (int) $row['changed_items'],
-			'failed_items'  => (int) $row['failed_items'],
-			'chunk_size'    => (int) ( $row['chunk_size'] ?? 0 ),
-			'note'          => (string) ( $row['note'] ?? '' ),
-		];
+		return is_array( $row ) ? self::typed( $row ) : null;
+	}
+
+	/**
+	 * A batch's status alone, or null for no such batch: the cheap read the
+	 * chunk runner repeats to notice a cancellation (T35).
+	 *
+	 * @param int $batch_id Batch.
+	 */
+	public function status( int $batch_id ): ?string {
+		global $wpdb;
+		$status = $wpdb->get_var( $wpdb->prepare( 'SELECT status FROM %i WHERE batch_id = %d', $this->registry->table( Schema::BATCHES ), $batch_id ) );
+		return null === $status ? null : (string) $status;
 	}
 
 	/**
@@ -509,6 +506,152 @@ final class BatchRepository {
 				throw new \RuntimeException( 'The unfinished batch could not be removed.' );
 			}
 		}
+	}
+
+	/**
+	 * When a chunk last claimed items of a batch (T35): the latest
+	 * claimed_gmt among its items, or null when none was ever claimed. A
+	 * finished item keeps the time of the claim that worked it, so this is
+	 * the time the queue last ran for the batch.
+	 *
+	 * @param int $batch_id Batch.
+	 */
+	public function last_claimed_gmt( int $batch_id ): ?string {
+		global $wpdb;
+		$value = $wpdb->get_var( $wpdb->prepare( 'SELECT claimed_gmt FROM %i WHERE batch_id = %d AND claimed_gmt IS NOT NULL ORDER BY claimed_gmt DESC LIMIT 1', $this->registry->table( Schema::ITEMS ), $batch_id ) );
+		return null === $value || '' === $value ? null : (string) $value;
+	}
+
+	/**
+	 * The reasons of a batch's failed and skipped items that the journal
+	 * holds no row for (T36: an item given up on after three tries, a write
+	 * that threw, a category item), grouped by message with the number of
+	 * items carrying each, most first.
+	 *
+	 * @param int $batch_id Batch.
+	 * @param int $limit    Most reasons, 1 to 100.
+	 * @return list<array{message: string, objects: int}>
+	 */
+	public function unjournalled_reasons( int $batch_id, int $limit = 20 ): array {
+		global $wpdb;
+		$rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT i.message AS message, COUNT(*) AS objects FROM %i AS i WHERE i.batch_id = %d AND i.state IN ('failed', 'skipped') AND i.message <> '' AND NOT EXISTS (SELECT c.change_id FROM %i AS c WHERE c.batch_id = i.batch_id AND c.object_id = i.object_id) GROUP BY i.message ORDER BY objects DESC LIMIT %d",
+				$this->registry->table( Schema::ITEMS ),
+				$batch_id,
+				$this->registry->table( Schema::CHANGES ),
+				max( 1, min( 100, $limit ) )
+			),
+			ARRAY_A
+		);
+		return array_map(
+			static fn( array $row ): array => [
+				'message' => (string) $row['message'],
+				'objects' => (int) $row['objects'],
+			],
+			is_array( $rows ) ? $rows : []
+		);
+	}
+
+	/**
+	 * One page of batches, newest first, for the history screen (T35; T54
+	 * adds the action-type filter and the reversibility state).
+	 *
+	 * @param array{status?: string, user_id?: int, after?: string, before?: string} $filters  Status, initiating user, and created at or after / before a GMT `Y-m-d H:i:s` time.
+	 * @param int                                                                    $page     Page, from 1.
+	 * @param int                                                                    $per_page Rows per page, 1 to 100.
+	 * @return list<array<string, mixed>> Typed rows as find() returns them, with an empty selection.
+	 * @throws \InvalidArgumentException On an unknown filter or value.
+	 */
+	public function history( array $filters, int $page, int $per_page ): array {
+		global $wpdb;
+		[ $where, $args ] = $this->conditions( $filters );
+		$per_page         = max( 1, min( self::MAX_CLAIM, $per_page ) );
+		$args[]           = $per_page;
+		$args[]           = ( max( 1, $page ) - 1 ) * $per_page;
+		// Every column but the selection snapshot, which can hold 100,000 ids and is not shown in a list.
+		// $where holds only fixed column conditions with placeholders; every value is a prepared argument.
+		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT batch_id, uuid, user_id, created_gmt, finished_gmt, status, source, undo_of, operations, total_items, done_items, changed_items, failed_items, chunk_size, note FROM %i WHERE {$where} ORDER BY batch_id DESC LIMIT %d OFFSET %d", $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
+		return array_map( [ self::class, 'typed' ], is_array( $rows ) ? $rows : [] );
+	}
+
+	/**
+	 * Number of batches history() pages through.
+	 *
+	 * @param array{status?: string, user_id?: int, after?: string, before?: string} $filters As history().
+	 * @throws \InvalidArgumentException On an unknown filter or value.
+	 */
+	public function history_count( array $filters ): int {
+		global $wpdb;
+		[ $where, $args ] = $this->conditions( $filters );
+		// $where holds only fixed column conditions with placeholders; every value is a prepared argument.
+		return (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM %i WHERE {$where}", $args ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
+	}
+
+	/**
+	 * The WHERE clause and its arguments (the table first) for history() and history_count().
+	 *
+	 * @param array<string, mixed> $filters Filters.
+	 * @return array{0: string, 1: list<mixed>}
+	 * @throws \InvalidArgumentException On an unknown filter or value.
+	 */
+	private function conditions( array $filters ): array {
+		$unknown = array_diff( array_keys( $filters ), self::LIST_FILTERS );
+		if ( [] !== $unknown ) {
+			throw new \InvalidArgumentException( esc_html( sprintf( 'Unknown batch filter "%s".', (string) reset( $unknown ) ) ) );
+		}
+		$where = [ 'batch_id > 0' ];
+		$args  = [ $this->registry->table( Schema::BATCHES ) ];
+		if ( isset( $filters['status'] ) ) {
+			self::assert_in( (string) $filters['status'], Schema::BATCH_STATUSES, 'status' );
+			$where[] = 'status = %s';
+			$args[]  = (string) $filters['status'];
+		}
+		if ( isset( $filters['user_id'] ) ) {
+			self::assert_ids( [ $filters['user_id'] ], 'user id' );
+			$where[] = 'user_id = %d';
+			$args[]  = $filters['user_id'];
+		}
+		foreach ( [
+			'after'  => 'created_gmt >= %s',
+			'before' => 'created_gmt < %s',
+		] as $key => $condition ) {
+			if ( isset( $filters[ $key ] ) ) {
+				if ( ! is_string( $filters[ $key ] ) || 1 !== preg_match( '/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $filters[ $key ] ) ) {
+					throw new \InvalidArgumentException( 'A date filter is a GMT Y-m-d H:i:s time.' );
+				}
+				$where[] = $condition;
+				$args[]  = $filters[ $key ];
+			}
+		}
+		return [ implode( ' AND ', $where ), $args ];
+	}
+
+	/**
+	 * A batch row typed, operations and selection decoded (an absent selection as empty).
+	 *
+	 * @param array $row Row from the database.
+	 * @return array{batch_id: int, uuid: string, user_id: int, created_gmt: string, finished_gmt: ?string, status: string, source: string, undo_of: ?int, operations: array, selection: array, total_items: int, done_items: int, changed_items: int, failed_items: int, chunk_size: int, note: string}
+	 */
+	private static function typed( array $row ): array {
+		return [
+			'batch_id'      => (int) $row['batch_id'],
+			'uuid'          => (string) $row['uuid'],
+			'user_id'       => (int) $row['user_id'],
+			'created_gmt'   => (string) $row['created_gmt'],
+			'finished_gmt'  => null === ( $row['finished_gmt'] ?? null ) ? null : (string) $row['finished_gmt'],
+			'status'        => (string) $row['status'],
+			'source'        => (string) $row['source'],
+			'undo_of'       => null === ( $row['undo_of'] ?? null ) ? null : (int) $row['undo_of'],
+			'operations'    => (array) ValueCodec::decode( (string) $row['operations'] ),
+			'selection'     => isset( $row['selection'] ) ? (array) ValueCodec::decode( (string) $row['selection'] ) : [],
+			'total_items'   => (int) $row['total_items'],
+			'done_items'    => (int) $row['done_items'],
+			'changed_items' => (int) $row['changed_items'],
+			'failed_items'  => (int) $row['failed_items'],
+			'chunk_size'    => (int) ( $row['chunk_size'] ?? 0 ),
+			'note'          => (string) ( $row['note'] ?? '' ),
+		];
 	}
 
 	/**

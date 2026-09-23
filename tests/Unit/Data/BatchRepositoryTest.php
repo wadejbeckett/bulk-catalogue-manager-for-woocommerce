@@ -423,6 +423,46 @@ final class BatchRepositoryTest extends TestCase {
 		}
 	}
 
+	public function test_the_progress_and_history_reads(): void {
+		$repo                 = new BatchRepository();
+		self::db()->responses = [
+			'SELECT status FROM `wp_bcm_batches` WHERE batch_id = 7'                                                                   => 'running',
+			'SELECT claimed_gmt FROM `wp_bcm_batch_items` WHERE batch_id = 7 AND claimed_gmt IS NOT NULL ORDER BY claimed_gmt DESC LIMIT 1' => '2026-09-23 08:05:00',
+			"SELECT COUNT(*) FROM `wp_bcm_batches` WHERE batch_id > 0 AND status = 'partial' AND user_id = 3 AND created_gmt >= '2026-09-01 00:00:00' AND created_gmt < '2026-10-01 00:00:00'" => '41',
+		];
+		$this->assertSame( 'running', $repo->status( 7 ) );
+		$this->assertNull( $repo->status( 8 ) );
+		$this->assertSame( '2026-09-23 08:05:00', $repo->last_claimed_gmt( 7 ) );
+		$this->assertNull( $repo->last_claimed_gmt( 8 ) );
+
+		$this->assertSame( [], $repo->unjournalled_reasons( 7, 500 ) );
+		$this->assertSame( "SELECT i.message AS message, COUNT(*) AS objects FROM `wp_bcm_batch_items` AS i WHERE i.batch_id = 7 AND i.state IN ('failed', 'skipped') AND i.message <> '' AND NOT EXISTS (SELECT c.change_id FROM `wp_bcm_changes` AS c WHERE c.batch_id = i.batch_id AND c.object_id = i.object_id) GROUP BY i.message ORDER BY objects DESC LIMIT 100", end( self::db()->queries ) );
+
+		$filters = [
+			'status'  => 'partial',
+			'user_id' => 3,
+			'after'   => '2026-09-01 00:00:00',
+			'before'  => '2026-10-01 00:00:00',
+		];
+		$this->assertSame( 41, $repo->history_count( $filters ) );
+		$this->assertSame( [], $repo->history( $filters, 3, 20 ) );
+		$list = end( self::db()->queries );
+		$this->assertSame( "SELECT batch_id, uuid, user_id, created_gmt, finished_gmt, status, source, undo_of, operations, total_items, done_items, changed_items, failed_items, chunk_size, note FROM `wp_bcm_batches` WHERE batch_id > 0 AND status = 'partial' AND user_id = 3 AND created_gmt >= '2026-09-01 00:00:00' AND created_gmt < '2026-10-01 00:00:00' ORDER BY batch_id DESC LIMIT 20 OFFSET 40", $list );
+		$this->assertStringNotContainsString( 'selection', $list, 'A list never reads the selection snapshot.' );
+		$repo->history( [], 1, 500 );
+		$this->assertStringEndsWith( 'WHERE batch_id > 0 ORDER BY batch_id DESC LIMIT 100 OFFSET 0', end( self::db()->queries ) );
+		$this->assert_all_prepared();
+
+		foreach ( [ [ 'orderby' => 'x' ], [ 'status' => 'lost' ], [ 'user_id' => 0 ], [ 'after' => '2026-09-01' ], [ 'before' => "1' OR 1=1" ] ] as $bad ) {
+			try {
+				$repo->history( $bad, 1, 10 );
+				$this->fail( 'Accepted ' . wp_json_encode( $bad ) );
+			} catch ( \InvalidArgumentException $e ) {
+				$this->assertNotSame( '', $e->getMessage() );
+			}
+		}
+	}
+
 	public function test_the_site_prefix_and_only_registry_tables_are_used(): void {
 		self::db()->prefix = 'wp_3_';
 		( new BatchRepository() )->increment_counters( 6, 1, 0, 0 );

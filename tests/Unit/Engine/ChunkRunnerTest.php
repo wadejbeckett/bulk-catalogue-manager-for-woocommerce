@@ -408,6 +408,124 @@ final class ChunkRunnerTest extends TestCase {
 		$this->assertSame( 'missing', $this->runner()->run( 99 ) );
 	}
 
+	/**
+	 * Run $before ahead of the store's answer to the statement a pattern matches.
+	 */
+	private function wrap( string $prefix, \Closure $before ): void {
+		global $wpdb;
+		foreach ( $wpdb->responses as $pattern => $answer ) {
+			if ( str_starts_with( (string) $pattern, $prefix ) ) {
+				$wpdb->responses[ $pattern ] = static function ( string $sql ) use ( $answer, $before ): mixed {
+					$before();
+					return $answer( $sql );
+				};
+				return;
+			}
+		}
+		$this->fail( "No store answer starts $prefix." );
+	}
+
+	public function test_every_status_transition_the_engine_writes_is_enumerated(): void {
+		$root  = dirname( __DIR__, 3 ) . '/src';
+		$calls = [];
+		$files = new \RecursiveIteratorIterator( new \RecursiveDirectoryIterator( $root, \FilesystemIterator::SKIP_DOTS ) );
+		foreach ( $files as $file ) {
+			if ( 'php' !== $file->getExtension() ) {
+				continue;
+			}
+			$code     = (string) file_get_contents( $file->getPathname() ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- reading plugin source.
+			$relative = substr( $file->getPathname(), strlen( $root ) + 1 );
+			$this->assertSame( 0, preg_match( '/->set_status\s*\(/', $code ), "$relative sets a status without transition()." );
+			preg_match_all( '/->transition\(\s*\$\w+,\s*([^,]+?),\s*([^)]+?)\s*\)/', $code, $found, PREG_SET_ORDER );
+			foreach ( $found as [ , $from, $to ] ) {
+				$calls[] = $relative . ': ' . $from . ' -> ' . $to;
+			}
+		}
+		sort( $calls );
+		$this->assertSame(
+			[
+				"Engine/ChunkRunner.php: 'queued' -> 'running'",
+				"Engine/ChunkRunner.php: 'running' -> \$status",
+				"Engine/Progress.php: 'queued' -> 'cancelled'",
+				"Engine/Progress.php: 'running' -> 'cancelled'",
+			],
+			$calls,
+			'The engine writes queued -> running -> complete, partial, failed or cancelled, and nothing else.'
+		);
+
+		// The one variable target is the final status, which is only ever complete, partial or failed.
+		$finals = [];
+		foreach ( range( 0, 3 ) as $reported ) {
+			foreach ( range( 0, 3 ) as $failed ) {
+				foreach ( range( 0, 2 ) as $applied ) {
+					$finals[ ChunkRunner::final_status( $reported, $failed, $applied ) ] = true;
+				}
+			}
+		}
+		ksort( $finals );
+		$this->assertSame( [ 'complete', 'failed', 'partial' ], array_keys( $finals ) );
+	}
+
+	public function test_a_cancellation_between_the_status_read_and_the_claim_releases_the_claim(): void {
+		$store                  = new RunnerStore( self::BATCH, self::products( 3 ), $this->increase(), self::USER );
+		$store->batch['status'] = 'running';
+		// The cancellation lands as the claim is taken.
+		$this->wrap(
+			"/^UPDATE `wp_bcm_batch_items` SET claim_token = '/",
+			static function () use ( $store ): void {
+				$store->batch['status'] = 'cancelled';
+			}
+		);
+
+		$this->assertSame( 'stopped', $this->runner()->run( self::BATCH ) );
+		$this->assertSame(
+			[
+				1001 => 'pending',
+				1002 => 'pending',
+				1003 => 'pending',
+			],
+			$store->states()
+		);
+		foreach ( $store->items as $item ) {
+			$this->assertNull( $item['claim_token'], 'The claim is given back.' );
+		}
+		$this->assertSame( '10', self::price( 1001 ), 'Nothing was written.' );
+		$this->assertSame( [], $GLOBALS['bcm_test']['scheduled'], 'No retry and no successor.' );
+		$this->assertSame( 'cancelled', $store->batch()['status'] );
+	}
+
+	public function test_a_cancellation_during_a_chunk_keeps_its_work_and_ends_the_chain(): void {
+		$store = new RunnerStore( self::BATCH, self::products( 60 ), $this->increase(), self::USER );
+		// The screen cancels while the first chunk is under way: it lands as the chunk adds to the counters.
+		$this->wrap(
+			'/^UPDATE `wp_bcm_batches` SET done_items = /',
+			static function () use ( $store ): void {
+				$store->sync();
+				$store->batch['status'] = 'cancelled';
+			}
+		);
+
+		$this->assertSame( 'stopped', $this->runner()->run( self::BATCH ) );
+		$this->assertSame(
+			[
+				'done'    => 50,
+				'pending' => 10,
+			],
+			array_count_values( $store->states() ),
+			'The chunk under way finishes; the rest stay pending.'
+		);
+		$batch = $store->batch();
+		$this->assertSame( [ 'cancelled', 50, 50 ], [ $batch['status'], $batch['done_items'], $batch['changed_items'] ] );
+		$this->assertSame( [], self::scheduled( 'enqueue' ), 'No successor after a cancellation.' );
+		$this->assertCount( 50, $store->journal(), 'The applied part is journalled, so it can be undone.' );
+
+		// A queued action that runs later exits without claiming.
+		$claims = count( self::claims() );
+		$this->assertSame( 'stopped', $this->runner()->run( self::BATCH ) );
+		$this->assertCount( $claims, self::claims() );
+		$this->assertSame( '10', self::price( 1051 ) );
+	}
+
 	public function test_no_woocommerce_internal_batch_processing_class_is_referenced(): void {
 		$files = glob( dirname( __DIR__, 3 ) . '/src/Engine/*.php' );
 		$this->assertNotEmpty( $files );

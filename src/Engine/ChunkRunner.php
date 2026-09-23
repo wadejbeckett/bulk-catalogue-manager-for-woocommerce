@@ -9,7 +9,8 @@
  *
  * 1. exits without claiming unless the batch is queued or running (a
  *    cancelled or finished batch, T35), and moves queued to running on the
- *    first chunk;
+ *    first chunk; a cancellation that lands between that read and the claim
+ *    is seen straight after the claim, which is then released untouched;
  * 2. fails, with a plain reason, every pending item already claimed
  *    MAX_ATTEMPTS times whose last claim has gone stale (the chunk that held
  *    it died three times), counting it done and failed;
@@ -40,8 +41,14 @@
  * 8. enqueues its successor with as_enqueue_async_action() while pending
  *    items remain, or finalises the batch: complete when nothing is reported,
  *    failed when items failed and the journal holds no applied change, and
- *    partial otherwise (any failure or skip); finished_gmt is stamped. The
- *    move is from running only, so a cancellation meanwhile stands.
+ *    partial otherwise (any failure or skip); finished_gmt is stamped. A
+ *    batch cancelled while the chunk ran gets neither: its applied items
+ *    stay applied and journalled, the rest stay pending, and the status
+ *    stays cancelled (the move is from running only in any case).
+ *
+ * The only status moves the engine writes are queued to running, running to
+ * complete, partial or failed here, and queued or running to cancelled in
+ * Progress::cancel(); ChunkRunnerTest enumerates every transition() call.
  *
  * An exception out of a write (the journal refusing a row, T33) stops the
  * chunk: that item is marked failed and not retried, the rest of the claim is
@@ -212,7 +219,7 @@ final class ChunkRunner {
 	 *
 	 * @param int $batch_id The batch.
 	 * @return string What happened: `missing`, `stopped` (not queued or
-	 *                running), `continued` (successor enqueued), `waiting`
+	 *                running, or cancelled during the run), `continued` (successor enqueued), `waiting`
 	 *                (items are under a live claim; a retry is scheduled) or
 	 *                the final status.
 	 * @throws \Throwable An exception out of a write, after the chunk's bookkeeping.
@@ -244,6 +251,11 @@ final class ChunkRunner {
 		$items      = $this->batches->claim_chunk( $batch_id, $size, $token, gmdate( 'Y-m-d H:i:s', $now ), $stale );
 		if ( [] === $items ) {
 			return $this->settle( $batch_id, false );
+		}
+		// A cancellation that landed between the status read and the claim (T35): give the items back untouched.
+		if ( 'running' !== $this->batches->status( $batch_id ) ) {
+			$this->batches->release_claim( $batch_id, $token );
+			return 'stopped';
 		}
 
 		self::schedule_retry( $now + BatchRepository::LEASE_SECONDS + self::RETRY_DELAY, $batch_id );
@@ -319,6 +331,10 @@ final class ChunkRunner {
 	 * @param bool $claimed  Whether this run claimed anything (else pending items are under a live claim).
 	 */
 	private function settle( int $batch_id, bool $claimed ): string {
+		// Cancelled while the chunk ran (T35): the chunk's work stands, nothing follows it.
+		if ( 'running' !== $this->batches->status( $batch_id ) ) {
+			return 'stopped';
+		}
 		if ( $this->batches->count_items( $batch_id, 'pending' ) > 0 ) {
 			if ( $claimed ) {
 				as_enqueue_async_action( self::HOOK, [ $batch_id ], Data::ACTION_GROUP );

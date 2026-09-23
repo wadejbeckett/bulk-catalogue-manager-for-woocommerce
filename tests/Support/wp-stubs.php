@@ -202,6 +202,11 @@ if ( ! function_exists( 'add_filter' ) ) {
 		return $GLOBALS['bcm_test']['translate'][ $text ] ?? $text;
 	}
 
+	function _n( string $single, string $plural, int $number, string $domain = 'default' ): string {
+		$GLOBALS['bcm_test']['gettext'][] = [ $single, $domain ];
+		return 1 === $number ? $single : $plural;
+	}
+
 	function esc_html( string $text ): string {
 		return htmlspecialchars( $text, ENT_QUOTES, 'UTF-8' );
 	}

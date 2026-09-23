@@ -169,6 +169,48 @@ final class ChangeRepositoryTest extends TestCase {
 		}
 	}
 
+	public function test_the_feed_pages_counts_and_groups_reasons(): void {
+		global $wpdb;
+		$repo = new ChangeRepository();
+		$this->assertSame( [], $repo->page( 9, 3, 25, [ 'failed', 'skipped', 'failed' ] ) );
+		$this->assertSame( "SELECT change_id, batch_id, object_id, object_type, prop, old_value, new_value, modified_gmt, applied_gmt, result, message FROM `wp_bcm_changes` WHERE batch_id = 9 AND result IN ('failed', 'skipped') ORDER BY change_id ASC LIMIT 25 OFFSET 50", end( $wpdb->queries ) );
+		$repo->page( 9, 1, 5000 );
+		$this->assertStringEndsWith( 'WHERE batch_id = 9 ORDER BY change_id ASC LIMIT ' . ChangeRepository::MAX_PAGE . ' OFFSET 0', end( $wpdb->queries ) );
+
+		$wpdb->responses = [
+			"SELECT COUNT(*) FROM `wp_bcm_changes` WHERE batch_id = 9 AND result IN ('failed')" => '4',
+			"/^SELECT message, COUNT\\(DISTINCT object_id\\) AS objects FROM `wp_bcm_changes` WHERE batch_id = 9 AND result IN \\('failed', 'skipped'\\) AND message <> '' GROUP BY message ORDER BY objects DESC LIMIT 20$/" => [
+				[
+					'message' => 'A product with the SKU SHOE-42 already exists, so this SKU was not applied.',
+					'objects' => '2',
+				],
+			],
+		];
+		$this->assertSame( 4, $repo->page_count( 9, [ 'failed' ] ) );
+		$this->assertSame(
+			[
+				[
+					'message' => 'A product with the SKU SHOE-42 already exists, so this SKU was not applied.',
+					'objects' => 2,
+				],
+			],
+			$repo->reasons( 9 )
+		);
+		foreach ( $wpdb->prepared as [ $template ] ) {
+			$this->assertStringContainsString( '%i', $template );
+			$this->assertStringNotContainsString( 'wp_', $template );
+		}
+
+		foreach ( [ [], [ 'applied', 'lost' ] ] as $bad ) {
+			try {
+				$repo->page( 9, 1, 10, $bad );
+				$this->fail( 'Accepted ' . wp_json_encode( $bad ) );
+			} catch ( \InvalidArgumentException $e ) {
+				$this->assertStringContainsString( 'applied, skipped and failed', $e->getMessage() );
+			}
+		}
+	}
+
 	public function test_the_site_prefix_is_used(): void {
 		self::db()->prefix = 'wp_3_';
 		( new ChangeRepository() )->append( 6, 101, 'term', 'name', 'Shoes', 'Footwear', self::MODIFIED, 'applied' );

@@ -17,6 +17,7 @@ declare( strict_types = 1 );
 namespace BulkCatalogueManager\Tests\Unit\Engine;
 
 use BulkCatalogueManager\Data\ValueCodec;
+use BulkCatalogueManager\Tests\Support\SqlEvaluator;
 
 final class RunnerStore {
 	/**
@@ -94,6 +95,7 @@ final class RunnerStore {
 		$changes         = '`wp_bcm_changes`';
 		$wpdb->responses = [
 			"/^SELECT \\* FROM $batches WHERE batch_id = (\\d+)$/" => fn( string $sql ): ?array => $this->find( $sql ),
+			"/^SELECT status FROM $batches WHERE batch_id = (\\d+)$/" => fn( string $sql ): ?string => $this->find( $sql )['status'] ?? null,
 			"/^UPDATE $items SET claim_token = '/"    => fn( string $sql ): int => $this->claim( $sql ),
 			"/^SELECT item_id, object_id, object_type, attempts FROM $items/" => fn( string $sql ): array => $this->claimed( $sql ),
 			"/^UPDATE $items SET claim_token = NULL/" => fn( string $sql ): int => $this->release( $sql ),
@@ -104,7 +106,38 @@ final class RunnerStore {
 			"/^SELECT COUNT\\(\\*\\) FROM $items WHERE batch_id = \\d+ AND state <> 'pending'/" => fn(): string => $this->count_reported(),
 			"/^SELECT change_id FROM $changes WHERE batch_id = (\\d+) AND object_id = (\\d+) LIMIT 1$/" => fn( string $sql ): ?string => $this->has_object( $sql ),
 			"/^SELECT COUNT\\(\\*\\) FROM $changes WHERE batch_id = (\\d+) AND result = '(\\w+)'$/" => fn( string $sql ): string => $this->count_changes( $sql ),
-		] + $wpdb->responses;
+		] + $wpdb->responses + [
+			// T35, T36: any other read of the three tables runs through the evaluator over the rows as they stand.
+			"/^SELECT .* FROM ($batches|$items|$changes)/s" => fn( string $sql ): mixed => $this->evaluate( $sql ),
+		];
+	}
+
+	/**
+	 * Answer a read through the SQL evaluator over the current rows: a
+	 * COUNT or single-column read as a value, anything else as rows.
+	 */
+	private function evaluate( string $sql ): mixed {
+		$this->sync();
+		$changes = [];
+		foreach ( $this->changes as $index => $row ) {
+			$changes[] = [
+				'change_id' => $index + 1,
+				'old_value' => ValueCodec::encode( $row['old_value'] ),
+				'new_value' => ValueCodec::encode( $row['new_value'] ),
+			] + $row;
+		}
+		$db   = new SqlEvaluator(
+			[
+				'wp_bcm_batches'     => [ $this->batch ],
+				'wp_bcm_batch_items' => array_values( $this->items ),
+				'wp_bcm_changes'     => $changes,
+			]
+		);
+		$rows = $db->rows( $sql );
+		if ( 1 === preg_match( '/^SELECT (COUNT\(\*\)|claimed_gmt) FROM/', $sql ) ) {
+			return [] === $rows ? null : reset( $rows[0] );
+		}
+		return $rows;
 	}
 
 	/**

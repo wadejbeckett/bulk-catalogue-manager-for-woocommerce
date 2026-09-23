@@ -166,6 +166,84 @@ final class ChangeRepository {
 	}
 
 	/**
+	 * One page of a batch's journal in the order it was written, for the
+	 * changes feed (T36): optionally only rows with some results.
+	 *
+	 * @param int               $batch_id Batch.
+	 * @param int               $page     Page, from 1.
+	 * @param int               $per_page Rows per page, 1 to MAX_PAGE.
+	 * @param list<string>|null $results  Schema::CHANGE_RESULTS to keep, or null for all.
+	 * @return array<int, array{change_id: int, batch_id: int, object_id: int, object_type: string, prop: string, old_value: mixed, new_value: mixed, modified_gmt: string, applied_gmt: string, result: string, message: string}>
+	 * @throws \InvalidArgumentException On an unknown result.
+	 */
+	public function page( int $batch_id, int $page, int $per_page, ?array $results = null ): array {
+		global $wpdb;
+		$per_page         = max( 1, min( self::MAX_PAGE, $per_page ) );
+		[ $where, $args ] = $this->feed_conditions( $batch_id, $results );
+		$args[]           = $per_page;
+		$args[]           = ( max( 1, $page ) - 1 ) * $per_page;
+		// $where holds only fixed conditions with placeholders; every value is a prepared argument.
+		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT change_id, batch_id, object_id, object_type, prop, old_value, new_value, modified_gmt, applied_gmt, result, message FROM %i WHERE {$where} ORDER BY change_id ASC LIMIT %d OFFSET %d", $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
+		return array_map( [ self::class, 'row' ], is_array( $rows ) ? $rows : [] );
+	}
+
+	/**
+	 * Number of rows page() pages through.
+	 *
+	 * @param int               $batch_id Batch.
+	 * @param list<string>|null $results  As page().
+	 * @throws \InvalidArgumentException On an unknown result.
+	 */
+	public function page_count( int $batch_id, ?array $results = null ): int {
+		global $wpdb;
+		[ $where, $args ] = $this->feed_conditions( $batch_id, $results );
+		// $where holds only fixed conditions with placeholders; every value is a prepared argument.
+		return (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM %i WHERE {$where}", $args ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
+	}
+
+	/**
+	 * The reasons of a batch's failed and skipped rows grouped by message,
+	 * with the number of objects carrying each, most first (T36's summary).
+	 *
+	 * @param int $batch_id Batch.
+	 * @param int $limit    Most reasons, 1 to 100.
+	 * @return list<array{message: string, objects: int}>
+	 */
+	public function reasons( int $batch_id, int $limit = 20 ): array {
+		global $wpdb;
+		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT message, COUNT(DISTINCT object_id) AS objects FROM %i WHERE batch_id = %d AND result IN ('failed', 'skipped') AND message <> '' GROUP BY message ORDER BY objects DESC LIMIT %d", $this->registry->table( Schema::CHANGES ), $batch_id, max( 1, min( 100, $limit ) ) ), ARRAY_A );
+		return array_map(
+			static fn( array $row ): array => [
+				'message' => (string) $row['message'],
+				'objects' => (int) $row['objects'],
+			],
+			is_array( $rows ) ? $rows : []
+		);
+	}
+
+	/**
+	 * The WHERE clause and its arguments (the table first) for the feed.
+	 *
+	 * @param int               $batch_id Batch.
+	 * @param list<string>|null $results  Results to keep, or null for all.
+	 * @return array{0: string, 1: list<mixed>}
+	 * @throws \InvalidArgumentException On an unknown or empty result list.
+	 */
+	private function feed_conditions( int $batch_id, ?array $results ): array {
+		$where = 'batch_id = %d';
+		$args  = [ $this->registry->table( Schema::CHANGES ), $batch_id ];
+		if ( null !== $results ) {
+			$results = array_values( array_unique( $results ) );
+			if ( [] === $results || [] !== array_diff( $results, Schema::CHANGE_RESULTS ) ) {
+				throw new \InvalidArgumentException( 'Results are a non-empty list of applied, skipped and failed.' );
+			}
+			$where .= ' AND result IN (' . implode( ', ', array_fill( 0, count( $results ), '%s' ) ) . ')';
+			$args   = array_merge( $args, $results );
+		}
+		return [ $where, $args ];
+	}
+
+	/**
 	 * Type a stored row and decode its values.
 	 *
 	 * @param array $row Row from the database.

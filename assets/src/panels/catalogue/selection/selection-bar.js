@@ -8,6 +8,8 @@
 import { Button, Notice } from '@wordpress/components';
 import { __, _n, sprintf } from '@wordpress/i18n';
 
+import { SELECTION_DRAG_TYPE } from '../../categories/category-tree';
+
 import { formatNumber } from '../../bulk/words';
 
 /**
@@ -119,6 +121,7 @@ export function selectAllWords( total, filtered ) {
  * @param {Function}      props.onMakeChange Open the bulk change panel.
  * @param {Function|null} props.onShow       Show on site, or null when the registry offers none.
  * @param {Function|null} props.onHide       Hide from site, or null.
+ * @param {boolean}       props.draggable    The bar can be dragged onto a category (T65).
  * @return {Element|null} Bar.
  */
 export default function SelectionBar( {
@@ -129,6 +132,7 @@ export default function SelectionBar( {
 	onMakeChange,
 	onShow = null,
 	onHide = null,
+	draggable = false,
 } ) {
 	const { count, matching, error, notice } = selection;
 	const loading = matching?.status === 'loading';
@@ -165,12 +169,35 @@ export default function SelectionBar( {
 			) }
 			{ ( count > 0 || matching ) && (
 				<div
-					className="bcm-selection__bar"
+					className={
+						'bcm-selection__bar' +
+						( draggable && ! loading ? ' is-draggable' : '' )
+					}
 					role="region"
 					aria-label={ __(
 						'Selection',
 						'bulk-catalogue-manager-for-woocommerce'
 					) }
+					draggable={ draggable && ! loading }
+					title={
+						draggable && ! loading
+							? __(
+									'Drag onto a category to add these products to it.',
+									'bulk-catalogue-manager-for-woocommerce'
+								)
+							: undefined
+					}
+					onDragStart={ ( event ) => {
+						// The tree reads only the type; the catalogue keeps
+						// the selection and its scope (categories/README.md).
+						event.dataTransfer?.setData(
+							SELECTION_DRAG_TYPE,
+							String( count )
+						);
+						if ( event.dataTransfer ) {
+							event.dataTransfer.effectAllowed = 'copy';
+						}
+					} }
 				>
 					<span className="bcm-selection__count" aria-live="polite">
 						{ loading

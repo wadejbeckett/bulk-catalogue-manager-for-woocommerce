@@ -5,5 +5,5 @@
 export { default as useSelection } from './use-selection';
 export { default as SelectionBar } from './selection-bar';
 export { mergePageSelection, isPageSelected, panelSelection } from './model';
-export { visibilityOperation } from './quick-actions';
+export { addCategoryOperation, visibilityOperation } from './quick-actions';
 import './style.scss';

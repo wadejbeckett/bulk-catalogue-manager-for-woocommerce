@@ -22,6 +22,8 @@ import {
 } from '../../assets/src/panels/catalogue/defaults';
 import { alwaysConfirmReasons } from '../../assets/src/panels/bulk';
 import { withFilters } from '../../assets/src/panels/catalogue/toolbar';
+import { addCategoryOperation } from '../../assets/src/panels/catalogue/selection';
+import { SELECTION_DRAG_TYPE } from '../../assets/src/panels/categories/category-tree';
 import {
 	descriptorsOf,
 	fieldsFromRegistry,
@@ -183,6 +185,44 @@ describe( 'catalogue wire-ins', () => {
 		expect(
 			calls( apiFetch, 'products/21/variations' ).length
 		).toBeGreaterThanOrEqual( 1 );
+	} );
+} );
+
+describe( 'dropping the selection on a category (T65)', () => {
+	it( 'builds Add categories with the category chosen', () => {
+		expect( addCategoryOperation( REGISTRY, {}, 3 ) ).toMatchObject( {
+			action: 'add_terms',
+			args: { field: 'category_ids', terms: [ 3 ] },
+		} );
+		expect(
+			addCategoryOperation( { ...REGISTRY, actions: [] }, {}, 3 )
+		).toBeNull();
+	} );
+
+	it( 'opens the bulk panel prefilled from a drag of the selection bar, writing nothing', async () => {
+		await renderLoaded();
+		const row = screen
+			.getByRole( 'link', { name: 'Classic Cotton T-Shirt' } )
+			.closest( 'tr' );
+		fireEvent.click( within( row ).getByRole( 'checkbox' ) );
+		const bar = await screen.findByRole( 'region', { name: 'Selection' } );
+		expect( bar.getAttribute( 'draggable' ) ).toBe( 'true' );
+		const setData = jest.fn();
+		fireEvent.dragStart( bar, { dataTransfer: { setData } } );
+		expect( setData ).toHaveBeenCalledWith( SELECTION_DRAG_TYPE, '1' );
+		const target = await screen.findByRole( 'treeitem', {
+			name: /^Clothing,/,
+		} );
+		const dataTransfer = { types: [ SELECTION_DRAG_TYPE ], dropEffect: '' };
+		fireEvent.dragOver( target, { dataTransfer } );
+		fireEvent.drop( target, { dataTransfer } );
+		const panel = await screen.findByRole( 'dialog' );
+		expect(
+			within( panel ).getAllByText( /Add categories or tags/ ).length
+		).toBeGreaterThan( 0 );
+		expect(
+			apiFetch.mock.calls.some( ( [ options ] ) => options.method )
+		).toBe( false );
 	} );
 } );
 

@@ -36,3 +36,8 @@
 .bcm-catalogue .dataviews-bulk-actions-footer__container {
 	display: none;
 }
+
+// T65: the bar can be dragged onto a category.
+.bcm-selection__bar.is-draggable {
+	cursor: grab;
+}

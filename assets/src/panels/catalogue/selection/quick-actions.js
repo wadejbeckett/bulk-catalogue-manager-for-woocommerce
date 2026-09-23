@@ -8,7 +8,7 @@
  */
 import { fieldByKey } from '../../bulk/descriptors';
 import { changeArg, chooseAction, emptyOperation } from '../../bulk/operations';
-import { QUICK_VISIBILITY } from '../defaults';
+import { CATEGORY_FILTER, QUICK_VISIBILITY } from '../defaults';
 
 /**
  * The registry action that sets a field's value, or undefined.
@@ -59,4 +59,46 @@ export function visibilityOperation( registry, settings, show ) {
 	);
 	operation = changeArg( registry, settings, operation, 'field', key );
 	return changeArg( registry, settings, operation, 'value', value );
+}
+
+/**
+ * The prefilled step for a selection dropped on a category (T65, SPEC §4.3):
+ * the registry's action that adds terms to the category field, with that
+ * category chosen, or null when the registry offers no such action.
+ *
+ * @param {Object} registry   The `/fields` payload.
+ * @param {Object} settings   Settings.
+ * @param {number} categoryId The category dropped on.
+ * @return {Object|null} Panel operation.
+ */
+export function addCategoryOperation( registry, settings, categoryId ) {
+	const id = Number( categoryId );
+	const field = fieldByKey( registry, CATEGORY_FILTER );
+	const action = ( registry?.actions || [] ).find(
+		( each ) =>
+			( each.editKinds || [] ).includes( 'add' ) &&
+			( each.fields || [] ).includes( CATEGORY_FILTER ) &&
+			each.args?.properties?.terms
+	);
+	if ( ! id || ! field || ! action ) {
+		return null;
+	}
+	const group = ( action.groups || [] ).includes( field.group )
+		? field.group
+		: action.group;
+	let operation = chooseAction(
+		registry,
+		settings,
+		emptyOperation( 1 ),
+		action.id,
+		group
+	);
+	operation = changeArg(
+		registry,
+		settings,
+		operation,
+		'field',
+		CATEGORY_FILTER
+	);
+	return changeArg( registry, settings, operation, 'terms', [ id ] );
 }

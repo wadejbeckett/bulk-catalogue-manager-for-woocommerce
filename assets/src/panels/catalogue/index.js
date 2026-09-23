@@ -52,6 +52,7 @@ import {
 } from './toolbar';
 import {
 	SelectionBar,
+	addCategoryOperation,
 	panelSelection,
 	useSelection,
 	visibilityOperation,
@@ -219,6 +220,15 @@ export function CatalogueGrid( {
 			selection: panelSelection( selection, chips ),
 			initialOperations: steps,
 		} );
+	// T65: the selection dropped on a category opens the panel with Add
+	// categories for it; nothing is written before preview and apply.
+	const hasSelection = selection.count > 0 || !! selection.matching;
+	const dropSelection = ( categoryId ) => {
+		const step = addCategoryOperation( registry, settings, categoryId );
+		if ( step && hasSelection ) {
+			openBulk( [ step ] );
+		}
+	};
 	const viewCategory = !! filterArgs( view.filters, descriptors )[
 		CATEGORY_FILTER
 	];
@@ -286,6 +296,7 @@ export function CatalogueGrid( {
 				query={ treeQuery }
 				tree={ tree }
 				settings={ settings }
+				onDropSelection={ hasSelection ? dropSelection : undefined }
 			/>
 			<div className="bcm-catalogue__main">
 				{ /* T51–T53 */ }
@@ -342,6 +353,7 @@ export function CatalogueGrid( {
 					onMakeChange={ () => openBulk() }
 					onShow={ showStep ? () => openBulk( [ showStep ] ) : null }
 					onHide={ hideStep ? () => openBulk( [ hideStep ] ) : null }
+					draggable
 				/>
 				{ applied && ! bulk && (
 					<AppliedProgress

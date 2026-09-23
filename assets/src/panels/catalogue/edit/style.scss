@@ -1,0 +1,355 @@
+// Editing in the catalogue (T45–T47), in the prototype's admin palette
+// (docs/prototype/index.html: the switch, the Saved tick, the details drawer).
+$bcm-ink: #1d2327;
+$bcm-ink-2: #50575e;
+$bcm-ink-3: #646970;
+$bcm-panel: #fff;
+$bcm-sunk: #f6f7f7;
+$bcm-rule: #dcdcde;
+$bcm-rule-strong: #c3c4c7;
+$bcm-rule-soft: #f0f0f1;
+$bcm-blue: #2271b1;
+$bcm-good: #00a32a;
+$bcm-good-ink: #125c2a;
+$bcm-bad: #d63638;
+$bcm-bad-ink: #8a2424;
+$bcm-bad-tint: #fcf0f1;
+
+.bcm-sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border: 0;
+}
+
+.bcm-edit__notice {
+	margin: 12px 12px 0;
+}
+
+// The switch: a 24px-high target with a word beside the track, so colour is
+// never the only signal (§14).
+.bcm-switch {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+
+	&.is-pending {
+		opacity: 0.55;
+	}
+
+	&__button {
+		display: inline-flex;
+		align-items: center;
+		gap: 7px;
+		min-height: 24px;
+		padding: 2px;
+		background: none;
+		border: 0;
+		border-radius: 2px;
+		cursor: pointer;
+		color: $bcm-ink-3;
+
+		&:focus-visible {
+			outline: 2px solid $bcm-blue;
+			outline-offset: 1px;
+		}
+
+		&[aria-disabled="true"] {
+			cursor: progress;
+		}
+	}
+
+	&__track {
+		position: relative;
+		width: 34px;
+		height: 18px;
+		border-radius: 9px;
+		background: #8c8f94;
+		flex: none;
+		transition: background 0.12s ease;
+	}
+
+	&__knob {
+		position: absolute;
+		top: 2px;
+		left: 2px;
+		width: 14px;
+		height: 14px;
+		border-radius: 50%;
+		background: $bcm-panel;
+		transition: transform 0.12s ease;
+	}
+
+	&__button[aria-checked="true"] {
+		color: $bcm-good-ink;
+
+		.bcm-switch__track {
+			background: $bcm-good;
+		}
+
+		.bcm-switch__knob {
+			transform: translateX(16px);
+		}
+	}
+
+	// Partly: neither on nor off, the knob in the middle of a neutral track.
+	&__button.is-partly {
+		color: $bcm-ink-2;
+
+		.bcm-switch__track {
+			background: repeating-linear-gradient(135deg, #a7aaad 0 4px, #c3c4c7 4px 8px);
+		}
+
+		.bcm-switch__knob {
+			transform: translateX(8px);
+		}
+	}
+
+	&__label {
+		font-size: 11px;
+		min-width: 50px;
+		text-align: left;
+	}
+
+	&__menu {
+		display: flex;
+		flex-direction: column;
+		align-items: stretch;
+		gap: 4px;
+		padding: 8px;
+		max-width: 260px;
+	}
+
+	&__menu-title {
+		margin: 0 0 4px;
+		color: $bcm-ink-2;
+		font-size: 12px;
+		white-space: normal;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.bcm-switch__track,
+	.bcm-switch__knob {
+		transition: none;
+	}
+}
+
+// Inline cells.
+.bcm-inline {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	max-width: 100%;
+
+	&__trigger {
+		min-height: 24px;
+		min-width: 24px;
+		max-width: 100%;
+		padding: 2px 4px;
+		margin: -2px -4px;
+		background: none;
+		border: 1px dashed transparent;
+		border-radius: 2px;
+		color: inherit;
+		font: inherit;
+		text-align: left;
+		cursor: text;
+		overflow: hidden;
+		text-overflow: ellipsis;
+
+		&:hover {
+			border-color: $bcm-rule-strong;
+		}
+
+		&:focus-visible {
+			outline: 2px solid $bcm-blue;
+			outline-offset: 1px;
+		}
+
+		&.is-unavailable {
+			cursor: help;
+		}
+	}
+
+	&__input {
+		min-height: 28px;
+		width: 9rem;
+		max-width: 100%;
+	}
+
+	&.has-error .bcm-inline__input {
+		border-color: $bcm-bad;
+		box-shadow: 0 0 0 1px $bcm-bad;
+	}
+
+	&__error,
+	&__why {
+		font-size: 12px;
+		white-space: normal;
+	}
+
+	&__error {
+		color: $bcm-bad-ink;
+	}
+
+	&__why {
+		color: $bcm-ink-2;
+	}
+
+	&__saved {
+		color: $bcm-good-ink;
+		font-size: 11px;
+	}
+}
+
+.bcm-catalogue .dataviews-view-table tbody td:has(.bcm-inline.is-editing) {
+	overflow: visible;
+	white-space: normal;
+}
+
+// The details drawer.
+.bcm-drawer__scrim {
+	position: fixed;
+	inset: 32px 0 0 0;
+	z-index: 9980;
+	background: rgba(29, 35, 39, 0.28);
+
+	@media (max-width: 782px) {
+		top: 46px;
+	}
+}
+
+.bcm-drawer {
+	position: fixed;
+	top: 32px;
+	right: 0;
+	bottom: 0;
+	z-index: 9990;
+	width: min(420px, 100vw);
+	display: flex;
+	flex-direction: column;
+	background: $bcm-panel;
+	color: $bcm-ink;
+	border-left: 1px solid $bcm-rule-strong;
+	box-shadow: -8px 0 26px rgba(16, 24, 40, 0.18);
+
+	@media (max-width: 782px) {
+		top: 46px;
+	}
+
+	&__head {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 10px 12px;
+		border-bottom: 1px solid $bcm-rule;
+
+		h2 {
+			flex: 1;
+			margin: 0;
+			font-size: 13px;
+			font-weight: 600;
+		}
+	}
+
+	&__close {
+		width: 28px;
+		height: 28px;
+		display: grid;
+		place-items: center;
+		padding: 0;
+		background: $bcm-panel;
+		border: 1px solid $bcm-rule-strong;
+		border-radius: 2px;
+		color: $bcm-ink-2;
+		cursor: pointer;
+
+		&:hover {
+			background: $bcm-sunk;
+			color: $bcm-ink;
+		}
+	}
+
+	&__body {
+		flex: 1;
+		overflow: auto;
+		padding: 14px 14px 60px;
+	}
+
+	&__title h3 {
+		margin: 0 0 4px;
+		font-size: 15px;
+		font-weight: 600;
+	}
+
+	&__hint {
+		margin: 0;
+		color: $bcm-ink-2;
+		font-size: 12px;
+	}
+
+	&__ask {
+		margin: 12px 0;
+		padding: 10px 12px;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		align-items: center;
+		background: $bcm-bad-tint;
+		border: 1px solid $bcm-rule;
+
+		p {
+			flex-basis: 100%;
+			margin: 0;
+		}
+	}
+
+	&__form {
+		margin-top: 14px;
+	}
+
+	&__actions {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		margin-top: 16px;
+	}
+
+	&__saved {
+		color: $bcm-good-ink;
+		font-size: 12px;
+	}
+
+	&__section {
+		margin-top: 14px;
+		padding-top: 12px;
+		border-top: 1px solid $bcm-rule-soft;
+
+		h4 {
+			margin: 0 0 8px;
+			font-size: 12px;
+			font-weight: 600;
+			color: $bcm-ink-2;
+		}
+	}
+
+	&__variations {
+		margin: 0 0 8px;
+		padding: 0;
+		list-style: none;
+
+		li {
+			display: flex;
+			justify-content: space-between;
+			gap: 8px;
+			padding: 4px 0;
+			border-bottom: 1px solid $bcm-rule-soft;
+		}
+	}
+}

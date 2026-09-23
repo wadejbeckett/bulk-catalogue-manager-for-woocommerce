@@ -8,6 +8,7 @@ import { __ } from '@wordpress/i18n';
 
 import { CellContext } from './cells';
 import { PER_PAGE_SIZES } from './defaults';
+import { useEditScope } from './edit';
 import { LoadingRows } from './states';
 
 const LAYOUTS = { table: {} };
@@ -55,9 +56,10 @@ export default function CatalogueTable( {
 	selection,
 	onChangeSelection,
 } ) {
+	const edit = useEditScope( { items, fields, actions, pending } );
 	const context = useMemo(
-		() => ( { termNames, pending } ),
-		[ termNames, pending ]
+		() => ( { termNames, pending: edit.pending } ),
+		[ termNames, edit.pending ]
 	);
 	const skeleton = (
 		<LoadingRows
@@ -70,7 +72,7 @@ export default function CatalogueTable( {
 	if ( ! hasLoaded ) {
 		return skeleton;
 	}
-	return (
+	return edit.wrap(
 		<CellContext.Provider value={ context }>
 			<div
 				className={
@@ -81,14 +83,14 @@ export default function CatalogueTable( {
 				}
 			>
 				<DataViews
-					data={ items }
+					data={ edit.items }
 					fields={ fields }
 					view={ view }
 					onChangeView={ onChangeView }
 					paginationInfo={ pagination }
 					defaultLayouts={ LAYOUTS }
 					isLoading={ isLoading }
-					actions={ actions }
+					actions={ edit.actions }
 					getItemId={ itemId }
 					{ ...( onChangeSelection
 						? { selection, onChangeSelection }

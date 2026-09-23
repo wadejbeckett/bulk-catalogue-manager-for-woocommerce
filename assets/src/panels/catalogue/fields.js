@@ -3,8 +3,14 @@
  * column, label, choice list and sort option is built from the payload; the
  * only field keys the client knows are the preset in defaults.js.
  */
-import { COMPANIONS, DEFAULT_COLUMNS, PER_PAGE_SIZES } from './defaults';
+import {
+	COMPANIONS,
+	CONTEXT,
+	DEFAULT_COLUMNS,
+	PER_PAGE_SIZES,
+} from './defaults';
 import { renderCell } from './cells';
+import { renderEditable } from './edit';
 
 /**
  * The registry's field descriptors, from the payload or a bare list.
@@ -64,8 +70,12 @@ export function fieldsFromRegistry( registry ) {
 			label: descriptor.label || descriptor.dataviews.label,
 			enableSorting: descriptor.sortable === true,
 			filterBy: false,
+			descriptor,
 			render: ( { item } ) =>
-				renderCell( { item, descriptor, companion, role } ),
+				renderEditable(
+					{ item, descriptor, companion, role },
+					renderCell
+				),
 		};
 	} );
 }
@@ -83,7 +93,11 @@ export function queryFields( view, descriptors ) {
 	const wanted = new Set(
 		[ roles.id, view.titleField, view.mediaField, ...( view.fields || [] ) ]
 			.filter( Boolean )
-			.flatMap( ( key ) => [ key, COMPANIONS[ key ] ] )
+			.flatMap( ( key ) => [
+				key,
+				COMPANIONS[ key ],
+				...( CONTEXT[ key ] || [] ),
+			] )
 	);
 	return descriptors
 		.map( ( field ) => field.key )

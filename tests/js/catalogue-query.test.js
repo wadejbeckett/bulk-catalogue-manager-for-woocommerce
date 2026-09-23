@@ -24,6 +24,8 @@ describe( 'view to route arguments', () => {
 			fields: [
 				'name',
 				'status',
+				'catalog_visibility',
+				'visible_on_site',
 				'category_ids',
 				'regular_price',
 				'sale_price',
@@ -31,6 +33,7 @@ describe( 'view to route arguments', () => {
 				'stock_quantity',
 				'sku',
 				'id',
+				'type',
 				'thumbnail',
 			],
 		} );

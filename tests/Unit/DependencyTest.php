@@ -77,7 +77,9 @@ final class DependencyTest extends TestCase {
 
 		$this->assertSame(
 			[
+				'admin_enqueue_scripts'   => 1,
 				'admin_init'              => 1,
+				'admin_menu'              => 1,
 				'bcm_batch_created'       => 1,
 				'bcm_prune_history'       => 1,
 				'bcm_run_chunk'           => 1,
@@ -126,7 +128,9 @@ final class DependencyTest extends TestCase {
 
 		$this->assertSame(
 			[
+				'admin_enqueue_scripts'   => 1,
 				'admin_init'              => 1,
+				'admin_menu'              => 1,
 				'bcm_batch_created'       => 1,
 				'bcm_prune_history'       => 1,
 				'bcm_run_chunk'           => 1,

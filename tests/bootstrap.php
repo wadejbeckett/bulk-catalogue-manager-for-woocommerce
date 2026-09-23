@@ -36,4 +36,5 @@ require_once __DIR__ . '/Support/read-stubs.php';
 require_once __DIR__ . '/Support/wc-product-sentinel.php';
 require_once __DIR__ . '/Support/fake-product.php';
 require_once __DIR__ . '/Support/features-util-stub.php';
+require_once __DIR__ . '/Support/admin-stubs.php';
 bcm_test_reset();

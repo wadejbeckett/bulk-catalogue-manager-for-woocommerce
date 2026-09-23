@@ -1,0 +1,17 @@
+// The screen's own styles; everything else is the admin's and the bundled
+// components' (SPEC §4: the page inherits the admin's look and colour schemes).
+.bcm-app {
+	margin-top: 8px;
+}
+
+.bcm-app__panel {
+	margin-top: 16px;
+}
+
+.bcm-catalogue {
+	background: #fff;
+}
+
+.bcm-placeholder {
+	max-width: 40rem;
+}

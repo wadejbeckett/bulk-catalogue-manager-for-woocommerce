@@ -11,9 +11,10 @@ otherwise.
 
 Chapters (``--chapters``, comma separated, default all, run in this order):
 
-  screen     T10. The Products -> Bulk Catalogue Manager screen renders its
-             mount element for an administrator and refuses a subscriber.
-             Documented SKIP until T8 registers the screen.
+  screen     T8. The Products -> Bulk Catalogue Manager screen renders its
+             one mount element, the localised settings, the bundle and its
+             style for an administrator and a shop manager, refuses a
+             subscriber 403, and loads none of it on other admin pages.
   read       T23. Every read route (/fields, /products with filters, search,
              sort and paging, /products/{id}/variations, /selection,
              /categories, /export) answered four ways: anonymous 401,
@@ -285,9 +286,56 @@ def filter_params(field: str, operator: str, value: Any) -> list[tuple[str, str]
 # ---------------------------------------------------------------------------
 
 
+SCREEN_PATH = "/wp-admin/edit.php?post_type=product&page=bulk-catalogue-manager-for-woocommerce"
+SCRIPT_PATH = "/wp-content/plugins/bulk-catalogue-manager-for-woocommerce/assets/build/index.js"
+
+
 def check_screen(p: Probe) -> None:
-    for leg in ("admin-mount", "subscriber-refused"):
-        p.skip("screen", f"screen:{leg}", "documented: the admin screen and its mount element land in T8 (needs Node 20)")
+    """The admin screen (T8): its mount element, localised settings and bundle for
+    the people it is for, a refusal for anyone else, and no asset off the screen."""
+
+    def page(user: str, path: str = SCREEN_PATH) -> tuple[Response, str]:
+        opener, _nonce = p.session(user)
+        reply = p._raw(opener, "GET", path)
+        return reply, reply.body.decode("utf-8", "replace")
+
+    def mounts(user: str) -> tuple[bool, str]:
+        reply, html = page(user)
+        ok = (
+            reply.status == 200
+            and html.count('<div id="bcm-app"></div>') == 1
+            and "window.bcmSettings = " in html
+            and SCRIPT_PATH in html
+            and "/assets/build/style-index.css" in html
+            and "notice-error" not in html.split('<div id="bcm-app">')[0].split("<h1>Bulk Catalogue Manager</h1>")[-1]
+        )
+        count = html.count('id="bcm-app"')
+        return ok, f"{reply.status}, mount x{count}, script {'yes' if SCRIPT_PATH in html else 'no'}"
+
+    def admin_mount() -> None:
+        ok, detail = mounts("admin")
+        p.row("screen", "screen:admin-mount", ok, detail)
+
+    def manager_mount() -> None:
+        ok, detail = mounts("manager")
+        p.row("screen", "screen:manager-mount", ok, detail)
+
+    def subscriber_refused() -> None:
+        reply, html = page("subscriber")
+        p.row("screen", "screen:subscriber-refused", reply.status == 403 and "bcm-app" not in html and SCRIPT_PATH not in html,
+              f"{reply.status}, mount {'present' if 'bcm-app' in html else 'absent'}")
+
+    def assets_only_here() -> None:
+        found = []
+        for path in ("/wp-admin/", "/wp-admin/edit.php?post_type=product", "/wp-admin/admin.php?page=wc-settings"):
+            reply, html = page("admin", path)
+            if SCRIPT_PATH in html or "bcmSettings" in html or "bcm-app" in html:
+                found.append(f"{path} ({reply.status})")
+        p.row("screen", "screen:assets-only-here", not found, "none elsewhere" if not found else "loaded on " + ", ".join(found))
+
+    for name, fn in (("admin-mount", admin_mount), ("manager-mount", manager_mount),
+                     ("subscriber-refused", subscriber_refused), ("assets-only-here", assets_only_here)):
+        p.guard("screen", f"screen:{name}", fn)
 
 
 # ---------------------------------------------------------------------------

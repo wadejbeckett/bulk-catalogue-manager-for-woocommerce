@@ -294,8 +294,7 @@ PHP;
 			}
 			$calls .= $code;
 		}
-		// TODO(T8): the screen's script handle arrives with T8. Until then there is none to check;
-		// once it is registered, this asserts wp_set_script_translations( handle, domain, languages/ ).
+		$this->assertContains( 'bcm-app', $handles, 'The screen script (T8) is registered with a literal handle.' );
 		foreach ( array_unique( $handles ) as $handle ) {
 			$this->assertSame(
 				1,

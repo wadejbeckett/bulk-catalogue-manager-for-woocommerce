@@ -44,6 +44,13 @@ final class Plugin {
 	private bool $booted = false;
 
 	/**
+	 * The admin screen, one per plugin instance so its menu and its assets share the screen id.
+	 *
+	 * @var Admin\Screen|null
+	 */
+	private ?Admin\Screen $screen = null;
+
+	/**
 	 * The single instance used at runtime. Tests construct their own.
 	 */
 	public static function instance(): self {
@@ -90,7 +97,9 @@ final class Plugin {
 	 * filtered count cache's, for a product saved from anywhere.
 	 * The migrator runs on admin_init as well as on activation, because an
 	 * update replaces the files without activating the plugin again. The REST
-	 * routes register on rest_api_init.
+	 * routes register on rest_api_init. The admin screen registers on
+	 * admin_menu and loads its assets on admin_enqueue_scripts, for its own
+	 * screen id only.
 	 *
 	 * @return array<int, array{0: string, 1: callable, 2: int, 3: int}>
 	 */
@@ -107,10 +116,22 @@ final class Plugin {
 			[ 'init', [ Query\CountCache::class, 'register_hooks' ], 10, 0 ],
 			[ 'admin_init', [ $this, 'migrate' ], 10, 0 ],
 			[ 'rest_api_init', [ $this, 'register_routes' ], 10, 0 ],
+			[ 'admin_menu', [ $this->screen(), 'register' ], 10, 0 ],
+			[ 'admin_enqueue_scripts', [ $this->screen(), 'enqueue' ], 10, 1 ],
 			[ Engine\BatchFactory::CREATED, [ Engine\ChunkRunner::class, 'enqueue' ], 10, 1 ],
 			[ Engine\ChunkRunner::HOOK, [ Engine\ChunkRunner::class, 'handle' ], 10, 2 ],
 			[ Engine\Pruner::HOOK, [ Engine\Pruner::class, 'handle' ], 10, 0 ],
 		];
+	}
+
+	/**
+	 * The admin screen: Products → Bulk Catalogue Manager.
+	 */
+	public function screen(): Admin\Screen {
+		if ( null === $this->screen ) {
+			$this->screen = new Admin\Screen();
+		}
+		return $this->screen;
 	}
 
 	/**

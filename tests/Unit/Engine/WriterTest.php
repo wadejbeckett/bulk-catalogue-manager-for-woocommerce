@@ -7,8 +7,11 @@
  * saves the earlier and later changes; a refused-only object is not saved; a
  * saved variation resynchronises its parent through WC_Product_Variable::sync()
  * once per object, or once per parent inside run(); the journal hook sees the
- * touched keys and the before state just before save(); and no path calls
- * update_post_meta().
+ * touched keys and the before state just before save(); every computed
+ * Result passes the row Validator first (a refused or unauthorised row is
+ * reported and not applied, a clear_invalid_sale regular price change applies
+ * both Results, a SKU clash across two objects in one run fails the second);
+ * and no path calls update_post_meta().
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -30,6 +33,7 @@ use PHPUnit\Framework\TestCase;
 final class WriterTest extends TestCase {
 	protected function setUp(): void {
 		bcm_test_reset();
+		$GLOBALS['bcm_test']['caps']  = [ 'edit_post' => true ];
 		$GLOBALS['bcm_test']['terms'] = [
 			'product_cat'            => [ 11, 12 ],
 			'product_tag'            => [ 21, 22 ],
@@ -662,6 +666,190 @@ final class WriterTest extends TestCase {
 			}
 		}
 		$this->assertSame( [], $GLOBALS['bcm_test']['products_loaded'] ?? [] );
+	}
+
+	public function test_a_row_the_validator_refuses_is_reported_and_not_applied(): void {
+		$GLOBALS['bcm_test']['skus'] = [ 'TAKEN' => 99 ];
+		$product                     = self::product(
+			'simple',
+			[
+				'id'            => 80,
+				'regular_price' => '10',
+				'sale_price'    => '',
+				'sku'           => 'OLD',
+				'status'        => 'draft',
+			]
+		);
+		$outcome                     = ( new Writer( self::registry() ) )->write(
+			80,
+			$this->steps(
+				[
+					[
+						'set_value',
+						[
+							'field' => 'sale_price',
+							'value' => '12',
+						],
+					],
+					[
+						'set_value',
+						[
+							'field' => 'sku',
+							'value' => 'TAKEN',
+						],
+					],
+					[
+						'set_value',
+						[
+							'field' => 'status',
+							'value' => 'publish',
+						],
+					],
+				]
+			)
+		);
+		$this->assertSame( [ Result::SKIPPED, Result::FAILED, Result::CHANGED ], self::states( $outcome ) );
+		$this->assertSame( [ 'bcm_invalid_value', 'bcm_invalid_value', '' ], array_map( static fn( Result $r ): string => $r->code(), $outcome->results() ) );
+		$this->assertSame( [ [ 'set_status', 'publish' ] ], $product->sets, 'Only the row the validator passed reaches a setter.' );
+		$this->assertTrue( $outcome->saved() );
+		$this->assertSame( [ 'status' => 'draft' ], $outcome->before() );
+	}
+
+	public function test_an_object_the_batch_user_may_not_edit_is_skipped_and_not_saved(): void {
+		$GLOBALS['bcm_test']['caps']      = [];
+		$GLOBALS['bcm_test']['user_caps'] = [
+			5 => [
+				'edit_post'    => true,
+				'edit_post:82' => false,
+			],
+		];
+		$list                             = $this->steps(
+			[
+				[
+					'set_value',
+					[
+						'field' => 'featured',
+						'value' => true,
+					],
+				],
+			]
+		);
+		$allowed                          = self::product(
+			'simple',
+			[
+				'id'       => 81,
+				'featured' => false,
+			]
+		);
+		$denied                           = self::product(
+			'simple',
+			[
+				'id'       => 82,
+				'featured' => false,
+			]
+		);
+		$writer                           = new Writer( self::registry(), null, 5 );
+		$outcomes                         = $writer->run( static fn( Writer $w ): array => [ $w->write( 81, $list ), $w->write( 82, $list ) ] );
+		$this->assertSame( [ Result::CHANGED ], self::states( $outcomes[0] ) );
+		$this->assertSame( [ Result::SKIPPED ], self::states( $outcomes[1] ) );
+		$this->assertSame( 'bcm_cannot_edit', $outcomes[1]->results()[0]->code() );
+		$this->assertCount( 1, $allowed->saves );
+		$this->assertSame( [], $denied->sets );
+		$this->assertSame( [], $denied->saves );
+
+		$this->assertSame( [ Result::SKIPPED ], self::states( ( new Writer( self::registry() ) )->write( 81, $list ) ), 'Without an injected user the current user, who has no rights here, decides.' );
+	}
+
+	public function test_a_regular_price_change_with_clear_invalid_sale_applies_both_results(): void {
+		$product = self::product(
+			'simple',
+			[
+				'id'            => 83,
+				'regular_price' => '10',
+				'sale_price'    => '8',
+			]
+		);
+		$seen    = [];
+		$writer  = new Writer(
+			self::registry(),
+			static function ( object $subject, array $fields, array $before ) use ( &$seen ): void {
+				$seen = [ $fields, $before ];
+			}
+		);
+		$outcome = $writer->write(
+			83,
+			$this->steps(
+				[
+					[
+						'set_value',
+						[
+							'field'              => 'regular_price',
+							'value'              => '7.5',
+							'clear_invalid_sale' => true,
+						],
+					],
+				]
+			)
+		);
+		$this->assertSame( [ Result::CHANGED, Result::CHANGED ], self::states( $outcome ) );
+		$this->assertSame( [ 'regular_price', 'sale_price' ], array_map( static fn( Result $r ): string => $r->field(), $outcome->results() ) );
+		$this->assertSame(
+			[
+				[ 'set_regular_price', '7.50' ],
+				[ 'set_sale_price', '' ],
+			],
+			$product->sets
+		);
+		$this->assertCount( 1, $product->saves );
+		$this->assertSame( [ 'regular_price', 'sale_price' ], $seen[0] );
+		$this->assertSame( [ 'regular_price', 'sale_price' ], array_keys( $seen[1] ), 'The journal gets the cleared sale price\'s value too.' );
+		$this->assertSame( $seen[1], $outcome->before() );
+	}
+
+	public function test_one_sku_given_to_two_objects_in_one_run_fails_the_second(): void {
+		$list               = $this->steps(
+			[
+				[
+					'set_value',
+					[
+						'field' => 'sku',
+						'value' => 'NEW-1',
+					],
+				],
+			]
+		);
+		$reset              = static function (): array {
+			return [
+				self::product(
+					'simple',
+					[
+						'id'  => 84,
+						'sku' => 'A',
+					]
+				),
+				self::product(
+					'simple',
+					[
+						'id'  => 85,
+						'sku' => 'B',
+					]
+				),
+			];
+		};
+		[ $first, $second ] = $reset();
+		$writer             = new Writer( self::registry() );
+		$outcomes           = $writer->run( static fn( Writer $w ): array => [ $w->write( 84, $list ), $w->write( 85, $list ) ] );
+		$this->assertSame( [ Result::CHANGED ], self::states( $outcomes[0] ) );
+		$this->assertSame( [ Result::FAILED ], self::states( $outcomes[1] ) );
+		$this->assertSame( 'bcm_invalid_value', $outcomes[1]->results()[0]->code() );
+		$this->assertSame( [ [ 'set_sku', 'NEW-1' ] ], $first->sets );
+		$this->assertSame( [], $second->sets );
+		$this->assertFalse( $outcomes[1]->saved() );
+
+		// A new run starts with nothing claimed.
+		[ , $second ] = $reset();
+		$this->assertSame( [ Result::CHANGED ], self::states( $writer->run( static fn( Writer $w ): WriteOutcome => $w->write( 85, $list ) ) ) );
+		$this->assertSame( [ [ 'set_sku', 'NEW-1' ] ], $second->sets );
 	}
 
 	public function test_the_engine_never_writes_meta_sql_or_setters_of_its_own(): void {

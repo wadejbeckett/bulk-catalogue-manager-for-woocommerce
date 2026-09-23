@@ -11,9 +11,15 @@
  * 2. reads, through the field registry, the value of every field the list
  *    names, before anything is set (the before state the journal needs);
  * 3. for each operation in list order, computes a Result against the live
- *    object — so a later step sees an earlier step's value — and applies a
- *    change through the operation's apply(): typed CRUD setters through
- *    Field::write(), term lists through wp_set_object_terms(). A WriteRefused
+ *    object — so a later step sees an earlier step's value — passes it
+ *    through Operations\Validator::check() (permission, the field's own
+ *    refusal, the per-run SKU claim and the sale/regular price pair; the
+ *    same check the preview runs), and applies every Result the check
+ *    returns: the step's through the operation's apply() — typed CRUD
+ *    setters through Field::write(), term lists through
+ *    wp_set_object_terms() — and the sale-price clear `clear_invalid_sale`
+ *    adds after a regular price change through that field's write(). A
+ *    refused or skipped Result is reported and not applied. A WriteRefused
  *    (or a WooCommerce setter's WC_Data_Exception) becomes a failed Result
  *    with the refusal's sentence, and the list carries on;
  * 4. saves once, with save(), only when at least one Result is still a
@@ -37,6 +43,12 @@
  * values, so the before state comes from the third argument; its dates are
  * still the stored ones. Nothing is called for an object that is not saved.
  *
+ * Permission is checked for the injected user id (background work: the
+ * batch's recorded user) or, without one, the current user (request paths).
+ * One Validator serves one run(), so a SKU given to one object in a chunk
+ * clashes with the same SKU on another object of that chunk; a write()
+ * outside run() is its own run.
+ *
  * An exception from save() or from the hook is not caught: nothing was
  * saved and the caller records the item as failed (SPEC §12.6).
  *
@@ -51,6 +63,7 @@ namespace BulkCatalogueManager\Engine;
 use BulkCatalogueManager\Operations\Operation;
 use BulkCatalogueManager\Operations\Registry;
 use BulkCatalogueManager\Operations\Result;
+use BulkCatalogueManager\Operations\Validator;
 use BulkCatalogueManager\Operations\WriteRefused;
 
 defined( 'ABSPATH' ) || exit;
@@ -91,12 +104,20 @@ final class Writer {
 	private array $pending = [];
 
 	/**
+	 * The open run's validator, or null outside run().
+	 *
+	 * @var Validator|null
+	 */
+	private ?Validator $validator = null;
+
+	/**
 	 * Build over the operation registry.
 	 *
 	 * @param Registry      $operations  Resolves each step's action and the field registry.
 	 * @param callable|null $before_save Journal hook: fn( object $product, list<string> $fields, array<string, mixed> $before ): void.
+	 * @param int|null      $user_id     The batch's recorded user for background work, or null to check the current user.
 	 */
-	public function __construct( private readonly Registry $operations, ?callable $before_save = null ) {
+	public function __construct( private readonly Registry $operations, ?callable $before_save = null, private readonly ?int $user_id = null ) {
 		$this->before_save = null === $before_save ? null : \Closure::fromCallable( $before_save );
 	}
 
@@ -114,10 +135,18 @@ final class Writer {
 			return new WriteOutcome( $id, self::not_found( $steps ), false );
 		}
 
-		$before  = $this->before( $product, $steps );
-		$results = [];
+		$validator = $this->validator ?? $this->new_validator();
+		$before    = $this->before( $product, $steps );
+		$results   = [];
 		foreach ( $steps as [ $operation, $args ] ) {
-			$results[] = self::apply( $operation, $operation->compute( $product, $args ), $product );
+			$checked = $validator->check( $product, $operation->compute( $product, $args ), $args );
+			foreach ( $checked as $index => $result ) {
+				$results[] = 0 === $index ? self::apply( $operation, $result, $product ) : $this->apply_field( $result, $product );
+				if ( $result->is_changed() && ! array_key_exists( $result->field(), $before ) ) {
+					// A field no step names (the sale-price clear): its value before this first change.
+					$before[ $result->field() ] = $result->old();
+				}
+			}
 		}
 
 		$touched = array_values( array_unique( array_map( static fn( Result $r ): string => $r->field(), array_filter( $results, static fn( Result $r ): bool => $r->is_changed() ) ) ) );
@@ -146,14 +175,18 @@ final class Writer {
 	 * @return mixed What the work returned.
 	 */
 	public function run( callable $work ): mixed {
+		if ( 0 === $this->depth ) {
+			$this->validator = $this->new_validator();
+		}
 		++$this->depth;
 		try {
 			return $work( $this );
 		} finally {
 			--$this->depth;
 			if ( 0 === $this->depth ) {
-				$parents       = array_keys( $this->pending );
-				$this->pending = [];
+				$parents         = array_keys( $this->pending );
+				$this->pending   = [];
+				$this->validator = null;
 				foreach ( $parents as $parent_id ) {
 					\WC_Product_Variable::sync( $parent_id );
 				}
@@ -225,6 +258,37 @@ final class Writer {
 				self::INVALID
 			);
 		}
+	}
+
+	/**
+	 * A validator for one run: the injected user's, or the current user's.
+	 */
+	private function new_validator(): Validator {
+		$fields = $this->operations->fields();
+		return null === $this->user_id ? Validator::for_request( $fields ) : Validator::for_user( $fields, $this->user_id );
+	}
+
+	/**
+	 * Apply a Result the validator added (the sale-price clear) through its field.
+	 *
+	 * @param Result $result  The added Result.
+	 * @param object $product The live object.
+	 * @throws \LogicException When the Result names a field the registry does not have.
+	 */
+	private function apply_field( Result $result, object $product ): Result {
+		if ( ! $result->is_changed() ) {
+			return $result;
+		}
+		$field = $this->operations->fields()->get( $result->field() );
+		if ( null === $field ) {
+			throw new \LogicException( esc_html( sprintf( 'Field "%s" is not in the registry.', $result->field() ) ) );
+		}
+		$written = $field->write( $product, $result->new() );
+		if ( $written instanceof \WP_Error ) {
+			$code = (string) $written->get_error_code();
+			return Result::failed( $result->field(), $result->old(), $written->get_error_message(), str_starts_with( $code, 'bcm_' ) ? $code : '' );
+		}
+		return $result;
 	}
 
 	/**

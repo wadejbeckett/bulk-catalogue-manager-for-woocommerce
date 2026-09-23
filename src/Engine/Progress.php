@@ -52,6 +52,7 @@ namespace BulkCatalogueManager\Engine;
 
 use BulkCatalogueManager\Data\BatchRepository;
 use BulkCatalogueManager\Data\ChangeRepository;
+use BulkCatalogueManager\Undo\Planner;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -113,13 +114,13 @@ final class Progress {
 	 * @param BatchRepository|null  $batches       Batches; the plugin's by default.
 	 * @param ChangeRepository|null $changes       The journal; the plugin's by default.
 	 * @param \Closure|null         $clock         Returns the Unix time; time() by default.
-	 * @param Reversibility|null    $reversibility The reversibility state; one over the same repositories and clock by default.
+	 * @param Reversibility|null    $reversibility The reversibility state; by default one over the same repositories and clock, counting conflicts with the undo planner (T55).
 	 */
 	public function __construct( ?BatchRepository $batches = null, ?ChangeRepository $changes = null, ?\Closure $clock = null, ?Reversibility $reversibility = null ) {
 		$this->batches       = $batches ?? new BatchRepository();
 		$this->changes       = $changes ?? new ChangeRepository();
 		$this->clock         = $clock ?? static fn(): int => time();
-		$this->reversibility = $reversibility ?? new Reversibility( $this->batches, $this->changes, null, $this->clock );
+		$this->reversibility = $reversibility ?? new Reversibility( $this->batches, $this->changes, null, $this->clock, Planner::counter( $this->batches, $this->changes, $this->clock ) );
 	}
 
 	/**

@@ -8,7 +8,7 @@
  * one already undone (its status is `undone`, or a complete or partial undo
  * batch names it in `undo_of`), one being undone now (a queued or running
  * undo batch names it), one outside the retention window, and one whose
- * journal was pruned (`pruned_gmt` set, where the column exists, or no
+ * journal was pruned (`pruned_gmt` set, as Reversibility reads it, or no
  * journal rows left although the batch processed items). A partial, failed
  * or cancelled batch is planned for the part it applied.
  *
@@ -198,6 +198,37 @@ final class Planner {
 	}
 
 	/**
+	 * How many of a batch's objects were changed again since it ran (the
+	 * plan's conflicted items), or 0 where it cannot be planned. This is the
+	 * count Engine\Reversibility shows as `conflicts` and turns into
+	 * `partially_reversible`.
+	 *
+	 * @param array<string, mixed> $batch Typed batch row; only its id is read.
+	 */
+	public function conflicts( array $batch ): int {
+		$plan = $this->plan( (int) $batch['batch_id'] );
+		return $plan instanceof Plan ? $plan->counts()[ Plan::CONFLICTED ] : 0;
+	}
+
+	/**
+	 * The conflict counter Engine\Reversibility takes, over the given
+	 * repositories and clock. The planner is built on the first count, so a
+	 * page that never asks (every row in progress or refused) loads nothing.
+	 *
+	 * @param BatchRepository|null  $batches Batches.
+	 * @param ChangeRepository|null $changes The journal.
+	 * @param \Closure|null         $now     Returns the current Unix time.
+	 * @return \Closure( array<string, mixed> ): int
+	 */
+	public static function counter( ?BatchRepository $batches = null, ?ChangeRepository $changes = null, ?\Closure $now = null ): \Closure {
+		$planner = null;
+		return static function ( array $batch ) use ( &$planner, $batches, $changes, $now ): int {
+			$planner ??= new self( $batches, $changes, null, null, $now );
+			return $planner->conflicts( $batch );
+		};
+	}
+
+	/**
 	 * A value in its field type's canonical form, for comparison.
 	 *
 	 * @param Field $field The field.
@@ -267,7 +298,7 @@ final class Planner {
 				return self::not_reversible( self::UNDO_IN_PROGRESS, self::undoing_sentence(), [ 'undo_batch_id' => $undo['batch_id'] ] );
 			}
 		}
-		if ( null !== $this->batches->pruned_gmt( $batch['batch_id'] ) ) {
+		if ( null !== ( $batch['pruned_gmt'] ?? null ) ) {
 			return self::not_reversible( self::PRUNED, self::pruned_sentence() );
 		}
 		$days    = $this->settings->history_days();

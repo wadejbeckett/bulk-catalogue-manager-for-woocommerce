@@ -139,7 +139,7 @@ final class CategoriesController implements ReadController {
 					'type'        => 'integer',
 				],
 				'order'                => [
-					'description' => __( 'Position among its siblings as stored by WooCommerce; siblings are listed in this order, then by name.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'description' => __( 'Position among its siblings: the order set by moving categories here, or WooCommerce\'s stored category order for a category never moved here. Moved categories come first, then the rest in this order, then by name.', 'bulk-catalogue-manager-for-woocommerce' ),
 					'type'        => 'integer',
 				],
 				'count'                => [ 'description' => __( 'Products in this category that match the other active filters.', 'bulk-catalogue-manager-for-woocommerce' ) ] + $count,

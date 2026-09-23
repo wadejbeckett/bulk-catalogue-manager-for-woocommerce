@@ -32,6 +32,8 @@ use BulkCatalogueManager\Settings\Settings;
 use BulkCatalogueManager\Tests\Support\SavedProduct;
 use PHPUnit\Framework\TestCase;
 
+require_once __DIR__ . '/RunnerStore.php';
+
 final class ChunkRunnerTest extends TestCase {
 	private const BATCH = 12;
 

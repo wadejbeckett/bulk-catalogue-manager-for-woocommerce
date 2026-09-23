@@ -168,7 +168,7 @@ final class BatchesController implements ReadController {
 	 * @param ChangeRepository|null $changes  The journal; the plugin's by default.
 	 * @param Fields|null           $fields   Field registry; the shared one by default.
 	 * @param \Closure|null         $clock    Returns the Unix time, for the stalled check and retention; time() by default.
-	 * @param Reversibility|null    $reversibility The reversibility state (T55 passes one counting conflicts); one over the same repositories and clock by default.
+	 * @param Reversibility|null    $reversibility The reversibility state; by default Progress's, counting conflicts with the undo planner (T55).
 	 * @param Actions|null          $actions  Operations registry, for the action filter; the shared one by default.
 	 */
 	public function __construct( ?BatchFactory $factory = null, ?BatchRepository $batches = null, ?ChangeRepository $changes = null, ?Fields $fields = null, ?\Closure $clock = null, ?Reversibility $reversibility = null, ?Actions $actions = null ) {

@@ -854,11 +854,10 @@ final class BatchRepository {
 
 	/**
 	 * Mark batches pruned (T60): their note becomes the plain reason they can
-	 * no longer be undone and, where the batches table has a `pruned_gmt`
-	 * column, it is stamped once (a later mark keeps the first time). The
-	 * column is looked up rather than assumed, so this works on either side
-	 * of the schema version that adds it. A queued, running or undoing batch
-	 * is never marked. Counters, status and every other column are left alone.
+	 * no longer be undone and `pruned_gmt` (schema version 5) is stamped once
+	 * (a later mark keeps the first time); Reversibility and the undo planner
+	 * read it as the `pruned` signal. A queued, running or undoing batch is
+	 * never marked. Counters, status and every other column are left alone.
 	 *
 	 * @param list<int> $batch_ids Batches.
 	 * @param string    $note      The plain reason, cut to MESSAGE_LENGTH.
@@ -873,13 +872,9 @@ final class BatchRepository {
 			return 0;
 		}
 		self::assert_ids( $batch_ids, 'batch id' );
-		$table = $this->registry->table( Schema::BATCHES );
-		$in    = implode( ', ', array_fill( 0, count( $batch_ids ), '%d' ) );
-		if ( $this->has_pruned_column() ) {
-			$result = $wpdb->query( $wpdb->prepare( "UPDATE %i SET note = %s, pruned_gmt = COALESCE(pruned_gmt, %s) WHERE status NOT IN ('queued', 'running', 'undoing') AND batch_id IN ({$in})", array_merge( [ $table, self::cut( $note ), $now_gmt ], array_values( $batch_ids ) ) ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in is only %d placeholders.
-		} else {
-			$result = $wpdb->query( $wpdb->prepare( "UPDATE %i SET note = %s WHERE status NOT IN ('queued', 'running', 'undoing') AND batch_id IN ({$in})", array_merge( [ $table, self::cut( $note ) ], array_values( $batch_ids ) ) ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in is only %d placeholders.
-		}
+		$table  = $this->registry->table( Schema::BATCHES );
+		$in     = implode( ', ', array_fill( 0, count( $batch_ids ), '%d' ) );
+		$result = $wpdb->query( $wpdb->prepare( "UPDATE %i SET note = %s, pruned_gmt = COALESCE(pruned_gmt, %s) WHERE status NOT IN ('queued', 'running', 'undoing') AND batch_id IN ({$in})", array_merge( [ $table, self::cut( $note ), $now_gmt ], array_values( $batch_ids ) ) ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in is only %d placeholders.
 		if ( false === $result ) {
 			throw new \RuntimeException( 'The pruned batches could not be marked.' );
 		}
@@ -910,14 +905,6 @@ final class BatchRepository {
 		return (int) $result;
 	}
 
-	/**
-	 * Whether the batches table has a `pruned_gmt` column on this site.
-	 */
-	private function has_pruned_column(): bool {
-		global $wpdb;
-		// A schema check, once per prune run; nothing to cache.
-		return 'pruned_gmt' === $wpdb->get_var( $wpdb->prepare( 'SHOW COLUMNS FROM %i LIKE %s', $this->registry->table( Schema::BATCHES ), $wpdb->esc_like( 'pruned_gmt' ) ) );
-	}
 
 	/**
 	 * The undo batches recorded against a batch (T55), newest first, as
@@ -936,19 +923,5 @@ final class BatchRepository {
 			],
 			is_array( $rows ) ? $rows : []
 		);
-	}
-
-	/**
-	 * When the history clean-up pruned a batch's journal, or null when it has
-	 * not (T55). Reads the whole row, so it answers null on a schema that has
-	 * no `pruned_gmt` column rather than failing.
-	 *
-	 * @param int $batch_id Batch.
-	 */
-	public function pruned_gmt( int $batch_id ): ?string {
-		global $wpdb;
-		$row   = $wpdb->get_row( $wpdb->prepare( 'SELECT * FROM %i WHERE batch_id = %d', $this->registry->table( Schema::BATCHES ), $batch_id ), ARRAY_A );
-		$value = is_array( $row ) ? ( $row['pruned_gmt'] ?? null ) : null;
-		return null === $value || '' === (string) $value || '0000-00-00 00:00:00' === (string) $value ? null : (string) $value;
 	}
 }

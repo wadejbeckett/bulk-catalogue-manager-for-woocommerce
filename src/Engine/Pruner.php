@@ -13,8 +13,8 @@
  *    that still hold item or journal rows, never one that is queued, running
  *    or undoing whatever its age (BatchRepository::prunable());
  * 3. marks them pruned first — the note becomes the plain reason they can no
- *    longer be undone, and `pruned_gmt` is stamped where the column exists —
- *    so a run cut short leaves a batch refused for undo rather than half
+ *    longer be undone, and `pruned_gmt` is stamped (the `pruned` signal
+ *    Engine\Reversibility and Undo\Planner read) — so a run cut short leaves a batch refused for undo rather than half
  *    reversible; the batch row, its status and its counters stay, so History
  *    still lists it;
  * 4. deletes their `bcm_changes` rows and then their `bcm_batch_items` rows,

@@ -26,10 +26,11 @@
  *
  * Conflicts are T55's undo planner's to count. They come through the
  * injectable `$conflicts` callable, `fn( array $batch ): int`, called only
- * for a batch that is not in progress and not refused; it defaults to 0, so
- * the planner plugs in by being passed here (Progress and BatchesController
- * take a Reversibility) with no change to the routes. The list calls it once
- * per row of a page, so it should answer from a bounded read.
+ * for a batch that is not in progress and not refused; it defaults to 0
+ * here, and Progress (so BatchesController and the history list) passes
+ * Undo\Planner::counter(), the plan's conflicted items. The list calls it
+ * once per such row of a page, so each costs one plan: the batch's journal
+ * and a read of each object it touched.
  *
  * for_page() answers a whole page with two grouped reads (the completed
  * undo batches and the applied counts), so the history list costs the same

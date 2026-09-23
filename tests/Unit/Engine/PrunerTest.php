@@ -44,11 +44,6 @@ final class PrunerTest extends TestCase {
 	 */
 	private array $tables = [];
 
-	/**
-	 * Whether the batches table has a pruned_gmt column (T54's schema).
-	 */
-	private bool $pruned_column = false;
-
 	private int $next_item = 0;
 
 	private int $next_change = 0;
@@ -61,15 +56,13 @@ final class PrunerTest extends TestCase {
 			'wp_bcm_batch_items' => [],
 			'wp_bcm_changes'     => [],
 		];
-		$this->pruned_column              = false;
 		$this->next_item                  = 0;
 		$this->next_change                = 0;
 
 		global $wpdb;
 		$wpdb->responses = [
 			'/^SELECT b\.batch_id AS batch_id FROM `wp_bcm_batches` AS b /' => fn( string $sql ): array => array_column( $this->db()->rows( $sql ), 'batch_id' ),
-			'/^SHOW COLUMNS FROM `wp_bcm_batches` LIKE /' => fn(): ?string => $this->pruned_column ? 'pruned_gmt' : null,
-			'/^UPDATE `wp_bcm_batches` SET note = /'      => fn( string $sql ): int => $this->mark( $sql ),
+			'/^UPDATE `wp_bcm_batches` SET note = /' => fn( string $sql ): int => $this->mark( $sql ),
 			'/^DELETE FROM `(wp_bcm_changes|wp_bcm_batch_items)` WHERE /' => fn( string $sql ): int => $this->delete( $sql ),
 		];
 	}
@@ -104,6 +97,8 @@ final class PrunerTest extends TestCase {
 			'failed_items'    => 1,
 			'chunk_size'      => 50,
 			'note'            => '',
+			'actions'         => '[]',
+			'pruned_gmt'      => null,
 		];
 		for ( $i = 1; $i <= $items; $i++ ) {
 			$item_id                                        = ++$this->next_item;
@@ -155,16 +150,14 @@ final class PrunerTest extends TestCase {
 	 * Answer the marking UPDATE through the evaluator for its WHERE clause.
 	 */
 	private function mark( string $sql ): int {
-		$this->assertSame( 1, preg_match( "/^UPDATE `wp_bcm_batches` SET note = '((?:[^'\\\\]|\\\\.)*)'(?:, pruned_gmt = COALESCE\\(pruned_gmt, '([^']*)'\\))? WHERE (.+)$/s", $sql, $m ), "Unexpected UPDATE: $sql" );
-		$stamp = $m[2] ?? '';
-		$this->assertSame( $this->pruned_column, '' !== $stamp, 'pruned_gmt is written exactly when the column exists.' );
+		$this->assertSame( 1, preg_match( "/^UPDATE `wp_bcm_batches` SET note = '((?:[^'\\\\]|\\\\.)*)', pruned_gmt = COALESCE\\(pruned_gmt, '([^']*)'\\) WHERE (.+)$/s", $sql, $m ), "Unexpected UPDATE: $sql" );
+		$stamp = $m[2];
+		$this->assertSame( 1, preg_match( '/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $stamp ), 'pruned_gmt is always stamped (schema version 5).' );
 		$ids = array_column( $this->db()->rows( 'SELECT batch_id FROM `wp_bcm_batches` WHERE ' . $m[3] ), 'batch_id' );
 		foreach ( $ids as $id ) {
-			$row         = &$this->tables['wp_bcm_batches'][ (int) $id ];
-			$row['note'] = stripslashes( $m[1] );
-			if ( '' !== $stamp ) {
-				$row['pruned_gmt'] ??= $stamp;
-			}
+			$row                 = &$this->tables['wp_bcm_batches'][ (int) $id ];
+			$row['note']         = stripslashes( $m[1] );
+			$row['pruned_gmt'] ??= $stamp;
 			unset( $row );
 		}
 		return count( $ids );
@@ -346,13 +339,12 @@ final class PrunerTest extends TestCase {
 		$this->assertStringContainsString( 'can no longer be undone', $after['note'] );
 		$this->assertStringNotContainsString( 'bcm_', $after['note'] );
 		$this->assertLessThan( 256, mb_strlen( $after['note'] ) );
-		unset( $before['note'], $after['note'] );
-		$this->assertSame( $before, $after, 'Status, counters and times are unchanged.' );
-		$this->assertArrayNotHasKey( 'pruned_gmt', $after, 'Without the column nothing else is written.' );
+		$this->assertSame( '2026-09-23 12:00:00', $after['pruned_gmt'] );
+		unset( $before['note'], $after['note'], $before['pruned_gmt'], $after['pruned_gmt'] );
+		$this->assertSame( $before, $after, 'Status, counters and times are unchanged; only the note and pruned_gmt are written.' );
 	}
 
-	public function test_pruned_gmt_is_stamped_once_where_the_column_exists(): void {
-		$this->pruned_column = true;
+	public function test_pruned_gmt_is_stamped_once(): void {
 		$this->batch( 1, 100, 'complete', 3, 3 );
 
 		$this->pruner( 90, 2, 1 )->run();

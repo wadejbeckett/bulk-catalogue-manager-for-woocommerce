@@ -17,6 +17,9 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Tests\Unit\Undo;
 
+use BulkCatalogueManager\Data\BatchRepository;
+use BulkCatalogueManager\Engine\Progress;
+use BulkCatalogueManager\Engine\Reversibility;
 use BulkCatalogueManager\Fields\Registry as Fields;
 use BulkCatalogueManager\Operations\Registry;
 use BulkCatalogueManager\Settings\Settings;
@@ -551,8 +554,8 @@ final class PlannerTest extends TestCase {
 		$this->store->batch['pruned_gmt'] = '2026-09-23 09:00:00';
 		$this->assert_refused( 'pruned' );
 
-		unset( $this->store->batch['pruned_gmt'] );
-		$this->assertInstanceOf( Plan::class, $this->planner()->plan( self::BATCH ), 'With no pruned_gmt column, the batch is judged by its journal.' );
+		$this->store->batch['pruned_gmt'] = null;
+		$this->assertInstanceOf( Plan::class, $this->planner()->plan( self::BATCH ), 'With pruned_gmt unset, the batch is judged by its journal.' );
 
 		$this->store->changes = [];
 		$this->assert_refused( 'pruned' );
@@ -631,5 +634,48 @@ final class PlannerTest extends TestCase {
 		$this->assertInstanceOf( Plan::class, $other );
 		$this->assertSame( self::item( $this->planner()->plan( 13 ), 1001 )['operations'], self::item( $other, 1001 )['operations'] );
 		$this->assertNotSame( $hash, $other->hash(), 'The same contents for another batch hash differently.' );
+	}
+
+	public function test_the_planners_conflict_count_makes_the_history_state_partially_reversible(): void {
+		global $wpdb;
+		$this->change( 1001, 'regular_price', '10.00', '11.00' );
+		$this->change( 1002, 'regular_price', '20.00', '22.00' );
+		self::product( 1001, [ 'regular_price' => '11.00' ] );
+		$changed                           = self::product( 1002, [ 'regular_price' => '21.00' ] );
+		$this->store->batch['total_items'] = 2;
+		$this->store->batch['done_items']  = 2;
+		$wpdb->responses                   = [
+			'/^SELECT batch_id, undo_of FROM `wp_bcm_batches` WHERE undo_of IN /' => static fn(): array => [],
+			'/^SELECT batch_id, COUNT\(\*\) AS applied FROM `wp_bcm_changes` /' => static fn(): array => [
+				[
+					'batch_id' => self::BATCH,
+					'applied'  => 2,
+				],
+			],
+		] + $wpdb->responses;
+		$batch                             = ( new BatchRepository() )->find( self::BATCH );
+		$this->assertNotNull( $batch );
+		$clock = static fn(): int => self::NOW;
+
+		$reversibility = new Reversibility( null, null, new Settings( [] ), $clock, Planner::counter( null, null, $clock ) );
+		$this->assertSame(
+			[
+				'state'     => Reversibility::PARTIALLY_REVERSIBLE,
+				'conflicts' => 1,
+				'reason'    => null,
+			],
+			$reversibility->of( $batch ),
+			'One product changed since the batch ran.'
+		);
+		$this->assertSame( 1, $this->planner()->conflicts( $batch ) );
+
+		$progress = new Progress( null, null, $clock );
+		$this->assertSame( Reversibility::PARTIALLY_REVERSIBLE, $progress->reports( [ $batch ] )[0]['reversibility']['state'], 'Progress, and so the history routes, count conflicts with the planner by default.' );
+
+		$changed->props['regular_price'] = '22.00';
+		$this->assertSame( Reversibility::REVERSIBLE, ( new Reversibility( null, null, new Settings( [] ), $clock, Planner::counter( null, null, $clock ) ) )->of( $batch )['state'], 'Back to what the batch left: reversible again.' );
+
+		$this->store->batch['status'] = 'running';
+		$this->assertSame( 0, $this->planner()->conflicts( $this->store->batch ), 'A batch that cannot be planned counts none.' );
 	}
 }

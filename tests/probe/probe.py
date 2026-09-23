@@ -237,8 +237,8 @@ class Probe:
         """Drives Action Scheduler until the batch leaves queued/running/undoing."""
         report: dict = {}
         for _ in range(rounds):
-            # --hooks, not --group=bcm: on a fresh site Action Scheduler's hybrid store
-            # asks the old post store for the group first and refuses "bcm".
+            # --hooks, not --group: on a fresh site Action Scheduler's hybrid store
+            # asks the old post store for the group first and refuses it.
             self.wp("action-scheduler", "run", "--hooks=bcm_run_chunk", "--batch-size=25", check=False)
             report = self.http("manager", "GET", f"/batches/{batch_id}").json() or {}
             if report.get("status") not in ("queued", "running"):
@@ -784,7 +784,7 @@ bcm_out( array(
 	'options'   => $wpdb->get_col( "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE 'bcm\\_%' OR option_name LIKE '\\_transient\\_bcm\\_%' OR option_name LIKE '\\_transient\\_timeout\\_bcm\\_%' ORDER BY option_name" ),
 	'usermeta'  => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->usermeta} WHERE meta_key LIKE 'bcm\\_%'" ),
 	'termmeta'  => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->termmeta} WHERE meta_key LIKE 'bcm\\_%'" ),
-	'actions'   => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}actionscheduler_actions a JOIN {$wpdb->prefix}actionscheduler_groups g ON g.group_id = a.group_id WHERE g.slug = 'bcm' AND a.status = 'pending'" ),
+	'actions'   => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}actionscheduler_actions a JOIN {$wpdb->prefix}actionscheduler_groups g ON g.group_id = a.group_id WHERE g.slug = 'bulk-catalogue-manager-for-woocommerce' AND a.status = 'pending'" ),
 	'version'   => get_option( 'bcm_db_version', null ),
 ) );
 """

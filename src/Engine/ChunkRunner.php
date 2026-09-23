@@ -5,7 +5,8 @@
  * than a fan-out, through Action Scheduler's public `as_*` functions only.
  *
  * `bcm_batch_created` (BatchFactory) enqueues the first `bcm_run_chunk`
- * action in the `bcm` group with as_enqueue_async_action(). Each run:
+ * action in the plugin's group (Data\Registry::ACTION_GROUP, the full slug)
+ * with as_enqueue_async_action(). Each run:
  *
  * 1. exits without claiming unless the batch is queued or running (a
  *    cancelled or finished batch, T35), and moves queued to running on the

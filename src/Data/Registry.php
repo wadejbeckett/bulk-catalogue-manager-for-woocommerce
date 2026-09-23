@@ -23,9 +23,11 @@ defined( 'ABSPATH' ) || exit;
  */
 final class Registry {
 	/**
-	 * The Action Scheduler group every action the plugin schedules belongs to.
+	 * The Action Scheduler group every action the plugin schedules belongs to:
+	 * the full plugin slug, so no other plugin's group can share it (uninstall
+	 * cancels every action in it).
 	 */
-	public const ACTION_GROUP = 'bcm';
+	public const ACTION_GROUP = 'bulk-catalogue-manager-for-woocommerce';
 
 	/**
 	 * Tables, unprefixed name => the body of its `CREATE TABLE` statement:

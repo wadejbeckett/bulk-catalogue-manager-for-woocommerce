@@ -345,7 +345,7 @@ final class UndoRouteTest extends TestCase {
 		}
 		$this->assertSame( 'undoing', $this->store->batch()['status'], 'The batch undone is marked undoing.' );
 		$this->assertSame( '2026-09-23 08:05:00', $this->store->batch()['finished_gmt'] );
-		$this->assertSame( [ [ 'enqueue', 'bcm_run_chunk', [ $undo_id ], 'bcm', null ] ], $GLOBALS['bcm_test']['scheduled'], 'Only then is the first chunk queued.' );
+		$this->assertSame( [ [ 'enqueue', 'bcm_run_chunk', [ $undo_id ], 'bulk-catalogue-manager-for-woocommerce', null ] ], $GLOBALS['bcm_test']['scheduled'], 'Only then is the first chunk queued.' );
 		foreach ( $GLOBALS['bcm_test']['products'] as $product ) {
 			$this->assertSame( [], $product->saves, 'Nothing is written before the runner works it.' );
 		}

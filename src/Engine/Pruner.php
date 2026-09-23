@@ -4,9 +4,10 @@
  * daily `bcm_prune_history` action.
  *
  * Activation schedules it once through as_schedule_recurring_action() in the
- * `bcm` group, guarded by as_next_scheduled_action() so a reactivation does
- * not add a second one; deactivation unschedules it (Data\Cleanup, from the
- * registry's recurring actions). Each run:
+ * plugin's group (Data\Registry::ACTION_GROUP, the full slug), guarded by
+ * as_next_scheduled_action() so a reactivation does not add a second one;
+ * deactivation unschedules it (Data\Cleanup, from the registry's recurring
+ * actions). Each run:
  *
  * 1. does nothing when *Keep history for* is indefinitely (0);
  * 2. picks up to BATCHES_PER_RUN batches finished before the retention limit

@@ -220,7 +220,7 @@ final class PrunerTest extends TestCase {
 		$recurring = self::scheduled( 'recurring' );
 		$this->assertCount( 1, $recurring );
 		[ , $hook, $args, $group, $timestamp, $interval ] = $recurring[0];
-		$this->assertSame( [ 'bcm_prune_history', [], 'bcm', 86400 ], [ $hook, $args, $group, $interval ] );
+		$this->assertSame( [ 'bcm_prune_history', [], 'bulk-catalogue-manager-for-woocommerce', 86400 ], [ $hook, $args, $group, $interval ] );
 		$this->assertTrue( $timestamp >= $before + Pruner::FIRST_RUN_DELAY && $timestamp <= time() + Pruner::FIRST_RUN_DELAY, 'The first run is an hour after activation.' );
 		$this->assertSame( $recurring, $GLOBALS['bcm_test']['scheduled'], 'Nothing else is scheduled.' );
 	}
@@ -235,12 +235,12 @@ final class PrunerTest extends TestCase {
 
 	public function test_deactivation_unschedules_the_prune_and_reactivation_schedules_it_again(): void {
 		Pruner::schedule();
-		$this->assertNotSame( false, as_next_scheduled_action( Pruner::HOOK, [], 'bcm' ) );
+		$this->assertNotSame( false, as_next_scheduled_action( Pruner::HOOK, [], 'bulk-catalogue-manager-for-woocommerce' ) );
 
 		Cleanup::deactivate();
 
-		$this->assertContains( [ 'bcm_prune_history', [], 'bcm' ], $GLOBALS['bcm_test']['unscheduled'] );
-		$this->assertFalse( as_next_scheduled_action( Pruner::HOOK, [], 'bcm' ) );
+		$this->assertContains( [ 'bcm_prune_history', [], 'bulk-catalogue-manager-for-woocommerce' ], $GLOBALS['bcm_test']['unscheduled'] );
+		$this->assertFalse( as_next_scheduled_action( Pruner::HOOK, [], 'bulk-catalogue-manager-for-woocommerce' ) );
 
 		Pruner::schedule();
 		$this->assertCount( 2, self::scheduled( 'recurring' ), 'Reactivation after a deactivation schedules it again.' );
@@ -376,7 +376,7 @@ final class PrunerTest extends TestCase {
 			$this->assertStringEndsWith( 'LIMIT 5', $sql );
 		}
 		$this->assertCount( 23 - 15, array_filter( $this->tables['wp_bcm_changes'], static fn( array $row ): bool => 1 === $row['batch_id'] ) );
-		$this->assertSame( [ [ 'enqueue', 'bcm_prune_history', [], 'bcm', null ] ], $GLOBALS['bcm_test']['scheduled'], 'Its successor is one async action in the bcm group.' );
+		$this->assertSame( [ [ 'enqueue', 'bcm_prune_history', [], 'bulk-catalogue-manager-for-woocommerce', null ] ], $GLOBALS['bcm_test']['scheduled'], 'Its successor is one async action in the plugin group.' );
 
 		$runs = 1;
 		while ( 'continued' === $pruner->run() ) {

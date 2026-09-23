@@ -138,7 +138,7 @@ final class ChunkRunnerTest extends TestCase {
 		add_action( BatchFactory::CREATED, [ ChunkRunner::class, 'enqueue' ], 10, 1 );
 		do_action( 'bcm_batch_created', 42 );
 
-		$this->assertSame( [ [ 'enqueue', 'bcm_run_chunk', [ 42 ], 'bcm', null ] ], $GLOBALS['bcm_test']['scheduled'], 'One async action in the bcm group, and nothing else scheduled.' );
+		$this->assertSame( [ [ 'enqueue', 'bcm_run_chunk', [ 42 ], 'bulk-catalogue-manager-for-woocommerce', null ] ], $GLOBALS['bcm_test']['scheduled'], 'One async action in the plugin group, and nothing else scheduled.' );
 	}
 
 	public function test_one_chunk_claims_exactly_n_pending_items_with_one_update_and_enqueues_its_successor(): void {
@@ -164,8 +164,8 @@ final class ChunkRunnerTest extends TestCase {
 		$this->assertSame( 'running', $batch['status'], 'The first chunk marks the batch running.' );
 		$this->assertSame( [ 50, 50, 0 ], [ $batch['done_items'], $batch['changed_items'], $batch['failed_items'] ] );
 		$this->assertNull( $batch['finished_gmt'] );
-		$this->assertSame( [ [ 'enqueue', 'bcm_run_chunk', [ self::BATCH ], 'bcm', null ] ], self::scheduled( 'enqueue' ), 'The successor is enqueued while items remain.' );
-		$this->assertSame( [ [ 'unschedule', 'bcm_run_chunk', [ self::BATCH, 'retry' ], 'bcm', null ] ], self::scheduled( 'unschedule' ), 'A chunk that ends normally drops its dead-chunk retry.' );
+		$this->assertSame( [ [ 'enqueue', 'bcm_run_chunk', [ self::BATCH ], 'bulk-catalogue-manager-for-woocommerce', null ] ], self::scheduled( 'enqueue' ), 'The successor is enqueued while items remain.' );
+		$this->assertSame( [ [ 'unschedule', 'bcm_run_chunk', [ self::BATCH, 'retry' ], 'bulk-catalogue-manager-for-woocommerce', null ] ], self::scheduled( 'unschedule' ), 'A chunk that ends normally drops its dead-chunk retry.' );
 		$this->assertSame( (int) $this->now - 1 + BatchRepository::LEASE_SECONDS + ChunkRunner::RETRY_DELAY, self::scheduled( 'single' )[0][4], 'The dead-chunk retry is set for just after the lease goes stale.' );
 
 		$this->assertSame( 'complete', $this->runner()->run( self::BATCH ) );
@@ -392,7 +392,7 @@ final class ChunkRunnerTest extends TestCase {
 		$this->assertSame( [], self::scheduled( 'enqueue' ) );
 		$retry = self::scheduled( 'single' );
 		$this->assertCount( 2, $retry, 'The dead-chunk retry, then the retry after the error.' );
-		$this->assertSame( [ 'unschedule', 'bcm_run_chunk', [ self::BATCH, 'retry' ], 'bcm', null ], $GLOBALS['bcm_test']['scheduled'][1] );
+		$this->assertSame( [ 'unschedule', 'bcm_run_chunk', [ self::BATCH, 'retry' ], 'bulk-catalogue-manager-for-woocommerce', null ], $GLOBALS['bcm_test']['scheduled'][1] );
 	}
 
 	public function test_a_batch_that_is_not_queued_or_running_is_left_alone(): void {

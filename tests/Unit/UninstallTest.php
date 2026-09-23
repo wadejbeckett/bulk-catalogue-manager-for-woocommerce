@@ -112,7 +112,7 @@ final class UninstallTest extends TestCase {
 					[ 'option', 'bcm_db_version' ],
 				],
 				'unscheduled' => [
-					[ '', [], 'bcm' ],
+					[ '', [], 'bulk-catalogue-manager-for-woocommerce' ],
 				],
 				'sql'         => [
 					'DROP TABLE IF EXISTS `wp_bcm_batches`',
@@ -161,7 +161,7 @@ final class UninstallTest extends TestCase {
 
 		$this->assertTrue( ( new Cleanup( $registry ) )->uninstall( new Settings( [ 'remove_data_on_delete' => true ] ) ) );
 
-		$this->assertSame( [ [ '', [], 'bcm' ] ], $GLOBALS['bcm_test']['unscheduled'] );
+		$this->assertSame( [ [ '', [], 'bulk-catalogue-manager-for-woocommerce' ] ], $GLOBALS['bcm_test']['unscheduled'] );
 		$this->assertSame(
 			[
 				'DROP TABLE IF EXISTS `wp_bcm_alpha`',
@@ -202,13 +202,13 @@ final class UninstallTest extends TestCase {
 
 	public function test_deactivation_unschedules_only_the_recurring_actions(): void {
 		Cleanup::deactivate();
-		$this->assertSame( [ [ 'bcm_prune_history', [], 'bcm' ] ], $GLOBALS['bcm_test']['unscheduled'] );
+		$this->assertSame( [ [ 'bcm_prune_history', [], 'bulk-catalogue-manager-for-woocommerce' ] ], $GLOBALS['bcm_test']['unscheduled'] );
 		$this->assertSame( [], $GLOBALS['bcm_test']['deleted'], 'Deactivation deletes no data.' );
 		$this->assertSame( [], $GLOBALS['wpdb']->queries );
 
 		bcm_test_reset();
 		( new Cleanup( new Registry( [], [], [], [], [], [ 'bcm_a', 'bcm_b' ] ) ) )->unschedule_recurring();
-		$this->assertSame( [ [ 'bcm_a', [], 'bcm' ], [ 'bcm_b', [], 'bcm' ] ], $GLOBALS['bcm_test']['unscheduled'] );
+		$this->assertSame( [ [ 'bcm_a', [], 'bulk-catalogue-manager-for-woocommerce' ], [ 'bcm_b', [], 'bulk-catalogue-manager-for-woocommerce' ] ], $GLOBALS['bcm_test']['unscheduled'] );
 	}
 
 	public function test_without_action_scheduler_nothing_is_fatal(): void {

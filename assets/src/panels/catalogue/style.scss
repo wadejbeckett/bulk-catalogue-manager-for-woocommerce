@@ -200,3 +200,25 @@
 		list-style: disc;
 	}
 }
+
+.bcm-catalogue__body {
+	display: flex;
+	gap: 16px;
+	align-items: flex-start;
+}
+
+.bcm-catalogue__main {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+.bcm-catalogue__chip {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+	margin: 0 0 8px;
+}
+
+.bcm-catalogue__progress {
+	margin: 0 0 8px;
+}

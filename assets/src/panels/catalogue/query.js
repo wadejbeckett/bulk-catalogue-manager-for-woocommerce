@@ -2,6 +2,7 @@
  * The GET /products arguments for a DataViews view (SPEC §12.1): paging,
  * search, the sort as the route's `orderby[]` and `order[]`, and `fields[]`.
  */
+import { CATEGORY_FILTER } from './defaults';
 import { queryFields } from './fields';
 
 /**
@@ -9,9 +10,10 @@ import { queryFields } from './fields';
  *
  * @param {Object}        view        DataViews view.
  * @param {Array<Object>} descriptors Registry descriptors.
+ * @param {Object}        extra       Further filter arguments, such as categoryArgs().
  * @return {Object} Query arguments.
  */
-export function toQuery( view, descriptors ) {
+export function toQuery( view, descriptors, extra = {} ) {
 	const query = {
 		page: view.page || 1,
 		per_page: view.perPage,
@@ -25,7 +27,25 @@ export function toQuery( view, descriptors ) {
 		query.orderby = [ view.sort.field ];
 		query.order = [ view.sort.direction === 'desc' ? 'desc' : 'asc' ];
 	}
-	return query;
+	return { ...query, ...extra };
+}
+
+/**
+ * The GET /products filter argument for the category panel's value (T62):
+ * `{ operator: 'isAny', value: ids }` under the category field, or nothing
+ * for all products. The server includes each category's descendants; the
+ * panel's "this category only" choice waits for its include-children flag.
+ *
+ * @param {Object|null} value CategoryPanel value `{ id, ids?, includeChildren }`.
+ * @return {Object} Filter arguments.
+ */
+export function categoryArgs( value ) {
+	const ids = ( value?.ids?.length ? value.ids : [ value?.id ] )
+		.map( Number )
+		.filter( ( id ) => id > 0 );
+	return ids.length
+		? { [ CATEGORY_FILTER ]: { operator: 'isAny', value: ids } }
+		: {};
 }
 
 /**

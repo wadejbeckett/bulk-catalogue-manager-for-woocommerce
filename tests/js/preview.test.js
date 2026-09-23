@@ -78,6 +78,34 @@ function renderPreview( props = {} ) {
 const rows = () => screen.getAllByRole( 'row' ).slice( 1 );
 
 describe( 'preview', () => {
+	it( 'shows the server summary and the products and variations apart (T69)', () => {
+		const response = previewResponse();
+		renderPreview( {
+			response: {
+				...response,
+				summary:
+					'Regular price will change on 12 products and 8 variations.',
+				totals: {
+					...response.totals,
+					by_type: {
+						product: { matched: 14, would_change: 12 },
+						variation: { matched: 10, would_change: 8 },
+					},
+				},
+			},
+		} );
+		expect(
+			screen.getByText(
+				'Regular price will change on 12 products and 8 variations.'
+			)
+		).toBeVisible();
+		const count = ( label ) =>
+			screen.getByText( label ).closest( 'div' ).querySelector( 'dd' )
+				.textContent;
+		expect( count( 'Products that will change' ) ).toBe( '12' );
+		expect( count( 'Variations that will change' ) ).toBe( '8' );
+	} );
+
 	it( 'renders summary, counts, sample and warnings in that order', () => {
 		const { container } = renderPreview();
 		const summary = screen.getByText(

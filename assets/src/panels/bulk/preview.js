@@ -135,6 +135,11 @@ export function warningSentences( warnings ) {
  * @return {string} Sentence.
  */
 export function summarySentence( response, fieldNames ) {
+	if ( typeof response?.summary === 'string' && response.summary ) {
+		// The server's own sentence (T69), which counts products and
+		// variations apart.
+		return response.summary;
+	}
 	const totals = response?.totals || {};
 	const changed = Number( totals.would_change ) || 0;
 	const variations = Number( totals.variations ) || 0;
@@ -242,6 +247,8 @@ export function PreviewResult( {
 	busy = false,
 } ) {
 	const totals = response?.totals || {};
+	const byType = totals.by_type || {};
+	const variationRows = Number( byType.variation?.matched ) || 0;
 	const sample = Array.isArray( response?.sample ) ? response.sample : [];
 	const rows = changedOnly
 		? sample.filter( ( row ) => row.state === 'changed' )
@@ -301,6 +308,36 @@ export function PreviewResult( {
 						</dt>
 						<dd>{ formatNumber( totals.would_change ) }</dd>
 					</div>
+					{ variationRows > 0 && (
+						<>
+							<div className="bcm-bulk__kv is-sub">
+								<dt>
+									{ __(
+										'Products that will change',
+										'bulk-catalogue-manager-for-woocommerce'
+									) }
+								</dt>
+								<dd>
+									{ formatNumber(
+										byType.product?.would_change
+									) }
+								</dd>
+							</div>
+							<div className="bcm-bulk__kv is-sub">
+								<dt>
+									{ __(
+										'Variations that will change',
+										'bulk-catalogue-manager-for-woocommerce'
+									) }
+								</dt>
+								<dd>
+									{ formatNumber(
+										byType.variation?.would_change
+									) }
+								</dd>
+							</div>
+						</>
+					) }
 					<div className="bcm-bulk__kv">
 						<dt>
 							{ __(

@@ -62,10 +62,19 @@ confirms.
   **Preview again**; a 409 `bcm_preview_stale` runs the preview again.
 - `GET /batches/{id}` every `pollInterval` until the batch finishes.
 
-## Not yet wired
+## Variations (T69)
 
 - **Also apply to variations** shows for fields whose variations rule allows
-  it, at the settings' starting position, but is not sent: the routes refuse
-  unknown arguments until T69 adds it to the preview and the materialiser.
-- The preview's summary names variations only when the answer carries
-  `totals.variations` (T69).
+  it, starting where the setting for the field's panel group puts it
+  (Publishing status, Pricing price, Stock stock), and is sent as the step's
+  `apply_to_variations` argument.
+- The preview shows the server's `summary` sentence and, when variations are
+  counted, `totals.by_type` split into products and variations.
+
+## Mounted by the catalogue
+
+`panels/catalogue` opens the panel from **Make a change to these** on the
+table's selection (ticked ids; T42 brings all rows matching the filter),
+passes the settings from `useSettings()` and the category tree, renders
+T44's `<StalledNotice>` through `renderStalled`, and shows `<BatchProgress>`
+above the table once the panel is closed on an applied change.

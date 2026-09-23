@@ -353,7 +353,9 @@ export function operationProblem( registry, operation ) {
 
 /**
  * The operation list as the REST routes take it: `[ { action, args } ]`,
- * each with only the arguments its schema knows and that are showing.
+ * each with only the arguments its schema knows and that are showing, and
+ * `apply_to_variations` from the step's switch where the field offers it
+ * (T69; left out, the server takes the same default).
  *
  * @param {Object}        registry   The `/fields` payload.
  * @param {Array<Object>} operations Panel operations.
@@ -379,6 +381,14 @@ export function toRequestOperations( registry, operations ) {
 				}
 				args[ name ] = value;
 			} );
+			if (
+				properties.apply_to_variations &&
+				offersVariations(
+					fieldByKey( registry, operation.args?.field )
+				)
+			) {
+				args.apply_to_variations = !! operation.variations;
+			}
 			return { action: operation.action, args };
 		} );
 }

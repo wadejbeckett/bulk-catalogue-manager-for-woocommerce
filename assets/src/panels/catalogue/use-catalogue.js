@@ -14,6 +14,8 @@ import { request } from '../../api';
 import { TERM_ROUTES } from './defaults';
 import { toQuery } from './query';
 
+const NONE = {};
+
 /**
  * GET /fields, once per mount and again on retry.
  *
@@ -46,12 +48,13 @@ export function useRegistry() {
  *
  * @param {Object}        view        DataViews view.
  * @param {Array<Object>} descriptors Registry descriptors.
+ * @param {Object}        extra       Further filter arguments (the category panel's).
  * @return {Object} { query, items, pagination, isLoading, hasLoaded, error, refetch, pending, setPending }.
  */
-export function useCatalogue( view, descriptors ) {
+export function useCatalogue( view, descriptors, extra = NONE ) {
 	const query = useMemo(
-		() => toQuery( view, descriptors ),
-		[ view, descriptors ]
+		() => toQuery( view, descriptors, extra ),
+		[ view, descriptors, extra ]
 	);
 	const key = JSON.stringify( query );
 	const [ items, setItems ] = useState( [] );

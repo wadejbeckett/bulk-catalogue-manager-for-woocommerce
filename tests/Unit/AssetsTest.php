@@ -174,6 +174,26 @@ final class AssetsTest extends TestCase {
 		$this->assertSame( [ [ 'bcm-app', 'rtl', 'replace' ] ], bcm_test_admin_calls( 'wp_style_add_data' ) );
 	}
 
+	public function test_the_client_is_told_the_current_users_capabilities(): void {
+		self::grant( [ 'manage_woocommerce', 'edit_products', 'manage_product_terms' ] );
+		$caps = self::registered()->client_settings()['user']['capabilities'];
+		$this->assertSame(
+			[
+				'manage_woocommerce'   => true,
+				'edit_products'        => true,
+				'manage_product_terms' => true,
+				'manage_options'       => false,
+			],
+			$caps,
+			'A shop manager may manage categories but not the settings.'
+		);
+
+		self::grant( [ 'manage_woocommerce', 'manage_options' ] );
+		$caps = self::registered()->client_settings()['user']['capabilities'];
+		$this->assertTrue( $caps['manage_options'] );
+		$this->assertFalse( $caps['manage_product_terms'] );
+	}
+
 	public function test_the_settings_cannot_close_the_inline_script(): void {
 		$GLOBALS['bcm_test']['display_name'] = '</script><script>alert(1)</script>';
 		$screen                              = self::registered();

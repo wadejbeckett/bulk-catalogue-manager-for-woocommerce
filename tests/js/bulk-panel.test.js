@@ -457,6 +457,25 @@ describe( 'bulk panel: preview, apply and done', () => {
 		apiFetch.mockReset();
 	} );
 
+	it( 'sends the variations switch as apply_to_variations (T69)', async () => {
+		routeApi( apiFetch, {
+			'POST preview': () => new Promise( () => {} ),
+		} );
+		renderPanel();
+		chooseIncrease();
+		fireEvent.click( screen.getByLabelText( 'Also apply to variations' ) );
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Check the change' } )
+		);
+		await waitFor( () =>
+			expect( callsTo( apiFetch, 'POST preview' ) ).toHaveLength( 1 )
+		);
+		expect(
+			callsTo( apiFetch, 'POST preview' )[ 0 ].data.operations[ 0 ].args
+				.apply_to_variations
+		).toBe( true );
+	} );
+
 	it( 'moves idle → configuring → previewing → ready, sending the operation list', async () => {
 		let answer;
 		routeApi( apiFetch, {
@@ -486,6 +505,7 @@ describe( 'bulk panel: preview, apply and done', () => {
 						by: 'percent',
 						amount: '10',
 						skip_already: true,
+						apply_to_variations: false,
 					},
 				},
 			],

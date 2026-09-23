@@ -14,20 +14,30 @@ const LAYOUTS = { table: {} };
 const CONFIG = { perPageSizes: PER_PAGE_SIZES };
 
 /**
+ * A row's id as DataViews keys its selection.
+ *
+ * @param {Object} item Row.
+ * @return {string} Id.
+ */
+const itemId = ( item ) => String( item.id );
+
+/**
  * The table.
  *
- * @param {Object}        props              Props.
- * @param {Array<Object>} props.fields       DataViews fields (fieldsFromRegistry()).
- * @param {Object}        props.view         DataViews view.
- * @param {Function}      props.onChangeView View change.
- * @param {Array<Object>} props.items        Rows.
- * @param {Object}        props.pagination   { totalItems, totalPages }.
- * @param {boolean}       props.isLoading    A read is in flight.
- * @param {boolean}       props.hasLoaded    A page (or a failure) has arrived at least once.
- * @param {Array<Object>} props.actions      Row actions.
- * @param {Element}       props.empty        What to show when a loaded page has no rows.
- * @param {Object}        props.termNames    source => Map( id => name ).
- * @param {Set}           props.pending      Row ids with a change in flight.
+ * @param {Object}        props                   Props.
+ * @param {Array<Object>} props.fields            DataViews fields (fieldsFromRegistry()).
+ * @param {Object}        props.view              DataViews view.
+ * @param {Function}      props.onChangeView      View change.
+ * @param {Array<Object>} props.items             Rows.
+ * @param {Object}        props.pagination        { totalItems, totalPages }.
+ * @param {boolean}       props.isLoading         A read is in flight.
+ * @param {boolean}       props.hasLoaded         A page (or a failure) has arrived at least once.
+ * @param {Array<Object>} props.actions           Row actions.
+ * @param {Element}       props.empty             What to show when a loaded page has no rows.
+ * @param {Object}        props.termNames         source => Map( id => name ).
+ * @param {Set}           props.pending           Row ids with a change in flight.
+ * @param {Array<string>} props.selection         Selected row ids, as strings.
+ * @param {Function}      props.onChangeSelection Selection change.
  * @return {Element} Table.
  */
 export default function CatalogueTable( {
@@ -42,6 +52,8 @@ export default function CatalogueTable( {
 	empty,
 	termNames,
 	pending,
+	selection,
+	onChangeSelection,
 } ) {
 	const context = useMemo(
 		() => ( { termNames, pending } ),
@@ -77,6 +89,10 @@ export default function CatalogueTable( {
 					defaultLayouts={ LAYOUTS }
 					isLoading={ isLoading }
 					actions={ actions }
+					getItemId={ itemId }
+					{ ...( onChangeSelection
+						? { selection, onChangeSelection }
+						: {} ) }
 					config={ CONFIG }
 					searchLabel={ __(
 						'Search by name or SKU',

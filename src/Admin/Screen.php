@@ -178,7 +178,21 @@ final class Screen {
 	}
 
 	/**
-	 * What the application is given at page load.
+	 * The capabilities the screen tells the client about, so a panel can hide
+	 * what the current user may not do instead of failing on submit. Access is
+	 * still decided by every route on the server.
+	 */
+	public const CLIENT_CAPABILITIES = [
+		'manage_woocommerce',
+		Access::WRITE_CAPABILITY,
+		Access::TERMS_CAPABILITY,
+		Access::SETTINGS_CAPABILITY,
+	];
+
+	/**
+	 * What the application is given at page load: the bcm/v1 root and nonce,
+	 * the settings, the current user with the capabilities in
+	 * CLIENT_CAPABILITIES (each true or false), and the host's versions.
 	 *
 	 * @return array<string, mixed>
 	 */
@@ -191,8 +205,12 @@ final class Screen {
 			'settings'       => Settings::load()->values(),
 			'fieldsEndpoint' => $client['root'] . 'fields',
 			'user'           => [
-				'id'   => (int) $user->ID,
-				'name' => (string) $user->display_name,
+				'id'           => (int) $user->ID,
+				'name'         => (string) $user->display_name,
+				'capabilities' => array_combine(
+					self::CLIENT_CAPABILITIES,
+					array_map( static fn( string $capability ): bool => current_user_can( $capability ), self::CLIENT_CAPABILITIES )
+				),
 			],
 			'wpMajor'        => self::host_major(),
 			'dataviews'      => self::DATAVIEWS_VERSION,

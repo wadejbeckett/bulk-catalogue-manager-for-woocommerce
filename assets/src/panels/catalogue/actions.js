@@ -13,13 +13,31 @@ import { editUrl } from './cells';
  * @param {Object}   handlers               Handlers.
  * @param {Function} handlers.onEditDetails Open the detail panel for a row.
  * @param {Function} handlers.navigate      Go to a URL.
+ * @param {Function} handlers.onMakeChange  Open the bulk change panel for the selected rows' ids.
  * @return {Array<Object>} Actions.
  */
 export function rowActions( {
 	onEditDetails = () => {},
 	navigate = ( url ) => window.location.assign( url ),
+	onMakeChange = null,
 } = {} ) {
+	const bulk = onMakeChange
+		? [
+				{
+					id: 'make-change',
+					label: __(
+						'Make a change to these',
+						'bulk-catalogue-manager-for-woocommerce'
+					),
+					isPrimary: false,
+					supportsBulk: true,
+					callback: ( items ) =>
+						onMakeChange( items.map( ( item ) => item.id ) ),
+				},
+			]
+		: [];
 	return [
+		...bulk,
 		{
 			id: 'edit-details',
 			label: __(

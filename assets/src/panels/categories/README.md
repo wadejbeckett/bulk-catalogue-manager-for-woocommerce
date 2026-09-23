@@ -49,9 +49,15 @@ counts, and the menu, rename, drag, Move to… and **+ Add category** are
 absent, replaced by one line saying why. The server checks
 `Access::can_manage_terms` on every write regardless.
 
-> `src/Admin/Screen.php::client_settings()` does not yet localise the
-> capability. Until it adds `user.capabilities.manage_product_terms`, pass
-> `canManage` explicitly or every user sees the read-only tree.
+`src/Admin/Screen.php::client_settings()` localises the current user's
+`user.capabilities` (`manage_woocommerce`, `edit_products`,
+`manage_product_terms`, `manage_options`, each true or false).
+
+The catalogue mounts the panel left of its table with a shared
+`useCategoryTree()`, and maps its value to the `category_ids` filter
+argument (`isAny` over the chosen ids). The server always includes
+descendants, so *this category only* waits for T62's include-children flag
+on the route.
 
 ### Dropping a product selection (T65 contract)
 

@@ -45,6 +45,12 @@ export const ROW = {
 	attributeSummary: 'attribute_summary',
 };
 
+/**
+ * The field the category panel filters by (T62). Its `isAny` filter includes
+ * the chosen categories' descendants on the server (Query\ProductQuery).
+ */
+export const CATEGORY_FILTER = 'category_ids';
+
 /** Page sizes offered (SPEC §4.1); the first is the default. */
 export const PER_PAGE_SIZES = [ 25, 50, 100 ];
 

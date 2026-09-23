@@ -1,0 +1,610 @@
+// The bulk change slide-over (SPEC §4.3, §4.4, §14), in the prototype's
+// admin palette (docs/prototype/index.html, screen 3).
+$bcm-ink: #1d2327;
+$bcm-ink-2: #50575e;
+$bcm-ink-3: #646970;
+$bcm-panel: #fff;
+$bcm-sunk: #f6f7f7;
+$bcm-rule: #dcdcde;
+$bcm-rule-strong: #c3c4c7;
+$bcm-rule-soft: #f0f0f1;
+$bcm-blue: #2271b1;
+$bcm-blue-tint: #f0f6fc;
+$bcm-blue-line: #a7c8e8;
+$bcm-good: #00a32a;
+$bcm-good-ink: #125c2a;
+$bcm-good-tint: #edfaef;
+$bcm-good-line: #b8e6c3;
+$bcm-warn: #dba617;
+$bcm-warn-ink: #6b5209;
+$bcm-warn-tint: #fcf9e8;
+$bcm-warn-line: #f0e0a8;
+$bcm-bad: #d63638;
+$bcm-bad-ink: #8a2424;
+$bcm-bad-tint: #fcf0f1;
+$bcm-bad-line: #f3c3c4;
+
+.bcm-bulk {
+	position: fixed;
+	top: 32px;
+	right: 0;
+	bottom: 0;
+	z-index: 9990;
+	width: min(640px, 100vw);
+	display: flex;
+	flex-direction: column;
+	background: $bcm-panel;
+	color: $bcm-ink;
+	border-left: 1px solid $bcm-rule;
+	box-shadow: -8px 0 24px rgba(16, 24, 40, 0.14);
+
+	@media (max-width: 782px) {
+		top: 46px;
+	}
+
+	&__head {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 12px 20px;
+		border-bottom: 1px solid $bcm-rule;
+
+		h2 {
+			outline: none;
+			flex: 1;
+			margin: 0;
+			font-size: 17px;
+			font-weight: 600;
+		}
+	}
+
+	&__close {
+		min-width: 32px;
+		min-height: 32px;
+		font-size: 22px;
+		line-height: 1;
+		color: $bcm-ink-2;
+	}
+
+	&__steps {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 2px;
+		margin: 0;
+		padding: 6px 20px 0;
+		list-style: none;
+		border-bottom: 1px solid $bcm-rule;
+	}
+
+	&__step {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin: 0 0 -1px;
+		padding: 8px 14px 10px;
+		color: $bcm-ink-3;
+		border-bottom: 2px solid transparent;
+
+		&.is-now {
+			color: $bcm-ink;
+			font-weight: 600;
+			border-bottom-color: $bcm-blue;
+
+			.bcm-bulk__n {
+				background: $bcm-blue;
+				border-color: $bcm-blue;
+				color: #fff;
+			}
+		}
+
+		&.is-done .bcm-bulk__n {
+			background: $bcm-good-tint;
+			border-color: $bcm-good-line;
+			color: $bcm-good-ink;
+		}
+	}
+
+	&__n {
+		display: inline-grid;
+		place-items: center;
+		flex: none;
+		width: 21px;
+		height: 21px;
+		border: 1px solid $bcm-rule-strong;
+		border-radius: 50%;
+		background: $bcm-panel;
+		font-size: 11px;
+		font-weight: 600;
+	}
+
+	&__body {
+		flex: 1;
+		min-height: 0;
+		overflow: auto;
+		padding: 16px 20px 20px;
+		display: flex;
+		flex-direction: column;
+		gap: 16px;
+	}
+
+	&__h {
+		margin: 0 0 4px;
+		font-size: 15px;
+		font-weight: 600;
+	}
+
+	&__sub {
+		margin: 0 0 12px;
+		color: $bcm-ink-2;
+		max-width: 70ch;
+	}
+
+	&__card {
+		padding: 12px;
+		background: $bcm-panel;
+		border: 1px solid $bcm-rule;
+		border-radius: 4px;
+
+		h3 {
+			margin: 0 0 8px;
+			font-size: 12px;
+			font-weight: 600;
+			color: $bcm-ink-2;
+		}
+	}
+
+	&__big {
+		margin: 0 0 8px;
+		font-size: 20px;
+		font-weight: 600;
+		line-height: 1.2;
+		font-variant-numeric: tabular-nums;
+	}
+
+	&__kv {
+		display: flex;
+		justify-content: space-between;
+		gap: 10px;
+		padding: 4px 0;
+		border-bottom: 1px solid $bcm-rule-soft;
+
+		&:last-child {
+			border-bottom: 0;
+		}
+
+		dt {
+			color: $bcm-ink-2;
+		}
+
+		dd {
+			margin: 0;
+			font-weight: 600;
+			text-align: right;
+			font-variant-numeric: tabular-nums;
+		}
+	}
+
+	&__filters,
+	&__counts {
+		margin: 0 0 8px;
+	}
+
+	&__ops {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+		display: grid;
+		gap: 10px;
+	}
+
+	&__opsum {
+		display: flex;
+		align-items: flex-start;
+		gap: 10px;
+		padding: 8px 10px;
+		border: 1px solid $bcm-rule;
+		border-radius: 4px;
+		background: $bcm-sunk;
+
+		&.is-editing {
+			border-color: $bcm-blue-line;
+			background: $bcm-blue-tint;
+		}
+	}
+
+	&__optitle {
+		flex: 1;
+		min-width: 0;
+		font-weight: 600;
+	}
+
+	&__opacts {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px;
+	}
+
+	&__choices {
+		display: grid;
+		gap: 8px;
+		margin-top: 8px;
+	}
+
+	&__grouphead {
+		margin: 8px 0 6px;
+		font-size: 12px;
+		font-weight: 600;
+		color: $bcm-ink-2;
+		text-transform: none;
+	}
+
+	&__group {
+		display: grid;
+		gap: 8px;
+	}
+
+	&__choice {
+		overflow: hidden;
+		background: $bcm-panel;
+		border: 1px solid $bcm-rule;
+		border-radius: 4px;
+
+		&:hover {
+			border-color: $bcm-blue-line;
+		}
+
+		&.is-on {
+			border-color: $bcm-blue;
+			box-shadow: inset 0 0 0 1px $bcm-blue;
+		}
+
+		> label {
+			display: flex;
+			align-items: flex-start;
+			gap: 10px;
+			padding: 11px 12px;
+			cursor: pointer;
+		}
+	}
+
+	&__ct {
+		display: block;
+		font-weight: 600;
+	}
+
+	&__cd {
+		display: block;
+		font-weight: 400;
+		margin-top: 1px;
+		color: $bcm-ink-2;
+		font-size: 12px;
+	}
+
+	&__cbody {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: flex-end;
+		gap: 12px 16px;
+		padding: 12px 12px 13px 40px;
+		background: $bcm-sunk;
+		border-top: 1px dashed $bcm-rule;
+	}
+
+	&__fg {
+		display: flex;
+		flex-direction: column;
+		min-width: 0;
+
+		&.is-full {
+			flex-basis: 100%;
+		}
+	}
+
+	&__lbl {
+		display: block;
+		margin-bottom: 4px;
+		font-size: 12px;
+		font-weight: 600;
+		color: $bcm-ink-2;
+	}
+
+	&__field {
+		min-height: 30px;
+		max-width: 100%;
+	}
+
+	&__hint {
+		margin: 4px 0 0;
+		color: $bcm-ink-3;
+		font-size: 12px;
+		line-height: 1.45;
+	}
+
+	&__reason {
+		display: block;
+		margin: 4px 0 0;
+		color: $bcm-bad-ink;
+		font-size: 12px;
+		font-weight: 400;
+	}
+
+	&__check {
+		display: flex;
+		align-items: flex-start;
+		gap: 9px;
+		cursor: pointer;
+
+		input {
+			margin-top: 2px;
+		}
+	}
+
+	&__terms {
+		border: 0;
+		padding: 0;
+		margin: 0;
+	}
+
+	&__termlist {
+		max-height: 180px;
+		overflow: auto;
+		margin: 6px 0 0;
+		padding: 6px 8px;
+		list-style: none;
+		background: $bcm-panel;
+		border: 1px solid $bcm-rule;
+		border-radius: 3px;
+
+		li {
+			margin: 0 0 4px;
+		}
+	}
+
+	&__varbox {
+		display: grid;
+		gap: 8px;
+		padding: 12px 13px;
+		background: $bcm-panel;
+		border: 1px solid $bcm-rule;
+		border-radius: 4px;
+	}
+
+	&__why {
+		display: block;
+		margin: 0 0 0 24px;
+		color: $bcm-ink-2;
+		font-size: 12px;
+		font-weight: 400;
+		max-width: 66ch;
+
+		&.is-flush {
+			margin-left: 0;
+		}
+	}
+
+	&__addrow {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 10px;
+		margin: 12px 0 0;
+	}
+
+	&__summary {
+		margin: 12px 0;
+		font-size: 14px;
+		font-weight: 600;
+	}
+
+	&__samplebar {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: flex-end;
+		gap: 10px 16px;
+		margin: 14px 0 10px;
+	}
+
+	&__seg {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px;
+		margin: 0;
+		padding: 0;
+		border: 0;
+
+		legend {
+			width: 100%;
+		}
+
+		.button[aria-pressed="true"] {
+			background: $bcm-blue-tint;
+			border-color: $bcm-blue;
+			color: #0a4b78;
+			font-weight: 600;
+		}
+	}
+
+	&__scroll {
+		overflow-x: auto;
+	}
+
+	&__table {
+		width: 100%;
+		min-width: 480px;
+		border: 1px solid $bcm-rule;
+		border-radius: 4px;
+		border-collapse: separate;
+		border-spacing: 0;
+
+		th,
+		td {
+			padding: 7px 10px;
+			text-align: left;
+			border-bottom: 1px solid $bcm-rule-soft;
+		}
+
+		thead th {
+			background: $bcm-sunk;
+			font-size: 12px;
+			font-weight: 600;
+			color: $bcm-ink-2;
+			border-bottom-color: $bcm-rule;
+		}
+
+		tbody th {
+			font-weight: 400;
+		}
+
+		tr:last-child > * {
+			border-bottom: 0;
+		}
+
+		tr.is-variation > th {
+			padding-left: 26px;
+			color: $bcm-ink-2;
+		}
+
+		tr.is-skip > *,
+		tr.is-already > * {
+			background: $bcm-sunk;
+			color: $bcm-ink-3;
+		}
+	}
+
+	&__from {
+		color: $bcm-ink-2;
+		font-variant-numeric: tabular-nums;
+	}
+
+	&__to {
+		color: $bcm-good-ink;
+		font-variant-numeric: tabular-nums;
+	}
+
+	&__note {
+		color: $bcm-ink-3;
+	}
+
+	&__notice {
+		padding: 10px 12px;
+		background: $bcm-panel;
+		border: 1px solid $bcm-rule;
+		border-left: 4px solid $bcm-blue;
+		border-radius: 3px;
+		margin: 12px 0 0;
+
+		strong {
+			display: block;
+			margin-bottom: 2px;
+		}
+
+		p,
+		ul {
+			margin: 4px 0 0;
+		}
+
+		ul {
+			padding-left: 18px;
+			list-style: disc;
+		}
+
+		&.is-ok {
+			border-left-color: $bcm-good;
+		}
+
+		&.is-warn {
+			background: $bcm-warn-tint;
+			border-color: $bcm-warn-line;
+			border-left-color: $bcm-warn;
+			color: $bcm-warn-ink;
+		}
+
+		&.is-error {
+			background: $bcm-bad-tint;
+			border-color: $bcm-bad-line;
+			border-left-color: $bcm-bad;
+			color: $bcm-bad-ink;
+		}
+	}
+
+	&__acts {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		margin-top: 9px;
+	}
+
+	&__progress {
+		max-width: 520px;
+		height: 9px;
+		overflow: hidden;
+		background: #e5e7e9;
+		border: 1px solid $bcm-rule;
+		border-radius: 5px;
+
+		> i {
+			display: block;
+			height: 100%;
+			background: $bcm-blue;
+			transition: width 0.25s linear;
+
+			@media (prefers-reduced-motion: reduce) {
+				transition: none;
+			}
+		}
+	}
+
+	&__foot {
+		position: sticky;
+		bottom: 0;
+		display: flex;
+		flex-wrap: wrap;
+		align-items: flex-start;
+		gap: 10px;
+		padding: 14px 20px;
+		background: $bcm-panel;
+		border-top: 1px solid $bcm-rule;
+		box-shadow: 0 -6px 12px -6px rgba(16, 24, 40, 0.12);
+	}
+
+	&__footnote {
+		margin-left: auto;
+		color: $bcm-ink-3;
+		font-size: 12px;
+		align-self: center;
+	}
+}
+
+.bcm-confirm {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	max-width: 100%;
+
+	&__ask {
+		padding: 10px 12px;
+		background: $bcm-warn-tint;
+		border: 1px solid $bcm-warn-line;
+		border-left: 4px solid $bcm-warn;
+		border-radius: 3px;
+		color: $bcm-warn-ink;
+	}
+
+	&__title {
+		margin: 0;
+		font-weight: 600;
+	}
+
+	&__reasons {
+		margin: 6px 0 0;
+		padding-left: 18px;
+		list-style: disc;
+	}
+
+	&__acts {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+		margin-top: 9px;
+	}
+}

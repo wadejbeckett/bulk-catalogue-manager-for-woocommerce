@@ -52,3 +52,20 @@ export const PER_PAGE_SIZES = [ 25, 50, 100 ];
 export const TERM_ROUTES = {
 	categories: 'categories',
 };
+
+/**
+ * Choices that take a product off the site when set in bulk: field key =>
+ * values. Setting one always confirms (SPEC §4.5; panels/bulk/confirm.js).
+ */
+export const OFF_SITE_CHOICES = {
+	status: [ 'draft', 'pending' ],
+};
+
+/**
+ * Choices that hide a product from the shop and from search when set in bulk:
+ * field key => values. Setting one always confirms (SPEC §4.5).
+ */
+export const HIDING_CHOICES = {
+	visible_on_site: [ 'off' ],
+	catalog_visibility: [ 'hidden' ],
+};

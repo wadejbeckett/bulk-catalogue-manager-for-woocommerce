@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-09-23T15:26:11+00:00\n"
+"POT-Creation-Date: 2026-09-23T15:27:41+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -154,14 +154,15 @@ msgid "Nothing will change: every row already holds the value or cannot be chang
 msgstr ""
 
 #. translators: %s: a number of products, such as "1,284".
-#, php-format
+#. translators: %s: a number of products, such as "4,312".
+#, php-format,js-format
 msgid "%s product"
 msgid_plural "%s products"
 msgstr[0] ""
 msgstr[1] ""
 
 #. translators: %s: a number of variations, such as "3,915".
-#, php-format
+#, php-format,js-format
 msgid "%s variation"
 msgid_plural "%s variations"
 msgstr[0] ""
@@ -1432,6 +1433,402 @@ msgstr ""
 msgid "Your sign-in check has expired and could not be renewed, so this request was not sent. Reload the page, then try again."
 msgstr ""
 
+#. translators: 1: a field, such as "Sale price"; 2: a number of products, such as "24 products".
+#, js-format
+msgid "This empties %1$s on %2$s."
+msgstr ""
+
+#. translators: 1: a field, "Status"; 2: its new value, such as "Draft"; 3: a number of products, such as "24 products".
+#, js-format
+msgid "This sets %1$s to %2$s on %3$s, which takes them off the site."
+msgstr ""
+
+#. translators: 1: a field, such as "Visible on site"; 2: its new value, such as "Hidden"; 3: a number of products, such as "24 products".
+#, js-format
+msgid "This sets %1$s to %2$s on %3$s, hiding them from the shop and from search."
+msgstr ""
+
+#. translators: %s: a number of products, such as "24 products".
+#, js-format
+msgid "Apply to %s"
+msgstr ""
+
+#. translators: %s: a number of products, such as "1,284 products".
+#, js-format
+msgid "Yes, change %s"
+msgstr ""
+
+#. translators: %s: a number of products, such as "1,284".
+#, js-format
+msgid "This will change %s product. Apply it?"
+msgid_plural "This will change %s products. Apply it?"
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "You can undo this afterwards from History."
+msgstr ""
+
+msgid "Not yet"
+msgstr ""
+
+msgid "There is nothing to choose from yet."
+msgstr ""
+
+msgid "Search the list"
+msgstr ""
+
+msgid "Leave it empty to clear this field."
+msgstr ""
+
+msgid "On"
+msgstr ""
+
+msgid "Off"
+msgstr ""
+
+msgid "No change chosen yet"
+msgstr ""
+
+#. translators: 1: an action, such as "Round prices"; 2: a field, such as "Regular price".
+#, js-format
+msgid "%1$s — %2$s"
+msgstr ""
+
+msgid "Switched on: the variations inside these products change too."
+msgstr ""
+
+msgid "Switched off because variations often carry their own prices and stock. Switch it on to change them too."
+msgstr ""
+
+#. translators: %d: the step's position in the list, such as 2.
+#, js-format
+msgid "Choose the change for step %d"
+msgstr ""
+
+#. translators: %d: the step's position in the list.
+#, js-format
+msgid "Edit step %d"
+msgstr ""
+
+msgid "Edit"
+msgstr ""
+
+#. translators: %d: the step's position in the list.
+#, js-format
+msgid "Move step %d up"
+msgstr ""
+
+#. translators: %d: the step's position in the list.
+#, js-format
+msgid "Move step %d down"
+msgstr ""
+
+#. translators: %d: the step's position in the list.
+#, js-format
+msgid "Remove step %d"
+msgstr ""
+
+msgid "Remove"
+msgstr ""
+
+#. translators: %s: a number of products, such as "4,312".
+#, js-format
+msgid "All %s product matching the current filter"
+msgid_plural "All %s products matching the current filter"
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of products, such as "24".
+#, js-format
+msgid "%s selected product"
+msgid_plural "%s selected products"
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "Nothing is selected. Go back to Products and tick what you want to change."
+msgstr ""
+
+msgid "Choose a change first."
+msgstr ""
+
+#. translators: %d: the step's position in the list, such as 2.
+#, js-format
+msgid "Step %d has no change chosen yet. Choose one or remove the step."
+msgstr ""
+
+#. translators: 1: the step's position, such as 2; 2: what to fix, such as "Enter how much to change it by, as a number above 0 like 10 or 2.5."
+#, js-format
+msgid "Step %1$d: %2$s"
+msgstr ""
+
+msgid "Choose the change"
+msgstr ""
+
+msgid "Check it"
+msgstr ""
+
+msgid "Done"
+msgstr ""
+
+msgid "Bulk change"
+msgstr ""
+
+msgid "Close the bulk change panel"
+msgstr ""
+
+msgid "What is being changed"
+msgstr ""
+
+msgid "This change will affect"
+msgstr ""
+
+msgid "Change the selection"
+msgstr ""
+
+msgid "Pick a change. You will see exactly what it does, on real products, before anything is saved."
+msgstr ""
+
+msgid "Add another change"
+msgstr ""
+
+#. translators: %d: the most steps one change may hold, 20.
+#, js-format
+msgid "One change can hold at most %d steps."
+msgstr ""
+
+msgid "Working out what would change. Nothing is saved."
+msgstr ""
+
+msgid "The products or the settings changed after you checked, so the preview has been worked out again. Check it, then apply."
+msgstr ""
+
+msgid "The selection or the change has moved on since you checked it. Preview it again before applying."
+msgstr ""
+
+msgid "Nothing would change"
+msgstr ""
+
+msgid "None of the chosen products would be different after this change. Adjust it and check again."
+msgstr ""
+
+msgid "Worth knowing"
+msgstr ""
+
+msgid "Variations carry their own prices and stock. Nothing happens to them until you switch on Also apply to variations for this change."
+msgstr ""
+
+msgid "The filter now matches a different number of products"
+msgstr ""
+
+#. translators: 1: products when previewed, such as "1,284 products"; 2: products now, such as "1,290 products".
+#, js-format
+msgid "When you checked the change it matched %1$s. It matches %2$s now."
+msgstr ""
+
+msgid "Apply anyway"
+msgstr ""
+
+msgid "Preview again"
+msgstr ""
+
+msgid "Safety"
+msgstr ""
+
+msgid "Every change is saved with the old values. One click in History puts them back."
+msgstr ""
+
+msgid "Back to products"
+msgstr ""
+
+msgid "Close"
+msgstr ""
+
+#. translators: %d: the current step, 1 to 3.
+#, js-format
+msgid "Step %d of 3 · You can undo this afterwards"
+msgstr ""
+
+msgid "Nothing would change, so there is nothing to apply."
+msgstr ""
+
+msgid "Check the change"
+msgstr ""
+
+msgid "Something went wrong. Try again in a moment."
+msgstr ""
+
+msgid "Show details"
+msgstr ""
+
+msgid "(empty)"
+msgstr ""
+
+msgid "(none)"
+msgstr ""
+
+#. translators: %s: a number, such as "3".
+#, js-format
+msgid "%s sale price would not be below its regular price."
+msgid_plural "%s sale prices would not be below their regular price."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number, such as "3".
+#, js-format
+msgid "%s price would fall to zero or below."
+msgid_plural "%s prices would fall to zero or below."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number, such as "3".
+#, js-format
+msgid "Stock would go below zero on %s product."
+msgid_plural "Stock would go below zero on %s products."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number, such as "3".
+#, js-format
+msgid "%s SKU would duplicate another product’s, so it would not be applied."
+msgid_plural "%s SKUs would duplicate another product’s, so they would not be applied."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: 1: fields, such as "Regular price"; 2: products, such as "1,284 products"; 3: variations, such as "3,915 variations".
+#, js-format
+msgid "This will change %1$s on %2$s and %3$s."
+msgstr ""
+
+#. translators: 1: fields, such as "Regular price"; 2: products, such as "1,284 products".
+#, js-format
+msgid "This will change %1$s on %2$s."
+msgstr ""
+
+msgid "Already correct, left alone"
+msgstr ""
+
+#. translators: %s: the plain reason, such as "A variable product takes its price from its variations."
+#, js-format
+msgid "Will be skipped: %s"
+msgstr ""
+
+msgid "Replaces the whole list with"
+msgstr ""
+
+#. translators: %s: a number of products, such as "10,000".
+#, js-format
+msgid "These counts are worked out from the first %s and scaled to the whole selection."
+msgstr ""
+
+msgid "What would happen"
+msgstr ""
+
+msgid "Will change"
+msgstr ""
+
+msgid "Already at the target value"
+msgstr ""
+
+msgid "Cannot change"
+msgstr ""
+
+msgid "Rows to show"
+msgstr ""
+
+msgid "Every row up to 1,000"
+msgstr ""
+
+msgid "Only rows that change"
+msgstr ""
+
+msgid "Download sample CSV"
+msgstr ""
+
+msgid "The download arrives with the export."
+msgstr ""
+
+msgid "A sample of the rows this change would touch"
+msgstr ""
+
+msgid "Product"
+msgstr ""
+
+msgid "What changes"
+msgstr ""
+
+msgid "Now"
+msgstr ""
+
+msgid "After"
+msgstr ""
+
+#. translators: 1: rows shown, such as "25"; 2: rows in all, such as "1,284".
+#, js-format
+msgid "The first %1$s of %2$s rows are shown. The same change applies to the rest."
+msgstr ""
+
+msgid "Every row is shown."
+msgstr ""
+
+msgid "Check these before applying"
+msgstr ""
+
+#. translators: %s: a number, such as "3".
+#, js-format
+msgid "%s product could not be read and is left out of this change."
+msgid_plural "%s products could not be read and are left out of this change."
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "The change could not be applied. Nothing more will happen to these products."
+msgstr ""
+
+msgid "The change was cancelled. Anything already applied is kept in History, where you can undo it."
+msgstr ""
+
+#. translators: 1: products done, such as "1,280"; 2: products in all, such as "1,284 products".
+#, js-format
+msgid "%1$s of %2$s updated. The rest are listed below."
+msgstr ""
+
+#. translators: %s: a number, such as "1,284".
+#, js-format
+msgid "%s product updated."
+msgid_plural "%s products updated."
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "Applying the change"
+msgstr ""
+
+#. translators: %s: a number of products, such as "1,284 products".
+#, js-format
+msgid "Working through %s in the background."
+msgstr ""
+
+msgid "Progress"
+msgstr ""
+
+#. translators: 1: done, such as "312"; 2: in all, such as "1,284".
+#, js-format
+msgid "%1$s of %2$s done"
+msgstr ""
+
+msgid "You can leave this page. The update carries on in the background and appears in History when it finishes."
+msgstr ""
+
+msgid "The progress could not be read just now. Trying again."
+msgstr ""
+
+msgid "The old values are saved, so you can put this back at any time."
+msgstr ""
+
+msgid "Undo this change"
+msgstr ""
+
+msgid "View in History"
+msgstr ""
+
 msgid "Edit details"
 msgstr ""
 
@@ -1476,9 +1873,6 @@ msgid "Active filters"
 msgstr ""
 
 msgid "Clear filters"
-msgstr ""
-
-msgid "Show details"
 msgstr ""
 
 msgid "Settings saved."

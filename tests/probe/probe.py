@@ -785,6 +785,41 @@ def check_access(p: Probe) -> None:
     p.guard("access", "access:administrators-only", run)
 
 
+def check_settings(p: Probe) -> None:
+    """T73: GET /settings for anyone with the screen capability, PUT for manage_options
+    only, and a refused value named by its setting with nothing saved."""
+
+    def run() -> None:
+        before = p.wp_eval("bcm_out( get_option( 'bcm_settings', null ) );")
+        got = p.http("manager", "GET", "/settings")
+        data = got.json() or {}
+        keys = {row.get("key") for row in data.get("settings", [])}
+        p.row(
+            "access",
+            "settings:get:manager",
+            got.status == 200 and data.get("canEdit") is False and "variation_batch_size" in keys,
+            f"{got.brief()} canEdit={data.get('canEdit')} settings={len(keys)}",
+        )
+        put = p.http("manager", "PUT", "/settings", body={"values": {"rows_per_page": 50}})
+        p.row("access", "settings:put:manager", put.status == 403, put.brief())
+        bad = p.http("admin", "PUT", "/settings", body={"values": {"variation_batch_size": 5, "rows_per_page": 50}})
+        refusal = bad.json() or {}
+        errors = (refusal.get("data") or {}).get("errors") or {}
+        after = p.wp_eval("bcm_out( get_option( 'bcm_settings', null ) );")
+        p.row(
+            "access",
+            "settings:put:admin-invalid",
+            bad.status == 400
+            and bad.code() == "bcm_invalid_setting"
+            and list(errors) == ["variation_batch_size"]
+            and "Variations per background batch" in refusal.get("message", "")
+            and after == before,
+            f"{bad.brief()} errors={list(errors)} saved-nothing={after == before}",
+        )
+
+    p.guard("access", "settings", run)
+
+
 # ---------------------------------------------------------------------------
 # lifecycle
 # ---------------------------------------------------------------------------
@@ -1113,7 +1148,7 @@ CHAPTERS: dict[str, list[Callable[[Probe], None]]] = {
     "screen": [check_screen],
     "read": [check_read_matrix, check_read_queries],
     "write": [check_write_engine, check_write_stale, check_write_inline, check_write_categories],
-    "access": [check_access],
+    "access": [check_access, check_settings],
     "variations": [check_variations],
     "lifecycle": [check_lifecycle],
 }

@@ -1,32 +1,14 @@
 /**
- * Who made a change, by name. The history and audit routes report the
- * batch's `user_id` only, so names come from core's own users route: one
- * request for the people who can use this screen (the user filter), and
- * one batched lookup per page for any other id. A name that cannot be read
- * (the user was deleted, or this user may not list users) reads "User 12";
- * the current user reads as their own name from the page settings.
- *
- * Follow-up (PHP): adding `user_name` to the batch and audit rows would
- * remove the second request; see docs/TICKETS.md T57.
+ * Who made a change, by name. Batch and audit rows carry the server's own
+ * `user_name`; the user filter's choices come from GET /batches/users,
+ * `{ items: [ { id, name } ] }` of every user who owns a batch. A row
+ * without a name reads the filter's name for its id, else "User 12"; the
+ * current user reads as their own name from the page settings.
  */
-import apiFetch from '@wordpress/api-fetch';
 import { __, sprintf } from '@wordpress/i18n';
-import { addQueryArgs } from '@wordpress/url';
 import { useEffect, useState } from '@wordpress/element';
 
-import { routeUrl } from '../../api';
-
-/**
- * Core's users route, beside this plugin's namespace root (so it works
- * with plain permalinks as well as pretty ones).
- *
- * @param {Object} query Query arguments.
- * @return {string} URL.
- */
-export function usersUrl( query ) {
-	const base = routeUrl( '' ).replace( /bcm\/v1\/?$/, 'wp/v2/users' );
-	return addQueryArgs( base, query );
-}
+import { request } from '../../api';
 
 /**
  * A user's name, or a plain stand-in.
@@ -50,76 +32,41 @@ export function userName( id, names ) {
 }
 
 /**
- * Names by id for the screen's users and any id seen on the page.
+ * Who a row names: the row's own `user_name`, else a name by its id.
  *
- * @param {Object}        currentUser `{ id, name }` from the page settings.
- * @param {Array<number>} seen        User ids on the current page.
+ * @param {Object} row   A batch or audit row.
+ * @param {Object} names Names by id.
+ * @return {string} Name.
+ */
+export function rowUserName( row, names ) {
+	return row?.user_name
+		? String( row.user_name )
+		: userName( row?.user_id, names );
+}
+
+/**
+ * Names by id of every batch owner (GET /batches/users), and the current user.
+ *
+ * @param {Object} currentUser `{ id, name }` from the page settings.
  * @return {Object} Names by id.
  */
-export function useUserNames( currentUser, seen ) {
+export function useBatchUsers( currentUser ) {
 	const [ names, setNames ] = useState( () =>
 		currentUser?.id ? { [ currentUser.id ]: currentUser.name } : {}
 	);
 
 	useEffect( () => {
 		let live = true;
-		apiFetch( {
-			url: usersUrl( {
-				per_page: 100,
-				capabilities: 'manage_woocommerce',
-				_fields: 'id,name',
-			} ),
-		} )
-			.then( ( users ) => {
-				if ( live && Array.isArray( users ) ) {
-					setNames( ( known ) => {
-						const next = { ...known };
-						users.forEach( ( user ) => {
-							next[ user.id ] = user.name;
-						} );
-						return next;
-					} );
-				}
-			} )
-			.catch( () => {} );
-		return () => {
-			live = false;
-		};
-	}, [] );
-
-	const missing = ( seen || [] )
-		.filter( ( id ) => id && ! names[ id ] )
-		.filter( ( id, index, all ) => all.indexOf( id ) === index )
-		.sort( ( a, b ) => a - b );
-	const key = missing.join( ',' );
-
-	useEffect( () => {
-		if ( ! key ) {
-			return;
-		}
-		let live = true;
-		apiFetch( {
-			url: usersUrl( {
-				include: key,
-				per_page: 100,
-				_fields: 'id,name',
-			} ),
-		} )
-			.then( ( users ) => {
-				if ( ! live ) {
+		request( 'batches/users' )
+			.then( ( answer ) => {
+				if ( ! live || ! Array.isArray( answer?.items ) ) {
 					return;
 				}
 				setNames( ( known ) => {
 					const next = { ...known };
-					( Array.isArray( users ) ? users : [] ).forEach(
-						( user ) => {
-							next[ user.id ] = user.name;
-						}
-					);
-					// Remember the ones core would not name, so they are not asked for again.
-					key.split( ',' ).forEach( ( id ) => {
-						if ( ! next[ id ] ) {
-							next[ id ] = userName( Number( id ), {} );
+					answer.items.forEach( ( user ) => {
+						if ( user?.id ) {
+							next[ user.id ] = String( user.name ?? '' );
 						}
 					} );
 					return next;
@@ -129,7 +76,7 @@ export function useUserNames( currentUser, seen ) {
 		return () => {
 			live = false;
 		};
-	}, [ key ] );
+	}, [] );
 
 	return names;
 }

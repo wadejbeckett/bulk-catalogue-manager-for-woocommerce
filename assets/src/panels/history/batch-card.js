@@ -30,6 +30,7 @@ import {
 } from './describe';
 import ErrorNotice from './error-notice';
 import { BatchProgress } from './stalled-notice';
+import { userName } from './users';
 import {
 	applyUndo,
 	confirmSentence,
@@ -186,6 +187,38 @@ function ConflictTable( { plan, byKey } ) {
 }
 
 /**
+ * Who put an undone batch back, and in which change: from the row's
+ * `undone_by` `{ batch_id, user_id, user_name }`.
+ *
+ * @param {Object|null} undoneBy The row's `undone_by`.
+ * @return {string} Sentence, or '' when the row was not put back.
+ */
+export function putBackBy( undoneBy ) {
+	if ( ! undoneBy ) {
+		return '';
+	}
+	const who = undoneBy.user_name
+		? String( undoneBy.user_name )
+		: userName( undoneBy.user_id, {} );
+	if ( ! undoneBy.batch_id ) {
+		return sprintf(
+			/* translators: %s: a user's name. */
+			__( 'Put back by %s', 'bulk-catalogue-manager-for-woocommerce' ),
+			who
+		);
+	}
+	return sprintf(
+		/* translators: 1: a user's name; 2: the undo change's number, such as "42". */
+		__(
+			'Put back by %1$s in change #%2$s',
+			'bulk-catalogue-manager-for-woocommerce'
+		),
+		who,
+		String( undoneBy.batch_id )
+	);
+}
+
+/**
  * The card.
  *
  * @param {Object}   props           Props.
@@ -195,7 +228,6 @@ function ConflictTable( { plan, byKey } ) {
  * @param {Object}   props.byKey     Field descriptors by key.
  * @param {Function} props.onChanged The list should be read again.
  * @param {Function} props.onNotice  Show a screen notice `{ status, text }`.
- * @param {Function} props.onExport  Export this batch's changes.
  * @return {Element} Card.
  */
 export default function BatchCard( {
@@ -205,7 +237,6 @@ export default function BatchCard( {
 	byKey,
 	onChanged,
 	onNotice,
-	onExport,
 } ) {
 	const state = batch.reversibility?.state || STATES.REVERSIBLE;
 	const isRedo = batch.source === 'undo';
@@ -433,6 +464,19 @@ export default function BatchCard( {
 						) }
 					</span>
 				) }
+				{ batch.variations_included && (
+					<span className="bcm-pill">
+						{ __(
+							'Includes variations',
+							'bulk-catalogue-manager-for-woocommerce'
+						) }
+					</span>
+				) }
+				{ putBackBy( batch.undone_by ) && (
+					<span className="bcm-pill bcm-batch__put-back">
+						{ putBackBy( batch.undone_by ) }
+					</span>
+				) }
 				{ batch.undo?.sentence && (
 					<span className="bcm-pill bcm-pill--warn">
 						{ batch.undo.sentence }
@@ -653,7 +697,7 @@ export default function BatchCard( {
 					batch={ batch }
 					byKey={ byKey }
 					problemsOnly={ state === STATES.WITH_ERRORS }
-					onExport={ onExport }
+					onNotice={ onNotice }
 				/>
 			) }
 		</article>

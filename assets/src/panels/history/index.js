@@ -2,6 +2,9 @@
  * The History panel (SPEC §4.6; T57–T59): the change history with undo,
  * and a separate Audit log tab, each carrying the scope line. A finished
  * undo or an export problem is reported in a dismissible notice at the top.
+ * A `product` argument in the page URL (the product drawer's "See history"
+ * link, T47) opens the Audit log filtered to that product, the one list
+ * that can be filtered by product (GET /audit `product`).
  */
 import { Notice, TabPanel } from '@wordpress/components';
 import { useCallback, useEffect, useMemo, useState } from '@wordpress/element';
@@ -13,7 +16,7 @@ import Batches from './batches';
 import { fieldsByKey } from './describe';
 import ErrorNotice from './error-notice';
 import ScopeNotice from './scope-notice';
-import { userElements, useUserNames } from './users';
+import { userElements, useBatchUsers } from './users';
 import './style.scss';
 
 export { StalledNotice, BatchProgress, isStalled } from './stalled-notice';
@@ -56,22 +59,42 @@ function useRegistry() {
 	return meta;
 }
 
+/**
+ * The product a URL's `product` argument names.
+ *
+ * @param {string} search A location's search string.
+ * @return {number|null} Product id, or null.
+ */
+export function productFrom( search ) {
+	const id = Number( new URLSearchParams( search ).get( 'product' ) );
+	return Number.isInteger( id ) && id > 0 ? id : null;
+}
+
+/**
+ * Take the `product` argument off the page URL, leaving the panel in place.
+ */
+function forgetProduct() {
+	const url = new URL( window.location.href );
+	if ( url.searchParams.has( 'product' ) ) {
+		url.searchParams.delete( 'product' );
+		window.history.replaceState( window.history.state, '', url.toString() );
+	}
+}
+
 export default function History( { settings } ) {
 	const meta = useRegistry();
-	const [ seen, setSeen ] = useState( [] );
 	const [ notice, setNotice ] = useState( null );
-	const names = useUserNames( settings?.user, seen );
+	const [ linkedProduct, setLinkedProduct ] = useState( () =>
+		productFrom( window.location.search )
+	);
+	const clearLinked = useCallback( () => {
+		setLinkedProduct( null );
+		forgetProduct();
+	}, [] );
+	const names = useBatchUsers( settings?.user );
 	const users = useMemo(
 		() => userElements( names, settings?.user ),
 		[ names, settings?.user ]
-	);
-	const onSeenUsers = useCallback(
-		( ids ) =>
-			setSeen( ( was ) => {
-				const next = [ ...new Set( [ ...was, ...ids ] ) ];
-				return next.length === was.length ? was : next;
-			} ),
-		[]
 	);
 	const onNotice = useCallback( ( next ) => setNotice( next ), [] );
 	const shared = {
@@ -79,7 +102,6 @@ export default function History( { settings } ) {
 		meta,
 		names,
 		users,
-		onSeenUsers,
 		onNotice,
 		scope: <ScopeNotice />,
 	};
@@ -110,6 +132,7 @@ export default function History( { settings } ) {
 			) }
 			<TabPanel
 				className="bcm-history__tabs"
+				initialTabName={ linkedProduct ? 'audit' : 'changes' }
 				tabs={ [
 					{
 						name: 'changes',
@@ -129,7 +152,11 @@ export default function History( { settings } ) {
 			>
 				{ ( tab ) =>
 					tab.name === 'audit' ? (
-						<AuditLog { ...shared } />
+						<AuditLog
+							{ ...shared }
+							linkedProduct={ linkedProduct }
+							onClearLinked={ clearLinked }
+						/>
 					) : (
 						<Batches { ...shared } />
 					)

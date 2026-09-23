@@ -21,6 +21,7 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Fields;
 
+use BulkCatalogueManager\Operations\Group;
 use BulkCatalogueManager\Rest\Refusal;
 
 defined( 'ABSPATH' ) || exit;
@@ -158,6 +159,7 @@ final class Field {
 	 * @param bool                                   $unique                 Whether the value must be unique across products and variations.
 	 * @param bool                                   $sortable               Whether the grid may sort on it.
 	 * @param string[]                               $filter_operators       DataViews filter operators; empty when it is not a filter.
+	 * @param string                                 $group                  The bulk action panel group it sits in (Operations\Group); '' for a read-only column.
 	 * @throws \InvalidArgumentException When the description is inconsistent.
 	 */
 	public function __construct(
@@ -184,7 +186,8 @@ final class Field {
 		private readonly bool $kses = false,
 		private readonly bool $unique = false,
 		private readonly bool $sortable = false,
-		private readonly array $filter_operators = []
+		private readonly array $filter_operators = [],
+		private readonly string $group = ''
 	) {
 		$problem = match ( true ) {
 			1 !== preg_match( '/^[a-z][a-z0-9_]{0,63}$/', $key ) => 'its key is not a lower-case field key',
@@ -196,6 +199,8 @@ final class Field {
 			( [] === $edit_kinds ) !== ( null === $setter )        => 'a field with edit kinds needs a setter and a read-only one none',
 			$inline && ! in_array( self::SET, $edit_kinds, true )  => 'an inline field must accept set',
 			in_array( self::CLEAR, $edit_kinds, true ) && ! $nullable => 'only a nullable field can be cleared',
+			'' !== $group && ! in_array( $group, Group::ALL, true ) => 'its group is unknown',
+			'' !== $group && [] === $edit_kinds                    => 'a read-only column has no group',
 			self::PER_VARIATION !== $variation_rule && self::CONDITIONAL !== $variation_rule && [] !== $edit_kinds && '' === $variation_note => 'it needs a note saying why a variation cannot take it',
 			default                                                => '',
 		};
@@ -248,6 +253,14 @@ final class Field {
 	 */
 	public function accepts( string $kind ): bool {
 		return in_array( $kind, $this->edit_kinds, true );
+	}
+
+	/**
+	 * The bulk action panel group (one of Operations\Group::ALL), or '' for a
+	 * read-only column.
+	 */
+	public function group(): string {
+		return $this->group;
 	}
 
 	/**
@@ -625,6 +638,9 @@ final class Field {
 			$client['writableChoices']      = $this->writable_choices();
 			$client['variationChoices']     = $this->variation_choices ?? $this->writable_choices();
 			$client['variationOnlyChoices'] = $this->variation_only_choices;
+		}
+		if ( '' !== $this->group ) {
+			$client['group'] = $this->group;
 		}
 		if ( '' !== $this->source ) {
 			$client['source'] = $this->source;

@@ -1,9 +1,12 @@
 <?php
 /**
- * `GET /bcm/v1/fields` (SPEC §5.1, §12.1): the field registry as the client
- * reads it, so the client hard-codes no field list. Each item carries the
- * key, label, type, edit kinds, variation rule and notes, choices, REST
- * schema fragment and DataViews definition, and no storage key.
+ * `GET /bcm/v1/fields` (SPEC §5.1, §6, §12.1): the field registry and the
+ * action registry as the client reads them, so the client hard-codes no
+ * field list and no action list. The response is `{ fields, actions,
+ * groups }`: each field carries the key, label, type, group, edit kinds,
+ * variation rule and notes, choices, REST schema fragment and DataViews
+ * definition, and no storage key; each action its descriptor; groups the
+ * five bulk action panel groups in order with their labels.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -14,6 +17,8 @@ declare( strict_types = 1 );
 namespace BulkCatalogueManager\Rest;
 
 use BulkCatalogueManager\Fields\Registry;
+use BulkCatalogueManager\Operations\Group;
+use BulkCatalogueManager\Operations\Registry as Actions;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -27,11 +32,21 @@ final class FieldsController implements ReadController {
 	public const ROUTE = '/fields';
 
 	/**
-	 * Build over a registry.
+	 * The action registry.
 	 *
-	 * @param Registry $registry Field registry.
+	 * @var Actions
 	 */
-	public function __construct( private readonly Registry $registry ) {}
+	private readonly Actions $actions;
+
+	/**
+	 * Build over the registries.
+	 *
+	 * @param Registry     $registry Field registry.
+	 * @param Actions|null $actions  Action registry; null for every action over $registry.
+	 */
+	public function __construct( private readonly Registry $registry, ?Actions $actions = null ) {
+		$this->actions = $actions ?? new Actions( $registry );
+	}
 
 	/**
 	 * Add the route through the registrar.
@@ -54,17 +69,31 @@ final class FieldsController implements ReadController {
 	}
 
 	/**
-	 * Every field's client definition, in registry order.
+	 * The payload: every field's client definition in registry order, every
+	 * action's descriptor in panel order, and the panel groups.
+	 *
+	 * @return array{fields: list<array<string, mixed>>, actions: list<array<string, mixed>>, groups: list<array{id: string, label: string}>}
+	 */
+	public function payload(): array {
+		return [
+			'fields'  => $this->registry->to_client(),
+			'actions' => $this->actions->to_client(),
+			'groups'  => Group::to_client(),
+		];
+	}
+
+	/**
+	 * The fields, actions and groups.
 	 *
 	 * @param mixed $request The REST request; unused.
 	 */
 	public function get_items( mixed $request = null ): \WP_REST_Response {
 		unset( $request );
-		return new \WP_REST_Response( $this->registry->to_client(), 200 );
+		return new \WP_REST_Response( $this->payload(), 200 );
 	}
 
 	/**
-	 * The schema of one item of the list.
+	 * The schema of the response: the fields, actions and groups lists.
 	 *
 	 * @return array<string, mixed>
 	 */
@@ -75,7 +104,67 @@ final class FieldsController implements ReadController {
 		];
 		return [
 			'$schema'    => 'http://json-schema.org/draft-04/schema#',
-			'title'      => 'bcm-field',
+			'title'      => 'bcm-fields',
+			'type'       => 'object',
+			'properties' => [
+				'fields'  => [
+					'type'  => 'array',
+					'items' => self::field_schema( $string_list ),
+				],
+				'actions' => [
+					'type'  => 'array',
+					'items' => self::action_schema( $string_list ),
+				],
+				'groups'  => [
+					'type'  => 'array',
+					'items' => [
+						'type'       => 'object',
+						'properties' => [
+							'id'    => [
+								'type' => 'string',
+								'enum' => Group::ALL,
+							],
+							'label' => [ 'type' => 'string' ],
+						],
+					],
+				],
+			],
+		];
+	}
+
+	/**
+	 * The schema of one action descriptor.
+	 *
+	 * @param array<string, mixed> $string_list Schema of a list of strings.
+	 * @return array<string, mixed>
+	 */
+	private static function action_schema( array $string_list ): array {
+		return [
+			'type'       => 'object',
+			'properties' => [
+				'id'          => [ 'type' => 'string' ],
+				'label'       => [ 'type' => 'string' ],
+				'description' => [ 'type' => 'string' ],
+				'group'       => [
+					'type' => 'string',
+					'enum' => Group::ALL,
+				],
+				'groups'      => $string_list,
+				'editKinds'   => $string_list,
+				'fields'      => $string_list,
+				'args'        => [ 'type' => 'object' ],
+			],
+		];
+	}
+
+	/**
+	 * The schema of one field definition.
+	 *
+	 * @param array<string, mixed> $string_list Schema of a list of strings.
+	 * @return array<string, mixed>
+	 */
+	private static function field_schema( array $string_list ): array {
+		return [
 			'type'       => 'object',
 			'properties' => [
 				'key'                  => [ 'type' => 'string' ],
@@ -95,6 +184,10 @@ final class FieldsController implements ReadController {
 				'writableChoices'      => $string_list,
 				'variationChoices'     => $string_list,
 				'variationOnlyChoices' => $string_list,
+				'group'                => [
+					'type' => 'string',
+					'enum' => Group::ALL,
+				],
 				'source'               => [ 'type' => 'string' ],
 				'maxLength'            => [ 'type' => 'integer' ],
 			],

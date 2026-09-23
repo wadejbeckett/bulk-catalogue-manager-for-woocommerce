@@ -18,6 +18,7 @@ declare( strict_types = 1 );
 namespace BulkCatalogueManager\Rest;
 
 use BulkCatalogueManager\Fields\Registry;
+use BulkCatalogueManager\Operations\Registry as Actions;
 use BulkCatalogueManager\Plugin;
 
 defined( 'ABSPATH' ) || exit;
@@ -51,7 +52,7 @@ final class Routes {
 	public static function plugin(): self {
 		return new self(
 			[
-				new FieldsController( Registry::instance() ),
+				new FieldsController( Registry::instance(), Actions::instance() ),
 				new ProductsController( Registry::instance() ),
 				new VariationsController( Registry::instance() ),
 				new CategoriesController( Registry::instance() ),

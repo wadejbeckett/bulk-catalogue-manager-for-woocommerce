@@ -2,7 +2,8 @@
 /**
  * `GET /bcm/v1/fields` (SPEC §12.1, §13): registered under bcm/v1 on
  * rest_api_init with a real permission callback, refusing with `bcm_forbidden`
- * and returning every field of the registry.
+ * and returning `{ fields, actions, groups }`: every field of the registry,
+ * every action descriptor (T24) and the five panel groups.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -13,6 +14,8 @@ declare( strict_types = 1 );
 namespace BulkCatalogueManager\Tests\Unit\Rest;
 
 use BulkCatalogueManager\Fields\Registry;
+use BulkCatalogueManager\Operations\Group;
+use BulkCatalogueManager\Operations\Registry as Actions;
 use BulkCatalogueManager\Plugin;
 use BulkCatalogueManager\Rest\Access;
 use BulkCatalogueManager\Rest\FieldsController;
@@ -107,7 +110,7 @@ final class FieldsRouteTest extends TestCase {
 		$this->assertSame( 'manage_woocommerce', Access::capability() );
 	}
 
-	public function test_the_route_returns_every_field_in_registry_order(): void {
+	public function test_the_route_returns_every_field_action_and_group_in_order(): void {
 		$GLOBALS['bcm_test']['logged_in']                  = true;
 		$GLOBALS['bcm_test']['caps']['manage_woocommerce'] = true;
 		$endpoint = self::endpoint();
@@ -117,19 +120,43 @@ final class FieldsRouteTest extends TestCase {
 		$this->assertInstanceOf( \WP_REST_Response::class, $response );
 		$this->assertSame( 200, $response->get_status() );
 		$data = $response->get_data();
-		$this->assertTrue( array_is_list( $data ) );
-		$this->assertSame( ( new Registry() )->keys(), array_column( $data, 'key' ) );
-		$this->assertCount( 30, $data );
-		$this->assertSame( ( new Registry() )->to_client(), $data );
+		$this->assertSame( [ 'fields', 'actions', 'groups' ], array_keys( $data ) );
+
+		$this->assertTrue( array_is_list( $data['fields'] ) );
+		$this->assertSame( ( new Registry() )->keys(), array_column( $data['fields'], 'key' ) );
+		$this->assertCount( 30, $data['fields'] );
+		$this->assertSame( ( new Registry() )->to_client(), $data['fields'] );
+
+		$actions = new Actions( new Registry() );
+		$this->assertTrue( array_is_list( $data['actions'] ) );
+		$this->assertSame( $actions->ids(), array_column( $data['actions'], 'id' ) );
+		$this->assertSame( [ 'set_value', 'clear', 'adjust', 'round', 'copy_price', 'find_replace', 'affix_sku', 'add_terms', 'remove_terms', 'replace_terms' ], array_column( $data['actions'], 'id' ) );
+		$this->assertSame( $actions->to_client(), $data['actions'] );
+
+		$this->assertSame( Group::ALL, array_column( $data['groups'], 'id' ) );
+		$this->assertSame( [ 'Pricing', 'Stock', 'Organisation', 'Shipping and tax', 'Publishing' ], array_column( $data['groups'], 'label' ) );
 	}
 
-	public function test_the_item_schema_describes_every_key_of_an_item(): void {
+	public function test_the_plugin_route_serves_the_shared_action_registry(): void {
+		$GLOBALS['bcm_test']['logged_in']                  = true;
+		$GLOBALS['bcm_test']['caps']['manage_woocommerce'] = true;
+		$data = call_user_func( self::endpoint()['callback'], new \WP_REST_Request( 'GET', '/bcm/v1/fields' ) )->get_data();
+		$this->assertSame( Actions::instance()->to_client(), $data['actions'] );
+	}
+
+	public function test_the_schema_describes_every_key_of_the_response(): void {
 		$controller = new FieldsController( new Registry() );
-		$properties = $controller->get_item_schema()['properties'];
-		foreach ( ( new Registry() )->to_client() as $item ) {
-			foreach ( array_keys( $item ) as $key ) {
-				$this->assertArrayHasKey( $key, $properties, "Item key $key is not in the schema." );
+		$schema     = $controller->get_item_schema();
+		$payload    = $controller->payload();
+		$this->assertSame( array_keys( $payload ), array_keys( $schema['properties'] ) );
+		foreach ( [ 'fields', 'actions', 'groups' ] as $list ) {
+			$properties = $schema['properties'][ $list ]['items']['properties'];
+			foreach ( $payload[ $list ] as $item ) {
+				foreach ( array_keys( $item ) as $key ) {
+					$this->assertArrayHasKey( $key, $properties, "$list item key $key is not in the schema." );
+				}
 			}
 		}
+		$this->assertTrue( rest_validate_value_from_schema( $payload, $schema, 'fields' ) );
 	}
 }

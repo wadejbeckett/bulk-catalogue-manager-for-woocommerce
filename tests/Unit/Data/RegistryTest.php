@@ -33,6 +33,11 @@ final class RegistryTest extends TestCase {
 		'bcm_invalid_selection'   => 'REST refusal code for a selection token that is altered, expired or another user\'s',
 		'bcm_selection_too_large' => 'REST refusal code for a selection of more than 100,000 objects',
 		'bcm_selection_ttl'       => 'filter hook for how long a selection token lasts',
+		'bcm_invalid_operation'   => 'refusal code for an operation whose arguments are missing, malformed or out of range',
+		'bcm_field_not_accepted'  => 'refusal code for an action applied to a field it does not accept',
+		'bcm_no_operations'       => 'refusal code for an operation list with no operations',
+		'bcm_too_many_operations' => 'refusal code for an operation list above twenty operations',
+		'bcm_unknown_action'      => 'refusal code for an action id no operation has',
 		'bcm_catalogue'           => 'object-cache group for hydrated catalogue pages; keys carry the last-changed values and expire, so nothing is left to remove',
 	];
 

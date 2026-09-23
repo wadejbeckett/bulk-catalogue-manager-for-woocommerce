@@ -13,6 +13,7 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Fields;
 
+use BulkCatalogueManager\Operations\Group;
 use BulkCatalogueManager\Rest\Refusal;
 
 defined( 'ABSPATH' ) || exit;
@@ -194,6 +195,7 @@ final class Registry {
 			storage: Storage::meta( '_' . $key ),
 			edit_kinds: [ Field::SET, Field::CLEAR ],
 			variation_rule: Field::PER_VARIATION,
+			group: Group::SHIPPING_TAX,
 			getter: 'get_' . $key,
 			setter: 'set_' . $key,
 			inline: true,
@@ -208,6 +210,7 @@ final class Registry {
 				storage: Storage::post( 'post_title' ),
 				edit_kinds: [ Field::SET, Field::FIND_REPLACE ],
 				variation_rule: Field::DERIVED,
+				group: Group::ORGANISATION,
 				getter: 'get_name',
 				setter: 'set_name',
 				variation_note: __( 'A variation takes its name from its product and its attributes, so it cannot be changed here.', 'bulk-catalogue-manager-for-woocommerce' ),
@@ -222,6 +225,7 @@ final class Registry {
 				storage: Storage::post( 'post_status' ),
 				edit_kinds: [ Field::SET ],
 				variation_rule: Field::CONDITIONAL,
+				group: Group::PUBLISHING,
 				getter: 'get_status',
 				setter: 'set_status',
 				choices: [
@@ -241,6 +245,7 @@ final class Registry {
 				storage: $visibility_storage,
 				edit_kinds: [ Field::SET ],
 				variation_rule: Field::PARENT_ONLY,
+				group: Group::PUBLISHING,
 				getter: 'get_catalog_visibility',
 				setter: 'set_catalog_visibility',
 				choices: [
@@ -259,6 +264,7 @@ final class Registry {
 				storage: $visibility_storage,
 				edit_kinds: [ Field::SET ],
 				variation_rule: Field::PARENT_ONLY,
+				group: Group::PUBLISHING,
 				getter: 'get_catalog_visibility',
 				setter: 'set_catalog_visibility',
 				inline: true,
@@ -278,6 +284,7 @@ final class Registry {
 				storage: Storage::taxonomy( 'product_visibility', [ 'featured' ] ),
 				edit_kinds: [ Field::SET ],
 				variation_rule: Field::PARENT_ONLY,
+				group: Group::PUBLISHING,
 				getter: 'get_featured',
 				setter: 'set_featured',
 				inline: true,
@@ -291,6 +298,7 @@ final class Registry {
 				storage: Storage::taxonomy( 'product_cat' ),
 				edit_kinds: [ Field::SET, Field::ADD, Field::REMOVE ],
 				variation_rule: Field::PARENT_ONLY,
+				group: Group::ORGANISATION,
 				getter: 'get_category_ids',
 				setter: 'set_category_ids',
 				variation_note: __( 'Categories belong to the product, not to each variation.', 'bulk-catalogue-manager-for-woocommerce' ),
@@ -304,6 +312,7 @@ final class Registry {
 				storage: Storage::taxonomy( 'product_tag' ),
 				edit_kinds: [ Field::SET, Field::ADD, Field::REMOVE ],
 				variation_rule: Field::PARENT_ONLY,
+				group: Group::ORGANISATION,
 				getter: 'get_tag_ids',
 				setter: 'set_tag_ids',
 				variation_note: __( 'Tags belong to the product, not to each variation.', 'bulk-catalogue-manager-for-woocommerce' ),
@@ -317,6 +326,7 @@ final class Registry {
 				storage: Storage::meta( '_regular_price', [ 'min_price', 'max_price' ] ),
 				edit_kinds: [ Field::SET, Field::ADJUST, Field::ROUND, Field::COPY_FROM_SALE ],
 				variation_rule: Field::PER_VARIATION,
+				group: Group::PRICING,
 				getter: 'get_regular_price',
 				setter: 'set_regular_price',
 				inline: true,
@@ -332,6 +342,7 @@ final class Registry {
 				storage: Storage::meta( '_sale_price' ),
 				edit_kinds: [ Field::SET, Field::CLEAR, Field::ADJUST, Field::ROUND, Field::COPY_FROM_REGULAR ],
 				variation_rule: Field::PER_VARIATION,
+				group: Group::PRICING,
 				getter: 'get_sale_price',
 				setter: 'set_sale_price',
 				inline: true,
@@ -345,6 +356,7 @@ final class Registry {
 				storage: Storage::meta( '_stock_status', [ 'stock_status' ] ),
 				edit_kinds: [ Field::SET ],
 				variation_rule: Field::PER_VARIATION,
+				group: Group::STOCK,
 				getter: 'get_stock_status',
 				setter: 'set_stock_status',
 				inline: true,
@@ -363,6 +375,7 @@ final class Registry {
 				storage: Storage::meta( '_manage_stock' ),
 				edit_kinds: [ Field::SET ],
 				variation_rule: Field::PER_VARIATION,
+				group: Group::STOCK,
 				getter: 'get_manage_stock',
 				setter: 'set_manage_stock',
 				filter_operators: [ 'is' ]
@@ -374,6 +387,7 @@ final class Registry {
 				storage: Storage::meta( '_stock', [ 'stock_quantity' ] ),
 				edit_kinds: [ Field::SET, Field::ADJUST ],
 				variation_rule: Field::CONDITIONAL,
+				group: Group::STOCK,
 				getter: 'get_stock_quantity',
 				setter: 'set_stock_quantity',
 				inline: true,
@@ -390,6 +404,7 @@ final class Registry {
 				storage: Storage::meta( '_sku', [ 'sku' ] ),
 				edit_kinds: [ Field::SET, Field::FIND_REPLACE, Field::PREFIX, Field::SUFFIX ],
 				variation_rule: Field::PER_VARIATION,
+				group: Group::ORGANISATION,
 				getter: 'get_sku',
 				setter: 'set_sku',
 				inline: true,
@@ -405,6 +420,7 @@ final class Registry {
 				storage: Storage::meta( '_weight' ),
 				edit_kinds: [ Field::SET, Field::ADJUST, Field::CLEAR ],
 				variation_rule: Field::PER_VARIATION,
+				group: Group::SHIPPING_TAX,
 				getter: 'get_weight',
 				setter: 'set_weight',
 				inline: true,
@@ -420,6 +436,7 @@ final class Registry {
 				storage: Storage::taxonomy( 'product_shipping_class' ),
 				edit_kinds: [ Field::SET ],
 				variation_rule: Field::PER_VARIATION,
+				group: Group::SHIPPING_TAX,
 				getter: 'get_shipping_class_id',
 				setter: 'set_shipping_class_id',
 				source: 'shipping_classes',
@@ -432,6 +449,7 @@ final class Registry {
 				storage: Storage::meta( '_tax_status', [ 'tax_status' ] ),
 				edit_kinds: [ Field::SET ],
 				variation_rule: Field::PER_VARIATION,
+				group: Group::SHIPPING_TAX,
 				getter: 'get_tax_status',
 				setter: 'set_tax_status',
 				choices: [
@@ -447,6 +465,7 @@ final class Registry {
 				storage: Storage::meta( '_tax_class', [ 'tax_class' ] ),
 				edit_kinds: [ Field::SET ],
 				variation_rule: Field::PER_VARIATION,
+				group: Group::SHIPPING_TAX,
 				getter: 'get_tax_class',
 				setter: 'set_tax_class',
 				choices: static fn(): array => self::tax_classes(),
@@ -460,6 +479,7 @@ final class Registry {
 				storage: Storage::meta( '_sold_individually' ),
 				edit_kinds: [ Field::SET ],
 				variation_rule: Field::PARENT_ONLY,
+				group: Group::STOCK,
 				getter: 'get_sold_individually',
 				setter: 'set_sold_individually',
 				variation_note: $per_product( $sold_individually )
@@ -471,6 +491,7 @@ final class Registry {
 				storage: Storage::post( 'comment_status' ),
 				edit_kinds: [ Field::SET ],
 				variation_rule: Field::PARENT_ONLY,
+				group: Group::PUBLISHING,
 				getter: 'get_reviews_allowed',
 				setter: 'set_reviews_allowed',
 				variation_note: $per_product( $reviews )

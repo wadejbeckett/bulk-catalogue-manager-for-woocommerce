@@ -17,6 +17,9 @@ namespace BulkCatalogueManager\Tests\Unit\Fields;
 use BulkCatalogueManager\Fields\Field;
 use BulkCatalogueManager\Fields\Registry;
 use BulkCatalogueManager\Fields\Storage;
+use BulkCatalogueManager\Operations\Group;
+use BulkCatalogueManager\Operations\Registry as Actions;
+use BulkCatalogueManager\Rest\FieldsController;
 use BulkCatalogueManager\Tests\Support\FakeProduct;
 use PHPUnit\Framework\TestCase;
 
@@ -177,7 +180,7 @@ final class RegistryTest extends TestCase {
 	}
 
 	public function test_the_client_payload_exposes_no_storage_key(): void {
-		$json = (string) wp_json_encode( ( new Registry() )->to_client() );
+		$json = (string) wp_json_encode( ( new FieldsController( new Registry() ) )->payload() );
 		foreach ( self::raw_identifiers() as $identifier ) {
 			$this->assertStringNotContainsString( '"' . $identifier . '"', $json, "The /fields payload exposes $identifier." );
 		}
@@ -186,15 +189,36 @@ final class RegistryTest extends TestCase {
 		$this->assertStringNotContainsString( 'storage', $json );
 	}
 
-	public function test_every_declared_edit_kind_is_a_known_kind(): void {
-		// T24 extends this to: every kind resolves to a registered operation.
-		foreach ( ( new Registry() )->all() as $key => $field ) {
+	public function test_every_declared_edit_kind_resolves_to_a_registered_operation(): void {
+		$registry = new Registry();
+		$actions  = new Actions( $registry );
+		foreach ( $registry->all() as $key => $field ) {
 			foreach ( $field->edit_kinds() as $kind ) {
 				$this->assertContains( $kind, Field::EDIT_KINDS, "$key: $kind." );
 				$this->assertTrue( $field->accepts( $kind ) );
+				$this->assertNotSame( [], $actions->actions_for( $key, $kind ), "No registered action performs $kind on $key." );
 			}
 		}
 		$this->assertFalse( self::field( 'status' )->accepts( Field::ADJUST ) );
+		$this->assertSame( [], $actions->actions_for( 'status', Field::ADJUST ) );
+	}
+
+	public function test_every_editable_field_sits_in_one_panel_group_and_no_column_does(): void {
+		$groups = [];
+		foreach ( ( new Registry() )->all() as $key => $field ) {
+			if ( $field->read_only() ) {
+				$this->assertSame( '', $field->group(), "$key is a column." );
+				continue;
+			}
+			$this->assertContains( $field->group(), Group::ALL, "$key has no group." );
+			$groups[ $field->group() ] = true;
+		}
+		$this->assertSame( Group::ALL, array_values( array_intersect( Group::ALL, array_keys( $groups ) ) ), 'Every panel group holds at least one field.' );
+		$this->assertSame( Group::PRICING, self::field( 'regular_price' )->group() );
+		$this->assertSame( Group::STOCK, self::field( 'stock_quantity' )->group() );
+		$this->assertSame( Group::ORGANISATION, self::field( 'category_ids' )->group() );
+		$this->assertSame( Group::SHIPPING_TAX, self::field( 'weight' )->group() );
+		$this->assertSame( Group::PUBLISHING, self::field( 'status' )->group() );
 	}
 
 	/**
@@ -550,6 +574,7 @@ final class RegistryTest extends TestCase {
 			'setter'         => 'set_thing',
 		];
 		$this->assertSame( 'thing', ( new Field( ...$base ) )->key() );
+		$this->assertSame( Group::STOCK, ( new Field( ...( $base + [ 'group' => Group::STOCK ] ) ) )->group() );
 		$bad = [
 			[ 'key' => '_thing' ],
 			[ 'key' => 'Thing' ],
@@ -566,6 +591,12 @@ final class RegistryTest extends TestCase {
 			],
 			[ 'edit_kinds' => [ Field::SET, Field::CLEAR ] ],
 			[ 'variation_rule' => Field::PARENT_ONLY ],
+			[ 'group' => 'marketing' ],
+			[
+				'edit_kinds' => [],
+				'setter'     => null,
+				'group'      => Group::PRICING,
+			],
 		];
 		foreach ( $bad as $change ) {
 			try {
@@ -578,7 +609,8 @@ final class RegistryTest extends TestCase {
 	}
 
 	public function test_the_fields_payload_matches_the_snapshot(): void {
-		$json = (string) wp_json_encode( ( new Registry() )->to_client(), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) . "\n";
+		// The whole `GET /fields` payload: fields, actions (T24) and groups.
+		$json = (string) wp_json_encode( ( new FieldsController( new Registry() ) )->payload(), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) . "\n";
 		if ( '1' === getenv( 'BCM_UPDATE_SNAPSHOT' ) ) {
 			file_put_contents( self::SNAPSHOT, $json );
 		}

@@ -75,3 +75,23 @@ export const HIDING_CHOICES = {
 	visible_on_site: [ 'off' ],
 	catalog_visibility: [ 'hidden' ],
 };
+
+// T41, T42: filters and the selection bar ---------------------------------
+
+/**
+ * Term sources whose terms form a tree, so a filter on them includes every
+ * term below the chosen ones (Query\ProductQuery expands them) and its chip
+ * says so: "Category is Shoes or its sub-categories".
+ */
+export const TREE_TERM_SOURCES = [ 'categories' ];
+
+/**
+ * The selection bar's Show on site and Hide from site (SPEC §4.1, §5.3): the
+ * switch field and its two real values. Either opens the bulk change panel
+ * with this field set, so it is previewed like any change.
+ */
+export const QUICK_VISIBILITY = {
+	field: 'visible_on_site',
+	show: 'on',
+	hide: 'off',
+};

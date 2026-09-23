@@ -87,8 +87,9 @@ describe( 'catalogue wiring', () => {
 			.getByRole( 'link', { name: 'Classic Cotton T-Shirt' } )
 			.closest( 'tr' );
 		fireEvent.click( within( row ).getByRole( 'checkbox' ) );
+		const bar = await screen.findByRole( 'region', { name: 'Selection' } );
 		fireEvent.click(
-			await screen.findByRole( 'button', {
+			within( bar ).getByRole( 'button', {
 				name: 'Make a change to these',
 			} )
 		);

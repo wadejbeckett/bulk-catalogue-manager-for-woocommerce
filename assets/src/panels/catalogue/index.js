@@ -12,6 +12,11 @@
  * rows (T61, T62); "Make a change to these" on the selection, which opens the
  * bulk change panel (T48–T50); and the progress of an applied change once
  * that panel is closed (T44).
+ *
+ * Search and filters (T41) live in toolbar/: the registry's filter
+ * definitions, viewToQuery() and the chips. The selection (T42) lives in
+ * selection/: ids kept across pages, select all matching through POST
+ * /selection, and the sticky selection bar that opens the bulk panel.
  */
 import { Button } from '@wordpress/components';
 import {
@@ -31,15 +36,27 @@ import { useSettings } from '../settings/store';
 import { rowActions } from './actions';
 import { descriptorsOf, defaultView, fieldsFromRegistry } from './fields';
 import { categoryArgs, clearFilters, isFiltered } from './query';
-import {
-	activeFilters,
-	ErrorNotice,
-	LoadingRows,
-	NoMatches,
-	NoProducts,
-} from './states';
+import { ErrorNotice, LoadingRows, NoMatches, NoProducts } from './states';
 import CatalogueTable from './table';
 import { useCatalogue, useRegistry, useTermNames } from './use-catalogue';
+// T41, T42: search, filters, chips and the selection.
+import { CATEGORY_FILTER } from './defaults';
+import {
+	FilterChips,
+	filterArgs,
+	filterChips,
+	filterSources,
+	selectionQuery,
+	withFilters,
+	withoutFilter,
+} from './toolbar';
+import {
+	SelectionBar,
+	panelSelection,
+	useSelection,
+	visibilityOperation,
+} from './selection';
+// End T41, T42.
 import './style.scss';
 
 export { fieldsFromRegistry, defaultView } from './fields';
@@ -126,8 +143,8 @@ export function CatalogueGrid( {
 	} ) );
 	const [ category, setCategory ] = useState( null );
 	const [ sentence, setSentence ] = useState( '' );
-	const [ selection, setSelection ] = useState( [] );
-	const [ bulkIds, setBulkIds ] = useState( null );
+	// T41, T42: the bulk panel opens on the selection, with any quick action's step.
+	const [ bulk, setBulk ] = useState( null );
 	const [ applied, setApplied ] = useState( null );
 	const extra = useMemo( () => categoryArgs( category ), [ category ] );
 	const catalogue = useCatalogue( view, descriptors, extra );
@@ -144,14 +161,59 @@ export function CatalogueGrid( {
 						field.source &&
 						( view.fields || [] ).includes( field.key )
 				)
-				.map( ( field ) => field.source ),
+				.map( ( field ) => field.source )
+				// T41: the filters name their terms too.
+				.concat( filterSources( descriptors ) ),
 		[ descriptors, view.fields ]
 	);
-	const termNames = useTermNames( sources );
+	const termNames = useTermNames( [ ...new Set( sources ) ] );
 	const actions = useMemo(
-		() => rowActions( { onEditDetails, onMakeChange: setBulkIds } ),
+		() =>
+			rowActions( {
+				onEditDetails,
+				onMakeChange: ( ids ) =>
+					setBulk( { selection: { kind: 'ids', ids } } ),
+			} ),
 		[ onEditDetails ]
 	);
+	// T41, T42: filter fields, chips, the selection and its quick actions.
+	const filterFields = useMemo(
+		() => withFilters( fields, descriptors, termNames ),
+		[ fields, descriptors, termNames ]
+	);
+	const chips = useMemo(
+		() => filterChips( view, descriptors, termNames ),
+		[ view, descriptors, termNames ]
+	);
+	const conditions = useMemo(
+		() => selectionQuery( view, descriptors, extra ),
+		[ view, descriptors, extra ]
+	);
+	const selection = useSelection( { conditions, items: catalogue.items } );
+	const showStep = useMemo(
+		() => visibilityOperation( registry, settings, true ),
+		[ registry, settings ]
+	);
+	const hideStep = useMemo(
+		() => visibilityOperation( registry, settings, false ),
+		[ registry, settings ]
+	);
+	const openBulk = ( steps = null ) =>
+		setBulk( {
+			selection: panelSelection( selection, chips ),
+			initialOperations: steps,
+		} );
+	const viewCategory = !! filterArgs( view.filters, descriptors )[
+		CATEGORY_FILTER
+	];
+	useEffect( () => {
+		// A category filter chosen in the filters replaces the panel's choice.
+		if ( viewCategory ) {
+			setCategory( null );
+			setSentence( '' );
+		}
+	}, [ viewCategory ] );
+	// End T41, T42.
 	const clear = useCallback( () => {
 		setView( ( current ) => clearFilters( current ) );
 		setCategory( null );
@@ -160,7 +222,10 @@ export function CatalogueGrid( {
 	const chooseCategory = useCallback( ( value, words ) => {
 		setCategory( value );
 		setSentence( value ? words : '' );
-		setView( ( current ) => ( { ...current, page: 1 } ) );
+		setView( ( current ) => ( {
+			...withoutFilter( current, CATEGORY_FILTER ), // T41
+			page: 1,
+		} ) );
 	}, [] );
 	const { refetch } = catalogue;
 	const finished = useCallback( () => {
@@ -213,14 +278,29 @@ export function CatalogueGrid( {
 						</Button>
 					</p>
 				) }
-				{ applied && ! bulkIds && (
+				{ /* T41, T42 */ }
+				<FilterChips
+					chips={ chips }
+					onChange={ setView }
+					onClearAll={ clear }
+				/>
+				<SelectionBar
+					selection={ selection }
+					pageCount={ catalogue.items.length }
+					total={ catalogue.pagination.totalItems }
+					filtered={ filtered }
+					onMakeChange={ () => openBulk() }
+					onShow={ showStep ? () => openBulk( [ showStep ] ) : null }
+					onHide={ hideStep ? () => openBulk( [ hideStep ] ) : null }
+				/>
+				{ applied && ! bulk && (
 					<AppliedProgress
 						batchId={ applied }
 						onFinished={ finished }
 					/>
 				) }
 				<CatalogueTable
-					fields={ fields }
+					fields={ filterFields }
 					view={ view }
 					onChangeView={ setView }
 					items={ catalogue.items }
@@ -230,25 +310,29 @@ export function CatalogueGrid( {
 					actions={ actions }
 					termNames={ termNames }
 					pending={ catalogue.pending }
-					selection={ selection }
-					onChangeSelection={ setSelection }
+					selection={ selection.tableSelection }
+					onChangeSelection={ selection.onChangeSelection }
 					empty={
 						catalogue.error ? null : (
 							<NoMatches
-								filters={ activeFilters( view, descriptors ) }
+								filters={ [
+									sentence,
+									...chips.map( ( chip ) => chip.sentence ),
+								].filter( Boolean ) }
 								onClear={ clear }
 							/>
 						)
 					}
 				/>
 			</div>
-			{ bulkIds && (
+			{ bulk && (
 				<BulkChangePanel
-					selection={ { kind: 'ids', ids: bulkIds } }
+					selection={ bulk.selection }
+					initialOperations={ bulk.initialOperations }
 					registry={ registry }
 					settings={ settings }
 					categories={ tree.nodes }
-					onClose={ () => setBulkIds( null ) }
+					onClose={ () => setBulk( null ) }
 					onApplied={ setApplied }
 					renderStalled={ ( report ) => (
 						<StalledNotice report={ report } />

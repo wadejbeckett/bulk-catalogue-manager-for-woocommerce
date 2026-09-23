@@ -34,6 +34,7 @@ import BulkChangePanel from './panels/bulk';
 | `onDownloadSample` | no | Called with the preview request (`{ operations, ids \| token, sample_size }`) by **Download sample CSV**. Until the export route takes a preview (T22's writer and formula guard), the button is disabled with its reason. |
 | `renderStalled` | no | `( report ) => Element`, rendered in place of the progress bar when `GET /batches/{id}` reports `stalled` (T44's notice). Without it the server's `stalled_message` is shown. |
 | `pollInterval` | no | Milliseconds between progress reads; 2000 by default. |
+| `initialOperations` | no | Steps to open with instead of one empty step, in the panel's operation shape (`chooseAction()` / `changeArg()` from `operations.js`). The catalogue's selection bar opens **Show on site** and **Hide from site** this way (T42); read once when the panel mounts, and previewed like any other change. |
 
 The panel exposes its §4.3 state on `data-state`: `idle`, `configuring`,
 `blocked`, `previewing`, `ready`, `empty`, `stale`, `applying`, `done`.

@@ -3,7 +3,13 @@
  * skeleton, no products, no matches with the active filters, an error that
  * keeps the rows already on screen — and Try again reads again.
  */
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+	within,
+} from '@testing-library/react';
 
 import Catalogue from '../../assets/src/panels/catalogue';
 
@@ -100,19 +106,22 @@ describe( 'catalogue states', () => {
 		expect(
 			await screen.findByText( 'No products match these filters.' )
 		).toBeTruthy();
-		const list = screen.getByRole( 'list', { name: 'Active filters' } );
+		const state = document.querySelector( '.bcm-state' );
+		const list = within( state ).getByRole( 'list', {
+			name: 'Active filters',
+		} );
 		expect(
 			Array.from( list.querySelectorAll( 'li' ) ).map(
 				( li ) => li.textContent
 			)
 		).toEqual( [
 			'Name or SKU contains “zzz”',
-			'Stock status: Out of stock, On backorder',
+			'Stock status is Out of stock or On backorder',
 		] );
 		expect( screen.queryByText( 'There are no products yet.' ) ).toBeNull();
 
 		fireEvent.click(
-			screen.getByRole( 'button', { name: 'Clear filters' } )
+			within( state ).getByRole( 'button', { name: 'Clear filters' } )
 		);
 		expect(
 			await screen.findByText( 'Classic Cotton T-Shirt' )

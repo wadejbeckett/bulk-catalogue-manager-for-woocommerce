@@ -179,20 +179,21 @@ export function panelState( facts ) {
 /**
  * The bulk action panel.
  *
- * @param {Object}        props                  Props (see README.md).
- * @param {Object}        props.selection        `{ kind: 'ids', ids }` or `{ kind: 'filter', token, count, filters }`.
- * @param {Object}        props.registry         The `/fields` payload `{ fields, actions, groups }`.
- * @param {Object}        props.settings         The `bcm_settings` values (or the screen settings carrying them).
- * @param {Function}      props.onClose          Close the panel.
- * @param {Function}      props.onApplied        Receives the new batch id.
- * @param {Array<Object>} props.categories       Category tree for the terms picker.
- * @param {Array<Object>} props.tags             Tags for the terms picker.
- * @param {Array<Object>} props.shippingClasses  Shipping classes for a set.
- * @param {Function}      props.onUndo           Receives a batch id: Undo this change.
- * @param {Function}      props.onViewHistory    Receives a batch id: View in History.
- * @param {Function}      props.onDownloadSample Receives the preview request: Download sample CSV.
- * @param {Function}      props.renderStalled    Receives a stalled batch report (T44).
- * @param {number}        props.pollInterval     Milliseconds between progress reads.
+ * @param {Object}        props                   Props (see README.md).
+ * @param {Object}        props.selection         `{ kind: 'ids', ids }` or `{ kind: 'filter', token, count, filters }`.
+ * @param {Object}        props.registry          The `/fields` payload `{ fields, actions, groups }`.
+ * @param {Object}        props.settings          The `bcm_settings` values (or the screen settings carrying them).
+ * @param {Function}      props.onClose           Close the panel.
+ * @param {Function}      props.onApplied         Receives the new batch id.
+ * @param {Array<Object>} props.categories        Category tree for the terms picker.
+ * @param {Array<Object>} props.tags              Tags for the terms picker.
+ * @param {Array<Object>} props.shippingClasses   Shipping classes for a set.
+ * @param {Function}      props.onUndo            Receives a batch id: Undo this change.
+ * @param {Function}      props.onViewHistory     Receives a batch id: View in History.
+ * @param {Function}      props.onDownloadSample  Receives the preview request: Download sample CSV.
+ * @param {Function}      props.renderStalled     Receives a stalled batch report (T44).
+ * @param {number}        props.pollInterval      Milliseconds between progress reads.
+ * @param {Array<Object>} props.initialOperations Steps to open with (the selection bar's quick actions, T42).
  * @return {Element} Panel.
  */
 export default function BulkChangePanel( {
@@ -209,14 +210,21 @@ export default function BulkChangePanel( {
 	onDownloadSample = null,
 	renderStalled = null,
 	pollInterval = 2000,
+	initialOperations = null,
 } ) {
 	const panelRef = useRef( null );
 	const headingRef = useRef( null );
 	const checkRef = useRef( null );
-	const nextKey = useRef( 2 );
-	const [ operations, setOperations ] = useState( () => [
-		emptyOperation( 1 ),
-	] );
+	const opening = Array.isArray( initialOperations ) ? initialOperations : [];
+	const nextKey = useRef( Math.max( opening.length, 1 ) + 1 );
+	const [ operations, setOperations ] = useState( () =>
+		opening.length
+			? opening.map( ( operation, index ) => ( {
+					...operation,
+					key: index + 1,
+				} ) )
+			: [ emptyOperation( 1 ) ]
+	);
 	const [ active, setActive ] = useState( 0 );
 	const [ sampleSize, setSampleSize ] = useState( 25 );
 	const [ changedOnly, setChangedOnly ] = useState( false );

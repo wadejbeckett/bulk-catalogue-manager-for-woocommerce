@@ -12,7 +12,7 @@ import {
 
 import { request } from '../../api';
 import { TERM_ROUTES } from './defaults';
-import { toQuery } from './query';
+import { viewToQuery } from './toolbar/filters'; // T41: filters join the query.
 
 const NONE = {};
 
@@ -53,7 +53,7 @@ export function useRegistry() {
  */
 export function useCatalogue( view, descriptors, extra = NONE ) {
 	const query = useMemo(
-		() => toQuery( view, descriptors, extra ),
+		() => viewToQuery( view, descriptors, extra ),
 		[ view, descriptors, extra ]
 	);
 	const key = JSON.stringify( query );

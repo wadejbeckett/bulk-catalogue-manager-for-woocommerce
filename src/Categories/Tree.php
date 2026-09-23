@@ -7,8 +7,10 @@
  *
  * A term whose parent is not in the list (removed, or in a loop of parents)
  * becomes a top-level node and reports parent 0, so the tree is always a
- * forest the panel can draw. Siblings sort by WooCommerce's stored category
- * order, then by name, then by id.
+ * forest the panel can draw. Siblings sort by the plugin's own tree order
+ * (`bcm_order`, written by a move) first, then those without one by
+ * WooCommerce's stored category order, then by name, then by id; a node's
+ * `order` is whichever of the two decided its place.
  *
  * Counts come from groups: each group is a set of category ids some number
  * of products carry exactly. A product counts once on every category it has
@@ -47,12 +49,14 @@ final class Tree {
 	/**
 	 * Build from a flat term list.
 	 *
-	 * @param iterable<object>  $terms  Terms with term_id, name, slug and parent, as get_terms() returns them.
-	 * @param array<int, mixed> $orders Stored category order by term id; missing or non-numeric reads as 0.
+	 * @param iterable<object>  $terms       Terms with term_id, name, slug and parent, as get_terms() returns them.
+	 * @param array<int, mixed> $orders      WooCommerce's stored category order by term id; missing or non-numeric reads as 0.
+	 * @param array<int, mixed> $tree_orders The plugin's tree order (`bcm_order`) by term id; a numeric value places the term ahead of siblings without one.
 	 */
-	public static function from_terms( iterable $terms, array $orders = [] ): self {
-		$tree = new self();
-		$flat = [];
+	public static function from_terms( iterable $terms, array $orders = [], array $tree_orders = [] ): self {
+		$tree   = new self();
+		$flat   = [];
+		$ranked = [];
 		foreach ( $terms as $term ) {
 			$id = (int) ( $term->term_id ?? 0 );
 			if ( $id <= 0 || isset( $flat[ $id ] ) ) {
@@ -66,6 +70,10 @@ final class Tree {
 				'depth'  => 0,
 				'order'  => is_numeric( $orders[ $id ] ?? null ) ? (int) $orders[ $id ] : 0,
 			];
+			if ( is_numeric( $tree_orders[ $id ] ?? null ) ) {
+				$flat[ $id ]['order'] = (int) $tree_orders[ $id ];
+				$ranked[ $id ]        = true;
+			}
 		}
 
 		// Group by parent, treating an unknown or self parent as none.
@@ -78,8 +86,8 @@ final class Tree {
 			$flat[ $id ]['parent']  = $parent;
 			$by_parent[ $parent ][] = $id;
 		}
-		// Stored order, then name in natural order ignoring case, then id.
-		$compare = static fn( int $a, int $b ): int => [ $flat[ $a ]['order'], strnatcasecmp( $flat[ $a ]['name'], $flat[ $b ]['name'] ), $a ] <=> [ $flat[ $b ]['order'], 0, $b ];
+		// Tree order before none, stored order, then name in natural order ignoring case, then id.
+		$compare = static fn( int $a, int $b ): int => [ isset( $ranked[ $a ] ) ? 0 : 1, $flat[ $a ]['order'], strnatcasecmp( $flat[ $a ]['name'], $flat[ $b ]['name'] ), $a ] <=> [ isset( $ranked[ $b ] ) ? 0 : 1, $flat[ $b ]['order'], 0, $b ];
 		foreach ( $by_parent as $parent => $ids ) {
 			usort( $ids, $compare );
 			$by_parent[ $parent ] = $ids;
@@ -149,6 +157,16 @@ final class Tree {
 	 */
 	public function node( int $id ): ?array {
 		return $this->nodes[ $id ] ?? null;
+	}
+
+	/**
+	 * The ids directly below a node (or the top level), in display order.
+	 *
+	 * @param int $parent_id Parent id, 0 for the top level.
+	 * @return list<int>
+	 */
+	public function children( int $parent_id ): array {
+		return $this->children[ $parent_id ] ?? [];
 	}
 
 	/**

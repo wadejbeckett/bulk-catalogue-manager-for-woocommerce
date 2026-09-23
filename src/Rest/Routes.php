@@ -62,6 +62,7 @@ final class Routes {
 				new AuditController(),
 				new PreviewController(),
 				new ProductWriteController( Registry::instance() ),
+				new CategoriesWriteController(),
 			]
 		);
 	}

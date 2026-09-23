@@ -50,9 +50,11 @@ final class Registry {
 	private const USER_META = [];
 
 	/**
-	 * Term meta keys.
+	 * Term meta keys: the category tree's own sibling order (T64).
 	 */
-	private const TERM_META = [];
+	private const TERM_META = [
+		\BulkCatalogueManager\Categories\CategoryTree::TREE_ORDER_META,
+	];
 
 	/**
 	 * Transient name prefixes; every transient whose name starts with one is the plugin's.

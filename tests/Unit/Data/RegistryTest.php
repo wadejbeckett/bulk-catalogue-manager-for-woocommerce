@@ -51,6 +51,13 @@ final class RegistryTest extends TestCase {
 		'bcm_batch_size'          => 'filter hook over the configured chunk size of a background batch',
 		'bcm_not_cancellable'     => 'REST refusal code for cancelling a batch that has already finished',
 		'bcm_not_reversible'      => 'refusal code for undoing a batch that is running, already undone, pruned or outside the retention window',
+		'bcm_name_required'       => 'REST refusal code for a category with an empty name',
+		'bcm_category_exists'     => 'REST refusal code for a category name another category under the same parent has',
+		'bcm_slug_taken'          => 'REST refusal code for a category slug another category has',
+		'bcm_slug_invalid'        => 'REST refusal code for a category slug with no letter or number',
+		'bcm_parent_missing'      => 'REST refusal code for a parent category that does not exist',
+		'bcm_category_cycle'      => 'REST refusal code for moving a category inside itself or one of its descendants',
+		'bcm_category_not_saved'  => 'REST refusal code for a category write WordPress refused',
 	];
 
 	/**

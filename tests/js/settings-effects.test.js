@@ -32,6 +32,10 @@ function load( values ) {
 	return require( '../../assets/src/panels/settings' );
 }
 
+// Each test loads the screen's modules afresh, DataViews included, which can
+// take longer than Jest's default five seconds when every suite runs at once.
+jest.setTimeout( 30000 );
+
 describe( 'settings effects', () => {
 	let errors;
 

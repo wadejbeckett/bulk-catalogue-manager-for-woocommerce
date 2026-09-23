@@ -267,6 +267,18 @@ const ALLOWED = new Map( [
 		'panels/catalogue/fields.js:id',
 		'the registry value type of the identity field, compared with descriptor.type',
 	],
+	[
+		'panels/history/audit.js:name',
+		'the product name property of a GET /audit row and of a GET /products item',
+	],
+	[
+		'panels/history/audit.js:id',
+		'the product id property of a GET /products item, asked for by fields',
+	],
+	[
+		'panels/history/batches.js:status',
+		'the outcome property of a GET /batches row, not the product status field',
+	],
 ] );
 
 describe( 'no field or storage key in the client', () => {

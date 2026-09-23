@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-09-23T15:27:41+00:00\n"
+"POT-Creation-Date: 2026-09-23T15:30:02+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -155,6 +155,7 @@ msgstr ""
 
 #. translators: %s: a number of products, such as "1,284".
 #. translators: %s: a number of products, such as "4,312".
+#. translators: %s: number of products and variations, such as "1,248".
 #, php-format,js-format
 msgid "%s product"
 msgid_plural "%s products"
@@ -203,7 +204,8 @@ msgstr[0] ""
 msgstr[1] ""
 
 #. translators: %s: the number of the batch undone, such as "418".
-#, php-format
+#. translators: %s: the number of the change undone, such as "418".
+#, php-format,js-format
 msgid "Undo of #%s"
 msgstr ""
 
@@ -1810,6 +1812,7 @@ msgid "Progress"
 msgstr ""
 
 #. translators: 1: done, such as "312"; 2: in all, such as "1,284".
+#. translators: 1: products done so far, such as "40"; 2: products in the change, such as "1,248".
 #, js-format
 msgid "%1$s of %2$s done"
 msgstr ""
@@ -1862,6 +1865,8 @@ msgid "Name or SKU contains “%s”"
 msgstr ""
 
 #. translators: 1: a field such as "Stock status", 2: the chosen values, comma separated.
+#. translators: 1: a result, such as "Skipped"; 2: its reason.
+#. translators: 1: an action, such as "Round prices"; 2: a field, such as "regular price".
 #, js-format
 msgid "%1$s: %2$s"
 msgstr ""
@@ -1873,6 +1878,445 @@ msgid "Active filters"
 msgstr ""
 
 msgid "Clear filters"
+msgstr ""
+
+msgid "When"
+msgstr ""
+
+msgid "Before"
+msgstr ""
+
+msgid "Result"
+msgstr ""
+
+msgid "Who"
+msgstr ""
+
+msgid "Change"
+msgstr ""
+
+#. translators: %s: the change's number, such as "418".
+#, js-format
+msgid "#%s"
+msgstr ""
+
+msgid "Type part of a product name to find it."
+msgstr ""
+
+msgid "Export log (CSV)"
+msgstr ""
+
+msgid "The audit log could not be loaded. Try again in a moment."
+msgstr ""
+
+msgid "No field changes match these filters."
+msgstr ""
+
+msgid "The products edited after this change"
+msgstr ""
+
+msgid "This change left"
+msgstr ""
+
+msgid "The undo did not finish, so nothing more was put back. Open its row in the history to see why."
+msgstr ""
+
+msgid "Hide the changes"
+msgstr ""
+
+msgid "See every change"
+msgstr ""
+
+msgid "Undone"
+msgstr ""
+
+msgid "Redo"
+msgstr ""
+
+msgid "Undo"
+msgstr ""
+
+#. translators: %s: number of products changed again since, such as "3".
+#, js-format
+msgid "%s changed since"
+msgstr ""
+
+#. translators: %s: number of products that failed, such as "3".
+#, js-format
+msgid "%s failed"
+msgid_plural "%s failed"
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "The undo could not be started. Reload the page and try again."
+msgstr ""
+
+msgid "Products changed since"
+msgstr ""
+
+#. translators: %s: number of products changed again since, such as "3".
+#, js-format
+msgid "%s of these products has changed since"
+msgid_plural "%s of these products have changed since"
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "Someone edited some of these products after this change was made. Undoing them would overwrite that later work."
+msgstr ""
+
+#. translators: %s: number of products that can go back safely, such as "117".
+#, js-format
+msgid "Undo the other %s"
+msgstr ""
+
+#. translators: %s: number of products changed again since, such as "3".
+#, js-format
+msgid "See the %s that changed"
+msgstr ""
+
+#. translators: %s: number of products, such as "120".
+#, js-format
+msgid "Undo all %s anyway"
+msgstr ""
+
+msgid "Cancel"
+msgstr ""
+
+msgid "Redo this change?"
+msgstr ""
+
+msgid "Undo this change?"
+msgstr ""
+
+#. translators: %s: number of products changed again since, such as "3".
+#, js-format
+msgid "This includes %s product someone edited after this change; that later edit will be overwritten."
+msgid_plural "This includes %s products someone edited after this change; those later edits will be overwritten."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: number of products changed again since, such as "3".
+#, js-format
+msgid "The %s product that changed since will be left alone."
+msgid_plural "The %s products that changed since will be left alone."
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "Date"
+msgstr ""
+
+msgid "Action"
+msgstr ""
+
+msgid "Outcome"
+msgstr ""
+
+msgid "History is kept indefinitely. Change this in Settings."
+msgstr ""
+
+#. translators: %s: number of days, such as "90".
+#, js-format
+msgid "Older batches are removed automatically after %s day. Change this in Settings."
+msgid_plural "Older batches are removed automatically after %s days. Change this in Settings."
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "Number"
+msgstr ""
+
+msgid "What"
+msgstr ""
+
+msgid "Rows"
+msgstr ""
+
+msgid "Can be undone"
+msgstr ""
+
+msgid "The history could not be loaded. Try again in a moment."
+msgstr ""
+
+msgid "Loading the history…"
+msgstr ""
+
+msgid "No changes match these filters yet."
+msgstr ""
+
+msgid "Reason"
+msgstr ""
+
+msgid "Change number"
+msgstr ""
+
+msgid "Changed"
+msgstr ""
+
+msgid "Skipped"
+msgstr ""
+
+msgid "Failed"
+msgstr ""
+
+msgid "Waiting"
+msgstr ""
+
+msgid "Hide details"
+msgstr ""
+
+#. translators: %s: the change's number, such as "401".
+#, js-format
+msgid "Change #%s: every product, field, before and after value is kept."
+msgstr ""
+
+msgid "Search these changes"
+msgstr ""
+
+msgid "Show"
+msgstr ""
+
+msgid "Every row"
+msgstr ""
+
+msgid "Failed and skipped rows"
+msgstr ""
+
+msgid "Download these changes (CSV)"
+msgstr ""
+
+msgid "The changes could not be loaded. Reload the page and try again."
+msgstr ""
+
+msgid "Loading the changes…"
+msgstr ""
+
+msgid "Time"
+msgstr ""
+
+msgid "No change on this page matches your search."
+msgstr ""
+
+msgid "There are no rows to show."
+msgstr ""
+
+msgid "Pages of changes"
+msgstr ""
+
+msgid "Previous"
+msgstr ""
+
+#. translators: 1: current page; 2: number of pages; 3: number of rows.
+#, js-format
+msgid "Page %1$s of %2$s (%3$s rows)"
+msgstr ""
+
+msgid "Next"
+msgstr ""
+
+msgid "A field"
+msgstr ""
+
+msgid "Empty"
+msgstr ""
+
+#. translators: 1: a field, such as "regular price"; 2: the value it was set to.
+#, js-format
+msgid "Set the %1$s to %2$s"
+msgstr ""
+
+#. translators: %s: a field, such as "sale price".
+#, js-format
+msgid "Cleared the %s"
+msgstr ""
+
+#. translators: 1: a field, such as "regular price"; 2: a percentage without its sign, such as "8".
+#, js-format
+msgid "Increased the %1$s by %2$s%%"
+msgstr ""
+
+#. translators: 1: a field, such as "regular price"; 2: a percentage without its sign, such as "8".
+#, js-format
+msgid "Decreased the %1$s by %2$s%%"
+msgstr ""
+
+#. translators: 1: a field, such as "regular price"; 2: an amount, such as "5.00".
+#, js-format
+msgid "Increased the %1$s by %2$s"
+msgstr ""
+
+#. translators: 1: a field, such as "regular price"; 2: an amount, such as "5.00".
+#, js-format
+msgid "Decreased the %1$s by %2$s"
+msgstr ""
+
+#. translators: %s: a field, such as "regular price".
+#, js-format
+msgid "Rounded the %s"
+msgstr ""
+
+#. translators: 1: a price field, such as "sale price"; 2: a percentage without its sign, such as "15".
+#, js-format
+msgid "Copied the other price into the %1$s, then took %2$s%% off"
+msgstr ""
+
+#. translators: %s: a price field, such as "sale price".
+#, js-format
+msgid "Copied the other price into the %s"
+msgstr ""
+
+#. translators: 1: the text found; 2: the text put in its place; 3: a field, such as "name".
+#, js-format
+msgid "Replaced “%1$s” with “%2$s” in the %3$s"
+msgstr ""
+
+#. translators: 1: the text added; 2: a field, such as "SKU".
+#, js-format
+msgid "Added “%1$s” to the end of the %2$s"
+msgstr ""
+
+#. translators: 1: the text added; 2: a field, such as "SKU".
+#, js-format
+msgid "Added “%1$s” to the start of the %2$s"
+msgstr ""
+
+#. translators: %s: a field, such as "categories".
+#, js-format
+msgid "Added %s"
+msgstr ""
+
+#. translators: %s: a field, such as "categories".
+#, js-format
+msgid "Removed %s"
+msgstr ""
+
+#. translators: %s: a field, such as "categories".
+#, js-format
+msgid "Replaced the %s"
+msgstr ""
+
+msgid "Changed some products"
+msgstr ""
+
+msgid "Changed a category"
+msgstr ""
+
+msgid "Edited in the grid"
+msgstr ""
+
+msgid "Category manager"
+msgstr ""
+
+msgid "Waiting to start"
+msgstr ""
+
+msgid "Running"
+msgstr ""
+
+msgid "Done with errors"
+msgstr ""
+
+msgid "Cancelled"
+msgstr ""
+
+msgid "Being undone"
+msgstr ""
+
+msgid "The saved values for this change were removed when old history was cleared, so it cannot be undone."
+msgstr ""
+
+msgid "This change has already been undone."
+msgstr ""
+
+msgid "This change is older than the history is kept for, so it can no longer be undone."
+msgstr ""
+
+msgid "Nothing was changed by this batch, so there is nothing to undo."
+msgstr ""
+
+msgid "This change can no longer be undone."
+msgstr ""
+
+msgid "The file could not be made. Try again in a moment."
+msgstr ""
+
+msgid "Changes"
+msgstr ""
+
+msgid "Audit log"
+msgstr ""
+
+msgid "Only changes made through this screen are recorded here. Edits made elsewhere in WordPress, such as on the product edit page, are not."
+msgstr ""
+
+msgid "The background queue has not run."
+msgstr ""
+
+msgid "This change has not moved for five minutes because the site’s background tasks are not running."
+msgstr ""
+
+msgid "Nothing has been applied yet."
+msgstr ""
+
+#. translators: 1: products done so far, such as "40"; 2: products in the change, such as "1,248".
+#, js-format
+msgid "%1$s of %2$s product has been applied; nothing more will change until the queue runs."
+msgid_plural "%1$s of %2$s products have been applied; nothing more will change until the queue runs."
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "Open WooCommerce → Status → Scheduled Actions"
+msgstr ""
+
+#. translators: %s: number of products, such as "120".
+#, js-format
+msgid "This puts %s product back to its old price. Continue?"
+msgid_plural "This puts %s products back to their old prices. Continue?"
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: number of products, such as "120".
+#, js-format
+msgid "This puts %s product back to its old stock. Continue?"
+msgid_plural "This puts %s products back to their old stock. Continue?"
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: number of products, such as "120".
+#, js-format
+msgid "This puts %s product back to how it showed on the site. Continue?"
+msgid_plural "This puts %s products back to how they showed on the site. Continue?"
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: number of products, such as "120".
+#, js-format
+msgid "This puts %s product back to its old values. Continue?"
+msgid_plural "This puts %s products back to their old values. Continue?"
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: number of products, such as "1,248".
+#, js-format
+msgid "%s product was put back."
+msgid_plural "%s products were put back."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: how many were put back, such as "12 products were put back.".
+#, js-format
+msgid "Redone. %s"
+msgstr ""
+
+#. translators: 1: the change undone, in words, such as "Increased the regular price by 8%"; 2: how many were put back.
+#, js-format
+msgid "Undone: %1$s. %2$s"
+msgstr ""
+
+msgid "Someone"
+msgstr ""
+
+#. translators: %d: a user id.
+#, js-format
+msgid "User %d"
 msgstr ""
 
 msgid "Settings saved."

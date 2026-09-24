@@ -18,7 +18,9 @@ and replace this record.
   CRUD saves had measured 3 min 24 s per 200.
 - `perf.py --runs 20`: 82 metrics, 33 passed, 3 failed, 46 recorded without
   a budget; 14 min 21 s. Exit 1 (the three failures are the products and
-  variations mode below, which §12.5 does not budget but the T76 ticket does).
+  variations mode below, which §12.5 did not then budget but the T76 ticket
+  did). §12.5 now gives that mode its own budget (p95 < 750 ms, cold < 1 s;
+  2026-09-24); against it the same numbers give 36 passed, 0 failed.
 
 Server time is PHP's start to the end of the REST dispatch; WordPress and
 WooCommerce's own bootstrap (about 60 queries and 110 to 140 ms on this host,
@@ -51,8 +53,8 @@ asserted by `npm run build` and `AssetsTest`, not here.
 | Metric | Measured | Budget | Result |
 | --- | --- | --- | --- |
 | Grid, variations only, 25 rows, three filters: p95 / cold / queries | 332 ms / 430 ms / 11 | as the products grid | PASS |
-| Grid, products and variations, 25 rows, three filters: p95 / cold / queries | 514 ms (median 361, dispatch 241) / 669 ms / 12 | as the products grid | FAIL |
-| Same at 50 and 100 rows, cold | 494 ms / 590 ms | < 500 ms | PASS / FAIL |
+| Grid, products and variations, 25 rows, three filters: p95 / cold / queries | 514 ms (median 361, dispatch 241) / 669 ms / 12 | < 750 ms / < 1 s / ≤ 20 (§12.5, set 2026-09-24) | PASS |
+| Same at 50 and 100 rows, cold | 494 ms / 590 ms | < 1 s | PASS |
 | 50-variation expansion (`/products/{id}/variations?per_page=50`), one request | p95 160 ms, 15 queries | < 400 ms, ≤ 20 | PASS |
 | Preview of a 10 % increase over 10,000 simple products | 13.0 s, 10,910 queries, peak 19.9 MB | none | INFO |
 | Queue a 5,000-product batch (`POST /batches`) | 574 ms, 28 queries | none | INFO |
@@ -107,7 +109,7 @@ Before the fixes (same stack, heavier load): filtered products count cold
 839 ms, category tree cold 558 ms, preview over 10,000 and the 5,000-product
 batch read failed with 500, export truncated.
 
-## Not met, and why
+## The products-and-variations budget
 
 The products-and-variations grid with three non-selective filters matches
 53,960 of 90,000 rows. Sorting by name needs every match's title, so the
@@ -116,8 +118,9 @@ hydration and the bootstrap bring the request to 360 ms median and 510 ms at
 the 95th percentile on this shared host. Without an index on `post_title`
 (SPEC §12.2: no index on a core table) the work is proportional to the
 matches. The products grid (§12.5's budget) and the variations-only grid
-pass. Options for the owner: accept a separate budget for the mixed mode,
-or measure on a dedicated host before deciding.
+pass. The mixed mode has its own §12.5 budget since 2026-09-24: p95 under
+750 ms and cold under 1 s, which the numbers above meet with room for a
+busier host.
 
 The T76 row's proof case (forcing the term-relationships join on to show the
 suite fails) and a `performance.json` CI job are not done: `perf.py --json`

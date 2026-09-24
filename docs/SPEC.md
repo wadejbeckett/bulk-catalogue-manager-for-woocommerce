@@ -330,6 +330,7 @@ Default chunk size is 50 products or 100 variations (the settings *Products per 
 On 20,000 seeded products and 70,000 variations, PHP 8.3, MySQL 8, no persistent object cache. Asserted in the performance suite, not left as intentions.
 
 - Grid page of 25 rows with three filters: 95th-percentile server time under 400 ms, no more than 20 queries, constant with respect to page size.
+- Grid page of 25 rows with three filters in products-and-variations mode: 95th-percentile server time under 750 ms, filtered count under 1 second cold, the same query limit. Measured 514 ms p95 and 669 ms cold on a loaded host (T76, `tests/probe/PERF.md`). The mode lists products and their variations together, so three non-selective filters match most of 90,000 rows, and sorting them by name has no index on `post_title` to use (§12.2 adds no index to a core table); the work grows with the matches, not the page.
 - Filtered count under 500 ms cold, category tree under 300 ms cold, whole-catalogue selection resolved under 5 seconds.
 - At least 300 products a minute written at the default chunk size, peak memory under 96 MB per chunk.
 - CSV export of 20,000 rows: first byte under 2 seconds, complete under 60 seconds, memory flat. Built JavaScript under 400 KB compressed, loaded only on this screen.

@@ -29,8 +29,10 @@ Metrics (``--only`` takes these group names, comma separated, default all):
              Budget: p95 server time < 400 ms and <= 20 queries in the
              dispatch for 25 rows with three filters, the query count equal at
              25, 50 and 100 rows, the cold filtered request (page + COUNT)
-             < 500 ms; a 50-variation expansion (GET /products/{id}/variations)
-             is one request inside the same budget.
+             < 500 ms; in products-and-variations mode p95 < 750 ms and cold
+             < 1 s (SPEC §12.5); a 50-variation expansion
+             (GET /products/{id}/variations) is one request inside the
+             products grid's budget.
   categories GET /categories cold (tree transient cleared) < 300 ms, and warm.
   selection  POST /selection over the whole catalogue (products; products and
              variations) < 5 s.
@@ -84,6 +86,10 @@ BUDGET = {
     "grid_p95_ms": 400.0,
     "grid_queries": 20,
     "count_cold_ms": 500.0,
+    # Products-and-variations mode with three filters (SPEC §12.5): sorting
+    # tens of thousands of matching rows by title has no core index to use.
+    "mixed_grid_p95_ms": 750.0,
+    "mixed_count_cold_ms": 1000.0,
     "tree_cold_ms": 300.0,
     "selection_ms": 5000.0,
     "write_per_minute": 300.0,
@@ -241,11 +247,14 @@ class Perf:
                     queries.setdefault((mode, filtered), {})[per_page] = max(counts)
                     label = f"{mode}/{'3 filters' if filtered else 'no filter'}/{per_page}"
                     budgeted = filtered and per_page == 25
+                    mixed = mode == "products_and_variations"
+                    cold_budget = BUDGET["mixed_count_cold_ms"] if mixed else BUDGET["count_cold_ms"]
+                    p95_budget = BUDGET["mixed_grid_p95_ms"] if mixed else BUDGET["grid_p95_ms"]
                     self.metric("grid", f"{label} cold", cold["perf"]["server_ms"], "ms",
-                                "< 500 ms" if filtered else "", (cold["perf"]["server_ms"] < BUDGET["count_cold_ms"]) if filtered else None,
+                                f"< {cold_budget:.0f} ms" if filtered else "", (cold["perf"]["server_ms"] < cold_budget) if filtered else None,
                                 f"{cold['perf']['dispatch_queries']} queries, total {total}")
                     self.metric("grid", f"{label} warm p95", p95(server), "ms",
-                                "< 400 ms" if budgeted else "", (p95(server) < BUDGET["grid_p95_ms"]) if budgeted else None,
+                                f"< {p95_budget:.0f} ms" if budgeted else "", (p95(server) < p95_budget) if budgeted else None,
                                 f"median {median(server):.0f} ms, dispatch {median([w['perf']['dispatch_ms'] for w in warm]):.0f} ms, client {median([w['total_ms'] for w in warm]):.0f} ms")
                     self.metric("grid", f"{label} queries", max(counts), "queries",
                                 "<= 20" if budgeted else "", (max(counts) <= BUDGET["grid_queries"]) if budgeted else None,

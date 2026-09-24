@@ -8,6 +8,7 @@ import { __, _n, sprintf } from '@wordpress/i18n';
 
 import { FINISHED, useBatchProgress } from './hooks';
 import { formatNumber, productsPhrase } from './words';
+import { useProgressAnnouncer } from './announce';
 
 /**
  * The finished batch's headline.
@@ -77,6 +78,8 @@ export function DoneStep( {
 	const done = Number( report?.done_items ) || 0;
 	const finished = FINISHED.includes( report?.status );
 	const percent = total > 0 ? Math.min( 100, ( done / total ) * 100 ) : 0;
+	// T75: milestones, not every read; the result below is a status, said once.
+	useProgressAnnouncer( done, total, finished );
 
 	if ( ! finished ) {
 		return (
@@ -118,7 +121,7 @@ export function DoneStep( {
 						<i style={ { width: percent + '%' } } />
 					</div>
 				) }
-				<p className="bcm-bulk__hint" aria-live="polite">
+				<p className="bcm-bulk__hint">
 					{ sprintf(
 						/* translators: 1: done, such as "312"; 2: in all, such as "1,284". */
 						__(

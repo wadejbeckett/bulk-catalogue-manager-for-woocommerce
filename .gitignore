@@ -8,3 +8,4 @@ dist/
 .remember/
 .claude/settings.local.json
 .wp-env.override.json
+tests/e2e/.results/

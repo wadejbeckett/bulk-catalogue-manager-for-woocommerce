@@ -10,9 +10,10 @@
     "build": "wp-scripts build && npm run check:size",
     "check:size": "bytes=$(gzip -c assets/build/index.js | wc -c) && echo \"assets/build/index.js: $bytes bytes compressed (limit 409600)\" && test \"$bytes\" -lt 409600",
     "start": "wp-scripts start",
-    "lint:js": "wp-scripts lint-js assets/src tests/js webpack.config.js eslint.config.cjs --max-warnings=0",
-    "format": "wp-scripts format assets/src tests/js webpack.config.js eslint.config.cjs",
-    "test": "wp-scripts test-unit-js"
+    "lint:js": "wp-scripts lint-js assets/src tests/js tests/e2e webpack.config.js eslint.config.cjs --max-warnings=0",
+    "format": "wp-scripts format assets/src tests/js tests/e2e webpack.config.js eslint.config.cjs",
+    "test": "wp-scripts test-unit-js",
+    "e2e": "playwright test -c tests/e2e"
   },
   "dependencies": {
     "@wordpress/api-fetch": "7.40.1",
@@ -23,7 +24,9 @@
     "@wordpress/url": "4.40.1"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
     "@babel/parser": "7.29.9",
+    "@playwright/test": "1.63.0",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/react": "^16.3.0",
     "@wordpress/dependency-extraction-webpack-plugin": "6.56.0",

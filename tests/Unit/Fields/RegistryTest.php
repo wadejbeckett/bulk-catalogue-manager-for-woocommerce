@@ -183,8 +183,8 @@ final class RegistryTest extends TestCase {
 		$client  = array_map( static fn( Field $field ): array => $field->to_client(), ( new Registry() )->all() );
 		$default = array_filter( $client, static fn( array $field ): bool => $field['defaultColumn'] );
 		uasort( $default, static fn( array $a, array $b ): int => $a['defaultOrder'] <=> $b['defaultOrder'] );
-		$this->assertSame( [ 'sku', 'status', 'visible_on_site', 'regular_price', 'sale_price', 'stock_status', 'category_ids' ], array_keys( $default ), 'T40, T45: the columns after the product cell, in order.' );
-		$this->assertSame( [ 1, 2, 3, 4, 5, 6, 7 ], array_column( $default, 'defaultOrder' ) );
+		$this->assertSame( [ 'sku', 'category_ids', 'regular_price', 'stock_status', 'status', 'visible_on_site' ], array_keys( $default ), 'T40, T45, T75: the columns after the product cell, in the prototype\'s order; the sale price shows under the regular price.' );
+		$this->assertSame( [ 1, 2, 3, 4, 5, 6 ], array_column( $default, 'defaultOrder' ) );
 		foreach ( array_diff_key( $client, $default ) as $key => $field ) {
 			$this->assertNull( $field['defaultOrder'], $key );
 		}

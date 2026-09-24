@@ -192,8 +192,8 @@ afterEach( () => {
 	delete window.wp;
 } );
 
-async function renderLoaded() {
-	const result = render( <Catalogue settings={ SETTINGS } /> );
+async function renderLoaded( props = {} ) {
+	const result = render( <Catalogue settings={ SETTINGS } { ...props } /> );
 	await screen.findByText( 'Classic Tee' );
 	return result;
 }
@@ -526,7 +526,18 @@ describe( 'inheritance display (T68)', () => {
 	} );
 
 	it( 'reads Mixed where the variations disagree, with the reason', async () => {
-		await renderLoaded();
+		// The sale price shows under the regular price by default (T75);
+		// as its own column it reads Mixed.
+		await renderLoaded( {
+			initialView: {
+				fields: [
+					'sku',
+					'regular_price',
+					'sale_price',
+					'stock_status',
+				],
+			},
+		} );
 		await open( 'Polo' );
 		const poloRow = disclosure( 'Polo' ).closest( 'tr' );
 		const sale = cellOf( poloRow, 'Sale price' ).querySelector(

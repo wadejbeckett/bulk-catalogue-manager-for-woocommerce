@@ -107,6 +107,10 @@ export function BatchProgress( { report } ) {
 				max={ Math.max( 1, total ) }
 				value={ done }
 				aria-valuetext={ text }
+				aria-label={ __(
+					'Progress of the change',
+					'bulk-catalogue-manager-for-woocommerce'
+				) }
 			/>
 			<span className="bcm-progress__text">{ text }</span>
 		</div>

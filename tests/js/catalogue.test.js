@@ -83,12 +83,11 @@ describe( 'catalogue table', () => {
 		expect( headers ).toEqual( [
 			'Name',
 			'SKU',
+			'Categories',
+			'Regular price',
+			'Stock status',
 			'Status',
 			'Visible on site',
-			'Regular price',
-			'Sale price',
-			'Stock status',
-			'Categories',
 			'Actions',
 		] );
 	} );
@@ -140,7 +139,7 @@ describe( 'catalogue table', () => {
 
 	it( 'offers no sort on a column the registry does not mark sortable', async () => {
 		await renderLoaded();
-		fireEvent.click( screen.getByRole( 'button', { name: 'Sale price' } ) );
+		fireEvent.click( screen.getByRole( 'button', { name: 'Status' } ) );
 		await screen.findByRole( 'menuitem', { name: 'Hide column' } );
 		expect(
 			screen.queryByRole( 'menuitemradio', { name: 'Sort descending' } )

@@ -54,9 +54,13 @@ function choicesHidingAs( descriptors, as ) {
 	return out;
 }
 
-/** A field whose cell also shows another field's value: stock with its quantity. */
+/**
+ * A field whose cell also shows another field's value: stock with its
+ * quantity, the regular price with the sale price under it (T75).
+ */
 export const COMPANIONS = {
 	stock_status: 'stock_quantity',
+	regular_price: 'sale_price',
 };
 
 /** Badge tone per choice value; a value not listed is neutral. */

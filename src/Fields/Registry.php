@@ -237,7 +237,7 @@ final class Registry {
 				variation_choices: [ 'publish', 'private' ],
 				variation_note: __( 'A variation can only be published or private.', 'bulk-catalogue-manager-for-woocommerce' ),
 				filter_operators: [ 'isAny', 'isNone' ],
-				default_order: 2,
+				default_order: 5,
 				hiding_choices: [
 					'draft'   => Field::HIDES_OFF_SITE,
 					'pending' => Field::HIDES_OFF_SITE,
@@ -283,7 +283,7 @@ final class Registry {
 				variation_note: $per_product( $visible_on_site ),
 				adapter: Field::ADAPTER_SWITCH,
 				hiding_choices: [ 'off' => Field::HIDES_FROM_SHOP ],
-				default_order: 3
+				default_order: 6
 			),
 			new Field(
 				key: 'featured',
@@ -312,7 +312,7 @@ final class Registry {
 				variation_note: __( 'Categories belong to the product, not to each variation.', 'bulk-catalogue-manager-for-woocommerce' ),
 				source: 'categories',
 				filter_operators: [ 'isAny', 'isNone', 'isAll' ],
-				default_order: 7
+				default_order: 2
 			),
 			new Field(
 				key: 'tag_ids',
@@ -343,7 +343,7 @@ final class Registry {
 				variable_parent_note: $variable_price,
 				sortable: true,
 				filter_operators: self::RANGE,
-				default_order: 4
+				default_order: 3
 			),
 			new Field(
 				key: 'sale_price',
@@ -357,8 +357,7 @@ final class Registry {
 				setter: 'set_sale_price',
 				inline: true,
 				nullable: true,
-				variable_parent_note: $variable_price,
-				default_order: 5
+				variable_parent_note: $variable_price
 			),
 			new Field(
 				key: 'stock_status',
@@ -378,7 +377,7 @@ final class Registry {
 				],
 				sortable: true,
 				filter_operators: [ 'isAny', 'isNone' ],
-				default_order: 6
+				default_order: 4
 			),
 			new Field(
 				key: 'manage_stock',

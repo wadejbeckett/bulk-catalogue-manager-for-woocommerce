@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-09-23T18:54:19+00:00\n"
+"POT-Creation-Date: 2026-09-24T08:19:28+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -1590,6 +1590,17 @@ msgstr ""
 msgid "The record of this batch's changes has been cleared by the history clean-up, so it can no longer be undone."
 msgstr ""
 
+#. translators: %s: a filter as shown on its chip, such as "Date is in the past: 30 days".
+#, js-format
+msgid "Remove filter: %s"
+msgstr ""
+
+msgid "Remove filter"
+msgstr ""
+
+msgid "Your sign-in check has expired and could not be renewed, so this request was not sent. Reload the page, then try again."
+msgstr ""
+
 #. translators: %s: a number of products, such as "24 products".
 #, js-format
 msgid "Apply to %s"
@@ -1611,9 +1622,6 @@ msgid "You can undo this afterwards from History."
 msgstr ""
 
 msgid "Not yet"
-msgstr ""
-
-msgid "Your sign-in check has expired and could not be renewed, so this request was not sent. Reload the page, then try again."
 msgstr ""
 
 msgid "There is nothing to choose from yet."
@@ -1800,6 +1808,11 @@ msgid_plural "%s products could not be read and are left out of this change."
 msgstr[0] ""
 msgstr[1] ""
 
+#. translators: 1: rows done, such as "312"; 2: rows in all, such as "1,284".
+#, js-format
+msgid "Applying the change: %1$s of %2$s done."
+msgstr ""
+
 msgid "The change could not be applied. Nothing more will happen to these products."
 msgstr ""
 
@@ -1919,6 +1932,12 @@ msgstr ""
 msgid "Change the selection"
 msgstr ""
 
+msgid "Safety"
+msgstr ""
+
+msgid "Every change is saved with the old values. One click in History puts them back."
+msgstr ""
+
 msgid "Pick a change. You will see exactly what it does, on real products, before anything is saved."
 msgstr ""
 
@@ -1963,12 +1982,6 @@ msgid "Apply anyway"
 msgstr ""
 
 msgid "Preview again"
-msgstr ""
-
-msgid "Safety"
-msgstr ""
-
-msgid "Every change is saved with the old values. One click in History puts them back."
 msgstr ""
 
 msgid "Back to products"
@@ -2284,6 +2297,11 @@ msgstr ""
 #. translators: 1: a stock status such as "In stock", 2: the variations' quantities added up.
 #, js-format
 msgid "%1$s · %2$s"
+msgstr ""
+
+#. translators: %s: a sale price, such as "13.60".
+#, js-format
+msgid "%s on sale"
 msgstr ""
 
 msgid "Belongs to the product, not to each variation."
@@ -2682,6 +2700,9 @@ msgstr[1] ""
 msgid "Open WooCommerce → Status → Scheduled Actions"
 msgstr ""
 
+msgid "Progress of the change"
+msgstr ""
+
 #. translators: %s: number of products, such as "120".
 #, js-format
 msgid "This puts %s product back to its old price. Continue?"
@@ -2928,15 +2949,6 @@ msgid "No changes match these filters yet."
 msgstr ""
 
 msgid "Only changes made through this screen are recorded here. Edits made elsewhere in WordPress, such as on the product edit page, are not."
-msgstr ""
-
-msgid "The file could not be made. Try again in a moment."
-msgstr ""
-
-msgid "Changes"
-msgstr ""
-
-msgid "Audit log"
 msgstr ""
 
 #. translators: %s: several category names, such as "Shoes or Hats".
@@ -3203,7 +3215,19 @@ msgstr ""
 msgid "Layout"
 msgstr ""
 
+msgid "Products. Sort with the column headings; arrow keys move between cells."
+msgstr ""
+
 msgid "Search by name or SKU"
+msgstr ""
+
+msgid "Change in progress"
+msgstr ""
+
+msgid "The change could not be cancelled. Try again in a moment."
+msgstr ""
+
+msgid "Cancelling…"
 msgstr ""
 
 msgid "Edit details"
@@ -3238,6 +3262,15 @@ msgstr ""
 msgid "Number of days"
 msgstr ""
 
+msgid "The file could not be made. Try again in a moment."
+msgstr ""
+
+msgid "Changes"
+msgstr ""
+
+msgid "Audit log"
+msgstr ""
+
 msgid "Settings"
 msgstr ""
 
@@ -3268,5 +3301,11 @@ msgstr ""
 msgid "Save settings"
 msgstr ""
 
+msgid "Change prices, stock, categories and what shows in your shop — for one product or a thousand."
+msgstr ""
+
 msgid "Bulk Catalogue Manager sections"
+msgstr ""
+
+msgid "History and undo"
 msgstr ""

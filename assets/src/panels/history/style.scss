@@ -29,6 +29,10 @@
 	font-size: 12px;
 }
 
+.bcm-history__retention {
+	margin: 14px 0 0;
+}
+
 .bcm-history__empty {
 	padding: 24px 0;
 	color: #50575e;
@@ -45,6 +49,16 @@
 		background: #f6f7f7;
 	}
 
+	// T75: the batch the bulk panel linked to.
+	&.is-linked {
+		border-color: #2271b1;
+	}
+
+	&:focus {
+		outline: none;
+		box-shadow: 0 0 0 1px #fff, 0 0 0 3px var(--wp-admin-theme-color, #2271b1);
+	}
+
 	h3 {
 		font-size: 14px;
 		font-weight: 600;
@@ -57,7 +71,18 @@
 	flex-wrap: wrap;
 	gap: 12px;
 	align-items: flex-start;
-	padding: 12px 14px;
+	padding: 14px 14px 10px;
+}
+
+// T75: the prototype's quiet "See every change" beside the blue Undo.
+.bcm-batch__actions .bcm-batch__see.components-button.is-secondary {
+	color: #1d2327;
+	box-shadow: inset 0 0 0 1px #8c8f94;
+
+	&:hover:not(:disabled) {
+		color: #135e96;
+		box-shadow: inset 0 0 0 1px #135e96;
+	}
 }
 
 .bcm-batch__what {
@@ -104,10 +129,14 @@
 }
 
 .bcm-pill {
-	display: inline-block;
+	display: inline-flex;
+	align-items: center;
+	min-height: 20px;
+	box-sizing: border-box;
 	border: 1px solid #c3c4c7;
 	border-radius: 999px;
-	padding: 1px 8px;
+	padding: 0 8px;
+	line-height: 1.5;
 	font-size: 11px;
 	color: #50575e;
 	background: #f6f7f7;

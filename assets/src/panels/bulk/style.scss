@@ -30,7 +30,8 @@ $bcm-bad-line: #f3c3c4;
 	right: 0;
 	bottom: 0;
 	z-index: 9990;
-	width: min(640px, 100vw);
+	width: min(860px, 100vw);
+	container-type: inline-size;
 	display: flex;
 	flex-direction: column;
 	background: $bcm-panel;
@@ -125,6 +126,47 @@ $bcm-bad-line: #f3c3c4;
 		display: flex;
 		flex-direction: column;
 		gap: 16px;
+	}
+
+	// T75: narrow, the scope card leads and Safety closes the form; wide,
+	// both sit in a rail on the right of the steps, as in the prototype.
+	&__rail {
+		display: contents;
+	}
+
+	&__main {
+		display: flex;
+		flex-direction: column;
+		gap: 16px;
+		min-width: 0;
+	}
+
+	&__safety {
+		order: 2;
+	}
+
+	@container (min-width: 780px) {
+		&__body {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr) 240px;
+			align-items: start;
+			gap: 20px;
+		}
+
+		&__rail {
+			display: flex;
+			flex-direction: column;
+			gap: 12px;
+			grid-column: 2;
+			grid-row: 1;
+			position: sticky;
+			top: 0;
+		}
+
+		&__main {
+			grid-column: 1;
+			grid-row: 1;
+		}
 	}
 
 	&__h {

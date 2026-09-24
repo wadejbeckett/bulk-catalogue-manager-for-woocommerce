@@ -89,13 +89,18 @@ export function derivedOnParent( descriptor ) {
 
 /**
  * Whether this is the stock cell, which summarises a variable parent's
- * variations: the field shown with a companion (defaults.js COMPANIONS).
+ * variations: the choice field shown with a companion (defaults.js
+ * COMPANIONS); the regular price's companion is a second line, not a summary.
  *
  * @param {Object} descriptor Descriptor.
  * @return {boolean} True for the stock cell.
  */
 export function isStockSummary( descriptor ) {
-	return !! descriptor && !! COMPANIONS[ descriptor.key ];
+	return (
+		!! descriptor &&
+		descriptor.type === 'enum' &&
+		!! COMPANIONS[ descriptor.key ]
+	);
 }
 
 /**

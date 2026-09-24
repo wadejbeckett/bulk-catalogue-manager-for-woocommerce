@@ -20,7 +20,9 @@
  */
 import { Button } from '@wordpress/components';
 import {
+	createPortal,
 	useCallback,
+	useContext,
 	useEffect,
 	useMemo,
 	useRef,
@@ -28,8 +30,13 @@ import {
 } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 
+import { request } from '../../api';
+import { ShellContext } from '../../shell';
 import BulkChangePanel from '../bulk';
 import { FINISHED, useBatchProgress } from '../bulk/hooks';
+import { useProgressAnnouncer } from '../bulk/announce';
+import { doneSentence } from '../bulk/progress';
+import { announce } from '../categories/announce';
 import { CategoryPanel, useCategoryTree } from '../categories/index';
 import { categorySentence } from '../categories/tree-model';
 import { BatchProgress, StalledNotice } from '../history';
@@ -94,30 +101,107 @@ function useCurrentSettings( settings ) {
 
 /**
  * The progress of a change applied from the bulk panel, shown above the table
- * once the panel is closed: BatchProgress, or the stalled notice in its place.
+ * once the panel is closed (SPEC §4.1 Change in progress): BatchProgress, or
+ * the stalled notice in its place, with Cancel and View in History (T75).
  * The rows are read again when it finishes.
  *
- * @param {Object}   props            Props.
- * @param {number}   props.batchId    The batch.
- * @param {Function} props.onFinished Called once with the finished report.
+ * @param {Object}   props               Props.
+ * @param {number}   props.batchId       The batch.
+ * @param {Function} props.onFinished    Called once with the finished report.
+ * @param {Function} props.onViewHistory Open History at this batch, or null.
  * @return {Element|null} Progress.
  */
-export function AppliedProgress( { batchId, onFinished } ) {
+export function AppliedProgress( {
+	batchId,
+	onFinished,
+	onViewHistory = null,
+} ) {
+	const [ cancelling, setCancelling ] = useState( false );
+	const [ refused, setRefused ] = useState( '' );
 	const { report } = useBatchProgress( batchId );
 	const finished = FINISHED.includes( report?.status );
 	const tell = useRef( onFinished );
 	tell.current = onFinished;
+	// T75: progress is said at milestones and the result once (SPEC §14).
+	useProgressAnnouncer(
+		Number( report?.done_items ) || 0,
+		Number( report?.total_items ) || 0,
+		finished
+	);
+	const told = useRef( false );
 	useEffect( () => {
-		if ( finished ) {
+		if ( finished && ! told.current ) {
+			told.current = true;
+			announce( doneSentence( report ), 'polite' );
 			tell.current( report );
 		}
 	}, [ finished, report ] );
 	if ( ! report || finished ) {
 		return null;
 	}
+	const cancel = () => {
+		setCancelling( true );
+		setRefused( '' );
+		request( `batches/${ Number( batchId ) }/cancel`, {
+			method: 'POST',
+		} ).catch( ( error ) => {
+			setCancelling( false );
+			const text =
+				/^bcm_/.test( error?.code || '' ) && error.message
+					? error.message
+					: __(
+							'The change could not be cancelled. Try again in a moment.',
+							'bulk-catalogue-manager-for-woocommerce'
+						);
+			setRefused( text );
+			announce( text, 'assertive' );
+		} );
+	};
 	return (
-		<div className="bcm-catalogue__progress" role="status">
+		<div
+			className="bcm-catalogue__progress"
+			role="group"
+			aria-label={ __(
+				'Change in progress',
+				'bulk-catalogue-manager-for-woocommerce'
+			) }
+		>
 			<BatchProgress report={ report } />
+			<span className="bcm-catalogue__progress-acts">
+				<Button
+					variant="secondary"
+					size="compact"
+					onClick={ cancel }
+					disabled={ cancelling }
+					accessibleWhenDisabled
+				>
+					{ cancelling
+						? __(
+								'Cancelling…',
+								'bulk-catalogue-manager-for-woocommerce'
+							)
+						: __(
+								'Cancel',
+								'bulk-catalogue-manager-for-woocommerce'
+							) }
+				</Button>
+				{ onViewHistory && (
+					<Button
+						variant="link"
+						onClick={ () => onViewHistory( batchId ) }
+					>
+						{ __(
+							'View in History',
+							'bulk-catalogue-manager-for-woocommerce'
+						) }
+					</Button>
+				) }
+			</span>
+			{ refused && (
+				<p className="bcm-catalogue__progress-error" role="alert">
+					{ refused }
+				</p>
+			) }
 		</div>
 	);
 }
@@ -229,6 +313,39 @@ export function CatalogueGrid( {
 			openBulk( [ step ] );
 		}
 	};
+	// T75: the header's Bulk change opens the panel on the selection, or,
+	// with nothing selected, on every product matching the view once the
+	// server has resolved them.
+	const shell = useContext( ShellContext );
+	const [ bulkWanted, setBulkWanted ] = useState( false );
+	const { bulkRequested, consumeBulk } = shell;
+	useEffect( () => {
+		if ( ! bulkRequested ) {
+			return;
+		}
+		consumeBulk();
+		if ( hasSelection ) {
+			openBulk();
+		} else {
+			setBulkWanted( true );
+			selection.selectAllMatching();
+		}
+		// openBulk reads the selection at the time of the request.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [ bulkRequested ] );
+	const matchingStatus = selection.matching?.status;
+	useEffect( () => {
+		if ( ! bulkWanted ) {
+			return;
+		}
+		if ( matchingStatus === 'ready' ) {
+			setBulkWanted( false );
+			openBulk();
+		} else if ( matchingStatus !== 'loading' ) {
+			setBulkWanted( false );
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [ bulkWanted, matchingStatus ] );
 	const viewCategory = !! filterArgs( view.filters, descriptors )[
 		CATEGORY_FILTER
 	];
@@ -271,11 +388,36 @@ export function CatalogueGrid( {
 	}, [ filterFields ] );
 	const variationsMode = modeOf( view ) === MODES.variations;
 	const { refetch } = catalogue;
+	// T75: the rows a running change covers are pending and read-only until
+	// it finishes (SPEC §4.1): the ticked ids, or the page for a filter.
+	const { setPending, items: pageItems } = catalogue;
+	const covered = useRef( [] );
+	const onApplied = useCallback(
+		( id ) => {
+			const scope = bulk?.selection;
+			covered.current =
+				scope?.kind === 'ids'
+					? scope.ids.map( Number )
+					: pageItems.map( ( item ) => item.id );
+			setPending( covered.current, true );
+			setApplied( id );
+		},
+		[ bulk, pageItems, setPending ]
+	);
 	const finished = useCallback( () => {
+		setPending( covered.current, false );
+		covered.current = [];
 		setApplied( null );
 		refetch();
-	}, [ refetch ] );
+	}, [ refetch, setPending ] );
 
+	const exportControl = (
+		<ExportControl
+			query={ catalogue.query }
+			view={ view }
+			registry={ registry }
+		/>
+	);
 	const filtered = isFiltered( view ) || !! category;
 	if (
 		catalogue.hasLoaded &&
@@ -299,21 +441,21 @@ export function CatalogueGrid( {
 				onDropSelection={ hasSelection ? dropSelection : undefined }
 			/>
 			<div className="bcm-catalogue__main">
-				{ /* T51–T53 */ }
-				<SavedViewsBar
-					registry={ registry }
-					view={ view }
-					category={ category }
-					baseView={ baseView }
-					onApply={ applyView }
-				/>
-				<div className="bcm-catalogue__toolbar">
-					<LayoutSwitch view={ view } onChangeView={ setView } />
-					<ExportControl
-						query={ catalogue.query }
-						view={ view }
+				{ /* T51–T53; T75: one row, as in the prototype. */ }
+				<div className="bcm-catalogue__top">
+					<SavedViewsBar
 						registry={ registry }
+						view={ view }
+						category={ category }
+						baseView={ baseView }
+						onApply={ applyView }
 					/>
+					<div className="bcm-catalogue__toolbar">
+						<LayoutSwitch view={ view } onChangeView={ setView } />
+						{ shell.exportSlot
+							? createPortal( exportControl, shell.exportSlot )
+							: exportControl }
+					</div>
 				</div>
 				{ catalogue.error && (
 					<ErrorNotice
@@ -359,6 +501,14 @@ export function CatalogueGrid( {
 					<AppliedProgress
 						batchId={ applied }
 						onFinished={ finished }
+						onViewHistory={
+							shell.navigate
+								? ( id ) =>
+										shell.navigate( 'history', {
+											batch: id,
+										} )
+								: null
+						}
 					/>
 				) }
 				<CatalogueLayout
@@ -397,7 +547,22 @@ export function CatalogueGrid( {
 					settings={ settings }
 					categories={ tree.nodes }
 					onClose={ () => setBulk( null ) }
-					onApplied={ setApplied }
+					onApplied={ onApplied }
+					onUndo={
+						shell.navigate
+							? ( id ) =>
+									shell.navigate( 'history', {
+										batch: id,
+										undo: 1,
+									} )
+							: null
+					}
+					onViewHistory={
+						shell.navigate
+							? ( id ) =>
+									shell.navigate( 'history', { batch: id } )
+							: null
+					}
 					renderStalled={ ( report ) => (
 						<StalledNotice report={ report } />
 					) }

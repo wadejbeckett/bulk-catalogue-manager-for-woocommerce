@@ -71,6 +71,33 @@ export function productFrom( search ) {
 }
 
 /**
+ * The batch a URL's `batch` argument names, and whether `undo` asks for its
+ * undo to start: the bulk panel's Undo this change and View in History (T75).
+ *
+ * @param {string} search A location's search string.
+ * @return {{id: number, undo: boolean}|null} The linked batch, or null.
+ */
+export function batchFrom( search ) {
+	const args = new URLSearchParams( search );
+	const id = Number( args.get( 'batch' ) );
+	return Number.isInteger( id ) && id > 0
+		? { id, undo: args.get( 'undo' ) === '1' }
+		: null;
+}
+
+/**
+ * Take the `batch` and `undo` arguments off the page URL once read.
+ */
+function forgetBatch() {
+	const url = new URL( window.location.href );
+	if ( url.searchParams.has( 'batch' ) || url.searchParams.has( 'undo' ) ) {
+		url.searchParams.delete( 'batch' );
+		url.searchParams.delete( 'undo' );
+		window.history.replaceState( window.history.state, '', url.toString() );
+	}
+}
+
+/**
  * Take the `product` argument off the page URL, leaving the panel in place.
  */
 function forgetProduct() {
@@ -91,6 +118,10 @@ export default function History( { settings } ) {
 		setLinkedProduct( null );
 		forgetProduct();
 	}, [] );
+	const [ linkedBatch ] = useState( () =>
+		batchFrom( window.location.search )
+	);
+	useEffect( () => forgetBatch(), [] );
 	const names = useBatchUsers( settings?.user );
 	const users = useMemo(
 		() => userElements( names, settings?.user ),
@@ -158,7 +189,7 @@ export default function History( { settings } ) {
 							onClearLinked={ clearLinked }
 						/>
 					) : (
-						<Batches { ...shared } />
+						<Batches { ...shared } linkedBatch={ linkedBatch } />
 					)
 				}
 			</TabPanel>

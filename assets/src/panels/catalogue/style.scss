@@ -40,6 +40,112 @@
 		max-width: 22rem;
 	}
 
+	// T75: the prototype's table in the admin idiom: 13px sentence-case
+	// headings, tighter cells so the default columns fit beside the category
+	// panel at 1280 pixels, a hover and a selected tint, and text in the
+	// admin's ink rather than DataViews' grey.
+	.dataviews-view-table {
+		color: var(--bcm-ink, #1d2327);
+
+		td,
+		th {
+			padding: 8px;
+		}
+
+		thead th:has(.dataviews-view-table-header-button) {
+			padding-left: 2px;
+			padding-right: 2px;
+		}
+
+		.dataviews-view-table-header-button {
+			padding: 4px 6px;
+		}
+
+		// The switch's words wrap under it rather than widening the column.
+		td:has(.bcm-switch) {
+			white-space: normal;
+		}
+
+		.bcm-switch {
+			flex-wrap: wrap;
+			row-gap: 2px;
+			max-width: 7rem;
+		}
+
+		.bcm-switch__label {
+			min-width: 0;
+			white-space: normal;
+			line-height: 1.25;
+		}
+
+		// The Status column already shows Draft or Pending as a word; in the
+		// table the switch keeps its own sentence for screen readers only, so
+		// the row stays at its fixed height.
+		.bcm-switch__status {
+			display: none;
+		}
+
+		td:has(.bcm-terms) {
+			max-width: 10rem;
+		}
+
+		tr td:first-child,
+		tr th:first-child {
+			padding-left: 14px;
+		}
+
+		tr td:last-child,
+		tr th:last-child {
+			padding-right: 8px;
+		}
+
+		thead th,
+		.dataviews-view-table-header-button,
+		.dataviews-view-table-header {
+			font-size: 13px;
+			font-weight: 600;
+			text-transform: none;
+			color: var(--bcm-ink, #1d2327);
+		}
+
+		thead th {
+			border-bottom: 1px solid var(--bcm-rule);
+			background: #fff;
+		}
+
+		.dataviews-view-table__cell-content-wrapper:not(.dataviews-column-primary__media) {
+			min-width: 0;
+		}
+
+		// DataViews greys a selected row's text (#757575), below 4.5:1 on
+		// the selected tint; every row keeps the admin's ink (T75).
+		tbody tr,
+		tbody tr.is-selected {
+			color: var(--bcm-ink, #1d2327);
+		}
+
+		tbody tr:hover td {
+			background: #f6f7f7;
+		}
+
+		tbody tr.is-selected td {
+			background: var(--bcm-blue-tint, #f0f6fc);
+		}
+	}
+
+	.dataviews-view-table__primary-column-content {
+		min-width: 9rem;
+	}
+
+	.bcm-title__link {
+		color: var(--bcm-blue, #2271b1);
+		text-decoration: none;
+
+		&:hover {
+			text-decoration: underline;
+		}
+	}
+
 	.bcm-error {
 		margin: 12px 12px 0;
 	}
@@ -219,8 +325,32 @@
 	margin: 0 0 8px;
 }
 
+// T75: the change in progress, above the rows it is changing.
 .bcm-catalogue__progress {
-	margin: 0 0 8px;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px 16px;
+	margin: 0;
+	padding: 10px 12px;
+	background: var(--bcm-blue-tint, #f0f6fc);
+	border-bottom: 1px solid #c5d9ed;
+
+	.bcm-progress {
+		flex: 1 1 16rem;
+	}
+}
+
+.bcm-catalogue__progress-acts {
+	display: inline-flex;
+	align-items: center;
+	gap: 12px;
+}
+
+.bcm-catalogue__progress-error {
+	flex-basis: 100%;
+	margin: 0;
+	color: var(--bcm-bad-ink);
 }
 
 // T51, T53: the layout switch and Export beside each other above the grid.
@@ -237,4 +367,33 @@
 .bcm-catalogue__table {
 	max-width: 100%;
 	overflow-x: auto;
+}
+
+// T75: the regular price with the sale price under it, right-aligned.
+.bcm-money {
+	display: inline-flex;
+	flex-direction: column;
+	align-items: flex-end;
+	line-height: 1.3;
+	font-variant-numeric: tabular-nums;
+}
+
+.bcm-money__sale {
+	color: var(--bcm-good-ink);
+	font-size: 12px;
+}
+
+// The two rows above the table (saved views, then the layout switch and
+// the view's export) share one line when there is room, as the prototype's do.
+.bcm-catalogue__top {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 8px 16px;
+	padding: 12px 12px 0;
+
+	.bcm-catalogue__toolbar {
+		margin: 0;
+	}
 }

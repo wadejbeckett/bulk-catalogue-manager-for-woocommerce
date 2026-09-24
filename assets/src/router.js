@@ -29,6 +29,12 @@ export function panelFrom( search ) {
  */
 export function panelHref( panel, href ) {
 	const url = new URL( href );
+	// Arguments one panel reads once (History's product, batch and undo)
+	// do not follow the owner to another panel (T75).
+	[ 'product', 'batch', 'undo' ].forEach( ( key ) =>
+		url.searchParams.delete( key )
+	);
+	url.hash = '';
 	if ( panel === DEFAULT_PANEL ) {
 		url.searchParams.delete( 'panel' );
 	} else {
@@ -51,15 +57,17 @@ export function usePanel() {
 		window.addEventListener( 'popstate', onPop );
 		return () => window.removeEventListener( 'popstate', onPop );
 	}, [] );
-	const navigate = ( next ) => {
-		if ( next === panel ) {
+	// `params` are further URL arguments for the panel, such as History's
+	// `batch` and `undo` (T75).
+	const navigate = ( next, params = null ) => {
+		if ( next === panel && ! params ) {
 			return;
 		}
-		window.history.pushState(
-			{ panel: next },
-			'',
-			panelHref( next, window.location.href )
+		const url = new URL( panelHref( next, window.location.href ) );
+		Object.entries( params || {} ).forEach( ( [ key, value ] ) =>
+			url.searchParams.set( key, String( value ) )
 		);
+		window.history.pushState( { panel: next }, '', url.toString() );
 		setPanel( next );
 	};
 	return [ panel, navigate ];

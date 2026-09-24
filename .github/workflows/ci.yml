@@ -97,3 +97,33 @@ jobs:
       - run: npx wp-env run cli wp plugin list
       - run: bash tests/probe/seed.sh
       - run: python3 tests/probe/probe.py --base-url http://localhost:8888
+
+  # T75: the Playwright suite (keyboard journeys, grid states and axe-core on
+  # every screen, SPEC §14, §16.4) on wp-env with the pinned WordPress and
+  # WooCommerce of .wp-env.json. Chromium only; any axe-core serious or
+  # critical violation fails the job.
+  e2e:
+    name: Playwright and axe-core on wp-env
+    runs-on: ubuntu-24.04
+    env:
+      WP_CMD: npx wp-env run cli wp
+      BCM_E2E_BASE_URL: http://localhost:8888
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Install wp-env
+        run: npm install -g @wordpress/env@11.16.0
+      - run: npx wp-env start
+      - run: bash tests/probe/seed.sh
+      - run: npm run e2e
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: tests/e2e/.results/
+          retention-days: 7

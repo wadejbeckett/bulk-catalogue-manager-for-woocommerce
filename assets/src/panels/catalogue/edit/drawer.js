@@ -86,13 +86,33 @@ export function formField( descriptor, item, termNames ) {
 	}
 	if ( descriptor.type === 'terms' || descriptor.type === 'term' ) {
 		const names = termNames[ descriptor.source ];
-		if ( ! names ) {
+		const many = descriptor.type === 'terms';
+		// A single term with no terms to choose from (a shop with no
+		// shipping classes) shows what it is rather than a bare number (T75).
+		if ( ! names || ( ! many && ! names.size ) ) {
 			return { ...field, readOnly: true, render: show };
 		}
+		// The token field matches names by string, so the ids travel as
+		// strings in the form and as numbers to the server (T75: the
+		// categories showed their ids rather than their names).
 		field.elements = [ ...names ].map( ( [ value, label ] ) => ( {
-			value,
+			value: String( value ),
 			label,
 		} ) );
+		field.getValue = ( { item: row } ) => {
+			const value = row?.[ descriptor.key ];
+			if ( many ) {
+				return ( Array.isArray( value ) ? value : [] ).map( String );
+			}
+			return value === null || value === undefined ? '' : String( value );
+		};
+		field.setValue = ( { value } ) => ( {
+			[ descriptor.key ]: many
+				? ( Array.isArray( value ) ? value : [] )
+						.map( Number )
+						.filter( ( id ) => id > 0 )
+				: Number( value ) || 0,
+		} );
 	}
 	return field;
 }

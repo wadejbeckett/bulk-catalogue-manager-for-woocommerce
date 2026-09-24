@@ -59,6 +59,13 @@ function typedValue( descriptor, text ) {
 }
 
 /**
+ * The cell (row id and field) whose trigger takes focus back after a save
+ * that redraws its row, such as a variation's row read again after its edit
+ * (T75): the redrawn cell is a new component, so it looks here on mount.
+ */
+let focusAfterSave = null;
+
+/**
  * An inline-editable cell.
  *
  * @param {Object}  props            Props.
@@ -93,12 +100,22 @@ export default function InlineCell( { item, descriptor, display } ) {
 		name
 	);
 
-	useEffect(
-		() => () => {
+	const cellKey = `${ item.id }:${ descriptor.key }`;
+	useEffect( () => {
+		// Only when the redraw left focus nowhere: the owner may have moved on.
+		const doc = trigger.current?.ownerDocument;
+		if (
+			focusAfterSave === cellKey &&
+			( ! doc?.activeElement || doc.activeElement === doc.body )
+		) {
+			trigger.current?.focus();
+		}
+		return () => {
 			live.current = false;
-		},
-		[]
-	);
+		};
+		// On mount only: a redrawn cell picks up the focus its save left.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [] );
 
 	useEffect( () => {
 		if ( editing ) {
@@ -163,11 +180,21 @@ export default function InlineCell( { item, descriptor, display } ) {
 		}
 		setSaving( true );
 		setError( '' );
+		if ( focusTrigger ) {
+			focusAfterSave = cellKey;
+		}
 		scope
 			.commit( item, {
 				[ descriptor.key ]: toRequestValue( descriptor, value ),
 			} )
 			.then( () => {
+				// The row may be read again and redrawn after this answer;
+				// the redrawn cell keeps the focus for a moment (T75).
+				setTimeout( () => {
+					if ( focusAfterSave === cellKey ) {
+						focusAfterSave = null;
+					}
+				}, 3000 );
 				if ( ! live.current ) {
 					return;
 				}
@@ -187,6 +214,9 @@ export default function InlineCell( { item, descriptor, display } ) {
 				);
 			} )
 			.catch( ( failure ) => {
+				if ( focusAfterSave === cellKey ) {
+					focusAfterSave = null;
+				}
 				if ( ! live.current ) {
 					return;
 				}

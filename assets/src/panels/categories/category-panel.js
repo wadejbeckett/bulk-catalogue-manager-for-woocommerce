@@ -124,6 +124,31 @@ export default function CategoryPanel( {
 	const [ editing, setEditing ] = useState( null );
 	const [ moving, setMoving ] = useState( null );
 	const [ failure, setFailure ] = useState( null );
+	// T75: when Move to… closes, focus goes back into the tree — the moved
+	// category, or its new parent while that is collapsed — rather than to the
+	// menu item that opened the dialog, which is gone.
+	const [ refocus, setRefocus ] = useState( null );
+	useEffect( () => {
+		// After a move, wait for the tree to be read again, so the node is
+		// focused where it now is.
+		if ( ! refocus || moving || refocus.before === tree.nodes ) {
+			return;
+		}
+		const frame = window.requestAnimationFrame( () => {
+			const doc = window.document;
+			const target =
+				doc.getElementById( `bcm-cat-${ refocus.id }` ) ||
+				( refocus.parent
+					? doc.getElementById( `bcm-cat-${ refocus.parent }` )
+					: null ) ||
+				doc.querySelector( '[role="treeitem"][tabindex="0"]' );
+			if ( target ) {
+				target.focus();
+				setRefocus( null );
+			}
+		} );
+		return () => window.cancelAnimationFrame( frame );
+	}, [ refocus, moving, tree.nodes ] );
 	const [ sheet, setSheet ] = useState( false );
 	const narrow = useNarrow( narrowWidth );
 	const resizing = useRef( null );
@@ -203,6 +228,7 @@ export default function CategoryPanel( {
 
 	const move = async ( id, parent, position ) => {
 		setFailure( null );
+		setRefocus( { id, parent, before: tree.nodes } );
 		const name = tree.byId.get( id )?.node.name || '';
 		try {
 			await moveCategory( id, parent, position );
@@ -461,7 +487,10 @@ export default function CategoryPanel( {
 					tree={ tree }
 					id={ moving }
 					onMove={ move }
-					onClose={ () => setMoving( null ) }
+					onClose={ () => {
+						setRefocus( ( was ) => was || { id: moving } );
+						setMoving( null );
+					} }
 				/>
 			) }
 		</>

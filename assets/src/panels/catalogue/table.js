@@ -3,12 +3,13 @@
  * row menu, and the table's own empty content per state.
  */
 import { DataViews } from '@wordpress/dataviews';
-import { useCallback, useMemo, useRef } from '@wordpress/element';
+import { useCallback, useEffect, useMemo, useRef } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 
 import { CellContext } from './cells';
 import { PER_PAGE_SIZES } from './defaults';
 import { useEditScope } from './edit';
+import { onGridKeyDown } from './grid-keys';
 import { LoadingRows } from './states';
 import { useVariationRows } from './variations';
 
@@ -22,6 +23,53 @@ const CONFIG = { perPageSizes: PER_PAGE_SIZES };
  * @return {string} Id.
  */
 const itemId = ( item ) => String( item.id );
+
+/**
+ * What DataViews' table does not say itself (SPEC §14, T75): a caption, and
+ * each row's product name cell as the row's header. DataViews owns the
+ * table's markup, so these are set on it after each render.
+ *
+ * Every sortable column that is not the sorted one says so with
+ * `aria-sort="none"` (SPEC §14: sort state on every sortable column).
+ *
+ * @param {Element}       wrapper  The table's wrapper.
+ * @param {string}        caption  The caption's words.
+ * @param {Array<string>} sortable Labels of the sortable columns.
+ */
+export function describeTable( wrapper, caption, sortable = [] ) {
+	const table = wrapper?.querySelector( 'table' );
+	if ( ! table ) {
+		return;
+	}
+	let node = table.caption;
+	if ( ! node ) {
+		node = table.ownerDocument.createElement( 'caption' );
+		node.className = 'bcm-sr-only';
+		table.prepend( node );
+	}
+	if ( node.textContent !== caption ) {
+		node.textContent = caption;
+	}
+	table.querySelectorAll( 'thead th' ).forEach( ( th ) => {
+		const label = th.textContent.trim();
+		if ( sortable.includes( label ) && ! th.hasAttribute( 'aria-sort' ) ) {
+			th.setAttribute( 'aria-sort', 'none' );
+		} else if (
+			! sortable.includes( label ) &&
+			th.getAttribute( 'aria-sort' ) === 'none'
+		) {
+			th.removeAttribute( 'aria-sort' );
+		}
+	} );
+	table
+		.querySelectorAll( 'tbody .dataviews-title-field' )
+		.forEach( ( title ) => {
+			const cell = title.closest( 'td' );
+			if ( cell && cell.getAttribute( 'role' ) !== 'rowheader' ) {
+				cell.setAttribute( 'role', 'rowheader' );
+			}
+		} );
+}
 
 /**
  * The table.
@@ -84,6 +132,20 @@ export default function CatalogueTable( {
 		onChangeSelection,
 	} ); // T67–T68.
 	expand.current = tree.expand;
+	const wrapper = useRef( null );
+	const caption = __(
+		'Products. Sort with the column headings; arrow keys move between cells.',
+		'bulk-catalogue-manager-for-woocommerce'
+	);
+	// Every render: DataViews may have redrawn its table.
+	const sortable = useMemo(
+		() =>
+			fields
+				.filter( ( field ) => field.enableSorting )
+				.map( ( field ) => field.label ),
+		[ fields ]
+	);
+	useEffect( () => describeTable( wrapper.current, caption, sortable ) );
 	const context = useMemo(
 		() => ( { termNames, pending: edit.pending } ),
 		[ termNames, edit.pending ]
@@ -101,7 +163,11 @@ export default function CatalogueTable( {
 	}
 	return edit.wrap(
 		<CellContext.Provider value={ context }>
+			{ /* The arrows move between cells (grid-keys.js); Tab is untouched. */ }
+			{ /* eslint-disable-next-line jsx-a11y/no-static-element-interactions */ }
 			<div
+				ref={ wrapper }
+				onKeyDown={ onGridKeyDown }
 				className={
 					'bcm-catalogue__table' +
 					( view.layout?.density

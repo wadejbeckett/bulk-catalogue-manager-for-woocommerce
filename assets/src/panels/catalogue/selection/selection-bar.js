@@ -140,8 +140,9 @@ export default function SelectionBar( {
 	if ( ! count && ! matching && ! notice && ! error ) {
 		return null;
 	}
-	const offerAll =
-		selection.pageSelected && ! matching && total > selection.ids.length;
+	// T75: the offer stands beside any partial selection, as the
+	// prototype's bar has it, not only once the whole page is ticked.
+	const offerAll = ! matching && count > 0 && total > selection.ids.length;
 	return (
 		<div className="bcm-selection">
 			{ notice && (
@@ -209,7 +210,9 @@ export default function SelectionBar( {
 					</span>
 					{ offerAll && (
 						<span className="bcm-selection__line">
-							<span>{ pageWords( pageCount ) }</span>{ ' ' }
+							{ selection.pageSelected && (
+								<span>{ pageWords( pageCount ) } </span>
+							) }
 							<Button
 								variant="link"
 								onClick={ selection.selectAllMatching }

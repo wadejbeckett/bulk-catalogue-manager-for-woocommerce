@@ -188,6 +188,31 @@ function Value( { item, descriptor, companion, role } ) {
 				</Badge>
 			);
 		}
+		case 'money': {
+			// T75: a price with its companion (the sale price) on a second
+			// line, as the prototype's Price column has it.
+			if ( isEmpty( value ) ) {
+				return null;
+			}
+			const sale = companion ? item[ companion.key ] : undefined;
+			return (
+				<span className="bcm-money">
+					<span className="bcm-money__main">{ String( value ) }</span>
+					{ ! isEmpty( sale ) && (
+						<span className="bcm-money__sale">
+							{ sprintf(
+								/* translators: %s: a sale price, such as "13.60". */
+								__(
+									'%s on sale',
+									'bulk-catalogue-manager-for-woocommerce'
+								),
+								String( sale )
+							) }
+						</span>
+					) }
+				</span>
+			);
+		}
 		case 'boolean':
 			if ( isEmpty( value ) ) {
 				return null;

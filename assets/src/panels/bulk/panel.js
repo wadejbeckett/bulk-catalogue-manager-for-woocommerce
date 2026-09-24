@@ -490,362 +490,385 @@ export default function BulkChangePanel( {
 			</ol>
 
 			<div className="bcm-bulk__body">
-				<section className="bcm-bulk__card bcm-bulk__scope">
-					<h3>
-						{ batch
-							? __(
-									'What is being changed',
-									'bulk-catalogue-manager-for-woocommerce'
-								)
-							: __(
-									'This change will affect',
-									'bulk-catalogue-manager-for-woocommerce'
-								) }
-					</h3>
-					<p className="bcm-bulk__big">{ scopeLine( selection ) }</p>
-					{ filters.length > 0 && (
-						<dl className="bcm-bulk__filters">
-							{ filters.map( ( filter, index ) => (
-								<div className="bcm-bulk__kv" key={ index }>
-									<dt>{ filter.label }</dt>
-									<dd>{ filter.value }</dd>
-								</div>
-							) ) }
-						</dl>
-					) }
-					{ ! batch && (
-						<p>
-							<button
-								type="button"
-								className="button button-small"
-								onClick={ onClose }
-							>
-								{ __(
-									'Change the selection',
-									'bulk-catalogue-manager-for-woocommerce'
-								) }
-							</button>
+				{ /* T75: the scope and Safety cards form a rail beside the steps
+				   when the panel is wide enough, as in the prototype. */ }
+				<div className="bcm-bulk__rail">
+					<section className="bcm-bulk__card bcm-bulk__scope">
+						<h3>
+							{ batch
+								? __(
+										'What is being changed',
+										'bulk-catalogue-manager-for-woocommerce'
+									)
+								: __(
+										'This change will affect',
+										'bulk-catalogue-manager-for-woocommerce'
+									) }
+						</h3>
+						<p className="bcm-bulk__big">
+							{ scopeLine( selection ) }
 						</p>
-					) }
-				</section>
-
-				{ batch ? (
-					<DoneStep
-						batchId={ batch.batch_id }
-						count={ batch.total_items ?? changes }
-						interval={ pollInterval }
-						onUndo={ onUndo }
-						onViewHistory={ onViewHistory }
-						renderStalled={ renderStalled }
-					/>
-				) : (
-					<>
-						<section className="bcm-bulk__section">
-							<h3 className="bcm-bulk__h">
-								{ __(
-									'Choose the change',
-									'bulk-catalogue-manager-for-woocommerce'
-								) }
-							</h3>
-							<p className="bcm-bulk__sub">
-								{ __(
-									'Pick a change. You will see exactly what it does, on real products, before anything is saved.',
-									'bulk-catalogue-manager-for-woocommerce'
-								) }
-							</p>
-							<ol className="bcm-bulk__ops">
-								{ operations.map( ( operation, index ) => (
-									<li
-										key={ operation.key }
-										className="bcm-bulk__op"
-									>
-										{ ( index !== active ||
-											operations.length > 1 ) && (
-											<OperationSummary
-												registry={ registry }
-												operation={ operation }
-												index={ index }
-												total={ operations.length }
-												editing={ index === active }
-												onEdit={ () =>
-													setActive( index )
-												}
-												onMove={ ( by ) =>
-													move( index, by )
-												}
-												onRemove={ () =>
-													remove( index )
-												}
-											/>
-										) }
-										{ index === active && (
-											<ActionChooser
-												registry={ registry }
-												operation={ operation }
-												index={ index }
-												terms={ terms }
-												onChoose={ ( id, group ) =>
-													update( index, ( was ) =>
-														chooseAction(
-															registry,
-															settings,
-															was,
-															id,
-															group
-														)
-													)
-												}
-												onArg={ ( name, value ) =>
-													update( index, ( was ) =>
-														changeArg(
-															registry,
-															settings,
-															was,
-															name,
-															value
-														)
-													)
-												}
-												onVariations={ ( on ) =>
-													update(
-														index,
-														( was ) => ( {
-															...was,
-															variations: on,
-														} )
-													)
-												}
-											/>
-										) }
-									</li>
+						{ filters.length > 0 && (
+							<dl className="bcm-bulk__filters">
+								{ filters.map( ( filter, index ) => (
+									<div className="bcm-bulk__kv" key={ index }>
+										<dt>{ filter.label }</dt>
+										<dd>{ filter.value }</dd>
+									</div>
 								) ) }
-							</ol>
-							<p className="bcm-bulk__addrow">
+							</dl>
+						) }
+						{ ! batch && (
+							<p>
 								<button
 									type="button"
-									className="button"
-									onClick={ add }
-									disabled={
-										operations.length >= MAX_OPERATIONS
-									}
-									aria-describedby={
-										operations.length >= MAX_OPERATIONS
-											? 'bcm-bulk-max'
-											: undefined
-									}
+									className="button button-small"
+									onClick={ onClose }
 								>
 									{ __(
-										'Add another change',
+										'Change the selection',
 										'bulk-catalogue-manager-for-woocommerce'
 									) }
 								</button>
-								{ operations.length >= MAX_OPERATIONS && (
-									<span
-										className="bcm-bulk__hint"
-										id="bcm-bulk-max"
-									>
-										{ sprintf(
-											/* translators: %d: the most steps one change may hold, 20. */
-											__(
-												'One change can hold at most %d steps.',
-												'bulk-catalogue-manager-for-woocommerce'
-											),
-											MAX_OPERATIONS
-										) }
-									</span>
-								) }
 							</p>
-						</section>
-
-						{ preview.status !== 'idle' && (
-							<section
-								ref={ checkRef }
-								className="bcm-bulk__section"
-								aria-live="polite"
-							>
+						) }
+					</section>
+					<section className="bcm-bulk__card bcm-bulk__safety">
+						<h3>
+							{ __(
+								'Safety',
+								'bulk-catalogue-manager-for-woocommerce'
+							) }
+						</h3>
+						<p className="bcm-bulk__hint">
+							{ __(
+								'Every change is saved with the old values. One click in History puts them back.',
+								'bulk-catalogue-manager-for-woocommerce'
+							) }
+						</p>
+					</section>
+				</div>
+				<div className="bcm-bulk__main">
+					{ batch ? (
+						<DoneStep
+							batchId={ batch.batch_id }
+							count={ batch.total_items ?? changes }
+							interval={ pollInterval }
+							onUndo={ onUndo }
+							onViewHistory={ onViewHistory }
+							renderStalled={ renderStalled }
+						/>
+					) : (
+						<>
+							<section className="bcm-bulk__section">
 								<h3 className="bcm-bulk__h">
 									{ __(
-										'Check it',
+										'Choose the change',
 										'bulk-catalogue-manager-for-woocommerce'
 									) }
 								</h3>
-								{ preview.status === 'computing' && (
-									<p className="bcm-bulk__sub" role="status">
-										{ __(
-											'Working out what would change. Nothing is saved.',
-											'bulk-catalogue-manager-for-woocommerce'
-										) }
-									</p>
-								) }
-								{ preview.status === 'error' && (
-									<ErrorNotice
-										error={ preview.error }
-										details={ details }
-										onDetails={ setDetails }
-									/>
-								) }
-								{ reran && current && (
-									<div className="bcm-bulk__notice is-warn">
-										{ __(
-											'The products or the settings changed after you checked, so the preview has been worked out again. Check it, then apply.',
-											'bulk-catalogue-manager-for-woocommerce'
-										) }
-									</div>
-								) }
-								{ stale && preview.status === 'ready' && (
-									<div
-										className="bcm-bulk__notice is-warn"
-										data-block="stale"
-									>
-										{ __(
-											'The selection or the change has moved on since you checked it. Preview it again before applying.',
-											'bulk-catalogue-manager-for-woocommerce'
-										) }
-									</div>
-								) }
-								{ response && preview.status !== 'error' && (
-									<>
-										{ current && changes === 0 && (
-											<div className="bcm-bulk__notice is-warn">
-												<strong>
-													{ __(
-														'Nothing would change',
-														'bulk-catalogue-manager-for-woocommerce'
-													) }
-												</strong>
-												<p>
-													{ __(
-														'None of the chosen products would be different after this change. Adjust it and check again.',
-														'bulk-catalogue-manager-for-woocommerce'
-													) }
-												</p>
-											</div>
-										) }
-										<PreviewResult
-											response={ response }
-											registry={ registry }
-											operations={ requestOperations }
-											terms={ terms }
-											sampleSize={ preview.sampleSize }
-											busy={
-												preview.status === 'computing'
-											}
-											onSampleSize={ ( size ) => {
-												setSampleSize( size );
-												check( size );
-											} }
-											changedOnly={ changedOnly }
-											onChangedOnly={ setChangedOnly }
-											onDownload={
-												onDownloadSample
-													? () =>
-															onDownloadSample( {
-																operations:
-																	requestOperations,
-																...selectionArgs(
-																	selection
-																),
-																sample_size:
-																	preview.sampleSize,
-															} )
-													: null
-											}
-										/>
-										{ worthKnowing && (
-											<div className="bcm-bulk__notice is-warn">
-												<strong>
-													{ __(
-														'Worth knowing',
-														'bulk-catalogue-manager-for-woocommerce'
-													) }
-												</strong>
-												<p>
-													{ __(
-														'Variations carry their own prices and stock. Nothing happens to them until you switch on Also apply to variations for this change.',
-														'bulk-catalogue-manager-for-woocommerce'
-													) }
-												</p>
-											</div>
-										) }
-									</>
-								) }
-							</section>
-						) }
-
-						{ applier.status === 'changed' && (
-							<div
-								className="bcm-bulk__notice is-warn"
-								role="alert"
-								data-block="selection-changed"
-							>
-								<strong>
+								<p className="bcm-bulk__sub">
 									{ __(
-										'The filter now matches a different number of products',
+										'Pick a change. You will see exactly what it does, on real products, before anything is saved.',
 										'bulk-catalogue-manager-for-woocommerce'
 									) }
-								</strong>
-								<p>
-									{ sprintf(
-										/* translators: 1: products when previewed, such as "1,284 products"; 2: products now, such as "1,290 products". */
-										__(
-											'When you checked the change it matched %1$s. It matches %2$s now.',
+								</p>
+								<ol className="bcm-bulk__ops">
+									{ operations.map( ( operation, index ) => (
+										<li
+											key={ operation.key }
+											className="bcm-bulk__op"
+										>
+											{ ( index !== active ||
+												operations.length > 1 ) && (
+												<OperationSummary
+													registry={ registry }
+													operation={ operation }
+													index={ index }
+													total={ operations.length }
+													editing={ index === active }
+													onEdit={ () =>
+														setActive( index )
+													}
+													onMove={ ( by ) =>
+														move( index, by )
+													}
+													onRemove={ () =>
+														remove( index )
+													}
+												/>
+											) }
+											{ index === active && (
+												<ActionChooser
+													registry={ registry }
+													operation={ operation }
+													index={ index }
+													terms={ terms }
+													onChoose={ ( id, group ) =>
+														update(
+															index,
+															( was ) =>
+																chooseAction(
+																	registry,
+																	settings,
+																	was,
+																	id,
+																	group
+																)
+														)
+													}
+													onArg={ ( name, value ) =>
+														update(
+															index,
+															( was ) =>
+																changeArg(
+																	registry,
+																	settings,
+																	was,
+																	name,
+																	value
+																)
+														)
+													}
+													onVariations={ ( on ) =>
+														update(
+															index,
+															( was ) => ( {
+																...was,
+																variations: on,
+															} )
+														)
+													}
+												/>
+											) }
+										</li>
+									) ) }
+								</ol>
+								<p className="bcm-bulk__addrow">
+									<button
+										type="button"
+										className="button"
+										onClick={ add }
+										disabled={
+											operations.length >= MAX_OPERATIONS
+										}
+										aria-describedby={
+											operations.length >= MAX_OPERATIONS
+												? 'bcm-bulk-max'
+												: undefined
+										}
+									>
+										{ __(
+											'Add another change',
 											'bulk-catalogue-manager-for-woocommerce'
-										),
-										productsPhrase( applier.previewed ),
-										productsPhrase( applier.current )
+										) }
+									</button>
+									{ operations.length >= MAX_OPERATIONS && (
+										<span
+											className="bcm-bulk__hint"
+											id="bcm-bulk-max"
+										>
+											{ sprintf(
+												/* translators: %d: the most steps one change may hold, 20. */
+												__(
+													'One change can hold at most %d steps.',
+													'bulk-catalogue-manager-for-woocommerce'
+												),
+												MAX_OPERATIONS
+											) }
+										</span>
 									) }
 								</p>
-								<div className="bcm-bulk__acts">
-									<button
-										type="button"
-										className="button button-primary button-small"
-										onClick={ () => apply( true ) }
-									>
-										{ __(
-											'Apply anyway',
-											'bulk-catalogue-manager-for-woocommerce'
-										) }
-									</button>
-									<button
-										type="button"
-										className="button button-small"
-										onClick={ () => {
-											applier.reset();
-											check();
-										} }
-									>
-										{ __(
-											'Preview again',
-											'bulk-catalogue-manager-for-woocommerce'
-										) }
-									</button>
-								</div>
-							</div>
-						) }
-						{ applier.status === 'error' && (
-							<ErrorNotice
-								error={ applier.error }
-								details={ details }
-								onDetails={ setDetails }
-							/>
-						) }
-					</>
-				) }
+							</section>
 
-				<section className="bcm-bulk__card bcm-bulk__safety">
-					<h3>
-						{ __(
-							'Safety',
-							'bulk-catalogue-manager-for-woocommerce'
-						) }
-					</h3>
-					<p className="bcm-bulk__hint">
-						{ __(
-							'Every change is saved with the old values. One click in History puts them back.',
-							'bulk-catalogue-manager-for-woocommerce'
-						) }
-					</p>
-				</section>
+							{ preview.status !== 'idle' && (
+								<section
+									ref={ checkRef }
+									className="bcm-bulk__section"
+									aria-live="polite"
+								>
+									<h3 className="bcm-bulk__h">
+										{ __(
+											'Check it',
+											'bulk-catalogue-manager-for-woocommerce'
+										) }
+									</h3>
+									{ preview.status === 'computing' && (
+										<p
+											className="bcm-bulk__sub"
+											role="status"
+										>
+											{ __(
+												'Working out what would change. Nothing is saved.',
+												'bulk-catalogue-manager-for-woocommerce'
+											) }
+										</p>
+									) }
+									{ preview.status === 'error' && (
+										<ErrorNotice
+											error={ preview.error }
+											details={ details }
+											onDetails={ setDetails }
+										/>
+									) }
+									{ reran && current && (
+										<div className="bcm-bulk__notice is-warn">
+											{ __(
+												'The products or the settings changed after you checked, so the preview has been worked out again. Check it, then apply.',
+												'bulk-catalogue-manager-for-woocommerce'
+											) }
+										</div>
+									) }
+									{ stale && preview.status === 'ready' && (
+										<div
+											className="bcm-bulk__notice is-warn"
+											data-block="stale"
+										>
+											{ __(
+												'The selection or the change has moved on since you checked it. Preview it again before applying.',
+												'bulk-catalogue-manager-for-woocommerce'
+											) }
+										</div>
+									) }
+									{ response &&
+										preview.status !== 'error' && (
+											<>
+												{ current && changes === 0 && (
+													<div className="bcm-bulk__notice is-warn">
+														<strong>
+															{ __(
+																'Nothing would change',
+																'bulk-catalogue-manager-for-woocommerce'
+															) }
+														</strong>
+														<p>
+															{ __(
+																'None of the chosen products would be different after this change. Adjust it and check again.',
+																'bulk-catalogue-manager-for-woocommerce'
+															) }
+														</p>
+													</div>
+												) }
+												<PreviewResult
+													response={ response }
+													registry={ registry }
+													operations={
+														requestOperations
+													}
+													terms={ terms }
+													sampleSize={
+														preview.sampleSize
+													}
+													busy={
+														preview.status ===
+														'computing'
+													}
+													onSampleSize={ ( size ) => {
+														setSampleSize( size );
+														check( size );
+													} }
+													changedOnly={ changedOnly }
+													onChangedOnly={
+														setChangedOnly
+													}
+													onDownload={
+														onDownloadSample
+															? () =>
+																	onDownloadSample(
+																		{
+																			operations:
+																				requestOperations,
+																			...selectionArgs(
+																				selection
+																			),
+																			sample_size:
+																				preview.sampleSize,
+																		}
+																	)
+															: null
+													}
+												/>
+												{ worthKnowing && (
+													<div className="bcm-bulk__notice is-warn">
+														<strong>
+															{ __(
+																'Worth knowing',
+																'bulk-catalogue-manager-for-woocommerce'
+															) }
+														</strong>
+														<p>
+															{ __(
+																'Variations carry their own prices and stock. Nothing happens to them until you switch on Also apply to variations for this change.',
+																'bulk-catalogue-manager-for-woocommerce'
+															) }
+														</p>
+													</div>
+												) }
+											</>
+										) }
+								</section>
+							) }
+
+							{ applier.status === 'changed' && (
+								<div
+									className="bcm-bulk__notice is-warn"
+									role="alert"
+									data-block="selection-changed"
+								>
+									<strong>
+										{ __(
+											'The filter now matches a different number of products',
+											'bulk-catalogue-manager-for-woocommerce'
+										) }
+									</strong>
+									<p>
+										{ sprintf(
+											/* translators: 1: products when previewed, such as "1,284 products"; 2: products now, such as "1,290 products". */
+											__(
+												'When you checked the change it matched %1$s. It matches %2$s now.',
+												'bulk-catalogue-manager-for-woocommerce'
+											),
+											productsPhrase( applier.previewed ),
+											productsPhrase( applier.current )
+										) }
+									</p>
+									<div className="bcm-bulk__acts">
+										<button
+											type="button"
+											className="button button-primary button-small"
+											onClick={ () => apply( true ) }
+										>
+											{ __(
+												'Apply anyway',
+												'bulk-catalogue-manager-for-woocommerce'
+											) }
+										</button>
+										<button
+											type="button"
+											className="button button-small"
+											onClick={ () => {
+												applier.reset();
+												check();
+											} }
+										>
+											{ __(
+												'Preview again',
+												'bulk-catalogue-manager-for-woocommerce'
+											) }
+										</button>
+									</div>
+								</div>
+							) }
+							{ applier.status === 'error' && (
+								<ErrorNotice
+									error={ applier.error }
+									details={ details }
+									onDetails={ setDetails }
+								/>
+							) }
+						</>
+					) }
+				</div>
 			</div>
 
 			<footer className="bcm-bulk__foot">

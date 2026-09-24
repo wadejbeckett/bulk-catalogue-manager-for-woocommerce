@@ -228,6 +228,7 @@ export function putBackBy( undoneBy ) {
  * @param {Object}   props.byKey     Field descriptors by key.
  * @param {Function} props.onChanged The list should be read again.
  * @param {Function} props.onNotice  Show a screen notice `{ status, text }`.
+ * @param {Object}   props.linked    `{ id, undo }` when the URL names this batch (T75).
  * @return {Element} Card.
  */
 export default function BatchCard( {
@@ -237,6 +238,7 @@ export default function BatchCard( {
 	byKey,
 	onChanged,
 	onNotice,
+	linked = null,
 } ) {
 	const state = batch.reversibility?.state || STATES.REVERSIBLE;
 	const isRedo = batch.source === 'undo';
@@ -249,6 +251,7 @@ export default function BatchCard( {
 	const [ running, setRunning ] = useState( null );
 	const [ details, setDetails ] = useState( null );
 	const undoButton = useRef( null );
+	const cardRef = useRef( null );
 	const uuid = useRef( null );
 
 	// A batch in progress is followed until it finishes, then the list is read again.
@@ -333,11 +336,14 @@ export default function BatchCard( {
 			setPlan( null );
 			setSeeConflicts( false );
 			setRunning( answer?.batch_id || null );
+			// Undo gives way to the undo's progress, so focus goes to the
+			// batch's card, which shows it, rather than to the page (§14, T75).
+			window.requestAnimationFrame( () => cardRef.current?.focus() );
 		} catch ( caught ) {
 			setError( caught );
+			undoButton.current?.focus();
 		} finally {
 			setBusy( false );
-			undoButton.current?.focus();
 		}
 	};
 
@@ -354,9 +360,32 @@ export default function BatchCard( {
 		state !== STATES.NOT_REVERSIBLE &&
 		batch.status !== 'undone';
 
+	// T75: the batch the bulk panel linked to is brought into view and
+	// focused; with `undo`, its undo preview starts once it can be undone.
+	const autoUndone = useRef( false );
+	useEffect( () => {
+		if ( linked ) {
+			cardRef.current?.focus();
+		}
+	}, [ linked ] );
+	useEffect( () => {
+		if ( linked?.undo && undoable && ! autoUndone.current ) {
+			autoUndone.current = true;
+			startUndo();
+		}
+		// startUndo reads the batch as it is now.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [ linked, undoable ] );
+
 	return (
 		<article
-			className={ 'bcm-batch' + ( settled ? ' is-undone' : '' ) }
+			ref={ cardRef }
+			tabIndex={ -1 }
+			className={
+				'bcm-batch' +
+				( settled ? ' is-undone' : '' ) +
+				( linked ? ' is-linked' : '' )
+			}
 			aria-labelledby={ `bcm-batch-${ batch.batch_id }` }
 		>
 			<div className="bcm-batch__top">
@@ -383,8 +412,9 @@ export default function BatchCard( {
 				</div>
 				<div className="bcm-batch__actions">
 					<Button
-						variant="tertiary"
+						variant="secondary"
 						size="small"
+						className="bcm-batch__see"
 						aria-expanded={ open }
 						onClick={ () => setOpen( ( was ) => ! was ) }
 					>

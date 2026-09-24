@@ -91,17 +91,21 @@ describe( 'entry', () => {
 				name: 'Bulk Catalogue Manager sections',
 			} )
 		).toBeTruthy();
+		// T75: the prototype's header: the section switch, Categories and Settings.
 		for ( const tab of [
-			'Catalogue',
-			'History',
+			'Products',
+			'History and undo',
 			'Categories',
 			'Settings',
 		] ) {
 			expect( screen.getByRole( 'link', { name: tab } ) ).toBeTruthy();
 		}
 		expect(
+			screen.getByRole( 'button', { name: 'Bulk change' } )
+		).toBeTruthy();
+		expect(
 			screen
-				.getByRole( 'link', { name: 'Catalogue' } )
+				.getByRole( 'link', { name: 'Products' } )
 				.getAttribute( 'aria-current' )
 		).toBe( 'page' );
 		expect( apiFetch ).toHaveBeenCalledWith( {
@@ -118,7 +122,7 @@ describe( 'entry', () => {
 		} );
 
 		await act( async () => {
-			screen.getByRole( 'link', { name: 'History' } ).click();
+			screen.getByRole( 'link', { name: 'History and undo' } ).click();
 		} );
 		expect( window.location.search ).toContain( 'panel=history' );
 		expect(
@@ -126,7 +130,7 @@ describe( 'entry', () => {
 		).toBeTruthy();
 
 		await act( async () => {
-			screen.getByRole( 'link', { name: 'Catalogue' } ).click();
+			screen.getByRole( 'link', { name: 'Products' } ).click();
 		} );
 		expect( window.location.search ).not.toContain( 'panel=' );
 	} );

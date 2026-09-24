@@ -101,12 +101,11 @@ describe( 'fields from the registry', () => {
 		expect( view.fields ).toEqual( DEFAULT_COLUMNS );
 		expect( DEFAULT_COLUMNS ).toEqual( [
 			'sku',
+			'category_ids',
+			'regular_price',
+			'stock_status',
 			'status',
 			'visible_on_site',
-			'regular_price',
-			'sale_price',
-			'stock_status',
-			'category_ids',
 		] );
 		expect( view.perPage ).toBe( 50 );
 		expect( view.sort ).toBeUndefined();

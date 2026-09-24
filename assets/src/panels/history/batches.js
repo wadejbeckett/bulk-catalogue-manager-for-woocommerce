@@ -155,13 +155,14 @@ export function retentionLine( days ) {
 /**
  * The list.
  *
- * @param {Object}   props          Props.
- * @param {Object}   props.settings Page settings.
- * @param {Object}   props.meta     `{ byKey, actions, actionsById }` from GET /fields.
- * @param {Object}   props.names    User names by id.
- * @param {Array}    props.users    User filter elements.
- * @param {Function} props.onNotice Show a screen notice.
- * @param {Element}  props.scope    The scope line.
+ * @param {Object}   props             Props.
+ * @param {Object}   props.settings    Page settings.
+ * @param {Object}   props.meta        `{ byKey, actions, actionsById }` from GET /fields.
+ * @param {Object}   props.names       User names by id.
+ * @param {Array}    props.users       User filter elements.
+ * @param {Function} props.onNotice    Show a screen notice.
+ * @param {Element}  props.scope       The scope line.
+ * @param {Object}   props.linkedBatch The batch the URL names, `{ id, undo }` (T75).
  * @return {Element} List.
  */
 export default function Batches( {
@@ -171,6 +172,7 @@ export default function Batches( {
 	users,
 	onNotice,
 	scope,
+	linkedBatch = null,
 } ) {
 	const [ view, setView ] = useState( defaultBatchView );
 	const [ items, setItems ] = useState( [] );
@@ -294,6 +296,11 @@ export default function Batches( {
 							byKey={ meta.byKey }
 							onChanged={ reload }
 							onNotice={ onNotice }
+							linked={
+								linkedBatch?.id === batch.batch_id
+									? linkedBatch
+									: null
+							}
 						/>
 					) ) }
 				</div>

@@ -114,7 +114,7 @@ final class ProductsRouteTest extends TestCase {
 	}
 
 	public function test_a_well_formed_read_reaches_the_query_builder(): void {
-		$GLOBALS['wpdb']->responses['/^SELECT COUNT\(\*\)/'] = '57';
+		$GLOBALS['wpdb']->responses[ \BulkCatalogueManager\Tests\Support\SqlEvaluator::COUNT ] = '57';
 		$response = self::get(
 			[
 				'per_page'     => '500',
@@ -141,20 +141,20 @@ final class ProductsRouteTest extends TestCase {
 			$response->get_data()
 		);
 		$this->assertCount( 2, $GLOBALS['wpdb']->queries, 'The count, then the page, which found no rows to hydrate.' );
-		$this->assertStringStartsWith( 'SELECT COUNT(*) ', $GLOBALS['wpdb']->queries[0] );
+		$this->assertSame( 1, preg_match( \BulkCatalogueManager\Tests\Support\SqlEvaluator::COUNT, $GLOBALS['wpdb']->queries[0] ) );
 		$this->assertStringContainsString( "l.stock_status IN ('outofstock')", $GLOBALS['wpdb']->queries[0] );
-		$this->assertStringStartsWith( 'SELECT p.ID AS id, p.post_parent AS parent_id', $GLOBALS['wpdb']->queries[1] );
+		$this->assertSame( 1, preg_match( \BulkCatalogueManager\Tests\Support\SqlEvaluator::PAGE, $GLOBALS['wpdb']->queries[1] ) );
 		$this->assertStringEndsWith( 'LIMIT 100 OFFSET 0', $GLOBALS['wpdb']->queries[1] );
 	}
 
 	public function test_a_read_returns_hydrated_items_for_the_requested_fields(): void {
-		$GLOBALS['bcm_test']['posts'][41]                    = [
+		$GLOBALS['bcm_test']['posts'][41] = [
 			'post_type'   => 'product',
 			'post_title'  => 'Blue shirt',
 			'post_status' => 'draft',
 		];
-		$GLOBALS['wpdb']->responses['/^SELECT COUNT\(\*\)/'] = '1';
-		$GLOBALS['wpdb']->responses['/^SELECT p\.ID AS id/'] = [
+		$GLOBALS['wpdb']->responses[ \BulkCatalogueManager\Tests\Support\SqlEvaluator::COUNT ] = '1';
+		$GLOBALS['wpdb']->responses[ \BulkCatalogueManager\Tests\Support\SqlEvaluator::PAGE ]  = [
 			[
 				'id'        => '41',
 				'parent_id' => '0',
@@ -187,7 +187,7 @@ final class ProductsRouteTest extends TestCase {
 	}
 
 	public function test_defaults_fill_paging_and_mode(): void {
-		$GLOBALS['wpdb']->responses['/^SELECT COUNT\(\*\)/'] = '51';
+		$GLOBALS['wpdb']->responses[ \BulkCatalogueManager\Tests\Support\SqlEvaluator::COUNT ] = '51';
 		$response = self::get( [] );
 		$this->assertSame(
 			[

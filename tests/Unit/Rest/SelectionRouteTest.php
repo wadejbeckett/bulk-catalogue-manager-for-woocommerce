@@ -180,7 +180,7 @@ final class SelectionRouteTest extends TestCase {
 		$this->assertInstanceOf( Selection::class, $selection );
 		$this->assertSame( [ 106, 101, 201 ], $selection->ids );
 		$this->assertNull( $selection->criteria, 'With ids the filter arguments are ignored.' );
-		$this->assertSame( [], array_filter( $GLOBALS['wpdb']->queries, static fn( string $sql ): bool => str_starts_with( $sql, 'SELECT COUNT(*)' ) ), 'An id list is not counted in SQL.' );
+		$this->assertSame( [], array_filter( $GLOBALS['wpdb']->queries, static fn( string $sql ): bool => 1 === preg_match( \BulkCatalogueManager\Tests\Support\SqlEvaluator::COUNT, $sql ) ), 'An id list is not counted in SQL.' );
 	}
 
 	public function test_invalid_ids_are_refused_before_the_handler(): void {
@@ -252,7 +252,7 @@ final class SelectionRouteTest extends TestCase {
 				'wp_wc_product_meta_lookup' => [],
 			]
 		);
-		$GLOBALS['wpdb']->responses = [ '/^SELECT COUNT\(\*\) FROM/' => static fn( string $sql ): ?string => $db->value( $sql ) ];
+		$GLOBALS['wpdb']->responses = [ \BulkCatalogueManager\Tests\Support\SqlEvaluator::COUNT => static fn( string $sql ): ?string => $db->value( $sql ) ];
 	}
 
 	public function test_a_filter_matching_100001_seeded_objects_is_refused_with_the_count(): void {

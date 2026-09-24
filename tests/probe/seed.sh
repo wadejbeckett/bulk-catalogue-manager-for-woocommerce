@@ -22,9 +22,14 @@
 # seeder adds that many products under category "Scale Catalogue", SKUs
 # bcm-scale-00001 ..; every second one is variable with 7 variations, so
 # `seed.sh 20000` builds 20,000 products and 70,000 variations. Scale products
-# are created in runs of $SCALE_CHUNK per `wp eval` (bounded memory) and a
+# are bulk-inserted in runs of $SCALE_CHUNK per `wp eval`, one transaction
+# each, as the exact rows WooCommerce's CRUD classes write for them (CRUD
+# saves run at roughly 20 objects a second, which is hours at this size); a
 # product whose SKU already exists is left alone, so an interrupted build
-# resumes where it stopped and a finished one is reused between runs.
+# resumes where it stopped and a finished one is reused between runs. A last
+# run reads a sample back through wc_get_product() and fails the seed if
+# WooCommerce sees anything other than what was meant. 20,000 products take
+# about two minutes on the docker stack of tests/probe/README.md.
 #
 # Usage:
 #   bash tests/probe/seed.sh [SCALE]
@@ -36,7 +41,7 @@
 #   WP_CMD          the WP-CLI invocation. Default: wp
 #   SEED_JSON       where to write the fixture description. Default: tests/probe/seed.json (gitignored)
 #   PROBE_PASSWORD  the probe users' password. Default: bcm-probe-password (throwaway sites only)
-#   SCALE_CHUNK     scale products per wp eval run. Default: 200
+#   SCALE_CHUNK     scale products per wp eval run. Default: 1000
 #
 set -euo pipefail
 
@@ -44,7 +49,7 @@ WP_CMD=${WP_CMD:-wp}
 SEED_JSON=${SEED_JSON:-"$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/seed.json"}
 PROBE_PASSWORD=${PROBE_PASSWORD:-bcm-probe-password}
 SCALE=${1:-0}
-SCALE_CHUNK=${SCALE_CHUNK:-200}
+SCALE_CHUNK=${SCALE_CHUNK:-1000}
 
 case "$SCALE" in
 	'' | *[!0-9]*) echo "seed.sh: SCALE must be a whole number of products, got '$SCALE'" >&2; exit 2 ;;
@@ -176,51 +181,182 @@ echo "BCM_SEED_BEGIN\n" . wp_json_encode( $seed ) . "\nBCM_SEED_END\n";
 PHP
 )
 
-# One scale run: creates the missing products numbered FROM .. TO.
+# One scale run: inserts the missing products numbered FROM .. TO, and their
+# variations, as multi-row INSERTs inside one transaction. The rows are the
+# ones WooCommerce 11.1's CRUD classes write for these products (posts,
+# postmeta, product_type and product_cat relationships, wc_product_meta_lookup),
+# checked against wc_get_product() by the verification run below; the fixed
+# probe catalogue above still goes through CRUD. A run either commits all of
+# its products or none, so an interrupted build resumes cleanly.
 SCALE_PHP=$(cat <<'PHP'
+global $wpdb;
 list( $from, $to ) = array_map( 'intval', explode( ':', $bcm_scale_range ) );
 $found = get_term_by( 'slug', 'bcm-scale', 'product_cat' );
 $cat   = $found ? (int) $found->term_id : (int) wp_insert_term( 'Scale Catalogue', 'product_cat', array( 'slug' => 'bcm-scale' ) )['term_id'];
-wp_defer_term_counting( true );
-$made = 0;
+$tt    = array(
+	'cat'      => (int) get_term( $cat, 'product_cat' )->term_taxonomy_id,
+	'simple'   => (int) get_term_by( 'slug', 'simple', 'product_type' )->term_taxonomy_id,
+	'variable' => (int) get_term_by( 'slug', 'variable', 'product_type' )->term_taxonomy_id,
+);
+$skus = array();
 for ( $n = $from; $n <= $to; $n++ ) {
-	$sku = sprintf( 'bcm-scale-%05d', $n );
-	if ( wc_get_product_id_by_sku( $sku ) ) {
+	$skus[ $n ] = sprintf( 'bcm-scale-%05d', $n );
+}
+$have = array_flip( $wpdb->get_col( "SELECT sku FROM {$wpdb->wc_product_meta_lookup} WHERE sku IN ('" . implode( "','", array_map( 'esc_sql', $skus ) ) . "')" ) );
+$todo = array_diff_key( $skus, array_flip( array_map( fn( $s ) => (int) substr( $s, 10 ), array_keys( $have ) ) ) );
+if ( ! $todo ) {
+	echo "BCM_SCALE_MADE 0\n";
+	return;
+}
+
+$insert = function ( string $table, array $columns, array $rows ) use ( $wpdb ): void {
+	foreach ( array_chunk( $rows, 1000 ) as $part ) {
+		$values = array();
+		foreach ( $part as $row ) {
+			$values[] = '(' . implode( ',', array_map( fn( $v ) => null === $v ? 'NULL' : "'" . esc_sql( (string) $v ) . "'", $row ) ) . ')';
+		}
+		$sql = "INSERT INTO {$table} (`" . implode( '`,`', $columns ) . '`) VALUES ' . implode( ',', $values );
+		if ( false === $wpdb->query( $sql ) ) {
+			throw new RuntimeException( $wpdb->last_error );
+		}
+	}
+};
+$now     = current_time( 'mysql' );
+$now_gmt = current_time( 'mysql', true );
+$post    = function ( string $type, int $parent, string $title, string $slug, string $excerpt, string $comments ) use ( $now, $now_gmt ): array {
+	return array( 0, $now, $now_gmt, '', $title, $excerpt, 'publish', $comments, 'closed', $slug, '', '', $now, $now_gmt, '', $parent, '', 0, $type );
+};
+$post_columns = array( 'post_author', 'post_date', 'post_date_gmt', 'post_content', 'post_title', 'post_excerpt', 'post_status', 'comment_status', 'ping_status', 'post_name', 'to_ping', 'pinged', 'post_modified', 'post_modified_gmt', 'post_content_filtered', 'post_parent', 'guid', 'menu_order', 'post_type' );
+$options      = array( 'A', 'B', 'C', 'D', 'E', 'F', 'G' );
+$attributes   = serialize( array( 'option' => array( 'name' => 'Option', 'value' => implode( ' | ', $options ), 'position' => 0, 'is_visible' => 1, 'is_variation' => 1, 'is_taxonomy' => 0 ) ) );
+$version      = WC_VERSION;
+
+$wpdb->query( 'START TRANSACTION' );
+
+// Parents.
+$rows = array();
+foreach ( $todo as $n => $sku ) {
+	$rows[] = $post( 'product', 0, sprintf( 'Scale Product %05d', $n ), sprintf( 'scale-product-%05d', $n ), '', 'open' );
+}
+$insert( $wpdb->posts, $post_columns, $rows );
+$names  = array_map( fn( $n ) => sprintf( 'scale-product-%05d', $n ), array_keys( $todo ) );
+$parent = array();
+foreach ( $wpdb->get_results( "SELECT ID, post_name FROM {$wpdb->posts} WHERE post_type = 'product' AND post_name IN ('" . implode( "','", $names ) . "')" ) as $row ) {
+	$parent[ (int) substr( $row->post_name, 14 ) ] = (int) $row->ID;
+}
+
+// Variations of every even (variable) product.
+$rows = array();
+foreach ( $todo as $n => $sku ) {
+	if ( 0 !== $n % 2 ) {
 		continue;
 	}
-	$variable = 0 === $n % 2;
-	$product  = $variable ? new WC_Product_Variable() : new WC_Product_Simple();
-	$product->set_sku( $sku );
-	$product->set_name( sprintf( 'Scale Product %05d', $n ) );
-	$product->set_status( 'publish' );
-	$product->set_category_ids( array( $cat ) );
-	if ( $variable ) {
-		$attribute = new WC_Product_Attribute();
-		$attribute->set_name( 'Option' );
-		$attribute->set_options( array( 'A', 'B', 'C', 'D', 'E', 'F', 'G' ) );
-		$attribute->set_visible( true );
-		$attribute->set_variation( true );
-		$product->set_attributes( array( $attribute ) );
-		$parent = (int) $product->save();
-		foreach ( array( 'A', 'B', 'C', 'D', 'E', 'F', 'G' ) as $k => $option ) {
-			$variation = new WC_Product_Variation();
-			$variation->set_parent_id( $parent );
-			$variation->set_sku( $sku . '-' . strtolower( $option ) );
-			$variation->set_attributes( array( 'option' => $option ) );
-			$variation->set_regular_price( number_format( 5 + ( $n % 50 ) + $k, 2, '.', '' ) );
-			$variation->save();
-		}
-		WC_Product_Variable::sync( $parent );
-	} else {
-		$product->set_regular_price( number_format( 5 + ( $n % 90 ), 2, '.', '' ) );
-		$product->set_manage_stock( true );
-		$product->set_stock_quantity( $n % 40 );
-		$product->save();
+	foreach ( $options as $option ) {
+		$rows[] = $post( 'product_variation', $parent[ $n ], sprintf( 'Scale Product %05d - %s', $n, $option ), sprintf( 'scale-product-%05d-%s', $n, strtolower( $option ) ), 'Option: ' . $option, 'closed' );
 	}
-	++$made;
 }
-wp_defer_term_counting( false );
-echo "BCM_SCALE_MADE $made\n";
+$insert( $wpdb->posts, $post_columns, $rows );
+$variation = array();
+if ( $parent ) {
+	foreach ( $wpdb->get_results( "SELECT ID, post_parent, post_name FROM {$wpdb->posts} WHERE post_type = 'product_variation' AND post_parent IN (" . implode( ',', $parent ) . ')' ) as $row ) {
+		$variation[ (int) $row->post_parent ][ strtoupper( substr( $row->post_name, -1 ) ) ] = (int) $row->ID;
+	}
+}
+$wpdb->query( "UPDATE {$wpdb->posts} SET guid = CONCAT('" . esc_sql( home_url( '/' ) ) . "?post_type=', post_type, '&p=', ID) WHERE guid = '' AND post_name LIKE 'scale-product-%'" );
+
+// Meta, relationships and lookup rows, in the shapes CRUD writes.
+$common = function ( string $manage, string $stock, string $status, string $tax_class ): array {
+	return array( 'total_sales' => '0', '_tax_status' => 'taxable', '_tax_class' => $tax_class, '_manage_stock' => $manage, '_backorders' => 'no', '_sold_individually' => 'no', '_virtual' => 'no', '_downloadable' => 'no', '_download_limit' => '-1', '_download_expiry' => '-1', '_stock' => $stock, '_stock_status' => $status, '_wc_average_rating' => '0', '_wc_review_count' => '0' );
+};
+$lookup = function ( int $id, string $sku, string $min, string $max, $stock, string $tax_class ): array {
+	return array( $id, $sku, '', 0, 0, $min, $max, 0, $stock, 'instock', 0, '0.00', 0, 'taxable', $tax_class );
+};
+$meta = array();
+$rels = array();
+$look = array();
+foreach ( $todo as $n => $sku ) {
+	$id = $parent[ $n ];
+	$rels[] = array( $id, $tt['cat'], 0 );
+	if ( 0 !== $n % 2 ) {
+		$price = number_format( 5 + ( $n % 90 ), 2, '.', '' );
+		$stock = (string) ( $n % 40 );
+		$pairs = array( '_sku' => $sku, '_regular_price' => $price ) + $common( 'yes', $stock, 'instock', '' ) + array( '_product_version' => $version, '_price' => $price );
+		foreach ( $pairs as $key => $value ) {
+			$meta[] = array( $id, $key, $value );
+		}
+		$rels[] = array( $id, $tt['simple'], 0 );
+		$look[] = $lookup( $id, $sku, $price, $price, $stock, '' );
+		continue;
+	}
+	$prices = array();
+	foreach ( $options as $k => $option ) {
+		$vid      = $variation[ $id ][ $option ];
+		$vsku     = $sku . '-' . strtolower( $option );
+		$price    = number_format( 5 + ( $n % 50 ) + $k, 2, '.', '' );
+		$prices[] = $price;
+		$pairs    = array( '_variation_description' => '', '_sku' => $vsku, '_regular_price' => $price ) + $common( 'no', '', 'instock', 'parent' ) + array( 'attribute_option' => $option, '_price' => $price, '_product_version' => $version );
+		foreach ( $pairs as $key => $value ) {
+			$meta[] = array( $vid, $key, $value );
+		}
+		$look[] = $lookup( $vid, $vsku, $price, $price, null, 'parent' );
+	}
+	$pairs = array( '_sku' => $sku ) + $common( 'no', '', 'instock', '' ) + array( '_product_attributes' => $attributes, '_product_version' => $version );
+	foreach ( $pairs as $key => $value ) {
+		$meta[] = array( $id, $key, $value );
+	}
+	foreach ( $prices as $price ) {
+		$meta[] = array( $id, '_price', $price );
+	}
+	$rels[] = array( $id, $tt['variable'], 0 );
+	$look[] = $lookup( $id, $sku, min( $prices ), max( $prices ), null, '' );
+}
+$insert( $wpdb->postmeta, array( 'post_id', 'meta_key', 'meta_value' ), $meta );
+$insert( $wpdb->term_relationships, array( 'object_id', 'term_taxonomy_id', 'term_order' ), $rels );
+$insert( $wpdb->wc_product_meta_lookup, array( 'product_id', 'sku', 'global_unique_id', 'virtual', 'downloadable', 'min_price', 'max_price', 'onsale', 'stock_quantity', 'stock_status', 'rating_count', 'average_rating', 'total_sales', 'tax_status', 'tax_class' ), $look );
+$wpdb->query( 'COMMIT' );
+
+wp_update_term_count_now( array_values( $tt ), 'product_cat' );
+wp_update_term_count_now( array( $tt['simple'], $tt['variable'] ), 'product_type' );
+wc_delete_product_transients();
+echo 'BCM_SCALE_MADE ' . count( $todo ) . "\n";
+PHP
+)
+
+# Reads the scale catalogue back through WooCommerce: counts, and a sample of
+# simple and variable products against the values the insert meant.
+VERIFY_PHP=$(cat <<'PHP'
+global $wpdb;
+$scale    = (int) $bcm_scale;
+$problems = array();
+$products = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->wc_product_meta_lookup} l JOIN {$wpdb->posts} p ON p.ID = l.product_id WHERE p.post_type = 'product' AND l.sku LIKE 'bcm-scale-%'" );
+$children = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->wc_product_meta_lookup} l JOIN {$wpdb->posts} p ON p.ID = l.product_id WHERE p.post_type = 'product_variation' AND l.sku LIKE 'bcm-scale-%'" );
+if ( $products < $scale || $children < 7 * intdiv( $scale, 2 ) ) {
+	$problems[] = "counts $products products, $children variations";
+}
+foreach ( array_unique( array( 1, 2, $scale - 1, $scale ) ) as $n ) {
+	if ( $n < 1 ) {
+		continue;
+	}
+	$product = wc_get_product( wc_get_product_id_by_sku( sprintf( 'bcm-scale-%05d', $n ) ) );
+	if ( ! $product || $product->get_category_ids() === array() ) {
+		$problems[] = "product $n unreadable";
+		continue;
+	}
+	if ( 0 === $n % 2 ) {
+		$prices = $product->get_variation_prices();
+		$want   = number_format( 5 + ( $n % 50 ), 2, '.', '' );
+		if ( ! $product->is_type( 'variable' ) || 7 !== count( $product->get_children() ) || $want !== number_format( (float) min( $prices['price'] ), 2, '.', '' ) ) {
+			$problems[] = "variable $n: " . $product->get_type() . ' ' . count( $product->get_children() ) . ' children';
+		}
+		$first = wc_get_product( $product->get_children()[0] );
+		if ( ! $first || 'A' !== $first->get_attribute( 'option' ) || $want !== $first->get_regular_price() ) {
+			$problems[] = "variation of $n";
+		}
+	} elseif ( ! $product->is_type( 'simple' ) || number_format( 5 + ( $n % 90 ), 2, '.', '' ) !== $product->get_regular_price() || $n % 40 !== $product->get_stock_quantity() ) {
+		$problems[] = "simple $n";
+	}
+}
+echo $problems ? 'BCM_SCALE_BAD ' . implode( '; ', $problems ) . "\n" : "BCM_SCALE_OK $products $children\n";
 PHP
 )
 
@@ -234,6 +370,11 @@ if [ "$SCALE" -gt 0 ]; then
 		echo "seed.sh: scale $start-$end: created ${made:-0}" >&2
 		start=$((end + 1))
 	done
+	checked=$(wpcli eval "\$bcm_scale = $SCALE; $VERIFY_PHP")
+	case "$checked" in
+		*BCM_SCALE_OK*) echo "seed.sh: scale catalogue verified: ${checked#*BCM_SCALE_OK }" >&2 ;;
+		*) echo "seed.sh: scale catalogue does not read back as seeded: $checked" >&2; exit 1 ;;
+	esac
 fi
 
 RAW=$(wpcli eval "$SEED_PHP")

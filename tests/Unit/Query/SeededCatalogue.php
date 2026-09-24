@@ -209,8 +209,8 @@ final class SeededCatalogue {
 
 		$db              = new SqlEvaluator( $tables );
 		$wpdb->responses = [
-			'/^SELECT COUNT\(\*\) FROM/' => static fn( string $sql ): ?string => $db->value( $sql ),
-			'/^SELECT /'                 => static fn( string $sql ): array => $db->rows( $sql ),
+			\BulkCatalogueManager\Tests\Support\SqlEvaluator::COUNT => static fn( string $sql ): ?string => $db->value( $sql ),
+			'/^SELECT /' => static fn( string $sql ): array => $db->rows( $sql ),
 		];
 		return $db;
 	}

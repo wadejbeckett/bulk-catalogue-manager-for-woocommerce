@@ -31,6 +31,9 @@ final class ProductQueryTest extends TestCase {
 	 */
 	private const FRAGMENTS = [
 		'{FROM}'   => 'FROM `wp_posts` AS p LEFT JOIN `wp_wc_product_meta_lookup` AS l ON l.product_id = p.ID',
+		'{POSTS}'  => 'FROM `wp_posts` AS p',
+		'{HINT}'   => '/*+ JOIN_PREFIX(p) */',
+		'{SCAN}'   => '/*+ NO_INDEX(l stock_status, min_max_price, stock_quantity) */',
 		'{STATUS}' => "p.post_status IN ('publish', 'future', 'draft', 'pending', 'private')",
 		'{SLUG}'   => 'FROM `wp_term_relationships` AS tr INNER JOIN `wp_term_taxonomy` AS tt ON tt.term_taxonomy_id = tr.term_taxonomy_id INNER JOIN `wp_terms` AS t ON t.term_id = tt.term_id',
 		'{TERM}'   => 'FROM `wp_term_relationships` AS tr INNER JOIN `wp_term_taxonomy` AS tt ON tt.term_taxonomy_id = tr.term_taxonomy_id',
@@ -68,7 +71,7 @@ final class ProductQueryTest extends TestCase {
 			'defaults'                                 => [
 				[],
 				<<<'SQL'
-				SELECT p.ID AS id, p.post_parent AS parent_id, p.post_date_gmt AS date_created {FROM}
+				SELECT p.ID AS id, p.post_parent AS parent_id, p.post_date_gmt AS date_created {POSTS}
 				WHERE p.post_type IN ('product') AND {STATUS}
 				ORDER BY p.post_date_gmt DESC, p.ID DESC LIMIT 25 OFFSET 0
 				SQL,
@@ -86,7 +89,7 @@ final class ProductQueryTest extends TestCase {
 					'orderby' => 'sku',
 				],
 				<<<'SQL'
-				SELECT p.ID AS id, p.post_parent AS parent_id, l.sku AS sku {FROM}
+				SELECT {SCAN} p.ID AS id, p.post_parent AS parent_id, l.sku AS sku {FROM}
 				WHERE p.post_type IN ('product_variation') AND {STATUS} AND l.stock_status IN ('outofstock')
 				ORDER BY l.sku ASC, p.ID ASC LIMIT 25 OFFSET 0
 				SQL,
@@ -104,7 +107,7 @@ final class ProductQueryTest extends TestCase {
 					'orderby' => 'name',
 				],
 				<<<'SQL'
-				SELECT p.ID AS id, p.post_parent AS parent_id, p.post_title AS name {FROM}
+				SELECT p.ID AS id, p.post_parent AS parent_id, p.post_title AS name {POSTS}
 				WHERE p.post_type IN ('product', 'product_variation') AND {STATUS}
 				AND EXISTS (SELECT 1 {TERM} WHERE tr.object_id = {OWNER} AND tt.taxonomy = 'product_cat' AND tt.term_id IN (12))
 				ORDER BY p.post_title ASC, p.ID ASC LIMIT 25 OFFSET 0
@@ -130,7 +133,7 @@ final class ProductQueryTest extends TestCase {
 					'per_page' => 50,
 				],
 				<<<'SQL'
-				SELECT p.ID AS id, p.post_parent AS parent_id, l.stock_quantity AS stock_quantity, p.post_title AS name {FROM}
+				SELECT {HINT} p.ID AS id, p.post_parent AS parent_id, l.stock_quantity AS stock_quantity, p.post_title AS name {FROM}
 				WHERE p.post_type IN ('product') AND {STATUS}
 				AND NOT EXISTS (SELECT 1 {TERM} WHERE tr.object_id = p.ID AND tt.taxonomy = 'product_tag' AND tt.term_id IN (4, 5))
 				AND (l.stock_quantity >= 0 AND l.stock_quantity <= 10)
@@ -160,7 +163,7 @@ final class ProductQueryTest extends TestCase {
 					'order'   => 'DESC',
 				],
 				<<<'SQL'
-				SELECT p.ID AS id, p.post_parent AS parent_id {FROM}
+				SELECT {HINT} p.ID AS id, p.post_parent AS parent_id {FROM}
 				WHERE p.post_type IN ('product') AND {STATUS}
 				AND EXISTS (SELECT 1 {SLUG} WHERE tr.object_id = p.ID AND tt.taxonomy = 'product_visibility' AND t.slug IN ('featured'))
 				AND l.stock_quantity IS NULL AND l.tax_class IN ('', 'reduced-rate')
@@ -183,7 +186,7 @@ final class ProductQueryTest extends TestCase {
 					],
 				],
 				<<<'SQL'
-				SELECT p.ID AS id, p.post_parent AS parent_id, p.post_date_gmt AS date_created {FROM}
+				SELECT p.ID AS id, p.post_parent AS parent_id, p.post_date_gmt AS date_created {POSTS}
 				WHERE p.post_type IN ('product') AND {STATUS}
 				AND ((NOT EXISTS (SELECT 1 {SLUG} WHERE tr.object_id = p.ID AND tt.taxonomy = 'product_visibility' AND t.slug IN ('exclude-from-catalog'))
 				AND EXISTS (SELECT 1 {SLUG} WHERE tr.object_id = p.ID AND tt.taxonomy = 'product_visibility' AND t.slug IN ('exclude-from-search')))
@@ -222,7 +225,7 @@ final class ProductQueryTest extends TestCase {
 					'order'   => 'desc',
 				],
 				<<<'SQL'
-				SELECT p.ID AS id, p.post_parent AS parent_id, l.max_price AS regular_price {FROM}
+				SELECT {SCAN} p.ID AS id, p.post_parent AS parent_id, l.max_price AS regular_price {FROM}
 				WHERE p.post_type IN ('product_variation') AND {STATUS}
 				AND EXISTS (SELECT 1 {TERM} WHERE tr.object_id = p.post_parent AND tt.taxonomy = 'product_cat' AND tt.term_id IN (3))
 				AND EXISTS (SELECT 1 {TERM} WHERE tr.object_id = p.post_parent AND tt.taxonomy = 'product_cat' AND tt.term_id IN (7))
@@ -264,12 +267,22 @@ final class ProductQueryTest extends TestCase {
 					'per_page' => 500,
 				],
 				<<<'SQL'
-				SELECT p.ID AS id, p.post_parent AS parent_id, l.total_sales AS units_sold, p.post_modified_gmt AS date_modified {FROM}
+				SELECT {HINT} p.ID AS id, p.post_parent AS parent_id, l.total_sales AS units_sold, p.post_modified_gmt AS date_modified {FROM}
 				WHERE p.post_type IN ('product') AND {STATUS}
 				AND (p.post_title LIKE '%50\\% off\\_\'\\%s%' OR l.sku LIKE '%50\\% off\\_\'\\%s%')
 				AND p.post_modified_gmt < '2026-09-01 00:00:00' AND p.post_date_gmt > '2026-09-01 10:00:00'
 				AND p.post_modified_gmt >= '2026-09-09 12:00:00' AND l.min_price <= 99.95
 				ORDER BY l.total_sales DESC, p.post_modified_gmt DESC, p.ID DESC LIMIT 100 OFFSET 0
+				SQL,
+			],
+			'a lookup sort key alone joins the page'   => [
+				[
+					'orderby' => 'sku',
+				],
+				<<<'SQL'
+				SELECT {HINT} p.ID AS id, p.post_parent AS parent_id, l.sku AS sku {FROM}
+				WHERE p.post_type IN ('product') AND {STATUS}
+				ORDER BY l.sku ASC, p.ID ASC LIMIT 25 OFFSET 0
 				SQL,
 			],
 			'variation type needs no term'             => [
@@ -291,7 +304,7 @@ final class ProductQueryTest extends TestCase {
 					'order'   => 'asc',
 				],
 				<<<'SQL'
-				SELECT p.ID AS id, p.post_parent AS parent_id, p.post_date_gmt AS date_created {FROM}
+				SELECT p.ID AS id, p.post_parent AS parent_id, p.post_date_gmt AS date_created {POSTS}
 				WHERE p.post_type IN ('product', 'product_variation') AND {STATUS}
 				AND (p.post_type = 'product_variation') AND p.post_date_gmt >= '2027-01-01 00:00:00'
 				ORDER BY p.post_date_gmt ASC, p.ID ASC LIMIT 25 OFFSET 0
@@ -312,8 +325,11 @@ final class ProductQueryTest extends TestCase {
 			$page  = self::normalise( $query->statement() );
 			$count = self::normalise( $query->count_statement() );
 
-			$this->assertSame( 1, preg_match( '/^SELECT .+? (FROM .+) ORDER BY /', $page, $page_parts ), $name );
-			$this->assertSame( 'SELECT COUNT(*) ' . $page_parts[1] . ' LIMIT 1', $count, $name );
+			// The same WHERE; the lookup joined, and hinted in products mode, only when a condition reads it.
+			$this->assertSame( 1, preg_match( '/^SELECT .+? FROM `wp_posts` AS p (?:LEFT JOIN .+? )?(WHERE .+) ORDER BY /', $page, $page_parts ), $name );
+			$joins = 1 === preg_match( '/\bl\./', $page_parts[1] );
+			$hint  = $joins ? ( Criteria::MODE_PRODUCTS === ( $args['mode'] ?? Criteria::MODE_PRODUCTS ) ? '{HINT} ' : '{SCAN} ' ) : '';
+			$this->assertSame( self::normalise( strtr( 'SELECT ' . $hint . 'COUNT(*) ' . ( $joins ? '{FROM}' : '{POSTS}' ), self::FRAGMENTS ) ) . ' ' . $page_parts[1] . ' LIMIT 1', $count, $name );
 		}
 	}
 
@@ -335,14 +351,17 @@ final class ProductQueryTest extends TestCase {
 			$conditions = $query->conditions_sql();
 
 			$this->assertSame( [ 'sql', 'args' ], array_keys( $conditions ), $name );
-			$this->assertStringStartsWith( 'FROM %i AS p LEFT JOIN %i AS l ON l.product_id = p.ID WHERE ', $conditions['sql'], $name );
+			$joins = str_starts_with( $conditions['sql'], 'FROM %i AS p LEFT JOIN %i AS l ON l.product_id = p.ID WHERE ' );
+			$this->assertTrue( $joins || str_starts_with( $conditions['sql'], 'FROM %i AS p WHERE ' ), $name );
+			$this->assertSame( 1 === preg_match( '/\bl\./', $conditions['sql'] ), $joins, $name . ': the lookup is joined exactly when a condition reads it.' );
+			$hint = $joins ? strtr( Criteria::MODE_PRODUCTS === ( $args['mode'] ?? Criteria::MODE_PRODUCTS ) ? '{HINT} ' : '{SCAN} ', self::FRAGMENTS ) : '';
 			$this->assertStringNotContainsString( 'LIMIT', $conditions['sql'], $name );
 			$this->assertSame( 0, preg_match( '/[\'"`]/', $conditions['sql'] ), $name );
 			$this->assertSame( preg_match_all( '/%[sdfi]/', $conditions['sql'] ), count( $conditions['args'] ), $name );
 			$this->assertSame( [], self::db()->prepared, $name . ': the accessor prepares nothing.' );
 			$this->assertSame(
 				$query->count_statement(),
-				self::db()->prepare( 'SELECT COUNT(*) ' . $conditions['sql'] . ' LIMIT %d', ...[ ...$conditions['args'], 1 ] ),
+				self::db()->prepare( 'SELECT ' . $hint . 'COUNT(*) ' . $conditions['sql'] . ' LIMIT %d', ...[ ...$conditions['args'], 1 ] ),
 				$name
 			);
 		}
@@ -508,6 +527,37 @@ final class ProductQueryTest extends TestCase {
 		}
 	}
 
+	public function test_a_joined_lookup_carries_the_hint_of_its_mode(): void {
+		// T76: MySQL 8 otherwise drives a lookup condition from the lookup
+		// table through a misjudged index, every variation's row included
+		// (three times the work at 20,000 products). Products mode reads the
+		// posts first; the modes that read variations scan the lookup once.
+		$stock = [
+			[
+				'field'    => 'stock_status',
+				'operator' => 'isAny',
+				'value'    => [ 'instock' ],
+			],
+		];
+		foreach ( Criteria::MODES as $mode ) {
+			foreach ( [ [], $stock ] as $filters ) {
+				$query  = self::query(
+					[
+						'mode'    => $mode,
+						'filters' => $filters,
+					]
+				);
+				$hinted = Criteria::MODE_PRODUCTS === $mode && [] !== $filters;
+				$scans  = Criteria::MODE_PRODUCTS !== $mode && [] !== $filters;
+				foreach ( [ $query->statement(), $query->count_statement() ] as $sql ) {
+					$this->assertSame( $hinted, str_starts_with( $sql, 'SELECT /*+ JOIN_PREFIX(p) */ ' ), $mode . ': ' . $sql );
+					$this->assertSame( $scans, str_starts_with( $sql, 'SELECT /*+ NO_INDEX(l stock_status, min_max_price, stock_quantity) */ ' ), $mode . ': ' . $sql );
+					$this->assertSame( [] !== $filters, str_contains( $sql, 'LEFT JOIN `wp_wc_product_meta_lookup` AS l' ), $mode . ': ' . $sql );
+				}
+			}
+		}
+	}
+
 	public function test_tables_follow_the_site_prefix(): void {
 		self::db()->prefix = 'wp_3_';
 		$sql               = self::query(
@@ -517,6 +567,11 @@ final class ProductQueryTest extends TestCase {
 						'field'    => 'featured',
 						'operator' => 'is',
 						'value'    => true,
+					],
+					[
+						'field'    => 'stock_status',
+						'operator' => 'isAny',
+						'value'    => [ 'instock' ],
 					],
 				],
 			]
@@ -647,7 +702,7 @@ final class ProductQueryTest extends TestCase {
 			self::normalise(
 				strtr(
 					<<<'SQL'
-					SELECT p.ID AS id, p.post_parent AS parent_id {FROM}
+					SELECT p.ID AS id, p.post_parent AS parent_id {POSTS}
 					WHERE p.post_type IN ('product_variation') AND p.post_status IN ('publish', 'private') AND p.post_parent = 103
 					ORDER BY p.menu_order ASC, p.ID ASC LIMIT 100 OFFSET 100
 					SQL,

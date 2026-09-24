@@ -86,8 +86,8 @@ final class HydratorTest extends TestCase {
 
 		$wpdb            = $GLOBALS['wpdb'];
 		$wpdb->responses = [
-			'/^SELECT COUNT\(\*\) /'                      => (string) self::CATALOGUE,
-			'/^SELECT p\.ID AS id, p\.post_parent AS parent_id/' => static function ( string $sql ): array {
+			\BulkCatalogueManager\Tests\Support\SqlEvaluator::COUNT => (string) self::CATALOGUE,
+			\BulkCatalogueManager\Tests\Support\SqlEvaluator::PAGE => static function ( string $sql ): array {
 				preg_match( '/LIMIT (\d+) OFFSET (\d+)$/', $sql, $m );
 				$rows = [];
 				$last = min( self::CATALOGUE, (int) $m[2] + (int) $m[1] );
@@ -292,7 +292,7 @@ final class HydratorTest extends TestCase {
 		$this->assertSame( [], $page['items'] );
 		$this->assertSame( self::CATALOGUE, $page['total'] );
 		$this->assertCount( 1, $GLOBALS['wpdb']->queries );
-		$this->assertStringStartsWith( 'SELECT COUNT(*) ', $GLOBALS['wpdb']->queries[0] );
+		$this->assertSame( 1, preg_match( \BulkCatalogueManager\Tests\Support\SqlEvaluator::COUNT, $GLOBALS['wpdb']->queries[0] ) );
 	}
 
 	public function test_thumbnails_come_from_primed_attachments_or_the_placeholder(): void {

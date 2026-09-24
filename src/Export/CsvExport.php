@@ -3,8 +3,11 @@
  * One CSV export of a read (SPEC §10): a header of the requested columns'
  * registry labels in the requested order, then every row matching the
  * read's parameters, not only one page. Rows are read from a RowSource 100
- * at a time and written as each page arrives, so memory stays flat whatever
- * the total, and nothing is stored.
+ * at a time and written as each page arrives, and the runtime object cache
+ * is released after each page (Engine\Memory; T76: what each page primed
+ * stayed cached, and a 20,000-row export died of a 128 MB limit at about
+ * 12,800 rows), so memory stays flat whatever the total, and nothing is
+ * stored.
  *
  * History exports (a batch's changes, the audit log, the history list) use
  * the same class with their own column headers (HistoryColumns).
@@ -21,6 +24,7 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Export;
 
+use BulkCatalogueManager\Engine\Memory;
 use BulkCatalogueManager\Fields\Registry;
 
 defined( 'ABSPATH' ) || exit;
@@ -141,6 +145,7 @@ final class CsvExport {
 				++$written;
 			}
 			$writer->flush();
+			Memory::release();
 		}
 		return $written;
 	}

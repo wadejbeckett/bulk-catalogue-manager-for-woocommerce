@@ -112,7 +112,7 @@ final class CountCacheTest extends TestCase {
 				]
 			)
 		);
-		$this->assertSame( 1, count( array_filter( $GLOBALS['wpdb']->queries, static fn( string $sql ): bool => str_starts_with( $sql, 'SELECT COUNT(*) FROM' ) ) ) );
+		$this->assertSame( 1, count( array_filter( $GLOBALS['wpdb']->queries, static fn( string $sql ): bool => 1 === preg_match( \BulkCatalogueManager\Tests\Support\SqlEvaluator::COUNT, $sql ) ) ) );
 	}
 
 	public function test_any_change_to_the_conditions_changes_the_key(): void {
@@ -233,7 +233,7 @@ final class CountCacheTest extends TestCase {
 		}
 		$statements = [ ...$GLOBALS['wpdb']->queries, ...array_column( $GLOBALS['wpdb']->prepared, 0 ) ];
 		$this->assertGreaterThan( count( $reads ), count( $statements ) );
-		$this->assertNotEmpty( array_filter( $statements, static fn( string $sql ): bool => str_starts_with( $sql, 'SELECT COUNT(*) FROM' ) ), 'The walk must see the separate COUNT(*).' );
+		$this->assertNotEmpty( array_filter( $statements, static fn( string $sql ): bool => 1 === preg_match( \BulkCatalogueManager\Tests\Support\SqlEvaluator::COUNT, $sql ) ), 'The walk must see the separate COUNT(*).' );
 		foreach ( $statements as $sql ) {
 			$this->assertStringNotContainsString( 'SQL_CALC_FOUND_ROWS', strtoupper( $sql ) );
 			$this->assertStringNotContainsString( 'FOUND_ROWS(', strtoupper( $sql ) );

@@ -87,6 +87,17 @@ final class SqlEvaluatorTest extends TestCase {
 		);
 	}
 
+	public function test_an_optimiser_hint_changes_nothing(): void {
+		$plain = 'SELECT COUNT(*) FROM `wp_a` AS a LEFT JOIN `wp_b` AS b ON b.a_id = a.id WHERE b.tag IS NULL OR b.tag = \'x\' LIMIT 1';
+		$this->assertSame( self::db()->value( $plain ), self::db()->value( str_replace( 'SELECT ', 'SELECT /*+ JOIN_PREFIX(a) */ ', $plain ) ) );
+		try {
+			self::db()->value( 'SELECT /*+ JOIN_PREFIX(a) COUNT(*) FROM `wp_a` AS a LIMIT 1' );
+			$this->fail( 'An unclosed hint was accepted.' );
+		} catch ( \LogicException $e ) {
+			$this->assertStringContainsString( 'Unclosed optimiser hint', $e->getMessage() );
+		}
+	}
+
 	public function test_anything_outside_the_dialect_throws(): void {
 		foreach ( [ 'SELECT a.id FROM `wp_a` AS a WHERE a.id BETWEEN 1 AND 2', 'SELECT a.id FROM `wp_missing` AS a', 'SELECT a.nope AS x FROM `wp_a` AS a' ] as $sql ) {
 			try {

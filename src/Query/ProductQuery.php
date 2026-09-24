@@ -9,7 +9,28 @@
  * `{prefix}wc_product_meta_lookup`, which carries SKU, prices, stock and sales,
  * so no filter or sort touches `wp_postmeta`. The lookup is a LEFT JOIN so a
  * product whose lookup row is missing still lists; any lookup condition simply
- * does not match it. Taxonomy filters add correlated `EXISTS` sub-queries on
+ * does not match it. It is joined only when a condition or a sort key reads it
+ * (T76): joined on its primary key it can never add or remove a row, and at
+ * 20,000 products the unused join more than doubled the category tree's
+ * count (240 ms against 100 ms).
+ *
+ * Join order (T76). A lookup condition in the WHERE turns the LEFT JOIN into
+ * an inner one, and MySQL 8 then tends to read the lookup first through its
+ * one-value `stock_status` index or its price range: every variation's row
+ * too, 90,000 rows for 20,000 products, three times the work of reading the
+ * products and looking each one up. In products mode, where the post type
+ * narrows the rows most, the statements therefore carry the optimiser hint
+ * `JOIN_PREFIX(p)`; a server without optimiser hints reads it as a comment.
+ * In the modes that read variations the post type narrows nothing and
+ * forcing the order measured slower; there the hint is
+ * `NO_INDEX(l stock_status, min_max_price, stock_quantity)`, so the lookup is
+ * read in one pass in key order rather than row by row through an index
+ * whose range the optimiser misjudges (three filters on 70,000 variations:
+ * 125 ms against 200 ms). A selective lookup filter loses its index and
+ * costs that one pass, about 20 to 50 ms at this size: a bounded worst case
+ * rather than a lucky best one.
+ *
+ * Taxonomy filters add correlated `EXISTS` sub-queries on
  * `{prefix}term_relationships` (with `term_taxonomy`, and `terms` for slugs),
  * and only when such a filter is present; a semi-join cannot multiply rows, so
  * neither statement needs DISTINCT or GROUP BY.
@@ -161,6 +182,13 @@ final class ProductQuery {
 	private array $where_args = [];
 
 	/**
+	 * Whether a condition reads the lookup table.
+	 *
+	 * @var bool
+	 */
+	private bool $lookup = false;
+
+	/**
 	 * Build a query.
 	 *
 	 * @param Criteria                $criteria Validated criteria.
@@ -191,7 +219,9 @@ final class ProductQuery {
 
 	/**
 	 * The page statement, prepared: `id`, `parent_id` and each sort key, with
-	 * ORDER BY the sort keys then `p.ID`, and LIMIT/OFFSET.
+	 * ORDER BY the sort keys then `p.ID`, and LIMIT/OFFSET. It shares the
+	 * conditions of conditions_sql(), joining the lookup table also when only
+	 * a sort key reads it.
 	 */
 	public function statement(): string {
 		global $wpdb;
@@ -199,6 +229,7 @@ final class ProductQuery {
 		$order   = [];
 		$ids     = false;
 		$keyword = 'ASC';
+		$lookup  = $this->lookup;
 		if ( [] === $this->criteria->sorts ) {
 			// Only a one-product variations read has no sort keys: WooCommerce's own order.
 			$order[] = 'p.menu_order ASC';
@@ -207,6 +238,7 @@ final class ProductQuery {
 			$column  = self::SORT_COLUMNS[ $sort->field ][ Sort::DESC === $sort->direction ? 1 : 0 ];
 			$keyword = Sort::DESC === $sort->direction ? 'DESC' : 'ASC';
 			$order[] = $column . ' ' . $keyword;
+			$lookup  = $lookup || str_starts_with( $column, 'l.' );
 			if ( 'id' === $sort->field ) {
 				$ids = true;
 			} else {
@@ -217,9 +249,8 @@ final class ProductQuery {
 			// A stable tiebreak, running the same way as the last key.
 			$order[] = 'p.ID ' . $keyword;
 		}
-		$conditions = $this->conditions_sql();
-		$sql        = 'SELECT ' . implode( ', ', $select ) . ' ' . $conditions['sql'] . ' ORDER BY ' . implode( ', ', $order ) . ' LIMIT %d OFFSET %d';
-		$args       = [ ...$conditions['args'], $this->criteria->per_page, $this->criteria->offset() ];
+		$sql  = 'SELECT ' . $this->hint( $lookup ) . implode( ', ', $select ) . ' ' . $this->from( $lookup ) . ' WHERE ' . $this->where . ' ORDER BY ' . implode( ', ', $order ) . ' LIMIT %d OFFSET %d';
+		$args = [ ...$this->table_args( $lookup ), ...$this->where_args, $this->criteria->per_page, $this->criteria->offset() ];
 		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- The template holds only allow-listed literals and placeholders; every value is an argument.
 		return (string) $wpdb->prepare( $sql, ...$args );
 	}
@@ -231,7 +262,7 @@ final class ProductQuery {
 	public function count_statement(): string {
 		global $wpdb;
 		$conditions = $this->conditions_sql();
-		$sql        = 'SELECT COUNT(*) ' . $conditions['sql'] . ' LIMIT %d';
+		$sql        = 'SELECT ' . $this->hint( $this->lookup ) . 'COUNT(*) ' . $conditions['sql'] . ' LIMIT %d';
 		$args       = [ ...$conditions['args'], 1 ];
 		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- The template holds only allow-listed literals and placeholders; every value is an argument.
 		return (string) $wpdb->prepare( $sql, ...$args );
@@ -242,14 +273,15 @@ final class ProductQuery {
 	 * prepared: a template of allow-listed literals and placeholders only, and
 	 * its arguments in order. For a caller that embeds the same conditions in
 	 * a statement of its own and prepares the whole once (Categories\Counts),
-	 * so it matches exactly the rows the grid lists.
+	 * so it matches exactly the rows the grid lists. The lookup table is
+	 * joined only when a condition reads it.
 	 *
 	 * @return array{sql: string, args: list<int|float|string>}
 	 */
 	public function conditions_sql(): array {
 		return [
-			'sql'  => $this->from() . ' WHERE ' . $this->where,
-			'args' => [ ...$this->table_args(), ...$this->where_args ],
+			'sql'  => $this->from( $this->lookup ) . ' WHERE ' . $this->where,
+			'args' => [ ...$this->table_args( $this->lookup ), ...$this->where_args ],
 		];
 	}
 
@@ -291,19 +323,48 @@ final class ProductQuery {
 	}
 
 	/**
-	 * The FROM clause template.
+	 * The expression naming the product a row belongs to: the row itself in
+	 * products mode, its parent in variations mode, and either in products
+	 * and variations mode; with its arguments. What a parent-only filter
+	 * resolves against, and what Categories\Counts counts.
+	 *
+	 * @return array{0: string, 1: list<string>}
 	 */
-	private function from(): string {
-		return 'FROM %i AS p LEFT JOIN %i AS l ON l.product_id = p.ID';
+	public function product_owner(): array {
+		return $this->owner( true );
+	}
+
+	/**
+	 * The FROM clause template.
+	 *
+	 * @param bool $lookup Whether to join the lookup table.
+	 */
+	private function from( bool $lookup ): string {
+		return 'FROM %i AS p' . ( $lookup ? ' LEFT JOIN %i AS l ON l.product_id = p.ID' : '' );
 	}
 
 	/**
 	 * Arguments for the FROM clause.
 	 *
+	 * @param bool $lookup Whether the lookup table is joined.
 	 * @return string[]
 	 */
-	private function table_args(): array {
-		return [ self::table( 'posts' ), self::table( 'lookup' ) ];
+	private function table_args( bool $lookup ): array {
+		return $lookup ? [ self::table( 'posts' ), self::table( 'lookup' ) ] : [ self::table( 'posts' ) ];
+	}
+
+	/**
+	 * The optimiser hint for a statement that joins the lookup table (see
+	 * the class comment): the posts first in products mode, the lookup in
+	 * one pass in the modes that read variations; nothing without the join.
+	 *
+	 * @param bool $lookup Whether the statement joins the lookup table.
+	 */
+	private function hint( bool $lookup ): string {
+		if ( ! $lookup ) {
+			return '';
+		}
+		return Criteria::MODE_PRODUCTS === $this->criteria->mode ? '/*+ JOIN_PREFIX(p) */ ' : '/*+ NO_INDEX(l stock_status, min_max_price, stock_quantity) */ ';
 	}
 
 	/**
@@ -321,7 +382,7 @@ final class ProductQuery {
 		if ( '' !== $this->criteria->search ) {
 			global $wpdb;
 			$like = '%' . $wpdb->esc_like( $this->criteria->search ) . '%';
-			$this->add( '(p.post_title LIKE %s OR l.sku LIKE %s)', [ $like, $like ] );
+			$this->add( '(p.post_title LIKE %s OR l.sku LIKE %s)', [ $like, $like ], true );
 		}
 
 		foreach ( $this->criteria->filters as $filter ) {
@@ -332,12 +393,14 @@ final class ProductQuery {
 	/**
 	 * Append one AND condition.
 	 *
-	 * @param string                       $sql  Condition template.
-	 * @param array<int, int|float|string> $args Its arguments.
+	 * @param string                       $sql    Condition template.
+	 * @param array<int, int|float|string> $args   Its arguments.
+	 * @param bool                         $lookup Whether it reads the lookup table (`l.`).
 	 */
-	private function add( string $sql, array $args ): void {
+	private function add( string $sql, array $args, bool $lookup = false ): void {
 		$this->where      = '' === $this->where ? $sql : $this->where . ' AND ' . $sql;
 		$this->where_args = [ ...$this->where_args, ...$args ];
+		$this->lookup     = $this->lookup || $lookup;
 	}
 
 	/**
@@ -368,12 +431,12 @@ final class ProductQuery {
 			case 'stock_status':
 			case 'tax_class':
 				// A row without a lookup row has no value, so it is neither in nor out of the list.
-				$this->add( 'l.' . $filter->field . ' ' . ( $negate ? 'NOT IN' : 'IN' ) . ' (' . self::placeholders( $value, '%s' ) . ')', $value );
+				$this->add( 'l.' . $filter->field . ' ' . ( $negate ? 'NOT IN' : 'IN' ) . ' (' . self::placeholders( $value, '%s' ) . ')', $value, true );
 				return;
 
 			case 'manage_stock':
 				// WooCommerce stores a quantity in the lookup exactly when stock is managed.
-				$this->add( 'l.stock_quantity IS ' . ( $value ? 'NOT NULL' : 'NULL' ), [] );
+				$this->add( 'l.stock_quantity IS ' . ( $value ? 'NOT NULL' : 'NULL' ), [], true );
 				return;
 
 			case 'regular_price':
@@ -439,11 +502,11 @@ final class ProductQuery {
 	private function range( string $low_column, string $high_column, string $placeholder, Filter $filter ): void {
 		$value = $filter->value;
 		if ( 'between' === $filter->operator ) {
-			$this->add( '(' . $high_column . ' >= ' . $placeholder . ' AND ' . $low_column . ' <= ' . $placeholder . ')', [ $value[0], $value[1] ] );
+			$this->add( '(' . $high_column . ' >= ' . $placeholder . ' AND ' . $low_column . ' <= ' . $placeholder . ')', [ $value[0], $value[1] ], true );
 		} elseif ( 'greaterThanOrEqual' === $filter->operator ) {
-			$this->add( $high_column . ' >= ' . $placeholder, [ $value ] );
+			$this->add( $high_column . ' >= ' . $placeholder, [ $value ], true );
 		} else {
-			$this->add( $low_column . ' <= ' . $placeholder, [ $value ] );
+			$this->add( $low_column . ' <= ' . $placeholder, [ $value ], true );
 		}
 	}
 

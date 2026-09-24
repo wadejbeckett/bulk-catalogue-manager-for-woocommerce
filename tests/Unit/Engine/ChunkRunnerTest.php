@@ -208,6 +208,22 @@ final class ChunkRunnerTest extends TestCase {
 		$this->assertCount( 60, $store->journal(), 'One journal row per object and touched field.' );
 	}
 
+	public function test_each_chunk_releases_the_runtime_cache_once_its_items_are_written(): void {
+		// T76: a chained batch under `wp action-scheduler run` kept every chunk's objects cached.
+		$ids      = self::products( 60 );
+		$store    = new RunnerStore( self::BATCH, $ids, $this->increase(), self::USER );
+		$released = static fn(): int => count( array_filter( $GLOBALS['bcm_test']['calls'] ?? [], static fn( array $call ): bool => 'wp_cache_flush_runtime' === $call[0] ) );
+
+		$this->runner()->run( self::BATCH );
+		$this->assertSame( 1, $released() );
+		$this->assertSame( '11.00', self::price( 1050 ), 'Released after the chunk\'s writes.' );
+		$this->runner()->run( self::BATCH );
+		$this->assertSame( 2, $released() );
+		$this->assertSame( 'complete', $store->batch()['status'] );
+		$this->assertSame( 'stopped', $this->runner()->run( self::BATCH ) );
+		$this->assertSame( 2, $released(), 'A run that writes nothing releases nothing.' );
+	}
+
 	public function test_the_chunk_size_follows_the_setting_and_the_filter_within_floor_and_ceiling(): void {
 		foreach ( [ [ [ 'batch_size' => 20 ], null, 20 ], [ [], 3, 10 ], [ [], 500, 100 ], [ [ 'batch_size' => 10 ], 30, 30 ] ] as [ $settings, $filtered, $expected ] ) {
 			bcm_test_reset();

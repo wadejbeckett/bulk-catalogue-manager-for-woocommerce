@@ -72,7 +72,7 @@ final class CategoryTreeTest extends TestCase {
 			]
 		);
 		$count     = ( new ProductQuery( $criteria ) )->count_statement();
-		$body      = substr( $count, strlen( 'SELECT COUNT(*) ' ), -strlen( ' LIMIT 1' ) );
+		$body      = substr( (string) preg_replace( '#^SELECT (/\*\+ [^*]*\*/ )?COUNT\(\*\) #', '', $count ), 0, -strlen( ' LIMIT 1' ) );
 		$tree      = Tree::from_terms( CatalogueFixture::terms( array_slice( CatalogueFixture::TERMS, 0, 3, true ) ) );
 		$statement = ( new Counts( $criteria ) )->statement( $tree );
 
@@ -99,11 +99,41 @@ final class CategoryTreeTest extends TestCase {
 
 		$this->assertCount( 1, $GLOBALS['wpdb']->prepared );
 		[ $template, $values ] = $GLOBALS['wpdb']->prepared[0];
-		$this->assertStringContainsString( ' END) ' . $conditions['sql'] . ') GROUP BY ', $template );
+		$this->assertStringContainsString( ' IN (SELECT p.ID ' . $conditions['sql'] . ') GROUP BY ', $template );
 		$pairs = count( $tree->pairs() ) * 2;
 		$this->assertSame( array_merge( ...$tree->pairs() ), array_slice( $values, 2, $pairs ), 'The tree\'s pairs are arguments.' );
-		$this->assertSame( $conditions['args'], array_slice( $values, 2 + $pairs + 2, count( $conditions['args'] ) ) );
+		$this->assertSame( $conditions['args'], array_slice( $values, 2 + $pairs + 1, count( $conditions['args'] ) ) );
 		$this->assertSame( $tree->size(), $values[ array_key_last( $values ) ], 'At most one row per category.' );
+	}
+
+	public function test_each_row_is_counted_as_its_product_through_the_cheapest_expression(): void {
+		// T76: at 20,000 products the CASE over every row and the unused lookup
+		// join were most of the tree's cold time; products mode needs neither.
+		$tree = Tree::from_terms( CatalogueFixture::terms( array_slice( CatalogueFixture::TERMS, 0, 3, true ) ) );
+		$sub  = static function ( array $args ) use ( $tree ): string {
+			$statement = ( new Counts( CategoryTree::criteria( $args ) ) )->statement( $tree );
+			preg_match( '/ IN \((SELECT .+)\) GROUP BY /', $statement, $m );
+			return $m[1];
+		};
+
+		$this->assertSame( "SELECT p.ID FROM `wp_posts` AS p WHERE p.post_type IN ('product') AND p.post_status IN ('publish', 'future', 'draft', 'pending', 'private')", $sub( [] ) );
+		$this->assertStringStartsWith( 'SELECT p.post_parent FROM `wp_posts` AS p WHERE ', $sub( [ 'mode' => Criteria::MODE_VARIATIONS ] ) );
+		$this->assertStringStartsWith( "SELECT (CASE WHEN p.post_type = 'product_variation' THEN p.post_parent ELSE p.ID END) FROM `wp_posts` AS p WHERE ", $sub( [ 'mode' => Criteria::MODE_PRODUCTS_AND_VARIATIONS ] ) );
+		$this->assertStringStartsWith(
+			'SELECT p.ID FROM `wp_posts` AS p LEFT JOIN `wp_wc_product_meta_lookup` AS l ON l.product_id = p.ID WHERE ',
+			$sub(
+				[
+					'filters' => [
+						[
+							'field'    => 'stock_status',
+							'operator' => 'isAny',
+							'value'    => [ 'instock' ],
+						],
+					],
+				]
+			),
+			'A lookup condition still joins the lookup.'
+		);
 	}
 
 	public function test_the_counts_leave_out_the_category_filter_sort_and_paging(): void {

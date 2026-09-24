@@ -33,6 +33,9 @@
  *   cover every field, for **Revert anyway**;
  * - revertible otherwise.
  *
+ * Objects are read a page at a time (Engine\Memory), so a plan over
+ * thousands of objects — the single batch read counts conflicts with one —
+ * runs in bounded memory.
  * Values compare in the field type's canonical form, never loosely: a price
  * through wc_format_decimal() at the shop's precision (10 and 10.00 are the
  * same price, '' and 0.00 are not), a whole number with null distinct from
@@ -49,6 +52,7 @@ namespace BulkCatalogueManager\Undo;
 use BulkCatalogueManager\Data\BatchRepository;
 use BulkCatalogueManager\Data\ChangeRepository;
 use BulkCatalogueManager\Data\Schema;
+use BulkCatalogueManager\Engine\Memory;
 use BulkCatalogueManager\Engine\Preview;
 use BulkCatalogueManager\Engine\Writer;
 use BulkCatalogueManager\Fields\Field;
@@ -197,7 +201,14 @@ final class Planner {
 		}
 
 		$items = [];
+		$index = 0;
+		$ids   = array_keys( $objects );
 		foreach ( $objects as $object_id => $journal ) {
+			if ( 0 === $index % Preview::PAGE ) {
+				// T76: a 5,000-product batch's plan outgrew 128 MB with every object kept loaded.
+				Memory::next_page( array_slice( $ids, $index, Preview::PAGE ), 0 < $index );
+			}
+			++$index;
 			$items[] = $this->item( $object_id, $journal, $user_id );
 		}
 		return new Plan( $batch_id, $items, $this->hash( $batch_id, $items ) );

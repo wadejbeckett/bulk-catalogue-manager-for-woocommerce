@@ -61,6 +61,24 @@ if ( ! function_exists( 'wp_cache_get' ) ) {
 	}
 
 	/**
+	 * Core's cache supports releasing its runtime copy unless a test says otherwise.
+	 */
+	function wp_cache_supports( string $feature ): bool {
+		return 'flush_runtime' === $feature && empty( $GLOBALS['bcm_test']['no_flush_runtime'] );
+	}
+
+	/**
+	 * Releases the runtime cache: cached values and primed posts and meta alike.
+	 */
+	function wp_cache_flush_runtime(): bool {
+		bcm_test_record( 'wp_cache_flush_runtime', [], false );
+		$GLOBALS['bcm_test']['cache']        = [];
+		$GLOBALS['bcm_test']['primed_posts'] = [];
+		$GLOBALS['bcm_test']['primed_meta']  = [];
+		return true;
+	}
+
+	/**
 	 * Core's behaviour: a group's last-changed value, set to now on first read.
 	 */
 	function wp_cache_get_last_changed( string $group ): string {

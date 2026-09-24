@@ -408,3 +408,13 @@ A ticket is done when its tests are green, the static checks pass and Plugin Che
 3. Should pruning hard-delete history, or write it to a CSV first?
 4. Are both the table and grid layouts worth shipping, or is the table alone enough to learn?
 5. Should term writes and product writes share one batch type, as specified, or have separate undo paths?
+
+### 18.1 Working defaults
+
+Each answer below is a **working assumption until the owner answers**. It records what version 1.0.0 does, so the code, the docs and this specification agree; an answer from the owner that differs replaces it here first and then in the code.
+
+1. **Inline edits are journalled individually.** Each inline edit and each detail-panel save is its own one-item batch, written in the request through `Engine\InlineWrite`, listed in History and undone on its own (§9.3). Nothing is coalesced per editing session. *Working assumption until the owner answers.*
+2. **Any user with the capability may undo any batch.** Undo needs the write capabilities of §13 (`Access::can_write`), and the plan checks the person undoing against every object, not the batch's original author; there is no own-batches-only rule. *Working assumption until the owner answers.*
+3. **Pruning hard-deletes.** Past the retention limit the daily prune deletes a batch's `bcm_changes` and `bcm_batch_items` rows; the batch row stays listed as no longer reversible (§9.5). No CSV is written first: an owner who wants a copy exports it beforehand through History's CSV export (a batch's changes, the audit log or the batch list). The History panel states the retention period and the Settings tab where it changes. *Working assumption until the owner answers.*
+4. **Both the table and grid layouts ship.** Table is the default and the layout the design targets; the Table | Grid switch offers the grid as a second layout of the same view (§4.1). *Working assumption until the owner answers.*
+5. **Term writes and product writes share one batch type.** A category create, rename or move is a batch like a product change (source `tree`, items of `object_type` `term`), journalled in `bcm_changes` and undone through the same undo path and History (§7, §9.2). *Working assumption until the owner answers.*

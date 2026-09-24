@@ -331,6 +331,8 @@ final class ChunkRunner {
 		}
 		$this->adapt( $batch_id, $size, $configured, ( $this->clock )() - $start, count( $items ), $kind );
 		self::unschedule_retry( $batch_id );
+		// What the chunk loaded is not needed again; a long runner would keep it all (T76).
+		Memory::release();
 
 		if ( null !== $error ) {
 			self::schedule_retry( (int) ( $this->clock )() + self::RETRY_DELAY, $batch_id );

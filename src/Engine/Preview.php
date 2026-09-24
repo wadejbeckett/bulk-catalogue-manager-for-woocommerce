@@ -40,6 +40,12 @@
  * object whose other steps change still counts under would_change, because
  * the writer saves those). `rows` counts object-and-step rows by state.
  *
+ * Bounded memory (T76): objects are loaded PAGE at a time, each page's
+ * posts, meta and terms primed in one go, and the request's runtime object
+ * cache released after each page, as WP-CLI and Action Scheduler do between
+ * batches; without it the 10,000 loaded products and everything cached for
+ * them outgrew a 128 MB memory limit at 20,000 products.
+ *
  * Bounded work: totals are computed over the first CAP (10,000) objects.
  * A larger selection (up to Selection::MAX_OBJECTS) has every total and
  * warning count extrapolated from those, in proportion, and `estimated` is
@@ -82,6 +88,11 @@ final class Preview {
 	 * Most objects computed; beyond this the totals are extrapolated.
 	 */
 	public const CAP = 10000;
+
+	/**
+	 * Objects loaded between two releases of the runtime object cache.
+	 */
+	public const PAGE = 100;
 
 	/**
 	 * The sample sizes a request may ask for, besides every row.
@@ -277,7 +288,10 @@ final class Preview {
 			'fields'       => [],
 		];
 
-		foreach ( $objects as $entry ) {
+		foreach ( $objects as $index => $entry ) {
+			if ( 0 === $index % self::PAGE ) {
+				Memory::next_page( array_column( array_slice( $objects, $index, self::PAGE ), 0 ), 0 < $index );
+			}
 			[ $id, $type ] = $entry;
 			$steps         = isset( $entry[2] ) ? $this->steps( $entry[2] ) : $all;
 			$subject       = self::load( $id );

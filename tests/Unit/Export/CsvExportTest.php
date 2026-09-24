@@ -27,6 +27,13 @@ final class CsvExportTest extends TestCase {
 	 */
 	private array $calls = [];
 
+	/**
+	 * Runtime cache releases seen as each page was read.
+	 *
+	 * @var list<int>
+	 */
+	private array $releases = [];
+
 	protected function setUp(): void {
 		bcm_test_reset();
 		$this->calls = [];
@@ -40,10 +47,11 @@ final class CsvExportTest extends TestCase {
 	private function source( int $total ): CallableRowSource {
 		return new CallableRowSource(
 			function ( array $params, int $page, int $per_page ) use ( $total ): array {
-				$this->calls[] = [ $params, $page, $per_page ];
-				$items         = [];
-				$first         = ( $page - 1 ) * $per_page + 1;
-				$last          = min( $total, $first + $per_page - 1 );
+				$this->calls[]    = [ $params, $page, $per_page ];
+				$this->releases[] = count( array_filter( $GLOBALS['bcm_test']['calls'] ?? [], static fn( array $call ): bool => 'wp_cache_flush_runtime' === $call[0] ) );
+				$items            = [];
+				$first            = ( $page - 1 ) * $per_page + 1;
+				$last             = min( $total, $first + $per_page - 1 );
 				for ( $id = $first; $id <= $last; ++$id ) {
 					$items[] = [
 						'id'             => $id,
@@ -119,6 +127,17 @@ final class CsvExportTest extends TestCase {
 			}
 			$this->assertSame( $expected, array_slice( $rows, 1 ), "Every row once, in order, for total $total." );
 		}
+	}
+
+	public function test_the_runtime_cache_is_released_after_every_page(): void {
+		// T76: what each page primed stayed cached; 20,000 rows outgrew 128 MB at about 12,800.
+		$GLOBALS['bcm_test']['calls'] = [];
+		$this->calls                  = [];
+		$this->releases               = [];
+		self::bytes( new CsvExport( $this->source( 250 ), new Registry(), [ 'sku' ], [], ',', 'f.csv' ) );
+
+		$this->assertSame( [ 0, 1, 2 ], $this->releases, 'Each page is read after the previous one was released.' );
+		$this->assertCount( 3, array_filter( $GLOBALS['bcm_test']['calls'], static fn( array $call ): bool => 'wp_cache_flush_runtime' === $call[0] ) );
 	}
 
 	public function test_the_header_is_the_requested_columns_labels_in_the_requested_order(): void {

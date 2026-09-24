@@ -11,11 +11,12 @@
  * WHERE with AND, OR, NOT, =, <>, !=, <, <=, >, >=, [NOT] IN, [NOT] LIKE
  * (backslash escapes), IS [NOT] NULL, EXISTS and scalar sub-queries
  * (correlated), CASE WHEN; GROUP BY; ORDER BY with ASC/DESC; LIMIT and
- * OFFSET. It follows MySQL where the answer depends on it: three-valued
- * logic with NULL, NULL sorting first ascending, numbers compared as
- * numbers, text compared without regard to case, LIKE without regard to
- * case. Anything else throws, so a statement outside the dialect fails a
- * test loudly instead of answering wrongly.
+ * OFFSET; an optimiser hint comment (opening slash, star, plus) is read
+ * past. It follows MySQL where the answer depends on it: three-valued logic
+ * with NULL, NULL sorting first ascending, numbers compared as numbers, text
+ * compared without regard to case, LIKE without regard to case. Anything
+ * else throws, so a statement outside the dialect fails a test loudly
+ * instead of answering wrongly.
  *
  * Tables are full names (`wp_posts`) => list of rows (column => value, with
  * null for SQL NULL). Result values are strings, as `$wpdb` returns them.
@@ -30,6 +31,17 @@ namespace BulkCatalogueManager\Tests\Support;
 
 if ( ! class_exists( SqlEvaluator::class ) ) {
 	final class SqlEvaluator {
+		/**
+		 * Matches a catalogue count statement, with or without ProductQuery's
+		 * optimiser hint, for tests that route canned responses by pattern.
+		 */
+		public const COUNT = '/^SELECT (\/\*\+ [^*]*\*\/ )?COUNT\(\*\) /';
+
+		/**
+		 * Matches a catalogue page statement, with or without the hint.
+		 */
+		public const PAGE = '/^SELECT (\/\*\+ [^*]*\*\/ )?p\.ID AS id, p\.post_parent AS parent_id/';
+
 		private const KEYWORDS = [ 'SELECT', 'FROM', 'AS', 'LEFT', 'INNER', 'JOIN', 'ON', 'WHERE', 'AND', 'OR', 'NOT', 'IN', 'IS', 'NULL', 'LIKE', 'EXISTS', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'ORDER', 'BY', 'ASC', 'DESC', 'LIMIT', 'OFFSET', 'GROUP', 'COUNT', 'DISTINCT' ];
 
 		/**
@@ -87,6 +99,15 @@ if ( ! class_exists( SqlEvaluator::class ) ) {
 				$char = $sql[ $i ];
 				if ( ctype_space( $char ) ) {
 					++$i;
+					continue;
+				}
+				if ( str_starts_with( substr( $sql, $i, 3 ), '/*+' ) ) {
+					// An optimiser hint (ProductQuery's JOIN_PREFIX) changes a plan, never a result.
+					$end = strpos( $sql, '*/', $i + 3 );
+					if ( false === $end ) {
+						throw new \LogicException( 'Unclosed optimiser hint in: ' . $sql );
+					}
+					$i = $end + 2;
 					continue;
 				}
 				if ( '`' === $char ) {

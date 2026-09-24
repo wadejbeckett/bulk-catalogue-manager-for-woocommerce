@@ -62,7 +62,8 @@ final class PlannerTest extends TestCase {
 	protected function tearDown(): void {
 		$this->assertSame( [], $GLOBALS['wpdb']->writes, 'The planner wrote to the database.' );
 		foreach ( $GLOBALS['wpdb']->queries as $sql ) {
-			$this->assertStringStartsWith( 'SELECT', $sql, 'The planner only reads.' );
+			// The read stubs log a cache priming as a pseudo-statement: a read too.
+			$this->assertSame( 1, preg_match( '#^(SELECT|/\* (_prime_post_caches|update_meta_cache) \*/)#', $sql ), 'The planner only reads: ' . $sql );
 		}
 		foreach ( $GLOBALS['bcm_test']['products'] ?? [] as $product ) {
 			$this->assertSame( [], $product->sets, 'The planner set a value on a product.' );
@@ -630,6 +631,23 @@ final class PlannerTest extends TestCase {
 		$this->assertCount( 501, $plan->items() );
 		$this->assertSame( 5501, $plan->items()[0]['object_id'] );
 		$this->assertSame( 5001, $plan->items()[500]['object_id'] );
+	}
+
+	public function test_objects_are_read_a_page_at_a_time_and_each_page_released(): void {
+		// T76: the single batch read plans the whole batch; at 5,000 products that outgrew 128 MB.
+		foreach ( range( 1, 250 ) as $n ) {
+			$this->change( 7000 + $n, 'regular_price', '10.00', '11.00' );
+			self::product( 7000 + $n, [ 'regular_price' => '11.00' ] );
+		}
+		$GLOBALS['bcm_test']['calls'] = [];
+
+		$plan = $this->plan();
+
+		$this->assertSame( 250, $plan->counts()[ Plan::REVERTIBLE ] );
+		$calls  = array_values( array_filter( $GLOBALS['bcm_test']['calls'], static fn( array $call ): bool => in_array( $call[0], [ '_prime_post_caches', 'wp_cache_flush_runtime' ], true ) ) );
+		$primed = array_map( static fn( array $call ): int => count( $call[1][0] ), array_filter( $calls, static fn( array $call ): bool => '_prime_post_caches' === $call[0] ) );
+		$this->assertSame( [ 100, 100, 50 ], array_values( $primed ), 'Newest first, a page of 100 at a time.' );
+		$this->assertSame( [ '_prime_post_caches', 'wp_cache_flush_runtime', '_prime_post_caches', 'wp_cache_flush_runtime', '_prime_post_caches' ], array_column( $calls, 0 ) );
 	}
 
 	public function test_conflicts_come_first_for_the_preview(): void {

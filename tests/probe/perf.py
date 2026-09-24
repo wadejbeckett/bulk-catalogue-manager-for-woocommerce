@@ -1,0 +1,463 @@
+#!/usr/bin/env python3
+"""Performance benchmark of Bulk Catalogue Manager at 20,000 products (T76, SPEC §12.5).
+
+Measures a seeded scale site over HTTP and WP-CLI, prints one row per metric
+with its budget and PASS/FAIL/INFO, optionally writes the numbers as JSON, and
+exits 1 when any budget is missed. INFO rows have no budget in §12.5 and are
+recorded for comparison only.
+
+Needs, on a throwaway site (never a live one: it writes 5,000 prices and puts
+them back, inserts 200 history rows and 50,000 journal rows and prunes them):
+
+* the scale catalogue: ``seed.sh 20000`` (20,000 products, 70,000 variations);
+* no persistent object cache, ``DISABLE_WP_CRON`` true (so only this script
+  drives Action Scheduler);
+* the measurement mu-plugin ``bcm-perf-probe.php`` described in
+  tests/probe/README.md (Performance). It is not part of the plugin: it adds
+  an ``X-BCM-Perf`` header to REST responses (queries and time inside the
+  dispatch, the request's time so far, peak memory) and logs requests that
+  carry ``X-BCM-Perf-Log`` and every ``bcm_run_chunk`` / ``bcm_prune_history``
+  action to ``wp-content/bcm-perf.log``. Query counts are ``$wpdb->num_queries``,
+  which counts exactly what SAVEQUERIES would list, without its overhead.
+
+Metrics (``--only`` takes these group names, comma separated, default all):
+
+  grid       GET /products at per_page 25, 50 and 100, with no filter and with
+             three (category, stock status, price range), in products,
+             products-and-variations and variations-only modes: one cold
+             request (the count transients cleared) then --runs warm ones.
+             Budget: p95 server time < 400 ms and <= 20 queries in the
+             dispatch for 25 rows with three filters, the query count equal at
+             25, 50 and 100 rows, the cold filtered request (page + COUNT)
+             < 500 ms; a 50-variation expansion (GET /products/{id}/variations)
+             is one request inside the same budget.
+  categories GET /categories cold (tree transient cleared) < 300 ms, and warm.
+  selection  POST /selection over the whole catalogue (products; products and
+             variations) < 5 s.
+  preview    POST /preview of a 10 % increase over 10,000 simple products (INFO).
+  write      A 10 % regular price increase over 5,000 simple products, queued
+             through POST /batches and run by ``wp action-scheduler run``:
+             >= 300 products a minute at the default chunk size, every chunk's
+             peak memory < 96 MB; then its undo, held to the same budget.
+  history    GET /batches with 200 batches in the history, 25 and 100 a page
+             (INFO; the query count must not grow with the page size).
+  export     GET /export of 20,000 rows: first byte < 2 s, complete < 60 s,
+             memory flat (peak at 20,000 rows within 8 MB of the peak at 2,000).
+  prune      The history prune over 50,000 journal rows in batches past the
+             retention limit, run to the end through Action Scheduler (INFO).
+
+Usage (after the stack, seed and mu-plugin of tests/probe/README.md):
+    WP_CMD="..." python3 tests/probe/perf.py --base-url http://localhost:8896 \
+        [--seed tests/probe/seed.json] [--runs 20] [--only grid,export] \
+        [--json performance.json] [--verbose]
+
+Standard library only. Slow (about 17 minutes, most of it the write group), so
+it is not in CI; run it by hand before a release and record the numbers in
+tests/probe/PERF.md.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import math
+import os
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+import uuid
+from typing import Any
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from probe import NS, SIXTY, SIXTY_SEED_PHP, Probe, filter_params  # noqa: E402
+
+GROUPS = ["grid", "categories", "selection", "preview", "write", "history", "export", "prune"]
+ADJUST = [{"action": "adjust", "args": {"field": "regular_price", "direction": "increase", "by": "percent", "amount": "10"}}]
+PERF_SIXTY_SKU = "bcm-perf-sixty"
+LIST_BATCHES = 200
+PRUNE_ROWS = 50000
+EXPORT_FLAT_MB = 8.0
+
+BUDGET = {
+    "grid_p95_ms": 400.0,
+    "grid_queries": 20,
+    "count_cold_ms": 500.0,
+    "tree_cold_ms": 300.0,
+    "selection_ms": 5000.0,
+    "write_per_minute": 300.0,
+    "chunk_peak_mb": 96.0,
+    "export_ttfb_ms": 2000.0,
+    "export_total_ms": 60000.0,
+}
+
+
+def p95(values: list[float]) -> float:
+    ordered = sorted(values)
+    return ordered[max(0, math.ceil(0.95 * len(ordered)) - 1)]
+
+
+def median(values: list[float]) -> float:
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    return ordered[mid] if len(ordered) % 2 else (ordered[mid - 1] + ordered[mid]) / 2
+
+
+class Perf:
+    def __init__(self, args: argparse.Namespace) -> None:
+        self.p = Probe(args)
+        self.runs = args.runs
+        self.verbose = args.verbose
+        self.rows: list[dict[str, Any]] = []
+        self.scale_cat = 0
+
+    # ---- reporting -----------------------------------------------------------
+
+    def metric(self, group: str, name: str, value: float | str, unit: str, budget: str = "", ok: bool | None = None, detail: str = "") -> None:
+        result = "INFO" if ok is None else ("PASS" if ok else "FAIL")
+        self.rows.append({"group": group, "metric": name, "value": value, "unit": unit, "budget": budget, "result": result, "detail": detail})
+        shown = f"{value:.1f}" if isinstance(value, float) else str(value)
+        print(f"{result:<5} {group}:{name:<44} {shown:>10} {unit:<8} {budget:<14} {detail}", flush=True)
+
+    # ---- HTTP ----------------------------------------------------------------
+
+    def call(self, method: str, route: str, params: list | None = None, body: Any = None, log: str = "") -> dict[str, Any]:
+        """A REST call as the shop manager, timed at first byte and in full."""
+        opener, nonce = self.p.session("manager")
+        path = NS + route + ("?" + urllib.parse.urlencode(params, doseq=True) if params else "")
+        headers = {"Accept": "application/json", "X-WP-Nonce": nonce}
+        data = None
+        if body is not None:
+            data = json.dumps(body).encode()
+            headers["Content-Type"] = "application/json"
+        if log:
+            headers["X-BCM-Perf-Log"] = log
+        request = urllib.request.Request(self.p.base + path, data=data, method=method, headers=headers)
+        start = time.perf_counter()
+        try:
+            reply = opener.open(request, timeout=300)
+        except urllib.error.HTTPError as error:
+            reply = error
+        first = time.perf_counter()
+        payload = reply.read()
+        end = time.perf_counter()
+        status = reply.status if hasattr(reply, "status") else reply.code
+        perf = json.loads(reply.headers.get("X-BCM-Perf") or "{}")
+        if not perf and "text/csv" not in (reply.headers.get("Content-Type") or ""):
+            raise RuntimeError(f"{method} {route}: no X-BCM-Perf header (status {status}); is the mu-plugin installed?")
+        out = {"status": status, "ttfb_ms": (first - start) * 1000, "total_ms": (end - start) * 1000, "body": payload, "perf": perf}
+        if self.verbose:
+            print(f"  {method} {route} {status} {out['total_ms']:.0f} ms {perf}", file=sys.stderr)
+        return out
+
+    def json_of(self, reply: dict[str, Any]) -> Any:
+        try:
+            return json.loads(reply["body"].decode("utf-8"))
+        except ValueError:
+            return None
+
+    # ---- WP-CLI helpers --------------------------------------------------------
+
+    def clear_transients(self, prefix: str) -> None:
+        self.p.wp_eval(
+            "global $wpdb; $like = $wpdb->esc_like( '_transient_" + prefix + "' ) . '%'; $t = $wpdb->esc_like( '_transient_timeout_" + prefix + "' ) . '%';"
+            " $wpdb->query( $wpdb->prepare( \"DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s\", $like, $t ) ); bcm_out( true );"
+        )
+
+    def perf_log(self) -> list[dict[str, Any]]:
+        lines = self.p.wp_eval("$f = WP_CONTENT_DIR . '/bcm-perf.log'; bcm_out( file_exists( $f ) ? file( $f, FILE_IGNORE_NEW_LINES ) : array() );")
+        return [json.loads(line) for line in lines if line.strip()]
+
+    def reset_log(self) -> None:
+        self.p.wp_eval("$f = WP_CONTENT_DIR . '/bcm-perf.log'; if ( file_exists( $f ) ) { unlink( $f ); } bcm_out( true );")
+
+    def run_actions(self, hook: str) -> float:
+        """Runs every due action of one hook in one WP-CLI process; returns wall seconds."""
+        start = time.perf_counter()
+        self.p.wp("action-scheduler", "run", f"--hooks={hook}", "--batch-size=10", check=False)
+        return time.perf_counter() - start
+
+    def run_batch(self, batch_id: int) -> tuple[float, dict]:
+        wall = 0.0
+        report: dict = {}
+        for _ in range(50):
+            wall += self.run_actions("bcm_run_chunk")
+            report = self.json_of(self.call("GET", f"/batches/{batch_id}")) or {}
+            if report.get("status") not in ("queued", "running", "undoing"):
+                break
+        return wall, report
+
+    # ---- fixtures ----------------------------------------------------------------
+
+    def preflight(self) -> None:
+        state = self.p.wp_eval(
+            "global $wpdb; $cat = get_term_by( 'slug', 'bcm-scale', 'product_cat' );"
+            " bcm_out( array( 'cat' => $cat ? (int) $cat->term_id : 0,"
+            " 'products' => (int) $wpdb->get_var( \"SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'product'\" ),"
+            " 'variations' => (int) $wpdb->get_var( \"SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'product_variation'\" ),"
+            " 'ext_cache' => wp_using_ext_object_cache(), 'cron_off' => defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON,"
+            " 'mu' => file_exists( WPMU_PLUGIN_DIR . '/bcm-perf-probe.php' ),"
+            " 'php' => PHP_VERSION, 'db' => $wpdb->db_server_info(), 'wp' => get_bloginfo( 'version' ), 'wc' => WC_VERSION ) );"
+        )
+        problems = []
+        if state["products"] < 20000 or state["variations"] < 70000 or not state["cat"]:
+            problems.append(f"catalogue is {state['products']} products / {state['variations']} variations; run seed.sh 20000")
+        if state["ext_cache"]:
+            problems.append("a persistent object cache is active; §12.5 is measured without one")
+        if not state["cron_off"]:
+            problems.append("DISABLE_WP_CRON is not true; WP-Cron would run batches behind the measurement")
+        if not state["mu"]:
+            problems.append("the measurement mu-plugin bcm-perf-probe.php is missing")
+        if problems:
+            raise SystemExit("perf.py: " + "; ".join(problems))
+        self.scale_cat = state["cat"]
+        self.stack = state
+        print(f"stack: PHP {state['php']}, MySQL {state['db']}, WordPress {state['wp']}, WooCommerce {state['wc']}; "
+              f"{state['products']} products, {state['variations']} variations; no persistent object cache", flush=True)
+
+    def three_filters(self) -> list[tuple[str, str]]:
+        return (filter_params("category_ids", "isAny", [self.scale_cat])
+                + filter_params("stock_status", "isAny", ["instock"])
+                + filter_params("regular_price", "between", ["10", "40"]))
+
+    # ---- groups ------------------------------------------------------------------
+
+    def grid(self) -> None:
+        queries: dict[tuple[str, bool], dict[int, int]] = {}
+        for mode in ("products", "products_and_variations", "variations"):
+            for filtered in (False, True):
+                for per_page in (25, 50, 100):
+                    params = [("mode", mode), ("per_page", str(per_page)), ("orderby", "name"), ("order", "asc")]
+                    if filtered:
+                        params += self.three_filters()
+                    self.clear_transients("bcm_count_")
+                    cold = self.call("GET", "/products", params)
+                    assert cold["status"] == 200, f"GET /products {cold['status']} {cold['body'][:200]!r}"
+                    total = (self.json_of(cold) or {}).get("pagination", {}).get("total")
+                    warm = [self.call("GET", "/products", params) for _ in range(self.runs)]
+                    server = [w["perf"]["server_ms"] for w in warm]
+                    counts = sorted({w["perf"]["dispatch_queries"] for w in warm})
+                    queries.setdefault((mode, filtered), {})[per_page] = max(counts)
+                    label = f"{mode}/{'3 filters' if filtered else 'no filter'}/{per_page}"
+                    budgeted = filtered and per_page == 25
+                    self.metric("grid", f"{label} cold", cold["perf"]["server_ms"], "ms",
+                                "< 500 ms" if filtered else "", (cold["perf"]["server_ms"] < BUDGET["count_cold_ms"]) if filtered else None,
+                                f"{cold['perf']['dispatch_queries']} queries, total {total}")
+                    self.metric("grid", f"{label} warm p95", p95(server), "ms",
+                                "< 400 ms" if budgeted else "", (p95(server) < BUDGET["grid_p95_ms"]) if budgeted else None,
+                                f"median {median(server):.0f} ms, dispatch {median([w['perf']['dispatch_ms'] for w in warm]):.0f} ms, client {median([w['total_ms'] for w in warm]):.0f} ms")
+                    self.metric("grid", f"{label} queries", max(counts), "queries",
+                                "<= 20" if budgeted else "", (max(counts) <= BUDGET["grid_queries"]) if budgeted else None,
+                                f"request total {warm[-1]['perf']['queries']}")
+        for (mode, filtered), by_size in queries.items():
+            same = len(set(by_size.values())) == 1
+            self.metric("grid", f"{mode}/{'3 filters' if filtered else 'no filter'} query count constant", "yes" if same else "no", "",
+                        "25 = 50 = 100", same, str(by_size))
+
+        parent = self.p.wp_eval(SIXTY_SEED_PHP % (PERF_SIXTY_SKU, SIXTY))["parent"]
+        route = f"/products/{parent}/variations"
+        warm = [self.call("GET", route, [("per_page", "50")]) for _ in range(self.runs)]
+        items = len((self.json_of(warm[-1]) or {}).get("items", []))
+        server = [w["perf"]["server_ms"] for w in warm]
+        self.metric("grid", "50-variation expansion p95", p95(server), "ms", "< 400 ms, 1 req",
+                    p95(server) < BUDGET["grid_p95_ms"] and items == 50, f"{items} rows in one request, median {median(server):.0f} ms")
+        q = max(w["perf"]["dispatch_queries"] for w in warm)
+        self.metric("grid", "50-variation expansion queries", q, "queries", "<= 20", q <= BUDGET["grid_queries"])
+
+    def categories(self) -> None:
+        cold = []
+        for _ in range(3):
+            self.clear_transients("bcm_category_tree_")
+            cold.append(self.call("GET", "/categories"))
+        warm = [self.call("GET", "/categories") for _ in range(self.runs)]
+        worst = max(c["perf"]["server_ms"] for c in cold)
+        self.metric("categories", "tree cold (worst of 3)", worst, "ms", "< 300 ms", worst < BUDGET["tree_cold_ms"],
+                    f"{cold[0]['perf']['dispatch_queries']} queries")
+        self.metric("categories", "tree warm p95", p95([w["perf"]["server_ms"] for w in warm]), "ms", "", None,
+                    f"{warm[-1]['perf']['dispatch_queries']} queries")
+
+    def selection(self) -> None:
+        for mode in ("products", "products_and_variations"):
+            self.clear_transients("bcm_count_")
+            reply = self.call("POST", "/selection", body={"mode": mode})
+            data = self.json_of(reply) or {}
+            ms = reply["perf"]["server_ms"]
+            self.metric("selection", f"whole catalogue ({mode})", ms, "ms", "< 5 s", reply["status"] == 200 and ms < BUDGET["selection_ms"],
+                        f"{data.get('count')} objects, {reply['perf']['dispatch_queries']} queries, peak {reply['perf']['peak_mb']} MB")
+
+    def simple_filter(self, extra: dict | None = None) -> dict:
+        body = {"category_ids": {"operator": "isAny", "value": [self.scale_cat]}, "type": {"operator": "isAny", "value": ["simple"]}}
+        body.update(extra or {})
+        return body
+
+    def preview(self) -> None:
+        sel = self.json_of(self.call("POST", "/selection", body=self.simple_filter())) or {}
+        reply = self.call("POST", "/preview", body={"token": sel.get("token"), "operations": ADJUST})
+        data = self.json_of(reply) or {}
+        self.metric("preview", f"preview over {sel.get('count')} objects", reply["perf"]["server_ms"], "ms", "", None,
+                    f"status {reply['status']}, would change {(data.get('totals') or {}).get('would_change')}, "
+                    f"{reply['perf']['dispatch_queries']} queries, peak {reply['perf']['peak_mb']} MB")
+
+    def write(self) -> None:
+        body = self.simple_filter({"stock_quantity": {"operator": "between", "value": [1, 19]}})
+        sel = self.json_of(self.call("POST", "/selection", body=body)) or {}
+        pre = self.json_of(self.call("POST", "/preview", body={"token": sel["token"], "operations": ADJUST})) or {}
+        reply = self.call("POST", "/batches", body={"uuid": str(uuid.uuid4()), "token": sel["token"], "operations": ADJUST,
+                                                     "preview_hash": pre.get("hash"), "preview_count": sel["count"]})
+        created = self.json_of(reply) or {}
+        assert reply["status"] == 201, f"POST /batches {reply['status']} {created}"
+        self.metric("write", f"queue a {sel['count']}-product batch", reply["perf"]["server_ms"], "ms", "", None,
+                    f"{reply['perf']['dispatch_queries']} queries, peak {reply['perf']['peak_mb']} MB")
+        self.batch_budget("apply", created["batch_id"])
+
+        undo_route = f"/batches/{created['batch_id']}/undo"
+        plan = self.json_of(self.call("POST", undo_route, body={"preview": True})) or {}
+        reply = self.call("POST", undo_route, body={"uuid": str(uuid.uuid4()), "plan_hash": plan.get("plan_hash")})
+        undo = self.json_of(reply) or {}
+        assert reply["status"] == 201, f"undo {reply['status']} {undo}"
+        self.batch_budget("undo", undo["batch_id"])
+
+    def batch_budget(self, label: str, batch_id: int) -> None:
+        # A web runner starts each request from WordPress's own footprint; under WP-CLI
+        # WooCommerce's commands alone hold about 110 MB, so a chunk's peak is read as
+        # what the chunk adds to the memory it started with, on top of a light REST
+        # request's peak (GET /fields: WordPress, WooCommerce and the plugin loaded).
+        base = self.call("GET", "/fields")["perf"]["peak_mb"]
+        self.reset_log()
+        wall, report = self.run_batch(batch_id)
+        chunks = [row for row in self.perf_log() if row["kind"] == "bcm_run_chunk"]
+        done = int(report.get("done_items") or 0)
+        rate = done / (wall / 60) if wall else 0.0
+        in_chunks = sum(c["ms"] for c in chunks) / 1000
+        ok_status = report.get("status") in ("complete", "partial") and not report.get("failed_items")
+        self.metric("write", f"{label}: products a minute", rate, "/min", ">= 300", ok_status and rate >= BUDGET["write_per_minute"],
+                    f"{done} items ({report.get('changed_items')} changed, {report.get('failed_items')} failed) in {wall:.0f} s wall, "
+                    f"{in_chunks:.0f} s in {len(chunks)} chunks, status {report.get('status')}")
+        own = max((c["peak_mb"] - c["start_mb"] for c in chunks), default=0.0)
+        peak = base + own
+        self.metric("write", f"{label}: peak memory per chunk", peak, "MB", "< 96 MB", bool(chunks) and peak < BUDGET["chunk_peak_mb"],
+                    f"a request's {base} MB + at most {own:.2f} MB a chunk adds; queries a chunk median {median([c['queries'] for c in chunks]) if chunks else 0}")
+        drift = (chunks[-1]["end_mb"] - chunks[0]["start_mb"]) if chunks else 0.0
+        self.metric("write", f"{label}: memory kept across chunks", drift, "MB", "flat (+<8 MB)", drift < EXPORT_FLAT_MB,
+                    f"one WP-CLI process: {chunks[0]['start_mb'] if chunks else 0} MB before the first chunk, {chunks[-1]['end_mb'] if chunks else 0} MB after the last")
+
+    def history(self) -> None:
+        have = self.p.wp_eval(
+            "global $wpdb; bcm_out( (int) $wpdb->get_var( \"SELECT COUNT(*) FROM {$wpdb->prefix}bcm_batches\" ) );"
+        )
+        if have < LIST_BATCHES:
+            # Copies of the newest real batch, spread over the past 60 days: the list reads them as it reads any batch.
+            self.p.wp_eval(
+                "global $wpdb; $t = $wpdb->prefix . 'bcm_batches'; $src = (int) $wpdb->get_var( \"SELECT MAX(batch_id) FROM $t WHERE source = 'bulk'\" );"
+                " if ( ! $src ) { throw new RuntimeException( 'no bulk batch to copy; run the write group first' ); }"
+                " for ( $i = 0; $i < %d; $i++ ) { $wpdb->query( $wpdb->prepare( \"INSERT INTO $t (uuid, user_id, created_gmt, finished_gmt, status, source, undo_of, operations, selection, total_items, previewed_items, done_items, changed_items, failed_items, chunk_size, note, actions) SELECT %%s, user_id, DATE_SUB(UTC_TIMESTAMP(), INTERVAL %%d HOUR), DATE_SUB(UTC_TIMESTAMP(), INTERVAL %%d HOUR), 'complete', source, NULL, operations, selection, total_items, previewed_items, done_items, changed_items, failed_items, chunk_size, '', actions FROM $t WHERE batch_id = %%d\", wp_generate_uuid4(), $i * 7 + 1, $i * 7 + 1, $src ) ); }"
+                " bcm_out( true );" % (LIST_BATCHES - have)
+            )
+        counts = {}
+        for per_page in (25, 100):
+            warm = [self.call("GET", "/batches", [("per_page", str(per_page))]) for _ in range(self.runs)]
+            total = (self.json_of(warm[-1]) or {}).get("pagination", {}).get("total")
+            counts[per_page] = max(w["perf"]["dispatch_queries"] for w in warm)
+            self.metric("history", f"GET /batches per_page {per_page} p95", p95([w["perf"]["server_ms"] for w in warm]), "ms", "", None,
+                        f"{counts[per_page]} queries, {total} batches")
+        flat = counts[25] == counts[100]
+        self.metric("history", "GET /batches query count constant", "yes" if flat else "no", "", "25 = 100", flat, str(counts))
+
+    def export(self) -> None:
+        peaks = {}
+        for rows in (2000, 20000):
+            params = filter_params("category_ids", "isAny", [self.scale_cat]) + [("columns[]", c) for c in ("name", "sku", "regular_price", "stock_quantity", "stock_status")]
+            if rows == 2000:
+                params += filter_params("type", "isAny", ["simple"]) + filter_params("stock_quantity", "between", ["1", "8"])
+            log_id = f"export-{rows}-{uuid.uuid4().hex[:8]}"
+            reply = self.call("GET", "/export", params, log=log_id)
+            lines = reply["body"].count(b"\n") - 1
+            logged = next((r for r in self.perf_log() if r.get("id") == log_id), {})
+            peaks[rows] = logged.get("peak_mb", 0.0)
+            if rows == 20000:
+                self.metric("export", "20,000 rows: first byte", reply["ttfb_ms"], "ms", "< 2 s", reply["status"] == 200 and reply["ttfb_ms"] < BUDGET["export_ttfb_ms"],
+                            f"{len(reply['body']) / 1048576:.1f} MB")
+                self.metric("export", "20,000 rows: complete", reply["total_ms"], "ms", "< 60 s, every row",
+                            lines == rows and reply["total_ms"] < BUDGET["export_total_ms"],
+                            f"{lines} data rows; server {logged.get('total_ms')} ms, {logged.get('queries')} queries")
+            else:
+                self.metric("export", f"{rows} rows: peak memory", peaks[rows], "MB", "", None, f"{lines} data rows in {reply['total_ms']:.0f} ms")
+        grew = peaks[20000] - peaks[2000]
+        self.metric("export", "20,000 rows: peak memory", peaks[20000], "MB", "flat (+<8 MB)", grew < EXPORT_FLAT_MB,
+                    f"{grew:+.2f} MB over the 2,000-row export")
+
+    def prune(self) -> None:
+        made = self.p.wp_eval(
+            "global $wpdb; $b = $wpdb->prefix . 'bcm_batches'; $c = $wpdb->prefix . 'bcm_changes'; $i = $wpdb->prefix . 'bcm_batch_items';"
+            " $src = (int) $wpdb->get_var( \"SELECT batch_id FROM $c GROUP BY batch_id ORDER BY COUNT(*) DESC LIMIT 1\" );"
+            " if ( 5000 > (int) $wpdb->get_var( $wpdb->prepare( \"SELECT COUNT(*) FROM $c WHERE batch_id = %d\", $src ) ) ) { throw new RuntimeException( 'no 5,000-row journal to copy; run the write group first' ); }"
+            " $old = gmdate( 'Y-m-d H:i:s', time() - 400 * DAY_IN_SECONDS ); $rows = 0; $ids = array();"
+            " for ( $n = 0; $n < 10; $n++ ) {"
+            "  $wpdb->query( $wpdb->prepare( \"INSERT INTO $b (uuid, user_id, created_gmt, finished_gmt, status, source, operations, selection, total_items, done_items, changed_items, chunk_size) SELECT %s, user_id, %s, %s, 'complete', 'bulk', operations, selection, 5000, 5000, 5000, 50 FROM $b WHERE batch_id = %d\", wp_generate_uuid4(), $old, $old, $src ) );"
+            "  $id = (int) $wpdb->insert_id; $ids[] = $id;"
+            "  $wpdb->query( $wpdb->prepare( \"INSERT INTO $c (batch_id, object_id, object_type, prop, old_value, new_value, modified_gmt, applied_gmt, result, message) SELECT %d, object_id, object_type, prop, old_value, new_value, %s, %s, result, message FROM $c WHERE batch_id = %d ORDER BY change_id LIMIT 5000\", $id, $old, $old, $src ) );"
+            "  $rows += (int) $wpdb->rows_affected;"
+            "  $wpdb->query( $wpdb->prepare( \"INSERT INTO $i (batch_id, object_id, object_type, state, attempts) SELECT %d, object_id, object_type, 'done', 1 FROM $i WHERE batch_id = %d ORDER BY item_id LIMIT 5000\", $id, $src ) );"
+            " }"
+            " bcm_out( array( 'rows' => $rows, 'ids' => $ids ) );"
+        )
+        ids = ",".join(str(int(i)) for i in made["ids"])
+        self.reset_log()
+        self.p.wp_eval("as_enqueue_async_action( 'bcm_prune_history', array(), 'bulk-catalogue-manager-for-woocommerce' ); bcm_out( true );")
+        wall = 0.0
+        for _ in range(20):
+            wall += self.run_actions("bcm_prune_history")
+            left = self.p.wp_eval(
+                "global $wpdb; bcm_out( (int) $wpdb->get_var( \"SELECT COUNT(*) FROM {$wpdb->prefix}bcm_changes WHERE batch_id IN (" + ids + ")\" ) );"
+            )
+            if left == 0:
+                break
+        runs = [r for r in self.perf_log() if r["kind"] == "bcm_prune_history"]
+        self.metric("prune", f"prune {made['rows']} journal rows", wall, "s", "", None if left == 0 else False,
+                    f"{len(runs)} runs, longest {max((r['ms'] for r in runs), default=0):.0f} ms, peak {max((r['peak_mb'] for r in runs), default=0)} MB, {left} rows left")
+
+    # ---- main ----------------------------------------------------------------------
+
+    def run(self, only: list[str]) -> int:
+        self.preflight()
+        for group in GROUPS:
+            if group not in only:
+                continue
+            try:
+                getattr(self, group)()
+            except (AssertionError, KeyError, TypeError, ValueError, RuntimeError) as error:
+                self.metric(group, "error", type(error).__name__, "", "", False, str(error)[:300])
+        failed = [r for r in self.rows if r["result"] == "FAIL"]
+        print(f"\n{len(self.rows)} metrics: {sum(r['result'] == 'PASS' for r in self.rows)} passed, {len(failed)} failed, "
+              f"{sum(r['result'] == 'INFO' for r in self.rows)} recorded", flush=True)
+        return 1 if failed else 0
+
+
+def main() -> int:
+    here = os.path.dirname(os.path.abspath(__file__))
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--base-url", required=True)
+    parser.add_argument("--seed", default=os.path.join(here, "seed.json"))
+    parser.add_argument("--wp-cmd", default=os.environ.get("WP_CMD", "wp"))
+    parser.add_argument("--runs", type=int, default=20, help="warm requests per read metric (default 20)")
+    parser.add_argument("--only", default=",".join(GROUPS), help="comma-separated groups: " + ",".join(GROUPS))
+    parser.add_argument("--json", default="", help="also write the metrics to this JSON file")
+    parser.add_argument("--verbose", action="store_true")
+    args = parser.parse_args()
+    args.no_wp = False
+    only = [g.strip() for g in args.only.split(",") if g.strip()]
+    unknown = [g for g in only if g not in GROUPS]
+    if unknown:
+        parser.error(f"unknown group(s): {', '.join(unknown)}")
+    perf = Perf(args)
+    code = perf.run(only)
+    if args.json:
+        with open(args.json, "w", encoding="utf-8") as handle:
+            json.dump({"date": time.strftime("%Y-%m-%d"), "stack": perf.stack, "budgets": BUDGET, "metrics": perf.rows}, handle, indent=1)
+            handle.write("\n")
+    return code
+
+
+if __name__ == "__main__":
+    sys.exit(main())

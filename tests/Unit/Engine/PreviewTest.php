@@ -506,6 +506,43 @@ final class PreviewTest extends TestCase {
 		$this->assertSame( 10000, Preview::CAP );
 	}
 
+	public function test_objects_are_loaded_a_page_at_a_time_and_each_page_released(): void {
+		// T76: 10,000 loaded products outgrew a 128 MB limit when nothing was released.
+		SeededCatalogue::seed( SeededCatalogue::fillers( 250 ) );
+		$ids = range( 1001, 1250 );
+		foreach ( $ids as $id ) {
+			$this->load(
+				$id,
+				'simple',
+				[
+					'regular_price' => '10',
+					'sale_price'    => '',
+					'name'          => 'Filler',
+				]
+			);
+		}
+		$GLOBALS['bcm_test']['calls'] = [];
+
+		$result = $this->answer( Selection::of_ids( $ids ), self::set( 'regular_price', '11' ), 25 );
+
+		$this->assertSame( 250, $result['totals']['would_change'], 'Paging changes no answer.' );
+		$calls  = array_values( array_filter( $GLOBALS['bcm_test']['calls'], static fn( array $call ): bool => in_array( $call[0], [ '_prime_post_caches', 'wp_cache_flush_runtime' ], true ) ) );
+		$primed = array_values( array_filter( $calls, static fn( array $call ): bool => '_prime_post_caches' === $call[0] && [] !== $call[1][0] && $call[1][0][0] >= 1001 ) );
+		$this->assertSame( [ range( 1001, 1100 ), range( 1101, 1200 ), range( 1201, 1250 ) ], array_map( static fn( array $call ): array => $call[1][0], $primed ), 'Each page is primed once, posts with their terms and meta.' );
+		foreach ( $primed as $call ) {
+			$this->assertSame( [ true, true ], [ $call[1][1], $call[1][2] ] );
+		}
+		$this->assertSame( 2, count( array_filter( $calls, static fn( array $call ): bool => 'wp_cache_flush_runtime' === $call[0] ) ), 'Released between pages, not before the first.' );
+		$order = array_column( $calls, 0 );
+		$this->assertSame( '_prime_post_caches', $order[ array_search( 'wp_cache_flush_runtime', $order, true ) + 1 ], 'A release is followed by the next page\'s priming.' );
+
+		$GLOBALS['bcm_test']['calls']            = [];
+		$GLOBALS['bcm_test']['no_flush_runtime'] = true;
+		$this->answer( Selection::of_ids( $ids ), self::set( 'regular_price', '11' ), 25 );
+		$this->assertNotContains( 'wp_cache_flush_runtime', array_column( $GLOBALS['bcm_test']['calls'], 0 ), 'A cache that cannot release its runtime copy is only primed.' );
+		$this->assertSame( 100, Preview::PAGE );
+	}
+
 	public function test_the_hash_binds_selection_operations_and_settings(): void {
 		$ops      = self::set( 'regular_price', '25' );
 		$list     = ( new Actions( new Fields() ) )->validate_list( $ops );

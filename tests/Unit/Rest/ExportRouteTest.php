@@ -282,9 +282,9 @@ final class ExportRouteTest extends TestCase {
 
 	public function test_the_default_source_reads_pages_of_the_products_route(): void {
 		bcm_test_reset();
-		$GLOBALS['bcm_test']['logged_in']                    = true;
-		$GLOBALS['bcm_test']['caps']['manage_woocommerce']   = true;
-		$GLOBALS['wpdb']->responses['/^SELECT COUNT\(\*\)/'] = '0';
+		$GLOBALS['bcm_test']['logged_in']                  = true;
+		$GLOBALS['bcm_test']['caps']['manage_woocommerce'] = true;
+		$GLOBALS['wpdb']->responses[ \BulkCatalogueManager\Tests\Support\SqlEvaluator::COUNT ] = '0';
 		$controller = new ExportController( new Registry() );
 		( new Routes( [ $controller ] ) )->register();
 
@@ -302,15 +302,15 @@ final class ExportRouteTest extends TestCase {
 		rewind( $stream );
 		$this->assertSame( CsvWriter::BOM . '"' . ( new Registry() )->get( 'name' )->label() . "\"\r\n", stream_get_contents( $stream ) );
 		$this->assertCount( 1, $GLOBALS['wpdb']->queries );
-		$this->assertStringStartsWith( 'SELECT COUNT(*) ', $GLOBALS['wpdb']->queries[0] );
+		$this->assertSame( 1, preg_match( \BulkCatalogueManager\Tests\Support\SqlEvaluator::COUNT, $GLOBALS['wpdb']->queries[0] ) );
 		$this->assertStringContainsString( "l.stock_status IN ('outofstock')", $GLOBALS['wpdb']->queries[0] );
 	}
 
 	public function test_a_parent_exports_one_product_s_variations_and_needs_the_variations_mode(): void {
 		bcm_test_reset();
-		$GLOBALS['bcm_test']['logged_in']                    = true;
-		$GLOBALS['bcm_test']['caps']['manage_woocommerce']   = true;
-		$GLOBALS['wpdb']->responses['/^SELECT COUNT\(\*\)/'] = '0';
+		$GLOBALS['bcm_test']['logged_in']                  = true;
+		$GLOBALS['bcm_test']['caps']['manage_woocommerce'] = true;
+		$GLOBALS['wpdb']->responses[ \BulkCatalogueManager\Tests\Support\SqlEvaluator::COUNT ] = '0';
 		$controller = new ExportController( new Registry() );
 		( new Routes( [ $controller ] ) )->register();
 

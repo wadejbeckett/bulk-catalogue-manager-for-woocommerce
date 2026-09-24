@@ -7,7 +7,11 @@
  * embeds ProductQuery::conditions_sql() (its FROM and WHERE with their
  * arguments) for the same criteria and prepares the whole once, so the tree
  * and the grid can never disagree about which rows match. Each matching row
- * is reduced to its product (a variation to its parent), and each product's
+ * is reduced to its product (a variation to its parent) through
+ * ProductQuery::product_owner(): the row itself in products mode, so the
+ * sub-query reads only the posts' type and status index (T76: the CASE
+ * expression it replaced read every post row, which at 20,000 products was
+ * most of the tree's cold time), and each product's
  * `product_cat` relationships are joined to the tree's own (category,
  * ancestor) pairs — every node paired with itself and each node above it, as
  * Tree::pairs() gives them, so orphans and loops count where the panel draws
@@ -82,19 +86,20 @@ final class Counts {
 		if ( [] === $pairs ) {
 			throw new \InvalidArgumentException( 'An empty tree has nothing to count.' );
 		}
-		$conditions = $this->query->conditions_sql();
-		$ancestors  = 'SELECT %d AS term_id, %d AS ancestor' . str_repeat( ' UNION ALL SELECT %d, %d', count( $pairs ) - 1 );
-		$sql        = 'SELECT a.ancestor AS term_id, COUNT(DISTINCT CASE WHEN a.term_id = a.ancestor THEN cr.object_id END) AS own, COUNT(DISTINCT cr.object_id) AS total FROM %i AS cr INNER JOIN %i AS ct ON ct.term_taxonomy_id = cr.term_taxonomy_id INNER JOIN ('
+		$conditions             = $this->query->conditions_sql();
+		[ $owner, $owner_args ] = $this->query->product_owner();
+		$ancestors              = 'SELECT %d AS term_id, %d AS ancestor' . str_repeat( ' UNION ALL SELECT %d, %d', count( $pairs ) - 1 );
+		$sql                    = 'SELECT a.ancestor AS term_id, COUNT(DISTINCT CASE WHEN a.term_id = a.ancestor THEN cr.object_id END) AS own, COUNT(DISTINCT cr.object_id) AS total FROM %i AS cr INNER JOIN %i AS ct ON ct.term_taxonomy_id = cr.term_taxonomy_id INNER JOIN ('
 			. $ancestors
-			. ') AS a ON a.term_id = ct.term_id WHERE ct.taxonomy = %s AND cr.object_id IN (SELECT (CASE WHEN p.post_type = %s THEN p.post_parent ELSE p.ID END) '
+			. ') AS a ON a.term_id = ct.term_id WHERE ct.taxonomy = %s AND cr.object_id IN (SELECT ' . $owner . ' '
 			. $conditions['sql']
 			. ') GROUP BY a.ancestor LIMIT %d';
-		$args       = [
+		$args                   = [
 			$wpdb->prefix . ProductQuery::TABLES['relationships'],
 			$wpdb->prefix . ProductQuery::TABLES['taxonomy'],
 			...array_merge( ...$pairs ),
 			self::TAXONOMY,
-			'product_variation',
+			...$owner_args,
 			...$conditions['args'],
 			$tree->size(),
 		];

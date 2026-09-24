@@ -74,6 +74,18 @@ For the first release (1.0.0) there is no previous tag. Record this step as not 
 - [ ] Create the GitHub release from the tag with the `CHANGELOG.md` entry and the archive from `bin/build-zip.sh` attached.
 - [ ] WordPress.org (only once the owner has authorised the directory listing): commit the release to the plugin's SVN `trunk`, tag it, and copy `assets-wporg/` to the SVN `assets/` folder so the screenshots match `readme.txt`.
 
+## Known notices
+
+Plugin Check on the archive reports these WARNING rows, and `bin/plugin-check-allowed.tsv` accepts them (with at most the count shown). Each is a direct database read whose SQL the plugin's own query builders assemble from literal fragments and placeholders; Plugin Check cannot trace a template through a method or an array. Every value is bound by `$wpdb->prepare()` and every identifier comes from an allow-list. A new row, or a higher count, fails `bin/plugin-check.sh` until it is reviewed and added to both places.
+
+| File | Code | Rows | Why |
+| --- | --- | --- | --- |
+| `src/Query/ProductQuery.php` | `PluginCheck.Security.DirectDB.UnescapedDBParameter` | 2 | The catalogue list and its count (SPEC §12.2). |
+| `src/Categories/Counts.php` | `PluginCheck.Security.DirectDB.UnescapedDBParameter` | 1 | Category product counts in one grouped read (SPEC §7). |
+| `src/Engine/BatchFactory.php` | `PluginCheck.Security.DirectDB.UnescapedDBParameter` | 1 | The ids a filter selects, read through ProductQuery's own FROM and WHERE. |
+| `src/Data/ChangeRepository.php` | `PluginCheck.Security.DirectDB.UnescapedDBParameter` | 4 | History and audit feeds (SPEC §9.3). |
+| `src/Data/BatchRepository.php` | `PluginCheck.Security.DirectDB.UnescapedDBParameter` | 2 | The batch list and its count (SPEC §9.3). |
+
 ## Record template
 
 ```

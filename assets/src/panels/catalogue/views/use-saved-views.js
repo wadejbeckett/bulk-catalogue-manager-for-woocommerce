@@ -1,5 +1,5 @@
 /**
- * The current user's saved views through /bcm/v1/views (T52). Every write
+ * The current user's saved views through /bulkcat/v1/views (T52). Every write
  * answers the whole list, which replaces the one held here, so the chips
  * always show what the server stored.
  */

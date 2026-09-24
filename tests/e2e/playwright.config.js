@@ -8,15 +8,15 @@
  * stack of tests/probe/README.md locally.
  *
  * Environment:
- *   BCM_E2E_BASE_URL  the site. Default http://localhost:8888 (wp-env).
- *   BCM_E2E_USER      an administrator's login. Default admin.
- *   BCM_E2E_PASSWORD  its password. Default password.
- *   BCM_E2E_CHROMIUM  a Chromium binary to use instead of Playwright's own.
+ *   BULKCAT_E2E_BASE_URL  the site. Default http://localhost:8888 (wp-env).
+ *   BULKCAT_E2E_USER      an administrator's login. Default admin.
+ *   BULKCAT_E2E_PASSWORD  its password. Default password.
+ *   BULKCAT_E2E_CHROMIUM  a Chromium binary to use instead of Playwright's own.
  */
 const path = require( 'path' );
 const { defineConfig, devices } = require( '@playwright/test' );
 
-const executablePath = process.env.BCM_E2E_CHROMIUM || undefined;
+const executablePath = process.env.BULKCAT_E2E_CHROMIUM || undefined;
 
 module.exports = defineConfig( {
 	testDir: __dirname,
@@ -31,7 +31,7 @@ module.exports = defineConfig( {
 	expect: { timeout: 15_000 },
 	reporter: process.env.CI ? [ [ 'list' ], [ 'github' ] ] : 'list',
 	use: {
-		baseURL: process.env.BCM_E2E_BASE_URL || 'http://localhost:8888',
+		baseURL: process.env.BULKCAT_E2E_BASE_URL || 'http://localhost:8888',
 		storageState: path.join( __dirname, '.results', 'admin.json' ),
 		viewport: { width: 1440, height: 900 },
 		trace: 'retain-on-failure',

@@ -26,7 +26,7 @@ defined( 'ABSPATH' ) || exit;
 /**
  * The batches route.
  *
- * `POST /bcm/v1/batches` (T31) queues a change. The
+ * `POST /bulkcat/v1/batches` (T31) queues a change. The
  * body carries the client's request id (`uuid`), the operation list
  * (`operations`, `[ { action, args } ]`), the selection — an `ids` list, or
  * the signed `token` from `POST /selection`, exactly one of them — and
@@ -45,13 +45,13 @@ defined( 'ABSPATH' ) || exit;
  * `preview_hash` — for an id list or id token as much as for a filter, since
  * every bulk write is previewed first — and a filter token the count the
  * preview showed (`preview_count`; the token's own count when absent). BatchFactory refuses
- * 409 `bcm_preview_stale` when the hash is missing or no longer what a
- * preview gives now, and 409 `bcm_selection_changed` with `data.previewed`
+ * 409 `bulkcat_preview_stale` when the hash is missing or no longer what a
+ * preview gives now, and 409 `bulkcat_selection_changed` with `data.previewed`
  * and `data.current` when the filter now matches another number of objects,
  * unless the body carries `confirm_changed: true` — the owner's answer after
  * the screen stated both numbers.
  *
- * `GET /bcm/v1/batches` (T35, T54) pages the batches newest first, filtered
+ * `GET /bulkcat/v1/batches` (T35, T54) pages the batches newest first, filtered
  * by status, user, creation time and action type (`action`, one id from the
  * operations registry, matched on the batch's `actions` column), for the
  * history screen. Every row, like the single read, carries `actions` and
@@ -66,19 +66,19 @@ defined( 'ABSPATH' ) || exit;
  * the selection snapshot's `variations_added`, one read per page) and
  * `undone_by`: on an undone row `{ batch_id, user_id, user_name }` of the
  * undo batch that put it back, one read per page that has undone rows, else
- * null. `GET /bcm/v1/batches/users` (BatchUsersController, registered here)
+ * null. `GET /bulkcat/v1/batches/users` (BatchUsersController, registered here)
  * lists `{ id, name }` of every user who owns a batch, for the history and
  * audit log's user filter. The
  * audit log across batches is AuditController.
  *
- * `GET /bcm/v1/batches/{id}` (T35, T36) answers Engine\Progress::report():
+ * `GET /bulkcat/v1/batches/{id}` (T35, T36) answers Engine\Progress::report():
  * status, counters, times, source, note, chunk size, the `stalled` flag and
- * the grouped `summary` of reasons. `POST /bcm/v1/batches/{id}/cancel` (T35)
+ * the grouped `summary` of reasons. `POST /bulkcat/v1/batches/{id}/cancel` (T35)
  * cancels a queued or running batch; a batch already cancelled answers as it
- * is, a finished one 409 `bcm_not_cancellable`. `GET
- * /bcm/v1/batches/{id}/changes` (T36) is registered here from
+ * is, a finished one 409 `bulkcat_not_cancellable`. `GET
+ * /bulkcat/v1/batches/{id}/changes` (T36) is registered here from
  * BatchChangesController, which owns its row schema, and `POST
- * /bcm/v1/batches/{id}/undo` (T56) from UndoController.
+ * /bulkcat/v1/batches/{id}/undo` (T56) from UndoController.
  *
  * Who may read which batch: the reads sit behind Access::can_read and the
  * cancellation behind Access::can_write, and any user who passes may read or
@@ -86,7 +86,7 @@ defined( 'ABSPATH' ) || exit;
  * shop's shared record — it lists every user's batches and filters by user —
  * and the capability is what the owner grants for the screen as a whole
  * (§13); the batch's own user_id is reported, not enforced. A missing batch
- * answers 404 `bcm_not_found`.
+ * answers 404 `bulkcat_not_found`.
  */
 final class BatchesController implements ReadController {
 	/**
@@ -103,7 +103,7 @@ final class BatchesController implements ReadController {
 	/**
 	 * Refusal code for a body with neither or both of `ids` and `token`.
 	 */
-	public const SELECTION_REQUIRED = 'bcm_selection_required';
+	public const SELECTION_REQUIRED = 'bulkcat_selection_required';
 
 	/**
 	 * One batch, under Access::REST_NAMESPACE.
@@ -118,12 +118,12 @@ final class BatchesController implements ReadController {
 	/**
 	 * Refusal code for a batch id that does not exist.
 	 */
-	public const NOT_FOUND = 'bcm_not_found';
+	public const NOT_FOUND = 'bulkcat_not_found';
 
 	/**
 	 * Refusal code for cancelling a batch that has finished.
 	 */
-	public const NOT_CANCELLABLE = 'bcm_not_cancellable';
+	public const NOT_CANCELLABLE = 'bulkcat_not_cancellable';
 
 	/**
 	 * A request id: a UUID in its 8-4-4-4-12 hexadecimal form.
@@ -272,7 +272,7 @@ final class BatchesController implements ReadController {
 		$counters = array_fill_keys( [ 'total_items', 'done_items', 'changed_items', 'failed_items', 'pending_items', 'chunk_size' ], $integer );
 		return [
 			'$schema'    => RouteSchema::DIALECT,
-			'title'      => 'bcm-batch',
+			'title'      => 'bulkcat-batch',
 			'type'       => 'object',
 			'properties' => [
 				'batch_id'     => $integer + [ 'required' => true ],
@@ -397,7 +397,7 @@ final class BatchesController implements ReadController {
 				if ( is_string( $value ) && 1 === preg_match( '/' . self::DATE . '/', $value ) && '' !== self::gmt( $value ) ) {
 					return true;
 				}
-				return Refusal::invalid( 'bcm_invalid_value', __( 'Dates have to look like 2026-09-23, optionally with a time. Choose the dates again.', 'bulk-catalogue-manager-for-woocommerce' ) );
+				return Refusal::invalid( 'bulkcat_invalid_value', __( 'Dates have to look like 2026-09-23, optionally with a time. Choose the dates again.', 'bulk-catalogue-manager-for-woocommerce' ) );
 			},
 			'sanitize_callback' => [ self::class, 'gmt' ],
 		];
@@ -668,7 +668,7 @@ final class BatchesController implements ReadController {
 					if ( is_string( $value ) && 1 === preg_match( self::UUID, $value ) ) {
 						return true;
 					}
-					return Refusal::invalid( 'bcm_invalid_value', __( 'This change could not be sent because its request id is missing or damaged. Reload the page and try again.', 'bulk-catalogue-manager-for-woocommerce' ) );
+					return Refusal::invalid( 'bulkcat_invalid_value', __( 'This change could not be sent because its request id is missing or damaged. Reload the page and try again.', 'bulk-catalogue-manager-for-woocommerce' ) );
 				},
 				'sanitize_callback' => static fn( mixed $value ): string => strtolower( (string) $value ),
 			],
@@ -801,7 +801,7 @@ final class BatchesController implements ReadController {
 			return Selection::of_ids( (array) $ids );
 		} catch ( \InvalidArgumentException $e ) {
 			return Refusal::invalid(
-				'bcm_invalid_value',
+				'bulkcat_invalid_value',
 				__( 'These products could not be selected. Choose the products again and try again.', 'bulk-catalogue-manager-for-woocommerce' ),
 				[ 'details' => $e->getMessage() ]
 			);

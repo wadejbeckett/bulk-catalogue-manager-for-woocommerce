@@ -38,7 +38,7 @@ const {
 	newUuid,
 } = require( '../../assets/src/panels/history/undo.js' );
 
-const ROOT = 'https://example.test/wp-json/bcm/v1/';
+const ROOT = 'https://example.test/wp-json/bulkcat/v1/';
 
 const SETTINGS = {
 	root: ROOT,
@@ -273,24 +273,24 @@ function serve( table ) {
 }
 
 const DEFAULT_ROUTES = () => ( {
-	'GET bcm/v1/fields': FIELDS,
-	'GET bcm/v1/batches/users': {
+	'GET bulkcat/v1/fields': FIELDS,
+	'GET bulkcat/v1/batches/users': {
 		items: [
 			{ id: 1, name: 'Mia Fourie' },
 			{ id: 2, name: 'Sam Naidoo' },
 		],
 	},
-	'GET bcm/v1/batches': {
+	'GET bulkcat/v1/batches': {
 		items: BATCHES,
 		pagination: { page: 1, perPage: 25, total: 7, totalPages: 1 },
 	},
-	'GET bcm/v1/batches/3': base( 3, {
+	'GET bulkcat/v1/batches/3': base( 3, {
 		status: 'running',
 		done_items: 40,
 		total_items: 100,
 		reversibility: { state: 'in_progress', conflicts: null, reason: null },
 	} ),
-	'GET bcm/v1/batches/4': base( 4, {
+	'GET bulkcat/v1/batches/4': base( 4, {
 		status: 'partial',
 		summary: [
 			{
@@ -300,8 +300,8 @@ const DEFAULT_ROUTES = () => ( {
 			},
 		],
 	} ),
-	'GET bcm/v1/batches/1/changes': CHANGES,
-	'GET bcm/v1/batches/4/changes': FAILED,
+	'GET bulkcat/v1/batches/1/changes': CHANGES,
+	'GET bulkcat/v1/batches/4/changes': FAILED,
 } );
 
 /**
@@ -311,7 +311,7 @@ const DEFAULT_ROUTES = () => ( {
  * @return {HTMLElement} The article.
  */
 const card = ( id ) =>
-	document.getElementById( `bcm-batch-${ id }` ).closest( 'article' );
+	document.getElementById( `bulkcat-batch-${ id }` ).closest( 'article' );
 
 /**
  * The screen notice's text, or null when there is none.
@@ -319,13 +319,14 @@ const card = ( id ) =>
  * @return {string|null} Text.
  */
 const noticeText = () =>
-	document.querySelector( '.bcm-history__notice .components-notice__content' )
-		?.childNodes[ 0 ]?.textContent ?? null;
+	document.querySelector(
+		'.bulkcat-history__notice .components-notice__content'
+	)?.childNodes[ 0 ]?.textContent ?? null;
 
 async function renderHistory() {
 	render( <History settings={ SETTINGS } /> );
 	await waitFor( () =>
-		expect( document.getElementById( 'bcm-batch-1' ) ).not.toBeNull()
+		expect( document.getElementById( 'bulkcat-batch-1' ) ).not.toBeNull()
 	);
 }
 
@@ -412,7 +413,7 @@ describe( 'history query', () => {
 
 	it( 'sends the filters to GET /batches', async () => {
 		await renderHistory();
-		const list = calls.find( ( c ) => c.route === 'bcm/v1/batches' );
+		const list = calls.find( ( c ) => c.route === 'bulkcat/v1/batches' );
 		expect( list.query.page ).toBe( '1' );
 		expect( list.query.per_page ).toBe( '25' );
 		expect( list.query.after ).toMatch( /^\d{4}-\d{2}-\d{2}T/ );
@@ -556,7 +557,7 @@ describe( 'history states', () => {
 			expect( one.getByText( 'A5 Hardcover Notebook' ) ).toBeTruthy()
 		);
 		const request = calls.find(
-			( c ) => c.route === 'bcm/v1/batches/1/changes'
+			( c ) => c.route === 'bulkcat/v1/batches/1/changes'
 		);
 		expect( request.query ).toEqual( { page: '1', per_page: '25' } );
 		expect( one.getByText( '7.31' ) ).toBeTruthy();
@@ -584,7 +585,7 @@ describe( 'history states', () => {
 			expect( four.getByText( 'Classic Cotton T-Shirt' ) ).toBeTruthy()
 		);
 		const request = calls.find(
-			( c ) => c.route === 'bcm/v1/batches/4/changes'
+			( c ) => c.route === 'bulkcat/v1/batches/4/changes'
 		);
 		expect( request.query.result ).toEqual( [ 'failed', 'skipped' ] );
 		expect(
@@ -618,7 +619,7 @@ describe( 'history states', () => {
  * @return {{url: URL, columns: Array<string>}} URL and columns.
  */
 function exportFrame() {
-	const frame = document.querySelector( 'iframe.bcm-export__frame' );
+	const frame = document.querySelector( 'iframe.bulkcat-export__frame' );
 	const url = new URL( frame.src );
 	const columns = [];
 	url.searchParams.forEach( ( value, key ) => {
@@ -632,7 +633,7 @@ function exportFrame() {
 describe( 'history wire-ins', () => {
 	afterEach( () => {
 		document
-			.querySelectorAll( 'iframe.bcm-export__frame' )
+			.querySelectorAll( 'iframe.bulkcat-export__frame' )
 			.forEach( ( frame ) => frame.remove() );
 	} );
 
@@ -643,7 +644,7 @@ describe( 'history wire-ins', () => {
 			expect( within( card( 2 ) ).getByText( 'Sam Naidoo' ) ).toBeTruthy()
 		);
 		expect(
-			calls.some( ( c ) => c.route === 'bcm/v1/batches/users' )
+			calls.some( ( c ) => c.route === 'bulkcat/v1/batches/users' )
 		).toBe( true );
 		expect( calls.some( ( c ) => c.route.startsWith( 'wp/v2/' ) ) ).toBe(
 			false
@@ -673,7 +674,7 @@ describe( 'history wire-ins', () => {
 		} );
 		await act( async () => fireEvent.click( button ) );
 		const { url, columns } = exportFrame();
-		expect( url.pathname ).toBe( '/wp-json/bcm/v1/export' );
+		expect( url.pathname ).toBe( '/wp-json/bulkcat/v1/export' );
 		expect( url.searchParams.get( 'source' ) ).toBe( 'batches' );
 		expect( url.searchParams.get( 'after' ) ).toMatch( /Z$/ );
 		expect( url.searchParams.get( 'page' ) ).toBeNull();
@@ -720,7 +721,7 @@ describe( 'history wire-ins', () => {
 					started = url;
 					onError(
 						Object.assign( new Error( 'Too many rows.' ), {
-							code: 'bcm_export_too_large',
+							code: 'bulkcat_export_too_large',
 						} )
 					);
 					return () => {};
@@ -752,7 +753,7 @@ describe( 'undo flow', () => {
 	it( 'previews, confirms in a sentence, applies and reports', async () => {
 		serve( {
 			...DEFAULT_ROUTES(),
-			'POST bcm/v1/batches/1/undo': ( query, data ) =>
+			'POST bulkcat/v1/batches/1/undo': ( query, data ) =>
 				data.preview
 					? PLAN
 					: {
@@ -762,7 +763,7 @@ describe( 'undo flow', () => {
 							replayed: false,
 							undo: { undo_of: 1, label: 'Undo of #1' },
 						},
-			'GET bcm/v1/batches/99': base( 99, {
+			'GET bulkcat/v1/batches/99': base( 99, {
 				source: 'undo',
 				undo_of: 1,
 				status: 'complete',
@@ -777,7 +778,8 @@ describe( 'undo flow', () => {
 		await act( async () => fireEvent.click( undo ) );
 
 		const preview = calls.find(
-			( c ) => c.method === 'POST' && c.route === 'bcm/v1/batches/1/undo'
+			( c ) =>
+				c.method === 'POST' && c.route === 'bulkcat/v1/batches/1/undo'
 		);
 		expect( preview.data ).toEqual( { preview: true, per_page: 100 } );
 
@@ -796,7 +798,8 @@ describe( 'undo flow', () => {
 		);
 
 		const applied = calls.filter(
-			( c ) => c.method === 'POST' && c.route === 'bcm/v1/batches/1/undo'
+			( c ) =>
+				c.method === 'POST' && c.route === 'bulkcat/v1/batches/1/undo'
 		)[ 1 ];
 		expect( applied.data.plan_hash ).toBe( PLAN.plan_hash );
 		expect( applied.data.force ).toBe( false );
@@ -807,9 +810,9 @@ describe( 'undo flow', () => {
 				'Undone: Increased the regular price by 8%. 120 products were put back.'
 			)
 		);
-		expect( calls.some( ( c ) => c.route === 'bcm/v1/batches/99' ) ).toBe(
-			true
-		);
+		expect(
+			calls.some( ( c ) => c.route === 'bulkcat/v1/batches/99' )
+		).toBe( true );
 		// The notice is dismissible.
 		fireEvent.click(
 			screen.getByRole( 'button', { name: /Close|Dismiss/ } )
@@ -849,7 +852,7 @@ describe( 'undo flow', () => {
 		};
 		serve( {
 			...DEFAULT_ROUTES(),
-			'POST bcm/v1/batches/2/undo': ( query, data ) =>
+			'POST bulkcat/v1/batches/2/undo': ( query, data ) =>
 				data.preview
 					? plan
 					: {
@@ -858,7 +861,7 @@ describe( 'undo flow', () => {
 							total_items: 117,
 							replayed: false,
 						},
-			'GET bcm/v1/batches/98': base( 98, {
+			'GET bulkcat/v1/batches/98': base( 98, {
 				source: 'undo',
 				undo_of: 2,
 				status: 'complete',
@@ -919,7 +922,8 @@ describe( 'undo flow', () => {
 			)
 		);
 		const applied = calls.filter(
-			( c ) => c.method === 'POST' && c.route === 'bcm/v1/batches/2/undo'
+			( c ) =>
+				c.method === 'POST' && c.route === 'bulkcat/v1/batches/2/undo'
 		)[ 1 ];
 		expect( applied.data.force ).toBe( false );
 		await waitFor( () =>
@@ -936,7 +940,7 @@ describe( 'undo flow', () => {
 		};
 		serve( {
 			...DEFAULT_ROUTES(),
-			'POST bcm/v1/batches/2/undo': ( query, data ) =>
+			'POST bulkcat/v1/batches/2/undo': ( query, data ) =>
 				data.preview
 					? plan
 					: { batch_id: 97, status: 'queued', replayed: false },
@@ -961,7 +965,8 @@ describe( 'undo flow', () => {
 			)
 		);
 		const applied = calls.filter(
-			( c ) => c.method === 'POST' && c.route === 'bcm/v1/batches/2/undo'
+			( c ) =>
+				c.method === 'POST' && c.route === 'bulkcat/v1/batches/2/undo'
 		)[ 1 ];
 		expect( applied.data.force ).toBe( true );
 		expect( applied.data.plan_hash ).toBe( plan.plan_hash );
@@ -969,13 +974,13 @@ describe( 'undo flow', () => {
 
 	it( 'reports a refused undo in plain words with the code behind Show details', async () => {
 		const refusal = Object.assign( new Error( 'x' ), {
-			code: 'bcm_not_reversible',
+			code: 'bulkcat_not_reversible',
 			message: 'This change has already been undone.',
 			data: { status: 409, reason: 'already_undone' },
 		} );
 		serve( {
 			...DEFAULT_ROUTES(),
-			'POST bcm/v1/batches/1/undo': refusal,
+			'POST bulkcat/v1/batches/1/undo': refusal,
 		} );
 		await renderHistory();
 		const one = within( card( 1 ) );
@@ -985,8 +990,8 @@ describe( 'undo flow', () => {
 		expect(
 			one.getByText( 'This change has already been undone.' )
 		).toBeTruthy();
-		expect( one.queryByText( /bcm_not_reversible/ ) ).toBeNull();
+		expect( one.queryByText( /bulkcat_not_reversible/ ) ).toBeNull();
 		fireEvent.click( one.getByRole( 'button', { name: 'Show details' } ) );
-		expect( one.getByText( /bcm_not_reversible/ ) ).toBeTruthy();
+		expect( one.getByText( /bulkcat_not_reversible/ ) ).toBeTruthy();
 	} );
 } );

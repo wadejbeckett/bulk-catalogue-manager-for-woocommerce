@@ -1,7 +1,7 @@
 <?php
 /**
  * The filtered count's cache (SPEC §12.2): ProductQuery's `COUNT(*)` over a
- * read's conditions, kept 60 seconds in a `bcm_count_` transient whose name
+ * read's conditions, kept 60 seconds in a `bulkcat_count_` transient whose name
  * is a hash of the normalised conditions (Criteria::conditions(): mode,
  * search, filters and parent, never sort or paging), so every page, sort and
  * page size of one view shares one count, and any change to the conditions
@@ -36,7 +36,7 @@ final class CountCache {
 	/**
 	 * Every transient of the count cache starts with this (Data\Registry).
 	 */
-	public const PREFIX = 'bcm_count_';
+	public const PREFIX = 'bulkcat_count_';
 
 	/**
 	 * The transient holding the current version.

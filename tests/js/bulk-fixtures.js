@@ -147,7 +147,7 @@ function previewResponse( overrides = {} ) {
 				new: '',
 				state: 'skipped',
 				reason: REASON,
-				code: 'bcm_not_available',
+				code: 'bulkcat_not_available',
 				replaces: false,
 			},
 			{

@@ -29,7 +29,7 @@ use PHPUnit\Framework\TestCase;
 
 final class FindReplaceTest extends TestCase {
 	protected function setUp(): void {
-		bcm_test_reset();
+		bulkcat_test_reset();
 	}
 
 	private static function operation(): Operation {
@@ -143,7 +143,7 @@ final class FindReplaceTest extends TestCase {
 			]
 		);
 		$this->assertFalse( $refused->ok() );
-		$this->assertSame( 'bcm_invalid_operation', $refused->error()->get_error_code() );
+		$this->assertSame( 'bulkcat_invalid_operation', $refused->error()->get_error_code() );
 
 		$this->assertSame( 'Blue', FindReplace::replace( 'Blue', '', 'x', false, false ), 'An empty needle never inserts between characters.' );
 		$result = $operation->compute(
@@ -175,7 +175,7 @@ final class FindReplaceTest extends TestCase {
 
 		$product = new FakeProduct( 'simple', [ 'name' => "Caf\xC3\x28" ] );
 		$result  = $operation->compute( $product, $this->args( $operation, 'name', 'Caf', 'Cafe' ) );
-		$this->assertSame( [ Result::FAILED, 'bcm_invalid_value' ], [ $result->state(), $result->code() ] );
+		$this->assertSame( [ Result::FAILED, 'bulkcat_invalid_value' ], [ $result->state(), $result->code() ] );
 		$this->assertStringContainsString( 'Name', $result->reason() );
 		$this->assertSame( [], $product->sets );
 	}
@@ -207,13 +207,13 @@ final class FindReplaceTest extends TestCase {
 		$this->assertSame( stripslashes( wp_filter_post_kses( addslashes( 'Blue ' . $replace ) ) ), $result->new() );
 		$this->assertSame( 'Blue x()<em>top</em>', $result->new() );
 
-		$GLOBALS['bcm_test']['caps']['unfiltered_html'] = true;
-		$trusted                                        = $operation->compute( new FakeProduct( 'simple', [ 'name' => $held ] ), $this->args( $operation, 'name', 'shirt', $replace ) );
+		$GLOBALS['bulkcat_test']['caps']['unfiltered_html'] = true;
+		$trusted = $operation->compute( new FakeProduct( 'simple', [ 'name' => $held ] ), $this->args( $operation, 'name', 'shirt', $replace ) );
 		$this->assertSame( 'Blue ' . $replace, $trusted->new() );
 
 		// A replacement the filter reduces to the text already held is already.
-		$GLOBALS['bcm_test']['caps'] = [];
-		$same                        = $operation->compute( new FakeProduct( 'simple', [ 'name' => 'Blue x' ] ), $this->args( $operation, 'name', 'x', '<script></script>x', false, true ) );
+		$GLOBALS['bulkcat_test']['caps'] = [];
+		$same                            = $operation->compute( new FakeProduct( 'simple', [ 'name' => 'Blue x' ] ), $this->args( $operation, 'name', 'x', '<script></script>x', false, true ) );
 		$this->assertSame( Result::ALREADY, $same->state() );
 		$this->assertSame( 'Blue x', $same->new() );
 	}
@@ -222,15 +222,15 @@ final class FindReplaceTest extends TestCase {
 		$operation = self::operation();
 
 		$empty = $operation->compute( new FakeProduct( 'simple', [ 'name' => 'Shirt' ] ), $this->args( $operation, 'name', 'Shirt', '', false, true ) );
-		$this->assertSame( [ Result::FAILED, 'bcm_invalid_value', 'Shirt' ], [ $empty->state(), $empty->code(), $empty->new() ] );
+		$this->assertSame( [ Result::FAILED, 'bulkcat_invalid_value', 'Shirt' ], [ $empty->state(), $empty->code(), $empty->new() ] );
 		$this->assertSame( ( new Fields() )->get( 'name' )->rule_text(), $empty->reason(), 'A name cannot become empty.' );
 
 		$long = $operation->compute( new FakeProduct( 'simple', [ 'sku' => str_repeat( 'A', 100 ) ] ), $this->args( $operation, 'sku', 'A', 'BB' ) );
-		$this->assertSame( [ Result::FAILED, 'bcm_invalid_value' ], [ $long->state(), $long->code() ], 'A SKU over 100 characters.' );
+		$this->assertSame( [ Result::FAILED, 'bulkcat_invalid_value' ], [ $long->state(), $long->code() ], 'A SKU over 100 characters.' );
 
 		$variation = new FakeProduct( 'variation', [ 'name' => 'Shirt - Blue' ] );
 		$derived   = $operation->compute( $variation, $this->args( $operation, 'name', 'Shirt', 'Top' ) );
-		$this->assertSame( [ Result::FAILED, 'bcm_not_available' ], [ $derived->state(), $derived->code() ] );
+		$this->assertSame( [ Result::FAILED, 'bulkcat_not_available' ], [ $derived->state(), $derived->code() ] );
 		$this->assertSame( 'A variation takes its name from its product and its attributes, so it cannot be changed here.', $derived->reason() );
 		$operation->apply( $derived, $variation );
 		$this->assertSame( [], $variation->sets );

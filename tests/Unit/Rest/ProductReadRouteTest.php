@@ -1,9 +1,9 @@
 <?php
 /**
- * `GET /bcm/v1/products/{id}` over the seeded catalogue: one product or
+ * `GET /bulkcat/v1/products/{id}` over the seeded catalogue: one product or
  * variation as `{ item }`, the row the list builds (Catalogue::row()),
  * narrowed by `fields[]` like `/products`; registered on the single-object
- * route behind Access::can_read beside the write; 404 `bcm_not_found` for an
+ * route behind Access::can_read beside the write; 404 `bulkcat_not_found` for an
  * id the list could not show (missing, trashed, another post type). A
  * visitor is refused by RoutesTest's sweep of every endpoint.
  *
@@ -27,22 +27,22 @@ require_once dirname( __DIR__ ) . '/Query/SeededCatalogue.php';
 
 final class ProductReadRouteTest extends TestCase {
 	protected function setUp(): void {
-		bcm_test_reset();
-		$GLOBALS['bcm_test']['logged_in']                  = true;
-		$GLOBALS['bcm_test']['caps']['manage_woocommerce'] = true;
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['logged_in']                  = true;
+		$GLOBALS['bulkcat_test']['caps']['manage_woocommerce'] = true;
 		( new Plugin() )->boot();
 		do_action( 'rest_api_init' );
 		SeededCatalogue::seed();
 	}
 
 	/**
-	 * Dispatch a GET to /bcm/v1/{route}.
+	 * Dispatch a GET to /bulkcat/v1/{route}.
 	 *
 	 * @param string               $route  Route below the namespace.
 	 * @param array<string, mixed> $params Query parameters.
 	 */
 	private static function get( string $route, array $params = [] ): \WP_REST_Response|\WP_Error {
-		$request = new \WP_REST_Request( 'GET', '/bcm/v1' . $route );
+		$request = new \WP_REST_Request( 'GET', '/bulkcat/v1' . $route );
 		foreach ( $params as $key => $value ) {
 			$request->set_param( $key, $value );
 		}
@@ -50,7 +50,7 @@ final class ProductReadRouteTest extends TestCase {
 	}
 
 	public function test_the_read_registers_beside_the_write_behind_the_read_permission(): void {
-		$route = $GLOBALS['bcm_test']['routes'][ '/bcm/v1' . ProductWriteController::ROUTE ] ?? null;
+		$route = $GLOBALS['bulkcat_test']['routes'][ '/bulkcat/v1' . ProductWriteController::ROUTE ] ?? null;
 		$this->assertTrue( is_array( $route ), 'The route is registered.' );
 		$this->assertSame( [ 'PATCH', 'GET' ], [ $route[0]['methods'], $route[1]['methods'] ] );
 		$this->assertSame( [ Access::class, 'can_read' ], $route[1]['permission_callback'] );
@@ -92,7 +92,7 @@ final class ProductReadRouteTest extends TestCase {
 		foreach ( [ 999, 108, 203, 5000 ] as $id ) {
 			$refused = self::get( '/products/' . $id );
 			$this->assertInstanceOf( \WP_Error::class, $refused, "Object $id." );
-			$this->assertSame( 'bcm_not_found', $refused->get_error_code() );
+			$this->assertSame( 'bulkcat_not_found', $refused->get_error_code() );
 			$this->assertSame( 404, $refused->get_error_data()['status'] );
 		}
 	}

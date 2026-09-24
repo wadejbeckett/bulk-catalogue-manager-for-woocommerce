@@ -28,7 +28,7 @@ import { parentOptions } from './tree-model';
 export function validateCategory( form ) {
 	if ( ! form.name.trim() ) {
 		return {
-			code: 'bcm_name_required',
+			code: 'bulkcat_name_required',
 			message: __(
 				'A category needs a name. Enter a name and try again.',
 				'bulk-catalogue-manager-for-woocommerce'
@@ -37,7 +37,7 @@ export function validateCategory( form ) {
 	}
 	if ( form.slug.trim() && ! /[\p{L}\p{N}]/u.test( form.slug ) ) {
 		return {
-			code: 'bcm_slug_invalid',
+			code: 'bulkcat_slug_invalid',
 			message: __(
 				'A slug needs at least one letter or number. Enter a slug like summer-sale.',
 				'bulk-catalogue-manager-for-woocommerce'
@@ -93,7 +93,7 @@ export default function CategoryManager( {
 
 	if ( categoryId && ! entry ) {
 		return (
-			<div className="bcm-cat-manager">
+			<div className="bulkcat-cat-manager">
 				<p>
 					{ __(
 						'That category could not be found. It may have been deleted; reload the categories and try again.',
@@ -187,9 +187,9 @@ export default function CategoryManager( {
 
 	if ( ! canManage ) {
 		return (
-			<div className="bcm-cat-manager">
-				<h3 className="bcm-cat-manager__title">{ heading }</h3>
-				<p className="bcm-cat-readonly">
+			<div className="bulkcat-cat-manager">
+				<h3 className="bulkcat-cat-manager__title">{ heading }</h3>
+				<p className="bulkcat-cat-readonly">
 					{ __(
 						'You can browse and filter by categories, but changing them needs permission to manage product categories.',
 						'bulk-catalogue-manager-for-woocommerce'
@@ -200,8 +200,8 @@ export default function CategoryManager( {
 	}
 
 	return (
-		<form className="bcm-cat-manager" onSubmit={ submit } noValidate>
-			<h3 className="bcm-cat-manager__title">{ heading }</h3>
+		<form className="bulkcat-cat-manager" onSubmit={ submit } noValidate>
+			<h3 className="bulkcat-cat-manager__title">{ heading }</h3>
 			{ error && (
 				<ErrorNotice
 					error={ error }
@@ -259,7 +259,7 @@ export default function CategoryManager( {
 				onChange={ change( 'description' ) }
 				rows={ 3 }
 			/>
-			<div className="bcm-cat-manager__actions">
+			<div className="bulkcat-cat-manager__actions">
 				<Button
 					variant="primary"
 					type="submit"

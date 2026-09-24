@@ -3,7 +3,7 @@
  * The category tree service (T21; SPEC §7, §12.2): one get_terms() call and
  * one grouped statement per uncached request, none when warm; the grouped
  * statement reuses ProductQuery's conditions and leaves the category filter
- * out; the `bcm_category_tree_` transient is keyed by the conditions, the
+ * out; the `bulkcat_category_tree_` transient is keyed by the conditions, the
  * version the term hooks renew and, with a persistent object cache only, the
  * last-changed values; each hook busts it.
  *
@@ -33,7 +33,7 @@ final class CategoryTreeTest extends TestCase {
 	private const GROUPED = '/^SELECT a\.ancestor AS term_id, /';
 
 	protected function setUp(): void {
-		bcm_test_reset();
+		bulkcat_test_reset();
 		CatalogueFixture::seed();
 		$GLOBALS['wpdb']->responses[ self::GROUPED ] = CatalogueFixture::answer();
 	}
@@ -94,7 +94,7 @@ final class CategoryTreeTest extends TestCase {
 		$criteria   = CategoryTree::criteria( [ 'search' => 'hat' ] );
 		$conditions = ( new ProductQuery( $criteria ) )->conditions_sql();
 		$tree       = Tree::from_terms( CatalogueFixture::terms() );
-		bcm_test_reset();
+		bulkcat_test_reset();
 		( new Counts( $criteria ) )->statement( $tree );
 
 		$this->assertCount( 1, $GLOBALS['wpdb']->prepared );
@@ -199,7 +199,7 @@ final class CategoryTreeTest extends TestCase {
 		foreach ( range( 1, 200 ) as $id ) {
 			$terms[ $id ] = [ "Category $id", "category-$id", $id > 4 ? intdiv( $id, 4 ) : 0 ];
 		}
-		$GLOBALS['bcm_test']['term_list'] = CatalogueFixture::terms( $terms );
+		$GLOBALS['bulkcat_test']['term_list'] = CatalogueFixture::terms( $terms );
 		// Seven products, each in both 48 and 49.
 		$GLOBALS['wpdb']->responses[ self::GROUPED ] = CatalogueFixture::answer( array_fill( 1, 7, [ [ 48, 49 ], 'publish' ] ) );
 		$service                                     = new CategoryTree();
@@ -214,7 +214,7 @@ final class CategoryTreeTest extends TestCase {
 					'update_term_meta_cache' => true,
 				],
 			],
-			$GLOBALS['bcm_test']['get_terms_calls']
+			$GLOBALS['bulkcat_test']['get_terms_calls']
 		);
 		$this->assertCount( 1, $GLOBALS['wpdb']->queries );
 		$this->assertSame( 1, preg_match( self::GROUPED, $GLOBALS['wpdb']->queries[0] ), 'The one query is the grouped count.' );
@@ -227,7 +227,7 @@ final class CategoryTreeTest extends TestCase {
 
 		$warm = ( new CategoryTree() )->get( CategoryTree::criteria( [] ) );
 		$this->assertSame( $cold, $warm );
-		$this->assertCount( 1, $GLOBALS['bcm_test']['get_terms_calls'], 'A warm read calls get_terms() no more.' );
+		$this->assertCount( 1, $GLOBALS['bulkcat_test']['get_terms_calls'], 'A warm read calls get_terms() no more.' );
 		$this->assertCount( 1, $GLOBALS['wpdb']->queries, 'A warm read runs no query.' );
 	}
 
@@ -254,7 +254,7 @@ final class CategoryTreeTest extends TestCase {
 		foreach ( range( 1000, 1299 ) as $id ) {
 			$terms[ $id ] = [ "Category $id", "category-$id", 1 ];
 		}
-		$GLOBALS['bcm_test']['term_list']            = CatalogueFixture::terms( $terms );
+		$GLOBALS['bulkcat_test']['term_list']        = CatalogueFixture::terms( $terms );
 		$GLOBALS['wpdb']->responses[ self::GROUPED ] = CatalogueFixture::answer(
 			[
 				501 => [ range( 1000, 1299 ), 'publish' ],
@@ -271,14 +271,14 @@ final class CategoryTreeTest extends TestCase {
 	}
 
 	public function test_no_categories_skips_the_count_query(): void {
-		$GLOBALS['bcm_test']['term_list'] = [];
+		$GLOBALS['bulkcat_test']['term_list'] = [];
 		$this->assertSame( [], ( new CategoryTree() )->get( CategoryTree::criteria( [] ) ) );
 		$this->assertSame( [], $GLOBALS['wpdb']->queries );
 	}
 
 	public function test_the_transient_is_prefixed_registered_and_short_lived(): void {
 		( new CategoryTree() )->get( CategoryTree::criteria( [] ) );
-		$names = array_keys( $GLOBALS['bcm_test']['transients'] );
+		$names = array_keys( $GLOBALS['bulkcat_test']['transients'] );
 		$this->assertCount( 2, $names, 'The version and one tree.' );
 		foreach ( $names as $name ) {
 			$this->assertStringStartsWith( Cache::PREFIX, $name );
@@ -286,8 +286,8 @@ final class CategoryTreeTest extends TestCase {
 		}
 		$this->assertContains( Cache::PREFIX, Registry::plugin()->transient_prefixes() );
 		$tree = array_values( array_diff( $names, [ Cache::VERSION ] ) )[0];
-		$this->assertSame( Cache::TTL, $GLOBALS['bcm_test']['transient_ttl'][ $tree ] );
-		$this->assertSame( 0, $GLOBALS['bcm_test']['transient_ttl'][ Cache::VERSION ] );
+		$this->assertSame( Cache::TTL, $GLOBALS['bulkcat_test']['transient_ttl'][ $tree ] );
+		$this->assertSame( 0, $GLOBALS['bulkcat_test']['transient_ttl'][ Cache::VERSION ] );
 	}
 
 	public function test_the_key_follows_conditions_version_and_last_changed_values(): void {
@@ -297,8 +297,8 @@ final class CategoryTreeTest extends TestCase {
 		$this->assertSame( $base, $cache->key( CategoryTree::criteria( [] )->conditions() ) );
 		$this->assertNotSame( $base, $cache->key( self::with_status( [ 'draft' ] )->conditions() ) );
 
-		$GLOBALS['bcm_test']['last_changed']['terms'] = '2';
-		$GLOBALS['bcm_test']['last_changed']['posts'] = '9';
+		$GLOBALS['bulkcat_test']['last_changed']['terms'] = '2';
+		$GLOBALS['bulkcat_test']['last_changed']['posts'] = '9';
 		$this->assertSame( $base, $cache->key( CategoryTree::criteria( [] )->conditions() ), 'Without a persistent object cache no last-changed value is in the key.' );
 
 		Cache::invalidate();
@@ -310,21 +310,21 @@ final class CategoryTreeTest extends TestCase {
 		$first    = ( new CategoryTree() )->get( $criteria );
 
 		// A new request: without a persistent object cache core sets fresh last-changed values.
-		$GLOBALS['bcm_test']['last_changed'] = [
+		$GLOBALS['bulkcat_test']['last_changed'] = [
 			'terms' => '0.5 2',
 			'posts' => '0.5 2',
 		];
 		$this->assertSame( $first, ( new CategoryTree() )->get( $criteria ) );
 
 		$this->assertCount( 1, $GLOBALS['wpdb']->queries, 'The grouped statement runs once.' );
-		$this->assertCount( 1, $GLOBALS['bcm_test']['get_terms_calls'], 'The terms are read once.' );
-		$this->assertCount( 2, $GLOBALS['bcm_test']['transients'], 'The version and one tree; no new row per request.' );
+		$this->assertCount( 1, $GLOBALS['bulkcat_test']['get_terms_calls'], 'The terms are read once.' );
+		$this->assertCount( 2, $GLOBALS['bulkcat_test']['transients'], 'The version and one tree; no new row per request.' );
 	}
 
 	public function test_with_a_persistent_object_cache_a_last_changed_bump_misses(): void {
-		$GLOBALS['bcm_test']['ext_object_cache'] = true;
-		$criteria                                = CategoryTree::criteria( [] );
-		$service                                 = new CategoryTree();
+		$GLOBALS['bulkcat_test']['ext_object_cache'] = true;
+		$criteria                                    = CategoryTree::criteria( [] );
+		$service                                     = new CategoryTree();
 
 		$service->get( $criteria );
 		$service->get( $criteria );
@@ -343,9 +343,9 @@ final class CategoryTreeTest extends TestCase {
 		Cache::register_hooks();
 		$this->assertSame( [ 'created_term', 'edited_term', 'delete_term', 'set_object_terms' ], array_keys( Cache::HOOKS ) );
 		foreach ( [ 'created_term', 'edited_term', 'delete_term' ] as $hook ) {
-			$this->assertSame( [ [ [ Cache::class, 'on_term' ], 10, 3 ] ], $GLOBALS['bcm_test']['filters'][ $hook ], $hook );
+			$this->assertSame( [ [ [ Cache::class, 'on_term' ], 10, 3 ] ], $GLOBALS['bulkcat_test']['filters'][ $hook ], $hook );
 		}
-		$this->assertSame( [ [ [ Cache::class, 'on_object_terms' ], 10, 4 ] ], $GLOBALS['bcm_test']['filters']['set_object_terms'] );
+		$this->assertSame( [ [ [ Cache::class, 'on_object_terms' ], 10, 4 ] ], $GLOBALS['bulkcat_test']['filters']['set_object_terms'] );
 	}
 
 	public function test_each_term_hook_busts_the_key_for_product_categories_only(): void {

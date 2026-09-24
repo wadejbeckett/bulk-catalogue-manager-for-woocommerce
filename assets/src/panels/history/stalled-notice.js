@@ -36,7 +36,7 @@ export function StalledNotice( { report } ) {
 	const done = Number( report?.done_items ) || 0;
 	const total = Number( report?.total_items ) || 0;
 	return (
-		<div className="notice notice-warning inline bcm-stalled">
+		<div className="notice notice-warning inline bulkcat-stalled">
 			<p>
 				<strong>
 					{ __(
@@ -50,7 +50,7 @@ export function StalledNotice( { report } ) {
 						'bulk-catalogue-manager-for-woocommerce'
 					) }
 			</p>
-			<p className="bcm-stalled__count">
+			<p className="bulkcat-stalled__count">
 				{ done === 0
 					? __(
 							'Nothing has been applied yet.',
@@ -101,9 +101,9 @@ export function BatchProgress( { report } ) {
 		total.toLocaleString()
 	);
 	return (
-		<div className="bcm-progress">
+		<div className="bulkcat-progress">
 			<progress
-				className="bcm-progress__bar"
+				className="bulkcat-progress__bar"
 				max={ Math.max( 1, total ) }
 				value={ done }
 				aria-valuetext={ text }
@@ -112,7 +112,7 @@ export function BatchProgress( { report } ) {
 					'bulk-catalogue-manager-for-woocommerce'
 				) }
 			/>
-			<span className="bcm-progress__text">{ text }</span>
+			<span className="bulkcat-progress__text">{ text }</span>
 		</div>
 	);
 }

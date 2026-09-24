@@ -9,18 +9,18 @@
 # term counts are WooCommerce's own.
 #
 # The fixed probe catalogue (category "Probe Catalogue" and its children):
-#   10 simple products  bcm-probe-simple-01 .. -10   regular price 11.00 .. 20.00,
+#   10 simple products  bulkcat-probe-simple-01 .. -10   regular price 11.00 .. 20.00,
 #                       stock managed, quantity 3 .. 30, odd in Probe Shirts,
-#                       even in Probe Hats, 01-03 tagged bcm-probe-tag
-#   1 variable product  bcm-probe-variable with Size Small/Medium/Large
-#                       (bcm-probe-variable-small ..) at 30.00 / 31.00 / 32.00
-#   1 draft product     bcm-probe-draft at 5.00
-# Users (password $PROBE_PASSWORD): bcm_probe_admin (administrator),
-# bcm_probe_manager (shop_manager), bcm_probe_subscriber (subscriber).
+#                       even in Probe Hats, 01-03 tagged bulkcat-probe-tag
+#   1 variable product  bulkcat-probe-variable with Size Small/Medium/Large
+#                       (bulkcat-probe-variable-small ..) at 30.00 / 31.00 / 32.00
+#   1 draft product     bulkcat-probe-draft at 5.00
+# Users (password $PROBE_PASSWORD): bulkcat_probe_admin (administrator),
+# bulkcat_probe_manager (shop_manager), bulkcat_probe_subscriber (subscriber).
 #
 # Scale catalogue (T76): pass a product count as the first argument and the
 # seeder adds that many products under category "Scale Catalogue", SKUs
-# bcm-scale-00001 ..; every second one is variable with 7 variations, so
+# bulkcat-scale-00001 ..; every second one is variable with 7 variations, so
 # `seed.sh 20000` builds 20,000 products and 70,000 variations. Scale products
 # are bulk-inserted in runs of $SCALE_CHUNK per `wp eval`, one transaction
 # each, as the exact rows WooCommerce's CRUD classes write for them (CRUD
@@ -40,14 +40,14 @@
 # Environment:
 #   WP_CMD          the WP-CLI invocation. Default: wp
 #   SEED_JSON       where to write the fixture description. Default: tests/probe/seed.json (gitignored)
-#   PROBE_PASSWORD  the probe users' password. Default: bcm-probe-password (throwaway sites only)
+#   PROBE_PASSWORD  the probe users' password. Default: bulkcat-probe-password (throwaway sites only)
 #   SCALE_CHUNK     scale products per wp eval run. Default: 1000
 #
 set -euo pipefail
 
 WP_CMD=${WP_CMD:-wp}
 SEED_JSON=${SEED_JSON:-"$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/seed.json"}
-PROBE_PASSWORD=${PROBE_PASSWORD:-bcm-probe-password}
+PROBE_PASSWORD=${PROBE_PASSWORD:-bulkcat-probe-password}
 SCALE=${1:-0}
 SCALE_CHUNK=${SCALE_CHUNK:-1000}
 
@@ -66,7 +66,7 @@ wpcli plugin is-active bulk-catalogue-manager-for-woocommerce >/dev/null 2>&1 ||
 wpcli rewrite structure '/%postname%/' >/dev/null
 wpcli option update woocommerce_coming_soon no >/dev/null
 
-for spec in bcm_probe_admin:administrator bcm_probe_manager:shop_manager bcm_probe_subscriber:subscriber; do
+for spec in bulkcat_probe_admin:administrator bulkcat_probe_manager:shop_manager bulkcat_probe_subscriber:subscriber; do
 	login=${spec%%:*}
 	role=${spec#*:}
 	if wpcli user get "$login" --field=ID >/dev/null 2>&1; then
@@ -90,10 +90,10 @@ $term = function ( string $taxonomy, string $slug, string $name, int $parent = 0
 	return (int) $made['term_id'];
 };
 
-$root   = $term( 'product_cat', 'bcm-probe', 'Probe Catalogue' );
-$shirts = $term( 'product_cat', 'bcm-probe-shirts', 'Probe Shirts', $root );
-$hats   = $term( 'product_cat', 'bcm-probe-hats', 'Probe Hats', $root );
-$tag    = $term( 'product_tag', 'bcm-probe-tag', 'Probe Tag' );
+$root   = $term( 'product_cat', 'bulkcat-probe', 'Probe Catalogue' );
+$shirts = $term( 'product_cat', 'bulkcat-probe-shirts', 'Probe Shirts', $root );
+$hats   = $term( 'product_cat', 'bulkcat-probe-hats', 'Probe Hats', $root );
+$tag    = $term( 'product_tag', 'bulkcat-probe-tag', 'Probe Tag' );
 
 $upsert = function ( string $class, string $sku ) {
 	$id = wc_get_product_id_by_sku( $sku );
@@ -107,7 +107,7 @@ $upsert = function ( string $class, string $sku ) {
 
 $simple = array();
 for ( $i = 1; $i <= 10; $i++ ) {
-	$sku     = sprintf( 'bcm-probe-simple-%02d', $i );
+	$sku     = sprintf( 'bulkcat-probe-simple-%02d', $i );
 	$product = $upsert( 'WC_Product_Simple', $sku );
 	$price   = number_format( 10 + $i, 2, '.', '' );
 	$product->set_name( sprintf( 'Probe Simple %02d', $i ) );
@@ -125,7 +125,7 @@ for ( $i = 1; $i <= 10; $i++ ) {
 	$simple[] = array( 'id' => (int) $id, 'sku' => $sku, 'name' => $product->get_name(), 'regular_price' => $price, 'stock_quantity' => $i * 3 );
 }
 
-$variable  = $upsert( 'WC_Product_Variable', 'bcm-probe-variable' );
+$variable  = $upsert( 'WC_Product_Variable', 'bulkcat-probe-variable' );
 $attribute = new WC_Product_Attribute();
 $attribute->set_name( 'Size' );
 $attribute->set_options( array( 'Small', 'Medium', 'Large' ) );
@@ -142,7 +142,7 @@ $variable_id = (int) $variable->save();
 
 $variations = array();
 foreach ( array( 'Small' => '30.00', 'Medium' => '31.00', 'Large' => '32.00' ) as $option => $price ) {
-	$vsku      = 'bcm-probe-variable-' . strtolower( $option );
+	$vsku      = 'bulkcat-probe-variable-' . strtolower( $option );
 	$variation = $upsert( 'WC_Product_Variation', $vsku );
 	$variation->set_parent_id( $variable_id );
 	$variation->set_status( 'publish' );
@@ -155,7 +155,7 @@ foreach ( array( 'Small' => '30.00', 'Medium' => '31.00', 'Large' => '32.00' ) a
 }
 WC_Product_Variable::sync( $variable_id );
 
-$draft = $upsert( 'WC_Product_Simple', 'bcm-probe-draft' );
+$draft = $upsert( 'WC_Product_Simple', 'bulkcat-probe-draft' );
 $draft->set_name( 'Probe Draft' );
 $draft->set_status( 'draft' );
 $draft->set_regular_price( '5.00' );
@@ -165,7 +165,7 @@ $draft->set_tag_ids( array() );
 $draft_id = (int) $draft->save();
 
 $users = array();
-foreach ( array( 'admin' => 'bcm_probe_admin', 'manager' => 'bcm_probe_manager', 'subscriber' => 'bcm_probe_subscriber' ) as $role => $login ) {
+foreach ( array( 'admin' => 'bulkcat_probe_admin', 'manager' => 'bulkcat_probe_manager', 'subscriber' => 'bulkcat_probe_subscriber' ) as $role => $login ) {
 	$users[ $role ] = array( 'login' => $login, 'id' => (int) get_user_by( 'login', $login )->ID );
 }
 
@@ -174,10 +174,10 @@ $seed = array(
 	'tag'        => $tag,
 	'users'      => $users,
 	'simple'     => $simple,
-	'variable'   => array( 'id' => $variable_id, 'sku' => 'bcm-probe-variable', 'variations' => $variations ),
-	'draft'      => array( 'id' => $draft_id, 'sku' => 'bcm-probe-draft' ),
+	'variable'   => array( 'id' => $variable_id, 'sku' => 'bulkcat-probe-variable', 'variations' => $variations ),
+	'draft'      => array( 'id' => $draft_id, 'sku' => 'bulkcat-probe-draft' ),
 );
-echo "BCM_SEED_BEGIN\n" . wp_json_encode( $seed ) . "\nBCM_SEED_END\n";
+echo "BULKCAT_SEED_BEGIN\n" . wp_json_encode( $seed ) . "\nBULKCAT_SEED_END\n";
 PHP
 )
 
@@ -190,9 +190,9 @@ PHP
 # its products or none, so an interrupted build resumes cleanly.
 SCALE_PHP=$(cat <<'PHP'
 global $wpdb;
-list( $from, $to ) = array_map( 'intval', explode( ':', $bcm_scale_range ) );
-$found = get_term_by( 'slug', 'bcm-scale', 'product_cat' );
-$cat   = $found ? (int) $found->term_id : (int) wp_insert_term( 'Scale Catalogue', 'product_cat', array( 'slug' => 'bcm-scale' ) )['term_id'];
+list( $from, $to ) = array_map( 'intval', explode( ':', $bulkcat_scale_range ) );
+$found = get_term_by( 'slug', 'bulkcat-scale', 'product_cat' );
+$cat   = $found ? (int) $found->term_id : (int) wp_insert_term( 'Scale Catalogue', 'product_cat', array( 'slug' => 'bulkcat-scale' ) )['term_id'];
 $tt    = array(
 	'cat'      => (int) get_term( $cat, 'product_cat' )->term_taxonomy_id,
 	'simple'   => (int) get_term_by( 'slug', 'simple', 'product_type' )->term_taxonomy_id,
@@ -200,12 +200,12 @@ $tt    = array(
 );
 $skus = array();
 for ( $n = $from; $n <= $to; $n++ ) {
-	$skus[ $n ] = sprintf( 'bcm-scale-%05d', $n );
+	$skus[ $n ] = sprintf( 'bulkcat-scale-%05d', $n );
 }
 $have = array_flip( $wpdb->get_col( "SELECT sku FROM {$wpdb->wc_product_meta_lookup} WHERE sku IN ('" . implode( "','", array_map( 'esc_sql', $skus ) ) . "')" ) );
 $todo = array_diff_key( $skus, array_flip( array_map( fn( $s ) => (int) substr( $s, 10 ), array_keys( $have ) ) ) );
 if ( ! $todo ) {
-	echo "BCM_SCALE_MADE 0\n";
+	echo "BULKCAT_SCALE_MADE 0\n";
 	return;
 }
 
@@ -318,7 +318,7 @@ $wpdb->query( 'COMMIT' );
 wp_update_term_count_now( array_values( $tt ), 'product_cat' );
 wp_update_term_count_now( array( $tt['simple'], $tt['variable'] ), 'product_type' );
 wc_delete_product_transients();
-echo 'BCM_SCALE_MADE ' . count( $todo ) . "\n";
+echo 'BULKCAT_SCALE_MADE ' . count( $todo ) . "\n";
 PHP
 )
 
@@ -326,10 +326,10 @@ PHP
 # simple and variable products against the values the insert meant.
 VERIFY_PHP=$(cat <<'PHP'
 global $wpdb;
-$scale    = (int) $bcm_scale;
+$scale    = (int) $bulkcat_scale;
 $problems = array();
-$products = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->wc_product_meta_lookup} l JOIN {$wpdb->posts} p ON p.ID = l.product_id WHERE p.post_type = 'product' AND l.sku LIKE 'bcm-scale-%'" );
-$children = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->wc_product_meta_lookup} l JOIN {$wpdb->posts} p ON p.ID = l.product_id WHERE p.post_type = 'product_variation' AND l.sku LIKE 'bcm-scale-%'" );
+$products = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->wc_product_meta_lookup} l JOIN {$wpdb->posts} p ON p.ID = l.product_id WHERE p.post_type = 'product' AND l.sku LIKE 'bulkcat-scale-%'" );
+$children = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->wc_product_meta_lookup} l JOIN {$wpdb->posts} p ON p.ID = l.product_id WHERE p.post_type = 'product_variation' AND l.sku LIKE 'bulkcat-scale-%'" );
 if ( $products < $scale || $children < 7 * intdiv( $scale, 2 ) ) {
 	$problems[] = "counts $products products, $children variations";
 }
@@ -337,7 +337,7 @@ foreach ( array_unique( array( 1, 2, $scale - 1, $scale ) ) as $n ) {
 	if ( $n < 1 ) {
 		continue;
 	}
-	$product = wc_get_product( wc_get_product_id_by_sku( sprintf( 'bcm-scale-%05d', $n ) ) );
+	$product = wc_get_product( wc_get_product_id_by_sku( sprintf( 'bulkcat-scale-%05d', $n ) ) );
 	if ( ! $product || $product->get_category_ids() === array() ) {
 		$problems[] = "product $n unreadable";
 		continue;
@@ -356,7 +356,7 @@ foreach ( array_unique( array( 1, 2, $scale - 1, $scale ) ) as $n ) {
 		$problems[] = "simple $n";
 	}
 }
-echo $problems ? 'BCM_SCALE_BAD ' . implode( '; ', $problems ) . "\n" : "BCM_SCALE_OK $products $children\n";
+echo $problems ? 'BULKCAT_SCALE_BAD ' . implode( '; ', $problems ) . "\n" : "BULKCAT_SCALE_OK $products $children\n";
 PHP
 )
 
@@ -366,29 +366,29 @@ if [ "$SCALE" -gt 0 ]; then
 		end=$((start + SCALE_CHUNK - 1))
 		[ "$end" -gt "$SCALE" ] && end=$SCALE
 		# The range travels as a PHP prefix: WP_CMD may not pass the environment through.
-		made=$(wpcli eval "\$bcm_scale_range = '$start:$end'; $SCALE_PHP" | sed -n 's/^BCM_SCALE_MADE //p')
+		made=$(wpcli eval "\$bulkcat_scale_range = '$start:$end'; $SCALE_PHP" | sed -n 's/^BULKCAT_SCALE_MADE //p')
 		echo "seed.sh: scale $start-$end: created ${made:-0}" >&2
 		start=$((end + 1))
 	done
-	checked=$(wpcli eval "\$bcm_scale = $SCALE; $VERIFY_PHP")
+	checked=$(wpcli eval "\$bulkcat_scale = $SCALE; $VERIFY_PHP")
 	case "$checked" in
-		*BCM_SCALE_OK*) echo "seed.sh: scale catalogue verified: ${checked#*BCM_SCALE_OK }" >&2 ;;
+		*BULKCAT_SCALE_OK*) echo "seed.sh: scale catalogue verified: ${checked#*BULKCAT_SCALE_OK }" >&2 ;;
 		*) echo "seed.sh: scale catalogue does not read back as seeded: $checked" >&2; exit 1 ;;
 	esac
 fi
 
 RAW=$(wpcli eval "$SEED_PHP")
-BODY=$(printf '%s\n' "$RAW" | sed -n '/BCM_SEED_BEGIN/,/BCM_SEED_END/p' | sed '1d;$d')
+BODY=$(printf '%s\n' "$RAW" | sed -n '/BULKCAT_SEED_BEGIN/,/BULKCAT_SEED_END/p' | sed '1d;$d')
 if [ -z "$BODY" ]; then
 	echo "seed.sh: WP-CLI produced no seed JSON; raw output was:" >&2
 	printf '%s\n' "$RAW" >&2
 	exit 1
 fi
 
-BCM_SEED_BODY=$BODY python3 - "$SEED_JSON" "$PROBE_PASSWORD" "$SCALE" <<'PY'
+BULKCAT_SEED_BODY=$BODY python3 - "$SEED_JSON" "$PROBE_PASSWORD" "$SCALE" <<'PY'
 import json, os, sys
 path, password, scale = sys.argv[1], sys.argv[2], int(sys.argv[3])
-seed = json.loads(os.environ["BCM_SEED_BODY"])
+seed = json.loads(os.environ["BULKCAT_SEED_BODY"])
 seed["password"] = password
 seed["scale"] = scale
 with open(path, "w", encoding="utf-8") as handle:

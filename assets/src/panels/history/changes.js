@@ -87,11 +87,13 @@ function Result( { row } ) {
 	const [ open, setOpen ] = useState( false );
 	return (
 		<>
-			<span className={ `bcm-result bcm-result--${ row.result }` }>
+			<span
+				className={ `bulkcat-result bulkcat-result--${ row.result }` }
+			>
 				{ resultLabel( row.result ) }
 			</span>
 			{ row.result !== 'applied' && row.message && (
-				<span className="bcm-result__reason">{ row.message }</span>
+				<span className="bulkcat-result__reason">{ row.message }</span>
 			) }
 			{ row.result !== 'applied' && row.detail && (
 				<>
@@ -112,7 +114,7 @@ function Result( { row } ) {
 								) }
 					</Button>
 					{ open && (
-						<span className="bcm-result__detail">
+						<span className="bulkcat-result__detail">
 							{ row.detail }
 						</span>
 					) }
@@ -169,8 +171,8 @@ export default function Changes( { batch, byKey, problemsOnly, onNotice } ) {
 	);
 
 	return (
-		<div className="bcm-changes">
-			<div className="bcm-changes__bar">
+		<div className="bulkcat-changes">
+			<div className="bulkcat-changes__bar">
 				<SearchControl
 					__nextHasNoMarginBottom
 					label={ __(
@@ -241,7 +243,7 @@ export default function Changes( { batch, byKey, problemsOnly, onNotice } ) {
 				/>
 			) }
 			{ ! answer && ! error && (
-				<p className="bcm-changes__loading">
+				<p className="bulkcat-changes__loading">
 					{ __(
 						'Loading the changes…',
 						'bulk-catalogue-manager-for-woocommerce'
@@ -249,8 +251,8 @@ export default function Changes( { batch, byKey, problemsOnly, onNotice } ) {
 				</p>
 			) }
 			{ answer && (
-				<div className="bcm-changes__scroll">
-					<table className="bcm-changes__table">
+				<div className="bulkcat-changes__scroll">
+					<table className="bulkcat-changes__table">
 						<caption>{ caption }</caption>
 						<thead>
 							<tr>
@@ -324,7 +326,7 @@ export default function Changes( { batch, byKey, problemsOnly, onNotice } ) {
 						</tbody>
 					</table>
 					{ ! rows.length && (
-						<p className="bcm-changes__empty">
+						<p className="bulkcat-changes__empty">
 							{ search
 								? __(
 										'No change on this page matches your search.',
@@ -340,7 +342,7 @@ export default function Changes( { batch, byKey, problemsOnly, onNotice } ) {
 			) }
 			{ answer && pages > 1 && (
 				<nav
-					className="bcm-changes__pages"
+					className="bulkcat-changes__pages"
 					aria-label={ __(
 						'Pages of changes',
 						'bulk-catalogue-manager-for-woocommerce'

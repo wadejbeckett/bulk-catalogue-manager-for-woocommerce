@@ -101,17 +101,17 @@ final class Writer {
 	/**
 	 * The refusal code for an id that is not a product.
 	 */
-	public const NOT_FOUND = 'bcm_not_found';
+	public const NOT_FOUND = 'bulkcat_not_found';
 
 	/**
 	 * The code for a value WooCommerce's own setter refused.
 	 */
-	public const INVALID = 'bcm_invalid_value';
+	public const INVALID = 'bulkcat_invalid_value';
 
 	/**
 	 * The code for a change lost because WooCommerce could not save the object.
 	 */
-	public const SAVE_FAILED = 'bcm_save_failed';
+	public const SAVE_FAILED = 'bulkcat_save_failed';
 
 	/**
 	 * Called with ( object, touched field keys, before values ) just before save().
@@ -287,7 +287,7 @@ final class Writer {
 				$refused = $field->write( $product, $value );
 				if ( $refused instanceof \WP_Error ) {
 					$code            = (string) $refused->get_error_code();
-					$results[ $key ] = Result::failed( $key, $old, $refused->get_error_message(), str_starts_with( $code, 'bcm_' ) ? $code : '' );
+					$results[ $key ] = Result::failed( $key, $old, $refused->get_error_message(), str_starts_with( $code, 'bulkcat_' ) ? $code : '' );
 					continue;
 				}
 				$written = true;
@@ -421,7 +421,7 @@ final class Writer {
 			return $result;
 		} catch ( WriteRefused $refused ) {
 			$code = (string) $refused->error()->get_error_code();
-			return Result::failed( $result->field(), $result->old(), $refused->error()->get_error_message(), str_starts_with( $code, 'bcm_' ) ? $code : '' );
+			return Result::failed( $result->field(), $result->old(), $refused->error()->get_error_message(), str_starts_with( $code, 'bulkcat_' ) ? $code : '' );
 		} catch ( \WC_Data_Exception $refused ) {
 			$reason = trim( $refused->getMessage() );
 			return Result::failed(
@@ -459,7 +459,7 @@ final class Writer {
 		$written = $field->write( $product, $result->new() );
 		if ( $written instanceof \WP_Error ) {
 			$code = (string) $written->get_error_code();
-			return Result::failed( $result->field(), $result->old(), $written->get_error_message(), str_starts_with( $code, 'bcm_' ) ? $code : '' );
+			return Result::failed( $result->field(), $result->old(), $written->get_error_message(), str_starts_with( $code, 'bulkcat_' ) ? $code : '' );
 		}
 		return $result;
 	}

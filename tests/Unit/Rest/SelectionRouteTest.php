@@ -1,6 +1,6 @@
 <?php
 /**
- * `POST /bcm/v1/selection` (T19; SPEC §9.1, §12.1, §13) over the seeded
+ * `POST /bulkcat/v1/selection` (T19; SPEC §9.1, §12.1, §13) over the seeded
  * catalogue: a filter answers `{ count, token }` with the count `/products`
  * reports and a token that re-materialises to the same normalised
  * conditions; an `ids` list answers its distinct ids in order; the count is
@@ -31,11 +31,11 @@ require_once dirname( __DIR__ ) . '/Query/SeededCatalogue.php';
 
 final class SelectionRouteTest extends TestCase {
 	protected function setUp(): void {
-		bcm_test_reset();
-		$GLOBALS['bcm_test']['logged_in']                  = true;
-		$GLOBALS['bcm_test']['user_id']                    = 12;
-		$GLOBALS['bcm_test']['caps']['manage_woocommerce'] = true;
-		$GLOBALS['bcm_test']['caps']['edit_products']      = true;
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['logged_in']                  = true;
+		$GLOBALS['bulkcat_test']['user_id']                    = 12;
+		$GLOBALS['bulkcat_test']['caps']['manage_woocommerce'] = true;
+		$GLOBALS['bulkcat_test']['caps']['edit_products']      = true;
 		( new Plugin() )->boot();
 		do_action( 'rest_api_init' );
 		SeededCatalogue::seed();
@@ -49,7 +49,7 @@ final class SelectionRouteTest extends TestCase {
 	 * @param array<string, mixed> $params Parameters.
 	 */
 	private static function send( string $method, string $route, array $params ): \WP_REST_Response|\WP_Error {
-		$request = new \WP_REST_Request( $method, '/bcm/v1' . $route );
+		$request = new \WP_REST_Request( $method, '/bulkcat/v1' . $route );
 		foreach ( $params as $key => $value ) {
 			$request->set_param( $key, $value );
 		}
@@ -77,7 +77,7 @@ final class SelectionRouteTest extends TestCase {
 	}
 
 	public function test_the_route_needs_the_write_capability(): void {
-		$route = $GLOBALS['bcm_test']['routes']['/bcm/v1/selection'] ?? null;
+		$route = $GLOBALS['bulkcat_test']['routes']['/bulkcat/v1/selection'] ?? null;
 		$this->assertTrue( is_array( $route ), 'The route is registered.' );
 		$this->assertSame( [ Access::class, 'can_write' ], $route[0]['permission_callback'] );
 		$this->assertSame( 'POST', $route[0]['methods'] );
@@ -146,7 +146,7 @@ final class SelectionRouteTest extends TestCase {
 
 		$refused = self::send( 'POST', '/selection', [ 'parent' => 103 ] );
 		$this->assertInstanceOf( \WP_Error::class, $refused );
-		$this->assertSame( 'bcm_invalid_value', $refused->get_error_code() );
+		$this->assertSame( 'bulkcat_invalid_value', $refused->get_error_code() );
 		$this->assertSame( 400, $refused->get_error_data()['status'] );
 	}
 
@@ -165,8 +165,8 @@ final class SelectionRouteTest extends TestCase {
 	public function test_the_same_filter_posted_twice_counts_once(): void {
 		$statement = ( new ProductQuery( Criteria::from_array( [ 'search' => 'shirt' ] ) ) )->count_statement();
 		foreach ( [ 1, 2 ] as $attempt ) {
-			$GLOBALS['bcm_test']['cache'] = [];
-			$response                     = self::send( 'POST', '/selection', [ 'search' => 'shirt' ] );
+			$GLOBALS['bulkcat_test']['cache'] = [];
+			$response                         = self::send( 'POST', '/selection', [ 'search' => 'shirt' ] );
 			$this->assertSame( 2, $response->get_data()['count'], "Attempt $attempt." );
 		}
 		$this->assertCount( 1, array_filter( $GLOBALS['wpdb']->queries, static fn( string $sql ): bool => $sql === $statement ) );
@@ -192,29 +192,29 @@ final class SelectionRouteTest extends TestCase {
 	}
 
 	public function test_a_visitor_is_refused_401_and_a_reader_403(): void {
-		$GLOBALS['bcm_test']['logged_in'] = false;
-		$GLOBALS['bcm_test']['user_id']   = 0;
-		$GLOBALS['bcm_test']['caps']      = [];
-		$response                         = self::send( 'POST', '/selection', [ 'ids' => [ 101 ] ] );
+		$GLOBALS['bulkcat_test']['logged_in'] = false;
+		$GLOBALS['bulkcat_test']['user_id']   = 0;
+		$GLOBALS['bulkcat_test']['caps']      = [];
+		$response                             = self::send( 'POST', '/selection', [ 'ids' => [ 101 ] ] );
 		$this->assertInstanceOf( \WP_Error::class, $response );
 		$this->assertSame( 401, $response->get_error_data()['status'] );
-		$this->assertSame( 'bcm_forbidden', $response->get_error_code() );
+		$this->assertSame( 'bulkcat_forbidden', $response->get_error_code() );
 
-		$GLOBALS['bcm_test']['logged_in']                  = true;
-		$GLOBALS['bcm_test']['user_id']                    = 12;
-		$GLOBALS['bcm_test']['caps']['manage_woocommerce'] = true;
+		$GLOBALS['bulkcat_test']['logged_in']                  = true;
+		$GLOBALS['bulkcat_test']['user_id']                    = 12;
+		$GLOBALS['bulkcat_test']['caps']['manage_woocommerce'] = true;
 		$response = self::send( 'POST', '/selection', [ 'ids' => [ 101 ] ] );
 		$this->assertInstanceOf( \WP_Error::class, $response );
 		$this->assertSame( 403, $response->get_error_data()['status'] );
-		$this->assertSame( 'bcm_forbidden', $response->get_error_code() );
+		$this->assertSame( 'bulkcat_forbidden', $response->get_error_code() );
 	}
 
 	public function test_a_token_is_refused_to_another_user(): void {
-		$token                          = self::send( 'POST', '/selection', [ 'ids' => [ 101 ] ] )->get_data()['token'];
-		$GLOBALS['bcm_test']['user_id'] = 13;
-		$refused                        = SelectionToken::parse( $token );
+		$token                              = self::send( 'POST', '/selection', [ 'ids' => [ 101 ] ] )->get_data()['token'];
+		$GLOBALS['bulkcat_test']['user_id'] = 13;
+		$refused                            = SelectionToken::parse( $token );
 		$this->assertInstanceOf( \WP_Error::class, $refused );
-		$this->assertSame( 'bcm_invalid_selection', $refused->get_error_code() );
+		$this->assertSame( 'bulkcat_invalid_selection', $refused->get_error_code() );
 		$this->assertSame( 403, $refused->get_error_data()['status'] );
 	}
 
@@ -259,14 +259,14 @@ final class SelectionRouteTest extends TestCase {
 		self::seed_many( Selection::MAX_OBJECTS + 1 );
 		$response = self::send( 'POST', '/selection', [ 'mode' => Criteria::MODE_PRODUCTS ] );
 		$this->assertInstanceOf( \WP_Error::class, $response );
-		$this->assertSame( 'bcm_selection_too_large', $response->get_error_code() );
+		$this->assertSame( 'bulkcat_selection_too_large', $response->get_error_code() );
 		$this->assertSame( 400, $response->get_error_data()['status'] );
 		$this->assertSame( 100001, $response->get_error_data()['count'] );
 		$this->assertSame( 'This selection holds 100,001 products, more than the 100,000 one change can include. Add a filter to narrow it and try again.', $response->get_error_message() );
 
 		self::seed_many( Selection::MAX_OBJECTS );
-		$GLOBALS['bcm_test']['transients'] = [];
-		$response                          = self::send( 'POST', '/selection', [ 'mode' => Criteria::MODE_PRODUCTS ] );
+		$GLOBALS['bulkcat_test']['transients'] = [];
+		$response                              = self::send( 'POST', '/selection', [ 'mode' => Criteria::MODE_PRODUCTS ] );
 		$this->assertInstanceOf( \WP_REST_Response::class, $response, 'Exactly 100,000 is allowed.' );
 		$this->assertSame( 100000, $response->get_data()['count'] );
 	}
@@ -274,7 +274,7 @@ final class SelectionRouteTest extends TestCase {
 	public function test_more_than_100000_ids_are_refused_with_the_count(): void {
 		$response = self::send( 'POST', '/selection', [ 'ids' => range( 1, Selection::MAX_OBJECTS + 1 ) ] );
 		$this->assertInstanceOf( \WP_Error::class, $response );
-		$this->assertSame( 'bcm_selection_too_large', $response->get_error_code() );
+		$this->assertSame( 'bulkcat_selection_too_large', $response->get_error_code() );
 		$this->assertStringContainsString( '100,001', $response->get_error_message() );
 	}
 }

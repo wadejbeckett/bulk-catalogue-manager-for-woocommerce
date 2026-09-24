@@ -1,7 +1,7 @@
 <?php
 /**
  * The journal (SPEC §9.3, §12.3, §12.6; T33 and T29): what the writer did to
- * one object, written to `bcm_changes` from inside the writer's own code
+ * one object, written to `bulkcat_changes` from inside the writer's own code
  * path — never from a hook after the fact — so every saved change has its
  * before state beside it and undo can put it back.
  *
@@ -69,7 +69,7 @@ final class Journal {
 	/**
 	 * The code on a step skipped because this batch already journalled the object.
 	 */
-	public const ALREADY_DONE = 'bcm_already_done';
+	public const ALREADY_DONE = 'bulkcat_already_done';
 
 	/**
 	 * Build over the change repository.

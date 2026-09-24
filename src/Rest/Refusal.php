@@ -1,7 +1,7 @@
 <?php
 /**
  * The one place a refusal is built (SPEC §4.8, §12.1, §13). Every refusal the
- * plugin returns is a `WP_Error` whose code starts `bcm_`, whose message is a
+ * plugin returns is a `WP_Error` whose code starts `bulkcat_`, whose message is a
  * plain-English sentence naming the thing, what happened and what to do, and
  * whose data carries an HTTP `status`: 401 for a visitor who is not logged in,
  * 403 for a logged-in user without the right, 400 for an invalid value.
@@ -23,12 +23,12 @@ final class Refusal {
 	/**
 	 * Every refusal code starts with this.
 	 */
-	public const PREFIX = 'bcm_';
+	public const PREFIX = 'bulkcat_';
 
 	/**
 	 * The code for a request the current user may not make.
 	 */
-	public const FORBIDDEN = 'bcm_forbidden';
+	public const FORBIDDEN = 'bulkcat_forbidden';
 
 	/**
 	 * The WooCommerce log source unexpected errors are written under.
@@ -36,10 +36,10 @@ final class Refusal {
 	public const LOG_SOURCE = 'bulk-catalogue-manager-for-woocommerce';
 
 	/**
-	 * A refusal. Refuses, as a programming error, a code without the `bcm_`
+	 * A refusal. Refuses, as a programming error, a code without the `bulkcat_`
 	 * prefix, an empty message or a status that is not a 4xx or 5xx.
 	 *
-	 * @param string               $code    `bcm_` error code.
+	 * @param string               $code    `bulkcat_` error code.
 	 * @param string               $message Plain-English sentence (SPEC §4.8), already translated.
 	 * @param int                  $status  HTTP status, 400 to 599.
 	 * @param array<string, mixed> $data    Extra data for the technical details line; `status` always wins.
@@ -47,7 +47,7 @@ final class Refusal {
 	 */
 	public static function create( string $code, string $message, int $status, array $data = [] ): \WP_Error {
 		if ( ! str_starts_with( $code, self::PREFIX ) || strlen( $code ) <= strlen( self::PREFIX ) ) {
-			throw new \InvalidArgumentException( 'A refusal code must start with bcm_.' );
+			throw new \InvalidArgumentException( 'A refusal code must start with bulkcat_.' );
 		}
 		if ( '' === trim( $message ) ) {
 			throw new \InvalidArgumentException( 'A refusal needs a plain-English message.' );
@@ -65,7 +65,7 @@ final class Refusal {
 	 * the plugin's source, when WooCommerce's logger is there, and never to
 	 * the client, which gets only the plain sentence.
 	 *
-	 * @param string               $code    `bcm_` error code.
+	 * @param string               $code    `bulkcat_` error code.
 	 * @param string               $message Plain-English sentence, already translated.
 	 * @param int                  $status  HTTP status, 400 to 599.
 	 * @param \Throwable           $error   What went wrong.
@@ -82,7 +82,7 @@ final class Refusal {
 	}
 
 	/**
-	 * A permission refusal, `bcm_forbidden`: 401 with a log-in sentence for a
+	 * A permission refusal, `bulkcat_forbidden`: 401 with a log-in sentence for a
 	 * visitor who is not logged in, otherwise 403 with the given sentence.
 	 *
 	 * @param string $message Sentence for a logged-in user, saying what they may not do and what to do.
@@ -97,7 +97,7 @@ final class Refusal {
 	/**
 	 * A refusal of an invalid value or request, status 400.
 	 *
-	 * @param string               $code    `bcm_` error code.
+	 * @param string               $code    `bulkcat_` error code.
 	 * @param string               $message Plain-English sentence.
 	 * @param array<string, mixed> $data    Extra data.
 	 */

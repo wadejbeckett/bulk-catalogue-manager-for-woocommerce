@@ -40,7 +40,7 @@ final class Validation {
 	/**
 	 * Refused.
 	 *
-	 * @param \WP_Error $error A Rest\Refusal: `bcm_` code, §4.8 sentence, status 400.
+	 * @param \WP_Error $error A Rest\Refusal: `bulkcat_` code, §4.8 sentence, status 400.
 	 */
 	public static function refused( \WP_Error $error ): self {
 		return new self( [], $error );

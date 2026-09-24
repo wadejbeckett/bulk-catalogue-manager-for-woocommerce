@@ -51,8 +51,8 @@
 	<rule ref="WordPress.NamingConventions.PrefixAllGlobals">
 		<properties>
 			<property name="prefixes" type="array">
-				<element value="bcm_"/>
-				<element value="BCM_"/>
+				<element value="bulkcat_"/>
+				<element value="BULKCAT_"/>
 				<element value="BulkCatalogueManager"/>
 			</property>
 		</properties>

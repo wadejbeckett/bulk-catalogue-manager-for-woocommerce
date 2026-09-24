@@ -96,7 +96,7 @@ test( 'keyboard-only bulk change and undo', async ( { page } ) => {
 		await keys.press( 'Tab' );
 		expect(
 			await page.evaluate(
-				() => !! document.activeElement.closest( '.bcm-bulk' )
+				() => !! document.activeElement.closest( '.bulkcat-bulk' )
 			),
 			'focus stays in the bulk panel'
 		).toBe( true );

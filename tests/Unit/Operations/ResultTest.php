@@ -18,7 +18,7 @@ use PHPUnit\Framework\TestCase;
 
 final class ResultTest extends TestCase {
 	protected function setUp(): void {
-		bcm_test_reset();
+		bulkcat_test_reset();
 	}
 
 	public function test_the_state_enum_is_changed_already_skipped_failed(): void {
@@ -26,7 +26,7 @@ final class ResultTest extends TestCase {
 		$this->assertSame( Result::CHANGED, Result::changed( 'regular_price', '10.00', '11.20' )->state() );
 		$this->assertSame( Result::ALREADY, Result::already( 'regular_price', '10.00' )->state() );
 		$this->assertSame( Result::SKIPPED, Result::skipped( 'regular_price', '', 'This product has no regular price to increase, so it was skipped.' )->state() );
-		$this->assertSame( Result::FAILED, Result::failed( 'sku', 'A-1', 'A product with the SKU B-1 already exists.', 'bcm_invalid_value' )->state() );
+		$this->assertSame( Result::FAILED, Result::failed( 'sku', 'A-1', 'A product with the SKU B-1 already exists.', 'bulkcat_invalid_value' )->state() );
 	}
 
 	public function test_each_state_carries_field_old_new_and_reason(): void {
@@ -43,9 +43,9 @@ final class ResultTest extends TestCase {
 		$this->assertSame( '', $skipped->new(), 'A skipped result keeps the value it found.' );
 		$this->assertSame( 'This product has no sale price to round, so it was skipped.', $skipped->reason() );
 
-		$failed = Result::failed( 'sku', 'A-1', 'A product with the SKU B-1 already exists, so this SKU was not applied.', 'bcm_invalid_value' );
+		$failed = Result::failed( 'sku', 'A-1', 'A product with the SKU B-1 already exists, so this SKU was not applied.', 'bulkcat_invalid_value' );
 		$this->assertSame( 'A-1', $failed->new() );
-		$this->assertSame( 'bcm_invalid_value', $failed->code() );
+		$this->assertSame( 'bulkcat_invalid_value', $failed->code() );
 
 		$replace = Result::changed( 'category_ids', [ 3, 4 ], [ 9 ], true );
 		$this->assertTrue( $replace->replaces() );
@@ -71,12 +71,12 @@ final class ResultTest extends TestCase {
 
 	public function test_inconsistent_results_are_refused(): void {
 		$cases = [
-			'changed without a change'       => static fn() => Result::changed( 'regular_price', '10.00', '10.00' ),
-			'skipped without a reason'       => static fn() => Result::skipped( 'regular_price', '', ' ' ),
-			'failed without a reason'        => static fn() => Result::failed( 'regular_price', '', '' ),
-			'a code without the bcm_ prefix' => static fn() => Result::failed( 'sku', 'A', 'Clash.', 'invalid' ),
-			'a bad field key'                => static fn() => Result::already( '_price', '1' ),
-			'a code in the sentence'         => static fn() => Result::failed( 'sku', 'A', 'Refused (bcm_invalid_value).', 'bcm_invalid_value' ),
+			'changed without a change'           => static fn() => Result::changed( 'regular_price', '10.00', '10.00' ),
+			'skipped without a reason'           => static fn() => Result::skipped( 'regular_price', '', ' ' ),
+			'failed without a reason'            => static fn() => Result::failed( 'regular_price', '', '' ),
+			'a code without the bulkcat_ prefix' => static fn() => Result::failed( 'sku', 'A', 'Clash.', 'invalid' ),
+			'a bad field key'                    => static fn() => Result::already( '_price', '1' ),
+			'a code in the sentence'             => static fn() => Result::failed( 'sku', 'A', 'Refused (bulkcat_invalid_value).', 'bulkcat_invalid_value' ),
 		];
 		foreach ( $cases as $case => $build ) {
 			try {
@@ -123,9 +123,9 @@ final class ResultTest extends TestCase {
 		$this->assertNull( $passed->error() );
 		$this->assertSame( [ 'field' => 'sku' ], $passed->args() );
 
-		$refused = Validation::refused( new \WP_Error( 'bcm_invalid_operation', 'Enter the text to add.', [ 'status' => 400 ] ) );
+		$refused = Validation::refused( new \WP_Error( 'bulkcat_invalid_operation', 'Enter the text to add.', [ 'status' => 400 ] ) );
 		$this->assertFalse( $refused->ok() );
-		$this->assertSame( 'bcm_invalid_operation', $refused->error()->get_error_code() );
+		$this->assertSame( 'bulkcat_invalid_operation', $refused->error()->get_error_code() );
 		try {
 			$refused->args();
 			$this->fail( 'Refused arguments were handed out.' );

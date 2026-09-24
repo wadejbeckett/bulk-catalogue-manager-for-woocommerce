@@ -240,7 +240,7 @@ function ProductFilter( { value, onChange } ) {
 		<ComboboxControl
 			__nextHasNoMarginBottom
 			__next40pxDefaultSize
-			className="bcm-audit__product"
+			className="bulkcat-audit__product"
 			label={ __( 'Product', 'bulk-catalogue-manager-for-woocommerce' ) }
 			help={ __(
 				'Type part of a product name to find it.',
@@ -352,10 +352,10 @@ export default function AuditLog( {
 	};
 
 	return (
-		<div className="bcm-audit">
-			<div className="bcm-history__bar">
+		<div className="bulkcat-audit">
+			<div className="bulkcat-history__bar">
 				<ProductFilter value={ product } onChange={ chooseProduct } />
-				<div className="bcm-history__bar-right">
+				<div className="bulkcat-history__bar-right">
 					<Button
 						variant="secondary"
 						onClick={ exportLog }
@@ -374,7 +374,7 @@ export default function AuditLog( {
 				<Notice
 					status="info"
 					isDismissible={ false }
-					className="bcm-audit__linked"
+					className="bulkcat-audit__linked"
 					actions={ [
 						{
 							label: __(
@@ -418,7 +418,7 @@ export default function AuditLog( {
 				search={ false }
 				getItemId={ ( item ) => String( item.change_id ) }
 				empty={
-					<div className="bcm-history__empty">
+					<div className="bulkcat-history__empty">
 						<p>
 							{ __(
 								'No field changes match these filters.',

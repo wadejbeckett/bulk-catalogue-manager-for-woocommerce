@@ -283,7 +283,8 @@ describe( 'selection in the catalogue', () => {
 		);
 		await waitFor( () =>
 			expect(
-				document.querySelector( '.bcm-selection__notice' )?.textContent
+				document.querySelector( '.bulkcat-selection__notice' )
+					?.textContent
 			).toContain(
 				'The selection was cleared because the filters changed.'
 			)

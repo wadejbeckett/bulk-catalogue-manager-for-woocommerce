@@ -83,14 +83,14 @@ export function DoneStep( {
 
 	if ( ! finished ) {
 		return (
-			<section className="bcm-bulk__section" data-step="applying">
-				<h3 className="bcm-bulk__h">
+			<section className="bulkcat-bulk__section" data-step="applying">
+				<h3 className="bulkcat-bulk__h">
 					{ __(
 						'Applying the change',
 						'bulk-catalogue-manager-for-woocommerce'
 					) }
 				</h3>
-				<p className="bcm-bulk__sub">
+				<p className="bulkcat-bulk__sub">
 					{ sprintf(
 						/* translators: %s: a number of products, such as "1,284 products". */
 						__(
@@ -102,13 +102,16 @@ export function DoneStep( {
 				</p>
 				{ report?.stalled ? (
 					( renderStalled && renderStalled( report ) ) || (
-						<div className="bcm-bulk__notice is-warn" role="alert">
+						<div
+							className="bulkcat-bulk__notice is-warn"
+							role="alert"
+						>
 							{ report.stalled_message }
 						</div>
 					)
 				) : (
 					<div
-						className="bcm-bulk__progress"
+						className="bulkcat-bulk__progress"
 						role="progressbar"
 						aria-valuemin={ 0 }
 						aria-valuemax={ total }
@@ -121,7 +124,7 @@ export function DoneStep( {
 						<i style={ { width: percent + '%' } } />
 					</div>
 				) }
-				<p className="bcm-bulk__hint">
+				<p className="bulkcat-bulk__hint">
 					{ sprintf(
 						/* translators: 1: done, such as "312"; 2: in all, such as "1,284". */
 						__(
@@ -132,14 +135,14 @@ export function DoneStep( {
 						formatNumber( total )
 					) }
 				</p>
-				<p className="bcm-bulk__hint">
+				<p className="bulkcat-bulk__hint">
 					{ __(
 						'You can leave this page. The update carries on in the background and appears in History when it finishes.',
 						'bulk-catalogue-manager-for-woocommerce'
 					) }
 				</p>
 				{ error && (
-					<p className="bcm-bulk__hint">
+					<p className="bulkcat-bulk__hint">
 						{ __(
 							'The progress could not be read just now. Trying again.',
 							'bulk-catalogue-manager-for-woocommerce'
@@ -152,12 +155,14 @@ export function DoneStep( {
 
 	const ok = [ 'complete', 'partial' ].includes( report.status );
 	return (
-		<section className="bcm-bulk__section" data-step="done">
-			<h3 className="bcm-bulk__h">
+		<section className="bulkcat-bulk__section" data-step="done">
+			<h3 className="bulkcat-bulk__h">
 				{ __( 'Done', 'bulk-catalogue-manager-for-woocommerce' ) }
 			</h3>
 			<div
-				className={ 'bcm-bulk__notice ' + ( ok ? 'is-ok' : 'is-warn' ) }
+				className={
+					'bulkcat-bulk__notice ' + ( ok ? 'is-ok' : 'is-warn' )
+				}
 				role="status"
 			>
 				<strong>{ doneSentence( report ) }</strong>
@@ -181,7 +186,7 @@ export function DoneStep( {
 						) }
 					</p>
 				) }
-				<div className="bcm-bulk__acts">
+				<div className="bulkcat-bulk__acts">
 					{ onUndo && ok && (
 						<button
 							type="button"

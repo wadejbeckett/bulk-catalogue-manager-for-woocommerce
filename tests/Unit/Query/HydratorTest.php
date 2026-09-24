@@ -42,7 +42,7 @@ final class HydratorTest extends TestCase {
 	private const VARIATIONS = 3;
 
 	protected function setUp(): void {
-		bcm_test_reset();
+		bulkcat_test_reset();
 		self::seed();
 	}
 
@@ -52,7 +52,7 @@ final class HydratorTest extends TestCase {
 	 * attachment id whose attachment is gone.
 	 */
 	private static function seed(): void {
-		$state = &$GLOBALS['bcm_test'];
+		$state = &$GLOBALS['bulkcat_test'];
 		for ( $id = 1; $id <= self::CATALOGUE; $id++ ) {
 			$variable              = 0 === $id % 3;
 			$state['posts'][ $id ] = [
@@ -146,9 +146,9 @@ final class HydratorTest extends TestCase {
 	 * @param string[]             $keys Field keys.
 	 */
 	private static function queries_for( array $args, array $keys = [] ): int {
-		$before = bcm_test_query_count();
+		$before = bulkcat_test_query_count();
 		self::catalogue()->page( Criteria::from_array( $args ), $keys );
-		return bcm_test_query_count() - $before;
+		return bulkcat_test_query_count() - $before;
 	}
 
 	/**
@@ -179,12 +179,12 @@ final class HydratorTest extends TestCase {
 	public function test_the_query_count_is_the_same_at_25_50_and_100_rows(): void {
 		$counts = [];
 		foreach ( [ 25, 50, 100 ] as $per_page ) {
-			bcm_test_reset();
+			bulkcat_test_reset();
 			self::seed();
 			$page = self::catalogue()->page( Criteria::from_array( [ 'per_page' => $per_page ] ), [] );
 			$this->assertCount( $per_page, $page['items'] );
 			$this->assertSame( self::CATALOGUE, $page['total'] );
-			$counts[ $per_page ] = bcm_test_query_count();
+			$counts[ $per_page ] = bulkcat_test_query_count();
 		}
 		$this->assertSame( $counts[25], $counts[50], 'Query count grew from 25 to 50 rows: ' . wp_json_encode( $counts ) );
 		$this->assertSame( $counts[25], $counts[100], 'Query count grew from 25 to 100 rows: ' . wp_json_encode( $counts ) );
@@ -195,7 +195,7 @@ final class HydratorTest extends TestCase {
 	public function test_three_filters_stay_inside_twenty_queries_at_every_page_size(): void {
 		$counts = [];
 		foreach ( [ 25, 50, 100 ] as $per_page ) {
-			bcm_test_reset();
+			bulkcat_test_reset();
 			self::seed();
 			$counts[ $per_page ] = self::queries_for(
 				[
@@ -211,18 +211,18 @@ final class HydratorTest extends TestCase {
 
 	public function test_each_catalogue_source_is_read_once_per_page(): void {
 		self::catalogue()->page( Criteria::from_array( [ 'per_page' => 100 ] ), [] );
-		$calls = array_count_values( array_column( $GLOBALS['bcm_test']['calls'], 0 ) );
+		$calls = array_count_values( array_column( $GLOBALS['bulkcat_test']['calls'], 0 ) );
 		$this->assertSame( 2, $calls['_prime_post_caches'], 'Products, then attachments.' );
 		$this->assertSame( 2, $calls['update_meta_cache'], 'Products, then attachments.' );
 		$this->assertSame( 1, $calls['wp_get_object_terms'] );
 		$this->assertArrayNotHasKey( 'get_post', $calls, 'No post was read uncached.' );
 		$this->assertArrayNotHasKey( 'get_post_meta', $calls, 'No meta was read uncached.' );
 
-		$terms = array_values( array_filter( $GLOBALS['bcm_test']['calls'], static fn( array $call ): bool => 'wp_get_object_terms' === $call[0] ) )[0][1];
+		$terms = array_values( array_filter( $GLOBALS['bulkcat_test']['calls'], static fn( array $call ): bool => 'wp_get_object_terms' === $call[0] ) )[0][1];
 		$this->assertSame( Hydrator::TAXONOMIES, $terms[1] );
 		$this->assertSame( 'all_with_object_id', $terms[2]['fields'] );
 		$this->assertFalse( $terms[2]['update_term_meta_cache'] );
-		$this->assertSame( [ false, false ], array_slice( $GLOBALS['bcm_test']['calls'][0][1], 1 ), 'Posts are primed without terms or meta.' );
+		$this->assertSame( [ false, false ], array_slice( $GLOBALS['bulkcat_test']['calls'][0][1], 1 ), 'Posts are primed without terms or meta.' );
 
 		$children = array_values( preg_grep( '/^SELECT post_parent AS parent_id, COUNT\(\*\)/', $GLOBALS['wpdb']->queries ) );
 		$this->assertCount( 1, $children );
@@ -244,7 +244,7 @@ final class HydratorTest extends TestCase {
 		$this->assertCount( 100, $page['items'] );
 		$this->assertSame( 0, $fired );
 		$this->assertSame( 0, did_action( 'woocommerce_product_read' ) );
-		$this->assertSame( 0, $GLOBALS['bcm_test']['products_built'] ?? 0 );
+		$this->assertSame( 0, $GLOBALS['bulkcat_test']['products_built'] ?? 0 );
 
 		// The sentinel works: building one would have been seen.
 		new \WC_Product( 1 );
@@ -265,7 +265,7 @@ final class HydratorTest extends TestCase {
 			'filters'  => self::three_filters(),
 		];
 		$first    = self::catalogue()->page( Criteria::from_array( $criteria ), [] );
-		$this->assertGreaterThan( 0, bcm_test_query_count() );
+		$this->assertGreaterThan( 0, bulkcat_test_query_count() );
 
 		$this->assertSame( 0, self::queries_for( $criteria ), 'The same read in the same window reached the database.' );
 		$this->assertSame( $first, self::catalogue()->page( Criteria::from_array( $criteria ), [] ) );
@@ -283,7 +283,7 @@ final class HydratorTest extends TestCase {
 		wp_cache_set_last_changed( 'terms' );
 		$this->assertGreaterThan( 0, self::queries_for( $criteria ), 'A term change must invalidate the page.' );
 
-		$sets = array_values( array_filter( $GLOBALS['bcm_test']['calls'], static fn( array $call ): bool => 'wp_cache_set' === $call[0] ) );
+		$sets = array_values( array_filter( $GLOBALS['bulkcat_test']['calls'], static fn( array $call ): bool => 'wp_cache_set' === $call[0] ) );
 		$this->assertSame( [ Catalogue::CACHE_GROUP, Catalogue::CACHE_TTL ], array_slice( $sets[0][1], 1 ) );
 	}
 
@@ -305,7 +305,7 @@ final class HydratorTest extends TestCase {
 		$this->assertSame( 0, $by_id[1]['thumbnail'] );
 		$this->assertSame( $placeholder, $by_id[7][ Hydrator::THUMBNAIL_URL ], 'An image whose attachment is gone: the placeholder.' );
 
-		$calls       = array_values( array_filter( $GLOBALS['bcm_test']['calls'], static fn( array $call ): bool => in_array( $call[0], [ '_prime_post_caches', 'update_meta_cache', 'wc_placeholder_img_src' ], true ) ) );
+		$calls       = array_values( array_filter( $GLOBALS['bulkcat_test']['calls'], static fn( array $call ): bool => in_array( $call[0], [ '_prime_post_caches', 'update_meta_cache', 'wc_placeholder_img_src' ], true ) ) );
 		$attachments = [ self::ATTACHMENTS + 2, self::ATTACHMENTS + 4, self::ATTACHMENTS + 6, self::ATTACHMENTS + 7, self::ATTACHMENTS + 8, self::ATTACHMENTS + 10 ];
 		$this->assertSame( [ $attachments, false, false ], $calls[2][1] );
 		$this->assertSame( [ 'post', $attachments ], $calls[3][1] );
@@ -314,20 +314,20 @@ final class HydratorTest extends TestCase {
 	}
 
 	public function test_without_any_image_the_attachments_are_not_primed(): void {
-		foreach ( $GLOBALS['bcm_test']['meta'] as $id => $meta ) {
-			unset( $GLOBALS['bcm_test']['meta'][ $id ]['_thumbnail_id'] );
+		foreach ( $GLOBALS['bulkcat_test']['meta'] as $id => $meta ) {
+			unset( $GLOBALS['bulkcat_test']['meta'][ $id ]['_thumbnail_id'] );
 		}
 		$items = self::catalogue()->page( Criteria::from_array( [ 'per_page' => 25 ] ), [] )['items'];
 		$this->assertSame( [ 'https://example.test/wp-content/plugins/woocommerce/assets/images/placeholder.webp' ], array_values( array_unique( array_column( $items, Hydrator::THUMBNAIL_URL ) ) ) );
-		$calls = array_count_values( array_column( $GLOBALS['bcm_test']['calls'], 0 ) );
+		$calls = array_count_values( array_column( $GLOBALS['bulkcat_test']['calls'], 0 ) );
 		$this->assertSame( 1, $calls['_prime_post_caches'] );
-		$this->assertSame( 7, bcm_test_query_count() );
+		$this->assertSame( 7, bulkcat_test_query_count() );
 	}
 
 	public function test_the_rendered_price_is_one_price_or_a_range_from_the_lookup_prices(): void {
-		$GLOBALS['bcm_test']['currency'] = '€';
-		$GLOBALS['bcm_test']['decimals'] = 2;
-		$price                           = static fn( string $amount ): string => '<span class="woocommerce-Price-amount amount"><bdi><span class="woocommerce-Price-currencySymbol">€</span>' . $amount . '</bdi></span>';
+		$GLOBALS['bulkcat_test']['currency'] = '€';
+		$GLOBALS['bulkcat_test']['decimals'] = 2;
+		$price                               = static fn( string $amount ): string => '<span class="woocommerce-Price-amount amount"><bdi><span class="woocommerce-Price-currencySymbol">€</span>' . $amount . '</bdi></span>';
 
 		$this->assertSame( $price( '10.50' ), Hydrator::render_price( '10.5000', '10.5000' ) );
 		$this->assertSame( $price( '5.00' ) . ' &ndash; ' . $price( '20.00' ), Hydrator::render_price( '5.0000', '20.0000' ) );
@@ -335,11 +335,11 @@ final class HydratorTest extends TestCase {
 		$this->assertSame( '', Hydrator::render_price( null, null ), 'No lookup price: nothing rather than a zero.' );
 		$this->assertSame( '', Hydrator::render_price( '', '' ) );
 
-		$GLOBALS['bcm_test']['separator'] = ',';
-		$GLOBALS['bcm_test']['thousands'] = '.';
+		$GLOBALS['bulkcat_test']['separator'] = ',';
+		$GLOBALS['bulkcat_test']['thousands'] = '.';
 		$this->assertSame( $price( '1.234,50' ), Hydrator::render_price( '1234.5', '1234.5' ), 'The shop\'s separators apply.' );
-		$GLOBALS['bcm_test']['separator'] = '.';
-		$GLOBALS['bcm_test']['thousands'] = ',';
+		$GLOBALS['bulkcat_test']['separator'] = '.';
+		$GLOBALS['bulkcat_test']['thousands'] = ',';
 
 		$by_id = array_column( self::catalogue()->page( Criteria::from_array( [ 'per_page' => 3 ] ), [] )['items'], null, 'id' );
 		$this->assertSame( $price( '10.50' ), $by_id[1]['price_html'], 'A simple product shows its price.' );
@@ -349,18 +349,18 @@ final class HydratorTest extends TestCase {
 	public function test_a_price_format_change_is_a_different_entry(): void {
 		self::catalogue()->page( Criteria::from_array( [] ), [] );
 		$this->assertSame( 0, self::queries_for( [] ) );
-		$GLOBALS['bcm_test']['currency'] = '$';
+		$GLOBALS['bulkcat_test']['currency'] = '$';
 		$this->assertGreaterThan( 0, self::queries_for( [] ) );
 	}
 
 	public function test_values_come_through_the_field_read_contract(): void {
-		$GLOBALS['bcm_test']['meta'][3]                   += [
+		$GLOBALS['bulkcat_test']['meta'][3]                   += [
 			'_sale_price'        => '4',
 			'_weight'            => '1.25',
 			'_tax_class'         => 'reduced-rate',
 			'_sold_individually' => 'yes',
 		];
-		$GLOBALS['bcm_test']['object_terms'][3]            = [
+		$GLOBALS['bulkcat_test']['object_terms'][3]            = [
 			[ 'product_type', 1, 'variable' ],
 			[ 'product_cat', 15, 'shirts' ],
 			[ 'product_cat', 16, 'sale' ],
@@ -369,8 +369,8 @@ final class HydratorTest extends TestCase {
 			[ 'product_visibility', 41, 'exclude-from-search' ],
 			[ 'product_shipping_class', 50, 'bulky' ],
 		];
-		$GLOBALS['bcm_test']['posts'][3]['comment_status'] = 'closed';
-		$GLOBALS['bcm_test']['posts'][1]['post_date_gmt']  = '0000-00-00 00:00:00';
+		$GLOBALS['bulkcat_test']['posts'][3]['comment_status'] = 'closed';
+		$GLOBALS['bulkcat_test']['posts'][1]['post_date_gmt']  = '0000-00-00 00:00:00';
 
 		$by_id = array_column( self::catalogue()->page( Criteria::from_array( [ 'per_page' => 3 ] ), [] )['items'], null, 'id' );
 		$item  = $by_id[3];
@@ -419,7 +419,7 @@ final class HydratorTest extends TestCase {
 	}
 
 	public function test_a_variation_row_reads_as_a_variation(): void {
-		$GLOBALS['bcm_test']['posts'][9001] = [
+		$GLOBALS['bulkcat_test']['posts'][9001] = [
 			'post_type'         => 'product_variation',
 			'post_title'        => 'Product 3 - Blue',
 			'post_status'       => 'private',
@@ -428,8 +428,8 @@ final class HydratorTest extends TestCase {
 			'post_date_gmt'     => '2026-09-02 08:00:00',
 			'post_modified_gmt' => '2026-09-02 08:00:00',
 		];
-		$GLOBALS['bcm_test']['meta'][9001]  = [ '_stock_status' => 'outofstock' ];
-		$items                              = ( new Hydrator( new Registry() ) )->hydrate(
+		$GLOBALS['bulkcat_test']['meta'][9001]  = [ '_stock_status' => 'outofstock' ];
+		$items                                  = ( new Hydrator( new Registry() ) )->hydrate(
 			[
 				[
 					'id'        => 9001,
@@ -465,15 +465,15 @@ final class HydratorTest extends TestCase {
 			],
 			$items[0]
 		);
-		$this->assertSame( [ '_prime_post_caches' ], array_values( array_diff( array_unique( array_column( $GLOBALS['bcm_test']['calls'], 0 ) ), [ 'wp_cache_set' ] ) ) );
-		$this->assertSame( 3, bcm_test_query_count(), 'Count, page and posts only.' );
+		$this->assertSame( [ '_prime_post_caches' ], array_values( array_diff( array_unique( array_column( $GLOBALS['bulkcat_test']['calls'], 0 ) ), [ 'wp_cache_set' ] ) ) );
+		$this->assertSame( 3, bulkcat_test_query_count(), 'Count, page and posts only.' );
 
-		bcm_test_reset();
+		bulkcat_test_reset();
 		self::seed();
 		self::catalogue()->page( Criteria::from_array( [ 'per_page' => 100 ] ), [ 'category_ids', 'sku' ] );
-		$calls = array_values( array_diff( array_unique( array_column( $GLOBALS['bcm_test']['calls'], 0 ) ), [ 'wp_cache_set' ] ) );
+		$calls = array_values( array_diff( array_unique( array_column( $GLOBALS['bulkcat_test']['calls'], 0 ) ), [ 'wp_cache_set' ] ) );
 		$this->assertSame( [ '_prime_post_caches', 'update_meta_cache', 'wp_get_object_terms' ], $calls );
-		$terms = array_values( array_filter( $GLOBALS['bcm_test']['calls'], static fn( array $call ): bool => 'wp_get_object_terms' === $call[0] ) )[0][1];
+		$terms = array_values( array_filter( $GLOBALS['bulkcat_test']['calls'], static fn( array $call ): bool => 'wp_get_object_terms' === $call[0] ) )[0][1];
 		$this->assertSame( [ 'product_cat' ], $terms[1] );
 	}
 

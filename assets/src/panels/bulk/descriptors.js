@@ -394,11 +394,11 @@ export function toRequestOperations( registry, operations ) {
 }
 
 /**
- * The `bcm_settings` values, whether given the settings themselves or the
+ * The `bulkcat_settings` values, whether given the settings themselves or the
  * screen's localised object that carries them under `settings`.
  *
  * @param {Object} settings Settings.
- * @return {Object} The bcm_settings values.
+ * @return {Object} The bulkcat_settings values.
  */
 export function settingsValues( settings ) {
 	if (

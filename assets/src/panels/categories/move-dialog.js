@@ -82,7 +82,7 @@ export default function MoveDialog( { tree, id, onMove, onClose } ) {
 				entry.node.name
 			) }
 			onRequestClose={ onClose }
-			className="bcm-cat-move"
+			className="bulkcat-cat-move"
 		>
 			<form onSubmit={ submit }>
 				{ error && (
@@ -119,7 +119,7 @@ export default function MoveDialog( { tree, id, onMove, onClose } ) {
 					options={ places }
 					onChange={ setPlace }
 				/>
-				<p className="bcm-cat-move__preview">
+				<p className="bulkcat-cat-move__preview">
 					{ sprintf(
 						/* translators: %s: the category's new path, such as "Clothing › T-Shirts". */
 						__(
@@ -131,7 +131,7 @@ export default function MoveDialog( { tree, id, onMove, onClose } ) {
 						)
 					) }
 				</p>
-				<div className="bcm-cat-manager__actions">
+				<div className="bulkcat-cat-manager__actions">
 					<Button
 						variant="primary"
 						type="submit"

@@ -1,6 +1,6 @@
 <?php
 /**
- * `GET /bcm/v1/export` (SPEC §10, §12.1, §13): registered behind the read
+ * `GET /bulkcat/v1/export` (SPEC §10, §12.1, §13): registered behind the read
  * permission with the `/products` arguments plus `columns[]`; refuses an
  * anonymous visitor and a user without the capability before reading a row;
  * refuses an unknown, repeated or missing column with 400; streams, through
@@ -45,12 +45,12 @@ final class ExportRouteTest extends TestCase {
 	private ExportController $controller;
 
 	protected function setUp(): void {
-		bcm_test_reset();
-		$GLOBALS['bcm_test']['logged_in']                  = true;
-		$GLOBALS['bcm_test']['caps']['manage_woocommerce'] = true;
-		$GLOBALS['bcm_test']['now']                        = '2026-09-23 10:00:00';
-		$this->calls                                       = [];
-		$this->controller                                  = new ExportController( new Registry(), $this->source( 250 ) );
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['logged_in']                  = true;
+		$GLOBALS['bulkcat_test']['caps']['manage_woocommerce'] = true;
+		$GLOBALS['bulkcat_test']['now']                        = '2026-09-23 10:00:00';
+		$this->calls      = [];
+		$this->controller = new ExportController( new Registry(), $this->source( 250 ) );
 		( new Routes( [ $this->controller ] ) )->register();
 	}
 
@@ -82,12 +82,12 @@ final class ExportRouteTest extends TestCase {
 	}
 
 	/**
-	 * Dispatch a GET to /bcm/v1/export.
+	 * Dispatch a GET to /bulkcat/v1/export.
 	 *
 	 * @param array<string, mixed> $params Query parameters.
 	 */
 	private static function get( array $params ): \WP_REST_Response|\WP_Error {
-		$request = new \WP_REST_Request( 'GET', '/bcm/v1/export' );
+		$request = new \WP_REST_Request( 'GET', '/bulkcat/v1/export' );
 		foreach ( $params as $key => $value ) {
 			$request->set_param( $key, $value );
 		}
@@ -127,7 +127,7 @@ final class ExportRouteTest extends TestCase {
 	}
 
 	public function test_the_route_registers_behind_the_read_permission_with_products_arguments_and_columns(): void {
-		$route = $GLOBALS['bcm_test']['routes']['/bcm/v1/export'] ?? null;
+		$route = $GLOBALS['bulkcat_test']['routes']['/bulkcat/v1/export'] ?? null;
 		$this->assertNotNull( $route );
 		$this->assertSame( 'GET', $route[0]['methods'] );
 		$this->assertSame( [ Access::class, 'can_read' ], $route[0]['permission_callback'] );
@@ -138,33 +138,33 @@ final class ExportRouteTest extends TestCase {
 		$this->assertSame( 'products', $route[0]['args']['source']['default'] );
 		$this->assertSame( [ 'products', 'changes', 'audit', 'batches' ], $route[0]['args']['source']['enum'] );
 		$this->assertInstanceOf( ReadController::class, $route['schema'][0] );
-		$this->assertSame( 'bcm-export-row', call_user_func( $route['schema'] )['title'] );
-		$this->assertContains( [ [ $this->controller, 'serve' ], 10, 4 ], $GLOBALS['bcm_test']['filters']['rest_pre_serve_request'] );
+		$this->assertSame( 'bulkcat-export-row', call_user_func( $route['schema'] )['title'] );
+		$this->assertContains( [ [ $this->controller, 'serve' ], 10, 4 ], $GLOBALS['bulkcat_test']['filters']['rest_pre_serve_request'] );
 	}
 
 	public function test_the_plugin_registers_the_route(): void {
-		bcm_test_reset();
+		bulkcat_test_reset();
 		( new Plugin() )->boot();
 		do_action( 'rest_api_init' );
-		$this->assertArrayHasKey( '/bcm/v1/export', $GLOBALS['bcm_test']['routes'] );
-		$this->assertSame( [], $GLOBALS['bcm_test']['wrong'] );
+		$this->assertArrayHasKey( '/bulkcat/v1/export', $GLOBALS['bulkcat_test']['routes'] );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['wrong'] );
 	}
 
 	public function test_an_anonymous_visitor_and_a_user_without_the_capability_are_refused_before_any_row_is_read(): void {
-		$GLOBALS['bcm_test']['logged_in'] = false;
-		$GLOBALS['bcm_test']['caps']      = [];
-		$result                           = self::get( [ 'columns' => [ 'name' ] ] );
+		$GLOBALS['bulkcat_test']['logged_in'] = false;
+		$GLOBALS['bulkcat_test']['caps']      = [];
+		$result                               = self::get( [ 'columns' => [ 'name' ] ] );
 		$this->assertInstanceOf( \WP_Error::class, $result );
-		$this->assertSame( 'bcm_forbidden', $result->get_error_code() );
+		$this->assertSame( 'bulkcat_forbidden', $result->get_error_code() );
 		$this->assertSame( 401, $result->get_error_data()['status'] );
 
-		$GLOBALS['bcm_test']['logged_in'] = true;
-		$result                           = self::get( [ 'columns' => [ 'name' ] ] );
-		$this->assertSame( 'bcm_forbidden', $result->get_error_code() );
+		$GLOBALS['bulkcat_test']['logged_in'] = true;
+		$result                               = self::get( [ 'columns' => [ 'name' ] ] );
+		$this->assertSame( 'bulkcat_forbidden', $result->get_error_code() );
 		$this->assertSame( 403, $result->get_error_data()['status'] );
 
-		$GLOBALS['bcm_test']['options']['bcm_settings'] = [ 'administrators_only' => true ];
-		$GLOBALS['bcm_test']['caps']                    = [ 'manage_woocommerce' => true ];
+		$GLOBALS['bulkcat_test']['options']['bulkcat_settings'] = [ 'administrators_only' => true ];
+		$GLOBALS['bulkcat_test']['caps']                        = [ 'manage_woocommerce' => true ];
 		$result = self::get( [ 'columns' => [ 'name' ] ] );
 		$this->assertSame( 403, $result->get_error_data()['status'], 'A shop manager is refused under administrators only.' );
 		$this->assertSame( [], $this->calls );
@@ -187,7 +187,7 @@ final class ExportRouteTest extends TestCase {
 		foreach ( [ [ 'name', 'name' ], [] ] as $columns ) {
 			$result = $this->controller->get_items( self::request( [ 'columns' => $columns ] ) );
 			$this->assertInstanceOf( \WP_Error::class, $result, json_encode( $columns ) );
-			$this->assertSame( 'bcm_invalid_value', $result->get_error_code() );
+			$this->assertSame( 'bulkcat_invalid_value', $result->get_error_code() );
 			$this->assertSame( 400, $result->get_error_data()['status'] );
 			$this->assertSame( 'columns', $result->get_error_data()['param'] );
 		}
@@ -257,8 +257,8 @@ final class ExportRouteTest extends TestCase {
 	}
 
 	public function test_the_separator_setting_switches_the_export_to_semicolons(): void {
-		$GLOBALS['bcm_test']['options']['bcm_settings'] = [ 'csv_separator' => 'semicolon' ];
-		[ $csv ]                                        = $this->serve( self::get( [ 'columns' => [ 'id', 'sku' ] ] ) );
+		$GLOBALS['bulkcat_test']['options']['bulkcat_settings'] = [ 'csv_separator' => 'semicolon' ];
+		[ $csv ] = $this->serve( self::get( [ 'columns' => [ 'id', 'sku' ] ] ) );
 		$this->assertStringContainsString( "\r\n\"2\";\"SKU-2\"\r\n", $csv );
 	}
 
@@ -281,9 +281,9 @@ final class ExportRouteTest extends TestCase {
 	}
 
 	public function test_the_default_source_reads_pages_of_the_products_route(): void {
-		bcm_test_reset();
-		$GLOBALS['bcm_test']['logged_in']                  = true;
-		$GLOBALS['bcm_test']['caps']['manage_woocommerce'] = true;
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['logged_in']                  = true;
+		$GLOBALS['bulkcat_test']['caps']['manage_woocommerce'] = true;
 		$GLOBALS['wpdb']->responses[ \BulkCatalogueManager\Tests\Support\SqlEvaluator::COUNT ] = '0';
 		$controller = new ExportController( new Registry() );
 		( new Routes( [ $controller ] ) )->register();
@@ -307,9 +307,9 @@ final class ExportRouteTest extends TestCase {
 	}
 
 	public function test_a_parent_exports_one_product_s_variations_and_needs_the_variations_mode(): void {
-		bcm_test_reset();
-		$GLOBALS['bcm_test']['logged_in']                  = true;
-		$GLOBALS['bcm_test']['caps']['manage_woocommerce'] = true;
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['logged_in']                  = true;
+		$GLOBALS['bulkcat_test']['caps']['manage_woocommerce'] = true;
 		$GLOBALS['wpdb']->responses[ \BulkCatalogueManager\Tests\Support\SqlEvaluator::COUNT ] = '0';
 		$controller = new ExportController( new Registry() );
 		( new Routes( [ $controller ] ) )->register();
@@ -321,7 +321,7 @@ final class ExportRouteTest extends TestCase {
 			]
 		);
 		$this->assertInstanceOf( \WP_Error::class, $refused );
-		$this->assertSame( 'bcm_invalid_value', $refused->get_error_code() );
+		$this->assertSame( 'bulkcat_invalid_value', $refused->get_error_code() );
 
 		$response = self::get(
 			[
@@ -342,7 +342,7 @@ final class ExportRouteTest extends TestCase {
 	 * @param array<string, mixed> $params Parameters.
 	 */
 	private static function request( array $params ): \WP_REST_Request {
-		$request = new \WP_REST_Request( 'GET', '/bcm/v1/export' );
+		$request = new \WP_REST_Request( 'GET', '/bulkcat/v1/export' );
 		foreach ( $params as $key => $value ) {
 			$request->set_param( $key, $value );
 		}

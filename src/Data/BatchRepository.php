@@ -1,7 +1,7 @@
 <?php
 /**
- * The only code that reads or writes `{prefix}bcm_batches` and
- * `{prefix}bcm_batch_items` (SPEC §9.2, §12.4). Every statement is prepared;
+ * The only code that reads or writes `{prefix}bulkcat_batches` and
+ * `{prefix}bulkcat_batch_items` (SPEC §9.2, §12.4). Every statement is prepared;
  * table names come from the registry with `$wpdb->prefix` and reach SQL as
  * `%i` identifiers, and values as `%d` or `%s`. Direct database access is
  * deliberate: these are the plugin's own tables, which WordPress has no API

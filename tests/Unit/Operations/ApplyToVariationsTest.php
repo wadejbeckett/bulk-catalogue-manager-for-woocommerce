@@ -29,8 +29,8 @@ final class ApplyToVariationsTest extends TestCase {
 	private const NEVER = [ 'name', 'catalog_visibility', 'visible_on_site', 'featured', 'category_ids', 'tag_ids' ];
 
 	protected function setUp(): void {
-		bcm_test_reset();
-		$GLOBALS['bcm_test']['terms'] = [ 'product_cat' => [ 10 ] ];
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['terms'] = [ 'product_cat' => [ 10 ] ];
 	}
 
 	private static function validate( string $action, array $args ): array|\WP_Error {
@@ -106,7 +106,7 @@ final class ApplyToVariationsTest extends TestCase {
 		$price = self::validate( 'clear', [ 'field' => 'sale_price' ] );
 		$this->assertFalse( $price[0]['args']['apply_to_variations'] );
 
-		$GLOBALS['bcm_test']['options']['bcm_settings'] = [ 'variations_price' => true ];
+		$GLOBALS['bulkcat_test']['options']['bulkcat_settings'] = [ 'variations_price' => true ];
 		$price = self::validate( 'clear', [ 'field' => 'sale_price' ] );
 		$this->assertTrue( $price[0]['args']['apply_to_variations'], 'The shop setting moves the starting position.' );
 

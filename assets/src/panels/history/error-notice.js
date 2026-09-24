@@ -64,7 +64,7 @@ export default function ErrorNotice( { error, fallback, onRemove } ) {
 			status="error"
 			isDismissible={ !! onRemove }
 			onRemove={ onRemove }
-			className="bcm-error"
+			className="bulkcat-error"
 		>
 			<p>{ errorMessage( error, fallback ) }</p>
 			{ details && (
@@ -85,7 +85,7 @@ export default function ErrorNotice( { error, fallback, onRemove } ) {
 								) }
 					</Button>
 					{ open && (
-						<p className="bcm-error__details">{ details }</p>
+						<p className="bulkcat-error__details">{ details }</p>
 					) }
 				</>
 			) }

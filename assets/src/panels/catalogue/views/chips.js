@@ -81,11 +81,11 @@ function NameDialog( {
 					maxLength={ 60 }
 				/>
 				{ error && (
-					<p className="bcm-views__error" role="alert">
+					<p className="bulkcat-views__error" role="alert">
 						{ error }
 					</p>
 				) }
-				<div className="bcm-views__dialog-actions">
+				<div className="bulkcat-views__dialog-actions">
 					<Button variant="tertiary" onClick={ onClose }>
 						{ __(
 							'Cancel',
@@ -137,7 +137,7 @@ function DeleteDialog( { name, busy, onConfirm, onClose } ) {
 					name
 				) }
 			</p>
-			<div className="bcm-views__dialog-actions">
+			<div className="bulkcat-views__dialog-actions">
 				<Button variant="tertiary" onClick={ onClose }>
 					{ __(
 						'Keep it',
@@ -180,7 +180,7 @@ function ViewMenu( { item, isFirst, isLast, isOnScreen, onAction } ) {
 			renderToggle={ ( { isOpen, onToggle } ) => (
 				<button
 					type="button"
-					className="bcm-views__more"
+					className="bulkcat-views__more"
 					aria-expanded={ isOpen }
 					aria-label={ sprintf(
 						/* translators: %s: a saved view's name. */
@@ -359,7 +359,7 @@ export default function SavedViewsBar( {
 	};
 
 	return (
-		<div className="bcm-views">
+		<div className="bulkcat-views">
 			{ saved.error && ! dialog && (
 				<ErrorNotice
 					message={
@@ -375,7 +375,7 @@ export default function SavedViewsBar( {
 				/>
 			) }
 			<div
-				className="bcm-views__chips"
+				className="bulkcat-views__chips"
 				role="group"
 				aria-label={ __(
 					'Saved views',
@@ -386,7 +386,7 @@ export default function SavedViewsBar( {
 					<button
 						key={ preset.id }
 						type="button"
-						className="bcm-views__chip"
+						className="bulkcat-views__chip"
 						aria-pressed={ showsBuiltIn( preset, view, category ) }
 						onClick={ () => {
 							const state = applyBuiltIn( preset, view );
@@ -400,7 +400,7 @@ export default function SavedViewsBar( {
 					<span
 						key={ item.id }
 						className={
-							'bcm-views__saved' +
+							'bulkcat-views__saved' +
 							( dragging === item.id ? ' is-dragging' : '' )
 						}
 						draggable
@@ -423,7 +423,7 @@ export default function SavedViewsBar( {
 					>
 						<button
 							type="button"
-							className="bcm-views__chip"
+							className="bulkcat-views__chip"
 							aria-pressed={ showsSaved( item, view, category ) }
 							onClick={ () => {
 								const state = fromSaved( item, baseView );
@@ -432,7 +432,7 @@ export default function SavedViewsBar( {
 						>
 							{ item.name }
 							{ item.isDefault && (
-								<span className="bcm-views__default">
+								<span className="bulkcat-views__default">
 									{ __(
 										'(opens first)',
 										'bulk-catalogue-manager-for-woocommerce'
@@ -451,7 +451,7 @@ export default function SavedViewsBar( {
 				) ) }
 				<button
 					type="button"
-					className="bcm-views__chip is-save"
+					className="bulkcat-views__chip is-save"
 					onClick={ () => setDialog( { action: 'save' } ) }
 				>
 					{ __(

@@ -66,7 +66,7 @@ describe( 'catalogue wiring', () => {
 		const clothing = await within( tree ).findByRole( 'treeitem', {
 			name: /^Clothing/,
 		} );
-		fireEvent.click( clothing.querySelector( '.bcm-cat-row' ) );
+		fireEvent.click( clothing.querySelector( '.bulkcat-cat-row' ) );
 		await waitFor( () =>
 			expect( calls( apiFetch, 'products' ).length ).toBeGreaterThan( 1 )
 		);
@@ -77,7 +77,7 @@ describe( 'catalogue wiring', () => {
 		} );
 		expect( last.page ).toBe( '1' );
 		expect(
-			document.querySelector( '.bcm-catalogue__chip' ).textContent
+			document.querySelector( '.bulkcat-catalogue__chip' ).textContent
 		).toContain( 'Category is Clothing or its sub-categories' );
 	} );
 

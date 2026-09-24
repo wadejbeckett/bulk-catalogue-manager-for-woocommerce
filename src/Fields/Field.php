@@ -159,7 +159,7 @@ final class Field {
 	/**
 	 * Describe a field. The registry is the only caller.
 	 *
-	 * @param string                                 $key                    Field key: lower case, as journalled in `bcm_changes.prop`.
+	 * @param string                                 $key                    Field key: lower case, as journalled in `bulkcat_changes.prop`.
 	 * @param string                                 $label                  Plain-English, translated label.
 	 * @param string                                 $type                   One of TYPES.
 	 * @param Storage                                $storage                Where WooCommerce keeps it.
@@ -502,7 +502,7 @@ final class Field {
 	public function validate( mixed $value ): bool|\WP_Error {
 		if ( $this->read_only() ) {
 			return self::error(
-				'bcm_read_only',
+				'bulkcat_read_only',
 				/* translators: %s: a field's name, such as "Total sales". */
 				sprintf( __( '%s cannot be changed here. It is shown for information only.', 'bulk-catalogue-manager-for-woocommerce' ), $this->label )
 			);
@@ -520,7 +520,7 @@ final class Field {
 			self::TERM    => $this->valid_term( $value ),
 			default       => false,
 		};
-		return $ok ? true : self::error( 'bcm_invalid_value', $this->rule_text() );
+		return $ok ? true : self::error( 'bulkcat_invalid_value', $this->rule_text() );
 	}
 
 	/**
@@ -607,14 +607,14 @@ final class Field {
 		}
 		$reason = $this->unavailable_reason( $subject );
 		if ( null !== $reason ) {
-			return self::error( 'bcm_not_available', $reason );
+			return self::error( 'bulkcat_not_available', $reason );
 		}
 		$clean = $this->clean( $value );
 		if ( $clean instanceof \WP_Error ) {
 			return $clean;
 		}
 		$refusal = $this->object_refusal( $subject, $clean );
-		return null === $refusal ? null : self::error( 'bcm_invalid_value', $refusal );
+		return null === $refusal ? null : self::error( 'bulkcat_invalid_value', $refusal );
 	}
 
 	/**
@@ -937,7 +937,7 @@ final class Field {
 	/**
 	 * A refusal with the field's plain sentence and a 400 status.
 	 *
-	 * @param string $code    `bcm_` error code.
+	 * @param string $code    `bulkcat_` error code.
 	 * @param string $message Plain-English sentence.
 	 */
 	private static function error( string $code, string $message ): \WP_Error {

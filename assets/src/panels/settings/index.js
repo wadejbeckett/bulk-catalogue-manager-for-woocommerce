@@ -122,7 +122,7 @@ export default function Settings() {
 
 	if ( ! loaded ) {
 		return (
-			<section className="bcm-settings">
+			<section className="bulkcat-settings">
 				<h2>
 					{ __(
 						'Settings',
@@ -167,11 +167,11 @@ export default function Settings() {
 	);
 
 	return (
-		<section className="bcm-settings">
+		<section className="bulkcat-settings">
 			<h2>
 				{ __( 'Settings', 'bulk-catalogue-manager-for-woocommerce' ) }
 			</h2>
-			<p className="bcm-settings__intro">
+			<p className="bulkcat-settings__intro">
 				{ readOnly
 					? __(
 							'Only an administrator can change these settings. You can see how they are set here.',
@@ -186,7 +186,10 @@ export default function Settings() {
 				<Notice status={ notice.status } isDismissible={ false }>
 					{ notice.text }
 					{ unplaced.map( ( key ) => (
-						<span key={ key } className="bcm-settings__unplaced">
+						<span
+							key={ key }
+							className="bulkcat-settings__unplaced"
+						>
 							{ ' ' }
 							{ errors[ key ] }
 						</span>
@@ -195,7 +198,7 @@ export default function Settings() {
 			) }
 			{ /* noValidate: the server's refusal names the setting in plain words. */ }
 			<form
-				className="bcm-settings__form"
+				className="bulkcat-settings__form"
 				noValidate
 				onSubmit={ ( event ) => {
 					event.preventDefault();
@@ -212,10 +215,10 @@ export default function Settings() {
 						rows.length > 0 && (
 							<section
 								key={ group.id }
-								className="bcm-settings__group"
-								aria-labelledby={ `bcm-settings-${ group.id }` }
+								className="bulkcat-settings__group"
+								aria-labelledby={ `bulkcat-settings-${ group.id }` }
 							>
-								<h3 id={ `bcm-settings-${ group.id }` }>
+								<h3 id={ `bulkcat-settings-${ group.id }` }>
 									{ group.label }
 								</h3>
 								{ rows.map( ( setting ) => (
@@ -235,7 +238,7 @@ export default function Settings() {
 					);
 				} ) }
 				{ ! readOnly && (
-					<div className="bcm-settings__actions">
+					<div className="bulkcat-settings__actions">
 						<Button
 							__next40pxDefaultSize
 							variant="primary"

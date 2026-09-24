@@ -203,14 +203,17 @@ describe( 'category manager', () => {
 
 	it.each( [
 		[
-			'bcm_category_exists',
+			'bulkcat_category_exists',
 			'A category called "Hats" already exists in "Clothing". Choose a different name, or put it somewhere else.',
 		],
 		[
-			'bcm_slug_taken',
+			'bulkcat_slug_taken',
 			'The slug "hats" is already used by the category "Hats". Choose a different slug.',
 		],
-		[ 'bcm_category_cycle', 'A category cannot be moved inside itself.' ],
+		[
+			'bulkcat_category_cycle',
+			'A category cannot be moved inside itself.',
+		],
 	] )(
 		'shows the %s refusal in plain words with the code behind Show details',
 		async ( code, message ) => {

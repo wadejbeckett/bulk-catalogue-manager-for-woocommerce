@@ -1,6 +1,6 @@
 /**
  * The Export control (SPEC §4.1, §10; T53): downloads the current view as
- * CSV through GET /bcm/v1/export with the active filters, search, sort and
+ * CSV through GET /bulkcat/v1/export with the active filters, search, sort and
  * mode (the same arguments the grid's GET /products carries, paging aside)
  * and `columns[]`, the visible columns in the owner's current order: the
  * product name, then each visible column. The thumbnail is left out; it is a
@@ -151,7 +151,7 @@ export function download(
 	frame.hidden = true;
 	frame.setAttribute( 'aria-hidden', 'true' );
 	frame.tabIndex = -1;
-	frame.className = 'bcm-export__frame';
+	frame.className = 'bulkcat-export__frame';
 	let finished = false;
 	let timer = null;
 	const finish = ( refusal ) => {
@@ -227,7 +227,7 @@ export default function ExportControl( {
 	};
 
 	const plain =
-		error?.code?.startsWith( 'bcm_' ) && error.message
+		error?.code?.startsWith( 'bulkcat_' ) && error.message
 			? error.message
 			: __(
 					'The CSV file could not be made. Reload the page and try again.',
@@ -235,10 +235,10 @@ export default function ExportControl( {
 				);
 
 	return (
-		<div className="bcm-export">
+		<div className="bulkcat-export">
 			<Button
 				variant="secondary"
-				className="bcm-export__button"
+				className="bulkcat-export__button"
 				onClick={ run }
 				isBusy={ busy }
 				disabled={ busy }

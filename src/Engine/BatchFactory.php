@@ -35,19 +35,19 @@ defined( 'ABSPATH' ) || exit;
  * Order of work, and nothing is written until every refusal has been ruled out:
  *
  * 1. Replay. The same user sending the same `uuid` within REPLAY_TTL seconds
- *    gets the batch the first request created (a `bcm_batch_request_`
+ *    gets the batch the first request created (a `bulkcat_batch_request_`
  *    transient keyed by a hash of the request id and user).
  * 2. The operation list, through Operations\Registry::validate_list() (an
  *    empty list, more than twenty operations, an unknown action or a bad
  *    argument is refused), stored normalised.
  * 3. The selection. More than Selection::MAX_OBJECTS objects is refused 400
- *    `bcm_selection_too_large`. A filter is re-resolved at this moment through
+ *    `bulkcat_selection_too_large`. A filter is re-resolved at this moment through
  *    ProductQuery's own conditions, PAGE ids at a time in id order, so the
  *    batch holds what matches now; an id list keeps its order and drops ids
  *    that are no longer a listable product or variation. Each object's type
  *    (product or variation) comes from its post type; the filter's mode
  *    decides whether variations match. Nothing left is refused 400
- *    `bcm_selection_empty`.
+ *    `bulkcat_selection_empty`.
  * 3a. "Also apply to variations" (T69, SPEC §8, §9.2). When a step of the
  *    normalised list carries `apply_to_variations` on, expand() resolves
  *    each selected product that is a variable product to its published and
@@ -70,8 +70,8 @@ defined( 'ABSPATH' ) || exit;
  *    past step 1 both insert a row; the later row sees the earlier one and
  *    removes itself before writing items, answering the earlier batch id.
  *    If the items cannot be written the row is removed and the request
- *    refused 500 `bcm_batch_not_recorded`.
- * 5. The replay transient, then the `bcm_batch_created` action with the
+ *    refused 500 `bulkcat_batch_not_recorded`.
+ * 5. The replay transient, then the `bulkcat_batch_created` action with the
  *    batch id: the point where the chunk runner (T34) enqueues its first
  *    chunk. Nothing is enqueued here.
  *
@@ -81,9 +81,9 @@ defined( 'ABSPATH' ) || exit;
  * selection is held to its preview: after the operation list is validated,
  * Preview::hash() over the token, the normalised list and the stored
  * settings must equal the hash the request carries, or the request is
- * refused 409 `bcm_preview_stale` (a missing hash included); after
+ * refused 409 `bulkcat_preview_stale` (a missing hash included); after
  * materialising, a count other than the previewed one (the request's, else
- * the token's own) is refused 409 `bcm_selection_changed`, naming both
+ * the token's own) is refused 409 `bulkcat_selection_changed`, naming both
  * numbers, unless the owner confirmed it. The previewed count is stored on
  * the batch as `previewed_items`, and Engine\Progress states any difference
  * from `total_items` in the batch's report and history row. A bulk batch of
@@ -97,19 +97,19 @@ defined( 'ABSPATH' ) || exit;
  * item carrying its own operation list (the object's own old values), so
  * nothing is re-resolved or re-validated beyond what the planner did. It
  * shares the replay check, the race guard, the items-before-work order and
- * `bcm_batch_created`, and moves the batch undone to `undoing` before the
+ * `bulkcat_batch_created`, and moves the batch undone to `undoing` before the
  * first chunk can run (Undo\Original moves it on when the undo finishes).
  *
  * open() (T37) is the synchronous variant for a batch its caller writes in
  * the same request: validated operations, the row and its items, the
- * status moved straight to running, and no `bcm_batch_created`, so no
+ * status moved straight to running, and no `bulkcat_batch_created`, so no
  * chunk is ever enqueued for it.
  */
 final class BatchFactory {
 	/**
 	 * Every replay transient starts with this (Data\Registry).
 	 */
-	public const PREFIX = 'bcm_batch_request_';
+	public const PREFIX = 'bulkcat_batch_request_';
 
 	/**
 	 * Seconds a request id keeps answering the same batch (SPEC §12.6).
@@ -124,12 +124,12 @@ final class BatchFactory {
 	/**
 	 * The action fired once a batch and its items are written, with the batch id.
 	 */
-	public const CREATED = 'bcm_batch_created';
+	public const CREATED = 'bulkcat_batch_created';
 
 	/**
 	 * Refusal code for a selection with nothing left to change.
 	 */
-	public const EMPTY = 'bcm_selection_empty';
+	public const EMPTY = 'bulkcat_selection_empty';
 
 	/**
 	 * Refusal code for a selection above Selection::MAX_OBJECTS.
@@ -139,22 +139,22 @@ final class BatchFactory {
 	/**
 	 * Refusal code for a filter whose count moved since the preview (T38).
 	 */
-	public const CHANGED = 'bcm_selection_changed';
+	public const CHANGED = 'bulkcat_selection_changed';
 
 	/**
 	 * Refusal code for a filter apply whose preview hash is missing or no longer matches (T38).
 	 */
-	public const STALE_PREVIEW = 'bcm_preview_stale';
+	public const STALE_PREVIEW = 'bulkcat_preview_stale';
 
 	/**
 	 * Refusal code for a batch the database would not take.
 	 */
-	public const NOT_RECORDED = 'bcm_batch_not_recorded';
+	public const NOT_RECORDED = 'bulkcat_batch_not_recorded';
 
 	/**
 	 * Refusal code for an undo that would put nothing back (T56).
 	 */
-	public const NOTHING_TO_UNDO = 'bcm_nothing_to_undo';
+	public const NOTHING_TO_UNDO = 'bulkcat_nothing_to_undo';
 
 	/**
 	 * Most grouped reasons an undo batch keeps for the items it could not put back.
@@ -329,7 +329,7 @@ final class BatchFactory {
 		 *
 		 * @param int $batch_id The new batch.
 		 */
-		do_action( 'bcm_batch_created', $batch_id );
+		do_action( 'bulkcat_batch_created', $batch_id );
 		return [
 			'batch_id'        => $batch_id,
 			'status'          => 'queued',
@@ -347,7 +347,7 @@ final class BatchFactory {
 	 * written before any work is queued. The batch undone moves from its
 	 * status to `undoing` once the items are written; if another undo moved
 	 * it first, this batch is removed and the request refused 409
-	 * `bcm_not_reversible` (`undo_in_progress`). The selection column keeps
+	 * `bulkcat_not_reversible` (`undo_in_progress`). The selection column keeps
 	 * what the report needs: the batch undone, its status before, the plan's
 	 * counts and hash, whether it was forced, how many objects were left
 	 * alone because they changed since, and the grouped reasons of those
@@ -454,7 +454,7 @@ final class BatchFactory {
 			self::REPLAY_TTL
 		);
 		/** This action is documented in create(). */
-		do_action( 'bcm_batch_created', $batch_id );
+		do_action( 'bulkcat_batch_created', $batch_id );
 		return [
 			'batch_id'        => $batch_id,
 			'status'          => 'queued',
@@ -512,11 +512,11 @@ final class BatchFactory {
 	 * (T37: an inline edit or detail-panel save as a batch of one): the
 	 * operation list through validate_list(), the batch row with a fresh
 	 * request id, its items pending, and the batch moved from queued to
-	 * running. There is no replay check, and `bcm_batch_created` is not
+	 * running. There is no replay check, and `bulkcat_batch_created` is not
 	 * fired, so the chunk runner never enqueues it; the caller claims the
 	 * items, writes them through Writer::for_batch() and finalises the batch
 	 * itself. A row or items the database will not take leave nothing written
-	 * and answer 500 `bcm_batch_not_recorded`.
+	 * and answer 500 `bulkcat_batch_not_recorded`.
 	 *
 	 * A `tree` batch (T63, T64: a category write) holds term items and the
 	 * category step its caller, Categories\Writer, has already validated;

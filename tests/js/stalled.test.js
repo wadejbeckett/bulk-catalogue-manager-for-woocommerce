@@ -27,7 +27,7 @@ const History = require( '../../assets/src/panels/history/index.js' ).default;
 // Counts are formatted for the viewer's locale.
 const THOUSANDS = ( 1248 ).toLocaleString().replace( /\s/g, ' ' );
 
-const ROOT = 'https://example.test/wp-json/bcm/v1/';
+const ROOT = 'https://example.test/wp-json/bulkcat/v1/';
 
 const MESSAGE =
 	"This change has not moved for five minutes because the site's background tasks are not running, so nothing more has been changed. Open WooCommerce > Status > Scheduled Actions to check them.";
@@ -79,7 +79,7 @@ describe( 'stalled notice', () => {
 
 	it( 'maps a stalled payload to the notice, the link and no progress bar', () => {
 		const { container } = render( <BatchProgress report={ STALLED } /> );
-		const notice = container.querySelector( '.bcm-stalled' );
+		const notice = container.querySelector( '.bulkcat-stalled' );
 		expect( notice ).not.toBeNull();
 		expect(
 			within( notice ).getByText( 'The background queue has not run.' )
@@ -121,13 +121,13 @@ describe( 'stalled notice', () => {
 		);
 		expect( container.querySelector( 'progress' ) ).not.toBeNull();
 		expect( screen.getByText( `40 of ${ THOUSANDS } done` ) ).toBeTruthy();
-		expect( container.querySelector( '.bcm-stalled' ) ).toBeNull();
+		expect( container.querySelector( '.bulkcat-stalled' ) ).toBeNull();
 	} );
 
 	it( 'replaces the History row progress with the notice', async () => {
 		apiFetch.mockImplementation( ( { url } ) => {
 			const path = new URL( url ).pathname;
-			if ( path.endsWith( '/bcm/v1/batches' ) ) {
+			if ( path.endsWith( '/bulkcat/v1/batches' ) ) {
 				return Promise.resolve( {
 					items: [
 						{ ...STALLED, stalled: false, stalled_message: '' },
@@ -140,10 +140,10 @@ describe( 'stalled notice', () => {
 					},
 				} );
 			}
-			if ( path.endsWith( '/bcm/v1/batches/418' ) ) {
+			if ( path.endsWith( '/bulkcat/v1/batches/418' ) ) {
 				return Promise.resolve( STALLED );
 			}
-			if ( path.endsWith( '/bcm/v1/fields' ) ) {
+			if ( path.endsWith( '/bulkcat/v1/fields' ) ) {
 				return Promise.resolve( { fields: [], actions: [] } );
 			}
 			return Promise.resolve( [] );
@@ -154,10 +154,12 @@ describe( 'stalled notice', () => {
 			/>
 		);
 		await waitFor( () =>
-			expect( container.querySelector( '.bcm-stalled' ) ).not.toBeNull()
+			expect(
+				container.querySelector( '.bulkcat-stalled' )
+			).not.toBeNull()
 		);
 		const row = document
-			.getElementById( 'bcm-batch-418' )
+			.getElementById( 'bulkcat-batch-418' )
 			.closest( 'article' );
 		expect( row.querySelector( 'progress' ) ).toBeNull();
 		expect(

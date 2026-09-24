@@ -119,9 +119,9 @@ final class RunnerStore {
 			];
 		}
 		$this->first_insert = $wpdb->insert_id;
-		$items              = '`wp_bcm_batch_items`';
-		$batches            = '`wp_bcm_batches`';
-		$changes            = '`wp_bcm_changes`';
+		$items              = '`wp_bulkcat_batch_items`';
+		$batches            = '`wp_bulkcat_batches`';
+		$changes            = '`wp_bulkcat_changes`';
 		$wpdb->responses    = [
 			"/^SELECT \\* FROM $batches WHERE batch_id = (\\d+)$/" => fn( string $sql ): ?array => $this->find( $sql ),
 			"/^SELECT status FROM $batches WHERE batch_id = (\\d+)$/" => fn( string $sql ): ?string => $this->find( $sql )['status'] ?? null,
@@ -163,9 +163,9 @@ final class RunnerStore {
 		}
 		$db   = new SqlEvaluator(
 			[
-				'wp_bcm_batches'     => [ $this->batch, ...array_values( $this->others ) ],
-				'wp_bcm_batch_items' => array_values( $this->items ),
-				'wp_bcm_changes'     => $changes,
+				'wp_bulkcat_batches'     => [ $this->batch, ...array_values( $this->others ) ],
+				'wp_bulkcat_batch_items' => array_values( $this->items ),
+				'wp_bulkcat_changes'     => $changes,
 			]
 		);
 		$rows = $db->rows( $sql );
@@ -184,13 +184,13 @@ final class RunnerStore {
 		foreach ( array_slice( $wpdb->writes, $this->seen ) as [ $method, $table, $data, , $where ] ) {
 			++$this->seen;
 			$inserted = 'insert' === $method && ! in_array( 'insert', $wpdb->failing, true );
-			if ( 'update' === $method && 'wp_bcm_batches' === $table && ! in_array( 'update', $wpdb->failing, true ) ) {
+			if ( 'update' === $method && 'wp_bulkcat_batches' === $table && ! in_array( 'update', $wpdb->failing, true ) ) {
 				if ( $where['batch_id'] === $this->batch['batch_id'] && ( ! isset( $where['status'] ) || $where['status'] === $this->batch['status'] ) ) {
 					$this->batch = $data + $this->batch;
 				} elseif ( isset( $this->others[ $where['batch_id'] ] ) && ( ! isset( $where['status'] ) || $where['status'] === $this->others[ $where['batch_id'] ]['status'] ) ) {
 					$this->others[ $where['batch_id'] ] = $data + $this->others[ $where['batch_id'] ];
 				}
-			} elseif ( 'update' === $method && 'wp_bcm_changes' === $table && ! in_array( 'update', $wpdb->failing, true ) ) {
+			} elseif ( 'update' === $method && 'wp_bulkcat_changes' === $table && ! in_array( 'update', $wpdb->failing, true ) ) {
 				// An intent row settled (§12.3).
 				foreach ( $this->changes as $index => $row ) {
 					if ( [] === array_diff_assoc( $where, array_intersect_key( $row, $where ) ) ) {
@@ -198,12 +198,12 @@ final class RunnerStore {
 						$this->changes[ $index ] = $data + $row;
 					}
 				}
-			} elseif ( $inserted && 'wp_bcm_changes' === $table ) {
+			} elseif ( $inserted && 'wp_bulkcat_changes' === $table ) {
 				++$this->inserts;
 				$data['old_value'] = ValueCodec::decode( $data['old_value'] );
 				$data['new_value'] = ValueCodec::decode( $data['new_value'] );
 				$this->changes[]   = $data;
-			} elseif ( $inserted && 'wp_bcm_batches' === $table ) {
+			} elseif ( $inserted && 'wp_bulkcat_batches' === $table ) {
 				$id                  = $this->first_insert + ( ++$this->inserts );
 				$this->others[ $id ] = $data + [
 					'batch_id'        => $id,
@@ -326,7 +326,7 @@ final class RunnerStore {
 		$this->sync();
 		preg_match( '/^DELETE FROM `(\w+)` WHERE batch_id = (\d+)$/', $sql, $m );
 		$id = (int) $m[2];
-		if ( 'wp_bcm_batches' === $m[1] ) {
+		if ( 'wp_bulkcat_batches' === $m[1] ) {
 			unset( $this->others[ $id ] );
 			return 1;
 		}

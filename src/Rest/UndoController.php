@@ -1,6 +1,6 @@
 <?php
 /**
- * `POST /bcm/v1/batches/{id}/undo` (SPEC §4.6, §9.4, §12.1, §12.6; T56):
+ * `POST /bulkcat/v1/batches/{id}/undo` (SPEC §4.6, §9.4, §12.1, §12.6; T56):
  * undo a batch, through its own preview first. Registered by
  * BatchesController, behind Access::can_write (it writes products; each
  * object is checked again, against the undo batch's user, as it is written).
@@ -37,7 +37,7 @@ defined( 'ABSPATH' ) || exit;
  * the preview's `plan_hash`: the same uuid within sixty seconds answers 200
  * with the batch the first request created (BatchFactory's replay), before
  * anything is planned again; otherwise the plan is made again now and a
- * missing or different hash is refused 409 `bcm_preview_stale`, and
+ * missing or different hash is refused 409 `bulkcat_preview_stale`, and
  * Engine\BatchFactory::create_undo() creates the undo batch — source `undo`,
  * `undo_of` the batch, the revertible objects (and the conflicted ones with
  * `force: true`, **Revert anyway**) materialised with their own operations
@@ -48,9 +48,9 @@ defined( 'ABSPATH' ) || exit;
  * how many objects were left alone.
  *
  * A batch the planner refuses (running, already undone or being undone,
- * pruned, outside retention) answers its 409 `bcm_not_reversible` with the
- * reason; one with nothing left to put back 409 `bcm_nothing_to_undo`; a
- * missing batch 404 `bcm_not_found`.
+ * pruned, outside retention) answers its 409 `bulkcat_not_reversible` with the
+ * reason; one with nothing left to put back 409 `bulkcat_nothing_to_undo`; a
+ * missing batch 404 `bulkcat_not_found`.
  */
 final class UndoController implements Controller {
 	/**
@@ -155,7 +155,7 @@ final class UndoController implements Controller {
 				'description'       => __( 'The hash the undo preview answered; required to undo.', 'bulk-catalogue-manager-for-woocommerce' ),
 				'type'              => 'string',
 				'pattern'           => '^[0-9a-f]{64}$',
-				'validate_callback' => static fn( mixed $value ): bool|\WP_Error => is_string( $value ) && 1 === preg_match( '/^[0-9a-f]{64}$/', $value ) ? true : Refusal::invalid( 'bcm_invalid_value', __( 'This undo could not be sent because its preview is missing or damaged. Preview the undo again, then confirm it.', 'bulk-catalogue-manager-for-woocommerce' ) ),
+				'validate_callback' => static fn( mixed $value ): bool|\WP_Error => is_string( $value ) && 1 === preg_match( '/^[0-9a-f]{64}$/', $value ) ? true : Refusal::invalid( 'bulkcat_invalid_value', __( 'This undo could not be sent because its preview is missing or damaged. Preview the undo again, then confirm it.', 'bulk-catalogue-manager-for-woocommerce' ) ),
 				'sanitize_callback' => static fn( mixed $value ): string => (string) $value,
 			],
 		];
@@ -174,7 +174,7 @@ final class UndoController implements Controller {
 
 		if ( ! $preview ) {
 			if ( ! is_string( $uuid ) || '' === $uuid ) {
-				return Refusal::invalid( 'bcm_invalid_value', __( 'This undo could not be sent because its request id is missing or damaged. Reload the page and try again.', 'bulk-catalogue-manager-for-woocommerce' ) );
+				return Refusal::invalid( 'bulkcat_invalid_value', __( 'This undo could not be sent because its request id is missing or damaged. Reload the page and try again.', 'bulk-catalogue-manager-for-woocommerce' ) );
 			}
 			// A repeat answers before anything is planned: the batch is being undone by then.
 			$existing = $this->factory()->replayed( $uuid, $user_id );

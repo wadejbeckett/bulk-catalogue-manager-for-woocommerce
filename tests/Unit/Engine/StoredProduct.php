@@ -45,7 +45,7 @@ final class StoredProduct {
 		foreach ( $this->sets as [ $method ] ) {
 			$prop  = substr( $method, 4 );
 			$value = $this->props[ $prop ];
-			$GLOBALS['bcm_test']['meta'][ $id ][ '_' . $prop ] = is_scalar( $value ) || null === $value ? (string) $value : $value;
+			$GLOBALS['bulkcat_test']['meta'][ $id ][ '_' . $prop ] = is_scalar( $value ) || null === $value ? (string) $value : $value;
 		}
 		return $id;
 	}

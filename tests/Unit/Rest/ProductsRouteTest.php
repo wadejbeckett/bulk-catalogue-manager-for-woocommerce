@@ -1,6 +1,6 @@
 <?php
 /**
- * `GET /bcm/v1/products` as T14 leaves it (SPEC §12.1): registered with the
+ * `GET /bulkcat/v1/products` as T14 leaves it (SPEC §12.1): registered with the
  * generated arguments and item schema, a malformed argument refused 400
  * `rest_invalid_param` by core's validation before any catalogue query, and
  * a well-formed read reaching the query builder and returning hydrated
@@ -24,20 +24,20 @@ use PHPUnit\Framework\TestCase;
 
 final class ProductsRouteTest extends TestCase {
 	protected function setUp(): void {
-		bcm_test_reset();
-		$GLOBALS['bcm_test']['logged_in']                  = true;
-		$GLOBALS['bcm_test']['caps']['manage_woocommerce'] = true;
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['logged_in']                  = true;
+		$GLOBALS['bulkcat_test']['caps']['manage_woocommerce'] = true;
 		( new Plugin() )->boot();
 		do_action( 'rest_api_init' );
 	}
 
 	/**
-	 * Dispatch a GET to /bcm/v1/products with query parameters.
+	 * Dispatch a GET to /bulkcat/v1/products with query parameters.
 	 *
 	 * @param array<string, mixed> $params Query parameters.
 	 */
 	private static function get( array $params ): \WP_REST_Response|\WP_Error {
-		$request = new \WP_REST_Request( 'GET', '/bcm/v1/products' );
+		$request = new \WP_REST_Request( 'GET', '/bulkcat/v1/products' );
 		foreach ( $params as $key => $value ) {
 			$request->set_param( $key, $value );
 		}
@@ -45,18 +45,18 @@ final class ProductsRouteTest extends TestCase {
 	}
 
 	public function test_the_route_registers_with_generated_arguments_and_schema(): void {
-		$route = $GLOBALS['bcm_test']['routes']['/bcm/v1/products'] ?? null;
+		$route = $GLOBALS['bulkcat_test']['routes']['/bulkcat/v1/products'] ?? null;
 		$this->assertNotNull( $route );
 		$this->assertSame( 'GET', $route[0]['methods'] );
 		$this->assertSame( [ Access::class, 'can_read' ], $route[0]['permission_callback'] );
 		$this->assertSame( array_keys( ( new RouteSchema( Registry::instance() ) )->query_args() ), array_keys( $route[0]['args'] ) );
 		$this->assertTrue( is_callable( $route['schema'] ) );
 		$this->assertSame( ( new ProductsController( new Registry() ) )->get_item_schema(), call_user_func( $route['schema'] ) );
-		$this->assertSame( 'bcm-product', call_user_func( $route['schema'] )['title'] );
+		$this->assertSame( 'bulkcat-product', call_user_func( $route['schema'] )['title'] );
 	}
 
 	public function test_every_read_route_publishes_its_item_schema(): void {
-		foreach ( $GLOBALS['bcm_test']['routes'] as $path => $route ) {
+		foreach ( $GLOBALS['bulkcat_test']['routes'] as $path => $route ) {
 			$endpoints = isset( $route['callback'] ) ? [ $route ] : array_filter( $route, 'is_int', ARRAY_FILTER_USE_KEY );
 			$methods   = implode( ',', array_map( static fn( array $endpoint ): string => (string) $endpoint['methods'], $endpoints ) );
 			if ( ! str_contains( $methods, 'GET' ) ) {
@@ -97,9 +97,9 @@ final class ProductsRouteTest extends TestCase {
 			'filter as a string' => [ 'featured' => '1' ],
 		];
 		foreach ( $cases as $case => $params ) {
-			bcm_test_reset();
-			$GLOBALS['bcm_test']['logged_in']                  = true;
-			$GLOBALS['bcm_test']['caps']['manage_woocommerce'] = true;
+			bulkcat_test_reset();
+			$GLOBALS['bulkcat_test']['logged_in']                  = true;
+			$GLOBALS['bulkcat_test']['caps']['manage_woocommerce'] = true;
 			( new Plugin() )->boot();
 			do_action( 'rest_api_init' );
 
@@ -148,7 +148,7 @@ final class ProductsRouteTest extends TestCase {
 	}
 
 	public function test_a_read_returns_hydrated_items_for_the_requested_fields(): void {
-		$GLOBALS['bcm_test']['posts'][41] = [
+		$GLOBALS['bulkcat_test']['posts'][41] = [
 			'post_type'   => 'product',
 			'post_title'  => 'Blue shirt',
 			'post_status' => 'draft',
@@ -180,7 +180,7 @@ final class ProductsRouteTest extends TestCase {
 			],
 			$response->get_data()
 		);
-		$schema = call_user_func( $GLOBALS['bcm_test']['routes']['/bcm/v1/products']['schema'] );
+		$schema = call_user_func( $GLOBALS['bulkcat_test']['routes']['/bulkcat/v1/products']['schema'] );
 		$this->assertTrue( rest_validate_value_from_schema( $response->get_data()['items'][0], $schema, 'item' ) );
 		$this->assertSame( 'integer', $schema['properties']['parent_id']['type'] );
 		$this->assertSame( 'string', $schema['properties']['thumbnail_url']['type'] );
@@ -202,11 +202,11 @@ final class ProductsRouteTest extends TestCase {
 	}
 
 	public function test_an_anonymous_read_is_refused(): void {
-		$GLOBALS['bcm_test']['logged_in'] = false;
-		$GLOBALS['bcm_test']['caps']      = [];
-		$result                           = self::get( [] );
+		$GLOBALS['bulkcat_test']['logged_in'] = false;
+		$GLOBALS['bulkcat_test']['caps']      = [];
+		$result                               = self::get( [] );
 		$this->assertInstanceOf( \WP_Error::class, $result );
-		$this->assertSame( 'bcm_forbidden', $result->get_error_code() );
+		$this->assertSame( 'bulkcat_forbidden', $result->get_error_code() );
 		$this->assertSame( [], $GLOBALS['wpdb']->queries );
 	}
 }

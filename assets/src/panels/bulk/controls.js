@@ -52,20 +52,20 @@ export function termOptions( field, terms ) {
  */
 function Group( { id, label, reason, hint, full, children } ) {
 	return (
-		<div className={ 'bcm-bulk__fg' + ( full ? ' is-full' : '' ) }>
+		<div className={ 'bulkcat-bulk__fg' + ( full ? ' is-full' : '' ) }>
 			{ label && (
-				<label className="bcm-bulk__lbl" htmlFor={ id }>
+				<label className="bulkcat-bulk__lbl" htmlFor={ id }>
 					{ label }
 				</label>
 			) }
 			{ children }
 			{ hint && (
-				<p className="bcm-bulk__hint" id={ id + '-hint' }>
+				<p className="bulkcat-bulk__hint" id={ id + '-hint' }>
 					{ hint }
 				</p>
 			) }
 			{ reason && (
-				<p className="bcm-bulk__reason" id={ id + '-reason' }>
+				<p className="bulkcat-bulk__reason" id={ id + '-reason' }>
 					{ reason }
 				</p>
 			) }
@@ -124,12 +124,12 @@ export function TermsPicker( { id, label, options, value, onChange, reason } ) {
 
 	return (
 		<fieldset
-			className="bcm-bulk__fg is-full bcm-bulk__terms"
+			className="bulkcat-bulk__fg is-full bulkcat-bulk__terms"
 			{ ...described( id, reason, '' ) }
 		>
-			<legend className="bcm-bulk__lbl">{ label }</legend>
+			<legend className="bulkcat-bulk__lbl">{ label }</legend>
 			{ options.length === 0 ? (
-				<p className="bcm-bulk__hint">
+				<p className="bulkcat-bulk__hint">
 					{ __(
 						'There is nothing to choose from yet.',
 						'bulk-catalogue-manager-for-woocommerce'
@@ -149,7 +149,7 @@ export function TermsPicker( { id, label, options, value, onChange, reason } ) {
 					<input
 						id={ id + '-search' }
 						type="search"
-						className="bcm-bulk__field"
+						className="bulkcat-bulk__field"
 						value={ search }
 						aria-label={ __(
 							'Search the list',
@@ -163,11 +163,11 @@ export function TermsPicker( { id, label, options, value, onChange, reason } ) {
 							setSearch( event.target.value )
 						}
 					/>
-					<ul className="bcm-bulk__termlist">
+					<ul className="bulkcat-bulk__termlist">
 						{ shown.map( ( option ) => (
 							<li key={ option.id }>
 								<label
-									className="bcm-bulk__check"
+									className="bulkcat-bulk__check"
 									htmlFor={ id + '-term-' + option.id }
 								>
 									<input
@@ -189,7 +189,7 @@ export function TermsPicker( { id, label, options, value, onChange, reason } ) {
 				</>
 			) }
 			{ reason && (
-				<p className="bcm-bulk__reason" id={ id + '-reason' }>
+				<p className="bulkcat-bulk__reason" id={ id + '-reason' }>
 					{ reason }
 				</p>
 			) }
@@ -232,7 +232,7 @@ export function ValueControl( {
 			<Group id={ id } label={ label } reason={ reason }>
 				<select
 					id={ id }
-					className="bcm-bulk__field"
+					className="bulkcat-bulk__field"
 					value={ value ? '1' : '0' }
 					onChange={ ( event ) =>
 						onChange( event.target.value === '1' )
@@ -259,7 +259,7 @@ export function ValueControl( {
 			<Group id={ id } label={ label } reason={ reason }>
 				<select
 					id={ id }
-					className="bcm-bulk__field"
+					className="bulkcat-bulk__field"
 					value={ String( value ?? '' ) }
 					onChange={ ( event ) => onChange( event.target.value ) }
 					{ ...described( id, reason, '' ) }
@@ -280,7 +280,7 @@ export function ValueControl( {
 			<Group id={ id } label={ label } reason={ reason }>
 				<select
 					id={ id }
-					className="bcm-bulk__field"
+					className="bulkcat-bulk__field"
 					value={ String( value ?? 0 ) }
 					onChange={ ( event ) =>
 						onChange( Number( event.target.value ) )
@@ -309,7 +309,7 @@ export function ValueControl( {
 			<input
 				id={ id }
 				type="text"
-				className="bcm-bulk__field"
+				className="bulkcat-bulk__field"
 				inputMode={ numeric ? 'decimal' : undefined }
 				maxLength={ field?.maxLength || undefined }
 				value={ value ?? '' }
@@ -376,8 +376,8 @@ export function ArgControl( {
 
 	if ( kind === 'boolean' ) {
 		return (
-			<div className="bcm-bulk__fg is-full">
-				<label className="bcm-bulk__check" htmlFor={ id }>
+			<div className="bulkcat-bulk__fg is-full">
+				<label className="bulkcat-bulk__check" htmlFor={ id }>
 					<input
 						id={ id }
 						type="checkbox"
@@ -400,7 +400,7 @@ export function ArgControl( {
 			<Group id={ id } label={ label } reason={ reason }>
 				<select
 					id={ id }
-					className="bcm-bulk__field"
+					className="bulkcat-bulk__field"
 					value={ String( value ?? '' ) }
 					onChange={ ( event ) => onChange( event.target.value ) }
 					{ ...described( id, reason, '' ) }
@@ -425,7 +425,7 @@ export function ArgControl( {
 			<input
 				id={ id }
 				type={ kind === 'integer' ? 'number' : 'text' }
-				className="bcm-bulk__field"
+				className="bulkcat-bulk__field"
 				inputMode={ numeric ? 'decimal' : undefined }
 				min={ kind === 'integer' ? property.minimum : undefined }
 				max={ kind === 'integer' ? property.maximum : undefined }

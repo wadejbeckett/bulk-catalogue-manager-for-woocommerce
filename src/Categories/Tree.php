@@ -9,7 +9,7 @@
  * A term whose parent is not in the list (removed, or in a loop of parents)
  * becomes a top-level node and reports parent 0, so the tree is always a
  * forest the panel can draw. Siblings sort by the plugin's own tree order
- * (`bcm_order`, written by a move) first, then those without one by
+ * (`bulkcat_order`, written by a move) first, then those without one by
  * WooCommerce's stored category order, then by name, then by id; a node's
  * `order` is whichever of the two decided its place.
  *
@@ -54,7 +54,7 @@ final class Tree {
 	 *
 	 * @param iterable<object>  $terms       Terms with term_id, name, slug, description and parent, as get_terms() returns them.
 	 * @param array<int, mixed> $orders      WooCommerce's stored category order by term id; missing or non-numeric reads as 0.
-	 * @param array<int, mixed> $tree_orders The plugin's tree order (`bcm_order`) by term id; a numeric value places the term ahead of siblings without one.
+	 * @param array<int, mixed> $tree_orders The plugin's tree order (`bulkcat_order`) by term id; a numeric value places the term ahead of siblings without one.
 	 */
 	public static function from_terms( iterable $terms, array $orders = [], array $tree_orders = [] ): self {
 		$tree   = new self();

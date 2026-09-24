@@ -32,12 +32,12 @@ use PHPUnit\Framework\TestCase;
 
 final class WriterTest extends TestCase {
 	protected function setUp(): void {
-		bcm_test_reset();
-		$GLOBALS['bcm_test']['caps']  = [
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['caps']  = [
 			'edit_post'            => true,
 			'assign_product_terms' => true,
 		];
-		$GLOBALS['bcm_test']['terms'] = [
+		$GLOBALS['bulkcat_test']['terms'] = [
 			'product_cat'            => [ 11, 12 ],
 			'product_tag'            => [ 21, 22 ],
 			'product_shipping_class' => [ 31 ],
@@ -45,7 +45,7 @@ final class WriterTest extends TestCase {
 	}
 
 	protected function tearDown(): void {
-		$this->assertSame( [], $GLOBALS['bcm_test']['post_meta_updates'] ?? [], 'The writer called update_post_meta().' );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['post_meta_updates'] ?? [], 'The writer called update_post_meta().' );
 	}
 
 	private static function registry(): Registry {
@@ -78,7 +78,7 @@ final class WriterTest extends TestCase {
 	 */
 	private static function product( string $type, array $props ): SavedProduct {
 		$product = new SavedProduct( $type, $props );
-		$GLOBALS['bcm_test']['products'][ $props['id'] ] = $product;
+		$GLOBALS['bulkcat_test']['products'][ $props['id'] ] = $product;
 		return $product;
 	}
 
@@ -168,10 +168,10 @@ final class WriterTest extends TestCase {
 		$id = 100;
 		foreach ( $table as $key => [ $action, $args, $type, $props, $setter, $value ] ) {
 			++$id;
-			$GLOBALS['bcm_test']['set_object_terms'] = [];
-			$GLOBALS['bcm_test']['variable_syncs']   = [];
-			$props                                  += [ 'id' => $id ] + ( 'variation' === $type ? [ 'parent_id' => 9 ] : [] );
-			$product                                 = self::product( $type, $props );
+			$GLOBALS['bulkcat_test']['set_object_terms'] = [];
+			$GLOBALS['bulkcat_test']['variable_syncs']   = [];
+			$props                                      += [ 'id' => $id ] + ( 'variation' === $type ? [ 'parent_id' => 9 ] : [] );
+			$product                                     = self::product( $type, $props );
 
 			$outcome = ( new Writer( self::registry() ) )->write( $id, $this->steps( [ [ $action, $args ] ] ) );
 
@@ -182,8 +182,8 @@ final class WriterTest extends TestCase {
 			$this->assertTrue( $outcome->saved() );
 			$this->assertSame( [ $key ], $outcome->touched() );
 			$terms = str_ends_with( $action, '_terms' ) ? [ [ $id, $value, 'category_ids' === $key ? 'product_cat' : 'product_tag', false ] ] : [];
-			$this->assertSame( $terms, $GLOBALS['bcm_test']['set_object_terms'], "$key: terms go through wp_set_object_terms() and nothing else does." );
-			$this->assertSame( 'variation' === $type ? [ 9 ] : [], $GLOBALS['bcm_test']['variable_syncs'], "$key: only a variation resynchronises its parent." );
+			$this->assertSame( $terms, $GLOBALS['bulkcat_test']['set_object_terms'], "$key: terms go through wp_set_object_terms() and nothing else does." );
+			$this->assertSame( 'variation' === $type ? [ 9 ] : [], $GLOBALS['bulkcat_test']['variable_syncs'], "$key: only a variation resynchronises its parent." );
 		}
 	}
 
@@ -228,9 +228,9 @@ final class WriterTest extends TestCase {
 		$this->assertSame( [], $product->sets );
 		$this->assertSame( [], $product->saves, 'An unchanged object is not re-saved.' );
 		$this->assertSame( 0, $called, 'The journal hook runs only for an object being saved.' );
-		$this->assertSame( [], $GLOBALS['bcm_test']['variable_syncs'] ?? [] );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['variable_syncs'] ?? [] );
 		$this->assertSame( 0, $outcome->parent_id() );
-		$this->assertSame( [ 5 ], $GLOBALS['bcm_test']['products_loaded'], 'The object is loaded once, with wc_get_product().' );
+		$this->assertSame( [ 5 ], $GLOBALS['bulkcat_test']['products_loaded'], 'The object is loaded once, with wc_get_product().' );
 	}
 
 	public function test_a_mixed_list_applies_in_order_against_the_live_object_and_saves_once(): void {
@@ -322,7 +322,7 @@ final class WriterTest extends TestCase {
 		$writer  = new Writer(
 			self::registry(),
 			function ( object $subject ): void {
-				$this->assertSame( [ [ 7, [ 11, 12 ], 'product_cat', false ] ], $GLOBALS['bcm_test']['set_object_terms'] ?? [], 'Terms are stored through wp_set_object_terms(), not only through the setter.' );
+				$this->assertSame( [ [ 7, [ 11, 12 ], 'product_cat', false ] ], $GLOBALS['bulkcat_test']['set_object_terms'] ?? [], 'Terms are stored through wp_set_object_terms(), not only through the setter.' );
 			}
 		);
 		$outcome = $writer->write(
@@ -376,9 +376,9 @@ final class WriterTest extends TestCase {
 			)
 		);
 		$this->assertCount( 1, $product->saves );
-		$this->assertSame( [ 20 ], $GLOBALS['bcm_test']['variable_syncs'], 'Two fields on one variation sync the parent once, through WooCommerce.' );
+		$this->assertSame( [ 20 ], $GLOBALS['bulkcat_test']['variable_syncs'], 'Two fields on one variation sync the parent once, through WooCommerce.' );
 		$this->assertSame( 20, $outcome->parent_id() );
-		$this->assertSame( [], $GLOBALS['bcm_test']['set_object_terms'] ?? [] );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['set_object_terms'] ?? [] );
 	}
 
 	public function test_variations_of_one_parent_sync_once_per_object_or_once_per_run(): void {
@@ -394,7 +394,7 @@ final class WriterTest extends TestCase {
 			]
 		);
 		$reset = static function (): void {
-			$GLOBALS['bcm_test']['variable_syncs'] = [];
+			$GLOBALS['bulkcat_test']['variable_syncs'] = [];
 			foreach ( [
 				31 => 30,
 				32 => 30,
@@ -415,7 +415,7 @@ final class WriterTest extends TestCase {
 		$writer = new Writer( self::registry() );
 		$writer->write( 31, $list );
 		$writer->write( 32, $list );
-		$this->assertSame( [ 30, 30 ], $GLOBALS['bcm_test']['variable_syncs'], 'Outside a run, each saved variation syncs its parent straight after its own save.' );
+		$this->assertSame( [ 30, 30 ], $GLOBALS['bulkcat_test']['variable_syncs'], 'Outside a run, each saved variation syncs its parent straight after its own save.' );
 
 		$reset();
 		$result = $writer->run(
@@ -424,12 +424,12 @@ final class WriterTest extends TestCase {
 				$inner->write( 32, $list );
 				$inner->write( 41, $list );
 				$inner->write( 99, $list );
-				$this->assertSame( [], $GLOBALS['bcm_test']['variable_syncs'] ?? [], 'Inside a run, syncing waits for the end.' );
+				$this->assertSame( [], $GLOBALS['bulkcat_test']['variable_syncs'] ?? [], 'Inside a run, syncing waits for the end.' );
 				return 'done';
 			}
 		);
 		$this->assertSame( 'done', $result );
-		$this->assertSame( [ 30, 40 ], $GLOBALS['bcm_test']['variable_syncs'], 'A run syncs each parent once, after its last variation.' );
+		$this->assertSame( [ 30, 40 ], $GLOBALS['bulkcat_test']['variable_syncs'], 'A run syncs each parent once, after its last variation.' );
 
 		$reset();
 		try {
@@ -443,11 +443,11 @@ final class WriterTest extends TestCase {
 		} catch ( \RuntimeException $e ) {
 			$this->assertSame( 'chunk killed', $e->getMessage() );
 		}
-		$this->assertSame( [ 30 ], $GLOBALS['bcm_test']['variable_syncs'], 'A run that throws still syncs the parents it saved.' );
+		$this->assertSame( [ 30 ], $GLOBALS['bulkcat_test']['variable_syncs'], 'A run that throws still syncs the parents it saved.' );
 	}
 
 	public function test_a_failure_mid_list_is_reported_and_the_other_changes_still_save(): void {
-		$product                                       = self::product(
+		$product                    = self::product(
 			'simple',
 			[
 				'id'            => 50,
@@ -457,8 +457,8 @@ final class WriterTest extends TestCase {
 				'weight'        => '1',
 			]
 		);
-		$product->refuse['set_sku']                    = 'Invalid or duplicated SKU.';
-		$GLOBALS['bcm_test']['set_object_terms_error'] = new \WP_Error( 'db', 'Deadlock.' );
+		$product->refuse['set_sku'] = 'Invalid or duplicated SKU.';
+		$GLOBALS['bulkcat_test']['set_object_terms_error'] = new \WP_Error( 'db', 'Deadlock.' );
 		$seen    = [];
 		$writer  = new Writer(
 			self::registry(),
@@ -505,7 +505,7 @@ final class WriterTest extends TestCase {
 		$this->assertSame( [ Result::CHANGED, Result::FAILED, Result::FAILED, Result::CHANGED ], self::states( $outcome ), 'A failure does not stop the steps after it.' );
 		[ , $terms, $sku ] = $outcome->results();
 		$this->assertSame( 'Categories could not be saved on this product. Try again in a moment.', $terms->reason(), 'A WriteRefused becomes a failed result with its sentence.' );
-		$this->assertSame( 'bcm_invalid_value', $terms->code() );
+		$this->assertSame( 'bulkcat_invalid_value', $terms->code() );
 		$this->assertSame( [ 11 ], $terms->old() );
 		$this->assertSame( 'Invalid or duplicated SKU.', $sku->reason(), "WooCommerce's own setter refusal becomes a failed result." );
 		$this->assertSame( Writer::INVALID, $sku->code() );
@@ -568,7 +568,7 @@ final class WriterTest extends TestCase {
 		$this->assertFalse( $outcome->saved() );
 		$this->assertSame( [], $product->saves );
 		$this->assertFalse( $called );
-		$this->assertSame( [], $GLOBALS['bcm_test']['variable_syncs'] ?? [] );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['variable_syncs'] ?? [] );
 	}
 
 	public function test_the_journal_hook_gets_the_state_before_the_first_step(): void {
@@ -668,12 +668,12 @@ final class WriterTest extends TestCase {
 				$this->assertStringContainsString( 'validate_list', $e->getMessage() );
 			}
 		}
-		$this->assertSame( [], $GLOBALS['bcm_test']['products_loaded'] ?? [] );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['products_loaded'] ?? [] );
 	}
 
 	public function test_a_row_the_validator_refuses_is_reported_and_not_applied(): void {
-		$GLOBALS['bcm_test']['skus'] = [ 'TAKEN' => 99 ];
-		$product                     = self::product(
+		$GLOBALS['bulkcat_test']['skus'] = [ 'TAKEN' => 99 ];
+		$product                         = self::product(
 			'simple',
 			[
 				'id'            => 80,
@@ -683,7 +683,7 @@ final class WriterTest extends TestCase {
 				'status'        => 'draft',
 			]
 		);
-		$outcome                     = ( new Writer( self::registry() ) )->write(
+		$outcome                         = ( new Writer( self::registry() ) )->write(
 			80,
 			$this->steps(
 				[
@@ -712,7 +712,7 @@ final class WriterTest extends TestCase {
 			)
 		);
 		$this->assertSame( [ Result::SKIPPED, Result::FAILED, Result::CHANGED ], self::states( $outcome ) );
-		$this->assertSame( [ 'bcm_invalid_value', 'bcm_invalid_value', '' ], array_map( static fn( Result $r ): string => $r->code(), $outcome->results() ) );
+		$this->assertSame( [ 'bulkcat_invalid_value', 'bulkcat_invalid_value', '' ], array_map( static fn( Result $r ): string => $r->code(), $outcome->results() ) );
 		$this->assertSame( [ [ 'set_status', 'publish' ] ], $product->sets, 'Only the row the validator passed reaches a setter.' );
 		$this->assertTrue( $outcome->saved() );
 		$this->assertSame( [ 'status' => 'draft' ], $outcome->before() );
@@ -721,8 +721,8 @@ final class WriterTest extends TestCase {
 	public function test_a_background_write_filters_html_by_the_batch_users_rights(): void {
 		$raw = '<script>alert(1)</script>Shirt <b>bold</b>';
 		// The list was validated in the administrator's own request, so it holds the markup as given.
-		$GLOBALS['bcm_test']['caps']['unfiltered_html'] = true;
-		$list                             = $this->steps(
+		$GLOBALS['bulkcat_test']['caps']['unfiltered_html'] = true;
+		$list                                 = $this->steps(
 			[
 				[
 					'set_value',
@@ -733,8 +733,8 @@ final class WriterTest extends TestCase {
 				],
 			]
 		);
-		$GLOBALS['bcm_test']['caps']      = [];
-		$GLOBALS['bcm_test']['user_caps'] = [
+		$GLOBALS['bulkcat_test']['caps']      = [];
+		$GLOBALS['bulkcat_test']['user_caps'] = [
 			5 => [
 				'edit_post'       => true,
 				'unfiltered_html' => true,
@@ -743,53 +743,53 @@ final class WriterTest extends TestCase {
 		];
 
 		// An administrator's batch runs with no current user and keeps their markup, as their own edit would.
-		$product                             = new SavedProduct(
+		$product                                 = new SavedProduct(
 			'simple',
 			[
 				'id'   => 83,
 				'name' => 'Old',
 			]
 		);
-		$GLOBALS['bcm_test']['products'][83] = $product;
+		$GLOBALS['bulkcat_test']['products'][83] = $product;
 		( new Writer( self::registry(), null, 5 ) )->write( 83, $list );
 		$this->assertSame( $raw, $product->props['name'] );
 
 		// A shop manager's batch is filtered even if the process happens to have a trusted current user.
-		$GLOBALS['bcm_test']['caps']['unfiltered_html'] = true;
-		$product                                        = new SavedProduct(
+		$GLOBALS['bulkcat_test']['caps']['unfiltered_html'] = true;
+		$product                                 = new SavedProduct(
 			'simple',
 			[
 				'id'   => 84,
 				'name' => 'Old',
 			]
 		);
-		$GLOBALS['bcm_test']['products'][84]            = $product;
+		$GLOBALS['bulkcat_test']['products'][84] = $product;
 		( new Writer( self::registry(), null, 6 ) )->write( 84, $list );
 		$this->assertSame( 'alert(1)Shirt <b>bold</b>', $product->props['name'] );
 
 		// Outside a background write, the current user decides again.
-		$product                                  = new SavedProduct(
+		$product                                      = new SavedProduct(
 			'simple',
 			[
 				'id'   => 85,
 				'name' => 'Old',
 			]
 		);
-		$GLOBALS['bcm_test']['products'][85]      = $product;
-		$GLOBALS['bcm_test']['caps']['edit_post'] = true;
+		$GLOBALS['bulkcat_test']['products'][85]      = $product;
+		$GLOBALS['bulkcat_test']['caps']['edit_post'] = true;
 		( new Writer( self::registry() ) )->write( 85, $list );
 		$this->assertSame( $raw, $product->props['name'] );
 	}
 
 	public function test_an_object_the_batch_user_may_not_edit_is_skipped_and_not_saved(): void {
-		$GLOBALS['bcm_test']['caps']      = [];
-		$GLOBALS['bcm_test']['user_caps'] = [
+		$GLOBALS['bulkcat_test']['caps']      = [];
+		$GLOBALS['bulkcat_test']['user_caps'] = [
 			5 => [
 				'edit_post'    => true,
 				'edit_post:82' => false,
 			],
 		];
-		$list                             = $this->steps(
+		$list                                 = $this->steps(
 			[
 				[
 					'set_value',
@@ -800,25 +800,25 @@ final class WriterTest extends TestCase {
 				],
 			]
 		);
-		$allowed                          = self::product(
+		$allowed                              = self::product(
 			'simple',
 			[
 				'id'       => 81,
 				'featured' => false,
 			]
 		);
-		$denied                           = self::product(
+		$denied                               = self::product(
 			'simple',
 			[
 				'id'       => 82,
 				'featured' => false,
 			]
 		);
-		$writer                           = new Writer( self::registry(), null, 5 );
-		$outcomes                         = $writer->run( static fn( Writer $w ): array => [ $w->write( 81, $list ), $w->write( 82, $list ) ] );
+		$writer                               = new Writer( self::registry(), null, 5 );
+		$outcomes                             = $writer->run( static fn( Writer $w ): array => [ $w->write( 81, $list ), $w->write( 82, $list ) ] );
 		$this->assertSame( [ Result::CHANGED ], self::states( $outcomes[0] ) );
 		$this->assertSame( [ Result::SKIPPED ], self::states( $outcomes[1] ) );
-		$this->assertSame( 'bcm_cannot_edit', $outcomes[1]->results()[0]->code() );
+		$this->assertSame( 'bulkcat_cannot_edit', $outcomes[1]->results()[0]->code() );
 		$this->assertCount( 1, $allowed->saves );
 		$this->assertSame( [], $denied->sets );
 		$this->assertSame( [], $denied->saves );
@@ -907,7 +907,7 @@ final class WriterTest extends TestCase {
 		$outcomes           = $writer->run( static fn( Writer $w ): array => [ $w->write( 84, $list ), $w->write( 85, $list ) ] );
 		$this->assertSame( [ Result::CHANGED ], self::states( $outcomes[0] ) );
 		$this->assertSame( [ Result::FAILED ], self::states( $outcomes[1] ) );
-		$this->assertSame( 'bcm_invalid_value', $outcomes[1]->results()[0]->code() );
+		$this->assertSame( 'bulkcat_invalid_value', $outcomes[1]->results()[0]->code() );
 		$this->assertSame( [ [ 'set_sku', 'NEW-1' ] ], $first->sets );
 		$this->assertSame( [], $second->sets );
 		$this->assertFalse( $outcomes[1]->saved() );

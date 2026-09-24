@@ -7,7 +7,7 @@
  * the edit; the argument schema carries `field` and `skip_already`; central
  * validation refuses an empty list, more than twenty operations, a
  * malformed step, an unknown id, an action on a field it does not accept
- * and invalid arguments, each 400 with a `bcm_` code and a §4.8 sentence,
+ * and invalid arguments, each 400 with a `bulkcat_` code and a §4.8 sentence,
  * and passes and normalises a valid list; compute() on a placeholder throws
  * and writes nothing; apply() writes only a change, through the field.
  *
@@ -53,8 +53,8 @@ final class RegistryTest extends TestCase {
 	];
 
 	protected function setUp(): void {
-		bcm_test_reset();
-		$GLOBALS['bcm_test']['terms'] = [
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['terms'] = [
 			'product_cat'            => [ 11, 12, 13 ],
 			'product_tag'            => [ 21, 22 ],
 			'product_shipping_class' => [ 31 ],
@@ -129,7 +129,7 @@ final class RegistryTest extends TestCase {
 		$this->assertSame( 400, $result->get_error_data()['status'], $case );
 		$message = $result->get_error_message();
 		$this->assertNotSame( '', trim( $message ), $case );
-		$this->assertSame( 0, preg_match( '/\bbcm_|\b[a-z]+_[a-z_]+\b/', $message ), "$case names a code or key: $message" );
+		$this->assertSame( 0, preg_match( '/\bbulkcat_|\b[a-z]+_[a-z_]+\b/', $message ), "$case names a code or key: $message" );
 		$this->assertTrue( str_ends_with( $message, '.' ), "$case is a sentence: $message" );
 		return $result;
 	}
@@ -339,13 +339,13 @@ final class RegistryTest extends TestCase {
 		];
 		$this->assertCount( 20, self::registry()->validate_list( array_fill( 0, 20, $step ) ) );
 
-		$refusal = $this->refused( self::registry()->validate_list( array_fill( 0, 21, $step ) ), 'bcm_too_many_operations', '21 operations' );
+		$refusal = $this->refused( self::registry()->validate_list( array_fill( 0, 21, $step ) ), 'bulkcat_too_many_operations', '21 operations' );
 		$this->assertSame( 'One change can hold at most 20 steps, and this one has 21. Remove some steps, or split them into two changes, and try again.', $refusal->get_error_message() );
 		$this->assertSame( 21, $refusal->get_error_data()['count'] );
 		$this->assertSame( 20, $refusal->get_error_data()['limit'] );
 
-		$this->refused( self::registry()->validate_list( array_fill( 0, 21, 'garbage' ) ), 'bcm_too_many_operations', '21 malformed steps' );
-		$this->refused( self::registry()->validate_list( [] ), 'bcm_no_operations', 'an empty list' );
+		$this->refused( self::registry()->validate_list( array_fill( 0, 21, 'garbage' ) ), 'bulkcat_too_many_operations', '21 malformed steps' );
+		$this->refused( self::registry()->validate_list( [] ), 'bulkcat_no_operations', 'an empty list' );
 	}
 
 	public function test_an_unknown_action_is_refused(): void {
@@ -362,7 +362,7 @@ final class RegistryTest extends TestCase {
 					],
 				]
 			),
-			'bcm_unknown_action',
+			'bulkcat_unknown_action',
 			'an unknown id'
 		);
 		$this->assertSame( 'Step 2 of 2: This step asks for an action that is not available. Choose an action from the list and try again.', $refusal->get_error_message() );
@@ -393,7 +393,7 @@ final class RegistryTest extends TestCase {
 						],
 					]
 				),
-				'bcm_field_not_accepted',
+				'bulkcat_field_not_accepted',
 				$case
 			);
 			$this->assertSame( $field, $refusal->get_error_data()['field'], $case );
@@ -410,7 +410,7 @@ final class RegistryTest extends TestCase {
 			)->get_error_message()
 		);
 		$direct = self::registry()->get( 'round' )->validate( [ 'field' => 'status' ] );
-		$this->assertSame( 'bcm_field_not_accepted', $direct->error()->get_error_code(), 'The action refuses it on its own too.' );
+		$this->assertSame( 'bulkcat_field_not_accepted', $direct->error()->get_error_code(), 'The action refuses it on its own too.' );
 	}
 
 	public function test_malformed_steps_are_refused(): void {
@@ -439,9 +439,9 @@ final class RegistryTest extends TestCase {
 			],
 		];
 		foreach ( $cases as $case => $list ) {
-			$this->refused( self::registry()->validate_list( $list ), 'bcm_invalid_operation', $case );
+			$this->refused( self::registry()->validate_list( $list ), 'bulkcat_invalid_operation', $case );
 		}
-		$this->refused( self::registry()->validate_list( 'clear' ), 'bcm_invalid_operation', 'a string' );
+		$this->refused( self::registry()->validate_list( 'clear' ), 'bulkcat_invalid_operation', 'a string' );
 	}
 
 	public function test_invalid_arguments_are_refused_per_action(): void {
@@ -745,7 +745,7 @@ final class RegistryTest extends TestCase {
 						],
 					]
 				),
-				'bcm_invalid_operation',
+				'bulkcat_invalid_operation',
 				$case
 			);
 			$this->assertSame( $action, $refusal->get_error_data()['action'], $case );
@@ -963,7 +963,7 @@ final class RegistryTest extends TestCase {
 			$this->assertTrue( is_array( $valid ), $case . ': ' . ( $valid instanceof \WP_Error ? $valid->get_error_message() : '' ) );
 		}
 
-		$GLOBALS['bcm_test']['terms']['product_cat'] = range( 1, 100 );
+		$GLOBALS['bulkcat_test']['terms']['product_cat'] = range( 1, 100 );
 		$this->assertTrue(
 			self::registry()->get( 'add_terms' )->validate(
 				[
@@ -974,8 +974,8 @@ final class RegistryTest extends TestCase {
 			'100 terms is the limit, not over it.'
 		);
 
-		$GLOBALS['bcm_test']['decimals'] = 3;
-		$three                           = new Registry( new Fields() );
+		$GLOBALS['bulkcat_test']['decimals'] = 3;
+		$three                               = new Registry( new Fields() );
 		$this->assertTrue(
 			$three->get( 'round' )->validate(
 				[
@@ -1033,7 +1033,7 @@ final class RegistryTest extends TestCase {
 			$operation->apply( Result::changed( 'regular_price', '10.00', '-1' ), $product );
 			$this->fail( 'A value the field refuses was written.' );
 		} catch ( WriteRefused $e ) {
-			$this->assertSame( 'bcm_invalid_value', $e->error()->get_error_code() );
+			$this->assertSame( 'bulkcat_invalid_value', $e->error()->get_error_code() );
 		}
 		$this->assertCount( 1, $product->sets );
 
@@ -1042,7 +1042,7 @@ final class RegistryTest extends TestCase {
 			$operation->apply( Result::changed( 'featured', false, true ), $variation );
 			$this->fail( 'A parent-only field was written to a variation.' );
 		} catch ( WriteRefused $e ) {
-			$this->assertSame( 'bcm_not_available', $e->error()->get_error_code() );
+			$this->assertSame( 'bulkcat_not_available', $e->error()->get_error_code() );
 			$this->assertSame( 'Featured belongs to the product, not to each variation.', $e->error()->get_error_message() );
 		}
 		$this->assertSame( [], $variation->sets );

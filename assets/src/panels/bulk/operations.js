@@ -142,18 +142,18 @@ function OperationControls( {
 		problem && problem.arg === name ? problem.reason : '';
 
 	return (
-		<div className="bcm-bulk__cbody">
+		<div className="bulkcat-bulk__cbody">
 			{ properties.field && (
-				<div className="bcm-bulk__fg">
+				<div className="bulkcat-bulk__fg">
 					<label
-						className="bcm-bulk__lbl"
+						className="bulkcat-bulk__lbl"
 						htmlFor={ idBase + '-field' }
 					>
 						{ properties.field.title }
 					</label>
 					<select
 						id={ idBase + '-field' }
-						className="bcm-bulk__field"
+						className="bulkcat-bulk__field"
 						value={ operation.args.field || '' }
 						onChange={ ( event ) =>
 							onArg( 'field', event.target.value )
@@ -186,11 +186,11 @@ function OperationControls( {
 						reason={ reasonFor( name ) }
 					/>
 				) ) }
-			<div className="bcm-bulk__varbox is-full">
+			<div className="bulkcat-bulk__varbox is-full">
 				{ offersVariations( field ) ? (
 					<>
 						<label
-							className="bcm-bulk__check"
+							className="bulkcat-bulk__check"
 							htmlFor={ idBase + '-variations' }
 						>
 							<input
@@ -208,7 +208,7 @@ function OperationControls( {
 								) }
 							</strong>
 						</label>
-						<p className="bcm-bulk__why">
+						<p className="bulkcat-bulk__why">
 							{ operation.variations
 								? __(
 										'Switched on: the variations inside these products change too.',
@@ -222,14 +222,14 @@ function OperationControls( {
 					</>
 				) : (
 					field?.variationNote && (
-						<p className="bcm-bulk__why is-flush">
+						<p className="bulkcat-bulk__why is-flush">
 							{ field.variationNote }
 						</p>
 					)
 				) }
 				{ properties.skip_already && (
 					<label
-						className="bcm-bulk__check"
+						className="bulkcat-bulk__check"
 						htmlFor={ idBase + '-skip_already' }
 					>
 						<input
@@ -271,10 +271,10 @@ export function ActionChooser( {
 	onArg,
 	onVariations,
 } ) {
-	const idBase = 'bcm-op-' + operation.key;
+	const idBase = 'bulkcat-op-' + operation.key;
 	return (
 		<div
-			className="bcm-bulk__choices"
+			className="bulkcat-bulk__choices"
 			role="radiogroup"
 			aria-label={ sprintf(
 				/* translators: %d: the step's position in the list, such as 2. */
@@ -286,8 +286,8 @@ export function ActionChooser( {
 			) }
 		>
 			{ groupedActions( registry ).map( ( group ) => (
-				<div className="bcm-bulk__group" key={ group.id }>
-					<h4 className="bcm-bulk__grouphead">{ group.label }</h4>
+				<div className="bulkcat-bulk__group" key={ group.id }>
+					<h4 className="bulkcat-bulk__grouphead">{ group.label }</h4>
 					{ group.actions.map( ( action ) => {
 						const on =
 							operation.action === action.id &&
@@ -297,7 +297,8 @@ export function ActionChooser( {
 							<div
 								key={ action.id }
 								className={
-									'bcm-bulk__choice' + ( on ? ' is-on' : '' )
+									'bulkcat-bulk__choice' +
+									( on ? ' is-on' : '' )
 								}
 							>
 								<label htmlFor={ id }>
@@ -311,9 +312,9 @@ export function ActionChooser( {
 											onChoose( action.id, group.id )
 										}
 									/>
-									<span className="bcm-bulk__ct">
+									<span className="bulkcat-bulk__ct">
 										{ action.label }
-										<span className="bcm-bulk__cd">
+										<span className="bulkcat-bulk__cd">
 											{ action.description }
 										</span>
 									</span>
@@ -364,17 +365,23 @@ export function OperationSummary( {
 	const title = operationTitle( registry, operation );
 	const problem = operationProblem( registry, operation );
 	return (
-		<div className={ 'bcm-bulk__opsum' + ( editing ? ' is-editing' : '' ) }>
-			<span className="bcm-bulk__n" aria-hidden="true">
+		<div
+			className={
+				'bulkcat-bulk__opsum' + ( editing ? ' is-editing' : '' )
+			}
+		>
+			<span className="bulkcat-bulk__n" aria-hidden="true">
 				{ index + 1 }
 			</span>
-			<span className="bcm-bulk__optitle">
+			<span className="bulkcat-bulk__optitle">
 				{ title }
 				{ ! editing && problem && problem.reason && (
-					<span className="bcm-bulk__reason">{ problem.reason }</span>
+					<span className="bulkcat-bulk__reason">
+						{ problem.reason }
+					</span>
 				) }
 			</span>
-			<span className="bcm-bulk__opacts">
+			<span className="bulkcat-bulk__opacts">
 				{ ! editing && (
 					<button
 						type="button"

@@ -165,7 +165,7 @@ final class FindReplace extends BaseOperation {
 					__( 'The %s on this product contains characters that could not be searched, so it was not changed. Edit it by hand.', 'bulk-catalogue-manager-for-woocommerce' ),
 					$field->label()
 				),
-				'bcm_invalid_value'
+				'bulkcat_invalid_value'
 			);
 		}
 		if ( $replaced === $text ) {

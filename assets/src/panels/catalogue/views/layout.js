@@ -40,7 +40,7 @@ export default function LayoutSwitch( { view, onChangeView } ) {
 	};
 	return (
 		<div
-			className="bcm-views__segmented"
+			className="bulkcat-views__segmented"
 			role="group"
 			aria-label={ __(
 				'Layout',

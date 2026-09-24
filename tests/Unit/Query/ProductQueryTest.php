@@ -46,7 +46,7 @@ final class ProductQueryTest extends TestCase {
 	private const HOSTILE_SEARCH = "50% off_'%s";
 
 	protected function setUp(): void {
-		bcm_test_reset();
+		bulkcat_test_reset();
 	}
 
 	private static function db(): \BulkCatalogueManager\Tests\Support\WpdbStub {
@@ -346,7 +346,7 @@ final class ProductQueryTest extends TestCase {
 
 	public function test_the_conditions_accessor_is_the_count_statement_s_from_and_where_unprepared(): void {
 		foreach ( self::matrix() as $name => [ $args ] ) {
-			bcm_test_reset();
+			bulkcat_test_reset();
 			$query      = self::query( $args );
 			$conditions = $query->conditions_sql();
 
@@ -369,7 +369,7 @@ final class ProductQueryTest extends TestCase {
 
 	public function test_every_value_is_a_prepare_argument(): void {
 		foreach ( self::matrix() as $name => [ $args ] ) {
-			bcm_test_reset();
+			bulkcat_test_reset();
 			$query = self::query( $args );
 			$query->statement();
 			$query->count_statement();
@@ -652,9 +652,9 @@ final class ProductQueryTest extends TestCase {
 
 	public function test_a_category_filter_includes_every_category_below_the_chosen_ones(): void {
 		// Clothing (1) > Men (2) > Shirts (3), Clothing > Women (5); Shoes (6) > Boots (7); tag 9 below tag 8 is ignored.
-		$GLOBALS['bcm_test']['term_list'] = [];
+		$GLOBALS['bulkcat_test']['term_list'] = [];
 		foreach ( [ [ 1, 0, 'product_cat' ], [ 2, 1, 'product_cat' ], [ 3, 2, 'product_cat' ], [ 5, 1, 'product_cat' ], [ 6, 0, 'product_cat' ], [ 7, 6, 'product_cat' ], [ 8, 0, 'product_tag' ], [ 9, 8, 'product_tag' ] ] as [ $id, $parent, $taxonomy ] ) {
-			$GLOBALS['bcm_test']['term_list'][] = (object) [
+			$GLOBALS['bulkcat_test']['term_list'][] = (object) [
 				'term_id'  => $id,
 				'parent'   => $parent,
 				'taxonomy' => $taxonomy,
@@ -685,7 +685,7 @@ final class ProductQueryTest extends TestCase {
 		$this->assertSame( 'NOT ' . $exists( 'product_cat', '1, 2, 3, 5' ), $where( 'category_ids', 'isNone', [ 1 ] ) );
 		$this->assertSame( $exists( 'product_cat', '2, 3' ) . ' AND ' . $exists( 'product_cat', '6, 7' ), $where( 'category_ids', 'isAll', [ 2, 6 ] ), 'All of: each chosen branch.' );
 		$this->assertSame( $exists( 'product_tag', '8' ), $where( 'tag_ids', 'isAny', [ 8 ] ), 'Tags are flat.' );
-		$this->assertSame( [ [ 1, 'product_cat' ], [ 2, 'product_cat' ], [ 3, 'product_cat' ], [ 5, 'product_cat' ] ], array_slice( $GLOBALS['bcm_test']['term_children_calls'], 0, 4 ) );
+		$this->assertSame( [ [ 1, 'product_cat' ], [ 2, 'product_cat' ], [ 3, 'product_cat' ], [ 5, 'product_cat' ] ], array_slice( $GLOBALS['bulkcat_test']['term_children_calls'], 0, 4 ) );
 		$this->assertSame( [], self::db()->queries, 'The hierarchy is read without a query.' );
 	}
 

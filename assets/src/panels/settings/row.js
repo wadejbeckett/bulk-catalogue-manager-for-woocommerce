@@ -36,7 +36,7 @@ export function numberFrom( text ) {
  */
 function NumberField( { setting, value, onChange, disabled, label } ) {
 	return (
-		<div className="bcm-settings__number">
+		<div className="bulkcat-settings__number">
 			<TextControl
 				__next40pxDefaultSize
 				__nextHasNoMarginBottom
@@ -52,7 +52,7 @@ function NumberField( { setting, value, onChange, disabled, label } ) {
 				}
 			/>
 			{ setting.unit && (
-				<span className="bcm-settings__unit">{ setting.unit }</span>
+				<span className="bulkcat-settings__unit">{ setting.unit }</span>
 			) }
 		</div>
 	);
@@ -76,7 +76,7 @@ function NumberWithSpecial( { setting, value, onChange, disabled } ) {
 			? setting.min
 			: setting.default;
 	return (
-		<div className="bcm-settings__special">
+		<div className="bulkcat-settings__special">
 			<RadioControl
 				label={ setting.label }
 				selected={ special ? String( special.value ) : 'number' }
@@ -215,8 +215,8 @@ export default function SettingRow( {
 	return (
 		<div
 			className={
-				'bcm-settings__row' +
-				( error ? ' bcm-settings__row--error' : '' )
+				'bulkcat-settings__row' +
+				( error ? ' bulkcat-settings__row--error' : '' )
 			}
 			data-setting={ setting.key }
 		>
@@ -227,14 +227,14 @@ export default function SettingRow( {
 				disabled={ disabled }
 			/>
 			{ setting.help && (
-				<p className="bcm-settings__help">{ setting.help }</p>
+				<p className="bulkcat-settings__help">{ setting.help }</p>
 			) }
 			{ setting.warning && value === true && (
 				<Notice status="warning" isDismissible={ false }>
 					{ setting.warning }
 				</Notice>
 			) }
-			{ error && <p className="bcm-settings__error">{ error }</p> }
+			{ error && <p className="bulkcat-settings__error">{ error }</p> }
 		</div>
 	);
 }

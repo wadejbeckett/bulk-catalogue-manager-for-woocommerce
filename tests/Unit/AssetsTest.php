@@ -23,9 +23,9 @@ final class AssetsTest extends TestCase {
 	private const SCREEN_ID = 'product_page_bulk-catalogue-manager-for-woocommerce';
 
 	protected function setUp(): void {
-		bcm_test_reset();
-		$GLOBALS['bcm_test']['logged_in'] = true;
-		$GLOBALS['bcm_test']['user_id']   = 7;
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['logged_in'] = true;
+		$GLOBALS['bulkcat_test']['user_id']   = 7;
 		self::grant( [ 'manage_woocommerce' ] );
 	}
 
@@ -39,7 +39,7 @@ final class AssetsTest extends TestCase {
 	 * @param list<string> $caps Capabilities.
 	 */
 	private static function grant( array $caps ): void {
-		$GLOBALS['bcm_test']['caps'] = array_fill_keys( $caps, true );
+		$GLOBALS['bulkcat_test']['caps'] = array_fill_keys( $caps, true );
 	}
 
 	private static function screen(): Screen {
@@ -66,7 +66,7 @@ final class AssetsTest extends TestCase {
 		$screen = self::registered();
 		$screen->register();
 
-		$calls = bcm_test_admin_calls( 'add_submenu_page' );
+		$calls = bulkcat_test_admin_calls( 'add_submenu_page' );
 		$this->assertCount( 1, $calls, 'A second register() adds nothing.' );
 		[ $parent, $page_title, $menu_title, $capability, $slug, $callback ] = $calls[0];
 		$this->assertSame( 'edit.php?post_type=product', $parent );
@@ -90,27 +90,27 @@ final class AssetsTest extends TestCase {
 	}
 
 	public function test_administrators_only_needs_manage_options_and_the_filter_has_the_last_word(): void {
-		$GLOBALS['bcm_test']['options']['bcm_settings'] = [ 'administrators_only' => true ];
+		$GLOBALS['bulkcat_test']['options']['bulkcat_settings'] = [ 'administrators_only' => true ];
 		self::grant( [ 'manage_woocommerce', 'manage_options' ] );
 		self::registered();
-		$this->assertSame( 'manage_options', bcm_test_admin_calls( 'add_submenu_page' )[0][3] );
+		$this->assertSame( 'manage_options', bulkcat_test_admin_calls( 'add_submenu_page' )[0][3] );
 
-		bcm_test_reset();
-		$GLOBALS['bcm_test']['logged_in'] = true;
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['logged_in'] = true;
 		self::grant( [ 'edit_products' ] );
-		add_filter( 'bcm_capability', static fn(): string => 'edit_products' );
+		add_filter( 'bulkcat_capability', static fn(): string => 'edit_products' );
 		$screen = self::registered();
-		$this->assertSame( 'edit_products', bcm_test_admin_calls( 'add_submenu_page' )[0][3] );
+		$this->assertSame( 'edit_products', bulkcat_test_admin_calls( 'add_submenu_page' )[0][3] );
 		$this->assertSame( self::SCREEN_ID, $screen->hook_suffix() );
 	}
 
 	public function test_a_shop_manager_is_shut_out_under_administrators_only(): void {
-		$GLOBALS['bcm_test']['options']['bcm_settings'] = [ 'administrators_only' => true ];
+		$GLOBALS['bulkcat_test']['options']['bulkcat_settings'] = [ 'administrators_only' => true ];
 		$screen = self::registered();
 		$this->assertSame( '', $screen->hook_suffix(), 'Core adds no page for a user without the capability.' );
 
 		$screen->enqueue( self::SCREEN_ID );
-		$this->assertSame( [], bcm_test_admin_calls( 'wp_enqueue_script' ) );
+		$this->assertSame( [], bulkcat_test_admin_calls( 'wp_enqueue_script' ) );
 	}
 
 	public function test_render_refuses_anyone_without_the_capability(): void {
@@ -119,7 +119,7 @@ final class AssetsTest extends TestCase {
 		try {
 			self::rendered( $screen );
 			$this->fail( 'render() must wp_die for a user without the capability.' );
-		} catch ( \BcmTestDied $died ) {
+		} catch ( \BulkcatTestDied $died ) {
 			$this->assertSame( 403, $died->args['response'] ?? null );
 			$this->assertStringContainsString( 'not allowed', $died->getMessage() );
 		}
@@ -127,8 +127,8 @@ final class AssetsTest extends TestCase {
 
 	public function test_the_page_renders_one_mount_element(): void {
 		$html = self::rendered( self::registered() );
-		$this->assertSame( 1, substr_count( $html, 'id="bcm-app"' ) );
-		$this->assertStringContainsString( '<div id="bcm-app"></div>', $html );
+		$this->assertSame( 1, substr_count( $html, 'id="bulkcat-app"' ) );
+		$this->assertStringContainsString( '<div id="bulkcat-app"></div>', $html );
 		$this->assertStringContainsString( '<h1>Bulk Catalogue Manager</h1>', $html );
 		$this->assertStringNotContainsString( 'notice', $html );
 	}
@@ -137,41 +137,41 @@ final class AssetsTest extends TestCase {
 		$screen = self::registered();
 		$screen->enqueue( self::SCREEN_ID );
 
-		$scripts = bcm_test_admin_calls( 'wp_register_script' );
+		$scripts = bulkcat_test_admin_calls( 'wp_register_script' );
 		$this->assertCount( 1, $scripts );
 		[ $handle, $src, $deps, $version, $args ] = $scripts[0];
-		$this->assertSame( 'bcm-app', $handle );
+		$this->assertSame( 'bulkcat-app', $handle );
 		$this->assertStringEndsWith( '/' . basename( self::root() ) . '/assets/build/index.js', $src, 'The plugin directory, whatever the checkout is called.' );
 		$asset = require self::root() . '/assets/build/index.asset.php';
 		$this->assertSame( [ ...$asset['dependencies'], 'heartbeat' ], $deps, 'The build\'s dependencies plus core\'s Heartbeat API (T39).' );
 		$this->assertSame( $asset['version'], $version );
 		$this->assertSame( [ 'in_footer' => true ], $args );
-		$this->assertSame( [ [ 'bcm-app' ] ], bcm_test_admin_calls( 'wp_enqueue_script' ) );
+		$this->assertSame( [ [ 'bulkcat-app' ] ], bulkcat_test_admin_calls( 'wp_enqueue_script' ) );
 
 		$this->assertSame(
-			[ [ 'bcm-app', 'bulk-catalogue-manager-for-woocommerce', self::root() . '/languages' ] ],
-			bcm_test_admin_calls( 'wp_set_script_translations' )
+			[ [ 'bulkcat-app', 'bulk-catalogue-manager-for-woocommerce', self::root() . '/languages' ] ],
+			bulkcat_test_admin_calls( 'wp_set_script_translations' )
 		);
 
-		$inline = bcm_test_admin_calls( 'wp_add_inline_script' );
+		$inline = bulkcat_test_admin_calls( 'wp_add_inline_script' );
 		$this->assertCount( 1, $inline );
-		$this->assertSame( 'bcm-app', $inline[0][0] );
+		$this->assertSame( 'bulkcat-app', $inline[0][0] );
 		$this->assertSame( 'before', $inline[0][2] );
-		$this->assertStringStartsWith( 'window.bcmSettings = ', $inline[0][1] );
-		$settings = json_decode( substr( rtrim( $inline[0][1], ';' ), strlen( 'window.bcmSettings = ' ) ), true );
-		$this->assertSame( 'https://example.test/wp-json/bcm/v1/', $settings['root'] );
+		$this->assertStringStartsWith( 'window.bulkcatSettings = ', $inline[0][1] );
+		$settings = json_decode( substr( rtrim( $inline[0][1], ';' ), strlen( 'window.bulkcatSettings = ' ) ), true );
+		$this->assertSame( 'https://example.test/wp-json/bulkcat/v1/', $settings['root'] );
 		$this->assertSame( 'nonce-wp_rest', $settings['nonce'] );
-		$this->assertSame( 'https://example.test/wp-json/bcm/v1/fields', $settings['fieldsEndpoint'] );
+		$this->assertSame( 'https://example.test/wp-json/bulkcat/v1/fields', $settings['fieldsEndpoint'] );
 		$this->assertSame( 7, $settings['user']['id'] );
 		$this->assertSame( 7, $settings['wpMajor'] );
 		$this->assertSame( Screen::DATAVIEWS_VERSION, $settings['dataviews'] );
 		$this->assertSame( 25, $settings['settings']['rows_per_page'] );
 
-		$styles = bcm_test_admin_calls( 'wp_enqueue_style' );
+		$styles = bulkcat_test_admin_calls( 'wp_enqueue_style' );
 		$this->assertCount( 1, $styles );
-		$this->assertSame( 'bcm-app', $styles[0][0] );
+		$this->assertSame( 'bulkcat-app', $styles[0][0] );
 		$this->assertStringEndsWith( '/assets/build/style-index.css', $styles[0][1] );
-		$this->assertSame( [ [ 'bcm-app', 'rtl', 'replace' ] ], bcm_test_admin_calls( 'wp_style_add_data' ) );
+		$this->assertSame( [ [ 'bulkcat-app', 'rtl', 'replace' ] ], bulkcat_test_admin_calls( 'wp_style_add_data' ) );
 	}
 
 	public function test_the_client_is_told_the_current_users_capabilities(): void {
@@ -195,10 +195,10 @@ final class AssetsTest extends TestCase {
 	}
 
 	public function test_the_settings_cannot_close_the_inline_script(): void {
-		$GLOBALS['bcm_test']['display_name'] = '</script><script>alert(1)</script>';
-		$screen                              = self::registered();
+		$GLOBALS['bulkcat_test']['display_name'] = '</script><script>alert(1)</script>';
+		$screen                                  = self::registered();
 		$screen->enqueue( self::SCREEN_ID );
-		$this->assertStringNotContainsString( '</script>', bcm_test_admin_calls( 'wp_add_inline_script' )[0][1] );
+		$this->assertStringNotContainsString( '</script>', bulkcat_test_admin_calls( 'wp_add_inline_script' )[0][1] );
 	}
 
 	public function test_nothing_loads_on_any_other_admin_screen(): void {
@@ -207,35 +207,35 @@ final class AssetsTest extends TestCase {
 			$screen->enqueue( $other );
 		}
 		foreach ( [ 'wp_register_script', 'wp_enqueue_script', 'wp_enqueue_style', 'wp_set_script_translations', 'wp_add_inline_script' ] as $function ) {
-			$this->assertSame( [], bcm_test_admin_calls( $function ), "$function must not run off the screen." );
+			$this->assertSame( [], bulkcat_test_admin_calls( $function ), "$function must not run off the screen." );
 		}
 	}
 
 	public function test_nothing_loads_before_the_screen_is_registered(): void {
 		self::screen()->enqueue( self::SCREEN_ID );
-		$this->assertSame( [], bcm_test_admin_calls( 'wp_enqueue_script' ) );
+		$this->assertSame( [], bulkcat_test_admin_calls( 'wp_enqueue_script' ) );
 	}
 
 	public function test_a_mismatched_wordpress_major_shows_a_notice_instead_of_mounting(): void {
-		$GLOBALS['bcm_test']['wp_version'] = '8.0';
-		$screen                            = self::registered();
+		$GLOBALS['bulkcat_test']['wp_version'] = '8.0';
+		$screen                                = self::registered();
 		$screen->enqueue( self::SCREEN_ID );
-		$this->assertSame( [], bcm_test_admin_calls( 'wp_enqueue_script' ), 'No script on a mismatched host.' );
-		$this->assertSame( [], bcm_test_admin_calls( 'wp_enqueue_style' ) );
+		$this->assertSame( [], bulkcat_test_admin_calls( 'wp_enqueue_script' ), 'No script on a mismatched host.' );
+		$this->assertSame( [], bulkcat_test_admin_calls( 'wp_enqueue_style' ) );
 
 		$html = self::rendered( $screen );
-		$this->assertStringNotContainsString( 'bcm-app', $html );
+		$this->assertStringNotContainsString( 'bulkcat-app', $html );
 		$this->assertStringContainsString( 'notice notice-error', $html );
 		$this->assertStringContainsString( 'built for WordPress 7, but this site runs WordPress 8.0', $html );
 	}
 
 	public function test_every_wordpress_7_release_matches_the_pinned_tag(): void {
 		foreach ( [ '7.0', '7.0.2', '7.1', '7.1-RC1' ] as $version ) {
-			$GLOBALS['bcm_test']['wp_version'] = $version;
+			$GLOBALS['bulkcat_test']['wp_version'] = $version;
 			$this->assertTrue( Screen::host_supported(), "WordPress $version runs the wp-7.0 DataViews." );
 		}
 		foreach ( [ '6.9', '8.0' ] as $version ) {
-			$GLOBALS['bcm_test']['wp_version'] = $version;
+			$GLOBALS['bulkcat_test']['wp_version'] = $version;
 			$this->assertFalse( Screen::host_supported(), "WordPress $version does not." );
 		}
 	}

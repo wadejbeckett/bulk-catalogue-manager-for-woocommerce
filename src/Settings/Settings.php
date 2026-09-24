@@ -1,6 +1,6 @@
 <?php
 /**
- * Typed reader for the `bcm_settings` option, its registration and its save
+ * Typed reader for the `bulkcat_settings` option, its registration and its save
  * sanitiser (SPEC §11). Callers read settings only through the typed methods;
  * a missing or corrupt stored value reads as its default.
  *
@@ -21,7 +21,7 @@ final class Settings {
 	/**
 	 * The one option holding every setting.
 	 */
-	public const OPTION = 'bcm_settings';
+	public const OPTION = 'bulkcat_settings';
 
 	/**
 	 * Valid stored values, every schema key present.
@@ -89,7 +89,7 @@ final class Settings {
 		$result = Schema::validate( $input );
 		foreach ( $result->errors() as $key => $message ) {
 			if ( function_exists( 'add_settings_error' ) ) {
-				add_settings_error( self::OPTION, 'bcm_invalid_' . sanitize_key( (string) $key ), $message );
+				add_settings_error( self::OPTION, 'bulkcat_invalid_' . sanitize_key( (string) $key ), $message );
 			}
 		}
 		return array_merge( self::load()->values, $result->values() );

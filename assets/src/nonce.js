@@ -2,7 +2,7 @@
  * Keeping the wp_rest nonce fresh (SPEC §13, T39).
  *
  * The page gets a nonce at load. The Heartbeat API (core's `heartbeat`
- * script, a dependency of this screen) sends `bcm_nonce` on every tick and
+ * script, a dependency of this screen) sends `bulkcat_nonce` on every tick and
  * src/Admin/Heartbeat.php answers with a fresh nonce, which is installed on
  * apiFetch's nonce middleware. If a request still fails with
  * `rest_cookie_invalid_nonce` (the nonce aged out or the user signed in
@@ -12,7 +12,7 @@
  * request once more with the same options, so a write keeps its `uuid`. A
  * second failure is reported in plain words and never retried.
  *
- * The refresh cannot be a bcm/v1 route: core refuses a REST request carrying
+ * The refresh cannot be a bulkcat/v1 route: core refuses a REST request carrying
  * a stale nonce before any route runs, and treats one without a nonce as
  * signed out.
  */
@@ -21,7 +21,7 @@ import { __ } from '@wordpress/i18n';
 /**
  * The Heartbeat data key sent on each tick and the key of the answer.
  */
-export const HEARTBEAT_KEY = 'bcm_nonce';
+export const HEARTBEAT_KEY = 'bulkcat_nonce';
 
 /**
  * The REST error code core returns for a nonce it does not accept.
@@ -32,7 +32,7 @@ export const INVALID_NONCE = 'rest_cookie_invalid_nonce';
  * The code of the error reported once the retry has failed. Deliberately not
  * INVALID_NONCE, so apiFetch's own recovery never retries it again.
  */
-export const EXPIRED_CODE = 'bcm_nonce_expired';
+export const EXPIRED_CODE = 'bulkcat_nonce_expired';
 
 /**
  * Whether a value looks like a nonce WordPress made: a short run of letters

@@ -1,6 +1,6 @@
 <?php
 /**
- * `GET /bcm/v1/fields` (SPEC §5.1, §6, §12.1): the field registry and the
+ * `GET /bulkcat/v1/fields` (SPEC §5.1, §6, §12.1): the field registry and the
  * action registry as the client reads them, so the client hard-codes no
  * field list and no action list. The response is `{ fields, actions,
  * groups }`: each field carries the key, label, type, group, edit kinds,
@@ -105,7 +105,7 @@ final class FieldsController implements ReadController {
 		];
 		return [
 			'$schema'    => 'http://json-schema.org/draft-04/schema#',
-			'title'      => 'bcm-fields',
+			'title'      => 'bulkcat-fields',
 			'type'       => 'object',
 			'properties' => [
 				'fields'  => [

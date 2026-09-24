@@ -58,12 +58,12 @@ abstract class BaseOperation implements Operation {
 	/**
 	 * The refusal code for arguments that are missing, malformed or out of range.
 	 */
-	public const INVALID = 'bcm_invalid_operation';
+	public const INVALID = 'bulkcat_invalid_operation';
 
 	/**
 	 * The refusal code for a field the action does not accept.
 	 */
-	public const FIELD_NOT_ACCEPTED = 'bcm_field_not_accepted';
+	public const FIELD_NOT_ACCEPTED = 'bulkcat_field_not_accepted';
 
 	/**
 	 * The step argument for "Also apply to variations" (T69).
@@ -367,7 +367,7 @@ abstract class BaseOperation implements Operation {
 		$old    = $field->read( $subject );
 		$reason = $field->unavailable_reason( $subject );
 		if ( null !== $reason ) {
-			return Result::failed( $field->key(), $old, $reason, 'bcm_not_available' );
+			return Result::failed( $field->key(), $old, $reason, 'bulkcat_not_available' );
 		}
 		$clean = $field->clean( $target );
 		if ( $clean instanceof \WP_Error ) {
@@ -394,7 +394,7 @@ abstract class BaseOperation implements Operation {
 	protected static function current_number( Field $field, object $subject, mixed $old ): string|Result {
 		$reason = $field->unavailable_reason( $subject );
 		if ( null !== $reason ) {
-			return Result::skipped( $field->key(), $old, $reason, 'bcm_not_available' );
+			return Result::skipped( $field->key(), $old, $reason, 'bulkcat_not_available' );
 		}
 		if ( Values::is_empty( $old ) ) {
 			return Result::skipped(
@@ -458,7 +458,7 @@ abstract class BaseOperation implements Operation {
 				$field->label(),
 				'-' . self::settle( $field, ltrim( $number, '-' ) )
 			),
-			'bcm_invalid_value'
+			'bulkcat_invalid_value'
 		);
 	}
 

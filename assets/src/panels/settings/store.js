@@ -1,6 +1,6 @@
 /**
  * The shop's settings as every panel reads them (SPEC §11). They start as
- * the values localised at page load (window.bcmSettings.settings, from
+ * the values localised at page load (window.bulkcatSettings.settings, from
  * src/Admin/Screen.php) and follow each save from the Settings tab, so a
  * panel reading useSettings() sees a change without a reload. Access is
  * never decided here: every route checks it on the server.

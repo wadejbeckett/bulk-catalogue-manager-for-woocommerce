@@ -1,7 +1,7 @@
 <?php
 /**
  * The filtered count (T19; SPEC §12.2): `total` is a separate `COUNT(*)`
- * over the page query's conditions, kept 60 seconds in a `bcm_count_`
+ * over the page query's conditions, kept 60 seconds in a `bulkcat_count_`
  * transient keyed by a hash of the normalised conditions. Two identical reads
  * in separate requests inside the window issue the `COUNT(*)` once; another
  * sort, page or page size of the same view shares it; any change to the
@@ -29,7 +29,7 @@ require_once __DIR__ . '/SeededCatalogue.php';
 
 final class CountCacheTest extends TestCase {
 	protected function setUp(): void {
-		bcm_test_reset();
+		bulkcat_test_reset();
 		SeededCatalogue::seed();
 	}
 
@@ -70,7 +70,7 @@ final class CountCacheTest extends TestCase {
 	 * @return array{items: array<int, array<string, mixed>>, total: int}
 	 */
 	private static function request( Criteria $criteria ): array {
-		$GLOBALS['bcm_test']['cache'] = [];
+		$GLOBALS['bulkcat_test']['cache'] = [];
 		return ( new Catalogue( new Hydrator( Registry::instance() ) ) )->page( $criteria, [ 'name' ] );
 	}
 
@@ -86,8 +86,8 @@ final class CountCacheTest extends TestCase {
 
 		$key = ( new CountCache() )->key( $criteria );
 		$this->assertStringStartsWith( CountCache::PREFIX, $key );
-		$this->assertSame( [ 'total' => 2 ], $GLOBALS['bcm_test']['transients'][ $key ] );
-		$this->assertSame( 60, $GLOBALS['bcm_test']['transient_ttl'][ $key ] );
+		$this->assertSame( [ 'total' => 2 ], $GLOBALS['bulkcat_test']['transients'][ $key ] );
+		$this->assertSame( 60, $GLOBALS['bulkcat_test']['transient_ttl'][ $key ] );
 	}
 
 	public function test_sort_page_and_page_size_share_the_count_of_their_view(): void {
@@ -171,8 +171,8 @@ final class CountCacheTest extends TestCase {
 		$this->assertSame( 2, self::counts_run( $criteria ), 'A product save must bust the count.' );
 
 		// With a persistent object cache the posts' last-changed value is in the key.
-		$GLOBALS['bcm_test']['ext_object_cache'] = true;
-		$before                                  = ( new CountCache() )->key( $criteria );
+		$GLOBALS['bulkcat_test']['ext_object_cache'] = true;
+		$before                                      = ( new CountCache() )->key( $criteria );
 		self::request( $criteria );
 		$this->assertSame( 3, self::counts_run( $criteria ) );
 		self::request( $criteria );
@@ -188,7 +188,7 @@ final class CountCacheTest extends TestCase {
 
 	public function test_a_stored_count_that_is_not_a_count_is_recounted(): void {
 		$criteria = self::criteria();
-		$GLOBALS['bcm_test']['transients'][ ( new CountCache() )->key( $criteria ) ] = [ 'total' => '99' ];
+		$GLOBALS['bulkcat_test']['transients'][ ( new CountCache() )->key( $criteria ) ] = [ 'total' => '99' ];
 		$this->assertSame( 2, self::request( $criteria )['total'] );
 		$this->assertSame( 1, self::counts_run( $criteria ) );
 	}

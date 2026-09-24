@@ -1,6 +1,6 @@
 <?php
 /**
- * `GET /bcm/v1/batches/{id}/changes` (SPEC §4.6, §9.2, §12.6; T36): one page
+ * `GET /bulkcat/v1/batches/{id}/changes` (SPEC §4.6, §9.2, §12.6; T36): one page
  * of a batch's per-row outcome from the journal, so the history screen can
  * expand a batch to what it did and to its failing rows. Each row is
  * `{ change_id, object_id, object_type, name, field, field_label, old_value,
@@ -10,7 +10,7 @@
  * rows; `per_page` is capped at 100 by RouteSchema's paging arguments.
  * Names come from one post-cache prime per page. Registered by
  * BatchesController, behind Access::can_read; a missing batch answers 404
- * `bcm_not_found`.
+ * `bulkcat_not_found`.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -222,7 +222,7 @@ final class BatchChangesController implements ReadController {
 		$any     = [ 'type' => [ 'string', 'number', 'integer', 'boolean', 'array', 'object', 'null' ] ];
 		return [
 			'$schema'    => RouteSchema::DIALECT,
-			'title'      => 'bcm-batch-change',
+			'title'      => 'bulkcat-batch-change',
 			'type'       => 'object',
 			'properties' => [
 				'change_id'   => $integer + [ 'required' => true ],

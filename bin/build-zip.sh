@@ -15,7 +15,7 @@
 # to src/Autoloader.php. Needs git, zip, unzip, Node 20 and npm.
 #
 #   bin/build-zip.sh              build, verify, print the path and size
-#   BCM_SKIP_BUILD=1 bin/build-zip.sh   ship the committed assets/build as is
+#   BULKCAT_SKIP_BUILD=1 bin/build-zip.sh   ship the committed assets/build as is
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -35,7 +35,7 @@ STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT
 git -C "$ROOT" archive --worktree-attributes --format=tar --prefix="$SLUG/" HEAD | tar -x -C "$STAGE"
 
-if [ "${BCM_SKIP_BUILD:-0}" != "1" ]; then
+if [ "${BULKCAT_SKIP_BUILD:-0}" != "1" ]; then
 	(
 		cd "$STAGE/$SLUG"
 		rm -rf assets/build

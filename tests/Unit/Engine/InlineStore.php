@@ -62,9 +62,9 @@ final class InlineStore {
 	public function __construct() {
 		global $wpdb;
 		SeededCatalogue::seed();
-		$items           = '`wp_bcm_batch_items`';
-		$batches         = '`wp_bcm_batches`';
-		$changes         = '`wp_bcm_changes`';
+		$items           = '`wp_bulkcat_batch_items`';
+		$batches         = '`wp_bulkcat_batches`';
+		$changes         = '`wp_bulkcat_changes`';
 		$wpdb->responses = [
 			"/^SELECT \\* FROM $batches WHERE batch_id = (\\d+)$/" => fn( string $sql ): ?array => $this->find( $sql ),
 			"/^INSERT INTO $items/"                => fn( string $sql ): int => $this->insert_items( $sql ),
@@ -73,7 +73,7 @@ final class InlineStore {
 			"/^UPDATE $items SET state = '\\w+', message = .* AND item_id IN /s" => fn( string $sql ): int => $this->mark( $sql ),
 			"/^UPDATE $batches SET done_items = /" => fn( string $sql ): int => $this->count_up( $sql ),
 			"/^SELECT change_id FROM $changes WHERE batch_id = (\\d+) AND object_id = (\\d+) LIMIT 1$/" => fn( string $sql ): ?string => $this->has_object( $sql ),
-			'/^DELETE FROM `(wp_bcm_batches|wp_bcm_batch_items)`/' => fn(): int => 1,
+			'/^DELETE FROM `(wp_bulkcat_batches|wp_bulkcat_batch_items)`/' => fn(): int => 1,
 		] + $wpdb->responses;
 	}
 
@@ -86,7 +86,7 @@ final class InlineStore {
 			++$this->seen;
 			if ( 'insert' === $method ) {
 				$id = ++$this->inserts;
-				if ( 'wp_bcm_batches' === $table ) {
+				if ( 'wp_bulkcat_batches' === $table ) {
 					$this->batches[ $id ] = [ 'batch_id' => $id ] + $data + [
 						'finished_gmt'  => null,
 						'undo_of'       => null,
@@ -96,12 +96,12 @@ final class InlineStore {
 						'chunk_size'    => 0,
 						'note'          => '',
 					];
-				} elseif ( 'wp_bcm_changes' === $table ) {
+				} elseif ( 'wp_bulkcat_changes' === $table ) {
 					$data['old_value'] = ValueCodec::decode( $data['old_value'] );
 					$data['new_value'] = ValueCodec::decode( $data['new_value'] );
 					$this->changes[]   = $data;
 				}
-			} elseif ( 'update' === $method && 'wp_bcm_changes' === $table ) {
+			} elseif ( 'update' === $method && 'wp_bulkcat_changes' === $table ) {
 				// An intent row settled (§12.3).
 				foreach ( $this->changes as $index => $row ) {
 					if ( [] === array_diff_assoc( $where, array_intersect_key( $row, $where ) ) ) {
@@ -109,7 +109,7 @@ final class InlineStore {
 						$this->changes[ $index ] = $data + $row;
 					}
 				}
-			} elseif ( 'update' === $method && 'wp_bcm_batches' === $table && isset( $this->batches[ $where['batch_id'] ] ) ) {
+			} elseif ( 'update' === $method && 'wp_bulkcat_batches' === $table && isset( $this->batches[ $where['batch_id'] ] ) ) {
 				$row = $this->batches[ $where['batch_id'] ];
 				if ( ! isset( $where['status'] ) || $where['status'] === $row['status'] ) {
 					$this->batches[ $where['batch_id'] ] = $data + $row;

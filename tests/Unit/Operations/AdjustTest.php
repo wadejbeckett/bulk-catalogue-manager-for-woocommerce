@@ -27,7 +27,7 @@ use PHPUnit\Framework\TestCase;
 
 final class AdjustTest extends TestCase {
 	protected function setUp(): void {
-		bcm_test_reset();
+		bulkcat_test_reset();
 	}
 
 	/**
@@ -78,7 +78,7 @@ final class AdjustTest extends TestCase {
 	}
 
 	public function test_price_table_at_two_decimals(): void {
-		$GLOBALS['bcm_test']['decimals'] = 2;
+		$GLOBALS['bulkcat_test']['decimals'] = 2;
 		$this->run_table(
 			'regular_price',
 			[
@@ -121,7 +121,7 @@ final class AdjustTest extends TestCase {
 	}
 
 	public function test_price_table_at_zero_decimals(): void {
-		$GLOBALS['bcm_test']['decimals'] = 0;
+		$GLOBALS['bulkcat_test']['decimals'] = 0;
 		$this->run_table(
 			'regular_price',
 			[
@@ -151,7 +151,7 @@ final class AdjustTest extends TestCase {
 		);
 		$this->assertSame( Result::SKIPPED, $result->state() );
 		$this->assertSame( 'Regular price would go below zero (-2.50), so it was not changed.', $result->reason() );
-		$this->assertSame( 'bcm_invalid_value', $result->code() );
+		$this->assertSame( 'bulkcat_invalid_value', $result->code() );
 		$this->assertSame( '3.00', $result->new(), 'Never clamped to zero.' );
 	}
 
@@ -225,7 +225,7 @@ final class AdjustTest extends TestCase {
 			'variation'
 		);
 		$this->assertSame( Result::SKIPPED, $result->state() );
-		$this->assertSame( 'bcm_not_available', $result->code() );
+		$this->assertSame( 'bulkcat_not_available', $result->code() );
 		$this->assertStringContainsString( 'Manage stock', $result->reason() );
 	}
 
@@ -241,7 +241,7 @@ final class AdjustTest extends TestCase {
 			'variable'
 		);
 		$this->assertSame( Result::SKIPPED, $result->state() );
-		$this->assertSame( 'bcm_not_available', $result->code() );
+		$this->assertSame( 'bulkcat_not_available', $result->code() );
 	}
 
 	public function test_weight_and_a_dimension_adjust_as_decimals(): void {

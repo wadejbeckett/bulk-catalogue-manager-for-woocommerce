@@ -9,7 +9,7 @@
  * fails that item while the rest apply, a parent resyncs once per chunk, a
  * variation takes only published or private; a chunk holds products up to
  * the product size, then variations up to the variation size, both through
- * `bcm_batch_size` with the kind, halved together after a slow chunk; and
+ * `bulkcat_batch_size` with the kind, halved together after a slow chunk; and
  * every variation is checked against the batch's user, its parent too.
  *
  * @package BulkCatalogueManager
@@ -52,16 +52,16 @@ final class VariationRunTest extends TestCase {
 	private float $step = 1.0;
 
 	protected function setUp(): void {
-		bcm_test_reset();
-		$this->now                            = 1790000000.0;
-		$this->step                           = 1.0;
-		$GLOBALS['bcm_test']['user_caps']     = [ self::USER => [ 'edit_post' => true ] ];
-		$GLOBALS['bcm_test']['scheduled']     = [];
-		$GLOBALS['bcm_test']['term_counting'] = [];
+		bulkcat_test_reset();
+		$this->now                                = 1790000000.0;
+		$this->step                               = 1.0;
+		$GLOBALS['bulkcat_test']['user_caps']     = [ self::USER => [ 'edit_post' => true ] ];
+		$GLOBALS['bulkcat_test']['scheduled']     = [];
+		$GLOBALS['bulkcat_test']['term_counting'] = [];
 	}
 
 	protected function tearDown(): void {
-		$this->assertSame( [], $GLOBALS['bcm_test']['post_meta_updates'] ?? [], 'The engine wrote meta.' );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['post_meta_updates'] ?? [], 'The engine wrote meta.' );
 	}
 
 	private function runner( array $settings = [], int $limit = 30 ): ChunkRunner {
@@ -100,8 +100,8 @@ final class VariationRunTest extends TestCase {
 	}
 
 	private static function object( int $id, string $type, array $props ): SavedProduct {
-		$product                                = new SavedProduct( $type, [ 'id' => $id ] + $props );
-		$GLOBALS['bcm_test']['products'][ $id ] = $product;
+		$product                                    = new SavedProduct( $type, [ 'id' => $id ] + $props );
+		$GLOBALS['bulkcat_test']['products'][ $id ] = $product;
 		return $product;
 	}
 
@@ -146,7 +146,7 @@ final class VariationRunTest extends TestCase {
 	}
 
 	private static function prop( int $id, string $prop ): mixed {
-		return $GLOBALS['bcm_test']['products'][ $id ]->props[ $prop ] ?? null;
+		return $GLOBALS['bulkcat_test']['products'][ $id ]->props[ $prop ] ?? null;
 	}
 
 	/**
@@ -155,7 +155,7 @@ final class VariationRunTest extends TestCase {
 	 * @return list<string>
 	 */
 	private static function claims(): array {
-		return array_values( array_filter( $GLOBALS['wpdb']->queries, static fn( string $sql ): bool => str_starts_with( $sql, 'UPDATE `wp_bcm_batch_items` SET claim_token = \'' ) ) );
+		return array_values( array_filter( $GLOBALS['wpdb']->queries, static fn( string $sql ): bool => str_starts_with( $sql, 'UPDATE `wp_bulkcat_batch_items` SET claim_token = \'' ) ) );
 	}
 
 	/**
@@ -169,7 +169,7 @@ final class VariationRunTest extends TestCase {
 				preg_match( '/p\.ID IN \(([\d, ]+)\)/', $sql, $m );
 				$rows = [];
 				foreach ( array_map( 'intval', explode( ', ', $m[1] ) ) as $id ) {
-					$product = $GLOBALS['bcm_test']['products'][ $id ] ?? null;
+					$product = $GLOBALS['bulkcat_test']['products'][ $id ] ?? null;
 					if ( null !== $product ) {
 						$rows[] = [
 							'id'        => (string) $id,
@@ -201,7 +201,7 @@ final class VariationRunTest extends TestCase {
 		self::answer_catalogue_reads();
 		$before = [];
 		foreach ( [ 500, 501, 502, 503, 600 ] as $id ) {
-			$before[ $id ] = $GLOBALS['bcm_test']['products'][ $id ]->props;
+			$before[ $id ] = $GLOBALS['bulkcat_test']['products'][ $id ]->props;
 		}
 
 		$increase = $this->steps(
@@ -231,7 +231,7 @@ final class VariationRunTest extends TestCase {
 		$this->assertSame( 'complete', $this->run_all( $batch_id ) );
 		$this->assertSame( [ '55.00', '11.00', '22.00', '33.00' ], [ self::prop( 600, 'regular_price' ), self::prop( 501, 'regular_price' ), self::prop( 502, 'regular_price' ), self::prop( 503, 'regular_price' ) ] );
 		$this->assertSame( '', self::prop( 500, 'regular_price' ), 'The parent is never written.' );
-		$this->assertSame( [ 500 ], $GLOBALS['bcm_test']['variable_syncs'], 'The parent is resynchronised once, through WooCommerce, after its variations.' );
+		$this->assertSame( [ 500 ], $GLOBALS['bulkcat_test']['variable_syncs'], 'The parent is resynchronised once, through WooCommerce, after its variations.' );
 		$journal = array_values( array_filter( $store->changes, static fn( array $row ): bool => $batch_id === $row['batch_id'] ) );
 		$this->assertSame( [ 'product', 'variation', 'variation', 'variation' ], array_column( $journal, 'object_type' ) );
 
@@ -245,7 +245,7 @@ final class VariationRunTest extends TestCase {
 		foreach ( $before as $id => $props ) {
 			$this->assertSame( $props['regular_price'], self::prop( $id, 'regular_price' ), "Object $id is back as it was." );
 		}
-		$this->assertSame( [ 500, 500 ], $GLOBALS['bcm_test']['variable_syncs'], 'The undo resynchronises the parent again, once.' );
+		$this->assertSame( [ 500, 500 ], $GLOBALS['bulkcat_test']['variable_syncs'], 'The undo resynchronises the parent again, once.' );
 	}
 
 	public function test_stock_quantity_on_a_variation_not_managing_its_stock_is_skipped_with_its_reason(): void {
@@ -278,8 +278,8 @@ final class VariationRunTest extends TestCase {
 		$this->assertSame( [ [ 'stock_quantity', 'skipped', $reason ] ], array_map( static fn( array $row ): array => [ $row['prop'], $row['result'], $row['message'] ], $rows ), 'Recorded skipped with its reason, not ignored.' );
 
 		// An increase says the same.
-		bcm_test_reset();
-		$GLOBALS['bcm_test']['user_caps'] = [ self::USER => [ 'edit_post' => true ] ];
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['user_caps'] = [ self::USER => [ 'edit_post' => true ] ];
 		self::catalogue();
 		$store = new RunnerStore(
 			self::BATCH,
@@ -305,8 +305,8 @@ final class VariationRunTest extends TestCase {
 
 	public function test_a_sku_another_product_holds_fails_that_item_and_the_rest_apply(): void {
 		self::catalogue();
-		$GLOBALS['bcm_test']['skus'] = [ 'X-COAT-501' => 900 ];
-		$store                       = new RunnerStore(
+		$GLOBALS['bulkcat_test']['skus'] = [ 'X-COAT-501' => 900 ];
+		$store                           = new RunnerStore(
 			self::BATCH,
 			[ [ 501, 'variation' ], [ 502, 'variation' ], [ 600, 'product' ] ],
 			$this->steps(
@@ -331,7 +331,7 @@ final class VariationRunTest extends TestCase {
 		$failed = array_values( array_filter( $store->changes, static fn( array $row ): bool => 'failed' === $row['result'] ) );
 		$this->assertSame( [ [ 501, 'variation', 'sku', $clash ] ], array_map( static fn( array $row ): array => [ $row['object_id'], $row['object_type'], $row['prop'], $row['message'] ], $failed ) );
 		$this->assertSame( [ 1, 2 ], [ $store->batch()['failed_items'], $store->batch()['changed_items'] ] );
-		$this->assertSame( [ 500 ], $GLOBALS['bcm_test']['variable_syncs'], 'Two variations of one parent in one chunk: one resync.' );
+		$this->assertSame( [ 500 ], $GLOBALS['bulkcat_test']['variable_syncs'], 'Two variations of one parent in one chunk: one resync.' );
 	}
 
 	public function test_a_variation_takes_only_published_or_private(): void {
@@ -361,8 +361,8 @@ final class VariationRunTest extends TestCase {
 			$this->assertSame( 'publish', self::prop( $id, 'status' ) );
 		}
 
-		bcm_test_reset();
-		$GLOBALS['bcm_test']['user_caps'] = [ self::USER => [ 'edit_post' => true ] ];
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['user_caps'] = [ self::USER => [ 'edit_post' => true ] ];
 		self::catalogue();
 		$store = new RunnerStore(
 			self::BATCH,
@@ -384,8 +384,8 @@ final class VariationRunTest extends TestCase {
 		$this->assertSame( 'failed', $this->run_all( self::BATCH ), 'Chosen on the variation itself, a draft fails.' );
 		$this->assertSame( [ 'failed', $sentence ], [ $store->item( 501 )['state'], $store->item( 501 )['message'] ] );
 
-		bcm_test_reset();
-		$GLOBALS['bcm_test']['user_caps'] = [ self::USER => [ 'edit_post' => true ] ];
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['user_caps'] = [ self::USER => [ 'edit_post' => true ] ];
 		self::catalogue();
 		$store = new RunnerStore(
 			self::BATCH,
@@ -498,9 +498,9 @@ final class VariationRunTest extends TestCase {
 		$this->assertSame( 50, array_count_values( $store->states() )['done'] );
 
 		// Variations only: the product claim finds nothing, the variation claim takes 100.
-		bcm_test_reset();
-		$GLOBALS['bcm_test']['user_caps'] = [ self::USER => [ 'edit_post' => true ] ];
-		$store                            = new RunnerStore( self::BATCH, self::variations( 150, 2001 ), $this->increase(), self::USER );
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['user_caps'] = [ self::USER => [ 'edit_post' => true ] ];
+		$store                                = new RunnerStore( self::BATCH, self::variations( 150, 2001 ), $this->increase(), self::USER );
 		$this->runner()->run( self::BATCH );
 		$this->assertCount( 2, self::claims() );
 		$this->assertStringContainsString( "AND object_type = 'variation' ORDER BY item_id ASC LIMIT 100", self::claims()[1] );
@@ -511,14 +511,14 @@ final class VariationRunTest extends TestCase {
 			],
 			array_count_values( $store->states() )
 		);
-		$this->assertSame( [ 9000 ], $GLOBALS['bcm_test']['variable_syncs'], 'A hundred variations of one parent: one resync for the chunk.' );
+		$this->assertSame( [ 9000 ], $GLOBALS['bulkcat_test']['variable_syncs'], 'A hundred variations of one parent: one resync for the chunk.' );
 
 		// Mixed and interleaved: products first, each kind against its own size.
-		bcm_test_reset();
-		$GLOBALS['bcm_test']['user_caps'] = [ self::USER => [ 'edit_post' => true ] ];
-		$variations                       = self::variations( 150, 2001 );
-		$products                         = self::products( 60, 1001 );
-		$mixed                            = [];
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['user_caps'] = [ self::USER => [ 'edit_post' => true ] ];
+		$variations                           = self::variations( 150, 2001 );
+		$products                             = self::products( 60, 1001 );
+		$mixed                                = [];
 		foreach ( $variations as $index => $variation ) {
 			$mixed[] = $variation;
 			if ( isset( $products[ $index ] ) ) {
@@ -546,7 +546,7 @@ final class VariationRunTest extends TestCase {
 	public function test_both_sizes_come_from_their_setting_through_the_filter_with_the_kind(): void {
 		$seen = [];
 		add_filter(
-			'bcm_batch_size',
+			'bulkcat_batch_size',
 			static function ( int $size, int $batch_id, string $kind ) use ( &$seen ): int {
 				$seen[] = [ $size, $batch_id, $kind ];
 				return 'variation' === $kind ? 30 : $size;
@@ -591,8 +591,8 @@ final class VariationRunTest extends TestCase {
 		}
 		$objects = [ ...self::variations( 3, 2001 ), [ 701, 'variation' ], [ 702, 'variation' ] ];
 		// Revoked since the batch was queued: one variation of its own, and every variation of 700 through the parent.
-		$GLOBALS['bcm_test']['user_caps'][ self::USER ]['edit_post:2002'] = false;
-		$GLOBALS['bcm_test']['user_caps'][ self::USER ]['edit_post:700']  = false;
+		$GLOBALS['bulkcat_test']['user_caps'][ self::USER ]['edit_post:2002'] = false;
+		$GLOBALS['bulkcat_test']['user_caps'][ self::USER ]['edit_post:700']  = false;
 		$store = new RunnerStore( self::BATCH, $objects, $this->increase(), self::USER );
 
 		$this->assertSame( 'partial', $this->run_all( self::BATCH ) );
@@ -606,6 +606,6 @@ final class VariationRunTest extends TestCase {
 		}
 		$skipped = array_values( array_filter( $store->changes, static fn( array $row ): bool => 'skipped' === $row['result'] ) );
 		$this->assertSame( [ 2002, 701, 702 ], array_column( $skipped, 'object_id' ), 'Each refusal is recorded against the variation.' );
-		$this->assertSame( [ 9000 ], $GLOBALS['bcm_test']['variable_syncs'], 'Only a parent with a saved variation is resynchronised.' );
+		$this->assertSame( [ 9000 ], $GLOBALS['bulkcat_test']['variable_syncs'], 'Only a parent with a saved variation is resynchronised.' );
 	}
 }

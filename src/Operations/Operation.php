@@ -33,7 +33,7 @@ interface Operation {
 
 	/**
 	 * Check arguments before any object is read: the normalised arguments,
-	 * or a refusal (`bcm_` code, §4.8 sentence, status 400).
+	 * or a refusal (`bulkcat_` code, §4.8 sentence, status 400).
 	 *
 	 * @param array<string, mixed> $args Arguments as submitted.
 	 */

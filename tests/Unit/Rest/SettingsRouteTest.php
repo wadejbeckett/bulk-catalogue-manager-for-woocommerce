@@ -1,6 +1,6 @@
 <?php
 /**
- * `GET` and `PUT /bcm/v1/settings` (SPEC §11, §12.1, §13; T73): both
+ * `GET` and `PUT /bulkcat/v1/settings` (SPEC §11, §12.1, §13; T73): both
  * registered through Routes with their own permission callbacks — the read
  * with the screen capability, the write with `manage_options` alone — the
  * GET describing every §11 setting in plain words, and the PUT saving only
@@ -23,8 +23,8 @@ use PHPUnit\Framework\TestCase;
 
 final class SettingsRouteTest extends TestCase {
 	protected function setUp(): void {
-		bcm_test_reset();
-		$GLOBALS['bcm_test']['logged_in'] = true;
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['logged_in'] = true;
 	}
 
 	/**
@@ -35,10 +35,10 @@ final class SettingsRouteTest extends TestCase {
 	private static function endpoints(): array {
 		( new Plugin() )->boot();
 		do_action( 'rest_api_init' );
-		$routes = $GLOBALS['bcm_test']['routes'];
-		self::assertArrayHasKey( '/bcm/v1/settings', $routes );
+		$routes = $GLOBALS['bulkcat_test']['routes'];
+		self::assertArrayHasKey( '/bulkcat/v1/settings', $routes );
 		$out = [];
-		foreach ( $routes['/bcm/v1/settings'] as $name => $endpoint ) {
+		foreach ( $routes['/bulkcat/v1/settings'] as $name => $endpoint ) {
 			if ( is_int( $name ) ) {
 				$out[ $endpoint['methods'] ] = $endpoint;
 			}
@@ -47,7 +47,7 @@ final class SettingsRouteTest extends TestCase {
 	}
 
 	private static function grant( string ...$caps ): void {
-		$GLOBALS['bcm_test']['caps'] = array_fill_keys( $caps, true );
+		$GLOBALS['bulkcat_test']['caps'] = array_fill_keys( $caps, true );
 	}
 
 	private static function http_status( mixed $result ): int {
@@ -63,7 +63,7 @@ final class SettingsRouteTest extends TestCase {
 	 * @param mixed $values The `values` body parameter.
 	 */
 	private static function put( mixed $values ): \WP_REST_Response|\WP_Error {
-		$request = new \WP_REST_Request( 'PUT', '/bcm/v1/settings' );
+		$request = new \WP_REST_Request( 'PUT', '/bulkcat/v1/settings' );
 		$request->set_param( 'values', $values );
 		return call_user_func( self::endpoints()['PUT, POST']['callback'], $request );
 	}
@@ -76,18 +76,18 @@ final class SettingsRouteTest extends TestCase {
 		foreach ( $endpoints as $endpoint ) {
 			$this->assertTrue( is_callable( $endpoint['callback'] ) );
 		}
-		$this->assertTrue( is_callable( $GLOBALS['bcm_test']['routes']['/bcm/v1/settings']['schema'] ) );
-		$this->assertSame( [], $GLOBALS['bcm_test']['wrong'], 'The registrar refused nothing.' );
+		$this->assertTrue( is_callable( $GLOBALS['bulkcat_test']['routes']['/bulkcat/v1/settings']['schema'] ) );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['wrong'], 'The registrar refused nothing.' );
 	}
 
 	public function test_a_shop_manager_reads_but_may_not_write(): void {
 		self::grant( 'manage_woocommerce', 'edit_products' );
 		$endpoints = self::endpoints();
-		$request   = new \WP_REST_Request( 'PUT', '/bcm/v1/settings' );
+		$request   = new \WP_REST_Request( 'PUT', '/bulkcat/v1/settings' );
 		$this->assertSame( 200, self::http_status( call_user_func( $endpoints['GET']['permission_callback'], $request ) ) );
 		$refused = call_user_func( $endpoints['PUT, POST']['permission_callback'], $request );
 		$this->assertSame( 403, self::http_status( $refused ) );
-		$this->assertSame( 'bcm_forbidden', $refused->get_error_code() );
+		$this->assertSame( 'bulkcat_forbidden', $refused->get_error_code() );
 		$this->assertStringContainsString( 'Only an administrator can change', $refused->get_error_message() );
 
 		$answer = call_user_func( $endpoints['GET']['callback'], $request );
@@ -95,7 +95,7 @@ final class SettingsRouteTest extends TestCase {
 	}
 
 	public function test_under_administrators_only_a_shop_manager_is_refused_both(): void {
-		$GLOBALS['bcm_test']['options'][ Settings::OPTION ] = [ Schema::ADMINISTRATORS_ONLY => true ];
+		$GLOBALS['bulkcat_test']['options'][ Settings::OPTION ] = [ Schema::ADMINISTRATORS_ONLY => true ];
 		self::grant( 'manage_woocommerce' );
 		$endpoints = self::endpoints();
 		$this->assertSame( 403, self::http_status( call_user_func( $endpoints['GET']['permission_callback'], new \WP_REST_Request() ) ) );
@@ -107,7 +107,7 @@ final class SettingsRouteTest extends TestCase {
 	}
 
 	public function test_an_anonymous_visitor_gets_401_on_both(): void {
-		$GLOBALS['bcm_test']['logged_in'] = false;
+		$GLOBALS['bulkcat_test']['logged_in'] = false;
 		foreach ( self::endpoints() as $endpoint ) {
 			$this->assertSame( 401, self::http_status( call_user_func( $endpoint['permission_callback'], new \WP_REST_Request() ) ) );
 		}
@@ -115,7 +115,7 @@ final class SettingsRouteTest extends TestCase {
 
 	public function test_get_describes_every_setting_in_plain_words(): void {
 		self::grant( 'manage_options', 'manage_woocommerce' );
-		$GLOBALS['bcm_test']['options'][ Settings::OPTION ] = [ Schema::ROWS_PER_PAGE => 50 ];
+		$GLOBALS['bulkcat_test']['options'][ Settings::OPTION ] = [ Schema::ROWS_PER_PAGE => 50 ];
 		$answer = call_user_func( self::endpoints()['GET']['callback'], new \WP_REST_Request() );
 		$this->assertSame( 200, $answer->get_status() );
 		$data = $answer->get_data();
@@ -169,7 +169,7 @@ final class SettingsRouteTest extends TestCase {
 
 	public function test_put_saves_accepted_values_through_the_sanitiser_and_answers_them(): void {
 		self::grant( 'manage_options' );
-		$GLOBALS['bcm_test']['options'][ Settings::OPTION ] = [ Schema::CSV_SEPARATOR => 'semicolon' ];
+		$GLOBALS['bulkcat_test']['options'][ Settings::OPTION ] = [ Schema::CSV_SEPARATOR => 'semicolon' ];
 		$answer = self::put(
 			[
 				Schema::ROWS_PER_PAGE     => '100',
@@ -186,7 +186,7 @@ final class SettingsRouteTest extends TestCase {
 		$this->assertFalse( $values[ Schema::CATEGORY_PANEL ] );
 		$this->assertSame( 'semicolon', $values[ Schema::CSV_SEPARATOR ], 'A setting not sent keeps its stored value.' );
 
-		$stored = $GLOBALS['bcm_test']['options'][ Settings::OPTION ];
+		$stored = $GLOBALS['bulkcat_test']['options'][ Settings::OPTION ];
 		$this->assertSame( Schema::keys(), array_keys( $stored ) );
 		$this->assertSame( 500, Settings::load()->confirm_threshold() );
 		$this->assertTrue( Settings::load()->keeps_history_indefinitely() );
@@ -195,7 +195,7 @@ final class SettingsRouteTest extends TestCase {
 	public function test_put_refuses_by_setting_name_and_saves_nothing(): void {
 		self::grant( 'manage_options' );
 		$before = [ Schema::ROWS_PER_PAGE => 50 ];
-		$GLOBALS['bcm_test']['options'][ Settings::OPTION ] = $before;
+		$GLOBALS['bulkcat_test']['options'][ Settings::OPTION ] = $before;
 
 		$refused = self::put(
 			[
@@ -205,7 +205,7 @@ final class SettingsRouteTest extends TestCase {
 			]
 		);
 		$this->assertInstanceOf( \WP_Error::class, $refused );
-		$this->assertSame( 'bcm_invalid_setting', $refused->get_error_code() );
+		$this->assertSame( 'bulkcat_invalid_setting', $refused->get_error_code() );
 		$data = $refused->get_error_data();
 		$this->assertSame( 400, $data['status'] );
 		$this->assertSame( [ Schema::BATCH_SIZE, Schema::HISTORY_DAYS ], array_keys( $data['errors'] ) );
@@ -213,17 +213,17 @@ final class SettingsRouteTest extends TestCase {
 		$this->assertSame( Schema::rejection( Schema::HISTORY_DAYS ), $data['errors'][ Schema::HISTORY_DAYS ] );
 		$this->assertStringContainsString( 'Products per background batch', $refused->get_error_message() );
 		$this->assertStringContainsString( 'Keep history for', $refused->get_error_message() );
-		$this->assertStringNotContainsString( 'bcm_', $refused->get_error_message() );
-		$this->assertSame( $before, $GLOBALS['bcm_test']['options'][ Settings::OPTION ], 'Nothing is saved, not even the valid value.' );
+		$this->assertStringNotContainsString( 'bulkcat_', $refused->get_error_message() );
+		$this->assertSame( $before, $GLOBALS['bulkcat_test']['options'][ Settings::OPTION ], 'Nothing is saved, not even the valid value.' );
 
 		$unknown = self::put( [ 'favourite_colour' => 'blue' ] );
 		$this->assertSame( [ 'favourite_colour' ], array_keys( $unknown->get_error_data()['errors'] ) );
 		$this->assertStringContainsString( 'is not a setting', $unknown->get_error_message() );
 
 		$malformed = self::put( 'rows_per_page=100' );
-		$this->assertSame( 'bcm_invalid_setting', $malformed->get_error_code() );
+		$this->assertSame( 'bulkcat_invalid_setting', $malformed->get_error_code() );
 		$this->assertSame( [ Settings::OPTION ], array_keys( $malformed->get_error_data()['errors'] ) );
-		$this->assertSame( $before, $GLOBALS['bcm_test']['options'][ Settings::OPTION ] );
+		$this->assertSame( $before, $GLOBALS['bulkcat_test']['options'][ Settings::OPTION ] );
 	}
 
 	public function test_the_administrators_only_setting_moves_the_screen_capability(): void {

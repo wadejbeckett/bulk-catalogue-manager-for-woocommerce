@@ -1,6 +1,6 @@
 <?php
 /**
- * `GET /bcm/v1/terms/{taxonomy}`: every term of a flat product taxonomy —
+ * `GET /bulkcat/v1/terms/{taxonomy}`: every term of a flat product taxonomy —
  * `product_tag` or `product_shipping_class` — as a flat JSON array
  * `[ { id, name, count } ]`, empty terms included, ordered by name, so the
  * catalogue can offer tag and shipping-class filters and values by name.
@@ -114,7 +114,7 @@ final class TermsController implements ReadController {
 		];
 		return [
 			'$schema'    => RouteSchema::DIALECT,
-			'title'      => 'bcm-term',
+			'title'      => 'bulkcat-term',
 			'type'       => 'object',
 			'properties' => [
 				'id'    => [

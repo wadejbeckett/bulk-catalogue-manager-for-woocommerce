@@ -121,7 +121,7 @@ final class CopyPrice extends BaseOperation {
 		$old    = $target->read( $subject );
 		$reason = $target->unavailable_reason( $subject );
 		if ( null !== $reason ) {
-			return Result::skipped( $target->key(), $old, $reason, 'bcm_not_available' );
+			return Result::skipped( $target->key(), $old, $reason, 'bulkcat_not_available' );
 		}
 
 		$from = $source->read( $subject );
@@ -165,7 +165,7 @@ final class CopyPrice extends BaseOperation {
 					$target->label(),
 					$source->label()
 				),
-				'bcm_invalid_value'
+				'bulkcat_invalid_value'
 			);
 		}
 		return self::number_outcome( $target, $old, $copy );

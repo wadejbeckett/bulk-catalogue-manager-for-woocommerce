@@ -7,8 +7,8 @@ import { useCallback, useEffect, useRef, useState } from '@wordpress/element';
 import { request } from '../../api';
 
 /** The 409 codes the apply answers (Engine\BatchFactory). */
-export const SELECTION_CHANGED = 'bcm_selection_changed';
-export const PREVIEW_STALE = 'bcm_preview_stale';
+export const SELECTION_CHANGED = 'bulkcat_selection_changed';
+export const PREVIEW_STALE = 'bulkcat_preview_stale';
 
 /** Batch statuses after which nothing more happens (Data\Schema). */
 export const FINISHED = [

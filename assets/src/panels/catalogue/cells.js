@@ -88,7 +88,7 @@ export function formatDate( value ) {
 
 function Badge( { value, children } ) {
 	const tone = TONES[ value ] || 'neutral';
-	return <span className={ `bcm-badge is-${ tone }` }>{ children }</span>;
+	return <span className={ `bulkcat-badge is-${ tone }` }>{ children }</span>;
 }
 
 function Terms( { descriptor, value } ) {
@@ -102,7 +102,7 @@ function Terms( { descriptor, value } ) {
 	const names = termNames[ descriptor.source ];
 	if ( ! names ) {
 		return (
-			<span className="bcm-cell__muted">
+			<span className="bulkcat-cell__muted">
 				{ sprintf(
 					/* translators: %d: how many terms (categories, tags or classes) the product has. */
 					_n(
@@ -117,9 +117,9 @@ function Terms( { descriptor, value } ) {
 		);
 	}
 	return (
-		<span className="bcm-terms">
+		<span className="bulkcat-terms">
 			{ ids.map( ( id ) => (
-				<span key={ id } className="bcm-badge is-term">
+				<span key={ id } className="bulkcat-badge is-term">
 					{ names.get( Number( id ) ) ?? `#${ id }` }
 				</span>
 			) ) }
@@ -130,8 +130,8 @@ function Terms( { descriptor, value } ) {
 function Title( { item, descriptor } ) {
 	const summary = item[ ROW.attributeSummary ];
 	return (
-		<span className="bcm-title">
-			<a className="bcm-title__link" href={ editUrl( item ) }>
+		<span className="bulkcat-title">
+			<a className="bulkcat-title__link" href={ editUrl( item ) }>
 				{ isEmpty( item[ descriptor.key ] )
 					? __(
 							'(no name)',
@@ -140,7 +140,7 @@ function Title( { item, descriptor } ) {
 					: String( item[ descriptor.key ] ) }
 			</a>
 			{ ! isEmpty( summary ) && (
-				<span className="bcm-title__summary">{ summary }</span>
+				<span className="bulkcat-title__summary">{ summary }</span>
 			) }
 		</span>
 	);
@@ -155,7 +155,7 @@ function Value( { item, descriptor, companion, role } ) {
 		const src = item[ ROW.thumbnailUrl ];
 		return src ? (
 			<img
-				className="bcm-thumb"
+				className="bulkcat-thumb"
 				src={ src }
 				alt=""
 				width="32"
@@ -163,7 +163,7 @@ function Value( { item, descriptor, companion, role } ) {
 				loading="lazy"
 			/>
 		) : (
-			<span className="bcm-thumb is-empty" aria-hidden="true" />
+			<span className="bulkcat-thumb is-empty" aria-hidden="true" />
 		);
 	}
 	switch ( descriptor.type ) {
@@ -196,10 +196,12 @@ function Value( { item, descriptor, companion, role } ) {
 			}
 			const sale = companion ? item[ companion.key ] : undefined;
 			return (
-				<span className="bcm-money">
-					<span className="bcm-money__main">{ String( value ) }</span>
+				<span className="bulkcat-money">
+					<span className="bulkcat-money__main">
+						{ String( value ) }
+					</span>
 					{ ! isEmpty( sale ) && (
-						<span className="bcm-money__sale">
+						<span className="bulkcat-money__sale">
 							{ sprintf(
 								/* translators: %s: a sale price, such as "13.60". */
 								__(
@@ -237,7 +239,7 @@ function Cell( props ) {
 	const isPending = pending.has( props.item?.id );
 	return (
 		<span
-			className={ 'bcm-cell' + ( isPending ? ' is-pending' : '' ) }
+			className={ 'bulkcat-cell' + ( isPending ? ' is-pending' : '' ) }
 			aria-busy={ isPending || undefined }
 		>
 			<Value { ...props } />

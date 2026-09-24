@@ -22,8 +22,8 @@ import BulkChangePanel from './panels/bulk';
 | Prop | Required | What it is |
 | --- | --- | --- |
 | `selection` | yes | What to change. `{ kind: 'ids', ids: number[] }` for ticked rows (optionally with `token` when the ids were exchanged at `POST /selection`), or `{ kind: 'filter', token: string, count: number, filters?: Array<{ label, value }> }` for *all rows matching the current filter* (T42). `filters` are listed under the scope line as the owner reads them. A new selection object with different ids, token or count makes a preview stale. |
-| `registry` | yes | The `GET /bcm/v1/fields` payload, `{ fields, actions, groups }`, as is. The chooser, the argument controls, the reasons shown in place and the variations rule all come from it; no action is listed in the panel. |
-| `settings` | yes | The `bcm_settings` values (`confirm_threshold`, `variations_status`, `variations_visibility`, `variations_price`, `variations_stock`), or the screen's `window.bcmSettings` object, which carries them under `settings`. Changing them makes a preview stale. |
+| `registry` | yes | The `GET /bulkcat/v1/fields` payload, `{ fields, actions, groups }`, as is. The chooser, the argument controls, the reasons shown in place and the variations rule all come from it; no action is listed in the panel. |
+| `settings` | yes | The `bulkcat_settings` values (`confirm_threshold`, `variations_status`, `variations_visibility`, `variations_price`, `variations_stock`), or the screen's `window.bulkcatSettings` object, which carries them under `settings`. Changing them makes a preview stale. |
 | `onClose` | no | Called by the close button, **Change the selection**, **Back to products** and Escape. The panel returns focus to the element focused when it opened when it unmounts. |
 | `onApplied` | no | Called with the new batch id once `POST /batches` succeeds. The panel then shows the Done step with progress; the caller may close it and show progress in the selection bar instead (§4.3 "After apply"). |
 | `categories` | no | The `GET /categories` tree (`[ { id, name, children } ]`), for the categories picker of add, remove and replace. |
@@ -58,9 +58,9 @@ confirms.
 - `POST /batches` with `uuid` (one per previewed change, reused when the same
   preview is retried, fresh after a new preview), `operations`, `ids` or
   `token`, `source: 'bulk'`, `preview_hash`, and for a filter `preview_count`
-  (the preview's `selection.current_count`). A 409 `bcm_selection_changed`
+  (the preview's `selection.current_count`). A 409 `bulkcat_selection_changed`
   states both counts and offers **Apply anyway** (`confirm_changed: true`) or
-  **Preview again**; a 409 `bcm_preview_stale` runs the preview again.
+  **Preview again**; a 409 `bulkcat_preview_stale` runs the preview again.
 - `GET /batches/{id}` every `pollInterval` until the batch finishes.
 
 ## Variations (T69)

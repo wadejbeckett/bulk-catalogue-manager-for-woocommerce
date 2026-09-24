@@ -30,9 +30,9 @@ defined( 'ABSPATH' ) || exit;
  *
  * Every write goes through WordPress's own term functions, `wp_insert_term()`
  * and `wp_update_term()` (never SQL), with the tree order in the plugin's own
- * `bcm_order` term meta (CategoryTree::TREE_ORDER_META), which only this tree
+ * `bulkcat_order` term meta (CategoryTree::TREE_ORDER_META), which only this tree
  * reads. Before anything is written it refuses, with a §4.8 sentence and a
- * `bcm_` code: an empty name, a name a sibling under the same parent already
+ * `bulkcat_` code: an empty name, a name a sibling under the same parent already
  * has, a slug another category already has, a parent that does not exist,
  * and a parent that is the category itself or one of its descendants ("A
  * category cannot be moved inside itself.").
@@ -103,37 +103,37 @@ final class Writer {
 	/**
 	 * Refusal code for an empty name.
 	 */
-	public const NAME_REQUIRED = 'bcm_name_required';
+	public const NAME_REQUIRED = 'bulkcat_name_required';
 
 	/**
 	 * Refusal code for a name a sibling already has.
 	 */
-	public const NAME_TAKEN = 'bcm_category_exists';
+	public const NAME_TAKEN = 'bulkcat_category_exists';
 
 	/**
 	 * Refusal code for a slug another category already has.
 	 */
-	public const SLUG_TAKEN = 'bcm_slug_taken';
+	public const SLUG_TAKEN = 'bulkcat_slug_taken';
 
 	/**
 	 * Refusal code for a slug with no letter or number.
 	 */
-	public const SLUG_INVALID = 'bcm_slug_invalid';
+	public const SLUG_INVALID = 'bulkcat_slug_invalid';
 
 	/**
 	 * Refusal code for a parent that does not exist.
 	 */
-	public const PARENT_MISSING = 'bcm_parent_missing';
+	public const PARENT_MISSING = 'bulkcat_parent_missing';
 
 	/**
 	 * Refusal code for a parent that is the category or one of its descendants.
 	 */
-	public const CYCLE = 'bcm_category_cycle';
+	public const CYCLE = 'bulkcat_category_cycle';
 
 	/**
 	 * Refusal code for a write WordPress refused.
 	 */
-	public const NOT_SAVED = 'bcm_category_not_saved';
+	public const NOT_SAVED = 'bulkcat_category_not_saved';
 
 	/**
 	 * Batches and items.

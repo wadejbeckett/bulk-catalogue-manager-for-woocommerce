@@ -39,7 +39,7 @@ final class CategoryTree {
 	 * siblings in this tree only, written by a move (Categories\Writer) and
 	 * never read by the storefront (SPEC §4.7, §7; Data\Registry).
 	 */
-	public const TREE_ORDER_META = 'bcm_order';
+	public const TREE_ORDER_META = 'bulkcat_order';
 
 	/**
 	 * Build over a cache.

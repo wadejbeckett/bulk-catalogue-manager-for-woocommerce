@@ -23,7 +23,7 @@ use PHPUnit\Framework\TestCase;
 
 final class AffixSkuTest extends TestCase {
 	protected function setUp(): void {
-		bcm_test_reset();
+		bulkcat_test_reset();
 	}
 
 	private static function operation(): Operation {
@@ -89,7 +89,7 @@ final class AffixSkuTest extends TestCase {
 		$operation = self::operation();
 		$product   = new FakeProduct( 'simple', [ 'sku' => str_repeat( 'A', 98 ) ] );
 		$result    = $operation->compute( $product, $this->args( $operation, 'suffix', '-B1' ) );
-		$this->assertSame( [ Result::FAILED, 'bcm_invalid_value' ], [ $result->state(), $result->code() ] );
+		$this->assertSame( [ Result::FAILED, 'bulkcat_invalid_value' ], [ $result->state(), $result->code() ] );
 		$this->assertSame( ( new Fields() )->get( 'sku' )->rule_text(), $result->reason() );
 
 		$fits = $operation->compute( $product, $this->args( $operation, 'suffix', '-B' ) );
@@ -107,7 +107,7 @@ final class AffixSkuTest extends TestCase {
 				]
 			);
 			$this->assertFalse( $validation->ok(), "'$text'" );
-			$this->assertSame( 'bcm_invalid_operation', $validation->error()->get_error_code() );
+			$this->assertSame( 'bulkcat_invalid_operation', $validation->error()->get_error_code() );
 		}
 	}
 }

@@ -24,7 +24,7 @@ use PHPUnit\Framework\TestCase;
 
 final class RoundTest extends TestCase {
 	protected function setUp(): void {
-		bcm_test_reset();
+		bulkcat_test_reset();
 	}
 
 	/**
@@ -56,7 +56,7 @@ final class RoundTest extends TestCase {
 	}
 
 	public function test_rounding_to_decimals(): void {
-		$GLOBALS['bcm_test']['decimals'] = 2;
+		$GLOBALS['bulkcat_test']['decimals'] = 2;
 		$this->run_table(
 			[
 				[ '12.345', 'decimals', 1, 'nearest', 'changed', '12.30' ],
@@ -74,7 +74,7 @@ final class RoundTest extends TestCase {
 			],
 			'2dp decimals'
 		);
-		$GLOBALS['bcm_test']['decimals'] = 0;
+		$GLOBALS['bulkcat_test']['decimals'] = 0;
 		$this->run_table(
 			[
 				[ '12.5', 'decimals', 0, 'nearest', 'changed', '13' ],
@@ -86,7 +86,7 @@ final class RoundTest extends TestCase {
 	}
 
 	public function test_rounding_to_a_step(): void {
-		$GLOBALS['bcm_test']['decimals'] = 2;
+		$GLOBALS['bulkcat_test']['decimals'] = 2;
 		$this->run_table(
 			[
 				[ '12.49', 'step', '5', 'nearest', 'changed', '10.00' ],
@@ -104,7 +104,7 @@ final class RoundTest extends TestCase {
 			],
 			'2dp step'
 		);
-		$GLOBALS['bcm_test']['decimals'] = 0;
+		$GLOBALS['bulkcat_test']['decimals'] = 0;
 		$this->run_table(
 			[
 				[ '12', 'step', '5', 'nearest', 'changed', '10' ],
@@ -117,9 +117,9 @@ final class RoundTest extends TestCase {
 	}
 
 	public function test_a_price_step_finer_than_the_shop_is_refused(): void {
-		$operation                       = ( new Registry( new Fields() ) )->get( 'round' );
-		$GLOBALS['bcm_test']['decimals'] = 2;
-		$refused                         = $operation->validate(
+		$operation                           = ( new Registry( new Fields() ) )->get( 'round' );
+		$GLOBALS['bulkcat_test']['decimals'] = 2;
+		$refused                             = $operation->validate(
 			[
 				'field' => 'regular_price',
 				'to'    => 'step',
@@ -127,7 +127,7 @@ final class RoundTest extends TestCase {
 			]
 		);
 		$this->assertFalse( $refused->ok() );
-		$this->assertSame( 'bcm_invalid_operation', $refused->error()->get_error_code() );
+		$this->assertSame( 'bulkcat_invalid_operation', $refused->error()->get_error_code() );
 		$this->assertTrue(
 			$operation->validate(
 				[
@@ -138,7 +138,7 @@ final class RoundTest extends TestCase {
 			)->ok(),
 			'Trailing zeros do not count.'
 		);
-		$GLOBALS['bcm_test']['decimals'] = 0;
+		$GLOBALS['bulkcat_test']['decimals'] = 0;
 		$this->assertFalse(
 			( new Registry( new Fields() ) )->get( 'round' )->validate(
 				[
@@ -151,7 +151,7 @@ final class RoundTest extends TestCase {
 	}
 
 	public function test_rounding_to_a_charm_ending(): void {
-		$GLOBALS['bcm_test']['decimals'] = 2;
+		$GLOBALS['bulkcat_test']['decimals'] = 2;
 		$this->run_table(
 			[
 				// Nearest: the closer of the ending below and above.
@@ -182,7 +182,7 @@ final class RoundTest extends TestCase {
 			],
 			'2dp ending'
 		);
-		$GLOBALS['bcm_test']['decimals'] = 0;
+		$GLOBALS['bulkcat_test']['decimals'] = 0;
 		$this->run_table(
 			[
 				[ '12.6', 'ending', '0', 'nearest', 'changed', '13' ],
@@ -205,7 +205,7 @@ final class RoundTest extends TestCase {
 		$result    = $operation->compute( new FakeProduct( 'simple', [ 'sale_price' => '0.50' ] ), $args );
 		$this->assertSame( Result::SKIPPED, $result->state() );
 		$this->assertSame( 'Sale price would go below zero (-0.01), so it was not changed.', $result->reason() );
-		$this->assertSame( 'bcm_invalid_value', $result->code() );
+		$this->assertSame( 'bulkcat_invalid_value', $result->code() );
 	}
 
 	/**
@@ -231,9 +231,9 @@ final class RoundTest extends TestCase {
 	}
 
 	public function test_increase_by_twelve_per_cent_then_round_to_95_composes_in_one_pass(): void {
-		$GLOBALS['bcm_test']['decimals'] = 2;
-		$product                         = new FakeProduct( 'simple', [ 'regular_price' => '25.00' ] );
-		$results                         = self::run_list(
+		$GLOBALS['bulkcat_test']['decimals'] = 2;
+		$product                             = new FakeProduct( 'simple', [ 'regular_price' => '25.00' ] );
+		$results                             = self::run_list(
 			$product,
 			[
 				[
@@ -294,7 +294,7 @@ final class RoundTest extends TestCase {
 	}
 
 	public function test_increase_by_ten_per_cent_then_round_up_to_99_at_both_precisions(): void {
-		$steps                           = [
+		$steps                               = [
 			[
 				'action' => 'adjust',
 				'args'   => [
@@ -314,7 +314,7 @@ final class RoundTest extends TestCase {
 				],
 			],
 		];
-		$GLOBALS['bcm_test']['decimals'] = 2;
+		$GLOBALS['bulkcat_test']['decimals'] = 2;
 		foreach ( [
 			'10.00' => '11.99',
 			'18.20' => '20.99',
@@ -331,10 +331,10 @@ final class RoundTest extends TestCase {
 		}
 
 		// At 0 decimals an ending of .99 is refused: the shop has no cents.
-		$GLOBALS['bcm_test']['decimals'] = 0;
-		$refused                         = ( new Registry( new Fields() ) )->validate_list( $steps );
+		$GLOBALS['bulkcat_test']['decimals'] = 0;
+		$refused                             = ( new Registry( new Fields() ) )->validate_list( $steps );
 		$this->assertInstanceOf( \WP_Error::class, $refused );
-		$this->assertSame( 'bcm_invalid_operation', $refused->get_error_code() );
+		$this->assertSame( 'bulkcat_invalid_operation', $refused->get_error_code() );
 		$this->assertSame( 2, $refused->get_error_data()['step'] );
 
 		$product                  = new FakeProduct( 'simple', [ 'regular_price' => '99' ] );

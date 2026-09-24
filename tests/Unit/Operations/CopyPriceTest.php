@@ -23,7 +23,7 @@ use PHPUnit\Framework\TestCase;
 
 final class CopyPriceTest extends TestCase {
 	protected function setUp(): void {
-		bcm_test_reset();
+		bulkcat_test_reset();
 	}
 
 	/**
@@ -58,8 +58,8 @@ final class CopyPriceTest extends TestCase {
 			[ 0, '100', '', '99.5', 'changed', '1' ],
 		];
 		foreach ( $cases as $i => [ $decimals, $regular, $sale, $discount, $state, $new ] ) {
-			$GLOBALS['bcm_test']['decimals'] = $decimals;
-			$result                          = $this->compute(
+			$GLOBALS['bulkcat_test']['decimals'] = $decimals;
+			$result                              = $this->compute(
 				[
 					'regular_price' => $regular,
 					'sale_price'    => $sale,
@@ -69,7 +69,7 @@ final class CopyPriceTest extends TestCase {
 					'discount' => $discount,
 				]
 			);
-			$case                            = "#$i: {$decimals}dp $regular less $discount%";
+			$case                                = "#$i: {$decimals}dp $regular less $discount%";
 			$this->assertSame( $state, $result->state(), $case . ' (' . $result->reason() . ')' );
 			$this->assertSame( 'sale_price', $result->field(), $case );
 			$this->assertSame( $sale, $result->old(), $case );
@@ -84,7 +84,7 @@ final class CopyPriceTest extends TestCase {
 		];
 		$plain = $this->compute( $props, [ 'field' => 'sale_price' ] );
 		$this->assertSame( Result::SKIPPED, $plain->state(), 'With no discount the sale price would equal the regular price.' );
-		$this->assertSame( 'bcm_invalid_value', $plain->code() );
+		$this->assertSame( 'bulkcat_invalid_value', $plain->code() );
 		$this->assertStringContainsString( 'would not be below Regular price', $plain->reason() );
 		$this->assertSame( '15.00', $plain->new(), 'The sale price is left alone, not cleared.' );
 
@@ -138,8 +138,8 @@ final class CopyPriceTest extends TestCase {
 	}
 
 	public function test_sale_into_regular(): void {
-		$GLOBALS['bcm_test']['decimals'] = 2;
-		$result                          = $this->compute(
+		$GLOBALS['bulkcat_test']['decimals'] = 2;
+		$result                              = $this->compute(
 			[
 				'regular_price' => '20.00',
 				'sale_price'    => '15',
@@ -180,7 +180,7 @@ final class CopyPriceTest extends TestCase {
 			'variable'
 		);
 		$this->assertSame( Result::SKIPPED, $result->state() );
-		$this->assertSame( 'bcm_not_available', $result->code() );
+		$this->assertSame( 'bulkcat_not_available', $result->code() );
 	}
 
 	public function test_apply_writes_the_copy_through_the_setter(): void {

@@ -1,7 +1,7 @@
 <?php
 /**
  * A sentinel WC_Product for unit tests: constructing one counts in
- * $GLOBALS['bcm_test']['products_built'] and fires `woocommerce_product_read`,
+ * $GLOBALS['bulkcat_test']['products_built'] and fires `woocommerce_product_read`,
  * as WooCommerce's data store does when it reads a product, so a test can
  * prove the read path never builds one. Under WooCommerce this file defines
  * nothing.
@@ -24,7 +24,7 @@ if ( ! class_exists( 'WC_Product' ) ) {
 		 * @param int $product Product id.
 		 */
 		public function __construct( int $product = 0 ) {
-			$GLOBALS['bcm_test']['products_built'] = ( $GLOBALS['bcm_test']['products_built'] ?? 0 ) + 1;
+			$GLOBALS['bulkcat_test']['products_built'] = ( $GLOBALS['bulkcat_test']['products_built'] ?? 0 ) + 1;
 			do_action( 'woocommerce_product_read', $product );
 		}
 	}
@@ -35,7 +35,7 @@ if ( ! class_exists( 'WC_Product' ) ) {
 // T32: the smallest faithful stand-ins for the writer. WooCommerce's
 // WC_Product_Variable::sync( $product, $save = true ) loads the parent, runs
 // its data store's sync_price() and sync_stock_status(), and saves it; the
-// stub records the id in $GLOBALS['bcm_test']['variable_syncs'] instead.
+// stub records the id in $GLOBALS['bulkcat_test']['variable_syncs'] instead.
 if ( ! class_exists( 'WC_Product_Variable' ) ) {
 	/**
 	 * Records each parent resynchronisation.
@@ -48,7 +48,7 @@ if ( ! class_exists( 'WC_Product_Variable' ) ) {
 		 * @param bool  $save    Whether to save the parent.
 		 */
 		public static function sync( mixed $product, bool $save = true ): mixed {
-			$GLOBALS['bcm_test']['variable_syncs'][] = $product;
+			$GLOBALS['bulkcat_test']['variable_syncs'][] = $product;
 			return $product;
 		}
 	}

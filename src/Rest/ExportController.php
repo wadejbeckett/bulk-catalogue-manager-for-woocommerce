@@ -1,6 +1,6 @@
 <?php
 /**
- * `GET /bcm/v1/export` (SPEC §10, §12.1, §13): a CSV of the current view.
+ * `GET /bulkcat/v1/export` (SPEC §10, §12.1, §13): a CSV of the current view.
  * It takes the `GET /products` arguments plus `columns[]`, the visible
  * columns in order, and streams every row matching the filter, not only
  * the current page, reading 100 rows at a time so memory stays flat. It is
@@ -60,7 +60,7 @@ final class ExportController implements ReadController {
 	/**
 	 * The item schema's title: one exported row.
 	 */
-	public const TITLE = 'bcm-export-row';
+	public const TITLE = 'bulkcat-export-row';
 
 	/**
 	 * The parameter naming the columns, in order.
@@ -260,7 +260,7 @@ final class ExportController implements ReadController {
 		}
 		$columns = RouteSchema::as_list( $params[ self::COLUMNS ] ?? [] );
 		$refusal = Refusal::invalid(
-			'bcm_invalid_value',
+			'bulkcat_invalid_value',
 			__( 'These columns could not be exported. Choose the columns again and try again.', 'bulk-catalogue-manager-for-woocommerce' ),
 			[ 'param' => self::COLUMNS ]
 		);
@@ -280,7 +280,7 @@ final class ExportController implements ReadController {
 			Criteria::from_array( $this->schema->criteria_input( $params ) );
 		} catch ( \InvalidArgumentException $e ) {
 			return Refusal::invalid(
-				'bcm_invalid_value',
+				'bulkcat_invalid_value',
 				__( 'These filters or this sort could not be used. Clear them and try again.', 'bulk-catalogue-manager-for-woocommerce' )
 			);
 		}
@@ -315,7 +315,7 @@ final class ExportController implements ReadController {
 		$columns = RouteSchema::as_list( $params[ self::COLUMNS ] ?? [] );
 		if ( [] === $columns || count( array_unique( $columns ) ) !== count( $columns ) || [] !== array_diff( $columns, array_keys( $labels ) ) ) {
 			return Refusal::invalid(
-				'bcm_invalid_value',
+				'bulkcat_invalid_value',
 				__( 'These columns could not be exported. Choose the columns again and try again.', 'bulk-catalogue-manager-for-woocommerce' ),
 				[ 'param' => self::COLUMNS ]
 			);
@@ -326,7 +326,7 @@ final class ExportController implements ReadController {
 			case HistoryColumns::CHANGES:
 				if ( $batch_id < 1 ) {
 					return Refusal::invalid(
-						'bcm_invalid_value',
+						'bulkcat_invalid_value',
 						__( 'This export does not say which change to export. Open the change in the history and export it again.', 'bulk-catalogue-manager-for-woocommerce' ),
 						[ 'param' => 'batch' ]
 					);

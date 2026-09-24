@@ -18,9 +18,9 @@ function region( doc ) {
 		return fallback;
 	}
 	fallback = doc.createElement( 'div' );
-	fallback.className = 'bcm-sr-only';
+	fallback.className = 'bulkcat-sr-only';
 	fallback.setAttribute( 'aria-live', 'polite' );
-	fallback.setAttribute( 'data-bcm-announcer', '' );
+	fallback.setAttribute( 'data-bulkcat-announcer', '' );
 	doc.body.appendChild( fallback );
 	return fallback;
 }

@@ -147,7 +147,7 @@ export function AppliedProgress( {
 		} ).catch( ( error ) => {
 			setCancelling( false );
 			const text =
-				/^bcm_/.test( error?.code || '' ) && error.message
+				/^bulkcat_/.test( error?.code || '' ) && error.message
 					? error.message
 					: __(
 							'The change could not be cancelled. Try again in a moment.',
@@ -159,7 +159,7 @@ export function AppliedProgress( {
 	};
 	return (
 		<div
-			className="bcm-catalogue__progress"
+			className="bulkcat-catalogue__progress"
 			role="group"
 			aria-label={ __(
 				'Change in progress',
@@ -167,7 +167,7 @@ export function AppliedProgress( {
 			) }
 		>
 			<BatchProgress report={ report } />
-			<span className="bcm-catalogue__progress-acts">
+			<span className="bulkcat-catalogue__progress-acts">
 				<Button
 					variant="secondary"
 					size="compact"
@@ -198,7 +198,7 @@ export function AppliedProgress( {
 				) }
 			</span>
 			{ refused && (
-				<p className="bcm-catalogue__progress-error" role="alert">
+				<p className="bulkcat-catalogue__progress-error" role="alert">
 					{ refused }
 				</p>
 			) }
@@ -431,7 +431,7 @@ export function CatalogueGrid( {
 	}
 
 	return (
-		<div className="bcm-catalogue__body">
+		<div className="bulkcat-catalogue__body">
 			<CategoryPanel
 				value={ category }
 				onChange={ chooseCategory }
@@ -440,9 +440,9 @@ export function CatalogueGrid( {
 				settings={ settings }
 				onDropSelection={ hasSelection ? dropSelection : undefined }
 			/>
-			<div className="bcm-catalogue__main">
+			<div className="bulkcat-catalogue__main">
 				{ /* T51–T53; T75: one row, as in the prototype. */ }
-				<div className="bcm-catalogue__top">
+				<div className="bulkcat-catalogue__top">
 					<SavedViewsBar
 						registry={ registry }
 						view={ view }
@@ -450,7 +450,7 @@ export function CatalogueGrid( {
 						baseView={ baseView }
 						onApply={ applyView }
 					/>
-					<div className="bcm-catalogue__toolbar">
+					<div className="bulkcat-catalogue__toolbar">
 						<LayoutSwitch view={ view } onChangeView={ setView } />
 						{ shell.exportSlot
 							? createPortal( exportControl, shell.exportSlot )
@@ -468,7 +468,7 @@ export function CatalogueGrid( {
 					/>
 				) }
 				{ sentence && (
-					<p className="bcm-catalogue__chip">
+					<p className="bulkcat-catalogue__chip">
 						<span>{ sentence }</span>
 						<Button
 							variant="link"
@@ -584,7 +584,7 @@ export function CatalogueGrid( {
 export default function Catalogue( { settings, initialView, onEditDetails } ) {
 	const { registry, error, retry } = useRegistry();
 	return (
-		<div className="bcm-catalogue">
+		<div className="bulkcat-catalogue">
 			{ error && (
 				<ErrorNotice
 					message={ __(

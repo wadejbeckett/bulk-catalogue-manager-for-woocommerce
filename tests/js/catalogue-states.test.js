@@ -45,14 +45,14 @@ describe( 'catalogue states', () => {
 	it( 'draws skeleton rows while the registry and the first page load', async () => {
 		route( apiFetch, { fields: () => REGISTRY } );
 		const { container } = render( <Catalogue settings={ SETTINGS } /> );
-		expect( container.querySelector( '.bcm-skeleton' ) ).toBeTruthy();
+		expect( container.querySelector( '.bulkcat-skeleton' ) ).toBeTruthy();
 		await waitFor( () =>
 			expect( calls( apiFetch, 'products' ) ).toHaveLength( 1 )
 		);
-		const skeleton = container.querySelector( '.bcm-skeleton' );
+		const skeleton = container.querySelector( '.bulkcat-skeleton' );
 		expect( skeleton ).toBeTruthy();
 		expect(
-			skeleton.querySelectorAll( 'tr.bcm-skeleton__row' )
+			skeleton.querySelectorAll( 'tr.bulkcat-skeleton__row' )
 		).toHaveLength( 10 );
 		expect(
 			skeleton.querySelector( 'table' ).getAttribute( 'aria-hidden' )
@@ -106,7 +106,7 @@ describe( 'catalogue states', () => {
 		expect(
 			await screen.findByText( 'No products match these filters.' )
 		).toBeTruthy();
-		const state = document.querySelector( '.bcm-state' );
+		const state = document.querySelector( '.bulkcat-state' );
 		const list = within( state ).getByRole( 'list', {
 			name: 'Active filters',
 		} );

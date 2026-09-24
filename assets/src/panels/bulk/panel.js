@@ -182,7 +182,7 @@ export function panelState( facts ) {
  * @param {Object}        props                   Props (see README.md).
  * @param {Object}        props.selection         `{ kind: 'ids', ids }` or `{ kind: 'filter', token, count, filters }`.
  * @param {Object}        props.registry          The `/fields` payload `{ fields, actions, groups }`.
- * @param {Object}        props.settings          The `bcm_settings` values (or the screen settings carrying them).
+ * @param {Object}        props.settings          The `bulkcat_settings` values (or the screen settings carrying them).
  * @param {Function}      props.onClose           Close the panel.
  * @param {Function}      props.onApplied         Receives the new batch id.
  * @param {Array<Object>} props.categories        Category tree for the terms picker.
@@ -305,7 +305,7 @@ export default function BulkChangePanel( {
 		}
 	}, [ preview.status ] );
 
-	// A 409 bcm_preview_stale: the preview no longer matches, so work it out again.
+	// A 409 bulkcat_preview_stale: the preview no longer matches, so work it out again.
 	useEffect( () => {
 		if (
 			applier.status === 'stale' &&
@@ -437,15 +437,15 @@ export default function BulkChangePanel( {
 		// eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
 		<div
 			ref={ panelRef }
-			className="bcm-bulk"
+			className="bulkcat-bulk"
 			role="dialog"
 			aria-modal="false"
-			aria-labelledby="bcm-bulk-title"
+			aria-labelledby="bulkcat-bulk-title"
 			data-state={ state }
 			onKeyDown={ onKeyDown }
 		>
-			<header className="bcm-bulk__head">
-				<h2 id="bcm-bulk-title" ref={ headingRef } tabIndex={ -1 }>
+			<header className="bulkcat-bulk__head">
+				<h2 id="bulkcat-bulk-title" ref={ headingRef } tabIndex={ -1 }>
 					{ __(
 						'Bulk change',
 						'bulk-catalogue-manager-for-woocommerce'
@@ -453,7 +453,7 @@ export default function BulkChangePanel( {
 				</h2>
 				<button
 					type="button"
-					className="button-link bcm-bulk__close"
+					className="button-link bulkcat-bulk__close"
 					onClick={ onClose }
 					aria-label={ __(
 						'Close the bulk change panel',
@@ -463,7 +463,7 @@ export default function BulkChangePanel( {
 					<span aria-hidden="true">×</span>
 				</button>
 			</header>
-			<ol className="bcm-bulk__steps">
+			<ol className="bulkcat-bulk__steps">
 				{ stepNames.map( ( name, index ) => {
 					const number = index + 1;
 					let status = '';
@@ -475,12 +475,15 @@ export default function BulkChangePanel( {
 					return (
 						<li
 							key={ name }
-							className={ 'bcm-bulk__step' + status }
+							className={ 'bulkcat-bulk__step' + status }
 							aria-current={
 								step === number ? 'step' : undefined
 							}
 						>
-							<span className="bcm-bulk__n" aria-hidden="true">
+							<span
+								className="bulkcat-bulk__n"
+								aria-hidden="true"
+							>
 								{ step > number ? '✓' : number }
 							</span>
 							{ name }
@@ -489,11 +492,11 @@ export default function BulkChangePanel( {
 				} ) }
 			</ol>
 
-			<div className="bcm-bulk__body">
+			<div className="bulkcat-bulk__body">
 				{ /* T75: the scope and Safety cards form a rail beside the steps
 				   when the panel is wide enough, as in the prototype. */ }
-				<div className="bcm-bulk__rail">
-					<section className="bcm-bulk__card bcm-bulk__scope">
+				<div className="bulkcat-bulk__rail">
+					<section className="bulkcat-bulk__card bulkcat-bulk__scope">
 						<h3>
 							{ batch
 								? __(
@@ -505,13 +508,16 @@ export default function BulkChangePanel( {
 										'bulk-catalogue-manager-for-woocommerce'
 									) }
 						</h3>
-						<p className="bcm-bulk__big">
+						<p className="bulkcat-bulk__big">
 							{ scopeLine( selection ) }
 						</p>
 						{ filters.length > 0 && (
-							<dl className="bcm-bulk__filters">
+							<dl className="bulkcat-bulk__filters">
 								{ filters.map( ( filter, index ) => (
-									<div className="bcm-bulk__kv" key={ index }>
+									<div
+										className="bulkcat-bulk__kv"
+										key={ index }
+									>
 										<dt>{ filter.label }</dt>
 										<dd>{ filter.value }</dd>
 									</div>
@@ -533,14 +539,14 @@ export default function BulkChangePanel( {
 							</p>
 						) }
 					</section>
-					<section className="bcm-bulk__card bcm-bulk__safety">
+					<section className="bulkcat-bulk__card bulkcat-bulk__safety">
 						<h3>
 							{ __(
 								'Safety',
 								'bulk-catalogue-manager-for-woocommerce'
 							) }
 						</h3>
-						<p className="bcm-bulk__hint">
+						<p className="bulkcat-bulk__hint">
 							{ __(
 								'Every change is saved with the old values. One click in History puts them back.',
 								'bulk-catalogue-manager-for-woocommerce'
@@ -548,7 +554,7 @@ export default function BulkChangePanel( {
 						</p>
 					</section>
 				</div>
-				<div className="bcm-bulk__main">
+				<div className="bulkcat-bulk__main">
 					{ batch ? (
 						<DoneStep
 							batchId={ batch.batch_id }
@@ -560,24 +566,24 @@ export default function BulkChangePanel( {
 						/>
 					) : (
 						<>
-							<section className="bcm-bulk__section">
-								<h3 className="bcm-bulk__h">
+							<section className="bulkcat-bulk__section">
+								<h3 className="bulkcat-bulk__h">
 									{ __(
 										'Choose the change',
 										'bulk-catalogue-manager-for-woocommerce'
 									) }
 								</h3>
-								<p className="bcm-bulk__sub">
+								<p className="bulkcat-bulk__sub">
 									{ __(
 										'Pick a change. You will see exactly what it does, on real products, before anything is saved.',
 										'bulk-catalogue-manager-for-woocommerce'
 									) }
 								</p>
-								<ol className="bcm-bulk__ops">
+								<ol className="bulkcat-bulk__ops">
 									{ operations.map( ( operation, index ) => (
 										<li
 											key={ operation.key }
-											className="bcm-bulk__op"
+											className="bulkcat-bulk__op"
 										>
 											{ ( index !== active ||
 												operations.length > 1 ) && (
@@ -644,7 +650,7 @@ export default function BulkChangePanel( {
 										</li>
 									) ) }
 								</ol>
-								<p className="bcm-bulk__addrow">
+								<p className="bulkcat-bulk__addrow">
 									<button
 										type="button"
 										className="button"
@@ -654,7 +660,7 @@ export default function BulkChangePanel( {
 										}
 										aria-describedby={
 											operations.length >= MAX_OPERATIONS
-												? 'bcm-bulk-max'
+												? 'bulkcat-bulk-max'
 												: undefined
 										}
 									>
@@ -665,8 +671,8 @@ export default function BulkChangePanel( {
 									</button>
 									{ operations.length >= MAX_OPERATIONS && (
 										<span
-											className="bcm-bulk__hint"
-											id="bcm-bulk-max"
+											className="bulkcat-bulk__hint"
+											id="bulkcat-bulk-max"
 										>
 											{ sprintf(
 												/* translators: %d: the most steps one change may hold, 20. */
@@ -684,10 +690,10 @@ export default function BulkChangePanel( {
 							{ preview.status !== 'idle' && (
 								<section
 									ref={ checkRef }
-									className="bcm-bulk__section"
+									className="bulkcat-bulk__section"
 									aria-live="polite"
 								>
-									<h3 className="bcm-bulk__h">
+									<h3 className="bulkcat-bulk__h">
 										{ __(
 											'Check it',
 											'bulk-catalogue-manager-for-woocommerce'
@@ -695,7 +701,7 @@ export default function BulkChangePanel( {
 									</h3>
 									{ preview.status === 'computing' && (
 										<p
-											className="bcm-bulk__sub"
+											className="bulkcat-bulk__sub"
 											role="status"
 										>
 											{ __(
@@ -712,7 +718,7 @@ export default function BulkChangePanel( {
 										/>
 									) }
 									{ reran && current && (
-										<div className="bcm-bulk__notice is-warn">
+										<div className="bulkcat-bulk__notice is-warn">
 											{ __(
 												'The products or the settings changed after you checked, so the preview has been worked out again. Check it, then apply.',
 												'bulk-catalogue-manager-for-woocommerce'
@@ -721,7 +727,7 @@ export default function BulkChangePanel( {
 									) }
 									{ stale && preview.status === 'ready' && (
 										<div
-											className="bcm-bulk__notice is-warn"
+											className="bulkcat-bulk__notice is-warn"
 											data-block="stale"
 										>
 											{ __(
@@ -734,7 +740,7 @@ export default function BulkChangePanel( {
 										preview.status !== 'error' && (
 											<>
 												{ current && changes === 0 && (
-													<div className="bcm-bulk__notice is-warn">
+													<div className="bulkcat-bulk__notice is-warn">
 														<strong>
 															{ __(
 																'Nothing would change',
@@ -789,7 +795,7 @@ export default function BulkChangePanel( {
 													}
 												/>
 												{ worthKnowing && (
-													<div className="bcm-bulk__notice is-warn">
+													<div className="bulkcat-bulk__notice is-warn">
 														<strong>
 															{ __(
 																'Worth knowing',
@@ -811,7 +817,7 @@ export default function BulkChangePanel( {
 
 							{ applier.status === 'changed' && (
 								<div
-									className="bcm-bulk__notice is-warn"
+									className="bulkcat-bulk__notice is-warn"
 									role="alert"
 									data-block="selection-changed"
 								>
@@ -832,7 +838,7 @@ export default function BulkChangePanel( {
 											productsPhrase( applier.current )
 										) }
 									</p>
-									<div className="bcm-bulk__acts">
+									<div className="bulkcat-bulk__acts">
 										<button
 											type="button"
 											className="button button-primary button-small"
@@ -871,7 +877,7 @@ export default function BulkChangePanel( {
 				</div>
 			</div>
 
-			<footer className="bcm-bulk__foot">
+			<footer className="bulkcat-bulk__foot">
 				{ ! batch && (
 					<FooterAction
 						state={ state }
@@ -896,7 +902,7 @@ export default function BulkChangePanel( {
 								'bulk-catalogue-manager-for-woocommerce'
 							) }
 				</button>
-				<span className="bcm-bulk__footnote">
+				<span className="bulkcat-bulk__footnote">
 					{ sprintf(
 						/* translators: %d: the current step, 1 to 3. */
 						__(
@@ -960,12 +966,12 @@ function FooterAction( {
 	}
 	const disabled = reason !== '' || state === 'previewing';
 	return (
-		<div className="bcm-confirm">
+		<div className="bulkcat-confirm">
 			<button
 				type="button"
 				className="button button-primary"
 				disabled={ disabled }
-				aria-describedby={ reason ? 'bcm-bulk-blocked' : undefined }
+				aria-describedby={ reason ? 'bulkcat-bulk-blocked' : undefined }
 				onClick={ check }
 			>
 				{ state === 'stale'
@@ -979,7 +985,7 @@ function FooterAction( {
 						) }
 			</button>
 			{ reason && (
-				<p className="bcm-bulk__hint" id="bcm-bulk-blocked">
+				<p className="bulkcat-bulk__hint" id="bulkcat-bulk-blocked">
 					{ reason }
 				</p>
 			) }
@@ -998,7 +1004,7 @@ function FooterAction( {
  */
 function ErrorNotice( { error, details, onDetails } ) {
 	return (
-		<div className="bcm-bulk__notice is-error" role="alert">
+		<div className="bulkcat-bulk__notice is-error" role="alert">
 			<p>
 				{ error?.message ||
 					__(
@@ -1020,7 +1026,7 @@ function ErrorNotice( { error, details, onDetails } ) {
 						) }
 					</button>
 					{ details && (
-						<p className="bcm-bulk__hint">
+						<p className="bulkcat-bulk__hint">
 							<code>{ error.code }</code>
 						</p>
 					) }

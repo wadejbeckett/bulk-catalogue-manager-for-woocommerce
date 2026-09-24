@@ -1,5 +1,5 @@
 /**
- * Pure helpers over the nested tree GET /bcm/v1/categories answers (SPEC §7):
+ * Pure helpers over the nested tree GET /bulkcat/v1/categories answers (SPEC §7):
  * an index by id, lineage and paths, the search filter, the visible rows the
  * ARIA tree walks, the filter value's sentence and the move payloads. No
  * React and no requests here, so every rule is tested on its own.

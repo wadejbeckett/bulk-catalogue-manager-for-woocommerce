@@ -131,7 +131,7 @@ describe( 'catalogue wire-ins', () => {
 		);
 		await waitFor( () =>
 			expect(
-				document.querySelector( '.bcm-catalogue__cards' )
+				document.querySelector( '.bulkcat-catalogue__cards' )
 			).not.toBeNull()
 		);
 		expect(

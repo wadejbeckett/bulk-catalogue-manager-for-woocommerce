@@ -93,7 +93,7 @@ if ( ! class_exists( 'WP_Error' ) ) {
 	class WP_REST_Server {
 		public function get_routes( string $route_namespace = '' ): array {
 			$routes = [];
-			foreach ( array_keys( $GLOBALS['bcm_test']['namespaces'] ) as $space ) {
+			foreach ( array_keys( $GLOBALS['bulkcat_test']['namespaces'] ) as $space ) {
 				$routes[ '/' . $space ] = [
 					[
 						'methods'   => [ 'GET' => true ],
@@ -102,10 +102,10 @@ if ( ! class_exists( 'WP_Error' ) ) {
 					],
 				];
 			}
-			foreach ( $GLOBALS['bcm_test']['routes'] as $route => $args ) {
+			foreach ( $GLOBALS['bulkcat_test']['routes'] as $route => $args ) {
 				$handlers = isset( $args['callback'] ) ? [ $args ] : array_filter( $args, 'is_int', ARRAY_FILTER_USE_KEY );
 				$space    = '';
-				foreach ( array_keys( $GLOBALS['bcm_test']['namespaces'] ) as $candidate ) {
+				foreach ( array_keys( $GLOBALS['bulkcat_test']['namespaces'] ) as $candidate ) {
 					$space = str_starts_with( $route, '/' . $candidate . '/' ) ? $candidate : $space;
 				}
 				foreach ( $handlers as $key => $handler ) {

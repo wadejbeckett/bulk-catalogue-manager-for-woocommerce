@@ -29,7 +29,7 @@ final class WriteRefused extends \RuntimeException {
 	}
 
 	/**
-	 * The field's refusal: its `bcm_` code and plain sentence.
+	 * The field's refusal: its `bulkcat_` code and plain sentence.
 	 */
 	public function error(): \WP_Error {
 		return $this->error;

@@ -34,14 +34,14 @@ final class CategoriesWriteRouteTest extends TestCase {
 	private InlineStore $store;
 
 	protected function setUp(): void {
-		bcm_test_reset();
-		$GLOBALS['bcm_test']['logged_in']                    = true;
-		$GLOBALS['bcm_test']['user_id']                      = 12;
-		$GLOBALS['bcm_test']['caps']['manage_woocommerce']   = true;
-		$GLOBALS['bcm_test']['caps']['manage_product_terms'] = true;
-		$GLOBALS['bcm_test']['caps']['edit_product_terms']   = true;
-		$GLOBALS['bcm_test']['caps']['edit_term']            = true;
-		$GLOBALS['bcm_test']['caps']['unfiltered_html']      = true;
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['logged_in']                    = true;
+		$GLOBALS['bulkcat_test']['user_id']                      = 12;
+		$GLOBALS['bulkcat_test']['caps']['manage_woocommerce']   = true;
+		$GLOBALS['bulkcat_test']['caps']['manage_product_terms'] = true;
+		$GLOBALS['bulkcat_test']['caps']['edit_product_terms']   = true;
+		$GLOBALS['bulkcat_test']['caps']['edit_term']            = true;
+		$GLOBALS['bulkcat_test']['caps']['unfiltered_html']      = true;
 		( new Plugin() )->boot();
 		do_action( 'rest_api_init' );
 		$this->store = new InlineStore();
@@ -54,7 +54,7 @@ final class CategoriesWriteRouteTest extends TestCase {
 	 * @param array<string, mixed> $params Parameters.
 	 */
 	private static function send( string $method, string $route, array $params = [] ): \WP_REST_Response|\WP_Error {
-		$request = new \WP_REST_Request( $method, '/bcm/v1' . $route );
+		$request = new \WP_REST_Request( $method, '/bulkcat/v1' . $route );
 		foreach ( $params as $key => $value ) {
 			$request->set_param( $key, $value );
 		}
@@ -66,9 +66,9 @@ final class CategoriesWriteRouteTest extends TestCase {
 		$this->assertSame( $code, $response->get_error_code() );
 		$this->assertSame( $status, $response->get_error_data()['status'] );
 		$this->assertSame( [], $GLOBALS['wpdb']->writes, 'Nothing was written.' );
-		$this->assertSame( [], $GLOBALS['bcm_test']['inserted_terms'] ?? [] );
-		$this->assertSame( [], $GLOBALS['bcm_test']['updated_terms'] ?? [] );
-		$this->assertSame( [], $GLOBALS['bcm_test']['term_meta_updates'] ?? [] );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['inserted_terms'] ?? [] );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['updated_terms'] ?? [] );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['term_meta_updates'] ?? [] );
 		return $response;
 	}
 
@@ -93,32 +93,32 @@ final class CategoriesWriteRouteTest extends TestCase {
 	}
 
 	public function test_the_routes_need_manage_product_terms_and_none_deletes(): void {
-		$routes = $GLOBALS['bcm_test']['routes'];
-		$create = $routes[ '/bcm/v1' . CategoriesWriteController::ROUTE ];
+		$routes = $GLOBALS['bulkcat_test']['routes'];
+		$create = $routes[ '/bulkcat/v1' . CategoriesWriteController::ROUTE ];
 		$this->assertSame( [ 'GET', 'POST' ], [ $create[0]['methods'], $create[1]['methods'] ], 'The create joins the tree read on one route.' );
 		$this->assertSame( [ Access::class, 'can_read' ], $create[0]['permission_callback'] );
-		$this->assertSame( 'bcm-category', call_user_func( $create['schema'] )['title'], 'The read keeps its schema.' );
+		$this->assertSame( 'bulkcat-category', call_user_func( $create['schema'] )['title'], 'The read keeps its schema.' );
 		$this->assertSame( [ Access::class, 'can_manage_terms' ], $create[1]['permission_callback'] );
 		$this->assertTrue( $create[1]['args']['name']['required'] );
 		$this->assertSame( [ 'name', 'slug', 'description', 'parent' ], array_keys( $create[1]['args'] ) );
 
-		$item = $routes[ '/bcm/v1' . CategoriesWriteController::ITEM_ROUTE ];
+		$item = $routes[ '/bulkcat/v1' . CategoriesWriteController::ITEM_ROUTE ];
 		$this->assertSame( [ 'PATCH', [ Access::class, 'can_manage_terms' ] ], [ $item[0]['methods'], $item[0]['permission_callback'] ] );
 		$this->assertSame( [ 'id', 'name', 'slug', 'description', 'parent' ], array_keys( $item[0]['args'] ) );
-		$move = $routes[ '/bcm/v1' . CategoriesWriteController::MOVE_ROUTE ];
+		$move = $routes[ '/bulkcat/v1' . CategoriesWriteController::MOVE_ROUTE ];
 		$this->assertSame( [ 'POST', [ Access::class, 'can_manage_terms' ] ], [ $move[0]['methods'], $move[0]['permission_callback'] ] );
 		$this->assertSame( [ 'id', 'parent', 'position' ], array_keys( $move[0]['args'] ) );
 
 		$methods = [];
 		foreach ( rest_get_server()->get_routes() as $route => $endpoints ) {
-			foreach ( str_starts_with( $route, '/bcm/v1/categories' ) ? $endpoints : [] as $endpoint ) {
+			foreach ( str_starts_with( $route, '/bulkcat/v1/categories' ) ? $endpoints : [] as $endpoint ) {
 				$methods = array_merge( $methods, array_keys( $endpoint['methods'] ) );
 			}
 		}
 		sort( $methods );
 		$this->assertSame( [ 'GET', 'PATCH', 'POST', 'POST' ], $methods );
 		$this->assertNotContains( 'DELETE', $methods, 'Deleting a category stays on the native screen (SPEC §2).' );
-		$this->assertSame( [], $GLOBALS['bcm_test']['wrong'] );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['wrong'] );
 	}
 
 	public function test_the_tree_read_still_answers_beside_the_create(): void {
@@ -180,38 +180,38 @@ final class CategoriesWriteRouteTest extends TestCase {
 	}
 
 	public function test_a_visitor_is_refused_401(): void {
-		$GLOBALS['bcm_test']['logged_in'] = false;
-		$GLOBALS['bcm_test']['caps']      = [];
+		$GLOBALS['bulkcat_test']['logged_in'] = false;
+		$GLOBALS['bulkcat_test']['caps']      = [];
 		foreach ( self::writes() as [ $method, $route, $params ] ) {
-			$this->assert_refused( self::send( $method, $route, $params ), 'bcm_forbidden', 401 );
+			$this->assert_refused( self::send( $method, $route, $params ), 'bulkcat_forbidden', 401 );
 		}
 	}
 
 	public function test_a_subscriber_is_refused_403(): void {
-		$GLOBALS['bcm_test']['caps'] = [ 'read' => true ];
+		$GLOBALS['bulkcat_test']['caps'] = [ 'read' => true ];
 		foreach ( self::writes() as [ $method, $route, $params ] ) {
-			$this->assert_refused( self::send( $method, $route, $params ), 'bcm_forbidden', 403 );
+			$this->assert_refused( self::send( $method, $route, $params ), 'bulkcat_forbidden', 403 );
 		}
 	}
 
 	public function test_a_shop_manager_without_manage_product_terms_is_refused_403(): void {
-		$GLOBALS['bcm_test']['caps']['manage_product_terms'] = false;
+		$GLOBALS['bulkcat_test']['caps']['manage_product_terms'] = false;
 		foreach ( self::writes() as [ $method, $route, $params ] ) {
-			$refused = $this->assert_refused( self::send( $method, $route, $params ), 'bcm_forbidden', 403 );
+			$refused = $this->assert_refused( self::send( $method, $route, $params ), 'bulkcat_forbidden', 403 );
 			$this->assertStringContainsString( 'categories', $refused->get_error_message() );
 		}
 	}
 
 	public function test_each_write_checks_the_per_term_capabilities_core_checks(): void {
 		// Creating needs the taxonomy's edit_terms capability.
-		$GLOBALS['bcm_test']['caps']['edit_product_terms'] = false;
-		$this->assert_refused( self::send( 'POST', '/categories', [ 'name' => 'Hats' ] ), 'bcm_forbidden', 403 );
-		$GLOBALS['bcm_test']['caps']['edit_product_terms'] = true;
+		$GLOBALS['bulkcat_test']['caps']['edit_product_terms'] = false;
+		$this->assert_refused( self::send( 'POST', '/categories', [ 'name' => 'Hats' ] ), 'bulkcat_forbidden', 403 );
+		$GLOBALS['bulkcat_test']['caps']['edit_product_terms'] = true;
 
 		// Editing or moving one category needs edit_term on that category.
-		$GLOBALS['bcm_test']['caps']['edit_term:3'] = false;
-		$GLOBALS['bcm_test']['caps']['edit_term:2'] = false;
-		$this->assert_refused( self::send( 'PATCH', '/categories/3', [ 'name' => 'Tops' ] ), 'bcm_forbidden', 403 );
+		$GLOBALS['bulkcat_test']['caps']['edit_term:3'] = false;
+		$GLOBALS['bulkcat_test']['caps']['edit_term:2'] = false;
+		$this->assert_refused( self::send( 'PATCH', '/categories/3', [ 'name' => 'Tops' ] ), 'bulkcat_forbidden', 403 );
 		$this->assert_refused(
 			self::send(
 				'POST',
@@ -221,10 +221,10 @@ final class CategoriesWriteRouteTest extends TestCase {
 					'position' => 0,
 				]
 			),
-			'bcm_forbidden',
+			'bulkcat_forbidden',
 			403
 		);
-		$GLOBALS['bcm_test']['caps']['edit_term:3'] = true;
+		$GLOBALS['bulkcat_test']['caps']['edit_term:3'] = true;
 		$this->assertSame( 200, self::send( 'PATCH', '/categories/3', [ 'name' => 'Tops' ] )->get_status() );
 	}
 

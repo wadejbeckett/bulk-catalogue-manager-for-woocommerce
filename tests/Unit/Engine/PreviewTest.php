@@ -54,12 +54,12 @@ final class PreviewTest extends TestCase {
 	private array $seeded = [];
 
 	protected function setUp(): void {
-		bcm_test_reset();
-		$GLOBALS['bcm_test']['caps']  = [
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['caps']  = [
 			'edit_post'            => true,
 			'assign_product_terms' => true,
 		];
-		$GLOBALS['bcm_test']['terms'] = [
+		$GLOBALS['bulkcat_test']['terms'] = [
 			'product_cat' => [ 10, 11, 12, 20 ],
 			'product_tag' => [ 30, 31 ],
 		];
@@ -85,17 +85,17 @@ final class PreviewTest extends TestCase {
 		$this->load( 107, 'variable', $simple( 'Plain Hoodie', '', '', 'HOODIE', null, [ 11 ] ) );
 		$this->load( 201, 'variation', [ 'parent_id' => 103 ] + $simple( 'Rain Jacket - Blue, Large', '60', '', 'JACKET-BL-L', 3, [] ) );
 		$this->load( 202, 'variation', [ 'parent_id' => 103 ] + $simple( 'Rain Jacket - Dark Green', '80', '', 'JACKET-DG', null, [] ) );
-		$GLOBALS['bcm_test']['watched'] = [];
+		$GLOBALS['bulkcat_test']['watched'] = [];
 	}
 
 	protected function tearDown(): void {
 		global $wpdb;
-		$this->assertSame( [], array_diff( array_column( $GLOBALS['bcm_test']['watched'] ?? [], 0 ), [ 'clone', 'set' ] ), 'Preview did more than copy objects and set values on the copies.' );
-		$this->assertNotContains( 'save', array_column( $GLOBALS['bcm_test']['watched'] ?? [], 0 ), 'Preview saved an object.' );
-		$this->assertSame( [], $GLOBALS['bcm_test']['set_object_terms'] ?? [], 'Preview wrote terms.' );
-		$this->assertSame( [], $GLOBALS['bcm_test']['post_meta_updates'] ?? [], 'Preview wrote meta.' );
-		$this->assertSame( [], $GLOBALS['bcm_test']['variable_syncs'] ?? [], 'Preview resynchronised a parent.' );
-		$this->assertSame( [], $GLOBALS['bcm_test']['transients'] ?? [], 'Preview stored something.' );
+		$this->assertSame( [], array_diff( array_column( $GLOBALS['bulkcat_test']['watched'] ?? [], 0 ), [ 'clone', 'set' ] ), 'Preview did more than copy objects and set values on the copies.' );
+		$this->assertNotContains( 'save', array_column( $GLOBALS['bulkcat_test']['watched'] ?? [], 0 ), 'Preview saved an object.' );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['set_object_terms'] ?? [], 'Preview wrote terms.' );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['post_meta_updates'] ?? [], 'Preview wrote meta.' );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['variable_syncs'] ?? [], 'Preview resynchronised a parent.' );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['transients'] ?? [], 'Preview stored something.' );
 		$this->assertSame( [], $wpdb->writes, 'Preview wrote to the database.' );
 		foreach ( $wpdb->queries as $sql ) {
 			$this->assertSame( 0, preg_match( '/^\s*(INSERT|UPDATE|DELETE|REPLACE)\b/i', $sql ), $sql );
@@ -111,13 +111,13 @@ final class PreviewTest extends TestCase {
 	 * @param array<string, mixed> $props Props.
 	 */
 	private function load( int $id, string $type, array $props ): WatchedProduct {
-		$props                                  = [ 'id' => $id ] + $props;
-		$product                                = new WatchedProduct( $type, $props );
-		$this->products[ $id ]                  = $product;
-		$this->seeded[ $id ]                    = $props;
-		$GLOBALS['bcm_test']['products'][ $id ] = $product;
+		$props                                      = [ 'id' => $id ] + $props;
+		$product                                    = new WatchedProduct( $type, $props );
+		$this->products[ $id ]                      = $product;
+		$this->seeded[ $id ]                        = $props;
+		$GLOBALS['bulkcat_test']['products'][ $id ] = $product;
 		if ( '' !== ( $props['sku'] ?? '' ) ) {
-			$GLOBALS['bcm_test']['skus'][ $props['sku'] ] = $id;
+			$GLOBALS['bulkcat_test']['skus'][ $props['sku'] ] = $id;
 		}
 		return $product;
 	}
@@ -430,7 +430,7 @@ final class PreviewTest extends TestCase {
 			],
 			$result['totals']['rows']
 		);
-		$this->assertContains( [ 'clone', 101, null ], $GLOBALS['bcm_test']['watched'], 'The steps ran on a copy.' );
+		$this->assertContains( [ 'clone', 101, null ], $GLOBALS['bulkcat_test']['watched'], 'The steps ran on a copy.' );
 	}
 
 	public function test_each_warning_kind(): void {
@@ -521,12 +521,12 @@ final class PreviewTest extends TestCase {
 				]
 			);
 		}
-		$GLOBALS['bcm_test']['calls'] = [];
+		$GLOBALS['bulkcat_test']['calls'] = [];
 
 		$result = $this->answer( Selection::of_ids( $ids ), self::set( 'regular_price', '11' ), 25 );
 
 		$this->assertSame( 250, $result['totals']['would_change'], 'Paging changes no answer.' );
-		$calls  = array_values( array_filter( $GLOBALS['bcm_test']['calls'], static fn( array $call ): bool => in_array( $call[0], [ '_prime_post_caches', 'wp_cache_flush_runtime' ], true ) ) );
+		$calls  = array_values( array_filter( $GLOBALS['bulkcat_test']['calls'], static fn( array $call ): bool => in_array( $call[0], [ '_prime_post_caches', 'wp_cache_flush_runtime' ], true ) ) );
 		$primed = array_values( array_filter( $calls, static fn( array $call ): bool => '_prime_post_caches' === $call[0] && [] !== $call[1][0] && $call[1][0][0] >= 1001 ) );
 		$this->assertSame( [ range( 1001, 1100 ), range( 1101, 1200 ), range( 1201, 1250 ) ], array_map( static fn( array $call ): array => $call[1][0], $primed ), 'Each page is primed once, posts with their terms and meta.' );
 		foreach ( $primed as $call ) {
@@ -536,10 +536,10 @@ final class PreviewTest extends TestCase {
 		$order = array_column( $calls, 0 );
 		$this->assertSame( '_prime_post_caches', $order[ array_search( 'wp_cache_flush_runtime', $order, true ) + 1 ], 'A release is followed by the next page\'s priming.' );
 
-		$GLOBALS['bcm_test']['calls']            = [];
-		$GLOBALS['bcm_test']['no_flush_runtime'] = true;
+		$GLOBALS['bulkcat_test']['calls']            = [];
+		$GLOBALS['bulkcat_test']['no_flush_runtime'] = true;
 		$this->answer( Selection::of_ids( $ids ), self::set( 'regular_price', '11' ), 25 );
-		$this->assertNotContains( 'wp_cache_flush_runtime', array_column( $GLOBALS['bcm_test']['calls'], 0 ), 'A cache that cannot release its runtime copy is only primed.' );
+		$this->assertNotContains( 'wp_cache_flush_runtime', array_column( $GLOBALS['bulkcat_test']['calls'], 0 ), 'A cache that cannot release its runtime copy is only primed.' );
 		$this->assertSame( 100, Preview::PAGE );
 	}
 
@@ -585,12 +585,12 @@ final class PreviewTest extends TestCase {
 		}
 		$this->assertCount( count( $different ), array_unique( $different ) );
 
-		$GLOBALS['bcm_test']['salt'] = 'rotated';
+		$GLOBALS['bulkcat_test']['salt'] = 'rotated';
 		$this->assertNotSame( $hash, Preview::hash( [ 101, 104 ], $list, $settings ), 'The hash is keyed on the site salt.' );
 	}
 
 	public function test_objects_that_cannot_be_read_are_listed_and_left_out(): void {
-		unset( $GLOBALS['bcm_test']['products'][106] );
+		unset( $GLOBALS['bulkcat_test']['products'][106] );
 		$result = $this->answer( Selection::of_ids( [ 101, 999, 106, 104 ] ), self::set( 'regular_price', '25' ) );
 
 		$this->assertSame( [ 999, 106 ], $result['unreadable'], '999 is not a product; 106 could not be loaded.' );
@@ -601,32 +601,32 @@ final class PreviewTest extends TestCase {
 	}
 
 	public function test_an_object_the_user_may_not_edit_is_skipped_with_the_reason(): void {
-		$GLOBALS['bcm_test']['caps']['edit_post:104'] = false;
-		$result                                       = $this->answer( Selection::of_ids( [ 101, 104 ] ), self::set( 'regular_price', '25' ) );
+		$GLOBALS['bulkcat_test']['caps']['edit_post:104'] = false;
+		$result = $this->answer( Selection::of_ids( [ 101, 104 ] ), self::set( 'regular_price', '25' ) );
 		$this->assertSame( [ 'changed', 'skipped' ], array_column( $result['sample'], 'state' ) );
-		$this->assertSame( 'bcm_cannot_edit', $result['sample'][1]['code'] );
+		$this->assertSame( 'bulkcat_cannot_edit', $result['sample'][1]['code'] );
 		$this->assertSame( 1, $result['totals']['would_change'] );
 	}
 
 	public function test_refusals_come_before_anything_is_read(): void {
 		$preview = self::preview();
 		foreach ( [
-			'bcm_no_operations'       => [],
-			'bcm_too_many_operations' => array_fill( 0, 21, self::set( 'featured', true )[0] ),
-			'bcm_unknown_action'      => self::ops( [ [ 'nope', [ 'field' => 'name' ] ] ] ),
-			'bcm_field_not_accepted'  => self::set( 'total_sales', 3 ),
+			'bulkcat_no_operations'       => [],
+			'bulkcat_too_many_operations' => array_fill( 0, 21, self::set( 'featured', true )[0] ),
+			'bulkcat_unknown_action'      => self::ops( [ [ 'nope', [ 'field' => 'name' ] ] ] ),
+			'bulkcat_field_not_accepted'  => self::set( 'total_sales', 3 ),
 		] as $code => $operations ) {
-			$GLOBALS['bcm_test']['products_loaded'] = [];
-			$refused                                = $preview->run( Selection::of_ids( [ 101 ] ), $operations );
+			$GLOBALS['bulkcat_test']['products_loaded'] = [];
+			$refused                                    = $preview->run( Selection::of_ids( [ 101 ] ), $operations );
 			$this->assertInstanceOf( \WP_Error::class, $refused, $code );
 			$this->assertSame( $code, $refused->get_error_code() );
 			$this->assertSame( 400, $refused->get_error_data()['status'] );
-			$this->assertSame( [], $GLOBALS['bcm_test']['products_loaded'], "$code: nothing was loaded." );
+			$this->assertSame( [], $GLOBALS['bulkcat_test']['products_loaded'], "$code: nothing was loaded." );
 		}
 
 		$ids     = range( 1, Selection::MAX_OBJECTS + 1 );
 		$refused = $preview->run( Selection::of_ids( $ids ), self::set( 'featured', true ) );
-		$this->assertSame( 'bcm_selection_too_large', $refused->get_error_code() );
+		$this->assertSame( 'bulkcat_selection_too_large', $refused->get_error_code() );
 	}
 
 	public function test_a_value_woocommerce_refuses_on_the_copy_fails_that_row_as_in_the_writer(): void {
@@ -634,7 +634,7 @@ final class PreviewTest extends TestCase {
 		$result                                 = $this->answer( Selection::of_ids( [ 101 ] ), self::set( 'sku', 'NEW-9' ) );
 		$this->assertSame( [ 'failed' ], array_column( $result['sample'], 'state' ) );
 		$this->assertSame( 'Invalid or duplicated SKU.', $result['sample'][0]['reason'] );
-		$this->assertSame( 'bcm_invalid_value', $result['sample'][0]['code'] );
+		$this->assertSame( 'bulkcat_invalid_value', $result['sample'][0]['code'] );
 		$this->assertSame( [ 'Invalid or duplicated SKU.' => 1 ], $result['totals']['would_fail'] );
 	}
 

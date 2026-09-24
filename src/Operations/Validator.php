@@ -62,7 +62,7 @@ defined( 'ABSPATH' ) || exit;
  *
  * Only a change is checked against the field; already, skipped and failed
  * Results pass through (after the permission check and the variation rules). Every refusal keeps
- * its sentence in the Result's reason and its `bcm_` code in the separate
+ * its sentence in the Result's reason and its `bulkcat_` code in the separate
  * code field for the details line, never in the sentence (SPEC §4.8).
  *
  * One Validator serves one run (a preview or a batch), because it
@@ -72,7 +72,7 @@ final class Validator {
 	/**
 	 * The code of a step skipped because the field does not apply to the object.
 	 */
-	public const NOT_AVAILABLE = 'bcm_not_available';
+	public const NOT_AVAILABLE = 'bulkcat_not_available';
 
 	/**
 	 * SKUs let through in this run: SKU => object id.
@@ -185,7 +185,7 @@ final class Validator {
 		$code    = (string) $refusal->get_error_code();
 		$message = $refusal->get_error_message();
 		$skip    = ( self::NOT_AVAILABLE === $code && $field->requires_managed_stock() )
-			|| ( 'bcm_invalid_value' === $code && ( $pushed || self::below_zero( $field, $result->new() ) ) );
+			|| ( 'bulkcat_invalid_value' === $code && ( $pushed || self::below_zero( $field, $result->new() ) ) );
 		return $skip
 			? Result::skipped( $field->key(), $result->old(), $message, $code )
 			: Result::failed( $field->key(), $result->old(), $message, $code );
@@ -207,7 +207,7 @@ final class Validator {
 		$id     = self::id_of( $subject );
 		$holder = $this->claimed[ $value ] ?? null;
 		if ( null !== $holder && $holder !== $id ) {
-			return Result::failed( $field->key(), $result->old(), Field::clash_reason( $value ), 'bcm_invalid_value' );
+			return Result::failed( $field->key(), $result->old(), Field::clash_reason( $value ), 'bulkcat_invalid_value' );
 		}
 		$this->claimed[ $value ] = $id;
 		return null;

@@ -14,8 +14,8 @@ module.exports = async ( config ) => {
 	await context.get( '/wp-login.php' );
 	const response = await context.post( '/wp-login.php', {
 		form: {
-			log: process.env.BCM_E2E_USER || 'admin',
-			pwd: process.env.BCM_E2E_PASSWORD || 'password',
+			log: process.env.BULKCAT_E2E_USER || 'admin',
+			pwd: process.env.BULKCAT_E2E_PASSWORD || 'password',
 			'wp-submit': 'Log In',
 			testcookie: '1',
 			redirect_to: `${ baseURL }/wp-admin/`,
@@ -30,7 +30,7 @@ module.exports = async ( config ) => {
 		)
 	) {
 		throw new Error(
-			`Could not log in to ${ baseURL } (HTTP ${ response.status() }). Check BCM_E2E_USER and BCM_E2E_PASSWORD.`
+			`Could not log in to ${ baseURL } (HTTP ${ response.status() }). Check BULKCAT_E2E_USER and BULKCAT_E2E_PASSWORD.`
 		);
 	}
 	await context.storageState( { path: storageState } );

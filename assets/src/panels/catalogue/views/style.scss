@@ -1,13 +1,13 @@
 // Saved views row, layout switch and export (T51–T53), as the prototype's
 // segmented chips, in the admin's own palette.
-.bcm-views {
+.bulkcat-views {
 	display: flex;
 	flex-direction: column;
 	gap: 8px;
 }
 
-.bcm-views__chips,
-.bcm-views__segmented {
+.bulkcat-views__chips,
+.bulkcat-views__segmented {
 	display: inline-flex;
 	flex-wrap: wrap;
 	gap: 2px;
@@ -48,7 +48,7 @@
 	}
 }
 
-.bcm-views__saved {
+.bulkcat-views__saved {
 	display: inline-flex;
 	align-items: center;
 
@@ -56,34 +56,34 @@
 		opacity: 0.5;
 	}
 
-	.bcm-views__more {
+	.bulkcat-views__more {
 		padding: 0 6px;
 	}
 }
 
-.bcm-views__default {
+.bulkcat-views__default {
 	margin-left: 4px;
 	font-weight: 400;
 	color: #50575e;
 }
 
-.bcm-views__dialog-actions {
+.bulkcat-views__dialog-actions {
 	display: flex;
 	justify-content: flex-end;
 	gap: 8px;
 	margin-top: 16px;
 }
 
-.bcm-views__error {
+.bulkcat-views__error {
 	color: #8a2424;
 }
 
-.bcm-export {
+.bulkcat-export {
 	display: inline-flex;
 	flex-direction: column;
 	gap: 8px;
 }
 
-.bcm-catalogue__cards .dataviews-view-grid {
+.bulkcat-catalogue__cards .dataviews-view-grid {
 	padding: 12px;
 }

@@ -31,7 +31,7 @@ async function openScreen( page, panel = '', extra = '' ) {
 	await page.goto(
 		SCREEN + ( panel ? `&panel=${ panel }` : '' ) + ( extra || '' )
 	);
-	await expect( page.locator( '#bcm-app .bcm-app' ) ).toBeVisible();
+	await expect( page.locator( '#bulkcat-app .bulkcat-app' ) ).toBeVisible();
 	if ( ! panel ) {
 		await expect(
 			page.locator( '.dataviews-view-table tbody tr' ).first()
@@ -88,7 +88,7 @@ function focused( page ) {
  * nonce the screen was given.
  *
  * @param {import('@playwright/test').Page} page           Page on the screen.
- * @param {string}                          path           Route under bcm/v1/.
+ * @param {string}                          path           Route under bulkcat/v1/.
  * @param {Object}                          options        Options.
  * @param {string}                          options.method HTTP method.
  * @param {Object}                          options.data   JSON body.
@@ -97,7 +97,7 @@ function focused( page ) {
 function rest( page, path, { method = 'GET', data } = {} ) {
 	return page.evaluate(
 		async ( args ) => {
-			const settings = window.bcmSettings;
+			const settings = window.bulkcatSettings;
 			const response = await window.fetch( settings.root + args.path, {
 				method: args.method,
 				credentials: 'same-origin',
@@ -148,9 +148,9 @@ async function expectAxeClean(
 	label,
 	include = [
 		'#wpbody-content .wrap',
-		'.bcm-bulk',
+		'.bulkcat-bulk',
 		'.components-modal__screen-overlay',
-		'.bcm-drawer',
+		'.bulkcat-drawer',
 	]
 ) {
 	let builder = new AxeBuilder( { page } ).withTags( [
@@ -168,7 +168,7 @@ async function expectAxeClean(
 	// WordPress's own update nag sits inside .wrap on an out-of-date site.
 	builder = builder
 		.exclude( '.update-nag' )
-		.exclude( '.notice:not([class*="bcm"])' );
+		.exclude( '.notice:not([class*="bulkcat"])' );
 	const { violations } = await builder.analyze();
 	const blocking = violations.filter( ( violation ) =>
 		[ 'serious', 'critical' ].includes( violation.impact )
@@ -195,7 +195,7 @@ function runQueue() {
 		return;
 	}
 	execSync(
-		`${ process.env.WP_CMD } action-scheduler run --hooks=bcm_run_chunk --batch-size=25`,
+		`${ process.env.WP_CMD } action-scheduler run --hooks=bulkcat_run_chunk --batch-size=25`,
 		{ stdio: 'ignore', timeout: 60_000 }
 	);
 }

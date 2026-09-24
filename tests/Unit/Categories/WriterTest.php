@@ -7,7 +7,7 @@
  * values; a duplicate name under the same parent, a slug in use, an empty
  * name, a missing parent and a parent inside the category itself are
  * refused with nothing written; a move renumbers the siblings compactly in
- * `bcm_order`, which the tree then honours; every write renews the tree cache.
+ * `bulkcat_order`, which the tree then honours; every write renews the tree cache.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -34,11 +34,11 @@ final class WriterTest extends TestCase {
 	private InlineStore $store;
 
 	protected function setUp(): void {
-		bcm_test_reset();
-		$GLOBALS['bcm_test']['logged_in']               = true;
-		$GLOBALS['bcm_test']['user_id']                 = self::USER;
-		$GLOBALS['bcm_test']['caps']['unfiltered_html'] = true;
-		$this->store                                    = new InlineStore();
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['logged_in']               = true;
+		$GLOBALS['bulkcat_test']['user_id']                 = self::USER;
+		$GLOBALS['bulkcat_test']['caps']['unfiltered_html'] = true;
+		$this->store                                        = new InlineStore();
 		CatalogueFixture::seed();
 		Cache::register_hooks();
 		set_transient( Cache::VERSION, 'before', 0 );
@@ -52,11 +52,11 @@ final class WriterTest extends TestCase {
 		$this->assertInstanceOf( \WP_Error::class, $result );
 		$this->assertSame( $code, $result->get_error_code() );
 		$this->assertSame( $status, $result->get_error_data()['status'] );
-		$this->assertStringNotContainsString( 'bcm_', $result->get_error_message(), 'No code in the sentence (SPEC §4.8).' );
+		$this->assertStringNotContainsString( 'bulkcat_', $result->get_error_message(), 'No code in the sentence (SPEC §4.8).' );
 		$this->assertSame( [], $GLOBALS['wpdb']->writes, 'No batch was recorded.' );
-		$this->assertSame( [], $GLOBALS['bcm_test']['inserted_terms'] ?? [] );
-		$this->assertSame( [], $GLOBALS['bcm_test']['updated_terms'] ?? [] );
-		$this->assertSame( [], $GLOBALS['bcm_test']['term_meta_updates'] ?? [] );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['inserted_terms'] ?? [] );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['updated_terms'] ?? [] );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['term_meta_updates'] ?? [] );
 		return $result;
 	}
 
@@ -67,7 +67,7 @@ final class WriterTest extends TestCase {
 	 * @return list<mixed>
 	 */
 	private static function orders( array $ids ): array {
-		return array_map( static fn( int $id ): mixed => $GLOBALS['bcm_test']['term_meta'][ $id ][ CategoryTree::TREE_ORDER_META ] ?? null, $ids );
+		return array_map( static fn( int $id ): mixed => $GLOBALS['bulkcat_test']['term_meta'][ $id ][ CategoryTree::TREE_ORDER_META ] ?? null, $ids );
 	}
 
 	public function test_a_create_writes_the_term_and_journals_a_tree_batch_of_one(): void {
@@ -106,7 +106,7 @@ final class WriterTest extends TestCase {
 					],
 				],
 			],
-			$GLOBALS['bcm_test']['inserted_terms']
+			$GLOBALS['bulkcat_test']['inserted_terms']
 		);
 
 		$batch = $this->store->batch( $result['batch_id'] );
@@ -124,7 +124,7 @@ final class WriterTest extends TestCase {
 		);
 		$this->assertSame( [ 'term' ], array_values( array_unique( array_column( $this->store->changes, 'object_type' ) ) ) );
 		$this->assertNotSame( 'before', get_transient( Cache::VERSION ), 'The tree cache was renewed.' );
-		$this->assertSame( [], $GLOBALS['bcm_test']['scheduled'] ?? [], 'Nothing is queued.' );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['scheduled'] ?? [], 'Nothing is queued.' );
 	}
 
 	public function test_a_create_takes_a_slug_and_a_name_used_under_another_parent(): void {
@@ -141,7 +141,7 @@ final class WriterTest extends TestCase {
 	}
 
 	public function test_without_unfiltered_html_the_name_and_description_pass_the_post_filter(): void {
-		$GLOBALS['bcm_test']['caps']['unfiltered_html'] = false;
+		$GLOBALS['bulkcat_test']['caps']['unfiltered_html'] = false;
 		$result = self::writer()->create(
 			[
 				'name'        => '<script>x</script>Hats',
@@ -154,8 +154,8 @@ final class WriterTest extends TestCase {
 	}
 
 	public function test_the_html_filter_follows_the_user_the_batch_is_recorded_for(): void {
-		$GLOBALS['bcm_test']['caps']['unfiltered_html'] = true;
-		$GLOBALS['bcm_test']['user_caps']               = [
+		$GLOBALS['bulkcat_test']['caps']['unfiltered_html'] = true;
+		$GLOBALS['bulkcat_test']['user_caps']               = [
 			self::USER => [ 'unfiltered_html' => false ],
 			13         => [ 'unfiltered_html' => true ],
 		];
@@ -167,7 +167,7 @@ final class WriterTest extends TestCase {
 		$filtered = self::writer()->create( $input, self::USER );
 		$this->assertSame( [ 'xHats', '<em>Warm</em>' ], [ $filtered['item']['name'], $filtered['item']['description'] ] );
 
-		$GLOBALS['bcm_test']['caps']['unfiltered_html'] = false;
+		$GLOBALS['bulkcat_test']['caps']['unfiltered_html'] = false;
 		$kept = self::writer()->create( [ 'name' => '<b>Caps</b>' ] + $input, 13 );
 		$this->assertSame( [ '<b>Caps</b>', '<em>Warm</em><iframe></iframe>' ], [ $kept['item']['name'], $kept['item']['description'] ] );
 	}
@@ -222,27 +222,27 @@ final class WriterTest extends TestCase {
 
 	public function test_a_create_whose_batch_cannot_be_recorded_is_removed_again(): void {
 		global $wpdb;
-		$wpdb->responses = [ '/^INSERT INTO `wp_bcm_batch_items`/' => false ] + $wpdb->responses;
+		$wpdb->responses = [ '/^INSERT INTO `wp_bulkcat_batch_items`/' => false ] + $wpdb->responses;
 
 		$result = self::writer()->create( [ 'name' => 'Hats' ], self::USER );
 		$this->assertInstanceOf( \WP_Error::class, $result );
-		$this->assertSame( 'bcm_batch_not_recorded', $result->get_error_code() );
-		$this->assertSame( [ [ 12, 'product_cat' ] ], $GLOBALS['bcm_test']['deleted_terms'] );
+		$this->assertSame( 'bulkcat_batch_not_recorded', $result->get_error_code() );
+		$this->assertSame( [ [ 12, 'product_cat' ] ], $GLOBALS['bulkcat_test']['deleted_terms'] );
 		$this->assertNull( get_term( 12, 'product_cat' ) );
 		$this->assertSame( [], $this->store->journal() );
 	}
 
 	public function test_a_journal_that_cannot_be_written_is_logged_and_its_text_never_sent(): void {
-		$GLOBALS['wpdb']->failing = [ 'insert:wp_bcm_changes' ];
+		$GLOBALS['wpdb']->failing = [ 'insert:wp_bulkcat_changes' ];
 
 		$result = self::writer()->create( [ 'name' => 'Hats' ], self::USER );
 
 		$this->assertInstanceOf( \WP_Error::class, $result );
 		$this->assertSame( 500, $result->get_error_data()['status'] );
 		$this->assertArrayNotHasKey( 'details', $result->get_error_data(), 'The exception text is logged, never sent.' );
-		$this->assertSame( 'error', $GLOBALS['bcm_test']['logged'][0][0] ?? null );
-		$this->assertStringContainsString( 'The change could not be journalled.', $GLOBALS['bcm_test']['logged'][0][1] );
-		$this->assertSame( 'bulk-catalogue-manager-for-woocommerce', $GLOBALS['bcm_test']['logged'][0][2]['source'] );
+		$this->assertSame( 'error', $GLOBALS['bulkcat_test']['logged'][0][0] ?? null );
+		$this->assertStringContainsString( 'The change could not be journalled.', $GLOBALS['bulkcat_test']['logged'][0][1] );
+		$this->assertSame( 'bulk-catalogue-manager-for-woocommerce', $GLOBALS['bulkcat_test']['logged'][0][2]['source'] );
 	}
 
 	public function test_an_edit_journals_the_old_and_new_name_slug_and_description(): void {
@@ -281,7 +281,7 @@ final class WriterTest extends TestCase {
 					],
 				],
 			],
-			$GLOBALS['bcm_test']['updated_terms']
+			$GLOBALS['bulkcat_test']['updated_terms']
 		);
 		$this->assertSame(
 			[
@@ -293,7 +293,7 @@ final class WriterTest extends TestCase {
 		);
 		$batch = $this->store->batch( $result['batch_id'] );
 		$this->assertSame( [ 'tree', 'complete', 1 ], [ $batch['source'], $batch['status'], $batch['changed_items'] ] );
-		$this->assertSame( [], $GLOBALS['bcm_test']['term_meta_updates'] ?? [], 'An edit that keeps the parent leaves the order alone.' );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['term_meta_updates'] ?? [], 'An edit that keeps the parent leaves the order alone.' );
 		$this->assertNotSame( 'before', get_transient( Cache::VERSION ) );
 	}
 
@@ -323,14 +323,14 @@ final class WriterTest extends TestCase {
 	}
 
 	public function test_an_edit_of_the_parent_places_the_category_last_among_its_new_siblings(): void {
-		$GLOBALS['bcm_test']['term_list'][] = (object) [
+		$GLOBALS['bulkcat_test']['term_list'][] = (object) [
 			'term_id'  => 12,
 			'name'     => 'Dresses',
 			'slug'     => 'dresses',
 			'parent'   => 5,
 			'taxonomy' => 'product_cat',
 		];
-		$result                             = self::writer()->update( 3, [ 'parent' => 5 ], self::USER );
+		$result                                 = self::writer()->update( 3, [ 'parent' => 5 ], self::USER );
 		$this->assertTrue( is_array( $result ), $result instanceof \WP_Error ? $result->get_error_message() : '' );
 		$this->assertSame( [ 5, 1 ], [ $result['item']['parent'], $result['item']['order'] ] );
 		$this->assertSame( [ 0, 1 ], self::orders( [ 12, 3 ] ) );
@@ -346,8 +346,8 @@ final class WriterTest extends TestCase {
 	}
 
 	public function test_an_edit_wordpress_refuses_is_journalled_as_failed(): void {
-		$GLOBALS['bcm_test']['update_term_error'] = new \WP_Error( 'duplicate_term_slug', 'The slug is already in use.' );
-		$result                                   = self::writer()->update( 3, [ 'name' => 'Tops' ], self::USER );
+		$GLOBALS['bulkcat_test']['update_term_error'] = new \WP_Error( 'duplicate_term_slug', 'The slug is already in use.' );
+		$result                                       = self::writer()->update( 3, [ 'name' => 'Tops' ], self::USER );
 		$this->assertInstanceOf( \WP_Error::class, $result );
 		$this->assertSame( Writer::NOT_SAVED, $result->get_error_code() );
 		$this->assertSame( 400, $result->get_error_data()['status'] );
@@ -367,8 +367,8 @@ final class WriterTest extends TestCase {
 		$this->assertSame( [ 1, 0 ], [ $result['item']['parent'], $result['item']['order'] ] );
 		$this->assertSame( [ 'already', 'changed' ], array_column( $result['results'], 'state' ) );
 		$this->assertSame( [ 0, 1 ], self::orders( [ 2, 5 ] ) );
-		$this->assertSame( [ 2, 5 ], CategoryTree::tree()->children( 1 ), 'The tree honours bcm_order before WooCommerce\'s order.' );
-		$this->assertSame( [], $GLOBALS['bcm_test']['updated_terms'] ?? [], 'A reorder under the same parent does not touch the term.' );
+		$this->assertSame( [ 2, 5 ], CategoryTree::tree()->children( 1 ), 'The tree honours bulkcat_order before WooCommerce\'s order.' );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['updated_terms'] ?? [], 'A reorder under the same parent does not touch the term.' );
 		$this->assertSame(
 			[
 				[ 2, 'term_order', null, 0, 'applied' ],
@@ -382,13 +382,13 @@ final class WriterTest extends TestCase {
 
 	public function test_a_move_to_another_parent_renumbers_both_groups(): void {
 		// Clothing holds Women (0), Men (1) after a reorder; Shoes holds Boots only.
-		$GLOBALS['bcm_test']['term_meta'][5][ CategoryTree::TREE_ORDER_META ] = 0;
-		$GLOBALS['bcm_test']['term_meta'][2][ CategoryTree::TREE_ORDER_META ] = 1;
+		$GLOBALS['bulkcat_test']['term_meta'][5][ CategoryTree::TREE_ORDER_META ] = 0;
+		$GLOBALS['bulkcat_test']['term_meta'][2][ CategoryTree::TREE_ORDER_META ] = 1;
 
 		$result = self::writer()->move( 7, 1, 1, self::USER );
 		$this->assertTrue( is_array( $result ), $result instanceof \WP_Error ? $result->get_error_message() : '' );
 		$this->assertSame( [ 1, 1, 1 ], [ $result['item']['parent'], $result['item']['depth'], $result['item']['order'] ] );
-		$this->assertSame( [ [ 7, 'product_cat', [ 'parent' => 1 ] ] ], array_slice( $GLOBALS['bcm_test']['updated_terms'], -1 ) );
+		$this->assertSame( [ [ 7, 'product_cat', [ 'parent' => 1 ] ] ], array_slice( $GLOBALS['bulkcat_test']['updated_terms'], -1 ) );
 		$this->assertSame( [ 5, 7, 2 ], CategoryTree::tree()->children( 1 ) );
 		$this->assertSame( [ 0, 1, 2 ], self::orders( [ 5, 7, 2 ] ), 'Contiguous from 0.' );
 		$this->assertSame( [], CategoryTree::tree()->children( 6 ) );
@@ -409,7 +409,7 @@ final class WriterTest extends TestCase {
 			13 => 2,
 		] as $id => $order ) {
 			if ( 3 !== $id ) {
-				$GLOBALS['bcm_test']['term_list'][] = (object) [
+				$GLOBALS['bulkcat_test']['term_list'][] = (object) [
 					'term_id'  => $id,
 					'name'     => 'Child ' . $id,
 					'slug'     => 'child-' . $id,
@@ -417,7 +417,7 @@ final class WriterTest extends TestCase {
 					'taxonomy' => 'product_cat',
 				];
 			}
-			$GLOBALS['bcm_test']['term_meta'][ $id ][ CategoryTree::TREE_ORDER_META ] = $order;
+			$GLOBALS['bulkcat_test']['term_meta'][ $id ][ CategoryTree::TREE_ORDER_META ] = $order;
 		}
 		$this->assertTrue( is_array( self::writer()->move( 3, 0, null, self::USER ) ) );
 		$this->assertSame( [ 12, 13 ], CategoryTree::tree()->children( 2 ) );

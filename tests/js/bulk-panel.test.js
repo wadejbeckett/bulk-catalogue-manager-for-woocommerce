@@ -443,7 +443,7 @@ describe( 'bulk panel: chooser and controls', () => {
 			screen.getByRole( 'button', { name: 'Move step 2 up' } )
 		);
 		const titles = Array.from(
-			panel().querySelectorAll( '.bcm-bulk__optitle' )
+			panel().querySelectorAll( '.bulkcat-bulk__optitle' )
 		).map( ( node ) => node.textContent );
 		expect( titles ).toEqual( [
 			'Find and replace — Name',
@@ -740,14 +740,14 @@ describe( 'bulk panel: preview, apply and done', () => {
 		await screen.findByText( 'Applying the change' );
 	} );
 
-	it( 'states both numbers on 409 bcm_selection_changed, then applies anyway with the same uuid', async () => {
+	it( 'states both numbers on 409 bulkcat_selection_changed, then applies anyway with the same uuid', async () => {
 		routeApi( apiFetch, {
 			'POST preview': previewResponse(),
 			'POST batches': ( options ) =>
 				options.data.confirm_changed
 					? { batch_id: 10, status: 'queued', total_items: 26 }
 					: restError(
-							'bcm_selection_changed',
+							'bulkcat_selection_changed',
 							'The filter now matches 26 products.',
 							{ status: 409, previewed: 24, current: 26 }
 						),
@@ -779,14 +779,18 @@ describe( 'bulk panel: preview, apply and done', () => {
 		expect( second.data.uuid ).toBe( first.data.uuid );
 	} );
 
-	it( 'offers Preview again on 409 bcm_selection_changed', async () => {
+	it( 'offers Preview again on 409 bulkcat_selection_changed', async () => {
 		routeApi( apiFetch, {
 			'POST preview': previewResponse(),
-			'POST batches': restError( 'bcm_selection_changed', 'Changed.', {
-				status: 409,
-				previewed: 24,
-				current: 30,
-			} ),
+			'POST batches': restError(
+				'bulkcat_selection_changed',
+				'Changed.',
+				{
+					status: 409,
+					previewed: 24,
+					current: 30,
+				}
+			),
 		} );
 		renderPanel( {
 			selection: { kind: 'filter', token: 'tok', count: 24 },
@@ -809,7 +813,7 @@ describe( 'bulk panel: preview, apply and done', () => {
 		expect( screen.queryByText( /It matches 30 products now/ ) ).toBeNull();
 	} );
 
-	it( 're-runs the preview on 409 bcm_preview_stale, and a new preview gets a new uuid', async () => {
+	it( 're-runs the preview on 409 bulkcat_preview_stale, and a new preview gets a new uuid', async () => {
 		let previews = 0;
 		let batches = 0;
 		routeApi( apiFetch, {
@@ -822,7 +826,7 @@ describe( 'bulk panel: preview, apply and done', () => {
 			'POST batches': () => {
 				batches++;
 				return batches === 1
-					? restError( 'bcm_preview_stale', 'Stale.', {
+					? restError( 'bulkcat_preview_stale', 'Stale.', {
 							status: 409,
 						} )
 					: { batch_id: 11, status: 'queued', total_items: 24 };

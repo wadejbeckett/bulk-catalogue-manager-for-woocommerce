@@ -1,21 +1,21 @@
 // Editing in the catalogue (T45–T47), in the prototype's admin palette
 // (docs/prototype/index.html: the switch, the Saved tick, the details drawer).
-$bcm-ink: #1d2327;
-$bcm-ink-2: #50575e;
-$bcm-ink-3: #646970;
-$bcm-panel: #fff;
-$bcm-sunk: #f6f7f7;
-$bcm-rule: #dcdcde;
-$bcm-rule-strong: #c3c4c7;
-$bcm-rule-soft: #f0f0f1;
-$bcm-blue: #2271b1;
-$bcm-good: #00a32a;
-$bcm-good-ink: #125c2a;
-$bcm-bad: #d63638;
-$bcm-bad-ink: #8a2424;
-$bcm-bad-tint: #fcf0f1;
+$bulkcat-ink: #1d2327;
+$bulkcat-ink-2: #50575e;
+$bulkcat-ink-3: #646970;
+$bulkcat-panel: #fff;
+$bulkcat-sunk: #f6f7f7;
+$bulkcat-rule: #dcdcde;
+$bulkcat-rule-strong: #c3c4c7;
+$bulkcat-rule-soft: #f0f0f1;
+$bulkcat-blue: #2271b1;
+$bulkcat-good: #00a32a;
+$bulkcat-good-ink: #125c2a;
+$bulkcat-bad: #d63638;
+$bulkcat-bad-ink: #8a2424;
+$bulkcat-bad-tint: #fcf0f1;
 
-.bcm-sr-only {
+.bulkcat-sr-only {
 	position: absolute;
 	width: 1px;
 	height: 1px;
@@ -27,13 +27,13 @@ $bcm-bad-tint: #fcf0f1;
 	border: 0;
 }
 
-.bcm-edit__notice {
+.bulkcat-edit__notice {
 	margin: 12px 12px 0;
 }
 
 // The switch: a 24px-high target with a word beside the track, so colour is
 // never the only signal (§14).
-.bcm-switch {
+.bulkcat-switch {
 	display: inline-flex;
 	align-items: center;
 	gap: 8px;
@@ -52,10 +52,10 @@ $bcm-bad-tint: #fcf0f1;
 		border: 0;
 		border-radius: 2px;
 		cursor: pointer;
-		color: $bcm-ink-3;
+		color: $bulkcat-ink-3;
 
 		&:focus-visible {
-			outline: 2px solid $bcm-blue;
+			outline: 2px solid $bulkcat-blue;
 			outline-offset: 1px;
 		}
 
@@ -81,31 +81,31 @@ $bcm-bad-tint: #fcf0f1;
 		width: 14px;
 		height: 14px;
 		border-radius: 50%;
-		background: $bcm-panel;
+		background: $bulkcat-panel;
 		transition: transform 0.12s ease;
 	}
 
 	&__button[aria-checked="true"] {
-		color: $bcm-good-ink;
+		color: $bulkcat-good-ink;
 
-		.bcm-switch__track {
-			background: $bcm-good;
+		.bulkcat-switch__track {
+			background: $bulkcat-good;
 		}
 
-		.bcm-switch__knob {
+		.bulkcat-switch__knob {
 			transform: translateX(16px);
 		}
 	}
 
 	// Partly: neither on nor off, the knob in the middle of a neutral track.
 	&__button.is-partly {
-		color: $bcm-ink-2;
+		color: $bulkcat-ink-2;
 
-		.bcm-switch__track {
+		.bulkcat-switch__track {
 			background: repeating-linear-gradient(135deg, #a7aaad 0 4px, #c3c4c7 4px 8px);
 		}
 
-		.bcm-switch__knob {
+		.bulkcat-switch__knob {
 			transform: translateX(8px);
 		}
 	}
@@ -127,21 +127,21 @@ $bcm-bad-tint: #fcf0f1;
 
 	&__menu-title {
 		margin: 0 0 4px;
-		color: $bcm-ink-2;
+		color: $bulkcat-ink-2;
 		font-size: 12px;
 		white-space: normal;
 	}
 }
 
 @media (prefers-reduced-motion: reduce) {
-	.bcm-switch__track,
-	.bcm-switch__knob {
+	.bulkcat-switch__track,
+	.bulkcat-switch__knob {
 		transition: none;
 	}
 }
 
 // Inline cells.
-.bcm-inline {
+.bulkcat-inline {
 	display: inline-flex;
 	align-items: center;
 	gap: 6px;
@@ -166,11 +166,11 @@ $bcm-bad-tint: #fcf0f1;
 		text-overflow: ellipsis;
 
 		&:hover {
-			border-color: $bcm-rule-strong;
+			border-color: $bulkcat-rule-strong;
 		}
 
 		&:focus-visible {
-			outline: 2px solid $bcm-blue;
+			outline: 2px solid $bulkcat-blue;
 			outline-offset: 1px;
 		}
 
@@ -185,9 +185,9 @@ $bcm-bad-tint: #fcf0f1;
 		max-width: 100%;
 	}
 
-	&.has-error .bcm-inline__input {
-		border-color: $bcm-bad;
-		box-shadow: 0 0 0 1px $bcm-bad;
+	&.has-error .bulkcat-inline__input {
+		border-color: $bulkcat-bad;
+		box-shadow: 0 0 0 1px $bulkcat-bad;
 	}
 
 	&__error,
@@ -197,26 +197,26 @@ $bcm-bad-tint: #fcf0f1;
 	}
 
 	&__error {
-		color: $bcm-bad-ink;
+		color: $bulkcat-bad-ink;
 	}
 
 	&__why {
-		color: $bcm-ink-2;
+		color: $bulkcat-ink-2;
 	}
 
 	&__saved {
-		color: $bcm-good-ink;
+		color: $bulkcat-good-ink;
 		font-size: 11px;
 	}
 }
 
-.bcm-catalogue .dataviews-view-table tbody td:has(.bcm-inline.is-editing) {
+.bulkcat-catalogue .dataviews-view-table tbody td:has(.bulkcat-inline.is-editing) {
 	overflow: visible;
 	white-space: normal;
 }
 
 // The details drawer.
-.bcm-drawer__scrim {
+.bulkcat-drawer__scrim {
 	position: fixed;
 	inset: 32px 0 0 0;
 	z-index: 9980;
@@ -227,7 +227,7 @@ $bcm-bad-tint: #fcf0f1;
 	}
 }
 
-.bcm-drawer {
+.bulkcat-drawer {
 	position: fixed;
 	top: 32px;
 	right: 0;
@@ -236,9 +236,9 @@ $bcm-bad-tint: #fcf0f1;
 	width: min(420px, 100vw);
 	display: flex;
 	flex-direction: column;
-	background: $bcm-panel;
-	color: $bcm-ink;
-	border-left: 1px solid $bcm-rule-strong;
+	background: $bulkcat-panel;
+	color: $bulkcat-ink;
+	border-left: 1px solid $bulkcat-rule-strong;
 	box-shadow: -8px 0 26px rgba(16, 24, 40, 0.18);
 
 	@media (max-width: 782px) {
@@ -250,7 +250,7 @@ $bcm-bad-tint: #fcf0f1;
 		align-items: center;
 		gap: 8px;
 		padding: 10px 12px;
-		border-bottom: 1px solid $bcm-rule;
+		border-bottom: 1px solid $bulkcat-rule;
 
 		h2 {
 			flex: 1;
@@ -266,15 +266,15 @@ $bcm-bad-tint: #fcf0f1;
 		display: grid;
 		place-items: center;
 		padding: 0;
-		background: $bcm-panel;
-		border: 1px solid $bcm-rule-strong;
+		background: $bulkcat-panel;
+		border: 1px solid $bulkcat-rule-strong;
 		border-radius: 2px;
-		color: $bcm-ink-2;
+		color: $bulkcat-ink-2;
 		cursor: pointer;
 
 		&:hover {
-			background: $bcm-sunk;
-			color: $bcm-ink;
+			background: $bulkcat-sunk;
+			color: $bulkcat-ink;
 		}
 	}
 
@@ -292,7 +292,7 @@ $bcm-bad-tint: #fcf0f1;
 
 	&__hint {
 		margin: 0;
-		color: $bcm-ink-2;
+		color: $bulkcat-ink-2;
 		font-size: 12px;
 	}
 
@@ -303,8 +303,8 @@ $bcm-bad-tint: #fcf0f1;
 		flex-wrap: wrap;
 		gap: 8px;
 		align-items: center;
-		background: $bcm-bad-tint;
-		border: 1px solid $bcm-rule;
+		background: $bulkcat-bad-tint;
+		border: 1px solid $bulkcat-rule;
 
 		p {
 			flex-basis: 100%;
@@ -324,20 +324,20 @@ $bcm-bad-tint: #fcf0f1;
 	}
 
 	&__saved {
-		color: $bcm-good-ink;
+		color: $bulkcat-good-ink;
 		font-size: 12px;
 	}
 
 	&__section {
 		margin-top: 14px;
 		padding-top: 12px;
-		border-top: 1px solid $bcm-rule-soft;
+		border-top: 1px solid $bulkcat-rule-soft;
 
 		h4 {
 			margin: 0 0 8px;
 			font-size: 12px;
 			font-weight: 600;
-			color: $bcm-ink-2;
+			color: $bulkcat-ink-2;
 		}
 	}
 
@@ -351,7 +351,7 @@ $bcm-bad-tint: #fcf0f1;
 			justify-content: space-between;
 			gap: 8px;
 			padding: 4px 0;
-			border-bottom: 1px solid $bcm-rule-soft;
+			border-bottom: 1px solid $bulkcat-rule-soft;
 		}
 	}
 }

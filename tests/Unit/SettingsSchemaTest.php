@@ -1,6 +1,6 @@
 <?php
 /**
- * The `bcm_settings` schema, sanitiser and typed reader (SPEC §11): every
+ * The `bulkcat_settings` schema, sanitiser and typed reader (SPEC §11): every
  * setting's default, valid, boundary and invalid values; rejections name the
  * setting; the stored option never holds a key outside the schema.
  *
@@ -41,7 +41,7 @@ final class SettingsSchemaTest extends TestCase {
 	];
 
 	protected function setUp(): void {
-		bcm_test_reset();
+		bulkcat_test_reset();
 	}
 
 	/**
@@ -136,8 +136,8 @@ final class SettingsSchemaTest extends TestCase {
 		foreach ( Schema::keys() as $key ) {
 			$this->assertNotSame( 'Unknown setting', Schema::label( $key ), "$key has no label." );
 		}
-		$this->assertNotEmpty( $GLOBALS['bcm_test']['gettext'] );
-		foreach ( $GLOBALS['bcm_test']['gettext'] as [ $text, $domain ] ) {
+		$this->assertNotEmpty( $GLOBALS['bulkcat_test']['gettext'] );
+		foreach ( $GLOBALS['bulkcat_test']['gettext'] as [ $text, $domain ] ) {
 			$this->assertSame( self::DOMAIN, $domain, "\"$text\" uses the wrong text domain." );
 		}
 	}
@@ -199,17 +199,17 @@ final class SettingsSchemaTest extends TestCase {
 			]
 		);
 
-		$stored = $GLOBALS['bcm_test']['options'][ Settings::OPTION ];
+		$stored = $GLOBALS['bulkcat_test']['options'][ Settings::OPTION ];
 		$this->assertSame( Schema::keys(), array_keys( $stored ), 'The stored option must hold exactly the schema keys.' );
 		$this->assertSame( 100, $stored['rows_per_page'] );
 		$this->assertSame( 'semicolon', $stored['csv_separator'] );
 		$this->assertSame( 50, $stored['batch_size'], 'A refused value keeps the stored one.' );
 		$this->assertSame( 200, $stored['confirm_threshold'], 'A refused value keeps the stored one.' );
 
-		$codes = array_column( $GLOBALS['bcm_test']['errors'], 1 );
+		$codes = array_column( $GLOBALS['bulkcat_test']['errors'], 1 );
 		sort( $codes );
-		$this->assertSame( [ 'bcm_invalid_7', 'bcm_invalid_batch_size', 'bcm_invalid_confirm_threshold', 'bcm_invalid_secret_hook' ], $codes );
-		foreach ( $GLOBALS['bcm_test']['errors'] as [ $setting, , $message, $type ] ) {
+		$this->assertSame( [ 'bulkcat_invalid_7', 'bulkcat_invalid_batch_size', 'bulkcat_invalid_confirm_threshold', 'bulkcat_invalid_secret_hook' ], $codes );
+		foreach ( $GLOBALS['bulkcat_test']['errors'] as [ $setting, , $message, $type ] ) {
 			$this->assertSame( Settings::OPTION, $setting );
 			$this->assertSame( 'error', $type );
 			$this->assertNotSame( '', $message );
@@ -228,21 +228,21 @@ final class SettingsSchemaTest extends TestCase {
 		);
 		update_option( Settings::OPTION, 'not a list' );
 
-		$stored = $GLOBALS['bcm_test']['options'][ Settings::OPTION ];
+		$stored = $GLOBALS['bulkcat_test']['options'][ Settings::OPTION ];
 		$this->assertSame( Schema::keys(), array_keys( $stored ) );
 		$this->assertSame( 0, $stored['history_days'] );
 		$this->assertFalse( $stored['category_panel'] );
 	}
 
 	public function test_a_stored_option_with_foreign_keys_is_cleaned_on_the_next_save(): void {
-		$GLOBALS['bcm_test']['options'][ Settings::OPTION ] = [
+		$GLOBALS['bulkcat_test']['options'][ Settings::OPTION ] = [
 			'batch_size' => 80,
 			'legacy'     => 'x',
 		];
 		Settings::register();
 		update_option( Settings::OPTION, [ 'rows_per_page' => 50 ] );
 
-		$stored = $GLOBALS['bcm_test']['options'][ Settings::OPTION ];
+		$stored = $GLOBALS['bulkcat_test']['options'][ Settings::OPTION ];
 		$this->assertSame( Schema::keys(), array_keys( $stored ) );
 		$this->assertSame( 80, $stored['batch_size'] );
 		$this->assertSame( 50, $stored['rows_per_page'] );
@@ -271,13 +271,13 @@ final class SettingsSchemaTest extends TestCase {
 
 	public function test_the_reader_returns_defaults_for_a_corrupt_option(): void {
 		foreach ( [ 'a:1:{broken', 42, true, null, (object) [ 'batch_size' => 20 ] ] as $stored ) {
-			$GLOBALS['bcm_test']['options'][ Settings::OPTION ] = $stored;
+			$GLOBALS['bulkcat_test']['options'][ Settings::OPTION ] = $stored;
 			$this->assertSame( self::DEFAULTS, Settings::load()->values(), json_encode( $stored ) );
 		}
 	}
 
 	public function test_the_reader_returns_the_default_for_each_corrupt_key_only(): void {
-		$GLOBALS['bcm_test']['options'][ Settings::OPTION ] = [
+		$GLOBALS['bulkcat_test']['options'][ Settings::OPTION ] = [
 			'rows_per_page'     => 'many',
 			'batch_size'        => 500,
 			'history_days'      => 0,
@@ -301,14 +301,14 @@ final class SettingsSchemaTest extends TestCase {
 	}
 
 	public function test_the_reader_exposes_no_raw_option(): void {
-		$GLOBALS['bcm_test']['options'][ Settings::OPTION ] = [
+		$GLOBALS['bulkcat_test']['options'][ Settings::OPTION ] = [
 			'batch_size' => '60',
 			'legacy'     => 'x',
 		];
 		$settings = Settings::load();
 
 		$this->assertSame( 60, $settings->batch_size(), 'A stored numeric string reads as an integer.' );
-		$this->assertNotSame( $GLOBALS['bcm_test']['options'][ Settings::OPTION ], $settings->values() );
+		$this->assertNotSame( $GLOBALS['bulkcat_test']['options'][ Settings::OPTION ], $settings->values() );
 		foreach ( ( new \ReflectionClass( Settings::class ) )->getProperties() as $property ) {
 			$this->assertFalse( $property->isPublic(), $property->getName() . ' must not be public.' );
 		}
@@ -317,17 +317,17 @@ final class SettingsSchemaTest extends TestCase {
 	public function test_boot_registers_the_option_with_its_sanitiser_on_init(): void {
 		$plugin = new Plugin();
 		$plugin->boot();
-		$this->assertArrayNotHasKey( Settings::OPTION, $GLOBALS['bcm_test']['settings'], 'Nothing registers before init.' );
+		$this->assertArrayNotHasKey( Settings::OPTION, $GLOBALS['bulkcat_test']['settings'], 'Nothing registers before init.' );
 
 		do_action( 'init' );
 
-		$this->assertArrayHasKey( Settings::OPTION, $GLOBALS['bcm_test']['settings'] );
-		$args = $GLOBALS['bcm_test']['settings'][ Settings::OPTION ];
+		$this->assertArrayHasKey( Settings::OPTION, $GLOBALS['bulkcat_test']['settings'] );
+		$args = $GLOBALS['bulkcat_test']['settings'][ Settings::OPTION ];
 		$this->assertSame( Settings::OPTION, $args['group'] );
 		$this->assertSame( 'object', $args['type'] );
 		$this->assertSame( [ Settings::class, 'sanitize' ], $args['sanitize_callback'] );
 		$this->assertSame( self::DEFAULTS, $args['default'] );
 		$this->assertFalse( $args['show_in_rest'] );
-		$this->assertCount( 1, $GLOBALS['bcm_test']['filters'][ 'sanitize_option_' . Settings::OPTION ] );
+		$this->assertCount( 1, $GLOBALS['bulkcat_test']['filters'][ 'sanitize_option_' . Settings::OPTION ] );
 	}
 }

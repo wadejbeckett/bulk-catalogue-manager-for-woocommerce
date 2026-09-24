@@ -15,7 +15,11 @@ import { __, sprintf } from '@wordpress/i18n';
  */
 export function errorMessage( error, fallback ) {
 	const message = error?.message;
-	if ( typeof message === 'string' && message && ! /^bcm_/.test( message ) ) {
+	if (
+		typeof message === 'string' &&
+		message &&
+		! /^bulkcat_/.test( message )
+	) {
 		return message;
 	}
 	return fallback;
@@ -64,7 +68,7 @@ export default function ErrorNotice( { error, fallback, onDismiss } ) {
 			status="error"
 			isDismissible={ !! onDismiss }
 			onRemove={ onDismiss }
-			className="bcm-cat-error"
+			className="bulkcat-cat-error"
 		>
 			<p>{ errorMessage( error, fallback ) }</p>
 			{ details && (
@@ -85,7 +89,7 @@ export default function ErrorNotice( { error, fallback, onDismiss } ) {
 								) }
 					</Button>
 					{ open && (
-						<p className="bcm-cat-error__details">
+						<p className="bulkcat-cat-error__details">
 							<code>{ details }</code>
 						</p>
 					) }

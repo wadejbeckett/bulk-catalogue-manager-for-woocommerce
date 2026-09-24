@@ -2,7 +2,7 @@
 /**
  * The saved views routes (SPEC §4.1, §10, §12.1, §13; T52): registered
  * through Routes behind Access::can_read; each user's views in their own
- * `bcm_views` user meta, so user A never lists, reads, changes or deletes
+ * `bulkcat_views` user meta, so user A never lists, reads, changes or deletes
  * user B's; the view sanitised against the explicit schema on save; names
  * sanitised and unique; at most 50 views; one default; reorder by ids.
  *
@@ -27,16 +27,16 @@ final class ViewsRouteTest extends TestCase {
 	private const B = 8;
 
 	protected function setUp(): void {
-		bcm_test_reset();
-		$GLOBALS['bcm_test']['logged_in'] = true;
-		$GLOBALS['bcm_test']['caps']      = [ 'manage_woocommerce' => true ];
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['logged_in'] = true;
+		$GLOBALS['bulkcat_test']['caps']      = [ 'manage_woocommerce' => true ];
 		self::as_user( self::A );
 		( new Plugin() )->boot();
 		do_action( 'rest_api_init' );
 	}
 
 	private static function as_user( int $id ): void {
-		$GLOBALS['bcm_test']['user_id'] = $id;
+		$GLOBALS['bulkcat_test']['user_id'] = $id;
 	}
 
 	/**
@@ -44,11 +44,11 @@ final class ViewsRouteTest extends TestCase {
 	 * validation, permission callback, handler.
 	 *
 	 * @param string               $method Method.
-	 * @param string               $route  Route below bcm/v1.
+	 * @param string               $route  Route below bulkcat/v1.
 	 * @param array<string, mixed> $params Parameters.
 	 */
 	private static function call( string $method, string $route, array $params = [] ): \WP_REST_Response|\WP_Error {
-		$request = new \WP_REST_Request( $method, '/bcm/v1' . $route );
+		$request = new \WP_REST_Request( $method, '/bulkcat/v1' . $route );
 		foreach ( $params as $key => $value ) {
 			$request->set_param( $key, $value );
 		}
@@ -107,12 +107,12 @@ final class ViewsRouteTest extends TestCase {
 	}
 
 	public function test_every_route_registers_behind_can_read(): void {
-		$routes = $GLOBALS['bcm_test']['routes'];
+		$routes = $GLOBALS['bulkcat_test']['routes'];
 		$want   = [
-			'/bcm/v1/views'                              => [ 'GET', 'POST' ],
-			'/bcm/v1/views/reorder'                      => [ 'POST' ],
-			'/bcm/v1/views/(?P<id>[a-f0-9]{12})'         => [ 'PATCH, PUT', 'DELETE' ],
-			'/bcm/v1/views/(?P<id>[a-f0-9]{12})/default' => [ 'POST' ],
+			'/bulkcat/v1/views'                      => [ 'GET', 'POST' ],
+			'/bulkcat/v1/views/reorder'              => [ 'POST' ],
+			'/bulkcat/v1/views/(?P<id>[a-f0-9]{12})' => [ 'PATCH, PUT', 'DELETE' ],
+			'/bulkcat/v1/views/(?P<id>[a-f0-9]{12})/default' => [ 'POST' ],
 		];
 		foreach ( $want as $route => $methods ) {
 			$this->assertArrayHasKey( $route, $routes );
@@ -123,21 +123,21 @@ final class ViewsRouteTest extends TestCase {
 			}
 			$this->assertTrue( is_callable( $routes[ $route ]['schema'] ) );
 		}
-		$this->assertSame( [], $GLOBALS['bcm_test']['wrong'], 'The registrar refused nothing.' );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['wrong'], 'The registrar refused nothing.' );
 	}
 
 	public function test_a_user_without_the_read_capability_is_refused_everywhere(): void {
-		$GLOBALS['bcm_test']['caps'] = [];
+		$GLOBALS['bulkcat_test']['caps'] = [];
 		$this->assertSame( 403, self::http_status( self::call( 'GET', '/views' ) ) );
 		$this->assertSame( 403, self::http_status( self::create( 'Mine' ) ) );
 		$this->assertSame( 403, self::http_status( self::call( 'POST', '/views/reorder', [ 'ids' => [] ] ) ) );
 		$this->assertSame( 403, self::http_status( self::call( 'DELETE', '/views/abcdef012345' ) ) );
-		$this->assertSame( [], $GLOBALS['bcm_test']['user_meta'] ?? [], 'Nothing was stored.' );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['user_meta'] ?? [], 'Nothing was stored.' );
 
-		$GLOBALS['bcm_test']['logged_in'] = false;
-		$refused                          = self::call( 'GET', '/views' );
+		$GLOBALS['bulkcat_test']['logged_in'] = false;
+		$refused                              = self::call( 'GET', '/views' );
 		$this->assertSame( 401, self::http_status( $refused ) );
-		$this->assertSame( 'bcm_forbidden', $refused->get_error_code() );
+		$this->assertSame( 'bulkcat_forbidden', $refused->get_error_code() );
 	}
 
 	public function test_create_read_update_delete(): void {
@@ -171,7 +171,7 @@ final class ViewsRouteTest extends TestCase {
 		);
 
 		// Stored as JSON in the user's own meta.
-		$stored = json_decode( $GLOBALS['bcm_test']['user_meta'][ self::A ][ ViewsController::META_KEY ], true );
+		$stored = json_decode( $GLOBALS['bulkcat_test']['user_meta'][ self::A ][ ViewsController::META_KEY ], true );
 		$this->assertSame( $item['id'], $stored['views'][0]['id'] );
 
 		$listed = self::call( 'GET', '/views' )->get_data();
@@ -213,7 +213,7 @@ final class ViewsRouteTest extends TestCase {
 		) {
 			$refused = self::call( $method, $route, $params );
 			$this->assertSame( 404, self::http_status( $refused ), "$method $route" );
-			$this->assertSame( 'bcm_view_not_found', $refused->get_error_code() );
+			$this->assertSame( 'bulkcat_view_not_found', $refused->get_error_code() );
 		}
 		$this->assertSame( 400, self::http_status( self::call( 'POST', '/views/reorder', [ 'ids' => [ $id ] ] ) ), 'B cannot order A\'s ids.' );
 		// B may use the same name: names are unique per user.
@@ -272,7 +272,7 @@ final class ViewsRouteTest extends TestCase {
 		foreach ( $bad as $case => $over ) {
 			$refused = self::create( 'Case ' . $case, $over );
 			$this->assertSame( 400, self::http_status( $refused ), $case );
-			$this->assertSame( 'bcm_invalid_view', $refused->get_error_code(), $case );
+			$this->assertSame( 'bulkcat_invalid_view', $refused->get_error_code(), $case );
 			$this->assertStringContainsString( 'could not be saved', $refused->get_error_message() );
 		}
 		foreach ( [
@@ -287,7 +287,7 @@ final class ViewsRouteTest extends TestCase {
 					'view' => $view,
 				]
 			);
-			$this->assertSame( 'bcm_invalid_view', $refused->get_error_code(), $case );
+			$this->assertSame( 'bulkcat_invalid_view', $refused->get_error_code(), $case );
 		}
 		$refused = self::call(
 			'POST',
@@ -298,7 +298,7 @@ final class ViewsRouteTest extends TestCase {
 				'category' => [ 'id' => 'shirts' ],
 			]
 		);
-		$this->assertSame( 'bcm_invalid_view', $refused->get_error_code(), 'A malformed category is refused.' );
+		$this->assertSame( 'bulkcat_invalid_view', $refused->get_error_code(), 'A malformed category is refused.' );
 		$this->assertSame( [], self::call( 'GET', '/views' )->get_data()['items'], 'Nothing refused was stored.' );
 
 		// Strings are cleaned; an unrecognised plain key is kept as plain JSON,
@@ -342,18 +342,18 @@ final class ViewsRouteTest extends TestCase {
 					'view' => self::view(),
 				]
 			);
-			$this->assertSame( 'bcm_view_name_required', $refused->get_error_code(), (string) json_encode( $name ) );
+			$this->assertSame( 'bulkcat_view_name_required', $refused->get_error_code(), (string) json_encode( $name ) );
 		}
-		$this->assertSame( 'bcm_view_name_required', self::create( str_repeat( 'é', 61 ) )->get_error_code() );
+		$this->assertSame( 'bulkcat_view_name_required', self::create( str_repeat( 'é', 61 ) )->get_error_code() );
 		$this->assertSame( 201, self::create( str_repeat( 'é', 60 ) )->get_status() );
 
 		$first = self::create( 'Low stock' )->get_data()['item']['id'];
 		$taken = self::create( 'low STOCK' );
-		$this->assertSame( 'bcm_view_exists', $taken->get_error_code() );
+		$this->assertSame( 'bulkcat_view_exists', $taken->get_error_code() );
 		$this->assertStringContainsString( '"low STOCK"', $taken->get_error_message() );
 
 		$second = self::create( 'Other' )->get_data()['item']['id'];
-		$this->assertSame( 'bcm_view_exists', self::call( 'PATCH', '/views/' . $second, [ 'name' => 'Low Stock' ] )->get_error_code() );
+		$this->assertSame( 'bulkcat_view_exists', self::call( 'PATCH', '/views/' . $second, [ 'name' => 'Low Stock' ] )->get_error_code() );
 		$this->assertSame( 200, self::call( 'PATCH', '/views/' . $first, [ 'name' => 'LOW STOCK' ] )->get_status(), 'A view may be renamed to its own name.' );
 	}
 
@@ -363,7 +363,7 @@ final class ViewsRouteTest extends TestCase {
 		}
 		$refused = self::create( 'One too many' );
 		$this->assertSame( 400, self::http_status( $refused ) );
-		$this->assertSame( 'bcm_too_many_views', $refused->get_error_code() );
+		$this->assertSame( 'bulkcat_too_many_views', $refused->get_error_code() );
 		$this->assertStringContainsString( '50 saved views', $refused->get_error_message() );
 		$this->assertCount( 50, self::call( 'GET', '/views' )->get_data()['items'] );
 
@@ -420,7 +420,7 @@ final class ViewsRouteTest extends TestCase {
 			] as $case => $bad
 		) {
 			$refused = self::call( 'POST', '/views/reorder', [ 'ids' => $bad ] );
-			$this->assertSame( 'bcm_invalid_view', $refused->get_error_code(), $case );
+			$this->assertSame( 'bulkcat_invalid_view', $refused->get_error_code(), $case );
 		}
 		$this->assertSame( 400, self::http_status( self::call( 'POST', '/views/reorder' ) ), 'ids is required.' );
 		$this->assertSame( $order, array_column( self::call( 'GET', '/views' )->get_data()['items'], 'id' ), 'A refused order changes nothing.' );
@@ -428,7 +428,7 @@ final class ViewsRouteTest extends TestCase {
 
 	public function test_a_malformed_stored_value_reads_as_no_views(): void {
 		foreach ( [ 'not json', '[]', '{"views":"x"}', '{"views":[{"id":"../x","name":"n","view":{}}],"default":"../x"}' ] as $raw ) {
-			$GLOBALS['bcm_test']['user_meta'][ self::A ][ ViewsController::META_KEY ] = $raw;
+			$GLOBALS['bulkcat_test']['user_meta'][ self::A ][ ViewsController::META_KEY ] = $raw;
 			$answer = self::call( 'GET', '/views' )->get_data();
 			$this->assertSame( [], $answer['items'], $raw );
 			$this->assertNull( $answer['default'] );
@@ -441,7 +441,7 @@ final class ViewsRouteTest extends TestCase {
 		$this->assertSame( 1, preg_match( '/^[a-f0-9]{12}$/', $id ) );
 	}
 
-	public function test_bcm_views_is_registered_for_uninstall(): void {
+	public function test_bulkcat_views_is_registered_for_uninstall(): void {
 		$this->assertContains( ViewsController::META_KEY, DataRegistry::plugin()->user_meta() );
 	}
 }

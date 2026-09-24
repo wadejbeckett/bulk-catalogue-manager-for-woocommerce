@@ -1,6 +1,6 @@
 <?php
 /**
- * `PATCH /bcm/v1/products/{id}` (SPEC §12.1, §9.3, §8, §13; T37): write any
+ * `PATCH /bulkcat/v1/products/{id}` (SPEC §12.1, §9.3, §8, §13; T37): write any
  * subset of the field registry's editable fields to one product or
  * variation, recorded as a batch of one.
  *
@@ -35,18 +35,18 @@ defined( 'ABSPATH' ) || exit;
  * row returned, as on `/products`.
  *
  * The permission callback is Access::can_write (the screen capability plus
- * `edit_products`); Engine\InlineWrite then refuses 404 `bcm_not_found` for
- * an id that is not a listed product or variation, 403 `bcm_cannot_edit` for
+ * `edit_products`); Engine\InlineWrite then refuses 404 `bulkcat_not_found` for
+ * an id that is not a listed product or variation, 403 `bulkcat_cannot_edit` for
  * an object the user may not edit, and 400 naming the field for a value the
  * object cannot take, with nothing written. Otherwise the change is written
  * through the same operations, Validator, Writer and Journal as a bulk batch,
  * synchronously, and never queued.
  *
- * `GET /bcm/v1/products/{id}` on the same route (Access::can_read, args
+ * `GET /bulkcat/v1/products/{id}` on the same route (Access::can_read, args
  * RouteSchema::row_args(): the id and `fields[]`) reads one product or
  * variation through Query\Catalogue::row(), the list's row builder, and
  * answers `{ item }`; an id that is not a listed product or variation is
- * 404 `bcm_not_found`.
+ * 404 `bulkcat_not_found`.
  *
  * The PATCH answer is `{ item, batch_id, status, results }`: `item` is the object
  * re-read through Query\Catalogue after its caches are cleared, in the same
@@ -63,7 +63,7 @@ final class ProductWriteController implements ReadController {
 	/**
 	 * The response schema's title.
 	 */
-	public const TITLE = 'bcm-product-write';
+	public const TITLE = 'bulkcat-product-write';
 
 	/**
 	 * Arguments and schema generator.
@@ -178,7 +178,7 @@ final class ProductWriteController implements ReadController {
 	 * One product or variation as the list shows it: `{ item }`, the row
 	 * Query\Catalogue::row() hydrates, narrowed by `fields[]` as on
 	 * `/products`. An id that is not a listed product or variation (missing,
-	 * another post type, trashed or an auto-draft) is 404 `bcm_not_found`.
+	 * another post type, trashed or an auto-draft) is 404 `bulkcat_not_found`.
 	 *
 	 * @param \WP_REST_Request $request The validated, sanitised request.
 	 */

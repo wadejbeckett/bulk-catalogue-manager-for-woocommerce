@@ -1,36 +1,36 @@
 // Catalogue grid (SPEC §4.1), in the admin's own palette so it follows the
 // admin colour scheme; tones match the prototype's badges.
-.bcm-catalogue {
-	--bcm-row-height: 56px;
-	--bcm-rule: #dcdcde;
-	--bcm-sunk: #f6f7f7;
-	--bcm-ink-2: #50575e;
-	--bcm-good-ink: #125c2a;
-	--bcm-good-tint: #edfaef;
-	--bcm-good-line: #b8e6c3;
-	--bcm-warn-ink: #6b5209;
-	--bcm-warn-tint: #fcf9e8;
-	--bcm-warn-line: #f0e0a8;
-	--bcm-bad-ink: #8a2424;
-	--bcm-bad-tint: #fcf0f1;
-	--bcm-bad-line: #f3c3c4;
+.bulkcat-catalogue {
+	--bulkcat-row-height: 56px;
+	--bulkcat-rule: #dcdcde;
+	--bulkcat-sunk: #f6f7f7;
+	--bulkcat-ink-2: #50575e;
+	--bulkcat-good-ink: #125c2a;
+	--bulkcat-good-tint: #edfaef;
+	--bulkcat-good-line: #b8e6c3;
+	--bulkcat-warn-ink: #6b5209;
+	--bulkcat-warn-tint: #fcf9e8;
+	--bulkcat-warn-line: #f0e0a8;
+	--bulkcat-bad-ink: #8a2424;
+	--bulkcat-bad-tint: #fcf0f1;
+	--bulkcat-bad-line: #f3c3c4;
 
-	border: 1px solid var(--bcm-rule);
+	border: 1px solid var(--bulkcat-rule);
 	min-height: 200px;
 
-	.bcm-catalogue__table.is-compact {
-		--bcm-row-height: 40px;
+	.bulkcat-catalogue__table.is-compact {
+		--bulkcat-row-height: 40px;
 	}
 
-	.bcm-catalogue__table.is-comfortable {
-		--bcm-row-height: 72px;
+	.bulkcat-catalogue__table.is-comfortable {
+		--bulkcat-row-height: 72px;
 	}
 
 	// Fixed row height: a cell never wraps, so every row and skeleton row is
 	// the same height and the page does not jump between states.
 	.dataviews-view-table tbody tr,
-	.bcm-skeleton__row {
-		height: var(--bcm-row-height);
+	.bulkcat-skeleton__row {
+		height: var(--bulkcat-row-height);
 	}
 
 	.dataviews-view-table tbody td {
@@ -45,7 +45,7 @@
 	// panel at 1280 pixels, a hover and a selected tint, and text in the
 	// admin's ink rather than DataViews' grey.
 	.dataviews-view-table {
-		color: var(--bcm-ink, #1d2327);
+		color: var(--bulkcat-ink, #1d2327);
 
 		td,
 		th {
@@ -62,17 +62,17 @@
 		}
 
 		// The switch's words wrap under it rather than widening the column.
-		td:has(.bcm-switch) {
+		td:has(.bulkcat-switch) {
 			white-space: normal;
 		}
 
-		.bcm-switch {
+		.bulkcat-switch {
 			flex-wrap: wrap;
 			row-gap: 2px;
 			max-width: 7rem;
 		}
 
-		.bcm-switch__label {
+		.bulkcat-switch__label {
 			min-width: 0;
 			white-space: normal;
 			line-height: 1.25;
@@ -81,11 +81,11 @@
 		// The Status column already shows Draft or Pending as a word; in the
 		// table the switch keeps its own sentence for screen readers only, so
 		// the row stays at its fixed height.
-		.bcm-switch__status {
+		.bulkcat-switch__status {
 			display: none;
 		}
 
-		td:has(.bcm-terms) {
+		td:has(.bulkcat-terms) {
 			max-width: 10rem;
 		}
 
@@ -105,11 +105,11 @@
 			font-size: 13px;
 			font-weight: 600;
 			text-transform: none;
-			color: var(--bcm-ink, #1d2327);
+			color: var(--bulkcat-ink, #1d2327);
 		}
 
 		thead th {
-			border-bottom: 1px solid var(--bcm-rule);
+			border-bottom: 1px solid var(--bulkcat-rule);
 			background: #fff;
 		}
 
@@ -121,7 +121,7 @@
 		// the selected tint; every row keeps the admin's ink (T75).
 		tbody tr,
 		tbody tr.is-selected {
-			color: var(--bcm-ink, #1d2327);
+			color: var(--bulkcat-ink, #1d2327);
 		}
 
 		tbody tr:hover td {
@@ -129,7 +129,7 @@
 		}
 
 		tbody tr.is-selected td {
-			background: var(--bcm-blue-tint, #f0f6fc);
+			background: var(--bulkcat-blue-tint, #f0f6fc);
 		}
 	}
 
@@ -137,8 +137,8 @@
 		min-width: 9rem;
 	}
 
-	.bcm-title__link {
-		color: var(--bcm-blue, #2271b1);
+	.bulkcat-title__link {
+		color: var(--bulkcat-blue, #2271b1);
 		text-decoration: none;
 
 		&:hover {
@@ -146,121 +146,121 @@
 		}
 	}
 
-	.bcm-error {
+	.bulkcat-error {
 		margin: 12px 12px 0;
 	}
 
-	.bcm-error__details code {
+	.bulkcat-error__details code {
 		display: block;
 		margin-top: 4px;
 		white-space: pre-wrap;
 	}
 }
 
-.bcm-cell.is-pending {
+.bulkcat-cell.is-pending {
 	opacity: 0.55;
 	pointer-events: none;
 }
 
-.bcm-cell__muted {
-	color: var(--bcm-ink-2);
+.bulkcat-cell__muted {
+	color: var(--bulkcat-ink-2);
 }
 
-.bcm-title {
+.bulkcat-title {
 	display: inline-flex;
 	flex-direction: column;
 	min-width: 0;
 }
 
-.bcm-title__link {
+.bulkcat-title__link {
 	font-weight: 600;
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
 
-.bcm-title__summary {
-	color: var(--bcm-ink-2);
+.bulkcat-title__summary {
+	color: var(--bulkcat-ink-2);
 	font-size: 12px;
 }
 
-.bcm-thumb {
+.bulkcat-thumb {
 	display: block;
 	width: 32px;
 	height: 32px;
 	object-fit: cover;
 	border-radius: 2px;
-	background: var(--bcm-sunk);
+	background: var(--bulkcat-sunk);
 
 	&.is-empty {
-		border: 1px solid var(--bcm-rule);
+		border: 1px solid var(--bulkcat-rule);
 	}
 }
 
-.bcm-terms {
+.bulkcat-terms {
 	display: inline-flex;
 	gap: 4px;
 }
 
-.bcm-badge {
+.bulkcat-badge {
 	display: inline-flex;
 	align-items: center;
 	height: 20px;
 	padding: 0 7px;
-	border: 1px solid var(--bcm-rule);
+	border: 1px solid var(--bulkcat-rule);
 	border-radius: 10px;
-	background: var(--bcm-sunk);
-	color: var(--bcm-ink-2);
+	background: var(--bulkcat-sunk);
+	color: var(--bulkcat-ink-2);
 	font-size: 11px;
 	white-space: nowrap;
 
 	&.is-good {
-		background: var(--bcm-good-tint);
-		border-color: var(--bcm-good-line);
-		color: var(--bcm-good-ink);
+		background: var(--bulkcat-good-tint);
+		border-color: var(--bulkcat-good-line);
+		color: var(--bulkcat-good-ink);
 	}
 
 	&.is-warn {
-		background: var(--bcm-warn-tint);
-		border-color: var(--bcm-warn-line);
-		color: var(--bcm-warn-ink);
+		background: var(--bulkcat-warn-tint);
+		border-color: var(--bulkcat-warn-line);
+		color: var(--bulkcat-warn-ink);
 	}
 
 	&.is-bad {
-		background: var(--bcm-bad-tint);
-		border-color: var(--bcm-bad-line);
-		color: var(--bcm-bad-ink);
+		background: var(--bulkcat-bad-tint);
+		border-color: var(--bulkcat-bad-line);
+		color: var(--bulkcat-bad-ink);
 	}
 }
 
-.bcm-skeleton {
+.bulkcat-skeleton {
 	width: 100%;
 }
 
-.bcm-skeleton__table {
+.bulkcat-skeleton__table {
 	width: 100%;
 	border-collapse: collapse;
 
 	td {
 		padding: 0 16px;
-		border-top: 1px solid var(--bcm-rule);
+		border-top: 1px solid var(--bulkcat-rule);
 	}
 }
 
-.bcm-skeleton__product {
+.bulkcat-skeleton__product {
 	display: flex;
 	align-items: center;
 	gap: 12px;
-	height: var(--bcm-row-height);
+	height: var(--bulkcat-row-height);
 }
 
-.bcm-skel {
+.bulkcat-skel {
 	display: block;
 	width: 64px;
 	height: 12px;
 	border-radius: 2px;
 	background: linear-gradient(90deg, #eceef0 25%, #f6f7f7 37%, #eceef0 63%);
 	background-size: 400% 100%;
-	animation: bcm-shimmer 1.3s ease infinite;
+	animation: bulkcat-shimmer 1.3s ease infinite;
 
 	&.is-thumb {
 		flex: none;
@@ -273,7 +273,7 @@
 	}
 }
 
-@keyframes bcm-shimmer {
+@keyframes bulkcat-shimmer {
 	0% {
 		background-position: 100% 50%;
 	}
@@ -283,23 +283,23 @@
 	}
 }
 
-.bcm-skeleton__status {
+.bulkcat-skeleton__status {
 	margin: 0;
 	padding: 12px 16px;
-	color: var(--bcm-ink-2);
+	color: var(--bulkcat-ink-2);
 }
 
-.bcm-state {
+.bulkcat-state {
 	max-width: 36rem;
 	margin: 48px auto;
 	text-align: center;
 
-	.bcm-state__title {
+	.bulkcat-state__title {
 		font-size: 15px;
 		font-weight: 600;
 	}
 
-	.bcm-state__filters {
+	.bulkcat-state__filters {
 		display: inline-block;
 		margin: 0 0 16px;
 		text-align: left;
@@ -307,18 +307,18 @@
 	}
 }
 
-.bcm-catalogue__body {
+.bulkcat-catalogue__body {
 	display: flex;
 	gap: 16px;
 	align-items: flex-start;
 }
 
-.bcm-catalogue__main {
+.bulkcat-catalogue__main {
 	flex: 1 1 auto;
 	min-width: 0;
 }
 
-.bcm-catalogue__chip {
+.bulkcat-catalogue__chip {
 	display: flex;
 	gap: 8px;
 	align-items: center;
@@ -326,35 +326,35 @@
 }
 
 // T75: the change in progress, above the rows it is changing.
-.bcm-catalogue__progress {
+.bulkcat-catalogue__progress {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
 	gap: 8px 16px;
 	margin: 0;
 	padding: 10px 12px;
-	background: var(--bcm-blue-tint, #f0f6fc);
+	background: var(--bulkcat-blue-tint, #f0f6fc);
 	border-bottom: 1px solid #c5d9ed;
 
-	.bcm-progress {
+	.bulkcat-progress {
 		flex: 1 1 16rem;
 	}
 }
 
-.bcm-catalogue__progress-acts {
+.bulkcat-catalogue__progress-acts {
 	display: inline-flex;
 	align-items: center;
 	gap: 12px;
 }
 
-.bcm-catalogue__progress-error {
+.bulkcat-catalogue__progress-error {
 	flex-basis: 100%;
 	margin: 0;
-	color: var(--bcm-bad-ink);
+	color: var(--bulkcat-bad-ink);
 }
 
 // T51, T53: the layout switch and Export beside each other above the grid.
-.bcm-catalogue__toolbar {
+.bulkcat-catalogue__toolbar {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: flex-start;
@@ -364,13 +364,13 @@
 }
 
 // A table wider than the panel scrolls inside it rather than the page.
-.bcm-catalogue__table {
+.bulkcat-catalogue__table {
 	max-width: 100%;
 	overflow-x: auto;
 }
 
 // T75: the regular price with the sale price under it, right-aligned.
-.bcm-money {
+.bulkcat-money {
 	display: inline-flex;
 	flex-direction: column;
 	align-items: flex-end;
@@ -378,14 +378,14 @@
 	font-variant-numeric: tabular-nums;
 }
 
-.bcm-money__sale {
-	color: var(--bcm-good-ink);
+.bulkcat-money__sale {
+	color: var(--bulkcat-good-ink);
 	font-size: 12px;
 }
 
 // The two rows above the table (saved views, then the layout switch and
 // the view's export) share one line when there is room, as the prototype's do.
-.bcm-catalogue__top {
+.bulkcat-catalogue__top {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: flex-start;
@@ -393,7 +393,7 @@
 	gap: 8px 16px;
 	padding: 12px 12px 0;
 
-	.bcm-catalogue__toolbar {
+	.bulkcat-catalogue__toolbar {
 		margin: 0;
 	}
 }

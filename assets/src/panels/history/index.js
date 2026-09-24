@@ -138,7 +138,7 @@ export default function History( { settings } ) {
 	};
 
 	return (
-		<section className="bcm-history">
+		<section className="bulkcat-history">
 			<h2>
 				{ __( 'History', 'bulk-catalogue-manager-for-woocommerce' ) }
 			</h2>
@@ -156,13 +156,13 @@ export default function History( { settings } ) {
 				<Notice
 					status={ notice.status || 'success' }
 					onRemove={ () => setNotice( null ) }
-					className="bcm-history__notice"
+					className="bulkcat-history__notice"
 				>
 					{ notice.text }
 				</Notice>
 			) }
 			<TabPanel
-				className="bcm-history__tabs"
+				className="bulkcat-history__tabs"
 				initialTabName={ linkedProduct ? 'audit' : 'changes' }
 				tabs={ [
 					{

@@ -1,7 +1,7 @@
 <?php
 /**
  * Undo a batch end to end (T56; SPEC §4.6, §9.4, §12.3, §12.4, §12.6)
- * through `POST /bcm/v1/batches/{id}/undo`, the undo batch factory and the
+ * through `POST /bulkcat/v1/batches/{id}/undo`, the undo batch factory and the
  * chunk runner, over the runner's in-memory batches, items and journal: the
  * preview's counts with conflicts first, bound to the plan hash; the hash
  * required to apply; the undo batch created with `undo_of` and each item's
@@ -58,21 +58,21 @@ final class UndoRouteTest extends TestCase {
 	private float $run_clock = self::NOW + 10.0;
 
 	protected function setUp(): void {
-		bcm_test_reset();
-		$this->run_clock                                   = self::NOW + 10.0;
-		$GLOBALS['bcm_test']['logged_in']                  = true;
-		$GLOBALS['bcm_test']['user_id']                    = self::USER;
-		$GLOBALS['bcm_test']['caps']['manage_woocommerce'] = true;
-		$GLOBALS['bcm_test']['caps']['edit_products']      = true;
-		$GLOBALS['bcm_test']['user_caps']                  = [
+		bulkcat_test_reset();
+		$this->run_clock                                       = self::NOW + 10.0;
+		$GLOBALS['bulkcat_test']['logged_in']                  = true;
+		$GLOBALS['bulkcat_test']['user_id']                    = self::USER;
+		$GLOBALS['bulkcat_test']['caps']['manage_woocommerce'] = true;
+		$GLOBALS['bulkcat_test']['caps']['edit_products']      = true;
+		$GLOBALS['bulkcat_test']['user_caps']                  = [
 			self::USER => [
 				'edit_post'            => true,
 				'assign_product_terms' => true,
 			],
 		];
-		$GLOBALS['bcm_test']['scheduled']                  = [];
-		$GLOBALS['bcm_test']['terms']                      = [ 'product_cat' => [ 5, 7 ] ];
-		$GLOBALS['wpdb']->insert_id                        = 40;
+		$GLOBALS['bulkcat_test']['scheduled']                  = [];
+		$GLOBALS['bulkcat_test']['terms']                      = [ 'product_cat' => [ 5, 7 ] ];
+		$GLOBALS['wpdb']->insert_id                            = 40;
 
 		$this->store                        = new RunnerStore( self::BATCH, [ 1001, 1002, [ 2001, 'variation' ] ], [], self::USER );
 		$this->store->batch['status']       = 'complete';
@@ -145,17 +145,17 @@ final class UndoRouteTest extends TestCase {
 	 * @param array<string, mixed> $props Props.
 	 */
 	private static function product( int $id, array $props, string $type = 'simple' ): SavedProduct {
-		$product                                = new SavedProduct( $type, [ 'id' => $id ] + $props );
-		$GLOBALS['bcm_test']['products'][ $id ] = $product;
+		$product                                    = new SavedProduct( $type, [ 'id' => $id ] + $props );
+		$GLOBALS['bulkcat_test']['products'][ $id ] = $product;
 		return $product;
 	}
 
 	private static function prop( int $id, string $prop ): mixed {
-		return $GLOBALS['bcm_test']['products'][ $id ]->props[ $prop ] ?? null;
+		return $GLOBALS['bulkcat_test']['products'][ $id ]->props[ $prop ] ?? null;
 	}
 
 	private static function dispatch( string $method, string $path, array $params = [] ): \WP_REST_Response|\WP_Error {
-		$request = new \WP_REST_Request( $method, '/bcm/v1' . $path );
+		$request = new \WP_REST_Request( $method, '/bulkcat/v1' . $path );
 		foreach ( $params as $key => $value ) {
 			$request->set_param( $key, $value );
 		}
@@ -177,7 +177,7 @@ final class UndoRouteTest extends TestCase {
 		$this->assertInstanceOf( \WP_Error::class, $response );
 		$this->assertSame( $code, $response->get_error_code() );
 		$this->assertSame( $status, $response->get_error_data()['status'] );
-		$this->assertStringNotContainsString( 'bcm_', $response->get_error_message() );
+		$this->assertStringNotContainsString( 'bulkcat_', $response->get_error_message() );
 		return $response;
 	}
 
@@ -232,16 +232,16 @@ final class UndoRouteTest extends TestCase {
 	}
 
 	public function test_the_route_registers_behind_the_write_capability(): void {
-		$route = $GLOBALS['bcm_test']['routes']['/bcm/v1/batches/(?P<id>[\d]+)/undo'];
+		$route = $GLOBALS['bulkcat_test']['routes']['/bulkcat/v1/batches/(?P<id>[\d]+)/undo'];
 		$this->assertSame( 'POST', $route[0]['methods'] );
 		$this->assertSame( [ Access::class, 'can_write' ], $route[0]['permission_callback'] );
 		$this->assertSame( [ 'id', 'page', 'per_page', 'uuid', 'preview', 'force', 'plan_hash' ], array_keys( $route[0]['args'] ) );
-		$this->assertSame( [], $GLOBALS['bcm_test']['wrong'] ?? [] );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['wrong'] ?? [] );
 	}
 
 	public function test_the_preview_counts_orders_conflicts_first_binds_the_hash_and_writes_nothing(): void {
 		// 1002 was edited by hand after the batch.
-		$GLOBALS['bcm_test']['products'][1002]->props['regular_price'] = '21.00';
+		$GLOBALS['bulkcat_test']['products'][1002]->props['regular_price'] = '21.00';
 
 		$preview = $this->preview();
 
@@ -282,18 +282,18 @@ final class UndoRouteTest extends TestCase {
 		$this->assertSame( [], $GLOBALS['wpdb']->writes, 'The preview writes nothing.' );
 		$this->assertSame( [], self::writing_queries() );
 		$this->assertSame( 'complete', $this->store->batch()['status'] );
-		foreach ( $GLOBALS['bcm_test']['products'] as $product ) {
+		foreach ( $GLOBALS['bulkcat_test']['products'] as $product ) {
 			$this->assertSame( [], $product->saves );
 		}
 	}
 
 	public function test_applying_requires_the_current_plan_hash(): void {
-		$missing = $this->refused( self::dispatch( 'POST', '/batches/12/undo', [ 'uuid' => self::UUID ] ), 'bcm_preview_stale', 409 );
+		$missing = $this->refused( self::dispatch( 'POST', '/batches/12/undo', [ 'uuid' => self::UUID ] ), 'bulkcat_preview_stale', 409 );
 		$this->assertStringContainsString( 'Preview the undo again', $missing->get_error_message() );
 
 		$hash = $this->preview()['plan_hash'];
 		// The catalogue moves on after the preview: the plan, and so its hash, changes.
-		$GLOBALS['bcm_test']['products'][1001]->props['regular_price'] = '12.00';
+		$GLOBALS['bulkcat_test']['products'][1001]->props['regular_price'] = '12.00';
 		$this->refused(
 			self::dispatch(
 				'POST',
@@ -303,10 +303,10 @@ final class UndoRouteTest extends TestCase {
 					'plan_hash' => $hash,
 				]
 			),
-			'bcm_preview_stale',
+			'bulkcat_preview_stale',
 			409
 		);
-		$this->refused( self::dispatch( 'POST', '/batches/12/undo', [ 'plan_hash' => $hash ] ), 'bcm_invalid_value', 400 );
+		$this->refused( self::dispatch( 'POST', '/batches/12/undo', [ 'plan_hash' => $hash ] ), 'bulkcat_invalid_value', 400 );
 		$this->refused(
 			self::dispatch(
 				'POST',
@@ -320,7 +320,7 @@ final class UndoRouteTest extends TestCase {
 			400
 		);
 		$this->assertSame( [], $this->store->others, 'No undo batch was created.' );
-		$this->assertSame( [], $GLOBALS['bcm_test']['scheduled'] );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['scheduled'] );
 	}
 
 	public function test_undo_creates_a_batch_with_undo_of_and_each_items_own_operations_before_any_work(): void {
@@ -350,13 +350,13 @@ final class UndoRouteTest extends TestCase {
 		}
 		$this->assertSame( 'undoing', $this->store->batch()['status'], 'The batch undone is marked undoing.' );
 		$this->assertSame( '2026-09-23 08:05:00', $this->store->batch()['finished_gmt'] );
-		$this->assertSame( [ [ 'enqueue', 'bcm_run_chunk', [ $undo_id ], 'bulk-catalogue-manager-for-woocommerce', null ] ], $GLOBALS['bcm_test']['scheduled'], 'Only then is the first chunk queued.' );
-		foreach ( $GLOBALS['bcm_test']['products'] as $product ) {
+		$this->assertSame( [ [ 'enqueue', 'bulkcat_run_chunk', [ $undo_id ], 'bulk-catalogue-manager-for-woocommerce', null ] ], $GLOBALS['bulkcat_test']['scheduled'], 'Only then is the first chunk queued.' );
+		foreach ( $GLOBALS['bulkcat_test']['products'] as $product ) {
 			$this->assertSame( [], $product->saves, 'Nothing is written before the runner works it.' );
 		}
 
 		// While it runs, the batch cannot be undone again or read as reversible.
-		$this->assertSame( 'undo_in_progress', $this->refused( self::dispatch( 'POST', '/batches/12/undo', [ 'preview' => true ] ), 'bcm_not_reversible', 409 )->get_error_data()['reason'] );
+		$this->assertSame( 'undo_in_progress', $this->refused( self::dispatch( 'POST', '/batches/12/undo', [ 'preview' => true ] ), 'bulkcat_not_reversible', 409 )->get_error_data()['reason'] );
 		$this->assertSame( 'in_progress', $this->ok( self::dispatch( 'GET', '/batches/12' ) )['reversibility']['state'] );
 	}
 
@@ -371,11 +371,11 @@ final class UndoRouteTest extends TestCase {
 		$this->assertSame( '20.00', self::prop( 1002, 'regular_price' ) );
 		$this->assertSame( [ 5 ], self::prop( 1002, 'category_ids' ) );
 		$this->assertSame( '5.00', self::prop( 2001, 'regular_price' ) );
-		$this->assertContains( [ 1002, [ 5 ], 'product_cat', false ], $GLOBALS['bcm_test']['set_object_terms'], 'Terms go back through wp_set_object_terms().' );
+		$this->assertContains( [ 1002, [ 5 ], 'product_cat', false ], $GLOBALS['bulkcat_test']['set_object_terms'], 'Terms go back through wp_set_object_terms().' );
 		foreach ( [ 1001, 1002, 2001 ] as $id ) {
-			$this->assertCount( 1, $GLOBALS['bcm_test']['products'][ $id ]->saves, 'Each object saved once, through CRUD.' );
+			$this->assertCount( 1, $GLOBALS['bulkcat_test']['products'][ $id ]->saves, 'Each object saved once, through CRUD.' );
 		}
-		$this->assertSame( [], $GLOBALS['bcm_test']['post_meta_updates'] ?? [] );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['post_meta_updates'] ?? [] );
 
 		$rows = array_values( array_filter( $this->store->changes, static fn( array $row ): bool => $undo_id === $row['batch_id'] ) );
 		$this->assertCount( 5, $rows, 'The undo is journalled like any batch.' );
@@ -422,7 +422,7 @@ final class UndoRouteTest extends TestCase {
 	}
 
 	public function test_a_conflicted_object_is_left_alone_and_counted_unless_forced(): void {
-		$GLOBALS['bcm_test']['products'][1002]->props['regular_price'] = '21.00';
+		$GLOBALS['bulkcat_test']['products'][1002]->props['regular_price'] = '21.00';
 
 		$created = $this->undo();
 		$this->assertSame( 2, $created['total_items'] );
@@ -433,7 +433,7 @@ final class UndoRouteTest extends TestCase {
 		$this->assertSame( 'complete', $this->run_batch( $created['batch_id'] ) );
 		$this->assertSame( '21.00', self::prop( 1002, 'regular_price' ), 'Left alone.' );
 		$this->assertSame( [ 5, 7 ], self::prop( 1002, 'category_ids' ), 'All of it: its other field too.' );
-		$this->assertSame( [], $GLOBALS['bcm_test']['products'][1002]->saves );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['products'][1002]->saves );
 		$this->assertSame( '10.00', self::prop( 1001, 'regular_price' ), 'The rest revert.' );
 		$this->assertSame( '5.00', self::prop( 2001, 'regular_price' ) );
 		$this->assertSame( 'undone', $this->store->batch()['status'] );
@@ -452,7 +452,7 @@ final class UndoRouteTest extends TestCase {
 	}
 
 	public function test_force_reverts_the_conflicted_object_too(): void {
-		$GLOBALS['bcm_test']['products'][1002]->props['regular_price'] = '21.00';
+		$GLOBALS['bulkcat_test']['products'][1002]->props['regular_price'] = '21.00';
 
 		$created = $this->undo( self::BATCH, true );
 		$this->assertSame( 3, $created['total_items'] );
@@ -468,7 +468,7 @@ final class UndoRouteTest extends TestCase {
 	}
 
 	public function test_skipped_objects_are_reported_with_their_reason(): void {
-		unset( $GLOBALS['bcm_test']['products'][2001] );
+		unset( $GLOBALS['bulkcat_test']['products'][2001] );
 
 		$created = $this->undo();
 		$this->assertSame( 1, $created['undo']['not_undone'] );
@@ -493,7 +493,7 @@ final class UndoRouteTest extends TestCase {
 		$this->assertTrue( $again['replayed'] );
 		$this->assertSame( 'Undo of #12', $again['undo']['label'] );
 		$this->assertCount( 1, $this->store->others, 'One undo batch.' );
-		$this->assertCount( 1, array_filter( $GLOBALS['bcm_test']['scheduled'], static fn( array $call ): bool => 'enqueue' === $call[0] ) );
+		$this->assertCount( 1, array_filter( $GLOBALS['bulkcat_test']['scheduled'], static fn( array $call ): bool => 'enqueue' === $call[0] ) );
 	}
 
 	public function test_an_undo_of_the_undo_puts_the_batch_back(): void {
@@ -520,7 +520,7 @@ final class UndoRouteTest extends TestCase {
 
 	public function test_a_batch_the_planner_refuses_answers_409_with_its_reason(): void {
 		$this->run_batch( $this->undo()['batch_id'] );
-		$refusal = $this->refused( self::dispatch( 'POST', '/batches/12/undo', [ 'preview' => true ] ), 'bcm_not_reversible', 409 );
+		$refusal = $this->refused( self::dispatch( 'POST', '/batches/12/undo', [ 'preview' => true ] ), 'bulkcat_not_reversible', 409 );
 		$this->assertSame( 'already_undone', $refusal->get_error_data()['reason'] );
 		$refusal = $this->refused(
 			self::dispatch(
@@ -531,18 +531,18 @@ final class UndoRouteTest extends TestCase {
 					'plan_hash' => str_repeat( 'a', 64 ),
 				]
 			),
-			'bcm_not_reversible',
+			'bulkcat_not_reversible',
 			409
 		);
 		$this->assertSame( 'already_undone', $refusal->get_error_data()['reason'] );
 
 		$this->store->batch['status'] = 'running';
-		$this->assertSame( 'in_progress', $this->refused( self::dispatch( 'POST', '/batches/12/undo', [ 'preview' => true ] ), 'bcm_not_reversible', 409 )->get_error_data()['reason'] );
+		$this->assertSame( 'in_progress', $this->refused( self::dispatch( 'POST', '/batches/12/undo', [ 'preview' => true ] ), 'bulkcat_not_reversible', 409 )->get_error_data()['reason'] );
 	}
 
 	public function test_an_undo_with_nothing_to_put_back_is_refused(): void {
 		foreach ( [ 1001, 1002, 2001 ] as $id ) {
-			$GLOBALS['bcm_test']['products'][ $id ]->props['regular_price'] = '1.00';
+			$GLOBALS['bulkcat_test']['products'][ $id ]->props['regular_price'] = '1.00';
 		}
 		$hash    = $this->preview()['plan_hash'];
 		$refusal = $this->refused(
@@ -554,7 +554,7 @@ final class UndoRouteTest extends TestCase {
 					'plan_hash' => $hash,
 				]
 			),
-			'bcm_nothing_to_undo',
+			'bulkcat_nothing_to_undo',
 			409
 		);
 		$this->assertStringContainsString( 'Revert anyway', $refusal->get_error_message() );
@@ -574,14 +574,14 @@ final class UndoRouteTest extends TestCase {
 					'plan_hash' => $hash,
 				]
 			),
-			'bcm_not_reversible',
+			'bulkcat_not_reversible',
 			409
 		);
 		$GLOBALS['wpdb']->failing = [];
 		$this->assertSame( 'undo_in_progress', $refusal->get_error_data()['reason'] );
 		$this->assertSame( [], $this->store->others, 'The new batch was removed.' );
 		$this->assertSame( [], $this->store->items_of( 41 ) );
-		$this->assertSame( [], $GLOBALS['bcm_test']['scheduled'] );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['scheduled'] );
 	}
 
 	public function test_a_failed_or_cancelled_undo_gives_the_batch_back_its_status(): void {
@@ -603,19 +603,19 @@ final class UndoRouteTest extends TestCase {
 	}
 
 	public function test_visitors_users_without_the_capability_and_missing_batches_are_refused(): void {
-		$this->refused( self::dispatch( 'POST', '/batches/999/undo', [ 'preview' => true ] ), 'bcm_not_found', 404 );
+		$this->refused( self::dispatch( 'POST', '/batches/999/undo', [ 'preview' => true ] ), 'bulkcat_not_found', 404 );
 
-		$GLOBALS['bcm_test']['caps']['edit_products'] = false;
-		$this->refused( self::dispatch( 'POST', '/batches/12/undo', [ 'preview' => true ] ), 'bcm_forbidden', 403 );
+		$GLOBALS['bulkcat_test']['caps']['edit_products'] = false;
+		$this->refused( self::dispatch( 'POST', '/batches/12/undo', [ 'preview' => true ] ), 'bulkcat_forbidden', 403 );
 
-		$GLOBALS['bcm_test']['logged_in'] = false;
-		$this->refused( self::dispatch( 'POST', '/batches/12/undo', [ 'preview' => true ] ), 'bcm_forbidden', 401 );
-		$this->assertSame( [], $GLOBALS['bcm_test']['products_loaded'] ?? [], 'No refusal reads a product.' );
+		$GLOBALS['bulkcat_test']['logged_in'] = false;
+		$this->refused( self::dispatch( 'POST', '/batches/12/undo', [ 'preview' => true ] ), 'bulkcat_forbidden', 401 );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['products_loaded'] ?? [], 'No refusal reads a product.' );
 	}
 
 	public function test_the_history_list_reads_no_product_and_leaves_conflicts_uncounted(): void {
-		$GLOBALS['bcm_test']['products'][1002]->props['regular_price'] = '21.00';
-		$GLOBALS['bcm_test']['products_loaded']                        = [];
+		$GLOBALS['bulkcat_test']['products'][1002]->props['regular_price'] = '21.00';
+		$GLOBALS['bulkcat_test']['products_loaded']                        = [];
 
 		$list = $this->ok( self::dispatch( 'GET', '/batches' ) );
 		$this->assertSame( [ self::BATCH ], array_column( $list['items'], 'batch_id' ) );
@@ -627,7 +627,7 @@ final class UndoRouteTest extends TestCase {
 			],
 			$list['items'][0]['reversibility']
 		);
-		$this->assertSame( [], $GLOBALS['bcm_test']['products_loaded'], 'The list builds no plan, so it reads no product.' );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['products_loaded'], 'The list builds no plan, so it reads no product.' );
 
 		$read = $this->ok( self::dispatch( 'GET', '/batches/12' ) );
 		$this->assertSame(
@@ -639,7 +639,7 @@ final class UndoRouteTest extends TestCase {
 			$read['reversibility'],
 			'The single read counts conflicts.'
 		);
-		$this->assertNotSame( [], $GLOBALS['bcm_test']['products_loaded'] );
+		$this->assertNotSame( [], $GLOBALS['bulkcat_test']['products_loaded'] );
 
 		// An undo batch's list row names the batch it undid.
 		$this->undo();

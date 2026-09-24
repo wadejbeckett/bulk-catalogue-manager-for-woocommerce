@@ -68,7 +68,7 @@ describe( 'catalogue table', () => {
 		expect( screen.getByText( 'Draft' ) ).toBeTruthy();
 		expect( await screen.findByText( 'T-Shirts' ) ).toBeTruthy();
 		expect( screen.getByText( 'Golf Shirts' ) ).toBeTruthy();
-		const thumbnail = document.querySelector( 'img.bcm-thumb' );
+		const thumbnail = document.querySelector( 'img.bulkcat-thumb' );
 		expect( thumbnail.getAttribute( 'src' ) ).toBe(
 			ROWS[ 0 ].thumbnail_url
 		);

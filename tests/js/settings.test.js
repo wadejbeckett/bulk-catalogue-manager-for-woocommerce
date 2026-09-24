@@ -195,7 +195,7 @@ async function renderTab( answer = FIXTURE ) {
 
 /** The tab's own notice text (the live region repeats it elsewhere). */
 const noticeText = () =>
-	document.querySelector( '.bcm-settings > .components-notice' )
+	document.querySelector( '.bulkcat-settings > .components-notice' )
 		?.textContent || '';
 
 const saveButton = () => screen.getByRole( 'button', { name: /Sav/ } );
@@ -342,7 +342,7 @@ describe( 'Settings tab', () => {
 			'Products per background batch was not saved: enter a whole number from 10 to 100.';
 		apiFetch.mockImplementationOnce( () =>
 			Promise.reject( {
-				code: 'bcm_invalid_setting',
+				code: 'bulkcat_invalid_setting',
 				message,
 				data: { status: 400, errors: { batch_size: message } },
 			} )
@@ -355,11 +355,11 @@ describe( 'Settings tab', () => {
 		} );
 		const row = document.querySelector( '[data-setting="batch_size"]' );
 		expect( row.textContent ).toContain( message );
-		expect( row.className ).toContain( 'bcm-settings__row--error' );
+		expect( row.className ).toContain( 'bulkcat-settings__row--error' );
 		expect( noticeText() ).toContain(
 			'Nothing was saved. Correct the settings marked below and save again.'
 		);
-		expect( document.body.textContent ).not.toContain( 'bcm_' );
+		expect( document.body.textContent ).not.toContain( 'bulkcat_' );
 		expect( saveButton().getAttribute( 'aria-disabled' ) ).toBeNull();
 
 		fireEvent.change(
@@ -378,7 +378,7 @@ describe( 'Settings tab', () => {
 		} );
 		apiFetch.mockImplementationOnce( () =>
 			Promise.reject( {
-				code: 'bcm_forbidden',
+				code: 'bulkcat_forbidden',
 				message:
 					'Only an administrator can change the Bulk Catalogue Manager settings. Ask an administrator to change them.',
 				data: { status: 403 },
@@ -391,7 +391,7 @@ describe( 'Settings tab', () => {
 			values: { csv_separator: 'semicolon' },
 		} );
 		expect(
-			document.querySelector( '.bcm-settings .components-notice' )
+			document.querySelector( '.bulkcat-settings .components-notice' )
 				.textContent
 		).toContain( 'Only an administrator can change' );
 	} );
@@ -405,7 +405,7 @@ describe( 'Settings tab', () => {
 		).toBeTruthy();
 		expect( screen.queryByRole( 'button', { name: /Sav/ } ) ).toBeNull();
 		const controls = document.querySelectorAll(
-			'.bcm-settings__form input, .bcm-settings__form select'
+			'.bulkcat-settings__form input, .bulkcat-settings__form select'
 		);
 		expect( controls.length ).toBeGreaterThan( 13 );
 		controls.forEach( ( control ) =>
@@ -419,7 +419,7 @@ describe( 'Settings tab', () => {
 			render( <Settings /> );
 		} );
 		expect(
-			document.querySelector( '.bcm-settings' ).textContent
+			document.querySelector( '.bulkcat-settings' ).textContent
 		).toContain( 'The settings could not be loaded.' );
 		apiFetch.mockImplementationOnce( () => Promise.resolve( FIXTURE ) );
 		await act( async () => {

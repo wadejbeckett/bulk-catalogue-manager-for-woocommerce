@@ -1,16 +1,16 @@
 // Selection bar (T42, SPEC §4.1), after the prototype's `.selbar`: sticky
 // under the admin bar, so its actions stay in reach while the owner scrolls.
-.bcm-selection {
+.bulkcat-selection {
 	position: sticky;
 	top: var(--wp-admin--admin-bar--height, 32px);
 	z-index: 20;
 }
 
-.bcm-selection__notice {
+.bulkcat-selection__notice {
 	margin: 8px 12px;
 }
 
-.bcm-selection__bar {
+.bulkcat-selection__bar {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
@@ -20,11 +20,11 @@
 	border-bottom: 1px solid #c5d9ed;
 }
 
-.bcm-selection__count {
+.bulkcat-selection__count {
 	font-weight: 600;
 }
 
-.bcm-selection__actions {
+.bulkcat-selection__actions {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 8px;
@@ -33,11 +33,11 @@
 
 // The selection bar carries the bulk actions, so DataViews' own footer
 // toolbar for the same selection is not shown.
-.bcm-catalogue .dataviews-bulk-actions-footer__container {
+.bulkcat-catalogue .dataviews-bulk-actions-footer__container {
 	display: none;
 }
 
 // T65: the bar can be dragged onto a category.
-.bcm-selection__bar.is-draggable {
+.bulkcat-selection__bar.is-draggable {
 	cursor: grab;
 }

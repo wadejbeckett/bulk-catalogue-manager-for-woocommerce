@@ -1,7 +1,7 @@
 <?php
 /**
  * A single-object write as a batch of one (SPEC §12.1, §9.3, §8, §13; T37):
- * what `PATCH /bcm/v1/products/{id}` runs. An inline edit, a detail-panel
+ * what `PATCH /bulkcat/v1/products/{id}` runs. An inline edit, a detail-panel
  * save or any other change to one product or variation goes through the
  * same operation classes, Validator, Writer and Journal as a bulk batch and
  * is recorded as its own batch, so it shows in history and undoes like one.
@@ -33,8 +33,8 @@ defined( 'ABSPATH' ) || exit;
  * For one request it:
  * 1. resolves the id through BatchFactory::materialise(), exactly as a
  *    batch's id list is resolved: anything that is not a listable product
- *    or variation is refused 404 `bcm_not_found`;
- * 2. refuses 403 `bcm_cannot_edit` an object the current user may not edit
+ *    or variation is refused 404 `bulkcat_not_found`;
+ * 2. refuses 403 `bulkcat_cannot_edit` an object the current user may not edit
  *    (`current_user_can( 'edit_post', $id )`, through Access::can_edit_object());
  * 3. turns the submitted values into an operation list, one step per field
  *    in the field registry's order (operations()): the action that sets the
@@ -60,7 +60,7 @@ defined( 'ABSPATH' ) || exit;
  *    request returns.
  *
  * A write that throws (the journal refusing a row) still finalises the batch
- * as failed and is answered 500 `bcm_save_failed`.
+ * as failed and is answered 500 `bulkcat_save_failed`.
  */
 final class InlineWrite {
 	/**
@@ -71,7 +71,7 @@ final class InlineWrite {
 	/**
 	 * The code for a value the dry run refused, when the refusal carries none of its own.
 	 */
-	public const INVALID = 'bcm_invalid_value';
+	public const INVALID = 'bulkcat_invalid_value';
 
 	/**
 	 * The operation registry.

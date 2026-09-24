@@ -1,6 +1,6 @@
 <?php
 /**
- * `GET /bcm/v1/categories` (SPEC §7, §4.7, §12.2): the whole `product_cat`
+ * `GET /bulkcat/v1/categories` (SPEC §7, §4.7, §12.2): the whole `product_cat`
  * hierarchy as one nested array, each node with its own product count and
  * its count including descendants under the grid's active conditions. It
  * takes the grid's mode, search and filter arguments exactly as
@@ -101,7 +101,7 @@ final class CategoriesController implements ReadController {
 			$criteria = CategoryTree::criteria( $this->schema->criteria_input( $params ) );
 		} catch ( \InvalidArgumentException $e ) {
 			return Refusal::invalid(
-				'bcm_invalid_value',
+				'bulkcat_invalid_value',
 				__( 'The category counts could not use the current filters. Clear the filters and try again.', 'bulk-catalogue-manager-for-woocommerce' ),
 				[ 'details' => $e->getMessage() ]
 			);
@@ -121,7 +121,7 @@ final class CategoriesController implements ReadController {
 		];
 		return [
 			'$schema'    => RouteSchema::DIALECT,
-			'title'      => 'bcm-category',
+			'title'      => 'bulkcat-category',
 			'type'       => 'object',
 			'properties' => [
 				'id'                   => [

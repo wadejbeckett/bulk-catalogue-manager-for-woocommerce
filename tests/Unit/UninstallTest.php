@@ -20,7 +20,7 @@ use PHPUnit\Framework\TestCase;
 
 final class UninstallTest extends TestCase {
 	protected function setUp(): void {
-		bcm_test_reset();
+		bulkcat_test_reset();
 	}
 
 	private static function root(): string {
@@ -31,10 +31,10 @@ final class UninstallTest extends TestCase {
 	 * Store the plugin's options and an unrelated one, as a live site would hold them.
 	 */
 	private static function seed( mixed $settings ): void {
-		$GLOBALS['bcm_test']['options'] = [
-			'bcm_settings'     => $settings,
-			'bcm_db_version'   => '1',
-			'unrelated_option' => 'keep',
+		$GLOBALS['bulkcat_test']['options'] = [
+			'bulkcat_settings'   => $settings,
+			'bulkcat_db_version' => '1',
+			'unrelated_option'   => 'keep',
 		];
 	}
 
@@ -50,17 +50,17 @@ final class UninstallTest extends TestCase {
 	 */
 	private static function calls(): array {
 		return [
-			'deleted'     => $GLOBALS['bcm_test']['deleted'],
-			'unscheduled' => $GLOBALS['bcm_test']['unscheduled'],
+			'deleted'     => $GLOBALS['bulkcat_test']['deleted'],
+			'unscheduled' => $GLOBALS['bulkcat_test']['unscheduled'],
 			'sql'         => $GLOBALS['wpdb']->queries,
 		];
 	}
 
 	public function test_with_the_setting_off_by_default_nothing_is_deleted(): void {
 		foreach ( [ [], null, 'corrupt', [ 'remove_data_on_delete' => false ], [ 'remove_data_on_delete' => 'yes' ] ] as $stored ) {
-			bcm_test_reset();
+			bulkcat_test_reset();
 			self::seed( $stored );
-			$before = $GLOBALS['bcm_test']['options'];
+			$before = $GLOBALS['bulkcat_test']['options'];
 
 			self::run_uninstall();
 
@@ -73,7 +73,7 @@ final class UninstallTest extends TestCase {
 				self::calls(),
 				'Stored settings: ' . json_encode( $stored )
 			);
-			$this->assertSame( $before, $GLOBALS['bcm_test']['options'] );
+			$this->assertSame( $before, $GLOBALS['bulkcat_test']['options'] );
 		}
 	}
 
@@ -92,10 +92,10 @@ final class UninstallTest extends TestCase {
 	public function test_with_the_setting_on_every_registered_item_is_removed_and_nothing_else(): void {
 		self::seed( [ 'remove_data_on_delete' => true ] );
 		$GLOBALS['wpdb']->tables = [
-			'wp_posts'           => true,
-			'wp_bcm_batches'     => true,
-			'wp_bcm_batch_items' => true,
-			'wp_bcm_changes'     => true,
+			'wp_posts'               => true,
+			'wp_bulkcat_batches'     => true,
+			'wp_bulkcat_batch_items' => true,
+			'wp_bulkcat_changes'     => true,
 		];
 
 		self::run_uninstall();
@@ -108,90 +108,90 @@ final class UninstallTest extends TestCase {
 		$this->assertSame(
 			[
 				'deleted'     => [
-					[ 'metadata', 'user', 0, 'bcm_views', '', true ],
-					[ 'metadata', 'term', 0, 'bcm_order', '', true ],
-					[ 'option', 'bcm_settings' ],
-					[ 'option', 'bcm_db_version' ],
+					[ 'metadata', 'user', 0, 'bulkcat_views', '', true ],
+					[ 'metadata', 'term', 0, 'bulkcat_order', '', true ],
+					[ 'option', 'bulkcat_settings' ],
+					[ 'option', 'bulkcat_db_version' ],
 				],
 				'unscheduled' => [
 					[ '', [], 'bulk-catalogue-manager-for-woocommerce' ],
 				],
 				'sql'         => [
-					'DROP TABLE IF EXISTS `wp_bcm_batches`',
-					'DROP TABLE IF EXISTS `wp_bcm_batch_items`',
-					'DROP TABLE IF EXISTS `wp_bcm_changes`',
-					"SELECT option_name FROM wp_options WHERE option_name LIKE '\\\\_transient\\\\_bcm\\\\_category\\\\_tree\\\\_%'",
-					"SELECT option_name FROM wp_options WHERE option_name LIKE '\\\\_site\\\\_transient\\\\_bcm\\\\_category\\\\_tree\\\\_%'",
-					"SELECT option_name FROM wp_options WHERE option_name LIKE '\\\\_transient\\\\_bcm\\\\_count\\\\_%'",
-					"SELECT option_name FROM wp_options WHERE option_name LIKE '\\\\_site\\\\_transient\\\\_bcm\\\\_count\\\\_%'",
-					"SELECT option_name FROM wp_options WHERE option_name LIKE '\\\\_transient\\\\_bcm\\\\_batch\\\\_request\\\\_%'",
-					"SELECT option_name FROM wp_options WHERE option_name LIKE '\\\\_site\\\\_transient\\\\_bcm\\\\_batch\\\\_request\\\\_%'",
-					"SELECT option_name FROM wp_options WHERE option_name LIKE '\\\\_transient\\\\_bcm\\\\_selection\\\\_%'",
-					"SELECT option_name FROM wp_options WHERE option_name LIKE '\\\\_site\\\\_transient\\\\_bcm\\\\_selection\\\\_%'",
+					'DROP TABLE IF EXISTS `wp_bulkcat_batches`',
+					'DROP TABLE IF EXISTS `wp_bulkcat_batch_items`',
+					'DROP TABLE IF EXISTS `wp_bulkcat_changes`',
+					"SELECT option_name FROM wp_options WHERE option_name LIKE '\\\\_transient\\\\_bulkcat\\\\_category\\\\_tree\\\\_%'",
+					"SELECT option_name FROM wp_options WHERE option_name LIKE '\\\\_site\\\\_transient\\\\_bulkcat\\\\_category\\\\_tree\\\\_%'",
+					"SELECT option_name FROM wp_options WHERE option_name LIKE '\\\\_transient\\\\_bulkcat\\\\_count\\\\_%'",
+					"SELECT option_name FROM wp_options WHERE option_name LIKE '\\\\_site\\\\_transient\\\\_bulkcat\\\\_count\\\\_%'",
+					"SELECT option_name FROM wp_options WHERE option_name LIKE '\\\\_transient\\\\_bulkcat\\\\_batch\\\\_request\\\\_%'",
+					"SELECT option_name FROM wp_options WHERE option_name LIKE '\\\\_site\\\\_transient\\\\_bulkcat\\\\_batch\\\\_request\\\\_%'",
+					"SELECT option_name FROM wp_options WHERE option_name LIKE '\\\\_transient\\\\_bulkcat\\\\_selection\\\\_%'",
+					"SELECT option_name FROM wp_options WHERE option_name LIKE '\\\\_site\\\\_transient\\\\_bulkcat\\\\_selection\\\\_%'",
 				],
 			],
 			self::calls()
 		);
-		$this->assertSame( [ 'unrelated_option' => 'keep' ], $GLOBALS['bcm_test']['options'] );
+		$this->assertSame( [ 'unrelated_option' => 'keep' ], $GLOBALS['bulkcat_test']['options'] );
 		$this->assertSame( [ 'wp_posts' => true ], $GLOBALS['wpdb']->tables );
 	}
 
 	public function test_every_kind_in_the_registry_is_removed_with_the_setting_on(): void {
 		$registry                     = new Registry(
 			[
-				'bcm_alpha' => 'id INT',
-				'bcm_beta'  => 'id INT',
+				'bulkcat_alpha' => 'id INT',
+				'bulkcat_beta'  => 'id INT',
 			],
-			[ 'bcm_settings', 'bcm_db_version' ],
-			[ 'bcm_views' ],
-			[ 'bcm_order' ],
-			[ 'bcm_count_' ],
-			[ 'bcm_prune_history' ]
+			[ 'bulkcat_settings', 'bulkcat_db_version' ],
+			[ 'bulkcat_views' ],
+			[ 'bulkcat_order' ],
+			[ 'bulkcat_count_' ],
+			[ 'bulkcat_prune_history' ]
 		);
 		$GLOBALS['wpdb']->tables      = [
-			'wp_bcm_alpha' => true,
-			'wp_bcm_beta'  => true,
-			'wp_posts'     => true,
+			'wp_bulkcat_alpha' => true,
+			'wp_bulkcat_beta'  => true,
+			'wp_posts'         => true,
 		];
 		$GLOBALS['wpdb']->option_rows = [
-			'_transient_bcm_count_abc'              => 1,
-			'_transient_timeout_bcm_count_abc'      => 1,
-			'_transient_bcm_countdown'              => 1,
-			'_site_transient_bcm_count_net'         => 1,
-			'_transient_bcmXcount_other'            => 1,
-			'_transient_other_bcm_count_'           => 1,
-			'_site_transient_timeout_bcm_count_net' => 1,
+			'_transient_bulkcat_count_abc'              => 1,
+			'_transient_timeout_bulkcat_count_abc'      => 1,
+			'_transient_bulkcat_countdown'              => 1,
+			'_site_transient_bulkcat_count_net'         => 1,
+			'_transient_bulkcatXcount_other'            => 1,
+			'_transient_other_bulkcat_count_'           => 1,
+			'_site_transient_timeout_bulkcat_count_net' => 1,
 		];
 
 		$this->assertTrue( ( new Cleanup( $registry ) )->uninstall( new Settings( [ 'remove_data_on_delete' => true ] ) ) );
 
-		$this->assertSame( [ [ '', [], 'bulk-catalogue-manager-for-woocommerce' ] ], $GLOBALS['bcm_test']['unscheduled'] );
+		$this->assertSame( [ [ '', [], 'bulk-catalogue-manager-for-woocommerce' ] ], $GLOBALS['bulkcat_test']['unscheduled'] );
 		$this->assertSame(
 			[
-				'DROP TABLE IF EXISTS `wp_bcm_alpha`',
-				'DROP TABLE IF EXISTS `wp_bcm_beta`',
-				"SELECT option_name FROM wp_options WHERE option_name LIKE '\\\\_transient\\\\_bcm\\\\_count\\\\_%'",
-				"SELECT option_name FROM wp_options WHERE option_name LIKE '\\\\_site\\\\_transient\\\\_bcm\\\\_count\\\\_%'",
+				'DROP TABLE IF EXISTS `wp_bulkcat_alpha`',
+				'DROP TABLE IF EXISTS `wp_bulkcat_beta`',
+				"SELECT option_name FROM wp_options WHERE option_name LIKE '\\\\_transient\\\\_bulkcat\\\\_count\\\\_%'",
+				"SELECT option_name FROM wp_options WHERE option_name LIKE '\\\\_site\\\\_transient\\\\_bulkcat\\\\_count\\\\_%'",
 			],
 			$GLOBALS['wpdb']->queries
 		);
 		$this->assertSame( [ 'wp_posts' => true ], $GLOBALS['wpdb']->tables );
 		$this->assertSame(
 			[
-				[ 'transient', 'bcm_count_abc' ],
-				[ 'site_transient', 'bcm_count_net' ],
-				[ 'metadata', 'user', 0, 'bcm_views', '', true ],
-				[ 'metadata', 'term', 0, 'bcm_order', '', true ],
-				[ 'option', 'bcm_settings' ],
-				[ 'option', 'bcm_db_version' ],
+				[ 'transient', 'bulkcat_count_abc' ],
+				[ 'site_transient', 'bulkcat_count_net' ],
+				[ 'metadata', 'user', 0, 'bulkcat_views', '', true ],
+				[ 'metadata', 'term', 0, 'bulkcat_order', '', true ],
+				[ 'option', 'bulkcat_settings' ],
+				[ 'option', 'bulkcat_db_version' ],
 			],
-			$GLOBALS['bcm_test']['deleted']
+			$GLOBALS['bulkcat_test']['deleted']
 		);
 	}
 
 	public function test_every_kind_in_the_registry_is_kept_with_the_setting_off(): void {
-		$registry                     = new Registry( [ 'bcm_alpha' => 'id INT' ], [ 'bcm_settings' ], [ 'bcm_views' ], [ 'bcm_order' ], [ 'bcm_count_' ], [ 'bcm_prune_history' ] );
-		$GLOBALS['wpdb']->option_rows = [ '_transient_bcm_count_abc' => 1 ];
+		$registry                     = new Registry( [ 'bulkcat_alpha' => 'id INT' ], [ 'bulkcat_settings' ], [ 'bulkcat_views' ], [ 'bulkcat_order' ], [ 'bulkcat_count_' ], [ 'bulkcat_prune_history' ] );
+		$GLOBALS['wpdb']->option_rows = [ '_transient_bulkcat_count_abc' => 1 ];
 
 		$this->assertFalse( ( new Cleanup( $registry ) )->uninstall( new Settings( [] ) ) );
 		$this->assertSame(
@@ -206,13 +206,13 @@ final class UninstallTest extends TestCase {
 
 	public function test_deactivation_unschedules_only_the_recurring_actions(): void {
 		Cleanup::deactivate();
-		$this->assertSame( [ [ 'bcm_prune_history', [], 'bulk-catalogue-manager-for-woocommerce' ] ], $GLOBALS['bcm_test']['unscheduled'] );
-		$this->assertSame( [], $GLOBALS['bcm_test']['deleted'], 'Deactivation deletes no data.' );
+		$this->assertSame( [ [ 'bulkcat_prune_history', [], 'bulk-catalogue-manager-for-woocommerce' ] ], $GLOBALS['bulkcat_test']['unscheduled'] );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['deleted'], 'Deactivation deletes no data.' );
 		$this->assertSame( [], $GLOBALS['wpdb']->queries );
 
-		bcm_test_reset();
-		( new Cleanup( new Registry( [], [], [], [], [], [ 'bcm_a', 'bcm_b' ] ) ) )->unschedule_recurring();
-		$this->assertSame( [ [ 'bcm_a', [], 'bulk-catalogue-manager-for-woocommerce' ], [ 'bcm_b', [], 'bulk-catalogue-manager-for-woocommerce' ] ], $GLOBALS['bcm_test']['unscheduled'] );
+		bulkcat_test_reset();
+		( new Cleanup( new Registry( [], [], [], [], [], [ 'bulkcat_a', 'bulkcat_b' ] ) ) )->unschedule_recurring();
+		$this->assertSame( [ [ 'bulkcat_a', [], 'bulk-catalogue-manager-for-woocommerce' ], [ 'bulkcat_b', [], 'bulk-catalogue-manager-for-woocommerce' ] ], $GLOBALS['bulkcat_test']['unscheduled'] );
 	}
 
 	public function test_without_action_scheduler_nothing_is_fatal(): void {
@@ -225,49 +225,49 @@ final class UninstallTest extends TestCase {
 		$this->assertTrue( is_array( $result ), $text );
 		$this->assertFalse( $result['scheduler'] );
 		$this->assertSame( [], $result['unscheduled'] );
-		$this->assertSame( [ [ 'metadata', 'user', 0, 'bcm_views', '', true ], [ 'metadata', 'term', 0, 'bcm_order', '', true ], [ 'option', 'bcm_settings' ], [ 'option', 'bcm_db_version' ] ], $result['deleted'] );
+		$this->assertSame( [ [ 'metadata', 'user', 0, 'bulkcat_views', '', true ], [ 'metadata', 'term', 0, 'bulkcat_order', '', true ], [ 'option', 'bulkcat_settings' ], [ 'option', 'bulkcat_db_version' ] ], $result['deleted'] );
 	}
 
 	public function test_tables_are_dropped_through_prepare_with_an_identifier_placeholder(): void {
-		$registry                = new Registry( [ 'bcm_alpha' => 'id INT' ], [], [], [], [], [] );
-		$GLOBALS['wpdb']->tables = [ 'wp_bcm_alpha' => true ];
+		$registry                = new Registry( [ 'bulkcat_alpha' => 'id INT' ], [], [], [], [], [] );
+		$GLOBALS['wpdb']->tables = [ 'wp_bulkcat_alpha' => true ];
 
 		( new Cleanup( $registry ) )->uninstall( new Settings( [ 'remove_data_on_delete' => true ] ) );
 
-		$this->assertSame( [ 'DROP TABLE IF EXISTS %i', [ 'wp_bcm_alpha' ] ], $GLOBALS['wpdb']->prepared[0], 'The table name reaches SQL as a %i identifier, never interpolated.' );
+		$this->assertSame( [ 'DROP TABLE IF EXISTS %i', [ 'wp_bulkcat_alpha' ] ], $GLOBALS['wpdb']->prepared[0], 'The table name reaches SQL as a %i identifier, never interpolated.' );
 		$this->assertStringNotContainsString( '{$table}', (string) file_get_contents( self::root() . '/src/Data/Cleanup.php' ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- reading plugin source.
 	}
 
 	public function test_on_multisite_every_site_is_cleaned_under_its_own_prefix(): void {
 		self::seed( [ 'remove_data_on_delete' => true ] );
-		$GLOBALS['bcm_test']['multisite'] = true;
-		$GLOBALS['bcm_test']['sites']     = [ 1, 2, 5 ];
+		$GLOBALS['bulkcat_test']['multisite'] = true;
+		$GLOBALS['bulkcat_test']['sites']     = [ 1, 2, 5 ];
 		// Site 2 keeps its data; site 5 asks for it to go, as site 1 does.
-		$GLOBALS['bcm_test']['site_options'] = [
-			2 => [ 'bcm_settings' => [ 'remove_data_on_delete' => false ] ],
-			5 => [ 'bcm_settings' => [ 'remove_data_on_delete' => true ] ],
+		$GLOBALS['bulkcat_test']['site_options'] = [
+			2 => [ 'bulkcat_settings' => [ 'remove_data_on_delete' => false ] ],
+			5 => [ 'bulkcat_settings' => [ 'remove_data_on_delete' => true ] ],
 		];
-		$GLOBALS['wpdb']->tables             = [
-			'wp_bcm_batches'   => true,
-			'wp_2_bcm_batches' => true,
-			'wp_5_bcm_batches' => true,
-			'wp_5_bcm_changes' => true,
-			'wp_5_other_table' => true,
+		$GLOBALS['wpdb']->tables                 = [
+			'wp_bulkcat_batches'   => true,
+			'wp_2_bulkcat_batches' => true,
+			'wp_5_bulkcat_batches' => true,
+			'wp_5_bulkcat_changes' => true,
+			'wp_5_other_table'     => true,
 		];
 
 		self::run_uninstall();
 
-		$this->assertSame( [ [ 'switch', 1 ], [ 'restore' ], [ 'switch', 2 ], [ 'restore' ], [ 'switch', 5 ], [ 'restore' ] ], $GLOBALS['bcm_test']['switched'] );
+		$this->assertSame( [ [ 'switch', 1 ], [ 'restore' ], [ 'switch', 2 ], [ 'restore' ], [ 'switch', 5 ], [ 'restore' ] ], $GLOBALS['bulkcat_test']['switched'] );
 		$this->assertSame(
 			[
-				'wp_2_bcm_batches' => true,
-				'wp_5_other_table' => true,
+				'wp_2_bulkcat_batches' => true,
+				'wp_5_other_table'     => true,
 			],
 			$GLOBALS['wpdb']->tables,
 			'Each site\'s own tables go under its own setting.'
 		);
-		$this->assertSame( [ 'unrelated_option' => 'keep' ], $GLOBALS['bcm_test']['options'] );
-		$this->assertSame( [], $GLOBALS['bcm_test']['site_options'][5] );
+		$this->assertSame( [ 'unrelated_option' => 'keep' ], $GLOBALS['bulkcat_test']['options'] );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['site_options'][5] );
 		$this->assertSame( 'wp_', $GLOBALS['wpdb']->prefix, 'The current site is restored.' );
 	}
 

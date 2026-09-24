@@ -48,10 +48,10 @@ Chapters (``--chapters``, comma separated, default all, run in this order):
              subscriber 403.
   lifecycle  Activation created the three tables with every documented
              index; WooCommerce lists the plugin compatible with HPOS and the
-             Cart and Checkout Blocks; a bcm_db_version bump re-runs dbDelta on
+             Cart and Checkout Blocks; a bulkcat_db_version bump re-runs dbDelta on
              admin_init keeping every row; deactivate/activate is idempotent;
              ``wp plugin uninstall --deactivate --skip-delete`` keeps every
-             bcm_ row with "Remove all data" off and leaves none with it on;
+             bulkcat_ row with "Remove all data" off and leaves none with it on;
              the plugin is activated again after each uninstall. Destructive:
              run it last, and re-run seed.sh afterwards.
 
@@ -98,7 +98,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 TIMEOUT_SECONDS = 60
-NS = "/wp-json/bcm/v1"
+NS = "/wp-json/bulkcat/v1"
 PLUGIN = "bulk-catalogue-manager-for-woocommerce"
 STALE_NONCE = "0123456789"
 
@@ -208,7 +208,7 @@ class Probe:
         body: Any = None,
         nonce: str = "valid",
     ) -> Response:
-        """A REST call under bcm/v1 as a probe user (None: anonymous)."""
+        """A REST call under bulkcat/v1 as a probe user (None: anonymous)."""
         path = NS + route
         if params:
             path += "?" + urllib.parse.urlencode(params, doseq=True)
@@ -241,12 +241,12 @@ class Probe:
         return done.stdout
 
     def wp_eval(self, php: str) -> Any:
-        """Runs PHP under wp eval; the PHP echoes one JSON value via bcm_out()."""
-        out = self.wp("eval", "function bcm_out( $v ) { echo \"\\nBCM_OUT \" . wp_json_encode( $v ) . \"\\n\"; } " + php)
+        """Runs PHP under wp eval; the PHP echoes one JSON value via bulkcat_out()."""
+        out = self.wp("eval", "function bulkcat_out( $v ) { echo \"\\nBULKCAT_OUT \" . wp_json_encode( $v ) . \"\\n\"; } " + php)
         for line in out.splitlines():
-            if line.startswith("BCM_OUT "):
+            if line.startswith("BULKCAT_OUT "):
                 return json.loads(line[8:])
-        raise WpCliError(f"no BCM_OUT in: {out.strip()[-400:]}")
+        raise WpCliError(f"no BULKCAT_OUT in: {out.strip()[-400:]}")
 
     def run_queue(self, batch_id: int, rounds: int = 20) -> dict:
         """Drives Action Scheduler until the batch leaves queued/running/undoing."""
@@ -254,7 +254,7 @@ class Probe:
         for _ in range(rounds):
             # --hooks, not --group: on a fresh site Action Scheduler's hybrid store
             # asks the old post store for the group first and refuses it.
-            self.wp("action-scheduler", "run", "--hooks=bcm_run_chunk", "--batch-size=25", check=False)
+            self.wp("action-scheduler", "run", "--hooks=bulkcat_run_chunk", "--batch-size=25", check=False)
             report = self.http("manager", "GET", f"/batches/{batch_id}").json() or {}
             if report.get("status") not in ("queued", "running"):
                 return report
@@ -269,12 +269,12 @@ class Probe:
     def prices(self, ids: list[int]) -> dict[str, str]:
         return self.wp_eval(
             "$o = array(); foreach ( " + php_list(ids) + " as $id ) { $p = wc_get_product( $id ); "
-            "$o[ $id ] = $p ? $p->get_regular_price( 'edit' ) : null; } bcm_out( $o );"
+            "$o[ $id ] = $p ? $p->get_regular_price( 'edit' ) : null; } bulkcat_out( $o );"
         )
 
     def modified(self, ids: list[int]) -> dict[str, str]:
         return self.wp_eval(
-            "$o = array(); foreach ( " + php_list(ids) + " as $id ) { $o[ $id ] = get_post( $id )->post_modified_gmt; } bcm_out( $o );"
+            "$o = array(); foreach ( " + php_list(ids) + " as $id ) { $o[ $id ] = get_post( $id )->post_modified_gmt; } bulkcat_out( $o );"
         )
 
 
@@ -317,13 +317,13 @@ def check_screen(p: Probe) -> None:
         reply, html = page(user)
         ok = (
             reply.status == 200
-            and html.count('<div id="bcm-app"></div>') == 1
-            and "window.bcmSettings = " in html
+            and html.count('<div id="bulkcat-app"></div>') == 1
+            and "window.bulkcatSettings = " in html
             and SCRIPT_PATH in html
             and "/assets/build/style-index.css" in html
-            and "notice-error" not in html.split('<div id="bcm-app">')[0].split("<h1>Bulk Catalogue Manager</h1>")[-1]
+            and "notice-error" not in html.split('<div id="bulkcat-app">')[0].split("<h1>Bulk Catalogue Manager</h1>")[-1]
         )
-        count = html.count('id="bcm-app"')
+        count = html.count('id="bulkcat-app"')
         return ok, f"{reply.status}, mount x{count}, script {'yes' if SCRIPT_PATH in html else 'no'}"
 
     def admin_mount() -> None:
@@ -336,14 +336,14 @@ def check_screen(p: Probe) -> None:
 
     def subscriber_refused() -> None:
         reply, html = page("subscriber")
-        p.row("screen", "screen:subscriber-refused", reply.status == 403 and "bcm-app" not in html and SCRIPT_PATH not in html,
-              f"{reply.status}, mount {'present' if 'bcm-app' in html else 'absent'}")
+        p.row("screen", "screen:subscriber-refused", reply.status == 403 and "bulkcat-app" not in html and SCRIPT_PATH not in html,
+              f"{reply.status}, mount {'present' if 'bulkcat-app' in html else 'absent'}")
 
     def assets_only_here() -> None:
         found = []
         for path in ("/wp-admin/", "/wp-admin/edit.php?post_type=product", "/wp-admin/admin.php?page=wc-settings"):
             reply, html = page("admin", path)
-            if SCRIPT_PATH in html or "bcmSettings" in html or "bcm-app" in html:
+            if SCRIPT_PATH in html or "bulkcatSettings" in html or "bulkcat-app" in html:
                 found.append(f"{path} ({reply.status})")
         p.row("screen", "screen:assets-only-here", not found, "none elsewhere" if not found else "loaded on " + ", ".join(found))
 
@@ -500,9 +500,9 @@ def check_read_matrix(p: Probe) -> None:
     for name, method, route, params, body, shape in read_routes(p):
         base = f"read:{name}"
         r = p.http(None, method, route, params, body)
-        p.row("read", f"{base}:anonymous", r.status == 401 and r.code() == "bcm_forbidden", r.brief())
+        p.row("read", f"{base}:anonymous", r.status == 401 and r.code() == "bulkcat_forbidden", r.brief())
         r = p.http("subscriber", method, route, params, body)
-        p.row("read", f"{base}:subscriber", r.status == 403 and r.code() == "bcm_forbidden", r.brief())
+        p.row("read", f"{base}:subscriber", r.status == 403 and r.code() == "bulkcat_forbidden", r.brief())
         r = p.http("manager", method, route, params, body)
         problem = shape(r) if r.status == 200 else r.brief()
         p.row("read", f"{base}:manager", r.status == 200 and problem == "", problem or "200, documented shape")
@@ -533,7 +533,7 @@ def all_ids(p: Probe, params: list[tuple[str, str]], per_page: int = 100) -> tup
 
 def truth(p: Probe, args_php: str) -> list[int]:
     """Product ids from wc_get_products() with the given query args."""
-    return sorted(p.wp_eval(f"bcm_out( wc_get_products( array_merge( array( 'limit' => -1, 'return' => 'ids', 'status' => array( 'publish', 'draft', 'pending', 'private' ) ), {args_php} ) ) );"))
+    return sorted(p.wp_eval(f"bulkcat_out( wc_get_products( array_merge( array( 'limit' => -1, 'return' => 'ids', 'status' => array( 'publish', 'draft', 'pending', 'private' ) ), {args_php} ) ) );"))
 
 
 def check_read_queries(p: Probe) -> None:
@@ -542,7 +542,7 @@ def check_read_queries(p: Probe) -> None:
 
     def category() -> None:
         ids, pag = all_ids(p, cat)
-        want = truth(p, "array( 'category' => array( 'bcm-probe', 'bcm-probe-shirts', 'bcm-probe-hats' ) )")
+        want = truth(p, "array( 'category' => array( 'bulkcat-probe', 'bulkcat-probe-shirts', 'bulkcat-probe-hats' ) )")
         p.row("read", "read:products:filter-category", sorted(ids) == want and pag["total"] == len(want),
               f"{len(ids)} ids, total {pag['total']}, WooCommerce {len(want)}")
 
@@ -576,13 +576,13 @@ def check_read_queries(p: Probe) -> None:
         vid = p.seed["variable"]["id"]
         r = p.http("manager", "GET", f"/products/{vid}/variations", [("per_page", "100")])
         d = r.json()
-        want = p.wp_eval(f"bcm_out( wc_get_product( {vid} )->get_children() );")
+        want = p.wp_eval(f"bulkcat_out( wc_get_product( {vid} )->get_children() );")
         got = [row["id"] for row in d["items"]]
         ok = sorted(got) == sorted(want) and d["pagination"]["total"] == len(want)
         ok = ok and all(row.get("parent_id") == vid and row.get("attribute_summary") for row in d["items"])
         p.row("read", "read:variations:children", ok, f"{got} vs get_children() {want}")
         miss = p.http("manager", "GET", f"/products/{p.simple(1)['id'] + 100000}/variations")
-        p.row("read", "read:variations:not-found", miss.status == 404 and miss.code() == "bcm_not_found", miss.brief())
+        p.row("read", "read:variations:not-found", miss.status == 404 and miss.code() == "bulkcat_not_found", miss.brief())
 
     def selection_ids() -> None:
         ids = [p.simple(1)["id"], p.simple(2)["id"], p.simple(1)["id"]]
@@ -593,7 +593,7 @@ def check_read_queries(p: Probe) -> None:
     def categories_counts() -> None:
         d = p.http("manager", "GET", "/categories").json()
         node = find_node(d.get("items", d) if isinstance(d, dict) else d, shirts)
-        want = len(truth(p, "array( 'category' => array( 'bcm-probe-shirts' ) )"))
+        want = len(truth(p, "array( 'category' => array( 'bulkcat-probe-shirts' ) )"))
         count = {k: v for k, v in (node or {}).items() if "count" in k}
         p.row("read", "read:categories:counts", node is not None and want in count.values(), f"shirts {count}, WooCommerce {want}")
 
@@ -629,7 +629,7 @@ def check_read_queries(p: Probe) -> None:
         only = cat[:1] + [("category_ids[value][]", str(root)), ("category_ids[include_children]", "false")]
         ids, pag = all_ids(p, only)
         want = sorted(p.wp_eval(
-            "bcm_out( get_posts( array( 'post_type' => 'product', 'post_status' => array( 'publish', 'draft', 'pending', 'private' ), "
+            "bulkcat_out( get_posts( array( 'post_type' => 'product', 'post_status' => array( 'publish', 'draft', 'pending', 'private' ), "
             f"'fields' => 'ids', 'numberposts' => -1, 'tax_query' => array( array( 'taxonomy' => 'product_cat', 'terms' => array( {root} ), 'include_children' => false ) ) ) ) );"
         ))
         branch, _ = all_ids(p, cat + [("category_ids[include_children]", "true")])
@@ -641,17 +641,17 @@ def check_read_queries(p: Probe) -> None:
         p.row("read", "read:products:filter-category-only-refused", bad.status == 400 and bad.code() == "rest_invalid_param", bad.brief())
 
     def variation_sku() -> None:
-        vsku = p.seed["variable"]["variations"][0]["sku"] if isinstance(p.seed["variable"]["variations"][0], dict) else "bcm-probe-variable-small"
+        vsku = p.seed["variable"]["variations"][0]["sku"] if isinstance(p.seed["variable"]["variations"][0], dict) else "bulkcat-probe-variable-small"
         mixed, _ = all_ids(p, [("mode", "products_and_variations"), ("search", vsku)])
         plain, _ = all_ids(p, [("search", vsku)])
-        want = p.wp_eval(f"bcm_out( wc_get_product_id_by_sku( '{vsku}' ) );")
+        want = p.wp_eval(f"bulkcat_out( wc_get_product_id_by_sku( '{vsku}' ) );")
         p.row("read", "read:products:search-variation-sku", mixed == [want] and plain == [],
               f"{vsku}: products_and_variations {mixed}, products {plain}, WooCommerce {want}")
 
     def category_description() -> None:
         d = p.http("manager", "GET", "/categories").json()
         node = find_node(d.get("items", d) if isinstance(d, dict) else d, root) or {}
-        want = p.wp_eval(f"bcm_out( get_term( {root}, 'product_cat' )->description );")
+        want = p.wp_eval(f"bulkcat_out( get_term( {root}, 'product_cat' )->description );")
         p.row("read", "read:categories:description", node.get("description") == want, f"node {node.get('description')!r} vs term {want!r}")
 
     def registry_flags() -> None:
@@ -706,14 +706,14 @@ def check_saved_views(p: Probe) -> None:
         patch = p.http("admin", "PATCH", f"/views/{state['id']}", body={"name": "taken"})
         gone = p.http("admin", "DELETE", f"/views/{state['id']}")
         p.row("read", "read:views:other-user", not other and patch.status == 404 and gone.status == 404
-              and patch.code() == "bcm_view_not_found", f"listed {len(other)}; PATCH {patch.brief()}; DELETE {gone.brief()}")
+              and patch.code() == "bulkcat_view_not_found", f"listed {len(other)}; PATCH {patch.brief()}; DELETE {gone.brief()}")
         sub = p.http("subscriber", "POST", "/views", body={"name": "x", "view": view})
         p.row("read", "read:views:subscriber-write", sub.status == 403, sub.brief())
 
     def refusals() -> None:
         bad = p.http("manager", "POST", "/views", body={"name": name + " bad", "view": {"type": "kanban"}})
         dup = p.http("manager", "POST", "/views", body={"name": name.upper(), "view": view})
-        p.row("read", "read:views:schema", bad.code() == "bcm_invalid_view" and dup.code() == "bcm_view_exists", f"{bad.brief()}; {dup.brief()}")
+        p.row("read", "read:views:schema", bad.code() == "bulkcat_invalid_view" and dup.code() == "bulkcat_view_exists", f"{bad.brief()}; {dup.brief()}")
 
     def export_query_nonce() -> None:
         _, nonce = p.session("manager")
@@ -824,7 +824,7 @@ def check_write_engine(p: Probe) -> None:
         bare = p.http("manager", "POST", "/batches", body={"uuid": str(uuid.uuid4()), "ids": [target["id"]], "operations": ops})
         wrong = p.http("manager", "POST", "/batches", body={"uuid": str(uuid.uuid4()), "ids": [target["id"]], "operations": ops, "preview_hash": "0" * 64})
         untouched = p.modified([target["id"]]) == before
-        ok = bare.status == 409 and bare.code() == "bcm_preview_stale" and wrong.status == 409 and wrong.code() == "bcm_preview_stale" and untouched
+        ok = bare.status == 409 and bare.code() == "bulkcat_preview_stale" and wrong.status == 409 and wrong.code() == "bulkcat_preview_stale" and untouched
         p.row("write", "write:ids-need-preview", ok, f"no hash {bare.brief()}, wrong hash {wrong.brief()}, nothing written: {untouched}")
 
     def skip_already() -> None:
@@ -861,13 +861,13 @@ def check_write_stale(p: Probe) -> None:
         sel = p.http("manager", "POST", "/selection", body=hat_filter).json()
         pre = p.http("manager", "POST", "/preview", body={"token": sel["token"], "operations": ops}).json()
         total_before = p.http("manager", "GET", "/products", grid).json()["pagination"]["total"]
-        p.wp_eval(f"$p = wc_get_product( {draft} ); $p->set_category_ids( array( {hats} ) ); $p->save(); bcm_out( 1 );")
+        p.wp_eval(f"$p = wc_get_product( {draft} ); $p->set_category_ids( array( {hats} ) ); $p->save(); bulkcat_out( 1 );")
         try:
             total_after = p.http("manager", "GET", "/products", grid).json()["pagination"]["total"]
             p.row("write", "write:count-cache-renewed", total_after == total_before + 1, f"hats total {total_before} -> {total_after} after a product save")
             body = {"uuid": str(uuid.uuid4()), "token": sel["token"], "operations": ops, "preview_hash": pre["hash"], "preview_count": sel["count"]}
             first = p.http("manager", "POST", "/batches", body=body)
-            p.row("write", "write:stale-selection-refused", first.status == 409 and first.code() == "bcm_selection_changed", first.brief())
+            p.row("write", "write:stale-selection-refused", first.status == 409 and first.code() == "bulkcat_selection_changed", first.brief())
             body["uuid"] = str(uuid.uuid4())
             body["confirm_changed"] = True
             second = p.http("manager", "POST", "/batches", body=body)
@@ -883,7 +883,7 @@ def check_write_stale(p: Probe) -> None:
             p.row("write", "write:cancel-before-run", cancel.status == 200 and final.get("status") == "cancelled" and final.get("done_items") == 0 and untouched,
                   f"{cancel.brief()} status {final.get('status')} done {final.get('done_items')}, nothing written: {untouched}")
         finally:
-            p.wp_eval(f"$p = wc_get_product( {draft} ); $p->set_category_ids( array( {root} ) ); $p->save(); bcm_out( 1 );")
+            p.wp_eval(f"$p = wc_get_product( {draft} ); $p->set_category_ids( array( {root} ) ); $p->save(); bulkcat_out( 1 );")
 
     p.guard("write", "write:stale-selection", run)
 
@@ -912,7 +912,7 @@ def check_write_categories(p: Probe) -> None:
         r = p.http("manager", "POST", "/categories", body={"name": name, "parent": root})
         d = r.json() or {}
         term_id = d.get("id") or (d.get("item") or {}).get("id") or (d.get("term") or {}).get("id")
-        live = p.wp_eval(f"$t = get_term_by( 'name', '{name}', 'product_cat' ); bcm_out( $t ? array( $t->term_id, $t->parent ) : null );")
+        live = p.wp_eval(f"$t = get_term_by( 'name', '{name}', 'product_cat' ); bulkcat_out( $t ? array( $t->term_id, $t->parent ) : null );")
         tree = p.http("manager", "GET", "/categories").json()
         in_tree = live is not None and find_node(tree.get("items", tree) if isinstance(tree, dict) else tree, live[0]) is not None
         p.row("write", "write:category-create", r.status in (200, 201) and live is not None and live[1] == root and in_tree,
@@ -921,13 +921,13 @@ def check_write_categories(p: Probe) -> None:
             return
         term_id = live[0]
         r = p.http("manager", "PATCH", f"/categories/{term_id}", body={"name": name + " Edited", "description": "Edited by the probe"})
-        got = p.wp_eval(f"$t = get_term( {term_id}, 'product_cat' ); bcm_out( array( $t->name, $t->description ) );")
+        got = p.wp_eval(f"$t = get_term( {term_id}, 'product_cat' ); bulkcat_out( array( $t->name, $t->description ) );")
         p.row("write", "write:category-edit", r.status == 200 and got == [name + " Edited", "Edited by the probe"], f"{r.brief()} live {got}")
         tree = p.http("manager", "GET", "/categories").json()
         node = find_node(tree.get("items", tree) if isinstance(tree, dict) else tree, term_id) or {}
         p.row("write", "write:category-description", node.get("description") == "Edited by the probe", f"tree node description {node.get('description')!r}")
         r = p.http("manager", "POST", f"/categories/{term_id}/move", body={"parent": shirts, "position": 0})
-        parent = p.wp_eval(f"bcm_out( get_term( {term_id}, 'product_cat' )->parent );")
+        parent = p.wp_eval(f"bulkcat_out( get_term( {term_id}, 'product_cat' )->parent );")
         p.row("write", "write:category-move", r.status == 200 and parent == shirts, f"{r.brief()} parent {parent} want {shirts}")
         sub = p.http("subscriber", "POST", "/categories", body={"name": name + " sub"})
         p.row("write", "write:category-refusal", sub.status == 403, sub.brief())
@@ -947,7 +947,7 @@ def check_write_history(p: Probe) -> None:
         listing = p.http("manager", "GET", "/batches", [("per_page", "100")]).json() or {}
         items = listing.get("items", [])
         undone = next((b for b in items if b.get("status") == "undone"), None)
-        names = p.wp_eval(f"bcm_out( get_userdata( {manager_id} )->display_name );")
+        names = p.wp_eval(f"bulkcat_out( get_userdata( {manager_id} )->display_name );")
         ok = bool(items) and all(isinstance(b.get("variations_included"), bool) and b.get("user_name") for b in items)
         ok = ok and all((b.get("undone_by") is None) == (b.get("status") != "undone") for b in items)
         by = (undone or {}).get("undone_by") or {}
@@ -1001,8 +1001,8 @@ def check_write_history(p: Probe) -> None:
 # ---------------------------------------------------------------------------
 
 SET_ADMIN_ONLY = (
-    "$s = get_option( 'bcm_settings', array() ); if ( ! is_array( $s ) ) { $s = array(); } "
-    "$s['administrators_only'] = %s; update_option( 'bcm_settings', $s ); bcm_out( get_option( 'bcm_settings' )['administrators_only'] );"
+    "$s = get_option( 'bulkcat_settings', array() ); if ( ! is_array( $s ) ) { $s = array(); } "
+    "$s['administrators_only'] = %s; update_option( 'bulkcat_settings', $s ); bulkcat_out( get_option( 'bulkcat_settings' )['administrators_only'] );"
 )
 
 
@@ -1012,7 +1012,7 @@ def check_access(p: Probe) -> None:
         try:
             manager = p.http("manager", "GET", "/fields")
             admin = p.http("admin", "GET", "/fields")
-            p.row("access", "access:administrators-only:manager", manager.status == 403 and manager.code() == "bcm_forbidden", manager.brief())
+            p.row("access", "access:administrators-only:manager", manager.status == 403 and manager.code() == "bulkcat_forbidden", manager.brief())
             p.row("access", "access:administrators-only:admin", admin.status == 200, admin.brief())
         finally:
             p.wp_eval(SET_ADMIN_ONLY % "false")
@@ -1027,7 +1027,7 @@ def check_settings(p: Probe) -> None:
     only, and a refused value named by its setting with nothing saved."""
 
     def run() -> None:
-        before = p.wp_eval("bcm_out( get_option( 'bcm_settings', null ) );")
+        before = p.wp_eval("bulkcat_out( get_option( 'bulkcat_settings', null ) );")
         got = p.http("manager", "GET", "/settings")
         data = got.json() or {}
         keys = {row.get("key") for row in data.get("settings", [])}
@@ -1042,12 +1042,12 @@ def check_settings(p: Probe) -> None:
         bad = p.http("admin", "PUT", "/settings", body={"values": {"variation_batch_size": 5, "rows_per_page": 50}})
         refusal = bad.json() or {}
         errors = (refusal.get("data") or {}).get("errors") or {}
-        after = p.wp_eval("bcm_out( get_option( 'bcm_settings', null ) );")
+        after = p.wp_eval("bulkcat_out( get_option( 'bulkcat_settings', null ) );")
         p.row(
             "access",
             "settings:put:admin-invalid",
             bad.status == 400
-            and bad.code() == "bcm_invalid_setting"
+            and bad.code() == "bulkcat_invalid_setting"
             and list(errors) == ["variation_batch_size"]
             and "Variations per background batch" in refusal.get("message", "")
             and after == before,
@@ -1063,10 +1063,10 @@ def check_settings(p: Probe) -> None:
 
 HYDRATION_PHP = r"""
 wp_set_current_user( %(user)d );
-$get = function ( $params ) { $r = new WP_REST_Request( 'GET', '/bcm/v1/products' ); foreach ( $params as $k => $v ) { $r->set_param( $k, $v ); } return rest_do_request( $r ); };
+$get = function ( $params ) { $r = new WP_REST_Request( 'GET', '/bulkcat/v1/products' ); foreach ( $params as $k => $v ) { $r->set_param( $k, $v ); } return rest_do_request( $r ); };
 $reads = 0;
 add_action( 'woocommerce_product_read', function () use ( &$reads ) { $reads++; } );
-$opts   = rest_get_server()->get_route_options( '/bcm/v1/products' );
+$opts   = rest_get_server()->get_route_options( '/bulkcat/v1/products' );
 $schema = call_user_func( $opts['schema'] );
 global $wpdb;
 $out = array();
@@ -1087,7 +1087,7 @@ foreach ( array( 'products', 'products_and_variations', 'variations' ) as $mode 
 		$out[ $mode ][ $n ] = array( 'queries' => $wpdb->num_queries - $before, 'rows' => count( $res->get_data()['items'] ), 'invalid' => $errors );
 	}
 }
-bcm_out( array( 'modes' => $out, 'product_reads' => $reads ) );
+bulkcat_out( array( 'modes' => $out, 'product_reads' => $reads ) );
 """
 
 INDEXES_PHP = r"""
@@ -1112,22 +1112,22 @@ foreach ( \BulkCatalogueManager\Data\Registry::plugin()->tables() as $name => $b
 	ksort( $have );
 	$out[ $name ] = array( 'exists' => $exists, 'want' => $want, 'have' => array_map( 'array_values', $have ) );
 }
-bcm_out( $out );
+bulkcat_out( $out );
 """
 
 FOOTPRINT_PHP = r"""
 global $wpdb;
-$like = $wpdb->esc_like( $wpdb->prefix . 'bcm_' ) . '%';
+$like = $wpdb->esc_like( $wpdb->prefix . 'bulkcat_' ) . '%';
 $tables = $wpdb->get_col( $wpdb->prepare( 'SHOW TABLES LIKE %s', $like ) );
 $rows = array();
 foreach ( $tables as $t ) { $rows[ $t ] = (int) $wpdb->get_var( "SELECT COUNT(*) FROM `$t`" ); }
-bcm_out( array(
+bulkcat_out( array(
 	'tables'    => $rows,
-	'options'   => $wpdb->get_col( "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE 'bcm\\_%' OR option_name LIKE '\\_transient\\_bcm\\_%' OR option_name LIKE '\\_transient\\_timeout\\_bcm\\_%' ORDER BY option_name" ),
-	'usermeta'  => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->usermeta} WHERE meta_key LIKE 'bcm\\_%'" ),
-	'termmeta'  => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->termmeta} WHERE meta_key LIKE 'bcm\\_%'" ),
+	'options'   => $wpdb->get_col( "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE 'bulkcat\\_%' OR option_name LIKE '\\_transient\\_bulkcat\\_%' OR option_name LIKE '\\_transient\\_timeout\\_bulkcat\\_%' ORDER BY option_name" ),
+	'usermeta'  => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->usermeta} WHERE meta_key LIKE 'bulkcat\\_%'" ),
+	'termmeta'  => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->termmeta} WHERE meta_key LIKE 'bulkcat\\_%'" ),
 	'actions'   => (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}actionscheduler_actions a JOIN {$wpdb->prefix}actionscheduler_groups g ON g.group_id = a.group_id WHERE g.slug = 'bulk-catalogue-manager-for-woocommerce' AND a.status = 'pending'" ),
-	'version'   => get_option( 'bcm_db_version', null ),
+	'version'   => get_option( 'bulkcat_db_version', null ),
 ) );
 """
 
@@ -1139,14 +1139,14 @@ foreach ( array( 'custom_order_tables', 'cart_checkout_blocks' ) as $f ) {
 	$l = $c->get_compatible_plugins_for_feature( $f, true );
 	$o[ $f ] = array( 'compatible' => in_array( $file, $l['compatible'], true ), 'incompatible' => in_array( $file, $l['incompatible'], true ), 'uncertain' => in_array( $file, $l['uncertain'] ?? array(), true ) );
 }
-bcm_out( $o );
+bulkcat_out( $o );
 """
 
 
 def set_remove_data(p: Probe, on: bool) -> None:
     p.wp_eval(
-        "$s = get_option( 'bcm_settings', array() ); if ( ! is_array( $s ) ) { $s = array(); } "
-        f"$s['remove_data_on_delete'] = {'true' if on else 'false'}; update_option( 'bcm_settings', $s ); bcm_out( 1 );"
+        "$s = get_option( 'bulkcat_settings', array() ); if ( ! is_array( $s ) ) { $s = array(); } "
+        f"$s['remove_data_on_delete'] = {'true' if on else 'false'}; update_option( 'bulkcat_settings', $s ); bulkcat_out( 1 );"
     )
 
 
@@ -1163,7 +1163,7 @@ def check_lifecycle(p: Probe) -> None:
 
     def bump() -> None:
         before = p.wp_eval(FOOTPRINT_PHP)
-        p.wp("option", "update", "bcm_db_version", "5")
+        p.wp("option", "update", "bulkcat_db_version", "5")
         p.http("admin", "GET", "/fields")  # a REST request does not run admin_init; the admin page does
         p._raw(p.session("admin")[0], "GET", "/wp-admin/")
         after = p.wp_eval(FOOTPRINT_PHP)
@@ -1209,10 +1209,10 @@ def check_lifecycle(p: Probe) -> None:
 # variations (T72)
 # ---------------------------------------------------------------------------
 
-SIXTY_SKU = "bcm-probe-sixty"
+SIXTY_SKU = "bulkcat-probe-sixty"
 SIXTY = 60
 
-# Upserts variable product bcm-probe-sixty with variations 1..60 (menu order
+# Upserts variable product bulkcat-probe-sixty with variations 1..60 (menu order
 # 1..60) at 10.00 + (n - 1), every third out of stock, none managing stock,
 # resynchronises it through WooCommerce, and echoes the parent and the
 # variation ids in menu order with their prices and stock statuses.
@@ -1251,7 +1251,7 @@ for ( $n = 1; $n <= $count; $n++ ) {
 }
 WC_Product_Variable::sync( $parent_id );
 wc_delete_product_transients( $parent_id );
-bcm_out( array( 'parent' => $parent_id, 'variations' => $out ) );
+bulkcat_out( array( 'parent' => $parent_id, 'variations' => $out ) );
 """
 
 # The parent's lookup row and every variation's stored regular price.
@@ -1261,7 +1261,7 @@ $parent = %d;
 $row    = $wpdb->get_row( $wpdb->prepare( 'SELECT min_price, max_price FROM %%i WHERE product_id = %%d', $wpdb->prefix . 'wc_product_meta_lookup', $parent ), ARRAY_A );
 $prices = array();
 foreach ( wc_get_product( $parent )->get_children() as $id ) { $prices[ $id ] = wc_get_product( $id )->get_regular_price( 'edit' ); }
-bcm_out( array( 'min' => $row ? $row['min_price'] : null, 'max' => $row ? $row['max_price'] : null, 'prices' => $prices ) );
+bulkcat_out( array( 'min' => $row ? $row['min_price'] : null, 'max' => $row ? $row['max_price'] : null, 'prices' => $prices ) );
 """
 
 
@@ -1313,7 +1313,7 @@ def check_variations(p: Probe) -> None:
         got = sorted(i for i in ids if i in mine)
         want = sorted(v["id"] for v in state["variations"] if v["stock"] == "outofstock")
         truth_ids = p.wp_eval(
-            "bcm_out( array_map( 'intval', get_posts( array( 'post_type' => 'product_variation', 'post_status' => array( 'publish', 'private' ), "
+            "bulkcat_out( array_map( 'intval', get_posts( array( 'post_type' => 'product_variation', 'post_status' => array( 'publish', 'private' ), "
             "'posts_per_page' => -1, 'fields' => 'ids', 'meta_key' => '_stock_status', 'meta_value' => 'outofstock', 'orderby' => 'ID', 'order' => 'ASC' ) ) ) );"
         )
         ok = got == want and len(want) == SIXTY // 3 and sorted(ids) == sorted(truth_ids)

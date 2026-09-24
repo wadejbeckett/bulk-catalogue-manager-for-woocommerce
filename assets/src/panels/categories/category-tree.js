@@ -24,7 +24,7 @@ import {
 } from './tree-model';
 
 /** The drag data type a dragged category carries. */
-export const CATEGORY_DRAG_TYPE = 'application/x-bcm-category';
+export const CATEGORY_DRAG_TYPE = 'application/x-bulkcat-category';
 
 /**
  * The drag data type the catalogue sets when the current product selection
@@ -32,7 +32,7 @@ export const CATEGORY_DRAG_TYPE = 'application/x-bcm-category';
  * it calls onDropSelection( categoryId ) and the catalogue uses its own
  * selection and scope).
  */
-export const SELECTION_DRAG_TYPE = 'application/x-bcm-selection';
+export const SELECTION_DRAG_TYPE = 'application/x-bulkcat-selection';
 
 /** The "All products" row's id. */
 export const ALL = 0;
@@ -523,14 +523,16 @@ export default function CategoryTree( {
 	return (
 		<>
 			<ul
-				className="bcm-cat-tree"
+				className="bulkcat-cat-tree"
 				role="tree"
 				aria-label={ __(
 					'Product categories',
 					'bulk-catalogue-manager-for-woocommerce'
 				) }
 				aria-multiselectable="true"
-				aria-describedby={ canManage ? 'bcm-cat-tree-help' : undefined }
+				aria-describedby={
+					canManage ? 'bulkcat-cat-tree-help' : undefined
+				}
 				onKeyDown={ onKeyDown }
 			>
 				{ rows.map( ( row ) => {
@@ -559,7 +561,7 @@ export default function CategoryTree( {
 								);
 					const manageable = canManage && row.id !== ALL;
 					const className = [
-						'bcm-cat-row',
+						'bulkcat-cat-row',
 						isSelected && 'is-selected',
 						drag?.id === row.id && 'is-dragging',
 						zone && ! blocked && `is-drop-${ zone }`,
@@ -579,7 +581,7 @@ export default function CategoryTree( {
 								}
 							} }
 							role="treeitem"
-							id={ `bcm-cat-${ row.id }` }
+							id={ `bulkcat-cat-${ row.id }` }
 							aria-label={ label }
 							aria-level={ row.depth + 1 }
 							aria-setsize={ row.setSize }
@@ -589,7 +591,7 @@ export default function CategoryTree( {
 							}
 							aria-selected={ isSelected }
 							tabIndex={ row.id === tabStop ? 0 : -1 }
-							className="bcm-cat-item"
+							className="bulkcat-cat-item"
 							onFocus={ ( event ) => {
 								if ( event.target === event.currentTarget ) {
 									setFocused( row.id );
@@ -625,19 +627,19 @@ export default function CategoryTree( {
 							>
 								{ manageable ? (
 									<span
-										className="bcm-cat-grip"
+										className="bulkcat-cat-grip"
 										aria-hidden="true"
 									/>
 								) : (
 									<span
-										className="bcm-cat-grip is-empty"
+										className="bulkcat-cat-grip is-empty"
 										aria-hidden="true"
 									/>
 								) }
 								{ row.hasChildren ? (
 									<span
 										className={
-											'bcm-cat-twist' +
+											'bulkcat-cat-twist' +
 											( row.open ? ' is-open' : '' )
 										}
 										aria-hidden="true"
@@ -648,13 +650,13 @@ export default function CategoryTree( {
 									/>
 								) : (
 									<span
-										className="bcm-cat-twist is-leaf"
+										className="bulkcat-cat-twist is-leaf"
 										aria-hidden="true"
 									/>
 								) }
 								{ renaming === row.id ? (
 									<input
-										className="bcm-cat-rename"
+										className="bulkcat-cat-rename"
 										aria-label={ sprintf(
 											/* translators: %s: a category name. */
 											__(
@@ -688,7 +690,7 @@ export default function CategoryTree( {
 									/>
 								) : (
 									<span
-										className="bcm-cat-name"
+										className="bulkcat-cat-name"
 										title={ name }
 									>
 										{ name }
@@ -696,7 +698,7 @@ export default function CategoryTree( {
 								) }
 								{ count !== null && (
 									<span
-										className="bcm-cat-count"
+										className="bulkcat-cat-count"
 										aria-hidden="true"
 									>
 										{ count.toLocaleString() }
@@ -705,7 +707,7 @@ export default function CategoryTree( {
 								{ manageable && (
 									<button
 										type="button"
-										className="bcm-cat-kebab"
+										className="bulkcat-cat-kebab"
 										tabIndex={ -1 }
 										aria-haspopup="menu"
 										aria-expanded={ menu === row.id }
@@ -753,7 +755,7 @@ export default function CategoryTree( {
 				} ) }
 			</ul>
 			{ canManage && (
-				<p id="bcm-cat-tree-help" className="bcm-sr-only">
+				<p id="bulkcat-cat-tree-help" className="bulkcat-sr-only">
 					{ __(
 						'Press Shift+F10 for a category’s actions, including Move to…, or F2 to rename it.',
 						'bulk-catalogue-manager-for-woocommerce'
@@ -761,7 +763,7 @@ export default function CategoryTree( {
 				</p>
 			) }
 			{ kept && kept.size === 0 && (
-				<p className="bcm-cat-none">
+				<p className="bulkcat-cat-none">
 					{ __(
 						'No categories match this search.',
 						'bulk-catalogue-manager-for-woocommerce'
@@ -770,7 +772,7 @@ export default function CategoryTree( {
 			) }
 			<p
 				className={
-					'bcm-cat-drag-line' +
+					'bulkcat-cat-drag-line' +
 					( drag?.payload?.blocked ? ' is-blocked' : '' )
 				}
 				hidden={ ! dragLine }
@@ -800,7 +802,7 @@ function MenuList( { items, label, onKeyDown, onChoose, onLeave } ) {
 	return (
 		<div
 			ref={ ref }
-			className="bcm-cat-menu"
+			className="bulkcat-cat-menu"
 			role="menu"
 			aria-label={ label }
 			tabIndex={ -1 }
@@ -809,7 +811,7 @@ function MenuList( { items, label, onKeyDown, onChoose, onLeave } ) {
 				const to = event.relatedTarget;
 				if (
 					! event.currentTarget.contains( to ) &&
-					! to?.classList?.contains( 'bcm-cat-kebab' )
+					! to?.classList?.contains( 'bulkcat-cat-kebab' )
 				) {
 					onLeave();
 				}

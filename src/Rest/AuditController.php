@@ -1,6 +1,6 @@
 <?php
 /**
- * `GET /bcm/v1/audit` (SPEC §4.6, §9.3, §12.1; T54): the audit log — field
+ * `GET /bulkcat/v1/audit` (SPEC §4.6, §9.3, §12.1; T54): the audit log — field
  * changes across every batch, newest first, filtered by product (`product`,
  * the changed object's id), field (`field`, a registry key), user (`user`,
  * the batch's user) and the time the row was written (`after`, `before`).
@@ -193,7 +193,7 @@ final class AuditController implements ReadController {
 	 */
 	public function get_item_schema(): array {
 		$schema               = $this->rows->get_item_schema();
-		$schema['title']      = 'bcm-audit-change';
+		$schema['title']      = 'bulkcat-audit-change';
 		$integer              = [ 'type' => 'integer' ];
 		$schema['properties'] = [
 			'batch_id'  => $integer,

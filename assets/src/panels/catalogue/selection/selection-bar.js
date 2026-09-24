@@ -144,11 +144,11 @@ export default function SelectionBar( {
 	// prototype's bar has it, not only once the whole page is ticked.
 	const offerAll = ! matching && count > 0 && total > selection.ids.length;
 	return (
-		<div className="bcm-selection">
+		<div className="bulkcat-selection">
 			{ notice && (
 				<Notice
 					status="info"
-					className="bcm-selection__notice"
+					className="bulkcat-selection__notice"
 					onRemove={ selection.dismissNotice }
 				>
 					{ notice }
@@ -157,10 +157,10 @@ export default function SelectionBar( {
 			{ error && (
 				<Notice
 					status="error"
-					className="bcm-selection__notice"
+					className="bulkcat-selection__notice"
 					isDismissible={ false }
 				>
-					{ /^bcm_/.test( error?.code || '' ) && error.message
+					{ /^bulkcat_/.test( error?.code || '' ) && error.message
 						? error.message
 						: __(
 								'All the matching products could not be selected. Try again.',
@@ -171,7 +171,7 @@ export default function SelectionBar( {
 			{ ( count > 0 || matching ) && (
 				<div
 					className={
-						'bcm-selection__bar' +
+						'bulkcat-selection__bar' +
 						( draggable && ! loading ? ' is-draggable' : '' )
 					}
 					role="region"
@@ -200,7 +200,10 @@ export default function SelectionBar( {
 						}
 					} }
 				>
-					<span className="bcm-selection__count" aria-live="polite">
+					<span
+						className="bulkcat-selection__count"
+						aria-live="polite"
+					>
 						{ loading
 							? __(
 									'Selecting every matching product…',
@@ -209,7 +212,7 @@ export default function SelectionBar( {
 							: countWords( count, ready, filtered ) }
 					</span>
 					{ offerAll && (
-						<span className="bcm-selection__line">
+						<span className="bulkcat-selection__line">
 							{ selection.pageSelected && (
 								<span>{ pageWords( pageCount ) } </span>
 							) }
@@ -229,7 +232,7 @@ export default function SelectionBar( {
 							) }
 						</Button>
 					) }
-					<span className="bcm-selection__actions">
+					<span className="bulkcat-selection__actions">
 						{ onShow && (
 							<Button
 								variant="secondary"

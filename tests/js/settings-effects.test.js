@@ -24,11 +24,11 @@ jest.mock( '@wordpress/api-fetch', () => {
 /**
  * Load the settings module afresh over these localised values.
  *
- * @param {Object|undefined} values window.bcmSettings.settings.
+ * @param {Object|undefined} values window.bulkcatSettings.settings.
  * @return {Object} The settings panel module.
  */
 function load( values ) {
-	window.bcmSettings = { root: '', nonce: '', settings: values };
+	window.bulkcatSettings = { root: '', nonce: '', settings: values };
 	return require( '../../assets/src/panels/settings' );
 }
 
@@ -48,7 +48,7 @@ describe( 'settings effects', () => {
 
 	afterEach( () => {
 		errors.mockRestore();
-		delete window.bcmSettings;
+		delete window.bulkcatSettings;
 	} );
 
 	it( 'rows per page sets the grid’s starting page size', async () => {

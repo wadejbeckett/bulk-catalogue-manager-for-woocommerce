@@ -1,6 +1,6 @@
 <?php
 /**
- * `GET /bcm/v1/export` for the history sources (T58; SPEC §4.6, §10): a
+ * `GET /bulkcat/v1/export` for the history sources (T58; SPEC §4.6, §10): a
  * batch's changes (`source=changes&batch=ID`), the audit log (`source=audit`
  * with its filters) and the history list (`source=batches` with its
  * filters), through the one CsvExport and CsvWriter, read page by page from
@@ -55,19 +55,19 @@ final class HistoryExportTest extends TestCase {
 	private array $changes = [];
 
 	protected function setUp(): void {
-		bcm_test_reset();
-		$GLOBALS['bcm_test']['logged_in']                  = true;
-		$GLOBALS['bcm_test']['user_id']                    = 12;
-		$GLOBALS['bcm_test']['caps']['manage_woocommerce'] = true;
-		$GLOBALS['bcm_test']['now']                        = '2026-09-23 10:00:00';
-		$GLOBALS['bcm_test']['users']                      = [
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['logged_in']                  = true;
+		$GLOBALS['bulkcat_test']['user_id']                    = 12;
+		$GLOBALS['bulkcat_test']['caps']['manage_woocommerce'] = true;
+		$GLOBALS['bulkcat_test']['now']                        = '2026-09-23 10:00:00';
+		$GLOBALS['bulkcat_test']['users']                      = [
 			3 => 'Sam Shop',
 			4 => '=Rosa',
 		];
 		( new Plugin() )->boot();
 		do_action( 'rest_api_init' );
-		if ( ! in_array( 'bcmspy', stream_get_wrappers(), true ) ) {
-			stream_wrapper_register( 'bcmspy', SpyStream::class );
+		if ( ! in_array( 'bulkcatspy', stream_get_wrappers(), true ) ) {
+			stream_wrapper_register( 'bulkcatspy', SpyStream::class );
 		}
 		SpyStream::$log  = [];
 		SpyStream::$head = '';
@@ -148,20 +148,20 @@ final class HistoryExportTest extends TestCase {
 		$change( 2, 20001, 'sale_price', '', '8', 'applied', 'variation' );
 		$change( 2, 20002, 'sale_price', '', '99', 'failed' );
 
-		$GLOBALS['bcm_test']['posts'][10001] = [
+		$GLOBALS['bulkcat_test']['posts'][10001] = [
 			'post_type'   => 'product',
 			'post_status' => 'publish',
 			'post_title'  => "=cmd|' /C calc'!A0",
 		];
-		$GLOBALS['bcm_test']['posts'][20001] = [
+		$GLOBALS['bulkcat_test']['posts'][20001] = [
 			'post_type'   => 'product_variation',
 			'post_status' => 'publish',
 			'post_title'  => 'Shoe - Blue',
 		];
 
-		$tables          = '`wp_bcm_(batches|batch_items|changes)`';
+		$tables          = '`wp_bulkcat_(batches|batch_items|changes)`';
 		$wpdb->responses = [
-			'/^SELECT \* FROM `wp_bcm_batches` WHERE batch_id = (\d+)$/' => function ( string $sql ): ?array {
+			'/^SELECT \* FROM `wp_bulkcat_batches` WHERE batch_id = (\d+)$/' => function ( string $sql ): ?array {
 				preg_match( '/(\d+)$/', $sql, $m );
 				foreach ( $this->batches as $row ) {
 					if ( (int) $m[1] === $row['batch_id'] ) {
@@ -171,14 +171,14 @@ final class HistoryExportTest extends TestCase {
 				return null;
 			},
 			"/^SELECT .* FROM $tables/s" => function ( string $sql ): mixed {
-				if ( 1 === preg_match( '/FROM `wp_bcm_changes` .*LIMIT (\d+) OFFSET (\d+)$/s', $sql, $m ) ) {
+				if ( 1 === preg_match( '/FROM `wp_bulkcat_changes` .*LIMIT (\d+) OFFSET (\d+)$/s', $sql, $m ) ) {
 					SpyStream::$log[] = [ 'read', intdiv( (int) $m[2], max( 1, (int) $m[1] ) ) + 1 ];
 				}
 				$db = new SqlEvaluator(
 					[
-						'wp_bcm_batches'     => $this->batches,
-						'wp_bcm_batch_items' => [],
-						'wp_bcm_changes'     => $this->changes,
+						'wp_bulkcat_batches'     => $this->batches,
+						'wp_bulkcat_batch_items' => [],
+						'wp_bulkcat_changes'     => $this->changes,
 					]
 				);
 				return 1 === preg_match( '/^SELECT (COUNT\(\*\)|status|claimed_gmt) FROM/', $sql ) ? $db->value( $sql ) : $db->rows( $sql );
@@ -187,7 +187,7 @@ final class HistoryExportTest extends TestCase {
 	}
 
 	private static function get( array $params ): \WP_REST_Response|\WP_Error {
-		$request = new \WP_REST_Request( 'GET', '/bcm/v1/export' );
+		$request = new \WP_REST_Request( 'GET', '/bulkcat/v1/export' );
 		foreach ( $params as $key => $value ) {
 			$request->set_param( $key, $value );
 		}
@@ -198,7 +198,7 @@ final class HistoryExportTest extends TestCase {
 	 * The plugin's export controller, as registered.
 	 */
 	private static function controller(): ExportController {
-		foreach ( $GLOBALS['bcm_test']['filters']['rest_pre_serve_request'] as [ $callback ] ) {
+		foreach ( $GLOBALS['bulkcat_test']['filters']['rest_pre_serve_request'] as [ $callback ] ) {
 			if ( is_array( $callback ) && $callback[0] instanceof ExportController ) {
 				return $callback[0];
 			}
@@ -228,7 +228,7 @@ final class HistoryExportTest extends TestCase {
 				$this->headers[ $name ] = $value;
 			}
 		};
-		$stream          = fopen( 'bcmspy://out', 'wb' );
+		$stream          = fopen( 'bulkcatspy://out', 'wb' );
 		$this->assertTrue( self::controller()->serve( false, $response, null, $server, $stream ) );
 		fclose( $stream );
 		return $server->headers;
@@ -269,8 +269,8 @@ final class HistoryExportTest extends TestCase {
 		$this->assertLessThan( end( $reads ), $first_rows, 'The first rows are written before the last page is read.' );
 
 		$queries = array_slice( $GLOBALS['wpdb']->queries, $before );
-		$this->assertCount( 1, preg_grep( '/^SELECT COUNT\(\*\) FROM `wp_bcm_changes`/', $queries ), 'Counted once, on the first page.' );
-		$this->assertCount( 50, preg_grep( '/FROM `wp_bcm_changes` .*LIMIT 100 OFFSET/s', $queries ) );
+		$this->assertCount( 1, preg_grep( '/^SELECT COUNT\(\*\) FROM `wp_bulkcat_changes`/', $queries ), 'Counted once, on the first page.' );
+		$this->assertCount( 50, preg_grep( '/FROM `wp_bulkcat_changes` .*LIMIT 100 OFFSET/s', $queries ) );
 		$this->assertCount( 50, preg_grep( '/_prime_post_caches/', $queries ), 'One name prime per page, none per row.' );
 
 		// Memory at the first write of each page after the first: no growth with the rows written. What
@@ -288,25 +288,25 @@ final class HistoryExportTest extends TestCase {
 	}
 
 	public function test_a_visitor_and_an_under_privileged_user_are_refused_before_any_row_is_read(): void {
-		$params                           = [
+		$params                               = [
 			'source'  => 'changes',
 			'batch'   => 1,
 			'columns' => [ 'name' ],
 		];
-		$GLOBALS['bcm_test']['logged_in'] = false;
-		$GLOBALS['bcm_test']['caps']      = [];
-		$result                           = self::get( $params );
-		$this->assertSame( [ 'bcm_forbidden', 401 ], [ $result->get_error_code(), $result->get_error_data()['status'] ] );
+		$GLOBALS['bulkcat_test']['logged_in'] = false;
+		$GLOBALS['bulkcat_test']['caps']      = [];
+		$result                               = self::get( $params );
+		$this->assertSame( [ 'bulkcat_forbidden', 401 ], [ $result->get_error_code(), $result->get_error_data()['status'] ] );
 
-		$GLOBALS['bcm_test']['logged_in'] = true;
-		$result                           = self::get( $params );
-		$this->assertSame( [ 'bcm_forbidden', 403 ], [ $result->get_error_code(), $result->get_error_data()['status'] ] );
+		$GLOBALS['bulkcat_test']['logged_in'] = true;
+		$result                               = self::get( $params );
+		$this->assertSame( [ 'bulkcat_forbidden', 403 ], [ $result->get_error_code(), $result->get_error_data()['status'] ] );
 
-		$GLOBALS['bcm_test']['options']['bcm_settings'] = [ 'administrators_only' => true ];
-		$GLOBALS['bcm_test']['caps']                    = [ 'manage_woocommerce' => true ];
+		$GLOBALS['bulkcat_test']['options']['bulkcat_settings'] = [ 'administrators_only' => true ];
+		$GLOBALS['bulkcat_test']['caps']                        = [ 'manage_woocommerce' => true ];
 		$result = self::get( $params );
 		$this->assertSame( 403, $result->get_error_data()['status'], 'A shop manager under administrators only.' );
-		$this->assertSame( [], preg_grep( '/wp_bcm_changes/', $GLOBALS['wpdb']->queries ) );
+		$this->assertSame( [], preg_grep( '/wp_bulkcat_changes/', $GLOBALS['wpdb']->queries ) );
 	}
 
 	public function test_a_bad_history_export_is_refused_before_any_row_is_read(): void {
@@ -323,7 +323,7 @@ final class HistoryExportTest extends TestCase {
 				'source'  => 'changes',
 				'columns' => [ 'name' ],
 			],
-			'bcm_invalid_value',
+			'bulkcat_invalid_value',
 			400,
 			'batch'
 		);
@@ -333,7 +333,7 @@ final class HistoryExportTest extends TestCase {
 				'batch'   => 99,
 				'columns' => [ 'name' ],
 			],
-			'bcm_not_found',
+			'bulkcat_not_found',
 			404
 		);
 		$refused(
@@ -342,7 +342,7 @@ final class HistoryExportTest extends TestCase {
 				'batch'   => 1,
 				'columns' => [ 'sku' ],
 			],
-			'bcm_invalid_value',
+			'bulkcat_invalid_value',
 			400,
 			'columns'
 		);
@@ -351,7 +351,7 @@ final class HistoryExportTest extends TestCase {
 				'source'  => 'audit',
 				'columns' => [ 'name', 'name' ],
 			],
-			'bcm_invalid_value',
+			'bulkcat_invalid_value',
 			400,
 			'columns'
 		);
@@ -393,7 +393,7 @@ final class HistoryExportTest extends TestCase {
 			400,
 			'field'
 		);
-		$this->assertSame( [], preg_grep( '/wp_bcm_changes/', $GLOBALS['wpdb']->queries ) );
+		$this->assertSame( [], preg_grep( '/wp_bulkcat_changes/', $GLOBALS['wpdb']->queries ) );
 
 		// The catalogue keeps its own status filter.
 		$catalogue = self::get(

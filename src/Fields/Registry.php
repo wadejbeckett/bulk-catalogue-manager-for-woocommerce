@@ -141,7 +141,7 @@ final class Registry {
 	}
 
 	/**
-	 * The client-facing list `GET /bcm/v1/fields` returns.
+	 * The client-facing list `GET /bulkcat/v1/fields` returns.
 	 *
 	 * @return array<int, array<string, mixed>>
 	 */
@@ -163,7 +163,7 @@ final class Registry {
 			return true;
 		}
 		return Refusal::invalid(
-			'bcm_invalid_value',
+			'bulkcat_invalid_value',
 			__( 'The sale price has to be below the regular price, so this product was skipped. Lower the sale price, or choose to clear it where it is not below the regular price.', 'bulk-catalogue-manager-for-woocommerce' )
 		);
 	}

@@ -25,7 +25,7 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Runs one chunk of a batch per scheduled action.
  *
- * `bcm_batch_created` (BatchFactory) enqueues the first `bcm_run_chunk`
+ * `bulkcat_batch_created` (BatchFactory) enqueues the first `bulkcat_run_chunk`
  * action in the plugin's group (Data\Registry::ACTION_GROUP, the full slug)
  * with as_enqueue_async_action(). Each run:
  *
@@ -77,7 +77,7 @@ defined( 'ABSPATH' ) || exit;
  * 7. adapts the chunk size: a chunk that used more than 70 per cent of the
  *    PHP time limit halves it for the rest of the batch, never below 10, and
  *    records why in the batch's note; one that used under 30 per cent grows
- *    it back, doubling, up to the size the settings and the `bcm_batch_size`
+ *    it back, doubling, up to the size the settings and the `bulkcat_batch_size`
  *    filter give (itself within 10 and 100). The filter gets the batch id and
  *    the kind, `product` or `variation`: products start from *Products per
  *    background batch* (50), variations from *Variations per background
@@ -113,7 +113,7 @@ final class ChunkRunner {
 	/**
 	 * The scheduled action each chunk runs as, in Data\Registry::ACTION_GROUP.
 	 */
-	public const HOOK = 'bcm_run_chunk';
+	public const HOOK = 'bulkcat_run_chunk';
 
 	/**
 	 * The second argument of a delayed retry, so a finishing chunk unschedules only that.
@@ -123,15 +123,15 @@ final class ChunkRunner {
 	/**
 	 * The filter over the configured chunk size.
 	 */
-	public const SIZE_FILTER = 'bcm_batch_size';
+	public const SIZE_FILTER = 'bulkcat_batch_size';
 
 	/**
-	 * The `bcm_batch_size` kind for products (and category items).
+	 * The `bulkcat_batch_size` kind for products (and category items).
 	 */
 	public const PRODUCT = 'product';
 
 	/**
-	 * The `bcm_batch_size` kind for variations.
+	 * The `bulkcat_batch_size` kind for variations.
 	 */
 	public const VARIATION = 'variation';
 
@@ -244,7 +244,7 @@ final class ChunkRunner {
 	}
 
 	/**
-	 * `bcm_batch_created`: enqueue the batch's first chunk.
+	 * `bulkcat_batch_created`: enqueue the batch's first chunk.
 	 *
 	 * @param mixed $batch_id The new batch.
 	 */
@@ -256,7 +256,7 @@ final class ChunkRunner {
 	}
 
 	/**
-	 * `bcm_run_chunk`: run one chunk of a batch.
+	 * `bulkcat_run_chunk`: run one chunk of a batch.
 	 *
 	 * @param mixed $batch_id The batch.
 	 * @param mixed $kind     RETRY for a delayed retry; ignored otherwise.
@@ -530,7 +530,7 @@ final class ChunkRunner {
 	/**
 	 * The configured chunk size for a kind of item: *Products per background
 	 * batch* or *Variations per background batch* through the
-	 * `bcm_batch_size` filter, within the floor and ceiling.
+	 * `bulkcat_batch_size` filter, within the floor and ceiling.
 	 *
 	 * @param int    $batch_id The batch, passed to the filter.
 	 * @param string $kind     PRODUCT or VARIATION, passed to the filter.
@@ -544,7 +544,7 @@ final class ChunkRunner {
 		 * @param int    $batch_id The batch.
 		 * @param string $kind     `product` (products and categories) or `variation`.
 		 */
-		return self::clamp( (int) apply_filters( 'bcm_batch_size', $setting, $batch_id, $kind ) );
+		return self::clamp( (int) apply_filters( 'bulkcat_batch_size', $setting, $batch_id, $kind ) );
 	}
 
 	/**

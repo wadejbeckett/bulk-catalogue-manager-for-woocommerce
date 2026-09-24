@@ -22,7 +22,7 @@ use PHPUnit\Framework\TestCase;
 
 final class ClearTest extends TestCase {
 	protected function setUp(): void {
-		bcm_test_reset();
+		bulkcat_test_reset();
 	}
 
 	private static function operation(): Operation {
@@ -79,7 +79,7 @@ final class ClearTest extends TestCase {
 		$result    = $operation->compute( $product, $this->args( $operation, 'sale_price' ) );
 		$this->assertSame( Result::FAILED, $result->state() );
 		$this->assertSame( 'A variable product takes its price from its variations. Change the variations instead.', $result->reason() );
-		$this->assertSame( 'bcm_not_available', $result->code() );
+		$this->assertSame( 'bulkcat_not_available', $result->code() );
 		$operation->apply( $result, $product );
 		$this->assertSame( [], $product->sets );
 

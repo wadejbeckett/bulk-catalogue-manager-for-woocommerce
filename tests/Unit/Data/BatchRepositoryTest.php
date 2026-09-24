@@ -20,7 +20,7 @@ final class BatchRepositoryTest extends TestCase {
 	private const UUID = '0f8fad5b-d9cb-469f-a165-70867728950e';
 
 	protected function setUp(): void {
-		bcm_test_reset();
+		bulkcat_test_reset();
 	}
 
 	private static function db(): \BulkCatalogueManager\Tests\Support\WpdbStub {
@@ -36,7 +36,7 @@ final class BatchRepositoryTest extends TestCase {
 		foreach ( self::db()->prepared as [ $template ] ) {
 			$this->assertStringContainsString( '%i', $template );
 			$this->assertStringNotContainsString( 'wp_', $template );
-			$this->assertStringNotContainsString( 'bcm_', $template );
+			$this->assertStringNotContainsString( 'bulkcat_', $template );
 		}
 		$this->assertCount( count( self::db()->prepared ), self::db()->queries, 'One prepare() per statement.' );
 	}
@@ -61,7 +61,7 @@ final class BatchRepositoryTest extends TestCase {
 		$this->assertSame( 42, $id );
 		$this->assertCount( 1, self::db()->writes );
 		[ $method, $table, $data, $format ] = self::db()->writes[0];
-		$this->assertSame( [ 'insert', 'wp_bcm_batches' ], [ $method, $table ] );
+		$this->assertSame( [ 'insert', 'wp_bulkcat_batches' ], [ $method, $table ] );
 		$this->assert_datetime( $data['created_gmt'] );
 		unset( $data['created_gmt'] );
 		$this->assertSame(
@@ -119,7 +119,7 @@ final class BatchRepositoryTest extends TestCase {
 	}
 
 	public function test_find_reads_one_row_back_typed(): void {
-		self::db()->responses['SELECT * FROM `wp_bcm_batches` WHERE batch_id = 7'] = [
+		self::db()->responses['SELECT * FROM `wp_bulkcat_batches` WHERE batch_id = 7'] = [
 			'batch_id'      => '7',
 			'uuid'          => self::UUID,
 			'user_id'       => '3',
@@ -138,7 +138,7 @@ final class BatchRepositoryTest extends TestCase {
 		$repo  = new BatchRepository();
 		$batch = $repo->find( 7 );
 
-		$this->assertSame( [ 'SELECT * FROM %i WHERE batch_id = %d', [ 'wp_bcm_batches', 7 ] ], self::db()->prepared[0] );
+		$this->assertSame( [ 'SELECT * FROM %i WHERE batch_id = %d', [ 'wp_bulkcat_batches', 7 ] ], self::db()->prepared[0] );
 		$this->assertSame( 7, $batch['batch_id'] );
 		$this->assertSame( 5, $batch['undo_of'] );
 		$this->assertNull( $batch['finished_gmt'] );
@@ -163,7 +163,7 @@ final class BatchRepositoryTest extends TestCase {
 		$this->assertTrue( $repo->set_status( 4, 'running' ) );
 		$this->assertTrue( $repo->set_status( 4, 'partial' ) );
 
-		$this->assertSame( [ 'update', 'wp_bcm_batches', [ 'status' => 'running' ], [ '%s' ], [ 'batch_id' => 4 ], [ '%d' ] ], self::db()->writes[0] );
+		$this->assertSame( [ 'update', 'wp_bulkcat_batches', [ 'status' => 'running' ], [ '%s' ], [ 'batch_id' => 4 ], [ '%d' ] ], self::db()->writes[0] );
 		[ , , $data, $format, $where ] = self::db()->writes[1];
 		$this->assertSame( [ 'status', 'finished_gmt' ], array_keys( $data ) );
 		$this->assert_datetime( $data['finished_gmt'] );
@@ -186,11 +186,11 @@ final class BatchRepositoryTest extends TestCase {
 		foreach ( self::db()->prepared as [ $template, $args ] ) {
 			$sizes[] = substr_count( $template, '(%d, %d, %s, \'pending\', 0)' );
 			$this->assertStringStartsWith( 'INSERT INTO %i (batch_id, object_id, object_type, state, attempts) VALUES (%d, %d, %s, \'pending\', 0), ', $template );
-			$this->assertSame( 'wp_bcm_batch_items', $args[0] );
+			$this->assertSame( 'wp_bulkcat_batch_items', $args[0] );
 			$this->assertCount( 1 + 3 * end( $sizes ), $args );
 		}
 		$this->assertSame( [ 500, 500, 201 ], $sizes );
-		$this->assertSame( [ 'wp_bcm_batch_items', 6, 1, 'product', 6, 2, 'product', 6, 3, 'variation' ], array_slice( self::db()->prepared[0][1], 0, 10 ) );
+		$this->assertSame( [ 'wp_bulkcat_batch_items', 6, 1, 'product', 6, 2, 'product', 6, 3, 'variation' ], array_slice( self::db()->prepared[0][1], 0, 10 ) );
 		$this->assertStringEndsWith( "(6, 1200, 'variation', 'pending', 0), (6, 1201, 'product', 'pending', 0)", self::db()->queries[2] );
 		$this->assert_all_prepared();
 	}
@@ -223,7 +223,7 @@ final class BatchRepositoryTest extends TestCase {
 		$this->assertSame( 2, $repo->materialise_items( 6, [ [ 1, 'product', $own ], [ 2, 'variation', $own ] ] ) );
 		[ $template, $args ] = self::db()->prepared[0];
 		$this->assertSame( 'INSERT INTO %i (batch_id, object_id, object_type, state, attempts, operations) VALUES (%d, %d, %s, \'pending\', 0, %s), (%d, %d, %s, \'pending\', 0, %s)', $template );
-		$this->assertSame( [ 'wp_bcm_batch_items', 6, 1, 'product', ValueCodec::encode( $own ), 6, 2, 'variation', ValueCodec::encode( $own ) ], $args );
+		$this->assertSame( [ 'wp_bulkcat_batch_items', 6, 1, 'product', ValueCodec::encode( $own ), 6, 2, 'variation', ValueCodec::encode( $own ) ], $args );
 
 		foreach ( [ [ [ 1, 'product', $own ], [ 2, 'product' ] ], [ [ 1, 'product' ], [ 2, 'product', $own ] ], [ [ 1, 'product', [] ] ], [ [ 1, 'product', 'x' ] ] ] as $objects ) {
 			try {
@@ -241,7 +241,7 @@ final class BatchRepositoryTest extends TestCase {
 			],
 		];
 		$this->assertSame( [ 11 => $own ], $repo->item_operations( 6, [ 11, 12, 11 ] ) );
-		$this->assertSame( 'SELECT item_id, operations FROM `wp_bcm_batch_items` WHERE batch_id = 6 AND operations IS NOT NULL AND item_id IN (11, 12) LIMIT 2', end( self::db()->queries ) );
+		$this->assertSame( 'SELECT item_id, operations FROM `wp_bulkcat_batch_items` WHERE batch_id = 6 AND operations IS NOT NULL AND item_id IN (11, 12) LIMIT 2', end( self::db()->queries ) );
 		$this->assertSame( [], $repo->item_operations( 6, [] ) );
 		$this->assert_invalid( static fn() => $repo->item_operations( 6, [ 0 ] ) );
 		$this->assert_all_prepared();
@@ -256,7 +256,7 @@ final class BatchRepositoryTest extends TestCase {
 	}
 
 	public function test_claim_selects_pending_items_under_the_attempt_limit_then_counts_the_attempt(): void {
-		self::db()->responses["/^SELECT item_id, object_id, object_type, attempts FROM `wp_bcm_batch_items` WHERE batch_id = 6 AND state = 'pending' AND attempts < 3 ORDER BY item_id ASC LIMIT 50$/"] = [
+		self::db()->responses["/^SELECT item_id, object_id, object_type, attempts FROM `wp_bulkcat_batch_items` WHERE batch_id = 6 AND state = 'pending' AND attempts < 3 ORDER BY item_id ASC LIMIT 50$/"] = [
 			[
 				'item_id'     => '11',
 				'object_id'   => '101',
@@ -289,8 +289,8 @@ final class BatchRepositoryTest extends TestCase {
 			],
 			$claimed
 		);
-		$this->assertSame( "UPDATE `wp_bcm_batch_items` SET attempts = attempts + 1 WHERE batch_id = 6 AND state = 'pending' AND item_id IN (11, 12)", self::db()->queries[1] );
-		$this->assertSame( [ 'wp_bcm_batch_items', 6, 11, 12 ], self::db()->prepared[1][1] );
+		$this->assertSame( "UPDATE `wp_bulkcat_batch_items` SET attempts = attempts + 1 WHERE batch_id = 6 AND state = 'pending' AND item_id IN (11, 12)", self::db()->queries[1] );
+		$this->assertSame( [ 'wp_bulkcat_batch_items', 6, 11, 12 ], self::db()->prepared[1][1] );
 		$this->assert_all_prepared();
 	}
 
@@ -307,8 +307,8 @@ final class BatchRepositoryTest extends TestCase {
 		self::db()->responses['/^UPDATE/'] = 2;
 		$repo                              = new BatchRepository();
 		$this->assertSame( 2, $repo->mark_items( 6, [ 11, 12 ], 'done' ) );
-		$this->assertSame( "UPDATE `wp_bcm_batch_items` SET state = 'done' WHERE batch_id = 6 AND item_id IN (11, 12)", self::db()->queries[0] );
-		$this->assertSame( [ 'wp_bcm_batch_items', 'done', 6, 11, 12 ], self::db()->prepared[0][1] );
+		$this->assertSame( "UPDATE `wp_bulkcat_batch_items` SET state = 'done' WHERE batch_id = 6 AND item_id IN (11, 12)", self::db()->queries[0] );
+		$this->assertSame( [ 'wp_bulkcat_batch_items', 'done', 6, 11, 12 ], self::db()->prepared[0][1] );
 		$this->assertSame( 0, $repo->mark_items( 6, [], 'failed' ) );
 		$this->assertCount( 1, self::db()->queries );
 		$this->assert_all_prepared();
@@ -324,20 +324,20 @@ final class BatchRepositoryTest extends TestCase {
 	}
 
 	public function test_exhausted_items_are_failed_and_counts_read_by_state(): void {
-		self::db()->responses["SELECT COUNT(*) FROM `wp_bcm_batch_items` WHERE batch_id = 6 AND state = 'pending'"] = '17';
+		self::db()->responses["SELECT COUNT(*) FROM `wp_bulkcat_batch_items` WHERE batch_id = 6 AND state = 'pending'"] = '17';
 		$repo = new BatchRepository();
 		$repo->fail_exhausted( 6 );
 		$this->assertSame( 17, $repo->count_items( 6, 'pending' ) );
 		$this->assertSame( 0, $repo->count_items( 6, 'done' ) );
 
-		$this->assertSame( "UPDATE `wp_bcm_batch_items` SET state = 'failed' WHERE batch_id = 6 AND state = 'pending' AND attempts >= 3", self::db()->queries[0] );
-		$this->assertSame( [ 'SELECT COUNT(*) FROM %i WHERE batch_id = %d AND state = %s', [ 'wp_bcm_batch_items', 6, 'pending' ] ], self::db()->prepared[1] );
+		$this->assertSame( "UPDATE `wp_bulkcat_batch_items` SET state = 'failed' WHERE batch_id = 6 AND state = 'pending' AND attempts >= 3", self::db()->queries[0] );
+		$this->assertSame( [ 'SELECT COUNT(*) FROM %i WHERE batch_id = %d AND state = %s', [ 'wp_bulkcat_batch_items', 6, 'pending' ] ], self::db()->prepared[1] );
 		$this->assert_all_prepared();
 	}
 
 	public function test_claim_chunk_claims_with_one_locking_update_then_reads_back_by_token(): void {
 		$token = str_repeat( 'ab', 16 );
-		self::db()->responses['/^UPDATE `wp_bcm_batch_items` SET claim_token/']           = 2;
+		self::db()->responses['/^UPDATE `wp_bulkcat_batch_items` SET claim_token/']       = 2;
 		self::db()->responses['/^SELECT item_id, object_id, object_type, attempts FROM/'] = [
 			[
 				'item_id'     => '11',
@@ -355,8 +355,8 @@ final class BatchRepositoryTest extends TestCase {
 		$repo  = new BatchRepository();
 		$items = $repo->claim_chunk( 6, 500, $token, '2026-09-23 10:05:00', '2026-09-23 10:00:00' );
 
-		$this->assertSame( "UPDATE `wp_bcm_batch_items` SET claim_token = '$token', claimed_gmt = '2026-09-23 10:05:00', attempts = attempts + 1 WHERE batch_id = 6 AND state = 'pending' AND attempts < 3 AND (claimed_gmt IS NULL OR claimed_gmt < '2026-09-23 10:00:00') ORDER BY item_id ASC LIMIT 100", self::db()->queries[0], 'One UPDATE, its limit clamped to the ceiling.' );
-		$this->assertSame( "SELECT item_id, object_id, object_type, attempts FROM `wp_bcm_batch_items` WHERE batch_id = 6 AND state = 'pending' AND claim_token = '$token' ORDER BY item_id ASC LIMIT 100", self::db()->queries[1] );
+		$this->assertSame( "UPDATE `wp_bulkcat_batch_items` SET claim_token = '$token', claimed_gmt = '2026-09-23 10:05:00', attempts = attempts + 1 WHERE batch_id = 6 AND state = 'pending' AND attempts < 3 AND (claimed_gmt IS NULL OR claimed_gmt < '2026-09-23 10:00:00') ORDER BY item_id ASC LIMIT 100", self::db()->queries[0], 'One UPDATE, its limit clamped to the ceiling.' );
+		$this->assertSame( "SELECT item_id, object_id, object_type, attempts FROM `wp_bulkcat_batch_items` WHERE batch_id = 6 AND state = 'pending' AND claim_token = '$token' ORDER BY item_id ASC LIMIT 100", self::db()->queries[1] );
 		$this->assertSame(
 			[
 				[
@@ -376,7 +376,7 @@ final class BatchRepositoryTest extends TestCase {
 		);
 		$this->assert_all_prepared();
 
-		self::db()->responses['/^UPDATE `wp_bcm_batch_items` SET claim_token/'] = 0;
+		self::db()->responses['/^UPDATE `wp_bulkcat_batch_items` SET claim_token/'] = 0;
 		$this->assertSame( [], $repo->claim_chunk( 6, 50, $token, '2026-09-23 10:05:00', '2026-09-23 10:00:00' ) );
 		$this->assertCount( 3, self::db()->queries, 'Nothing claimed, nothing read back.' );
 		$this->assert_invalid( static fn() => $repo->claim_chunk( 6, 50, 'not-a-token', '2026-09-23 10:05:00', '2026-09-23 10:00:00' ) );
@@ -393,7 +393,7 @@ final class BatchRepositoryTest extends TestCase {
 	public function test_claim_chunk_by_kind_is_one_literal_statement_each(): void {
 		$token = str_repeat( 'ef', 16 );
 		$where = "WHERE batch_id = 6 AND state = 'pending' AND attempts < 3 AND (claimed_gmt IS NULL OR claimed_gmt < '2026-09-23 10:00:00')";
-		self::db()->responses['/^UPDATE `wp_bcm_batch_items` SET claim_token/'] = 0;
+		self::db()->responses['/^UPDATE `wp_bulkcat_batch_items` SET claim_token/'] = 0;
 		$repo = new BatchRepository();
 		foreach (
 			[
@@ -405,7 +405,7 @@ final class BatchRepositoryTest extends TestCase {
 			self::db()->queries  = [];
 			self::db()->prepared = [];
 			$this->assertSame( [], $repo->claim_chunk( 6, 20, $token, '2026-09-23 10:05:00', '2026-09-23 10:00:00', $kind ) );
-			$this->assertSame( "UPDATE `wp_bcm_batch_items` SET claim_token = '$token', claimed_gmt = '2026-09-23 10:05:00', attempts = attempts + 1 $where$type ORDER BY item_id ASC LIMIT 20", self::db()->queries[0], $kind );
+			$this->assertSame( "UPDATE `wp_bulkcat_batch_items` SET claim_token = '$token', claimed_gmt = '2026-09-23 10:05:00', attempts = attempts + 1 $where$type ORDER BY item_id ASC LIMIT 20", self::db()->queries[0], $kind );
 		}
 		$this->assert_all_prepared();
 		$this->assert_invalid( static fn() => $repo->claim_chunk( 6, 20, $token, '2026-09-23 10:05:00', '2026-09-23 10:00:00', 'everything' ) );
@@ -423,10 +423,10 @@ final class BatchRepositoryTest extends TestCase {
 		$repo->fail_exhausted( 6, '2026-09-23 10:00:00', "It didn't finish." );
 		$repo->count_reported( 6 );
 
-		$this->assertSame( "UPDATE `wp_bcm_batch_items` SET claim_token = NULL, claimed_gmt = NULL WHERE batch_id = 6 AND state = 'pending' AND claim_token = '$token'", self::db()->queries[0] );
-		$this->assertSame( [ 'wp_bcm_batch_items', 'failed', str_repeat( 'x', 255 ), 6, 11, 12 ], self::db()->prepared[1][1], 'The message is cut to the column.' );
-		$this->assertSame( "UPDATE `wp_bcm_batch_items` SET state = 'failed', message = 'It didn\\'t finish.' WHERE batch_id = 6 AND state = 'pending' AND attempts >= 3 AND (claimed_gmt IS NULL OR claimed_gmt < '2026-09-23 10:00:00')", self::db()->queries[2], 'Only items whose last claim is stale.' );
-		$this->assertSame( "SELECT COUNT(*) FROM `wp_bcm_batch_items` WHERE batch_id = 6 AND state <> 'pending' AND (state <> 'done' OR message <> '')", self::db()->queries[3] );
+		$this->assertSame( "UPDATE `wp_bulkcat_batch_items` SET claim_token = NULL, claimed_gmt = NULL WHERE batch_id = 6 AND state = 'pending' AND claim_token = '$token'", self::db()->queries[0] );
+		$this->assertSame( [ 'wp_bulkcat_batch_items', 'failed', str_repeat( 'x', 255 ), 6, 11, 12 ], self::db()->prepared[1][1], 'The message is cut to the column.' );
+		$this->assertSame( "UPDATE `wp_bulkcat_batch_items` SET state = 'failed', message = 'It didn\\'t finish.' WHERE batch_id = 6 AND state = 'pending' AND attempts >= 3 AND (claimed_gmt IS NULL OR claimed_gmt < '2026-09-23 10:00:00')", self::db()->queries[2], 'Only items whose last claim is stale.' );
+		$this->assertSame( "SELECT COUNT(*) FROM `wp_bulkcat_batch_items` WHERE batch_id = 6 AND state <> 'pending' AND (state <> 'done' OR message <> '')", self::db()->queries[3] );
 		$this->assert_all_prepared();
 	}
 
@@ -464,14 +464,14 @@ final class BatchRepositoryTest extends TestCase {
 	}
 
 	public function test_counters_are_incremented_in_one_statement(): void {
-		self::db()->responses['/^UPDATE `wp_bcm_batches`/'] = 1;
+		self::db()->responses['/^UPDATE `wp_bulkcat_batches`/'] = 1;
 		$repo = new BatchRepository();
 		$this->assertTrue( $repo->increment_counters( 6, 50, 48, 2 ) );
-		$this->assertSame( 'UPDATE `wp_bcm_batches` SET done_items = done_items + 50, changed_items = changed_items + 48, failed_items = failed_items + 2 WHERE batch_id = 6', self::db()->queries[0] );
-		$this->assertSame( [ 'wp_bcm_batches', 50, 48, 2, 6 ], self::db()->prepared[0][1] );
+		$this->assertSame( 'UPDATE `wp_bulkcat_batches` SET done_items = done_items + 50, changed_items = changed_items + 48, failed_items = failed_items + 2 WHERE batch_id = 6', self::db()->queries[0] );
+		$this->assertSame( [ 'wp_bulkcat_batches', 50, 48, 2, 6 ], self::db()->prepared[0][1] );
 		$this->assert_all_prepared();
 
-		self::db()->responses['/^UPDATE `wp_bcm_batches`/'] = 0;
+		self::db()->responses['/^UPDATE `wp_bulkcat_batches`/'] = 0;
 		$this->assertFalse( $repo->increment_counters( 99, 1, 0, 0 ), 'No such batch.' );
 
 		$this->assert_invalid( static fn() => $repo->increment_counters( 6, 1, -1, 0 ) );
@@ -500,9 +500,9 @@ final class BatchRepositoryTest extends TestCase {
 	public function test_the_progress_and_history_reads(): void {
 		$repo                 = new BatchRepository();
 		self::db()->responses = [
-			'SELECT status FROM `wp_bcm_batches` WHERE batch_id = 7'                                                                   => 'running',
-			'SELECT claimed_gmt FROM `wp_bcm_batch_items` WHERE batch_id = 7 AND claimed_gmt IS NOT NULL ORDER BY claimed_gmt DESC LIMIT 1' => '2026-09-23 08:05:00',
-			"SELECT COUNT(*) FROM `wp_bcm_batches` WHERE batch_id > 0 AND status = 'partial' AND user_id = 3 AND created_gmt >= '2026-09-01 00:00:00' AND created_gmt < '2026-10-01 00:00:00'" => '41',
+			'SELECT status FROM `wp_bulkcat_batches` WHERE batch_id = 7'                                                                   => 'running',
+			'SELECT claimed_gmt FROM `wp_bulkcat_batch_items` WHERE batch_id = 7 AND claimed_gmt IS NOT NULL ORDER BY claimed_gmt DESC LIMIT 1' => '2026-09-23 08:05:00',
+			"SELECT COUNT(*) FROM `wp_bulkcat_batches` WHERE batch_id > 0 AND status = 'partial' AND user_id = 3 AND created_gmt >= '2026-09-01 00:00:00' AND created_gmt < '2026-10-01 00:00:00'" => '41',
 		];
 		$this->assertSame( 'running', $repo->status( 7 ) );
 		$this->assertNull( $repo->status( 8 ) );
@@ -510,7 +510,7 @@ final class BatchRepositoryTest extends TestCase {
 		$this->assertNull( $repo->last_claimed_gmt( 8 ) );
 
 		$this->assertSame( [], $repo->unjournalled_reasons( 7, 500 ) );
-		$this->assertSame( "SELECT i.message AS message, COUNT(*) AS objects FROM `wp_bcm_batch_items` AS i WHERE i.batch_id = 7 AND i.state IN ('failed', 'skipped') AND i.message <> '' AND NOT EXISTS (SELECT c.change_id FROM `wp_bcm_changes` AS c WHERE c.batch_id = i.batch_id AND c.object_id = i.object_id) GROUP BY i.message ORDER BY objects DESC LIMIT 100", end( self::db()->queries ) );
+		$this->assertSame( "SELECT i.message AS message, COUNT(*) AS objects FROM `wp_bulkcat_batch_items` AS i WHERE i.batch_id = 7 AND i.state IN ('failed', 'skipped') AND i.message <> '' AND NOT EXISTS (SELECT c.change_id FROM `wp_bulkcat_changes` AS c WHERE c.batch_id = i.batch_id AND c.object_id = i.object_id) GROUP BY i.message ORDER BY objects DESC LIMIT 100", end( self::db()->queries ) );
 
 		$filters = [
 			'status'  => 'partial',
@@ -521,7 +521,7 @@ final class BatchRepositoryTest extends TestCase {
 		$this->assertSame( 41, $repo->history_count( $filters ) );
 		$this->assertSame( [], $repo->history( $filters, 3, 20 ) );
 		$list = end( self::db()->queries );
-		$this->assertSame( "SELECT batch_id, uuid, user_id, created_gmt, finished_gmt, status, source, undo_of, operations, total_items, previewed_items, done_items, changed_items, failed_items, chunk_size, note, actions, pruned_gmt FROM `wp_bcm_batches` WHERE batch_id > 0 AND status = 'partial' AND user_id = 3 AND created_gmt >= '2026-09-01 00:00:00' AND created_gmt < '2026-10-01 00:00:00' ORDER BY batch_id DESC LIMIT 20 OFFSET 40", $list );
+		$this->assertSame( "SELECT batch_id, uuid, user_id, created_gmt, finished_gmt, status, source, undo_of, operations, total_items, previewed_items, done_items, changed_items, failed_items, chunk_size, note, actions, pruned_gmt FROM `wp_bulkcat_batches` WHERE batch_id > 0 AND status = 'partial' AND user_id = 3 AND created_gmt >= '2026-09-01 00:00:00' AND created_gmt < '2026-10-01 00:00:00' ORDER BY batch_id DESC LIMIT 20 OFFSET 40", $list );
 		$this->assertStringNotContainsString( 'selection', $list, 'A list never reads the selection snapshot.' );
 		$repo->history( [], 1, 500 );
 		$this->assertStringEndsWith( 'WHERE batch_id > 0 ORDER BY batch_id DESC LIMIT 100 OFFSET 0', end( self::db()->queries ) );
@@ -540,7 +540,7 @@ final class BatchRepositoryTest extends TestCase {
 	public function test_the_site_prefix_and_only_registry_tables_are_used(): void {
 		self::db()->prefix = 'wp_3_';
 		( new BatchRepository() )->increment_counters( 6, 1, 0, 0 );
-		$this->assertStringStartsWith( 'UPDATE `wp_3_bcm_batches` SET', self::db()->queries[0] );
+		$this->assertStringStartsWith( 'UPDATE `wp_3_bulkcat_batches` SET', self::db()->queries[0] );
 
 		$this->assert_invalid( static fn() => ( new BatchRepository( new Registry( [], [], [], [], [], [] ) ) )->count_items( 6, 'done' ) );
 	}
@@ -561,7 +561,7 @@ final class BatchRepositoryTest extends TestCase {
 
 		$repo = new BatchRepository();
 		$repo->history_count( [ 'action' => 'set_value' ] );
-		$this->assertSame( "SELECT COUNT(*) FROM `wp_bcm_batches` WHERE batch_id > 0 AND actions LIKE '%,set\\\\_value,%'", end( self::db()->queries ) );
+		$this->assertSame( "SELECT COUNT(*) FROM `wp_bulkcat_batches` WHERE batch_id > 0 AND actions LIKE '%,set\\\\_value,%'", end( self::db()->queries ) );
 		foreach ( [ 'Set', "x' OR 1=1", '%', '', 7 ] as $bad ) {
 			$this->assert_invalid( static fn() => $repo->history( [ 'action' => $bad ], 1, 10 ) );
 		}
@@ -569,7 +569,7 @@ final class BatchRepositoryTest extends TestCase {
 
 	public function test_undone_by_reads_a_page_of_completed_undo_batches_at_once(): void {
 		self::db()->responses = [
-			"SELECT batch_id, undo_of FROM `wp_bcm_batches` WHERE undo_of IN (4, 7) AND source = 'undo' AND status = 'complete' ORDER BY batch_id ASC" => [
+			"SELECT batch_id, undo_of FROM `wp_bulkcat_batches` WHERE undo_of IN (4, 7) AND source = 'undo' AND status = 'complete' ORDER BY batch_id ASC" => [
 				[
 					'batch_id' => '8',
 					'undo_of'  => '7',

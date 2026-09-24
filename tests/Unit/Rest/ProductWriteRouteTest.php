@@ -1,6 +1,6 @@
 <?php
 /**
- * `PATCH /bcm/v1/products/{id}` (T37; SPEC §12.1, §9.3, §8, §13) through the
+ * `PATCH /bulkcat/v1/products/{id}` (T37; SPEC §12.1, §9.3, §8, §13) through the
  * REST dispatcher: registered behind Access::can_write with one argument per
  * editable registry field, each the field's own rest_arg(); a price edit
  * answers 200 with the re-read row in the `/products` item shape, the batch
@@ -34,24 +34,24 @@ final class ProductWriteRouteTest extends TestCase {
 	private InlineStore $store;
 
 	protected function setUp(): void {
-		bcm_test_reset();
-		$GLOBALS['bcm_test']['logged_in']                  = true;
-		$GLOBALS['bcm_test']['user_id']                    = 12;
-		$GLOBALS['bcm_test']['caps']['manage_woocommerce'] = true;
-		$GLOBALS['bcm_test']['caps']['edit_products']      = true;
-		$GLOBALS['bcm_test']['caps']['edit_post']          = true;
-		$GLOBALS['bcm_test']['scheduled']                  = [];
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['logged_in']                  = true;
+		$GLOBALS['bulkcat_test']['user_id']                    = 12;
+		$GLOBALS['bulkcat_test']['caps']['manage_woocommerce'] = true;
+		$GLOBALS['bulkcat_test']['caps']['edit_products']      = true;
+		$GLOBALS['bulkcat_test']['caps']['edit_post']          = true;
+		$GLOBALS['bulkcat_test']['scheduled']                  = [];
 		( new Plugin() )->boot();
 		do_action( 'rest_api_init' );
-		$this->store                          = new InlineStore();
-		$GLOBALS['bcm_test']['products'][101] = new StoredProduct(
+		$this->store                              = new InlineStore();
+		$GLOBALS['bulkcat_test']['products'][101] = new StoredProduct(
 			'simple',
 			[
 				'id'            => 101,
 				'regular_price' => '20',
 			]
 		);
-		$GLOBALS['bcm_test']['products'][201] = new StoredProduct(
+		$GLOBALS['bulkcat_test']['products'][201] = new StoredProduct(
 			'variation',
 			[
 				'id'            => 201,
@@ -67,7 +67,7 @@ final class ProductWriteRouteTest extends TestCase {
 	 * @param array<string, mixed> $params Body parameters.
 	 */
 	private static function patch( int $id, array $params ): \WP_REST_Response|\WP_Error {
-		$request = new \WP_REST_Request( 'PATCH', '/bcm/v1/products/' . $id );
+		$request = new \WP_REST_Request( 'PATCH', '/bulkcat/v1/products/' . $id );
 		foreach ( $params as $key => $value ) {
 			$request->set_param( $key, $value );
 		}
@@ -81,15 +81,15 @@ final class ProductWriteRouteTest extends TestCase {
 		$this->assertSame( $status, $response->get_error_data()['status'] );
 		$this->assertSame( [], $wpdb->writes, 'Nothing was written.' );
 		$this->assertSame( [], $this->store->items );
-		foreach ( $GLOBALS['bcm_test']['products'] as $product ) {
+		foreach ( $GLOBALS['bulkcat_test']['products'] as $product ) {
 			$this->assertSame( 0, $product->saves, 'Nothing was saved.' );
 		}
-		$this->assertSame( [], $GLOBALS['bcm_test']['scheduled'] );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['scheduled'] );
 		return $response;
 	}
 
 	public function test_the_route_needs_the_write_capability_and_takes_the_registry_fields(): void {
-		$route = $GLOBALS['bcm_test']['routes'][ '/bcm/v1' . ProductWriteController::ROUTE ] ?? null;
+		$route = $GLOBALS['bulkcat_test']['routes'][ '/bulkcat/v1' . ProductWriteController::ROUTE ] ?? null;
 		$this->assertTrue( is_array( $route ), 'The route is registered.' );
 		$this->assertSame( [ Access::class, 'can_write' ], $route[0]['permission_callback'] );
 		$this->assertSame( 'PATCH', $route[0]['methods'] );
@@ -123,16 +123,16 @@ final class ProductWriteRouteTest extends TestCase {
 		$this->assertSame( '25.00', $item['regular_price'], 'The row is re-read after the write.' );
 		$this->assertSame( 'Blue Shirt', $item['name'] );
 		$this->assertSame( 0, $item[ Hydrator::PARENT_ID ] );
-		$list = new \WP_REST_Request( 'GET', '/bcm/v1/products' );
+		$list = new \WP_REST_Request( 'GET', '/bulkcat/v1/products' );
 		$list->set_param( 'per_page', 100 );
 		$rows = array_column( rest_get_server()->dispatch( $list )->get_data()['items'], null, 'id' );
 		$this->assertSame( $rows[101], $item, 'The same row, in the same shape, as /products lists it now.' );
-		$this->assertContains( 101, $GLOBALS['bcm_test']['cleaned_posts'], 'The object\'s caches were cleared before the re-read.' );
+		$this->assertContains( 101, $GLOBALS['bulkcat_test']['cleaned_posts'], 'The object\'s caches were cleared before the re-read.' );
 
 		$batch = $this->store->batch( 1 );
 		$this->assertSame( [ 'inline', 'complete', 12 ], [ $batch['source'], $batch['status'], $batch['user_id'] ] );
 		$this->assertSame( [ [ 101, 'regular_price', '20', '25.00', 'applied' ] ], $this->store->journal() );
-		$this->assertSame( [], $GLOBALS['bcm_test']['scheduled'], 'No as_enqueue_async_action call, nor any other scheduling.' );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['scheduled'], 'No as_enqueue_async_action call, nor any other scheduling.' );
 	}
 
 	public function test_fields_chooses_the_columns_and_source_can_say_bulk(): void {
@@ -157,14 +157,14 @@ final class ProductWriteRouteTest extends TestCase {
 	}
 
 	public function test_a_value_the_product_cannot_take_is_refused_naming_the_field(): void {
-		$error = $this->assert_refused( self::patch( 101, [ 'sale_price' => '30' ] ), 'bcm_invalid_value', 400 );
+		$error = $this->assert_refused( self::patch( 101, [ 'sale_price' => '30' ] ), 'bulkcat_invalid_value', 400 );
 		$this->assertSame( 'sale_price', $error->get_error_data()['field'] );
 	}
 
 	public function test_a_variation_is_accepted_and_its_parent_only_fields_refused_with_their_reason(): void {
-		$error = $this->assert_refused( self::patch( 201, [ 'featured' => true ] ), 'bcm_not_available', 400 );
+		$error = $this->assert_refused( self::patch( 201, [ 'featured' => true ] ), 'bulkcat_not_available', 400 );
 		$this->assertSame( 'featured', $error->get_error_data()['field'] );
-		$this->assertSame( Registry::instance()->get( 'featured' )->unavailable_reason( $GLOBALS['bcm_test']['products'][201] ), $error->get_error_message() );
+		$this->assertSame( Registry::instance()->get( 'featured' )->unavailable_reason( $GLOBALS['bulkcat_test']['products'][201] ), $error->get_error_message() );
 
 		$response = self::patch( 201, [ 'regular_price' => '65' ] );
 		$this->assertSame( 200, $response->get_status() );
@@ -174,20 +174,20 @@ final class ProductWriteRouteTest extends TestCase {
 	}
 
 	public function test_an_object_the_user_may_not_edit_is_refused_403(): void {
-		$GLOBALS['bcm_test']['caps']['edit_post:101'] = false;
-		$this->assert_refused( self::patch( 101, [ 'regular_price' => '25' ] ), 'bcm_cannot_edit', 403 );
+		$GLOBALS['bulkcat_test']['caps']['edit_post:101'] = false;
+		$this->assert_refused( self::patch( 101, [ 'regular_price' => '25' ] ), 'bulkcat_cannot_edit', 403 );
 	}
 
 	public function test_a_missing_id_is_refused_404(): void {
-		$this->assert_refused( self::patch( 999, [ 'regular_price' => '25' ] ), 'bcm_not_found', 404 );
+		$this->assert_refused( self::patch( 999, [ 'regular_price' => '25' ] ), 'bulkcat_not_found', 404 );
 	}
 
 	public function test_a_visitor_and_a_user_who_cannot_edit_products_are_refused(): void {
-		$GLOBALS['bcm_test']['caps']['edit_products'] = false;
-		$this->assert_refused( self::patch( 101, [ 'regular_price' => '25' ] ), 'bcm_forbidden', 403 );
+		$GLOBALS['bulkcat_test']['caps']['edit_products'] = false;
+		$this->assert_refused( self::patch( 101, [ 'regular_price' => '25' ] ), 'bulkcat_forbidden', 403 );
 
-		$GLOBALS['bcm_test']['logged_in'] = false;
-		$GLOBALS['bcm_test']['caps']      = [];
-		$this->assert_refused( self::patch( 101, [ 'regular_price' => '25' ] ), 'bcm_forbidden', 401 );
+		$GLOBALS['bulkcat_test']['logged_in'] = false;
+		$GLOBALS['bulkcat_test']['caps']      = [];
+		$this->assert_refused( self::patch( 101, [ 'regular_price' => '25' ] ), 'bulkcat_forbidden', 401 );
 	}
 }

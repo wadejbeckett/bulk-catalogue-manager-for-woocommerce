@@ -14,7 +14,7 @@ import {
 } from './registry';
 
 /** Where a drawn row keeps what it is: { kind, level, parent, entry, shown, total }. */
-export const META = Symbol( 'bcm-variation-row' );
+export const META = Symbol( 'bulkcat-variation-row' );
 
 /** Row kinds. */
 export const KINDS = {

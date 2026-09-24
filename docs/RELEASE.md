@@ -25,7 +25,7 @@ Use the release archive from step 2, not the working copy, on a throwaway site (
 ### 3.1 Fresh install
 
 - [ ] On a site that has never had the plugin, install the archive through Plugins → Add New → Upload Plugin and activate it.
-- [ ] The three tables exist, `bcm_db_version` is set, and one `bcm_prune_history` action is scheduled in the `bulk-catalogue-manager-for-woocommerce` group (Tools → Scheduled Actions).
+- [ ] The three tables exist, `bulkcat_db_version` is set, and one `bulkcat_prune_history` action is scheduled in the `bulk-catalogue-manager-for-woocommerce` group (Tools → Scheduled Actions).
 - [ ] Products → Bulk Catalogue Manager opens for an administrator and a shop manager, and is refused to a subscriber.
 - [ ] Seed with `tests/probe/seed.sh`, run a bulk change through preview and apply, check the products changed, undo it from History and check the products are back as they were.
 
@@ -35,9 +35,9 @@ Use the release archive from step 2, not the working copy, on a throwaway site (
 - [ ] Run a bulk change and an inline edit, so the three tables hold rows. Note the number of rows in each table and the batch numbers.
 - [ ] Upgrade in place to the candidate archive (upload it and choose **Replace current with uploaded**), without deactivating first.
 - [ ] Load any admin page (the schema update runs on the first admin request after an update).
-- [ ] The schema update ran: `bcm_db_version` equals the candidate's `Data\Migrator::SCHEMA_VERSION`, and the tables have the columns SPEC §9.2 lists.
+- [ ] The schema update ran: `bulkcat_db_version` equals the candidate's `Data\Migrator::SCHEMA_VERSION`, and the tables have the columns SPEC §9.2 lists.
 - [ ] No history was lost: every table has at least as many rows as before, and every earlier batch is still listed in History with the same counts.
-- [ ] `bcm_prune_history` is scheduled exactly once.
+- [ ] `bulkcat_prune_history` is scheduled exactly once.
 - [ ] An earlier batch is still undoable: undo it, and check the products are back to their values before that batch.
 
 The automated version of this sequence (T79) runs in the release job between the last released tag and the current build; record its result as well.
@@ -46,19 +46,19 @@ For the first release (1.0.0) there is no previous tag. Record this step as not 
 
 ### 3.3 Deactivate and reactivate
 
-- [ ] Deactivate: the screen and its menu entry are gone, `bcm_prune_history` is no longer scheduled, and the tables, settings and saved views are still there.
-- [ ] Reactivate: History shows the earlier batches, an earlier batch can still be undone, settings and saved views are as they were, and `bcm_prune_history` is scheduled exactly once.
+- [ ] Deactivate: the screen and its menu entry are gone, `bulkcat_prune_history` is no longer scheduled, and the tables, settings and saved views are still there.
+- [ ] Reactivate: History shows the earlier batches, an earlier batch can still be undone, settings and saved views are as they were, and `bulkcat_prune_history` is scheduled exactly once.
 
 ### 3.4 Uninstall with history kept
 
 - [ ] With **Remove all data when the plugin is deleted** off (the default), deactivate and delete the plugin.
-- [ ] The three tables, `bcm_settings`, `bcm_db_version` and users' `bcm_views` are all still present.
+- [ ] The three tables, `bulkcat_settings`, `bulkcat_db_version` and users' `bulkcat_views` are all still present.
 - [ ] Reinstall and activate: History shows the earlier batches and an earlier batch can still be undone.
 
 ### 3.5 Uninstall with history removed
 
 - [ ] Turn on **Remove all data when the plugin is deleted**, deactivate and delete the plugin.
-- [ ] Nothing of the plugin is left: no `bcm_` table, option, user meta, term meta or transient, and no scheduled action in the `bulk-catalogue-manager-for-woocommerce` group. (The probe's lifecycle chapter checks the same list.)
+- [ ] Nothing of the plugin is left: no `bulkcat_` table, option, user meta, term meta or transient, and no scheduled action in the `bulk-catalogue-manager-for-woocommerce` group. (The probe's lifecycle chapter checks the same list.)
 - [ ] Products still hold the values they had just before deletion; nothing product-related was removed.
 - [ ] On a multisite network, repeat on a network with two sites and check each site is cleaned under its own setting.
 

@@ -110,7 +110,7 @@ export function useHistoryExport(
 					onError: ( refusal ) => {
 						setBusy( false );
 						// Only the plugin's own refusals carry a sentence meant for the screen.
-						const error = refusal?.code?.startsWith( 'bcm_' )
+						const error = refusal?.code?.startsWith( 'bulkcat_' )
 							? refusal
 							: Object.assign( new Error( '' ), {
 									code: refusal?.code,

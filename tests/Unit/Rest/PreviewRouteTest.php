@@ -1,6 +1,6 @@
 <?php
 /**
- * `POST /bcm/v1/preview` (T30; SPEC §9.1, §12.1, §13) through the REST
+ * `POST /bulkcat/v1/preview` (T30; SPEC §9.1, §12.1, §13) through the REST
  * dispatcher: registered behind Access::can_write with the batch route's
  * operations, ids and token plus the sample size; an id list and a
  * selection token each answer totals, sample, warnings, unreadable,
@@ -32,17 +32,17 @@ require_once dirname( __DIR__ ) . '/Query/SeededCatalogue.php';
 
 final class PreviewRouteTest extends TestCase {
 	protected function setUp(): void {
-		bcm_test_reset();
-		$GLOBALS['bcm_test']['logged_in']                  = true;
-		$GLOBALS['bcm_test']['user_id']                    = 12;
-		$GLOBALS['bcm_test']['caps']['manage_woocommerce'] = true;
-		$GLOBALS['bcm_test']['caps']['edit_products']      = true;
-		$GLOBALS['bcm_test']['caps']['edit_post']          = true;
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['logged_in']                  = true;
+		$GLOBALS['bulkcat_test']['user_id']                    = 12;
+		$GLOBALS['bulkcat_test']['caps']['manage_woocommerce'] = true;
+		$GLOBALS['bulkcat_test']['caps']['edit_products']      = true;
+		$GLOBALS['bulkcat_test']['caps']['edit_post']          = true;
 		( new Plugin() )->boot();
 		do_action( 'rest_api_init' );
 		SeededCatalogue::seed();
 		foreach ( [ ...SeededCatalogue::PRODUCTS, ...SeededCatalogue::VARIATIONS ] as $id ) {
-			$GLOBALS['bcm_test']['products'][ $id ] = new WatchedProduct(
+			$GLOBALS['bulkcat_test']['products'][ $id ] = new WatchedProduct(
 				in_array( $id, SeededCatalogue::VARIATIONS, true ) ? 'variation' : 'simple',
 				[
 					'id'       => $id,
@@ -56,8 +56,8 @@ final class PreviewRouteTest extends TestCase {
 
 	protected function tearDown(): void {
 		global $wpdb;
-		$this->assertNotContains( 'save', array_column( $GLOBALS['bcm_test']['watched'] ?? [], 0 ), 'Preview saved an object.' );
-		$this->assertSame( [], $GLOBALS['bcm_test']['set_object_terms'] ?? [], 'Preview wrote terms.' );
+		$this->assertNotContains( 'save', array_column( $GLOBALS['bulkcat_test']['watched'] ?? [], 0 ), 'Preview saved an object.' );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['set_object_terms'] ?? [], 'Preview wrote terms.' );
 		$this->assertSame( [], $wpdb->writes, 'Preview wrote to the database.' );
 	}
 
@@ -67,7 +67,7 @@ final class PreviewRouteTest extends TestCase {
 	 * @param array<string, mixed> $params Parameters.
 	 */
 	private static function post( array $params ): \WP_REST_Response|\WP_Error {
-		$request = new \WP_REST_Request( 'POST', '/bcm/v1/preview' );
+		$request = new \WP_REST_Request( 'POST', '/bulkcat/v1/preview' );
 		foreach ( $params as $key => $value ) {
 			$request->set_param( $key, $value );
 		}
@@ -98,7 +98,7 @@ final class PreviewRouteTest extends TestCase {
 	}
 
 	public function test_the_route_needs_the_write_capability(): void {
-		$route = $GLOBALS['bcm_test']['routes']['/bcm/v1/preview'] ?? null;
+		$route = $GLOBALS['bulkcat_test']['routes']['/bulkcat/v1/preview'] ?? null;
 		$this->assertTrue( is_array( $route ), 'The route is registered.' );
 		$this->assertSame( [ Access::class, 'can_write' ], $route[0]['permission_callback'] );
 		$this->assertSame( 'POST', $route[0]['methods'] );
@@ -191,39 +191,39 @@ final class PreviewRouteTest extends TestCase {
 		$this->assert_refused( self::post( $body + [ 'sample_size' => 50 ] ), 'rest_invalid_param', 400 );
 		$this->assert_refused( self::post( $body + [ 'sample_size' => 'every' ] ), 'rest_invalid_param', 400 );
 
-		$sanitise = $GLOBALS['bcm_test']['routes']['/bcm/v1/preview'][0]['args']['sample_size']['sanitize_callback'];
+		$sanitise = $GLOBALS['bulkcat_test']['routes']['/bulkcat/v1/preview'][0]['args']['sample_size']['sanitize_callback'];
 		$this->assertSame( [ 25, 100, Preview::SAMPLE_ALL ], [ $sanitise( 25 ), $sanitise( '100' ), $sanitise( 'all' ) ] );
 	}
 
 	public function test_a_visitor_is_refused_401_and_a_reader_403(): void {
-		$GLOBALS['bcm_test']['logged_in'] = false;
-		$GLOBALS['bcm_test']['user_id']   = 0;
-		$GLOBALS['bcm_test']['caps']      = [];
-		$body                             = [
+		$GLOBALS['bulkcat_test']['logged_in'] = false;
+		$GLOBALS['bulkcat_test']['user_id']   = 0;
+		$GLOBALS['bulkcat_test']['caps']      = [];
+		$body                                 = [
 			'operations' => self::operations(),
 			'ids'        => [ 101 ],
 		];
-		$this->assert_refused( self::post( $body ), 'bcm_forbidden', 401 );
+		$this->assert_refused( self::post( $body ), 'bulkcat_forbidden', 401 );
 
-		$GLOBALS['bcm_test']['logged_in']                  = true;
-		$GLOBALS['bcm_test']['user_id']                    = 12;
-		$GLOBALS['bcm_test']['caps']['manage_woocommerce'] = true;
-		$this->assert_refused( self::post( $body ), 'bcm_forbidden', 403 );
-		$this->assertSame( [], $GLOBALS['bcm_test']['products_loaded'] ?? [], 'Nothing was loaded.' );
+		$GLOBALS['bulkcat_test']['logged_in']                  = true;
+		$GLOBALS['bulkcat_test']['user_id']                    = 12;
+		$GLOBALS['bulkcat_test']['caps']['manage_woocommerce'] = true;
+		$this->assert_refused( self::post( $body ), 'bulkcat_forbidden', 403 );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['products_loaded'] ?? [], 'Nothing was loaded.' );
 	}
 
 	public function test_invalid_operations_are_refused_400_with_the_registry_codes(): void {
 		$step = self::operations()[0];
 		foreach ( [
-			'bcm_no_operations'       => [],
-			'bcm_too_many_operations' => array_fill( 0, 21, $step ),
-			'bcm_unknown_action'      => [
+			'bulkcat_no_operations'       => [],
+			'bulkcat_too_many_operations' => array_fill( 0, 21, $step ),
+			'bulkcat_unknown_action'      => [
 				[
 					'action' => 'nope',
 					'args'   => [ 'field' => 'name' ],
 				],
 			],
-			'bcm_field_not_accepted'  => [
+			'bulkcat_field_not_accepted'  => [
 				[
 					'action' => 'set_value',
 					'args'   => [
@@ -232,7 +232,7 @@ final class PreviewRouteTest extends TestCase {
 					],
 				],
 			],
-			'bcm_invalid_operation'   => [
+			'bulkcat_invalid_operation'   => [
 				[
 					'action' => 'adjust',
 					'args'   => [ 'field' => 'regular_price' ],
@@ -250,12 +250,12 @@ final class PreviewRouteTest extends TestCase {
 				400
 			);
 		}
-		$this->assertSame( [], $GLOBALS['bcm_test']['products_loaded'] ?? [], 'Nothing was loaded.' );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['products_loaded'] ?? [], 'Nothing was loaded.' );
 		$this->assert_refused( self::post( [ 'ids' => [ 101 ] ] ), 'rest_missing_callback_param', 400 );
 	}
 
 	public function test_the_selection_must_be_exactly_one_of_ids_and_token(): void {
-		$this->assert_refused( self::post( [ 'operations' => self::operations() ] ), 'bcm_selection_required', 400 );
+		$this->assert_refused( self::post( [ 'operations' => self::operations() ] ), 'bulkcat_selection_required', 400 );
 		$this->assert_refused(
 			self::post(
 				[
@@ -264,7 +264,7 @@ final class PreviewRouteTest extends TestCase {
 					'token'      => SelectionToken::mint( Selection::of_ids( [ 101 ] ) ),
 				]
 			),
-			'bcm_selection_required',
+			'bulkcat_selection_required',
 			400
 		);
 		$this->assert_refused(
@@ -274,7 +274,7 @@ final class PreviewRouteTest extends TestCase {
 					'token'      => 'not-a-token',
 				]
 			),
-			'bcm_invalid_selection',
+			'bulkcat_invalid_selection',
 			403
 		);
 	}

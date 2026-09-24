@@ -16,7 +16,7 @@ const {
 	tabTo,
 } = require( './helpers' );
 
-const PRODUCTS = /\/bcm\/v1\/products(\?|%3F|$)/;
+const PRODUCTS = /\/bulkcat\/v1\/products(\?|%3F|$)/;
 
 test( 'loading shows skeleton rows at row height and says so once', async ( {
 	page,
@@ -32,12 +32,12 @@ test( 'loading shows skeleton rows at row height and says so once', async ( {
 		hasText: 'Loading products…',
 	} );
 	await expect( status ).toBeVisible();
-	await expect( page.locator( '.bcm-skeleton__table' ) ).toHaveAttribute(
+	await expect( page.locator( '.bulkcat-skeleton__table' ) ).toHaveAttribute(
 		'aria-hidden',
 		'true'
 	);
 	const heights = await page
-		.locator( '.bcm-skeleton__row' )
+		.locator( '.bulkcat-skeleton__row' )
 		.evaluateAll( ( rows ) => rows.map( ( row ) => row.offsetHeight ) );
 	expect( heights.length ).toBeGreaterThan( 0 );
 	release();
@@ -91,7 +91,7 @@ test( 'no matches lists the filters and clears them', async ( { page } ) => {
 		page.getByText( /zzz-no-such-product/ ).first()
 	).toBeVisible();
 	const clear = page
-		.locator( '.bcm-state' )
+		.locator( '.bulkcat-state' )
 		.getByRole( 'button', { name: 'Clear filters' } );
 	await tabTo( page, clear );
 	await page.keyboard.press( 'Enter' );
@@ -107,7 +107,7 @@ test( 'a failed read says what failed and keeps the rows', async ( {
 	await page.route( PRODUCTS, ( route ) =>
 		route.fulfill( {
 			status: 500,
-			json: { code: 'bcm_e2e_failure', message: 'Made to fail.' },
+			json: { code: 'bulkcat_e2e_failure', message: 'Made to fail.' },
 		} )
 	);
 	const search = page.getByRole( 'searchbox', {
@@ -117,7 +117,7 @@ test( 'a failed read says what failed and keeps the rows', async ( {
 	await page.keyboard.type( 'Probe' );
 	await expect(
 		page
-			.locator( '.bcm-error' )
+			.locator( '.bulkcat-error' )
 			.getByText( 'The products could not be loaded.' )
 	).toBeVisible();
 	// The rows loaded before stay behind the notice.
@@ -128,7 +128,7 @@ test( 'a failed read says what failed and keeps the rows', async ( {
 	const retry = page.getByRole( 'button', { name: 'Try again' } );
 	await tabTo( page, retry, { back: true } );
 	await page.keyboard.press( 'Enter' );
-	await expect( page.locator( '.bcm-error' ) ).toHaveCount( 0 );
+	await expect( page.locator( '.bulkcat-error' ) ).toHaveCount( 0 );
 } );
 
 test( 'a change in progress: pending rows, Cancel and View in History, then read again', async ( {
@@ -177,7 +177,7 @@ test( 'a change in progress: pending rows, Cancel and View in History, then read
 
 	// The queue runs; the banner goes and the row reads the new price.
 	await untilVisible(
-		page.locator( '.bcm-catalogue__progress' ).first(),
+		page.locator( '.bulkcat-catalogue__progress' ).first(),
 		1
 	).catch( () => {} );
 	for ( let i = 0; i < 10 && ( await banner.isVisible() ); i++ ) {
@@ -192,7 +192,7 @@ test( 'a change in progress: pending rows, Cancel and View in History, then read
 	// Put it back directly, as the bulk journey's undo is covered elsewhere.
 	await page.evaluate(
 		async ( args ) => {
-			const s = window.bcmSettings;
+			const s = window.bulkcatSettings;
 			const found = await (
 				await window.fetch(
 					`${ s.root }products?search=${ encodeURIComponent( args.name ) }&fields[]=name`,

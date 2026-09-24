@@ -32,12 +32,12 @@ require dirname( __DIR__, 2 ) . '/bulk-catalogue-manager-for-woocommerce.php';
 do_action( 'plugins_loaded' );
 
 $hooks = [];
-foreach ( $GLOBALS['bcm_test']['filters'] as $hook => $entries ) {
+foreach ( $GLOBALS['bulkcat_test']['filters'] as $hook => $entries ) {
 	$hooks[ $hook ] = count( $entries );
 }
 ksort( $hooks );
 
-$GLOBALS['bcm_test']['caps']['activate_plugins'] = true;
+$GLOBALS['bulkcat_test']['caps']['activate_plugins'] = true;
 ob_start();
 do_action( 'admin_notices' );
 $notice = (string) ob_get_clean();
@@ -49,10 +49,10 @@ echo json_encode(
 	[
 		'hooks'    => $hooks,
 		'notice'   => $notice,
-		'features' => $GLOBALS['bcm_test']['features'],
-		'gettext'  => $GLOBALS['bcm_test']['gettext'],
-		'settings' => array_keys( $GLOBALS['bcm_test']['settings'] ),
-		'activate' => $GLOBALS['bcm_test']['activation'],
-		'deactive' => $GLOBALS['bcm_test']['deactivate'],
+		'features' => $GLOBALS['bulkcat_test']['features'],
+		'gettext'  => $GLOBALS['bulkcat_test']['gettext'],
+		'settings' => array_keys( $GLOBALS['bulkcat_test']['settings'] ),
+		'activate' => $GLOBALS['bulkcat_test']['activation'],
+		'deactive' => $GLOBALS['bulkcat_test']['deactivate'],
 	]
 );

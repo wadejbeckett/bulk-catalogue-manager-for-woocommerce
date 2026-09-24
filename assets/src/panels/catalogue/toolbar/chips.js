@@ -398,21 +398,21 @@ export function FilterChips( { chips, onChange, onClearAll } ) {
 		return null;
 	}
 	return (
-		<div className="bcm-chips">
+		<div className="bulkcat-chips">
 			<ul
-				className="bcm-chips__list"
+				className="bulkcat-chips__list"
 				aria-label={ __(
 					'Active filters',
 					'bulk-catalogue-manager-for-woocommerce'
 				) }
 			>
 				{ chips.map( ( chip ) => (
-					<li key={ chip.id } className="bcm-chips__chip">
+					<li key={ chip.id } className="bulkcat-chips__chip">
 						<span>{ chip.sentence }</span>
 						<Button
 							size="small"
 							icon="no-alt"
-							className="bcm-chips__clear"
+							className="bulkcat-chips__clear"
 							label={ sprintf(
 								/* translators: %s: a filter as a sentence, such as "Stock quantity is 0 or less". */
 								__(

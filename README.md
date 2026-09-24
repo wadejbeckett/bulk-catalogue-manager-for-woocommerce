@@ -40,7 +40,7 @@ Every write goes through WooCommerce's product classes (`wc_get_product()`, the 
 | Sold individually | `_sold_individually` | Product only |
 | Reviews | `comment_status` | Product only |
 
-The screen never shows these storage names; it uses the plain labels in the first column. Category moves and order use `wp_update_term()` and one term meta value of the plugin's own, `bcm_order`, which orders the tree on this screen only and changes nothing on the shop.
+The screen never shows these storage names; it uses the plain labels in the first column. Category moves and order use `wp_update_term()` and one term meta value of the plugin's own, `bulkcat_order`, which orders the tree on this screen only and changes nothing on the shop.
 
 After a variation is saved, WooCommerce's own data store resynchronises the parent's price range and stock; the plugin never writes a parent's price itself.
 
@@ -62,18 +62,18 @@ Only changes made through this screen are recorded. Edits made elsewhere, such a
 
 | To | You need |
 | --- | --- |
-| Open the screen and read products, history and categories | `manage_woocommerce` (shop managers and administrators), or `manage_options` when **Who can use this screen** is set to administrators only. Filterable through `bcm_capability`. |
+| Open the screen and read products, history and categories | `manage_woocommerce` (shop managers and administrators), or `manage_options` when **Who can use this screen** is set to administrators only. Filterable through `bulkcat_capability`. |
 | Change products, or undo a batch | The above plus `edit_products`, and `edit_post` on every product (and a variation's parent) it touches, so `edit_others_products` is honoured. Changing categories, tags or shipping class also needs the taxonomy's `assign_terms`. |
 | Change categories | The above plus `manage_product_terms`, and `edit_term` on the category, or the taxonomy's `edit_terms` to create one |
 | Change settings | `manage_options` |
 
 A product you may not edit is skipped and reported, never silently dropped. Background work runs with no logged-in user, so every object is checked again against the user who started the batch before it is written; a batch cannot give that person more rights than they had, and an item whose permission was removed in the meantime is skipped and recorded. Any user allowed to change products may undo any batch; the check is made against the person undoing, not the person who made the batch.
 
-Requests use the logged-in cookie and WordPress's REST nonce (`bcm/v1` namespace). There is no API key, application password or public route.
+Requests use the logged-in cookie and WordPress's REST nonce (`bulkcat/v1` namespace). There is no API key, application password or public route.
 
 ## Settings
 
-One option, `bcm_settings`, checked against an explicit schema on every save. Only administrators can change it.
+One option, `bulkcat_settings`, checked against an explicit schema on every save. Only administrators can change it.
 
 | Setting | Key | Default | Allowed |
 | --- | --- | --- | --- |
@@ -98,12 +98,12 @@ The four "apply to variations" settings only set where the **Also apply to varia
 
 | What | Name |
 | --- | --- |
-| Tables | `{prefix}bcm_batches`, `{prefix}bcm_batch_items`, `{prefix}bcm_changes` (the history and undo records) |
-| Options | `bcm_settings`, `bcm_db_version` |
-| User meta | `bcm_views` (each user's saved views) |
-| Term meta | `bcm_order` (category order on this screen) |
-| Transients | `bcm_category_tree_*`, `bcm_count_*`, `bcm_batch_request_*`, `bcm_selection_*` (short-lived caches) |
-| Scheduled actions | `bcm_run_chunk` and the daily `bcm_prune_history`, in the `bulk-catalogue-manager-for-woocommerce` group |
+| Tables | `{prefix}bulkcat_batches`, `{prefix}bulkcat_batch_items`, `{prefix}bulkcat_changes` (the history and undo records) |
+| Options | `bulkcat_settings`, `bulkcat_db_version` |
+| User meta | `bulkcat_views` (each user's saved views) |
+| Term meta | `bulkcat_order` (category order on this screen) |
+| Transients | `bulkcat_category_tree_*`, `bulkcat_count_*`, `bulkcat_batch_request_*`, `bulkcat_selection_*` (short-lived caches) |
+| Scheduled actions | `bulkcat_run_chunk` and the daily `bulkcat_prune_history`, in the `bulk-catalogue-manager-for-woocommerce` group |
 | Browser storage | The category panel's width and open state, per user, in `localStorage` |
 
 - **Activation** creates or updates the tables with `dbDelta()` and schedules the daily prune once.
@@ -114,10 +114,10 @@ The four "apply to variations" settings only set where the **Also apply to varia
 
 | Hook | Type | Arguments | Use |
 | --- | --- | --- | --- |
-| `bcm_capability` | filter | `string $capability`, `bool $administrators_only` | The capability that opens the screen and its read routes |
-| `bcm_batch_size` | filter | `int $size`, `int $batch_id`, `string $kind` (`product` or `variation`) | Objects per background run; clamped to 10–100 |
-| `bcm_selection_ttl` | filter | `int $seconds` | How long a "select all matching" token lasts; default 900, clamped to 60–86,400 |
-| `bcm_batch_created` | action | `int $batch_id` | Fires once a batch and its items are recorded, before any work |
+| `bulkcat_capability` | filter | `string $capability`, `bool $administrators_only` | The capability that opens the screen and its read routes |
+| `bulkcat_batch_size` | filter | `int $size`, `int $batch_id`, `string $kind` (`product` or `variation`) | Objects per background run; clamped to 10–100 |
+| `bulkcat_selection_ttl` | filter | `int $seconds` | How long a "select all matching" token lasts; default 900, clamped to 60–86,400 |
+| `bulkcat_batch_created` | action | `int $batch_id` | Fires once a batch and its items are recorded, before any work |
 
 ## Development
 

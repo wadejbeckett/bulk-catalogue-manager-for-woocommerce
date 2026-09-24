@@ -1,7 +1,7 @@
 <?php
 /**
  * The settings schema (SPEC §11): every setting the plugin stores in the
- * `bcm_settings` option, its default and the values it accepts. Nothing else
+ * `bulkcat_settings` option, its default and the values it accepts. Nothing else
  * may be stored in the option.
  *
  * @package BulkCatalogueManager

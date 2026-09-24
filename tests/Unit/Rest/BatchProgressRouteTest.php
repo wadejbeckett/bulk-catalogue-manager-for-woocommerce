@@ -13,7 +13,7 @@
  * its fixed shape with per_page capped at 100; `GET /batches` pages newest
  * first with its filters; visitors 401, users without the capability 403, a
  * read-only user may read but not cancel; a missing batch 404
- * `bcm_not_found`, a finished one 409 `bcm_not_cancellable`.
+ * `bulkcat_not_found`, a finished one 409 `bulkcat_not_cancellable`.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -66,15 +66,15 @@ final class BatchProgressRouteTest extends TestCase {
 	private float $run_clock = self::CREATED + 30.0;
 
 	protected function setUp(): void {
-		bcm_test_reset();
-		$this->now                        = self::CREATED + 60;
-		$this->run_clock                  = self::CREATED + 30.0;
-		$GLOBALS['bcm_test']['logged_in'] = true;
-		$GLOBALS['bcm_test']['user_id']   = 12;
-		$GLOBALS['bcm_test']['caps']['manage_woocommerce'] = true;
-		$GLOBALS['bcm_test']['caps']['edit_products']      = true;
-		$GLOBALS['bcm_test']['user_caps']                  = [ self::OWNER => [ 'edit_post' => true ] ];
-		$GLOBALS['bcm_test']['scheduled']                  = [];
+		bulkcat_test_reset();
+		$this->now                            = self::CREATED + 60;
+		$this->run_clock                      = self::CREATED + 30.0;
+		$GLOBALS['bulkcat_test']['logged_in'] = true;
+		$GLOBALS['bulkcat_test']['user_id']   = 12;
+		$GLOBALS['bulkcat_test']['caps']['manage_woocommerce'] = true;
+		$GLOBALS['bulkcat_test']['caps']['edit_products']      = true;
+		$GLOBALS['bulkcat_test']['user_caps']                  = [ self::OWNER => [ 'edit_post' => true ] ];
+		$GLOBALS['bulkcat_test']['scheduled']                  = [];
 		( new Plugin() )->boot();
 		do_action( 'rest_api_init' );
 		// The same routes again over a clock the test sets.
@@ -82,7 +82,7 @@ final class BatchProgressRouteTest extends TestCase {
 	}
 
 	private static function dispatch( string $method, string $path, array $params = [] ): \WP_REST_Response|\WP_Error {
-		$request = new \WP_REST_Request( $method, '/bcm/v1' . $path );
+		$request = new \WP_REST_Request( $method, '/bulkcat/v1' . $path );
 		foreach ( $params as $key => $value ) {
 			$request->set_param( $key, $value );
 		}
@@ -104,7 +104,7 @@ final class BatchProgressRouteTest extends TestCase {
 		$this->assertInstanceOf( \WP_Error::class, $response );
 		$this->assertSame( $code, $response->get_error_code() );
 		$this->assertSame( $status, $response->get_error_data()['status'] );
-		$this->assertStringNotContainsString( 'bcm_', $response->get_error_message() );
+		$this->assertStringNotContainsString( 'bulkcat_', $response->get_error_message() );
 	}
 
 	private function runner(): ChunkRunner {
@@ -147,14 +147,14 @@ final class BatchProgressRouteTest extends TestCase {
 	private static function products( int $count ): array {
 		$ids = range( 1001, 1000 + $count );
 		foreach ( $ids as $id ) {
-			$GLOBALS['bcm_test']['products'][ $id ] = new SavedProduct(
+			$GLOBALS['bulkcat_test']['products'][ $id ] = new SavedProduct(
 				'simple',
 				[
 					'id'            => $id,
 					'regular_price' => '10',
 				]
 			);
-			$GLOBALS['bcm_test']['posts'][ $id ]    = [
+			$GLOBALS['bulkcat_test']['posts'][ $id ]    = [
 				'post_type'   => 'product',
 				'post_status' => 'publish',
 				'post_title'  => "Shoe $id",
@@ -164,25 +164,25 @@ final class BatchProgressRouteTest extends TestCase {
 	}
 
 	private static function price( int $id ): string {
-		return (string) $GLOBALS['bcm_test']['products'][ $id ]->props['regular_price'];
+		return (string) $GLOBALS['bulkcat_test']['products'][ $id ]->props['regular_price'];
 	}
 
 	private static function claims(): int {
-		return count( preg_grep( "/^UPDATE `wp_bcm_batch_items` SET claim_token = '/", $GLOBALS['wpdb']->queries ) );
+		return count( preg_grep( "/^UPDATE `wp_bulkcat_batch_items` SET claim_token = '/", $GLOBALS['wpdb']->queries ) );
 	}
 
 	public function test_the_routes_register_with_their_permissions_and_schemas(): void {
-		$routes = $GLOBALS['bcm_test']['routes'];
-		$this->assertSame( [ 'POST', 'GET' ], array_column( array_filter( $routes['/bcm/v1/batches'], 'is_int', ARRAY_FILTER_USE_KEY ), 'methods' ) );
-		$this->assertSame( [ Access::class, 'can_read' ], $routes['/bcm/v1/batches'][1]['permission_callback'] );
-		$this->assertSame( [ 'page', 'per_page', 'status', 'user', 'after', 'before', 'action' ], array_keys( $routes['/bcm/v1/batches'][1]['args'] ) );
-		$this->assertSame( [ Access::class, 'can_read' ], $routes[ '/bcm/v1' . BatchesController::ITEM_ROUTE ][0]['permission_callback'] );
-		$this->assertSame( [ Access::class, 'can_read' ], $routes[ '/bcm/v1' . BatchChangesController::ROUTE ][0]['permission_callback'] );
-		$this->assertSame( [ 'id', 'page', 'per_page', 'result' ], array_keys( $routes[ '/bcm/v1' . BatchChangesController::ROUTE ][0]['args'] ) );
-		$this->assertSame( 'POST', $routes[ '/bcm/v1' . BatchesController::CANCEL_ROUTE ][0]['methods'] );
-		$this->assertSame( [ Access::class, 'can_write' ], $routes[ '/bcm/v1' . BatchesController::CANCEL_ROUTE ][0]['permission_callback'] );
-		$this->assertSame( 'bcm-batch', call_user_func( $routes[ '/bcm/v1' . BatchesController::ITEM_ROUTE ]['schema'] )['title'] );
-		$this->assertSame( 'bcm-batch-change', call_user_func( $routes[ '/bcm/v1' . BatchChangesController::ROUTE ]['schema'] )['title'] );
+		$routes = $GLOBALS['bulkcat_test']['routes'];
+		$this->assertSame( [ 'POST', 'GET' ], array_column( array_filter( $routes['/bulkcat/v1/batches'], 'is_int', ARRAY_FILTER_USE_KEY ), 'methods' ) );
+		$this->assertSame( [ Access::class, 'can_read' ], $routes['/bulkcat/v1/batches'][1]['permission_callback'] );
+		$this->assertSame( [ 'page', 'per_page', 'status', 'user', 'after', 'before', 'action' ], array_keys( $routes['/bulkcat/v1/batches'][1]['args'] ) );
+		$this->assertSame( [ Access::class, 'can_read' ], $routes[ '/bulkcat/v1' . BatchesController::ITEM_ROUTE ][0]['permission_callback'] );
+		$this->assertSame( [ Access::class, 'can_read' ], $routes[ '/bulkcat/v1' . BatchChangesController::ROUTE ][0]['permission_callback'] );
+		$this->assertSame( [ 'id', 'page', 'per_page', 'result' ], array_keys( $routes[ '/bulkcat/v1' . BatchChangesController::ROUTE ][0]['args'] ) );
+		$this->assertSame( 'POST', $routes[ '/bulkcat/v1' . BatchesController::CANCEL_ROUTE ][0]['methods'] );
+		$this->assertSame( [ Access::class, 'can_write' ], $routes[ '/bulkcat/v1' . BatchesController::CANCEL_ROUTE ][0]['permission_callback'] );
+		$this->assertSame( 'bulkcat-batch', call_user_func( $routes[ '/bulkcat/v1' . BatchesController::ITEM_ROUTE ]['schema'] )['title'] );
+		$this->assertSame( 'bulkcat-batch-change', call_user_func( $routes[ '/bulkcat/v1' . BatchChangesController::ROUTE ]['schema'] )['title'] );
 	}
 
 	public function test_the_counters_count_up_after_every_chunk(): void {
@@ -291,8 +291,8 @@ final class BatchProgressRouteTest extends TestCase {
 
 	public function test_failures_and_skips_finish_partial_with_grouped_reasons_and_a_changes_feed(): void {
 		self::products( 3 );
-		$GLOBALS['bcm_test']['skus']['SHOE-42']                            = 999;
-		$GLOBALS['bcm_test']['user_caps'][ self::OWNER ]['edit_post:1003'] = false;
+		$GLOBALS['bulkcat_test']['skus']['SHOE-42']                            = 999;
+		$GLOBALS['bulkcat_test']['user_caps'][ self::OWNER ]['edit_post:1003'] = false;
 		$operations = $this->operations(
 			[
 				[
@@ -330,7 +330,7 @@ final class BatchProgressRouteTest extends TestCase {
 		$this->assertSame( 1, $permission['count'] );
 		$this->assertSame( '1 product: ' . $permission['message'], $permission['sentence'] );
 		foreach ( $report['summary'] as $group ) {
-			$this->assertSame( 0, preg_match( '/bcm_|\\\\|::|Exception/', $group['sentence'] ), 'No code or class name in the main text.' );
+			$this->assertSame( 0, preg_match( '/bulkcat_|\\\\|::|Exception/', $group['sentence'] ), 'No code or class name in the main text.' );
 		}
 
 		// The changes feed: every row, in order, in its fixed shape; failing rows on their own.
@@ -347,7 +347,7 @@ final class BatchProgressRouteTest extends TestCase {
 		foreach ( $problems['items'] as $item ) {
 			$this->assertContains( $item['result'], [ 'failed', 'skipped' ] );
 			$this->assertNotSame( '', $item['message'] );
-			$this->assertStringNotContainsString( 'bcm_', $item['message'] );
+			$this->assertStringNotContainsString( 'bulkcat_', $item['message'] );
 		}
 		$this->assertContains( $sku, array_column( $problems['items'], 'message' ) );
 		$this->assertSame( [ 'Shoe 1001', 'Shoe 1002' ], array_values( array_unique( array_column( array_filter( $problems['items'], static fn( array $i ): bool => $sku === $i['message'] ), 'name' ) ) ) );
@@ -433,21 +433,21 @@ final class BatchProgressRouteTest extends TestCase {
 		$reads = [ [ 'GET', '/batches' ], [ 'GET', '/batches/12' ], [ 'GET', '/batches/12/changes' ] ];
 
 		// A read-only user (the screen, not product editing) may follow any batch but not cancel it.
-		$GLOBALS['bcm_test']['caps']['edit_products'] = false;
+		$GLOBALS['bulkcat_test']['caps']['edit_products'] = false;
 		foreach ( $reads as [ $method, $path ] ) {
 			$this->ok( self::dispatch( $method, $path ) );
 		}
-		$this->refused( self::dispatch( 'POST', '/batches/12/cancel' ), 'bcm_forbidden', 403 );
+		$this->refused( self::dispatch( 'POST', '/batches/12/cancel' ), 'bulkcat_forbidden', 403 );
 		$this->assertSame( 'queued', $store->batch()['status'] );
 
-		$GLOBALS['bcm_test']['caps'] = [];
+		$GLOBALS['bulkcat_test']['caps'] = [];
 		foreach ( array_merge( $reads, [ [ 'POST', '/batches/12/cancel' ] ] ) as [ $method, $path ] ) {
-			$this->refused( self::dispatch( $method, $path ), 'bcm_forbidden', 403 );
+			$this->refused( self::dispatch( $method, $path ), 'bulkcat_forbidden', 403 );
 		}
 
-		$GLOBALS['bcm_test']['logged_in'] = false;
+		$GLOBALS['bulkcat_test']['logged_in'] = false;
 		foreach ( array_merge( $reads, [ [ 'POST', '/batches/12/cancel' ] ] ) as [ $method, $path ] ) {
-			$this->refused( self::dispatch( $method, $path ), 'bcm_forbidden', 401 );
+			$this->refused( self::dispatch( $method, $path ), 'bulkcat_forbidden', 401 );
 		}
 		$this->assertSame( 'queued', $store->batch()['status'] );
 	}
@@ -480,8 +480,8 @@ final class BatchProgressRouteTest extends TestCase {
 		}
 		$db              = new SqlEvaluator(
 			[
-				'wp_bcm_batches'     => $rows,
-				'wp_bcm_batch_items' => [
+				'wp_bulkcat_batches'     => $rows,
+				'wp_bulkcat_batch_items' => [
 					[
 						'batch_id'    => 4,
 						'state'       => 'pending',
@@ -491,7 +491,7 @@ final class BatchProgressRouteTest extends TestCase {
 			]
 		);
 		$wpdb->responses = [
-			'/^SELECT COUNT\(\*\) FROM `wp_bcm_(batches|batch_items)`/' => static fn( string $sql ): ?string => $db->value( $sql ),
+			'/^SELECT COUNT\(\*\) FROM `wp_bulkcat_(batches|batch_items)`/' => static fn( string $sql ): ?string => $db->value( $sql ),
 			'/^SELECT claimed_gmt FROM/' => static fn( string $sql ): ?string => $db->value( $sql ),
 			'/^SELECT batch_id, uuid/'   => static fn( string $sql ): array => $db->rows( $sql ),
 		];
@@ -587,7 +587,7 @@ final class BatchProgressRouteTest extends TestCase {
 		$this->assertNotNull( $report['finished_gmt'] );
 		$this->assertSame( [ 1, 0, 1, 0 ], [ $report['done_items'], $report['changed_items'], $report['failed_items'], $report['pending_items'] ] );
 		$this->assertStringContainsString( 'marked as failed', $report['note'] );
-		$this->assertStringNotContainsString( 'bcm_', $report['note'] );
+		$this->assertStringNotContainsString( 'bulkcat_', $report['note'] );
 		$this->assertSame( 'failed', $store->item( 1001 )['state'] );
 		$this->assertStringContainsString( 'stopped before it was saved', $store->item( 1001 )['message'] );
 		$this->assertSame( [ '1 product: This edit stopped before it was saved. Check the product and make the edit again.' ], array_column( $report['summary'], 'sentence' ) );

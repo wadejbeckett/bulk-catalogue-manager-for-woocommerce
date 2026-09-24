@@ -102,9 +102,9 @@ final class CatalogueFixture {
 	 * Store the terms and their order in the stubs.
 	 */
 	public static function seed(): void {
-		$GLOBALS['bcm_test']['term_list'] = self::terms();
+		$GLOBALS['bulkcat_test']['term_list'] = self::terms();
 		foreach ( self::ORDERS as $id => $order ) {
-			$GLOBALS['bcm_test']['term_meta'][ $id ]['order'] = $order;
+			$GLOBALS['bulkcat_test']['term_meta'][ $id ]['order'] = $order;
 		}
 	}
 

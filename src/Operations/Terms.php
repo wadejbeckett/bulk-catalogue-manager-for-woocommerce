@@ -167,12 +167,12 @@ final class Terms extends BaseOperation {
 
 		$reason = $field->unavailable_reason( $subject );
 		if ( null !== $reason ) {
-			return Result::failed( $key, $current, $reason, 'bcm_not_available' );
+			return Result::failed( $key, $current, $reason, 'bulkcat_not_available' );
 		}
 
 		$terms = self::ids( $args['terms'] ?? [] );
 		if ( [] === $terms || count( $terms ) > Values::MAX_TERMS ) {
-			return Result::failed( $key, $current, $field->rule_text(), 'bcm_invalid_value' );
+			return Result::failed( $key, $current, $field->rule_text(), 'bulkcat_invalid_value' );
 		}
 		$missing = $this->missing_term( $field, $terms );
 		if ( null !== $missing ) {
@@ -185,7 +185,7 @@ final class Terms extends BaseOperation {
 					$field->label(),
 					$missing
 				),
-				'bcm_invalid_value'
+				'bulkcat_invalid_value'
 			);
 		}
 
@@ -207,7 +207,7 @@ final class Terms extends BaseOperation {
 					$field->label(),
 					Values::MAX_TERMS
 				),
-				'bcm_invalid_value'
+				'bulkcat_invalid_value'
 			);
 		}
 		return Result::changed( $key, $current, $result, self::REPLACE === $this->mode );
@@ -234,7 +234,7 @@ final class Terms extends BaseOperation {
 
 		$reason = $field->unavailable_reason( $subject );
 		if ( null !== $reason ) {
-			throw new WriteRefused( Refusal::invalid( 'bcm_not_available', $reason ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- WriteRefused escapes the message it carries.
+			throw new WriteRefused( Refusal::invalid( 'bulkcat_not_available', $reason ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- WriteRefused escapes the message it carries.
 		}
 		// Terms deleted since compute(): core would skip an unknown id silently.
 		$ids   = self::ids( $result->new() );
@@ -247,7 +247,7 @@ final class Terms extends BaseOperation {
 		$written = wp_set_object_terms( (int) $subject->get_id(), $ids, $field->storage()->key(), false );
 		if ( $written instanceof \WP_Error ) {
 			$refusal = Refusal::invalid(
-				'bcm_invalid_value',
+				'bulkcat_invalid_value',
 				sprintf(
 					/* translators: %s: a field's name, such as "Categories". */
 					__( '%s could not be saved on this product. Try again in a moment.', 'bulk-catalogue-manager-for-woocommerce' ),

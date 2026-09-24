@@ -57,7 +57,7 @@ final class Result {
 	 * @param mixed  $new_value Value after the operation, canonical; equal to $old unless changed.
 	 * @param string $state     One of STATES.
 	 * @param string $reason    Plain-English sentence (SPEC §4.8) for skipped and failed; '' otherwise.
-	 * @param string $code      `bcm_` code for the technical details line, or ''.
+	 * @param string $code      `bulkcat_` code for the technical details line, or ''.
 	 * @param bool   $replaces  Whether the change replaces a whole list, which the preview states in bold (SPEC §6).
 	 * @throws \InvalidArgumentException When the parts are inconsistent.
 	 */
@@ -76,8 +76,8 @@ final class Result {
 			! in_array( $state, self::STATES, true )                => 'the state is unknown',
 			$needs_reason && '' === trim( $reason )                 => 'a skipped or failed result needs a reason',
 			! $needs_reason && ( '' !== $reason || '' !== $code )   => 'only a skipped or failed result carries a reason',
-			'' !== $code && ! str_starts_with( $code, 'bcm_' )      => 'the code must start with bcm_',
-			str_contains( $reason, 'bcm_' )                         => 'the reason is shown to people, so its code belongs in the code field',
+			'' !== $code && ! str_starts_with( $code, 'bulkcat_' )      => 'the code must start with bulkcat_',
+			str_contains( $reason, 'bulkcat_' )                         => 'the reason is shown to people, so its code belongs in the code field',
 			self::CHANGED === $state && $old === $new_value               => 'a change must change the value; use already()',
 			$replaces && self::CHANGED !== $state                   => 'only a change can replace a list',
 			default                                                 => '',
@@ -115,7 +115,7 @@ final class Result {
 	 * @param string $field  Field key.
 	 * @param mixed  $old    Current value.
 	 * @param string $reason Plain-English sentence.
-	 * @param string $code   `bcm_` code for the details line, or ''.
+	 * @param string $code   `bulkcat_` code for the details line, or ''.
 	 */
 	public static function skipped( string $field, mixed $old, string $reason, string $code = '' ): self {
 		return new self( $field, $old, $old, self::SKIPPED, $reason, $code, false );
@@ -127,7 +127,7 @@ final class Result {
 	 * @param string $field  Field key.
 	 * @param mixed  $old    Current value.
 	 * @param string $reason Plain-English sentence.
-	 * @param string $code   `bcm_` code for the details line, or ''.
+	 * @param string $code   `bulkcat_` code for the details line, or ''.
 	 */
 	public static function failed( string $field, mixed $old, string $reason, string $code = '' ): self {
 		return new self( $field, $old, $old, self::FAILED, $reason, $code, false );
@@ -176,7 +176,7 @@ final class Result {
 	}
 
 	/**
-	 * The `bcm_` code behind a skipped or failed result, or ''.
+	 * The `bulkcat_` code behind a skipped or failed result, or ''.
 	 */
 	public function code(): string {
 		return $this->code;

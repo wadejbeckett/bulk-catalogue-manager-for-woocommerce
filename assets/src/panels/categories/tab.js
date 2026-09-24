@@ -19,7 +19,7 @@ export default function CategoriesTab( { settings } ) {
 	const tree = useCategoryTree( QUERY );
 	const [ value, setValue ] = useState( null );
 	return (
-		<div className="bcm-categories-tab">
+		<div className="bulkcat-categories-tab">
 			<CategoryPanel
 				value={ value }
 				onChange={ setValue }

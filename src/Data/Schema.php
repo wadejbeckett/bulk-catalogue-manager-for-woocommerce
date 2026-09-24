@@ -52,17 +52,17 @@ final class Schema {
 	/**
 	 * One row per batch.
 	 */
-	public const BATCHES = 'bcm_batches';
+	public const BATCHES = 'bulkcat_batches';
 
 	/**
 	 * The batch's selection, materialised before any work starts.
 	 */
-	public const ITEMS = 'bcm_batch_items';
+	public const ITEMS = 'bulkcat_batch_items';
 
 	/**
 	 * The journal: one row per touched field per object.
 	 */
-	public const CHANGES = 'bcm_changes';
+	public const CHANGES = 'bulkcat_changes';
 
 	/**
 	 * Batch statuses.
@@ -105,7 +105,7 @@ final class Schema {
 	public const CHANGE_INTENT = 'pending';
 
 	/**
-	 * `{prefix}bcm_batches`.
+	 * `{prefix}bulkcat_batches`.
 	 */
 	public const BATCHES_BODY = 'batch_id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
 uuid char(36) NOT NULL,
@@ -132,7 +132,7 @@ KEY status (status),
 KEY user_id (user_id)';
 
 	/**
-	 * `{prefix}bcm_batch_items`.
+	 * `{prefix}bulkcat_batch_items`.
 	 */
 	public const ITEMS_BODY = "item_id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
 batch_id bigint(20) unsigned NOT NULL,
@@ -149,7 +149,7 @@ KEY batch_state (batch_id,state),
 KEY object (object_id)";
 
 	/**
-	 * `{prefix}bcm_changes`.
+	 * `{prefix}bulkcat_changes`.
 	 */
 	public const CHANGES_BODY = 'change_id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
 batch_id bigint(20) unsigned NOT NULL,

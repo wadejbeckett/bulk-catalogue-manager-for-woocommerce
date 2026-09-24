@@ -1,6 +1,6 @@
 <?php
 /**
- * The only code that reads or writes `{prefix}bcm_changes`, the journal of
+ * The only code that reads or writes `{prefix}bulkcat_changes`, the journal of
  * SPEC §9.2 and §9.3: one row per touched field per object, holding the value
  * before and after the write, JSON encoded by ValueCodec so type and null
  * survive. Every statement is prepared; the table name comes from the

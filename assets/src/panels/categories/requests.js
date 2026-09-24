@@ -1,6 +1,6 @@
 /**
  * The category routes (SPEC §7, §12.1; T21, T63, T64), always through the
- * screen's own request() so the nonce and the bcm/v1 root apply.
+ * screen's own request() so the nonce and the bulkcat/v1 root apply.
  */
 import { request } from '../../api';
 

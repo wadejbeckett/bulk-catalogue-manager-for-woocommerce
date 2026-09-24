@@ -28,8 +28,8 @@ use PHPUnit\Framework\TestCase;
 
 final class TermsTest extends TestCase {
 	protected function setUp(): void {
-		bcm_test_reset();
-		$GLOBALS['bcm_test']['terms'] = [
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['terms'] = [
 			'product_cat' => [ 11, 12, 13, 14 ],
 			'product_tag' => [ 21, 22, 23 ],
 		];
@@ -79,7 +79,7 @@ final class TermsTest extends TestCase {
 	private function compute( string $mode, string $field, array $terms, FakeProduct $product ): Result {
 		$result = self::action( $mode )->compute( $product, $this->args( $mode, $field, $terms ) );
 		$this->assertSame( [], $product->sets, 'compute() wrote to the product.' );
-		$this->assertSame( [], $GLOBALS['bcm_test']['set_object_terms'] ?? [], 'compute() wrote terms.' );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['set_object_terms'] ?? [], 'compute() wrote terms.' );
 		return $result;
 	}
 
@@ -164,7 +164,7 @@ final class TermsTest extends TestCase {
 	}
 
 	public function test_at_most_one_hundred_terms_in_one_operation(): void {
-		$GLOBALS['bcm_test']['terms']['product_cat'] = range( 1, 120 );
+		$GLOBALS['bulkcat_test']['terms']['product_cat'] = range( 1, 120 );
 		foreach ( Terms::MODES as $mode ) {
 			$this->assertTrue(
 				self::action( $mode )->validate(
@@ -183,7 +183,7 @@ final class TermsTest extends TestCase {
 				]
 			);
 			$this->assertFalse( $refused->ok(), "$mode took 101 terms." );
-			$this->assertSame( 'bcm_invalid_operation', $refused->error()->get_error_code() );
+			$this->assertSame( 'bulkcat_invalid_operation', $refused->error()->get_error_code() );
 			$this->assertSame( 'terms', $refused->error()->get_error_data()['argument'] );
 			$this->assertStringContainsString( '100', $refused->error()->get_error_message() );
 
@@ -199,7 +199,7 @@ final class TermsTest extends TestCase {
 		// Adding may not take a product past the same limit.
 		$result = self::action( Terms::ADD )->compute( self::product( range( 1, 95 ), [] ), $this->args( Terms::ADD, 'category_ids', range( 96, 110 ) ) );
 		$this->assertSame( Result::FAILED, $result->state() );
-		$this->assertSame( 'bcm_invalid_value', $result->code() );
+		$this->assertSame( 'bulkcat_invalid_value', $result->code() );
 		$this->assertStringContainsString( '100', $result->reason() );
 		$this->assertSame( range( 1, 95 ), $result->new(), 'A failed row keeps its list.' );
 
@@ -216,7 +216,7 @@ final class TermsTest extends TestCase {
 				]
 			);
 			$this->assertFalse( $wrong->ok(), "$mode took a tag as a category." );
-			$this->assertSame( 'bcm_invalid_operation', $wrong->error()->get_error_code() );
+			$this->assertSame( 'bulkcat_invalid_operation', $wrong->error()->get_error_code() );
 
 			$missing = self::action( $mode )->validate(
 				[
@@ -229,23 +229,23 @@ final class TermsTest extends TestCase {
 
 		// Deleted after the form was validated: that row fails with the id.
 		foreach ( Terms::MODES as $mode ) {
-			$args                                        = $this->args( $mode, 'category_ids', [ 12, 14 ] );
-			$GLOBALS['bcm_test']['terms']['product_cat'] = [ 11, 12, 13 ];
-			$product                                     = self::product();
-			$result                                      = self::action( $mode )->compute( $product, $args );
+			$args = $this->args( $mode, 'category_ids', [ 12, 14 ] );
+			$GLOBALS['bulkcat_test']['terms']['product_cat'] = [ 11, 12, 13 ];
+			$product = self::product();
+			$result  = self::action( $mode )->compute( $product, $args );
 			$this->assertSame( Result::FAILED, $result->state(), $mode );
-			$this->assertSame( 'bcm_invalid_value', $result->code() );
+			$this->assertSame( 'bulkcat_invalid_value', $result->code() );
 			$this->assertStringContainsString( 'ID 14', $result->reason() );
 			$this->assertStringStartsWith( 'Categories', $result->reason() );
 			$this->assertSame( [ 11, 12 ], $result->old() );
 			$this->assertSame( [], $product->sets );
-			$GLOBALS['bcm_test']['terms']['product_cat'] = [ 11, 12, 13, 14 ];
+			$GLOBALS['bulkcat_test']['terms']['product_cat'] = [ 11, 12, 13, 14 ];
 		}
 
 		// The taxonomy is the field's: a tag id checked against product_tag only.
-		$args                                        = $this->args( Terms::ADD, 'tag_ids', [ 22 ] );
-		$GLOBALS['bcm_test']['terms']['product_tag'] = [];
-		$GLOBALS['bcm_test']['terms']['product_cat'] = [ 11, 12, 13, 14, 22 ];
+		$args = $this->args( Terms::ADD, 'tag_ids', [ 22 ] );
+		$GLOBALS['bulkcat_test']['terms']['product_tag'] = [];
+		$GLOBALS['bulkcat_test']['terms']['product_cat'] = [ 11, 12, 13, 14, 22 ];
 		$this->assertSame( Result::FAILED, self::action( Terms::ADD )->compute( self::product(), $args )->state() );
 	}
 
@@ -260,7 +260,7 @@ final class TermsTest extends TestCase {
 				$result    = self::action( $mode )->compute( $variation, $this->args( $mode, $field, $terms ) );
 				$this->assertSame( Result::FAILED, $result->state(), "$mode $field" );
 				$this->assertSame( $reason, $result->reason() );
-				$this->assertSame( 'bcm_not_available', $result->code() );
+				$this->assertSame( 'bulkcat_not_available', $result->code() );
 				$this->assertSame( [], $variation->sets );
 			}
 		}
@@ -270,10 +270,10 @@ final class TermsTest extends TestCase {
 			self::action( Terms::ADD )->apply( Result::changed( 'category_ids', [ 11 ], [ 11, 13 ] ), $variation );
 			$this->fail( 'Categories were written to a variation.' );
 		} catch ( WriteRefused $e ) {
-			$this->assertSame( 'bcm_not_available', $e->error()->get_error_code() );
+			$this->assertSame( 'bulkcat_not_available', $e->error()->get_error_code() );
 			$this->assertSame( 'Categories belong to the product, not to each variation.', $e->error()->get_error_message() );
 		}
-		$this->assertSame( [], $GLOBALS['bcm_test']['set_object_terms'] ?? [] );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['set_object_terms'] ?? [] );
 		$this->assertSame( [], $variation->sets );
 	}
 
@@ -285,14 +285,14 @@ final class TermsTest extends TestCase {
 			[ Terms::REPLACE, 'tag_ids', [ 23, 22 ], [ 23, 22 ], 'product_tag', 'set_tag_ids' ],
 		];
 		foreach ( $cases as [ $mode, $field, $terms, $expected, $taxonomy, $setter ] ) {
-			$GLOBALS['bcm_test']['set_object_terms'] = [];
-			$product                                 = self::product();
-			$action                                  = self::action( $mode );
-			$result                                  = $action->compute( $product, $this->args( $mode, $field, $terms ) );
+			$GLOBALS['bulkcat_test']['set_object_terms'] = [];
+			$product                                     = self::product();
+			$action                                      = self::action( $mode );
+			$result                                      = $action->compute( $product, $this->args( $mode, $field, $terms ) );
 			$this->assertSame( $expected, $result->new() );
 
 			$action->apply( $result, $product );
-			$this->assertSame( [ [ 7, $expected, $taxonomy, false ] ], $GLOBALS['bcm_test']['set_object_terms'], "$mode $field: one call, full list, append off." );
+			$this->assertSame( [ [ 7, $expected, $taxonomy, false ] ], $GLOBALS['bulkcat_test']['set_object_terms'], "$mode $field: one call, full list, append off." );
 			$this->assertSame( [ [ $setter, $expected ] ], $product->sets, 'The object is kept in step through the field setter.' );
 		}
 	}
@@ -300,7 +300,7 @@ final class TermsTest extends TestCase {
 	public function test_apply_passes_integers_never_names(): void {
 		$product = self::product();
 		self::action( Terms::REPLACE )->apply( Result::changed( 'category_ids', [ 11, 12 ], [ '13', '14' ] ), $product );
-		$this->assertSame( [ 13, 14 ], $GLOBALS['bcm_test']['set_object_terms'][0][1] );
+		$this->assertSame( [ 13, 14 ], $GLOBALS['bulkcat_test']['set_object_terms'][0][1] );
 	}
 
 	public function test_a_later_step_computes_from_the_applied_list(): void {
@@ -320,7 +320,7 @@ final class TermsTest extends TestCase {
 		foreach ( [ Result::already( 'category_ids', [ 11, 12 ] ), Result::skipped( 'category_ids', [ 11, 12 ], 'Skipped for a reason.' ), Result::failed( 'category_ids', [ 11, 12 ], 'Failed for a reason.' ) ] as $result ) {
 			$action->apply( $result, $product );
 		}
-		$this->assertSame( [], $GLOBALS['bcm_test']['set_object_terms'] ?? [] );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['set_object_terms'] ?? [] );
 		$this->assertSame( [], $product->sets );
 
 		try {
@@ -329,28 +329,28 @@ final class TermsTest extends TestCase {
 		} catch ( \LogicException $e ) {
 			$this->assertStringContainsString( 'regular_price', $e->getMessage() );
 		}
-		$this->assertSame( [], $GLOBALS['bcm_test']['set_object_terms'] ?? [] );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['set_object_terms'] ?? [] );
 	}
 
 	public function test_apply_refuses_a_term_deleted_since_the_preview(): void {
-		$product                                     = self::product();
-		$action                                      = self::action( Terms::ADD );
-		$result                                      = $action->compute( $product, $this->args( Terms::ADD, 'category_ids', [ 14 ] ) );
-		$GLOBALS['bcm_test']['terms']['product_cat'] = [ 11, 12, 13 ];
+		$product = self::product();
+		$action  = self::action( Terms::ADD );
+		$result  = $action->compute( $product, $this->args( Terms::ADD, 'category_ids', [ 14 ] ) );
+		$GLOBALS['bulkcat_test']['terms']['product_cat'] = [ 11, 12, 13 ];
 		try {
 			$action->apply( $result, $product );
 			$this->fail( 'A deleted term was written.' );
 		} catch ( WriteRefused $e ) {
-			$this->assertSame( 'bcm_invalid_value', $e->error()->get_error_code() );
+			$this->assertSame( 'bulkcat_invalid_value', $e->error()->get_error_code() );
 		}
-		$this->assertSame( [], $GLOBALS['bcm_test']['set_object_terms'] ?? [] );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['set_object_terms'] ?? [] );
 		$this->assertSame( [], $product->sets );
 	}
 
 	public function test_a_failed_term_write_is_refused_and_the_object_left_alone(): void {
-		$GLOBALS['bcm_test']['set_object_terms_error'] = new \WP_Error( 'db_insert_error', 'Could not insert term relationship into the database.' );
-		$product                                       = self::product();
-		$action                                        = self::action( Terms::ADD );
+		$GLOBALS['bulkcat_test']['set_object_terms_error'] = new \WP_Error( 'db_insert_error', 'Could not insert term relationship into the database.' );
+		$product = self::product();
+		$action  = self::action( Terms::ADD );
 		try {
 			$action->apply( $action->compute( $product, $this->args( Terms::ADD, 'tag_ids', [ 22 ] ) ), $product );
 			$this->fail( 'A failed write passed.' );

@@ -179,7 +179,7 @@ export function summarySentence( response, fieldNames ) {
 function AfterCell( { row, field, terms } ) {
 	if ( row.state === 'already' ) {
 		return (
-			<span className="bcm-bulk__note">
+			<span className="bulkcat-bulk__note">
 				{ __(
 					'Already correct, left alone',
 					'bulk-catalogue-manager-for-woocommerce'
@@ -189,7 +189,7 @@ function AfterCell( { row, field, terms } ) {
 	}
 	if ( row.state === 'skipped' || row.state === 'failed' ) {
 		return (
-			<span className="bcm-bulk__note">
+			<span className="bulkcat-bulk__note">
 				{ sprintf(
 					/* translators: %s: the plain reason, such as "A variable product takes its price from its variations." */
 					__(
@@ -204,14 +204,14 @@ function AfterCell( { row, field, terms } ) {
 	return (
 		<>
 			{ row.replaces && (
-				<strong className="bcm-bulk__replace">
+				<strong className="bulkcat-bulk__replace">
 					{ __(
 						'Replaces the whole list with',
 						'bulk-catalogue-manager-for-woocommerce'
 					) }{ ' ' }
 				</strong>
 			) }
-			<strong className="bcm-bulk__to">
+			<strong className="bulkcat-bulk__to">
 				{ formatValue( field, row.new, terms ) }
 			</strong>
 		</>
@@ -274,12 +274,12 @@ export function PreviewResult( {
 	];
 
 	return (
-		<div className="bcm-bulk__preview" aria-busy={ busy || undefined }>
-			<p className="bcm-bulk__summary">
+		<div className="bulkcat-bulk__preview" aria-busy={ busy || undefined }>
+			<p className="bulkcat-bulk__summary">
 				{ summarySentence( response, fieldNames ) }
 			</p>
 			{ totals.estimated && (
-				<p className="bcm-bulk__hint">
+				<p className="bulkcat-bulk__hint">
 					{ sprintf(
 						/* translators: %s: a number of products, such as "10,000". */
 						__(
@@ -291,15 +291,15 @@ export function PreviewResult( {
 				</p>
 			) }
 
-			<div className="bcm-bulk__card">
+			<div className="bulkcat-bulk__card">
 				<h3>
 					{ __(
 						'What would happen',
 						'bulk-catalogue-manager-for-woocommerce'
 					) }
 				</h3>
-				<dl className="bcm-bulk__counts">
-					<div className="bcm-bulk__kv">
+				<dl className="bulkcat-bulk__counts">
+					<div className="bulkcat-bulk__kv">
 						<dt>
 							{ __(
 								'Will change',
@@ -310,7 +310,7 @@ export function PreviewResult( {
 					</div>
 					{ variationRows > 0 && (
 						<>
-							<div className="bcm-bulk__kv is-sub">
+							<div className="bulkcat-bulk__kv is-sub">
 								<dt>
 									{ __(
 										'Products that will change',
@@ -323,7 +323,7 @@ export function PreviewResult( {
 									) }
 								</dd>
 							</div>
-							<div className="bcm-bulk__kv is-sub">
+							<div className="bulkcat-bulk__kv is-sub">
 								<dt>
 									{ __(
 										'Variations that will change',
@@ -338,7 +338,7 @@ export function PreviewResult( {
 							</div>
 						</>
 					) }
-					<div className="bcm-bulk__kv">
+					<div className="bulkcat-bulk__kv">
 						<dt>
 							{ __(
 								'Already at the target value',
@@ -348,7 +348,7 @@ export function PreviewResult( {
 						<dd>{ formatNumber( totals.already ) }</dd>
 					</div>
 					{ failures.length === 0 ? (
-						<div className="bcm-bulk__kv">
+						<div className="bulkcat-bulk__kv">
 							<dt>
 								{ __(
 									'Cannot change',
@@ -360,7 +360,7 @@ export function PreviewResult( {
 					) : (
 						failures.map( ( [ reason, count ] ) => (
 							<div
-								className="bcm-bulk__kv is-fail"
+								className="bulkcat-bulk__kv is-fail"
 								key={ reason }
 							>
 								<dt>
@@ -368,7 +368,7 @@ export function PreviewResult( {
 										'Cannot change',
 										'bulk-catalogue-manager-for-woocommerce'
 									) }
-									<span className="bcm-bulk__why is-flush">
+									<span className="bulkcat-bulk__why is-flush">
 										{ reason }
 									</span>
 								</dt>
@@ -379,9 +379,9 @@ export function PreviewResult( {
 				</dl>
 			</div>
 
-			<div className="bcm-bulk__samplebar">
-				<fieldset className="bcm-bulk__seg">
-					<legend className="bcm-bulk__lbl">
+			<div className="bulkcat-bulk__samplebar">
+				<fieldset className="bulkcat-bulk__seg">
+					<legend className="bulkcat-bulk__lbl">
 						{ __(
 							'Rows to show',
 							'bulk-catalogue-manager-for-woocommerce'
@@ -406,11 +406,11 @@ export function PreviewResult( {
 					) ) }
 				</fieldset>
 				<label
-					className="bcm-bulk__check"
-					htmlFor="bcm-bulk-changed-only"
+					className="bulkcat-bulk__check"
+					htmlFor="bulkcat-bulk-changed-only"
 				>
 					<input
-						id="bcm-bulk-changed-only"
+						id="bulkcat-bulk-changed-only"
 						type="checkbox"
 						checked={ changedOnly }
 						onChange={ ( event ) =>
@@ -429,7 +429,7 @@ export function PreviewResult( {
 					className="button button-small"
 					disabled={ ! onDownload }
 					aria-describedby={
-						onDownload ? undefined : 'bcm-bulk-download-why'
+						onDownload ? undefined : 'bulkcat-bulk-download-why'
 					}
 					onClick={ () => onDownload && onDownload() }
 				>
@@ -439,7 +439,10 @@ export function PreviewResult( {
 					) }
 				</button>
 				{ ! onDownload && (
-					<span className="bcm-bulk__hint" id="bcm-bulk-download-why">
+					<span
+						className="bulkcat-bulk__hint"
+						id="bulkcat-bulk-download-why"
+					>
 						{ __(
 							'The download arrives with the export.',
 							'bulk-catalogue-manager-for-woocommerce'
@@ -448,8 +451,8 @@ export function PreviewResult( {
 				) }
 			</div>
 
-			<div className="bcm-bulk__scroll">
-				<table className="bcm-bulk__table">
+			<div className="bulkcat-bulk__scroll">
+				<table className="bulkcat-bulk__table">
 					<caption className="screen-reader-text">
 						{ __(
 							'A sample of the rows this change would touch',
@@ -512,7 +515,7 @@ export function PreviewResult( {
 								>
 									<th scope="row">{ row.name }</th>
 									<td>{ field?.label || row.field }</td>
-									<td className="bcm-bulk__from">
+									<td className="bulkcat-bulk__from">
 										{ row.state === 'changed' ? (
 											<del>
 												{ formatValue(
@@ -542,7 +545,7 @@ export function PreviewResult( {
 					</tbody>
 				</table>
 			</div>
-			<p className="bcm-bulk__hint">
+			<p className="bulkcat-bulk__hint">
 				{ sample.length < allRows
 					? sprintf(
 							/* translators: 1: rows shown, such as "25"; 2: rows in all, such as "1,284". */
@@ -560,7 +563,10 @@ export function PreviewResult( {
 			</p>
 
 			{ warnings.length > 0 && (
-				<div className="bcm-bulk__notice is-warn" data-block="warnings">
+				<div
+					className="bulkcat-bulk__notice is-warn"
+					data-block="warnings"
+				>
 					<strong>
 						{ __(
 							'Check these before applying',
@@ -582,7 +588,7 @@ export function PreviewResult( {
 
 			{ unreadable.length > 0 && (
 				<div
-					className="bcm-bulk__notice is-warn"
+					className="bulkcat-bulk__notice is-warn"
 					data-block="unreadable"
 				>
 					<strong>

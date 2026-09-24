@@ -84,16 +84,16 @@ function PanelLink( { panel, current, navigate, className, children } ) {
  */
 function Header( { current, navigate, onBulk, onSlot } ) {
 	return (
-		<div className="bcm-head">
-			<p className="bcm-head__lede">
+		<div className="bulkcat-head">
+			<p className="bulkcat-head__lede">
 				{ __(
 					'Change prices, stock, categories and what shows in your shop — for one product or a thousand.',
 					'bulk-catalogue-manager-for-woocommerce'
 				) }
 			</p>
-			<div className="bcm-head__acts">
+			<div className="bulkcat-head__acts">
 				<nav
-					className="bcm-head__nav"
+					className="bulkcat-head__nav"
 					aria-label={ __(
 						'Bulk Catalogue Manager sections',
 						'bulk-catalogue-manager-for-woocommerce'
@@ -103,7 +103,7 @@ function Header( { current, navigate, onBulk, onSlot } ) {
 						panel="catalogue"
 						current={ current === 'catalogue' }
 						navigate={ navigate }
-						className="bcm-head__seg"
+						className="bulkcat-head__seg"
 					>
 						{ __(
 							'Products',
@@ -112,7 +112,7 @@ function Header( { current, navigate, onBulk, onSlot } ) {
 					</PanelLink>
 					<button
 						type="button"
-						className="bcm-head__seg"
+						className="bulkcat-head__seg"
 						onClick={ onBulk }
 					>
 						{ __(
@@ -124,7 +124,7 @@ function Header( { current, navigate, onBulk, onSlot } ) {
 						panel="history"
 						current={ current === 'history' }
 						navigate={ navigate }
-						className="bcm-head__seg"
+						className="bulkcat-head__seg"
 					>
 						{ __(
 							'History and undo',
@@ -132,12 +132,12 @@ function Header( { current, navigate, onBulk, onSlot } ) {
 						) }
 					</PanelLink>
 				</nav>
-				<span className="bcm-head__slot" ref={ onSlot } />
+				<span className="bulkcat-head__slot" ref={ onSlot } />
 				<PanelLink
 					panel="categories"
 					current={ current === 'categories' }
 					navigate={ navigate }
-					className="bcm-head__link"
+					className="bulkcat-head__link"
 				>
 					{ __(
 						'Categories',
@@ -148,7 +148,7 @@ function Header( { current, navigate, onBulk, onSlot } ) {
 					panel="settings"
 					current={ current === 'settings' }
 					navigate={ navigate }
-					className="bcm-head__link"
+					className="bulkcat-head__link"
 				>
 					{ __(
 						'Settings',
@@ -201,7 +201,7 @@ export default function App( { settings } ) {
 
 	return (
 		<ShellContext.Provider value={ shell }>
-			<div className="bcm-app">
+			<div className="bulkcat-app">
 				<Header
 					current={ current }
 					navigate={ navigate }
@@ -209,7 +209,7 @@ export default function App( { settings } ) {
 					onSlot={ setExportSlot }
 				/>
 				<div
-					className="bcm-app__panel"
+					className="bulkcat-app__panel"
 					ref={ panelRef }
 					tabIndex={ -1 }
 					aria-label={ __(

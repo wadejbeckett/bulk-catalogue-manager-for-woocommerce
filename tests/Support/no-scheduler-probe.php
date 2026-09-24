@@ -13,16 +13,16 @@
 declare( strict_types = 1 );
 
 define( 'ABSPATH', '/' );
-define( 'BCM_TEST_NO_ACTION_SCHEDULER', true );
+define( 'BULKCAT_TEST_NO_ACTION_SCHEDULER', true );
 define( 'WP_UNINSTALL_PLUGIN', 'bulk-catalogue-manager-for-woocommerce/bulk-catalogue-manager-for-woocommerce.php' );
 
 require __DIR__ . '/wpdb-stub.php';
 require __DIR__ . '/wp-stubs.php';
-bcm_test_reset();
+bulkcat_test_reset();
 
-$GLOBALS['bcm_test']['options'] = [
-	'bcm_settings'   => [ 'remove_data_on_delete' => true ],
-	'bcm_db_version' => '1',
+$GLOBALS['bulkcat_test']['options'] = [
+	'bulkcat_settings'   => [ 'remove_data_on_delete' => true ],
+	'bulkcat_db_version' => '1',
 ];
 
 require dirname( __DIR__, 2 ) . '/uninstall.php';
@@ -31,7 +31,7 @@ require dirname( __DIR__, 2 ) . '/uninstall.php';
 echo json_encode(
 	[
 		'scheduler'   => function_exists( 'as_unschedule_all_actions' ),
-		'unscheduled' => $GLOBALS['bcm_test']['unscheduled'],
-		'deleted'     => $GLOBALS['bcm_test']['deleted'],
+		'unscheduled' => $GLOBALS['bulkcat_test']['unscheduled'],
+		'deleted'     => $GLOBALS['bulkcat_test']['deleted'],
 	]
 );

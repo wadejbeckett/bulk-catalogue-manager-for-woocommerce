@@ -1,6 +1,6 @@
 <?php
 /**
- * The REST bootstrap (SPEC §12.1, §13): every bcm/v1 endpoint the plugin
+ * The REST bootstrap (SPEC §12.1, §13): every bulkcat/v1 endpoint the plugin
  * registers has a real permission callback, the registrar refuses one that
  * does not, it is the only caller of register_rest_route(), and it hands the
  * screen a wp_rest nonce.
@@ -21,7 +21,7 @@ use PHPUnit\Framework\TestCase;
 
 final class RoutesTest extends TestCase {
 	protected function setUp(): void {
-		bcm_test_reset();
+		bulkcat_test_reset();
 	}
 
 	/**
@@ -37,18 +37,18 @@ final class RoutesTest extends TestCase {
 		];
 	}
 
-	public function test_every_bcm_endpoint_has_a_real_permission_callback(): void {
+	public function test_every_bulkcat_endpoint_has_a_real_permission_callback(): void {
 		( new Plugin() )->boot();
 		do_action( 'rest_api_init' );
 		$routes = rest_get_server()->get_routes( Access::REST_NAMESPACE );
 
-		$this->assertArrayHasKey( '/bcm/v1/fields', $routes, 'The walk must see the fields route.' );
+		$this->assertArrayHasKey( '/bulkcat/v1/fields', $routes, 'The walk must see the fields route.' );
 		$walked = 0;
 		foreach ( $routes as $route => $endpoints ) {
 			if ( '/' . Access::REST_NAMESPACE === $route ) {
 				continue; // Core's namespace index, which lists the routes and runs none of them.
 			}
-			$this->assertStringStartsWith( '/bcm/v1/', $route );
+			$this->assertStringStartsWith( '/bulkcat/v1/', $route );
 			$this->assertNotEmpty( $endpoints, "$route has no endpoint." );
 			foreach ( $endpoints as $endpoint ) {
 				$this->assertArrayHasKey( 'permission_callback', $endpoint, "$route has an endpoint without a permission callback." );
@@ -61,10 +61,10 @@ final class RoutesTest extends TestCase {
 			}
 		}
 		$this->assertGreaterThan( 0, $walked );
-		$this->assertSame( [], $GLOBALS['bcm_test']['wrong'], 'No plugin route was refused.' );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['wrong'], 'No plugin route was refused.' );
 	}
 
-	public function test_every_bcm_endpoint_refuses_an_anonymous_visitor(): void {
+	public function test_every_bulkcat_endpoint_refuses_an_anonymous_visitor(): void {
 		( new Plugin() )->boot();
 		do_action( 'rest_api_init' );
 		foreach ( rest_get_server()->get_routes( Access::REST_NAMESPACE ) as $route => $endpoints ) {
@@ -74,7 +74,7 @@ final class RoutesTest extends TestCase {
 			foreach ( $endpoints as $endpoint ) {
 				$result = call_user_func( $endpoint['permission_callback'], new \WP_REST_Request( 'GET', $route ) );
 				$this->assertInstanceOf( \WP_Error::class, $result, "$route let an anonymous visitor through." );
-				$this->assertSame( 'bcm_forbidden', $result->get_error_code() );
+				$this->assertSame( 'bulkcat_forbidden', $result->get_error_code() );
 				$this->assertSame( 401, $result->get_error_data()['status'] );
 			}
 		}
@@ -89,7 +89,7 @@ final class RoutesTest extends TestCase {
 			'/open'            => self::endpoint( '__return_true' ),
 			'/open-rooted'     => self::endpoint( '\__return_true' ),
 			'/open-upper'      => self::endpoint( '__RETURN_TRUE' ),
-			'/not-callable'    => self::endpoint( 'bcm_no_such_function' ),
+			'/not-callable'    => self::endpoint( 'bulkcat_no_such_function' ),
 			'/null'            => self::endpoint( null ),
 			'/true'            => self::endpoint( true ),
 			'/one-of-two'      => [
@@ -104,12 +104,12 @@ final class RoutesTest extends TestCase {
 			$this->assertFalse( $routes->add( $route, $args ), "$route was registered." );
 		}
 		$this->assertSame( array_keys( $cases ), $routes->refused() );
-		$this->assertSame( [], $GLOBALS['bcm_test']['routes'], 'A refused route reaches register_rest_route().' );
-		$this->assertCount( count( $cases ), $GLOBALS['bcm_test']['wrong'] );
-		$this->assertSame( Routes::class . '::add', $GLOBALS['bcm_test']['wrong'][0][0] );
-		$this->assertStringContainsString( 'bcm/v1/missing', $GLOBALS['bcm_test']['wrong'][0][1] );
-		$this->assertStringContainsString( 'no permission_callback', $GLOBALS['bcm_test']['wrong'][0][1] );
-		$this->assertStringContainsString( 'lets anyone through', $GLOBALS['bcm_test']['wrong'][1][1] );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['routes'], 'A refused route reaches register_rest_route().' );
+		$this->assertCount( count( $cases ), $GLOBALS['bulkcat_test']['wrong'] );
+		$this->assertSame( Routes::class . '::add', $GLOBALS['bulkcat_test']['wrong'][0][0] );
+		$this->assertStringContainsString( 'bulkcat/v1/missing', $GLOBALS['bulkcat_test']['wrong'][0][1] );
+		$this->assertStringContainsString( 'no permission_callback', $GLOBALS['bulkcat_test']['wrong'][0][1] );
+		$this->assertStringContainsString( 'lets anyone through', $GLOBALS['bulkcat_test']['wrong'][1][1] );
 
 		$this->assertTrue( $routes->add( '/guarded', self::endpoint( [ Access::class, 'can_read' ] ) ) );
 		$this->assertTrue(
@@ -122,8 +122,8 @@ final class RoutesTest extends TestCase {
 				]
 			)
 		);
-		$this->assertSame( [ '/bcm/v1/guarded', '/bcm/v1/pair' ], array_keys( $GLOBALS['bcm_test']['routes'] ) );
-		$this->assertCount( 2, rest_get_server()->get_routes( 'bcm/v1' )['/bcm/v1/pair'] );
+		$this->assertSame( [ '/bulkcat/v1/guarded', '/bulkcat/v1/pair' ], array_keys( $GLOBALS['bulkcat_test']['routes'] ) );
+		$this->assertCount( 2, rest_get_server()->get_routes( 'bulkcat/v1' )['/bulkcat/v1/pair'] );
 	}
 
 	public function test_the_registrar_registers_every_controller_on_rest_api_init(): void {
@@ -149,9 +149,9 @@ final class RoutesTest extends TestCase {
 		$this->assertSame( [ '/probe' ], $registrar->refused(), 'A controller cannot slip an open route past the registrar.' );
 
 		( new Plugin() )->boot();
-		$this->assertSame( [], $GLOBALS['bcm_test']['routes'], 'Routes wait for rest_api_init.' );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['routes'], 'Routes wait for rest_api_init.' );
 		do_action( 'rest_api_init' );
-		$this->assertArrayHasKey( '/bcm/v1/fields', $GLOBALS['bcm_test']['routes'] );
+		$this->assertArrayHasKey( '/bulkcat/v1/fields', $GLOBALS['bulkcat_test']['routes'] );
 	}
 
 	public function test_only_the_registrar_calls_register_rest_route(): void {
@@ -171,8 +171,8 @@ final class RoutesTest extends TestCase {
 	public function test_the_client_settings_carry_a_wp_rest_nonce_and_the_namespace_root(): void {
 		$settings = Routes::client_settings();
 		$this->assertSame( 'nonce-wp_rest', $settings['nonce'] );
-		$this->assertSame( [ 'wp_rest' ], $GLOBALS['bcm_test']['nonces'] );
-		$this->assertSame( 'https://example.test/wp-json/bcm/v1/', $settings['root'] );
+		$this->assertSame( [ 'wp_rest' ], $GLOBALS['bulkcat_test']['nonces'] );
+		$this->assertSame( 'https://example.test/wp-json/bulkcat/v1/', $settings['root'] );
 		$this->assertSame( 'nonce-wp_rest', Routes::nonce() );
 	}
 }

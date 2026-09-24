@@ -18,9 +18,9 @@ if ( ! defined( 'WC_VERSION' ) ) {
 	define( 'WC_VERSION', '10.0' );
 }
 
-$bcm_composer = dirname( __DIR__ ) . '/vendor/autoload.php';
-if ( file_exists( $bcm_composer ) ) {
-	require_once $bcm_composer;
+$bulkcat_composer = dirname( __DIR__ ) . '/vendor/autoload.php';
+if ( file_exists( $bulkcat_composer ) ) {
+	require_once $bulkcat_composer;
 } else {
 	require_once dirname( __DIR__ ) . '/src/Autoloader.php';
 	\BulkCatalogueManager\Autoloader::register( dirname( __DIR__ ) . '/src' );
@@ -37,4 +37,4 @@ require_once __DIR__ . '/Support/wc-product-sentinel.php';
 require_once __DIR__ . '/Support/fake-product.php';
 require_once __DIR__ . '/Support/features-util-stub.php';
 require_once __DIR__ . '/Support/admin-stubs.php';
-bcm_test_reset();
+bulkcat_test_reset();

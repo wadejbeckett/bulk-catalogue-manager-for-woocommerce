@@ -1,6 +1,6 @@
 <?php
 /**
- * `GET /bcm/v1/products` over a seeded catalogue (T18, T20; SPEC §4.1, §4.2,
+ * `GET /bulkcat/v1/products` over a seeded catalogue (T18, T20; SPEC §4.1, §4.2,
  * §12.1, §12.2): each §4.1 filter narrows to the expected ids, two filters
  * combine as an AND, a category includes the categories below it,
  * `per_page=500` returns 100 rows reporting `perPage` 100, a search matches a
@@ -41,21 +41,21 @@ final class ProductsCatalogueTest extends TestCase {
 	 * @param array<int, array<string, mixed>> $extra Extra seeded rows.
 	 */
 	private static function boot( array $extra = [] ): void {
-		bcm_test_reset();
-		$GLOBALS['bcm_test']['logged_in']                  = true;
-		$GLOBALS['bcm_test']['caps']['manage_woocommerce'] = true;
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['logged_in']                  = true;
+		$GLOBALS['bulkcat_test']['caps']['manage_woocommerce'] = true;
 		( new Plugin() )->boot();
 		do_action( 'rest_api_init' );
 		SeededCatalogue::seed( $extra );
 	}
 
 	/**
-	 * Dispatch a GET to /bcm/v1/products.
+	 * Dispatch a GET to /bulkcat/v1/products.
 	 *
 	 * @param array<string, mixed> $params Query parameters.
 	 */
 	private static function get( array $params ): \WP_REST_Response|\WP_Error {
-		$request = new \WP_REST_Request( 'GET', '/bcm/v1/products' );
+		$request = new \WP_REST_Request( 'GET', '/bulkcat/v1/products' );
 		foreach ( $params as $key => $value ) {
 			$request->set_param( $key, $value );
 		}
@@ -552,7 +552,7 @@ final class ProductsCatalogueTest extends TestCase {
 		foreach ( [ [], [ 'mode' => 'products' ], [ 'mode' => 'products_and_variations' ] ] as $mode ) {
 			$refused = self::get( $mode + [ 'parent' => 103 ] );
 			$this->assertInstanceOf( \WP_Error::class, $refused, (string) wp_json_encode( $mode ) );
-			$this->assertSame( 'bcm_invalid_value', $refused->get_error_code() );
+			$this->assertSame( 'bulkcat_invalid_value', $refused->get_error_code() );
 			$this->assertSame( 400, $refused->get_error_data()['status'] );
 		}
 		foreach ( [ 0, -3, 'abc' ] as $bad ) {

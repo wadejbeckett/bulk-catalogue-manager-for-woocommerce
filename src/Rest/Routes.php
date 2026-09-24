@@ -1,6 +1,6 @@
 <?php
 /**
- * The REST bootstrap (SPEC §12.1, §13). Every `bcm/v1` route goes through
+ * The REST bootstrap (SPEC §12.1, §13). Every `bulkcat/v1` route goes through
  * add(), the only call to `register_rest_route()` in the plugin. add() refuses
  * a route unless every endpoint names a callable permission callback other
  * than `__return_true`; a refused route is skipped with a `_doing_it_wrong()`
@@ -80,7 +80,7 @@ final class Routes {
 	}
 
 	/**
-	 * Register one route under `bcm/v1`, or refuse it. Takes the same
+	 * Register one route under `bulkcat/v1`, or refuse it. Takes the same
 	 * arguments as `register_rest_route()`: one endpoint, or a list of
 	 * endpoints plus route options such as `schema`.
 	 *
@@ -94,7 +94,7 @@ final class Routes {
 			$this->refused[] = $route;
 			_doing_it_wrong(
 				__METHOD__,
-				esc_html( sprintf( 'The REST route %1$s was not registered: %2$s Every bcm/v1 endpoint needs a permission callback that checks a capability.', Access::REST_NAMESPACE . $route, $problem ) ),
+				esc_html( sprintf( 'The REST route %1$s was not registered: %2$s Every bulkcat/v1 endpoint needs a permission callback that checks a capability.', Access::REST_NAMESPACE . $route, $problem ) ),
 				esc_html( Plugin::VERSION )
 			);
 			return false;

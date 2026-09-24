@@ -22,7 +22,7 @@ test.describe( 'axe-core on each screen', () => {
 			} )
 			.press( 'Enter' );
 		await expect(
-			page.locator( '.bcm-vrow.is-child' ).first()
+			page.locator( '.bulkcat-vrow.is-child' ).first()
 		).toBeVisible();
 		await expectAxeClean( page, 'the expanded variations' );
 	} );
@@ -64,12 +64,12 @@ test.describe( 'axe-core on each screen', () => {
 		await expect(
 			page.getByRole( 'heading', { name: 'History', level: 2 } )
 		).toBeVisible();
-		await page.waitForSelector( '.bcm-batch, .bcm-history__empty' );
+		await page.waitForSelector( '.bulkcat-batch, .bulkcat-history__empty' );
 		await expectAxeClean( page, 'History' );
 		const see = page.getByRole( 'button', { name: 'See every change' } );
 		if ( await see.count() ) {
 			await see.first().click();
-			await page.waitForSelector( '.bcm-changes' );
+			await page.waitForSelector( '.bulkcat-changes' );
 			await expectAxeClean( page, 'an expanded batch' );
 		}
 	} );
@@ -145,7 +145,7 @@ for ( const [ label, size ] of [
 						( panel ? `&panel=${ panel }` : '' )
 				);
 				await expect(
-					page.locator( '#bcm-app .bcm-app' )
+					page.locator( '#bulkcat-app .bulkcat-app' )
 				).toBeVisible();
 				await page.waitForTimeout( 2000 );
 				expect( await scrollsSideways( page ) ).toBe( false );
@@ -162,14 +162,14 @@ for ( const [ label, size ] of [
 				const offside = await page.evaluate( () =>
 					Array.from(
 						document.querySelectorAll(
-							'#bcm-app a[href], #bcm-app button:not([disabled]), #bcm-app input:not([type=hidden]):not([disabled]), #bcm-app select'
+							'#bulkcat-app a[href], #bulkcat-app button:not([disabled]), #bulkcat-app input:not([type=hidden]):not([disabled]), #bulkcat-app select'
 						)
 					)
 						.filter( ( node ) => node.offsetParent !== null )
 						.filter(
 							( node ) =>
 								! node.closest(
-									'.dataviews-view-table, .bcm-catalogue__table'
+									'.dataviews-view-table, .bulkcat-catalogue__table'
 								)
 						)
 						.filter( ( node ) => {
@@ -197,14 +197,14 @@ test( 'animation stops for reduced motion', async ( { page } ) => {
 	// Hold the products until the skeleton has been measured.
 	let release;
 	const held = new Promise( ( resolve ) => ( release = resolve ) );
-	await page.route( /\/bcm\/v1\/products(\?|%3F|$)/, async ( route ) => {
+	await page.route( /\/bulkcat\/v1\/products(\?|%3F|$)/, async ( route ) => {
 		await held;
 		await route.continue();
 	} );
 	await page.goto(
 		'/wp-admin/edit.php?post_type=product&page=bulk-catalogue-manager-for-woocommerce'
 	);
-	const skeleton = page.locator( '.bcm-skel' ).first();
+	const skeleton = page.locator( '.bulkcat-skel' ).first();
 	await expect( skeleton ).toBeVisible();
 	const animation = await skeleton.evaluate(
 		( node ) =>
@@ -223,7 +223,7 @@ test.describe( 'in the Default admin colour scheme', () => {
 	let was = '';
 	test.beforeAll( () => {
 		const { execSync } = require( 'child_process' );
-		const user = process.env.BCM_E2E_USER || 'admin';
+		const user = process.env.BULKCAT_E2E_USER || 'admin';
 		try {
 			was = execSync(
 				`${ process.env.WP_CMD } user meta get ${ user } admin_color`,
@@ -239,7 +239,7 @@ test.describe( 'in the Default admin colour scheme', () => {
 	} );
 	test.afterAll( () => {
 		const { execSync } = require( 'child_process' );
-		const user = process.env.BCM_E2E_USER || 'admin';
+		const user = process.env.BULKCAT_E2E_USER || 'admin';
 		execSync(
 			was
 				? `${ process.env.WP_CMD } user meta update ${ user } admin_color ${ was }`
@@ -266,7 +266,7 @@ test.describe( 'in the Default admin colour scheme', () => {
 
 	test( 'history and settings', async ( { page } ) => {
 		await openScreen( page, 'history' );
-		await page.waitForSelector( '.bcm-batch, .bcm-history__empty' );
+		await page.waitForSelector( '.bulkcat-batch, .bulkcat-history__empty' );
 		await expectAxeClean( page, 'History in Default colours' );
 		await openScreen( page, 'settings' );
 		await expect(

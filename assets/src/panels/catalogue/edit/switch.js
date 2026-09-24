@@ -135,7 +135,7 @@ export default function VisibleSwitch( { item, descriptor } ) {
 	};
 
 	const badge = offSite && (
-		<span className="bcm-badge is-neutral bcm-switch__status">
+		<span className="bulkcat-badge is-neutral bulkcat-switch__status">
 			{ status
 				? choiceLabel( status, statusValue )
 				: String( statusValue ) }
@@ -158,16 +158,16 @@ export default function VisibleSwitch( { item, descriptor } ) {
 					)
 		);
 		return (
-			<span className="bcm-switch" data-bcm-row={ item.id }>
+			<span className="bulkcat-switch" data-bulkcat-row={ item.id }>
 				<Dropdown
-					className="bcm-switch__partly-wrap"
-					contentClassName="bcm-switch__choices"
+					className="bulkcat-switch__partly-wrap"
+					contentClassName="bulkcat-switch__choices"
 					popoverProps={ { placement: 'bottom-start' } }
 					renderToggle={ ( { isOpen, onToggle } ) => (
 						<Tooltip text={ tip }>
 							<button
 								type="button"
-								className="bcm-switch__button is-partly"
+								className="bulkcat-switch__button is-partly"
 								aria-label={ accessibleName }
 								aria-describedby={ describedBy }
 								aria-haspopup="true"
@@ -176,12 +176,12 @@ export default function VisibleSwitch( { item, descriptor } ) {
 								onClick={ () => ! isPending && onToggle() }
 							>
 								<span
-									className="bcm-switch__track"
+									className="bulkcat-switch__track"
 									aria-hidden="true"
 								>
-									<span className="bcm-switch__knob" />
+									<span className="bulkcat-switch__knob" />
 								</span>
-								<span className="bcm-switch__label">
+								<span className="bulkcat-switch__label">
 									{ choiceLabel( descriptor, PARTLY ) }
 								</span>
 							</button>
@@ -189,11 +189,13 @@ export default function VisibleSwitch( { item, descriptor } ) {
 					) }
 					renderContent={ ( { onClose } ) => (
 						<div
-							className="bcm-switch__menu"
+							className="bulkcat-switch__menu"
 							role="group"
 							aria-label={ accessibleName }
 						>
-							<p className="bcm-switch__menu-title">{ tip }</p>
+							<p className="bulkcat-switch__menu-title">
+								{ tip }
+							</p>
 							{ [ ON, OFF ].map( ( next ) => (
 								<Button
 									key={ next }
@@ -214,7 +216,7 @@ export default function VisibleSwitch( { item, descriptor } ) {
 						</div>
 					) }
 				/>
-				<span id={ describedBy } className="bcm-sr-only">
+				<span id={ describedBy } className="bulkcat-sr-only">
 					{ tip }
 				</span>
 				{ badge }
@@ -231,13 +233,13 @@ export default function VisibleSwitch( { item, descriptor } ) {
 	}
 	return (
 		<span
-			className={ 'bcm-switch' + ( isPending ? ' is-pending' : '' ) }
-			data-bcm-row={ item.id }
+			className={ 'bulkcat-switch' + ( isPending ? ' is-pending' : '' ) }
+			data-bulkcat-row={ item.id }
 		>
 			<button
 				type="button"
 				role="switch"
-				className="bcm-switch__button"
+				className="bulkcat-switch__button"
 				aria-checked={ on }
 				aria-label={ accessibleName }
 				aria-describedby={ offSite ? describedBy : undefined }
@@ -245,13 +247,13 @@ export default function VisibleSwitch( { item, descriptor } ) {
 				aria-busy={ isPending || undefined }
 				onClick={ () => write( on ? OFF : ON ) }
 			>
-				<span className="bcm-switch__track" aria-hidden="true">
-					<span className="bcm-switch__knob" />
+				<span className="bulkcat-switch__track" aria-hidden="true">
+					<span className="bulkcat-switch__knob" />
 				</span>
-				<span className="bcm-switch__label">{ label }</span>
+				<span className="bulkcat-switch__label">{ label }</span>
 			</button>
 			{ offSite && (
-				<span id={ describedBy } className="bcm-sr-only">
+				<span id={ describedBy } className="bulkcat-sr-only">
 					{ sprintf(
 						/* translators: %s: a status such as "Draft". */
 						__(

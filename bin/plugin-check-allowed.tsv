@@ -13,12 +13,3 @@ src/Categories/Counts.php	PluginCheck.Security.DirectDB.UnescapedDBParameter	1	C
 src/Engine/BatchFactory.php	PluginCheck.Security.DirectDB.UnescapedDBParameter	1	Reading the ids a filter selects, PAGE at a time, through ProductQuery's own FROM and WHERE (conditions_sql(): literal fragments and placeholders), so a batch covers exactly what the grid lists.
 src/Data/ChangeRepository.php	PluginCheck.Security.DirectDB.UnescapedDBParameter	4	History and audit feeds (SPEC §9.3): {$where} is joined from literal conditions with placeholders chosen by feed_conditions()/audit_conditions(); every value is an argument to $wpdb->prepare().
 src/Data/BatchRepository.php	PluginCheck.Security.DirectDB.UnescapedDBParameter	2	The batch list and its count (SPEC §9.3): {$where} is joined from literal conditions with placeholders chosen by conditions(); every value is an argument to $wpdb->prepare().
-#
-# Hook names: Plugin Check never accepts a prefix shorter than four
-# characters, and SPEC §15 fixes the hook prefix as bcm_. These are the
-# plugin's public filters and action, all bcm_-prefixed. Pending an owner
-# decision on a longer prefix (which would rename options, tables and hooks).
-src/Rest/Access.php	WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound	1	bcm_capability filter (SPEC §13).
-src/Selection/SelectionToken.php	WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound	1	bcm_selection_ttl filter.
-src/Engine/ChunkRunner.php	WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound	1	bcm_batch_size filter (SPEC §12.4).
-src/Engine/BatchFactory.php	WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound	2	bcm_batch_created action.

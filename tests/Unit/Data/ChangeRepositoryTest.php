@@ -18,7 +18,7 @@ final class ChangeRepositoryTest extends TestCase {
 	private const MODIFIED = '2026-09-22 08:15:00';
 
 	protected function setUp(): void {
-		bcm_test_reset();
+		bulkcat_test_reset();
 	}
 
 	private static function db(): \BulkCatalogueManager\Tests\Support\WpdbStub {
@@ -31,7 +31,7 @@ final class ChangeRepositoryTest extends TestCase {
 
 		$this->assertSame( 100, $id );
 		[ $method, $table, $data, $format ] = self::db()->writes[0];
-		$this->assertSame( [ 'insert', 'wp_bcm_changes' ], [ $method, $table ] );
+		$this->assertSame( [ 'insert', 'wp_bulkcat_changes' ], [ $method, $table ] );
 		$this->assertSame( 1, preg_match( '/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $data['applied_gmt'] ) );
 		unset( $data['applied_gmt'] );
 		$this->assertSame(
@@ -111,7 +111,7 @@ final class ChangeRepositoryTest extends TestCase {
 		foreach ( self::db()->writes as $i => [ , , $data ] ) {
 			$rows[] = array_map( 'strval', [ 'change_id' => $i + 1 ] + $data );
 		}
-		self::db()->responses['/^SELECT \* FROM `wp_bcm_changes`/'] = $rows;
+		self::db()->responses['/^SELECT \* FROM `wp_bulkcat_changes`/'] = $rows;
 
 		$read = $repo->for_batch( 6 );
 
@@ -136,21 +136,21 @@ final class ChangeRepositoryTest extends TestCase {
 
 		$this->assertSame(
 			[
-				'SELECT * FROM `wp_bcm_changes` WHERE batch_id = 6 AND change_id > 0 ORDER BY change_id ASC LIMIT 100',
-				'SELECT * FROM `wp_bcm_changes` WHERE batch_id = 6 AND change_id > 250 ORDER BY change_id ASC LIMIT 500',
-				'SELECT * FROM `wp_bcm_changes` WHERE batch_id = 6 AND change_id < ' . PHP_INT_MAX . ' ORDER BY change_id DESC LIMIT 1',
-				'SELECT * FROM `wp_bcm_changes` WHERE batch_id = 6 AND change_id < 250 ORDER BY change_id DESC LIMIT 20',
+				'SELECT * FROM `wp_bulkcat_changes` WHERE batch_id = 6 AND change_id > 0 ORDER BY change_id ASC LIMIT 100',
+				'SELECT * FROM `wp_bulkcat_changes` WHERE batch_id = 6 AND change_id > 250 ORDER BY change_id ASC LIMIT 500',
+				'SELECT * FROM `wp_bulkcat_changes` WHERE batch_id = 6 AND change_id < ' . PHP_INT_MAX . ' ORDER BY change_id DESC LIMIT 1',
+				'SELECT * FROM `wp_bulkcat_changes` WHERE batch_id = 6 AND change_id < 250 ORDER BY change_id DESC LIMIT 20',
 			],
 			self::db()->queries
 		);
-		$this->assertSame( [ 'SELECT * FROM %i WHERE batch_id = %d AND change_id > %d ORDER BY change_id ASC LIMIT %d', [ 'wp_bcm_changes', 6, 0, 100 ] ], self::db()->prepared[0] );
+		$this->assertSame( [ 'SELECT * FROM %i WHERE batch_id = %d AND change_id > %d ORDER BY change_id ASC LIMIT %d', [ 'wp_bulkcat_changes', 6, 0, 100 ] ], self::db()->prepared[0] );
 		$this->assert_all_prepared();
 	}
 
 	public function test_has_object_and_counts(): void {
-		self::db()->responses['SELECT change_id FROM `wp_bcm_changes` WHERE batch_id = 6 AND object_id = 101 LIMIT 1'] = '55';
-		self::db()->responses['SELECT COUNT(*) FROM `wp_bcm_changes` WHERE batch_id = 6']                              = '12';
-		self::db()->responses["SELECT COUNT(*) FROM `wp_bcm_changes` WHERE batch_id = 6 AND result = 'failed'"]        = '2';
+		self::db()->responses['SELECT change_id FROM `wp_bulkcat_changes` WHERE batch_id = 6 AND object_id = 101 LIMIT 1'] = '55';
+		self::db()->responses['SELECT COUNT(*) FROM `wp_bulkcat_changes` WHERE batch_id = 6']                              = '12';
+		self::db()->responses["SELECT COUNT(*) FROM `wp_bulkcat_changes` WHERE batch_id = 6 AND result = 'failed'"]        = '2';
 		$repo = new ChangeRepository();
 
 		$this->assertTrue( $repo->has_object( 6, 101 ) );
@@ -158,7 +158,7 @@ final class ChangeRepositoryTest extends TestCase {
 		$this->assertSame( 12, $repo->count_for_batch( 6 ) );
 		$this->assertSame( 2, $repo->count_for_batch( 6, 'failed' ) );
 		$this->assertSame( 0, $repo->count_for_batch( 7, 'applied' ) );
-		$this->assertSame( [ 'wp_bcm_changes', 6, 'failed' ], self::db()->prepared[3][1] );
+		$this->assertSame( [ 'wp_bulkcat_changes', 6, 'failed' ], self::db()->prepared[3][1] );
 		$this->assert_all_prepared();
 
 		try {
@@ -173,13 +173,13 @@ final class ChangeRepositoryTest extends TestCase {
 		global $wpdb;
 		$repo = new ChangeRepository();
 		$this->assertSame( [], $repo->page( 9, 3, 25, [ 'failed', 'skipped', 'failed' ] ) );
-		$this->assertSame( "SELECT change_id, batch_id, object_id, object_type, prop, old_value, new_value, modified_gmt, applied_gmt, result, message FROM `wp_bcm_changes` WHERE batch_id = 9 AND result IN ('failed', 'skipped') ORDER BY change_id ASC LIMIT 25 OFFSET 50", end( $wpdb->queries ) );
+		$this->assertSame( "SELECT change_id, batch_id, object_id, object_type, prop, old_value, new_value, modified_gmt, applied_gmt, result, message FROM `wp_bulkcat_changes` WHERE batch_id = 9 AND result IN ('failed', 'skipped') ORDER BY change_id ASC LIMIT 25 OFFSET 50", end( $wpdb->queries ) );
 		$repo->page( 9, 1, 5000 );
 		$this->assertStringEndsWith( 'WHERE batch_id = 9 ORDER BY change_id ASC LIMIT ' . ChangeRepository::MAX_PAGE . ' OFFSET 0', end( $wpdb->queries ) );
 
 		$wpdb->responses = [
-			"SELECT COUNT(*) FROM `wp_bcm_changes` WHERE batch_id = 9 AND result IN ('failed')" => '4',
-			"/^SELECT message, COUNT\\(DISTINCT object_id\\) AS objects FROM `wp_bcm_changes` WHERE batch_id = 9 AND result IN \\('failed', 'skipped'\\) AND message <> '' GROUP BY message ORDER BY objects DESC LIMIT 20$/" => [
+			"SELECT COUNT(*) FROM `wp_bulkcat_changes` WHERE batch_id = 9 AND result IN ('failed')" => '4',
+			"/^SELECT message, COUNT\\(DISTINCT object_id\\) AS objects FROM `wp_bulkcat_changes` WHERE batch_id = 9 AND result IN \\('failed', 'skipped'\\) AND message <> '' GROUP BY message ORDER BY objects DESC LIMIT 20$/" => [
 				[
 					'message' => 'A product with the SKU SHOE-42 already exists, so this SKU was not applied.',
 					'objects' => '2',
@@ -215,8 +215,8 @@ final class ChangeRepositoryTest extends TestCase {
 		self::db()->prefix = 'wp_3_';
 		( new ChangeRepository() )->append( 6, 101, 'term', 'name', 'Shoes', 'Footwear', self::MODIFIED, 'applied' );
 		( new ChangeRepository() )->has_object( 6, 101 );
-		$this->assertSame( 'wp_3_bcm_changes', self::db()->writes[0][1] );
-		$this->assertStringContainsString( 'FROM `wp_3_bcm_changes`', self::db()->queries[0] );
+		$this->assertSame( 'wp_3_bulkcat_changes', self::db()->writes[0][1] );
+		$this->assertStringContainsString( 'FROM `wp_3_bulkcat_changes`', self::db()->queries[0] );
 	}
 
 	/**
@@ -227,7 +227,7 @@ final class ChangeRepositoryTest extends TestCase {
 		foreach ( self::db()->prepared as [ $template ] ) {
 			$this->assertStringContainsString( ' %i ', $template );
 			$this->assertStringNotContainsString( 'wp_', $template );
-			$this->assertStringNotContainsString( 'bcm_', $template );
+			$this->assertStringNotContainsString( 'bulkcat_', $template );
 		}
 		$this->assertCount( count( self::db()->prepared ), self::db()->queries, 'One prepare() per statement.' );
 	}
@@ -262,15 +262,15 @@ final class ChangeRepositoryTest extends TestCase {
 			'/^SELECT COUNT/'        => '41',
 		];
 		$rows            = $repo->audit( $filters, 3, 20 );
-		$this->assertSame( "SELECT c.change_id, c.batch_id, c.object_id, c.object_type, c.prop, c.old_value, c.new_value, c.modified_gmt, c.applied_gmt, c.result, c.message, b.user_id FROM `wp_bcm_changes` AS c INNER JOIN `wp_bcm_batches` AS b ON b.batch_id = c.batch_id WHERE c.change_id > 0 AND c.object_id = 1001 AND b.user_id = 4 AND c.prop = 'regular_price' AND c.applied_gmt >= '2026-09-01 00:00:00' AND c.applied_gmt < '2026-10-01 00:00:00' ORDER BY c.change_id DESC LIMIT 20 OFFSET 40", end( $wpdb->queries ) );
+		$this->assertSame( "SELECT c.change_id, c.batch_id, c.object_id, c.object_type, c.prop, c.old_value, c.new_value, c.modified_gmt, c.applied_gmt, c.result, c.message, b.user_id FROM `wp_bulkcat_changes` AS c INNER JOIN `wp_bulkcat_batches` AS b ON b.batch_id = c.batch_id WHERE c.change_id > 0 AND c.object_id = 1001 AND b.user_id = 4 AND c.prop = 'regular_price' AND c.applied_gmt >= '2026-09-01 00:00:00' AND c.applied_gmt < '2026-10-01 00:00:00' ORDER BY c.change_id DESC LIMIT 20 OFFSET 40", end( $wpdb->queries ) );
 		$this->assertSame( [ 5, 2, '10', '11', 4 ], [ $rows[0]['change_id'], $rows[0]['batch_id'], $rows[0]['old_value'], $rows[0]['new_value'], $rows[0]['user_id'] ] );
 		$this->assertSame( 41, $repo->audit_count( [] ) );
-		$this->assertSame( 'SELECT COUNT(*) FROM `wp_bcm_changes` AS c INNER JOIN `wp_bcm_batches` AS b ON b.batch_id = c.batch_id WHERE c.change_id > 0', end( $wpdb->queries ) );
+		$this->assertSame( 'SELECT COUNT(*) FROM `wp_bulkcat_changes` AS c INNER JOIN `wp_bulkcat_batches` AS b ON b.batch_id = c.batch_id WHERE c.change_id > 0', end( $wpdb->queries ) );
 		$repo->audit( [], 1, 5000 );
 		$this->assertStringEndsWith( 'LIMIT ' . ChangeRepository::MAX_PAGE . ' OFFSET 0', end( $wpdb->queries ) );
 
 		$repo->applied_counts( [ 3, 1, 3 ] );
-		$this->assertSame( "SELECT batch_id, COUNT(*) AS applied FROM `wp_bcm_changes` WHERE batch_id IN (3, 1) AND result = 'applied' GROUP BY batch_id", end( $wpdb->queries ) );
+		$this->assertSame( "SELECT batch_id, COUNT(*) AS applied FROM `wp_bulkcat_changes` WHERE batch_id IN (3, 1) AND result = 'applied' GROUP BY batch_id", end( $wpdb->queries ) );
 		$count = count( $wpdb->queries );
 		$this->assertSame( [], $repo->applied_counts( [] ) );
 		$this->assertCount( $count, $wpdb->queries );

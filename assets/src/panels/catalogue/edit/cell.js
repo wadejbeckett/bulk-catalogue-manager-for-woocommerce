@@ -258,7 +258,7 @@ export default function InlineCell( { item, descriptor, display } ) {
 	if ( editing ) {
 		const shared = {
 			ref: input,
-			className: 'bcm-inline__input',
+			className: 'bulkcat-inline__input',
 			'aria-label': editName,
 			'aria-invalid': error ? true : undefined,
 			'aria-describedby': error ? errorId : undefined,
@@ -315,15 +315,15 @@ export default function InlineCell( { item, descriptor, display } ) {
 		return (
 			<span
 				className={
-					'bcm-inline is-editing' + ( error ? ' has-error' : '' )
+					'bulkcat-inline is-editing' + ( error ? ' has-error' : '' )
 				}
-				data-bcm-row={ item.id }
+				data-bulkcat-row={ item.id }
 			>
 				{ control }
 				{ error && (
 					<span
 						id={ errorId }
-						className="bcm-inline__error"
+						className="bulkcat-inline__error"
 						role="alert"
 					>
 						{ error }
@@ -334,12 +334,13 @@ export default function InlineCell( { item, descriptor, display } ) {
 	}
 
 	return (
-		<span className="bcm-inline" data-bcm-row={ item.id }>
+		<span className="bulkcat-inline" data-bulkcat-row={ item.id }>
 			<button
 				ref={ trigger }
 				type="button"
 				className={
-					'bcm-inline__trigger' + ( reason ? ' is-unavailable' : '' )
+					'bulkcat-inline__trigger' +
+					( reason ? ' is-unavailable' : '' )
 				}
 				aria-label={ sprintf(
 					/* translators: %s: a field's name and a product name, such as "SKU, Blue Widget". */
@@ -359,12 +360,16 @@ export default function InlineCell( { item, descriptor, display } ) {
 				{ display }
 			</button>
 			{ saved && (
-				<span className="bcm-inline__saved" role="status">
+				<span className="bulkcat-inline__saved" role="status">
 					{ __( 'Saved', 'bulk-catalogue-manager-for-woocommerce' ) }
 				</span>
 			) }
 			{ why && reason && (
-				<span id={ errorId } className="bcm-inline__why" role="status">
+				<span
+					id={ errorId }
+					className="bulkcat-inline__why"
+					role="status"
+				>
 					{ reason }
 				</span>
 			) }

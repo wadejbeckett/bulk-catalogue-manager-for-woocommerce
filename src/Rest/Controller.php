@@ -1,6 +1,6 @@
 <?php
 /**
- * A group of `bcm/v1` routes. A controller never calls `register_rest_route()`
+ * A group of `bulkcat/v1` routes. A controller never calls `register_rest_route()`
  * itself: it hands each route to the registrar, which refuses one without a
  * real permission callback (SPEC §12.1).
  *

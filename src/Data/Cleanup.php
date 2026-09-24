@@ -124,7 +124,7 @@ final class Cleanup {
 				continue;
 			}
 			// Uninstall removes the plugin's own tables: the site prefix plus a registry name
-			// validated as bcm_[a-z0-9_]+, passed to prepare() as a %i identifier.
+			// validated as bulkcat_[a-z0-9_]+, passed to prepare() as a %i identifier.
 			$wpdb->query( $wpdb->prepare( 'DROP TABLE IF EXISTS %i', $wpdb->prefix . $name ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.DirectDatabaseQuery.SchemaChange -- Uninstall drops the plugin's own registry tables, which no WordPress API can do, and the name is an %i identifier.
 		}
 	}

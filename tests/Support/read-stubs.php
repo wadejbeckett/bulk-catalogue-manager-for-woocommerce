@@ -2,7 +2,7 @@
 /**
  * Recording stubs for the catalogue read path (T16, T17): the object cache
  * with last-changed values, posts, post meta and object terms read from
- * $GLOBALS['bcm_test'] fixtures, attachment addresses, WooCommerce's price
+ * $GLOBALS['bulkcat_test'] fixtures, attachment addresses, WooCommerce's price
  * formatting and placeholder. The sentinel WC_Product is in
  * wc-product-sentinel.php. Under WordPress this file defines nothing.
  *
@@ -10,7 +10,7 @@
  * appends one statement to the stub $wpdb's `queries`, exactly when WordPress
  * would — `_prime_post_caches()` and `update_meta_cache()` only for ids not
  * yet cached, `get_post()` and `get_post_meta()` for an id not yet primed,
- * `wp_get_object_terms()` on every call — so `bcm_test_query_count()` counts
+ * `wp_get_object_terms()` on every call — so `bulkcat_test_query_count()` counts
  * the $wpdb statements and the cache misses together, and a read that forgets
  * to prime shows up as a count growing with the page size.
  *
@@ -18,7 +18,7 @@
  * `object_terms` (id => list of [ taxonomy, term id, slug ]). Recorded:
  * `calls` (list of [ function, arguments ]), `products_built` (WC_Product
  * constructions), plus the `cache`, `last_changed`, `primed_posts` and
- * `primed_meta` state. bcm_test_reset() clears all of it.
+ * `primed_meta` state. bulkcat_test_reset() clears all of it.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -31,7 +31,7 @@ if ( ! function_exists( 'wp_cache_get' ) ) {
 	/**
 	 * Statements recorded so far: $wpdb's plus the stubs' cache misses.
 	 */
-	function bcm_test_query_count(): int {
+	function bulkcat_test_query_count(): int {
 		return count( $GLOBALS['wpdb']->queries );
 	}
 
@@ -42,21 +42,21 @@ if ( ! function_exists( 'wp_cache_get' ) ) {
 	 * @param array  $args   Arguments.
 	 * @param bool   $query  Whether it counts as a query.
 	 */
-	function bcm_test_record( string $name, array $args, bool $query ): void {
-		$GLOBALS['bcm_test']['calls'][] = [ $name, $args ];
+	function bulkcat_test_record( string $name, array $args, bool $query ): void {
+		$GLOBALS['bulkcat_test']['calls'][] = [ $name, $args ];
 		if ( $query ) {
 			$GLOBALS['wpdb']->queries[] = '/* ' . $name . ' */ ' . wp_json_encode( $args );
 		}
 	}
 
 	function wp_cache_get( int|string $key, string $group = '', bool $force = false, ?bool &$found = null ): mixed {
-		$found = isset( $GLOBALS['bcm_test']['cache'][ $group ] ) && array_key_exists( $key, $GLOBALS['bcm_test']['cache'][ $group ] );
-		return $found ? $GLOBALS['bcm_test']['cache'][ $group ][ $key ] : false;
+		$found = isset( $GLOBALS['bulkcat_test']['cache'][ $group ] ) && array_key_exists( $key, $GLOBALS['bulkcat_test']['cache'][ $group ] );
+		return $found ? $GLOBALS['bulkcat_test']['cache'][ $group ][ $key ] : false;
 	}
 
 	function wp_cache_set( int|string $key, mixed $data, string $group = '', int $expire = 0 ): bool {
-		$GLOBALS['bcm_test']['cache'][ $group ][ $key ] = $data;
-		bcm_test_record( 'wp_cache_set', [ $key, $group, $expire ], false );
+		$GLOBALS['bulkcat_test']['cache'][ $group ][ $key ] = $data;
+		bulkcat_test_record( 'wp_cache_set', [ $key, $group, $expire ], false );
 		return true;
 	}
 
@@ -64,17 +64,17 @@ if ( ! function_exists( 'wp_cache_get' ) ) {
 	 * Core's cache supports releasing its runtime copy unless a test says otherwise.
 	 */
 	function wp_cache_supports( string $feature ): bool {
-		return 'flush_runtime' === $feature && empty( $GLOBALS['bcm_test']['no_flush_runtime'] );
+		return 'flush_runtime' === $feature && empty( $GLOBALS['bulkcat_test']['no_flush_runtime'] );
 	}
 
 	/**
 	 * Releases the runtime cache: cached values and primed posts and meta alike.
 	 */
 	function wp_cache_flush_runtime(): bool {
-		bcm_test_record( 'wp_cache_flush_runtime', [], false );
-		$GLOBALS['bcm_test']['cache']        = [];
-		$GLOBALS['bcm_test']['primed_posts'] = [];
-		$GLOBALS['bcm_test']['primed_meta']  = [];
+		bulkcat_test_record( 'wp_cache_flush_runtime', [], false );
+		$GLOBALS['bulkcat_test']['cache']        = [];
+		$GLOBALS['bulkcat_test']['primed_posts'] = [];
+		$GLOBALS['bulkcat_test']['primed_meta']  = [];
 		return true;
 	}
 
@@ -82,16 +82,16 @@ if ( ! function_exists( 'wp_cache_get' ) ) {
 	 * Core's behaviour: a group's last-changed value, set to now on first read.
 	 */
 	function wp_cache_get_last_changed( string $group ): string {
-		$GLOBALS['bcm_test']['last_changed'][ $group ] ??= '0.00000001 1';
-		return $GLOBALS['bcm_test']['last_changed'][ $group ];
+		$GLOBALS['bulkcat_test']['last_changed'][ $group ] ??= '0.00000001 1';
+		return $GLOBALS['bulkcat_test']['last_changed'][ $group ];
 	}
 
 	/**
 	 * Moves a group's last-changed value, as clean_post_cache() does for posts.
 	 */
 	function wp_cache_set_last_changed( string $group ): string {
-		$previous                                      = $GLOBALS['bcm_test']['last_changed'][ $group ] ?? '0.00000001 1';
-		$GLOBALS['bcm_test']['last_changed'][ $group ] = $previous . '+';
+		$previous = $GLOBALS['bulkcat_test']['last_changed'][ $group ] ?? '0.00000001 1';
+		$GLOBALS['bulkcat_test']['last_changed'][ $group ] = $previous . '+';
 		return $previous;
 	}
 
@@ -102,10 +102,10 @@ if ( ! function_exists( 'wp_cache_get' ) ) {
 	 */
 	// phpcs:ignore WordPress.NamingConventions.ValidFunctionName -- WordPress's own name.
 	function _prime_post_caches( array $ids, bool $update_term_cache = true, bool $update_meta_cache = true ): void {
-		$missing = array_values( array_filter( $ids, static fn( int $id ): bool => ! isset( $GLOBALS['bcm_test']['primed_posts'][ $id ] ) ) );
-		bcm_test_record( '_prime_post_caches', [ $ids, $update_term_cache, $update_meta_cache ], [] !== $missing );
+		$missing = array_values( array_filter( $ids, static fn( int $id ): bool => ! isset( $GLOBALS['bulkcat_test']['primed_posts'][ $id ] ) ) );
+		bulkcat_test_record( '_prime_post_caches', [ $ids, $update_term_cache, $update_meta_cache ], [] !== $missing );
 		foreach ( $missing as $id ) {
-			$GLOBALS['bcm_test']['primed_posts'][ $id ] = true;
+			$GLOBALS['bulkcat_test']['primed_posts'][ $id ] = true;
 		}
 	}
 
@@ -115,10 +115,10 @@ if ( ! function_exists( 'wp_cache_get' ) ) {
 	 * @param int[] $ids Object ids.
 	 */
 	function update_meta_cache( string $meta_type, array $ids ): array|false {
-		$missing = array_values( array_filter( $ids, static fn( int $id ): bool => ! isset( $GLOBALS['bcm_test']['primed_meta'][ $id ] ) ) );
-		bcm_test_record( 'update_meta_cache', [ $meta_type, $ids ], [] !== $missing );
+		$missing = array_values( array_filter( $ids, static fn( int $id ): bool => ! isset( $GLOBALS['bulkcat_test']['primed_meta'][ $id ] ) ) );
+		bulkcat_test_record( 'update_meta_cache', [ $meta_type, $ids ], [] !== $missing );
 		foreach ( $missing as $id ) {
-			$GLOBALS['bcm_test']['primed_meta'][ $id ] = true;
+			$GLOBALS['bulkcat_test']['primed_meta'][ $id ] = true;
 		}
 		return [];
 	}
@@ -127,11 +127,11 @@ if ( ! function_exists( 'wp_cache_get' ) ) {
 	 * A fixture post as an object, costing a query when not yet primed.
 	 */
 	function get_post( int $id ): ?object {
-		if ( ! isset( $GLOBALS['bcm_test']['primed_posts'][ $id ] ) ) {
-			bcm_test_record( 'get_post', [ $id ], true );
-			$GLOBALS['bcm_test']['primed_posts'][ $id ] = true;
+		if ( ! isset( $GLOBALS['bulkcat_test']['primed_posts'][ $id ] ) ) {
+			bulkcat_test_record( 'get_post', [ $id ], true );
+			$GLOBALS['bulkcat_test']['primed_posts'][ $id ] = true;
 		}
-		$post = $GLOBALS['bcm_test']['posts'][ $id ] ?? null;
+		$post = $GLOBALS['bulkcat_test']['posts'][ $id ] ?? null;
 		return null === $post ? null : (object) ( [ 'ID' => $id ] + $post );
 	}
 
@@ -140,42 +140,42 @@ if ( ! function_exists( 'wp_cache_get' ) ) {
 	 * Without a key, every key's values in stored order, as core returns them.
 	 */
 	function get_post_meta( int $id, string $key = '', bool $single = false ): mixed {
-		if ( ! isset( $GLOBALS['bcm_test']['primed_meta'][ $id ] ) ) {
-			bcm_test_record( 'get_post_meta', [ $id, $key ], true );
-			$GLOBALS['bcm_test']['primed_meta'][ $id ] = true;
+		if ( ! isset( $GLOBALS['bulkcat_test']['primed_meta'][ $id ] ) ) {
+			bulkcat_test_record( 'get_post_meta', [ $id, $key ], true );
+			$GLOBALS['bulkcat_test']['primed_meta'][ $id ] = true;
 		}
 		if ( '' === $key ) {
-			return array_map( static fn( mixed $value ): array => [ $value ], $GLOBALS['bcm_test']['meta'][ $id ] ?? [] );
+			return array_map( static fn( mixed $value ): array => [ $value ], $GLOBALS['bulkcat_test']['meta'][ $id ] ?? [] );
 		}
-		$value = $GLOBALS['bcm_test']['meta'][ $id ][ $key ] ?? '';
+		$value = $GLOBALS['bulkcat_test']['meta'][ $id ][ $key ] ?? '';
 		return $single ? $value : [ $value ];
 	}
 
 	/**
 	 * Whether a taxonomy is registered: WooCommerce's attribute taxonomies
-	 * (`pa_`) and any listed in $GLOBALS['bcm_test']['taxonomies'].
+	 * (`pa_`) and any listed in $GLOBALS['bulkcat_test']['taxonomies'].
 	 */
 	function taxonomy_exists( string $taxonomy ): bool {
-		return str_starts_with( $taxonomy, 'pa_' ) || in_array( $taxonomy, $GLOBALS['bcm_test']['taxonomies'] ?? [], true );
+		return str_starts_with( $taxonomy, 'pa_' ) || in_array( $taxonomy, $GLOBALS['bulkcat_test']['taxonomies'] ?? [], true );
 	}
 
 	/**
 	 * An attribute taxonomy's label, as WooCommerce's registered attributes give it.
 	 */
 	function wc_attribute_label( string $name, mixed $product = '' ): string {
-		return $GLOBALS['bcm_test']['attribute_labels'][ $name ] ?? ucfirst( (string) preg_replace( '/^pa_/', '', $name ) );
+		return $GLOBALS['bulkcat_test']['attribute_labels'][ $name ] ?? ucfirst( (string) preg_replace( '/^pa_/', '', $name ) );
 	}
 
 	/**
-	 * Every term below a term, from the parents in $GLOBALS['bcm_test']['term_list'],
+	 * Every term below a term, from the parents in $GLOBALS['bulkcat_test']['term_list'],
 	 * as core reads them from its cached hierarchy option: no query.
 	 *
 	 * @return int[]
 	 */
 	function get_term_children( int $term_id, string $taxonomy ): array {
-		$GLOBALS['bcm_test']['term_children_calls'][] = [ $term_id, $taxonomy ];
-		$children                                     = [];
-		foreach ( $GLOBALS['bcm_test']['term_list'] ?? [] as $term ) {
+		$GLOBALS['bulkcat_test']['term_children_calls'][] = [ $term_id, $taxonomy ];
+		$children = [];
+		foreach ( $GLOBALS['bulkcat_test']['term_list'] ?? [] as $term ) {
 			if ( $taxonomy === $term->taxonomy && $term_id === (int) $term->parent && ! in_array( (int) $term->term_id, $children, true ) ) {
 				$children[] = (int) $term->term_id;
 				$children   = array_merge( $children, get_term_children( (int) $term->term_id, $taxonomy ) );
@@ -191,10 +191,10 @@ if ( ! function_exists( 'wp_cache_get' ) ) {
 	 * @param string[] $taxonomies Taxonomies.
 	 */
 	function wp_get_object_terms( array|int $ids, array|string $taxonomies, array $args = [] ): array {
-		bcm_test_record( 'wp_get_object_terms', [ (array) $ids, (array) $taxonomies, $args ], true );
+		bulkcat_test_record( 'wp_get_object_terms', [ (array) $ids, (array) $taxonomies, $args ], true );
 		$terms = [];
 		foreach ( (array) $ids as $id ) {
-			foreach ( $GLOBALS['bcm_test']['object_terms'][ $id ] ?? [] as [ $taxonomy, $term_id, $slug ] ) {
+			foreach ( $GLOBALS['bulkcat_test']['object_terms'][ $id ] ?? [] as [ $taxonomy, $term_id, $slug ] ) {
 				if ( in_array( $taxonomy, (array) $taxonomies, true ) ) {
 					$terms[] = (object) [
 						'object_id' => $id,
@@ -222,7 +222,7 @@ if ( ! function_exists( 'wp_cache_get' ) ) {
 	}
 
 	function wc_placeholder_img_src( string $size = 'woocommerce_thumbnail' ): string {
-		bcm_test_record( 'wc_placeholder_img_src', [ $size ], false );
+		bulkcat_test_record( 'wc_placeholder_img_src', [ $size ], false );
 		return 'https://example.test/wp-content/plugins/woocommerce/assets/images/placeholder.webp';
 	}
 
@@ -231,8 +231,8 @@ if ( ! function_exists( 'wp_cache_get' ) ) {
 	 * decimals and separators.
 	 */
 	function wc_price( float|int|string $price, array $args = [] ): string {
-		$amount = number_format( (float) $price, (int) $GLOBALS['bcm_test']['decimals'], (string) $GLOBALS['bcm_test']['separator'], (string) ( $GLOBALS['bcm_test']['thousands'] ?? ',' ) );
-		return '<span class="woocommerce-Price-amount amount"><bdi><span class="woocommerce-Price-currencySymbol">' . ( $GLOBALS['bcm_test']['currency'] ?? 'R' ) . '</span>' . $amount . '</bdi></span>';
+		$amount = number_format( (float) $price, (int) $GLOBALS['bulkcat_test']['decimals'], (string) $GLOBALS['bulkcat_test']['separator'], (string) ( $GLOBALS['bulkcat_test']['thousands'] ?? ',' ) );
+		return '<span class="woocommerce-Price-amount amount"><bdi><span class="woocommerce-Price-currencySymbol">' . ( $GLOBALS['bulkcat_test']['currency'] ?? 'R' ) . '</span>' . $amount . '</bdi></span>';
 	}
 
 	function wc_format_price_range( float|int|string $from, float|int|string $to ): string {

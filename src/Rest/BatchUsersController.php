@@ -1,6 +1,6 @@
 <?php
 /**
- * `GET /bcm/v1/batches/users`: every user who owns at least one batch, as
+ * `GET /bulkcat/v1/batches/users`: every user who owns at least one batch, as
  * `{ items: [ { id, name } ] }` ordered by name, so the history and the
  * audit log can offer a user filter of names rather than ids. Names come
  * from one get_users() call (BatchesController::user_names()); a removed
@@ -86,7 +86,7 @@ final class BatchUsersController implements ReadController {
 	public function get_item_schema(): array {
 		return [
 			'$schema'    => RouteSchema::DIALECT,
-			'title'      => 'bcm-batch-user',
+			'title'      => 'bulkcat-batch-user',
 			'type'       => 'object',
 			'properties' => [
 				'id'   => [

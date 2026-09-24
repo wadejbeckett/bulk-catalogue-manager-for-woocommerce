@@ -2,7 +2,7 @@
 /**
  * One cached page of the catalogue (SPEC §12.2): ProductQuery's count and
  * page statements, then the Hydrator, with the result kept in the
- * `bcm_catalogue` object-cache group. The key carries the posts' and terms'
+ * `bulkcat_catalogue` object-cache group. The key carries the posts' and terms'
  * last-changed values, which WordPress moves whenever a product, a
  * variation, their meta or their terms change (every WooCommerce CRUD save
  * ends in `clean_post_cache()`), so a second identical read inside the same
@@ -30,7 +30,7 @@ final class Catalogue {
 	 * Object-cache group for hydrated pages. Not stored data: entries expire
 	 * and are unreachable once the last-changed values move.
 	 */
-	public const CACHE_GROUP = 'bcm_catalogue';
+	public const CACHE_GROUP = 'bulkcat_catalogue';
 
 	/**
 	 * Longest an entry is kept, in seconds, where the object cache persists.

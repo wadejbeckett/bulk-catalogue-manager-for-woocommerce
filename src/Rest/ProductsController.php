@@ -1,6 +1,6 @@
 <?php
 /**
- * `GET /bcm/v1/products` (SPEC §12.1): the catalogue read. Its arguments and
+ * `GET /bulkcat/v1/products` (SPEC §12.1): the catalogue read. Its arguments and
  * its item schema are generated from the field registry by RouteSchema, so
  * core refuses a malformed argument with 400 `rest_invalid_param` before the
  * handler runs.
@@ -40,7 +40,7 @@ defined( 'ABSPATH' ) || exit;
  * `parent` (a product id) lists only that product's variations, paged,
  * sorted and narrowed by `fields[]` like any list; it needs
  * `mode=variations`, and with any other mode the read is refused 400
- * `bcm_invalid_value`. Without `orderby` the variations keep WooCommerce's
+ * `bulkcat_invalid_value`. Without `orderby` the variations keep WooCommerce's
  * order; an id with no listed variations answers no items.
  *
  * `search` matches each listed row's own name and SKU. In the
@@ -58,7 +58,7 @@ final class ProductsController implements ReadController {
 	/**
 	 * The item schema's title.
 	 */
-	public const TITLE = 'bcm-product';
+	public const TITLE = 'bulkcat-product';
 
 	/**
 	 * Arguments and schema generator.
@@ -114,7 +114,7 @@ final class ProductsController implements ReadController {
 			$criteria = Criteria::from_array( $this->schema->criteria_input( $request->get_params() ) );
 		} catch ( \InvalidArgumentException $e ) {
 			return Refusal::invalid(
-				'bcm_invalid_value',
+				'bulkcat_invalid_value',
 				__( 'These filters or this sort could not be used. Clear them and try again.', 'bulk-catalogue-manager-for-woocommerce' )
 			);
 		}

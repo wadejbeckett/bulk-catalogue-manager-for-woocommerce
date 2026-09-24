@@ -75,7 +75,7 @@ final class Registry {
 	 * unschedules. The daily history prune of SPEC §9.5.
 	 */
 	private const RECURRING_ACTIONS = [
-		'bcm_prune_history',
+		'bulkcat_prune_history',
 	];
 
 	/**
@@ -93,7 +93,7 @@ final class Registry {
 	private array $names;
 
 	/**
-	 * Build a registry. Every name must be `bcm_` followed by lower-case
+	 * Build a registry. Every name must be `bulkcat_` followed by lower-case
 	 * letters, digits and underscores, so each is safe as an SQL identifier
 	 * and cannot match another plugin's data.
 	 *
@@ -103,7 +103,7 @@ final class Registry {
 	 * @param string[]              $term_meta          Term meta keys.
 	 * @param string[]              $transient_prefixes Transient name prefixes.
 	 * @param string[]              $recurring_actions  Recurring action hooks.
-	 * @throws \InvalidArgumentException When a name is not a valid `bcm_` name.
+	 * @throws \InvalidArgumentException When a name is not a valid `bulkcat_` name.
 	 */
 	public function __construct( array $tables, array $options, array $user_meta, array $term_meta, array $transient_prefixes, array $recurring_actions ) {
 		$names = [
@@ -115,7 +115,7 @@ final class Registry {
 		];
 		foreach ( array_merge( array_keys( $tables ), ...array_values( $names ) ) as $name ) {
 			if ( ! self::valid_name( $name ) ) {
-				throw new \InvalidArgumentException( esc_html( sprintf( 'Registry name "%s" must be bcm_ followed by lower-case letters, digits and underscores.', (string) $name ) ) );
+				throw new \InvalidArgumentException( esc_html( sprintf( 'Registry name "%s" must be bulkcat_ followed by lower-case letters, digits and underscores.', (string) $name ) ) );
 			}
 		}
 		$this->tables = $tables;
@@ -130,12 +130,12 @@ final class Registry {
 	}
 
 	/**
-	 * Whether a name is `bcm_` followed by lower-case letters, digits and underscores.
+	 * Whether a name is `bulkcat_` followed by lower-case letters, digits and underscores.
 	 *
 	 * @param mixed $name Candidate name.
 	 */
 	public static function valid_name( mixed $name ): bool {
-		return is_string( $name ) && 1 === preg_match( '/^bcm_[a-z0-9_]+$/', $name );
+		return is_string( $name ) && 1 === preg_match( '/^bulkcat_[a-z0-9_]+$/', $name );
 	}
 
 	/**

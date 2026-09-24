@@ -203,7 +203,7 @@ final class RouteSchema {
 	 *
 	 * `parent` (a product id) lists only that product's variations. It is
 	 * taken only with `mode=variations`: in any other mode Criteria refuses
-	 * it, and the route answers 400 `bcm_invalid_value`. Without `orderby`
+	 * it, and the route answers 400 `bulkcat_invalid_value`. Without `orderby`
 	 * such a read keeps WooCommerce's variation order (`menu_order`, then
 	 * id); an id that is not a variable product lists nothing.
 	 *
@@ -338,7 +338,7 @@ final class RouteSchema {
 					Criteria::from_array( [ 'filters' => [ $filter ] ] );
 				} catch ( \InvalidArgumentException $e ) {
 					return Refusal::invalid(
-						'bcm_invalid_value',
+						'bulkcat_invalid_value',
 						sprintf(
 							/* translators: %s: a field's name, such as "Stock status". */
 							__( 'The %s filter could not be used. Clear it and choose it again.', 'bulk-catalogue-manager-for-woocommerce' ),
@@ -369,7 +369,7 @@ final class RouteSchema {
 	 * and attribute summary). A registry field always wins over an extra
 	 * property of the same name.
 	 *
-	 * @param string                              $title Schema title, such as `bcm-product`.
+	 * @param string                              $title Schema title, such as `bulkcat-product`.
 	 * @param array<string, array<string, mixed>> $extra Further properties.
 	 * @return array<string, mixed>
 	 */

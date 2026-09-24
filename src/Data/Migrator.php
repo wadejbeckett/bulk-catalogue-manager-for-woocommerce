@@ -1,7 +1,7 @@
 <?php
 /**
  * Schema migrator (SPEC §9.2, §15 Data lifecycle). On activation, and on the
- * first admin request after an update, compares `bcm_db_version` with the
+ * first admin request after an update, compares `bulkcat_db_version` with the
  * code's schema version and, when they differ, feeds every registry table to
  * dbDelta(). The new version is stored only once every table exists, so a
  * failed run is retried on the next request.
@@ -32,7 +32,7 @@ final class Migrator {
 	/**
 	 * The option holding the schema version the database was last migrated to.
 	 */
-	public const VERSION_OPTION = 'bcm_db_version';
+	public const VERSION_OPTION = 'bulkcat_db_version';
 
 	/**
 	 * What to create.

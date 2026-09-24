@@ -429,7 +429,7 @@ describe( 'preview inside the panel', () => {
 		routeApi( apiFetch, {
 			'POST preview': {
 				reject: {
-					code: 'bcm_selection_too_large',
+					code: 'bulkcat_selection_too_large',
 					message: 'This selection holds 100,001 products.',
 				},
 			},
@@ -445,10 +445,14 @@ describe( 'preview inside the panel', () => {
 		expect(
 			await screen.findByText( 'This selection holds 100,001 products.' )
 		).toBeVisible();
-		expect( screen.queryByText( 'bcm_selection_too_large' ) ).toBeNull();
+		expect(
+			screen.queryByText( 'bulkcat_selection_too_large' )
+		).toBeNull();
 		fireEvent.click(
 			screen.getByRole( 'button', { name: 'Show details' } )
 		);
-		expect( screen.getByText( 'bcm_selection_too_large' ) ).toBeVisible();
+		expect(
+			screen.getByText( 'bulkcat_selection_too_large' )
+		).toBeVisible();
 	} );
 } );

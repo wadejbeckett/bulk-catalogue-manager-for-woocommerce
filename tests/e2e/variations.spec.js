@@ -61,7 +61,7 @@ test( 'expand a variable product and edit a variation by keyboard', async ( {
 				.getAttribute( 'href' )
 		).match( /post=(\d+)/ )[ 1 ]
 	);
-	const sku = 'bcm-probe-variable-small';
+	const sku = 'bulkcat-probe-variable-small';
 	const before = await variationPrice( page, parentId, sku );
 	await keys.press( 'Enter' );
 	const input = page.getByRole( 'textbox', { name: /Regular price/ } );

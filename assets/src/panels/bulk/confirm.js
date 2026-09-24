@@ -250,7 +250,7 @@ export function ConfirmApply( {
 		);
 
 	return (
-		<div className="bcm-confirm">
+		<div className="bulkcat-confirm">
 			<button
 				ref={ applyRef }
 				type="button"
@@ -258,7 +258,7 @@ export function ConfirmApply( {
 				disabled={ disabled || busy || gate.armed }
 				aria-describedby={
 					disabled && disabledReason
-						? 'bcm-confirm-disabled'
+						? 'bulkcat-confirm-disabled'
 						: undefined
 				}
 				onClick={ gate.request }
@@ -266,17 +266,20 @@ export function ConfirmApply( {
 				{ applyText }
 			</button>
 			{ disabled && disabledReason && (
-				<p className="bcm-bulk__hint" id="bcm-confirm-disabled">
+				<p className="bulkcat-bulk__hint" id="bulkcat-confirm-disabled">
 					{ disabledReason }
 				</p>
 			) }
 			{ gate.armed && (
 				<div
-					className="bcm-confirm__ask"
+					className="bulkcat-confirm__ask"
 					role="group"
-					aria-labelledby="bcm-confirm-title"
+					aria-labelledby="bulkcat-confirm-title"
 				>
-					<p id="bcm-confirm-title" className="bcm-confirm__title">
+					<p
+						id="bulkcat-confirm-title"
+						className="bulkcat-confirm__title"
+					>
 						{ sprintf(
 							/* translators: %s: a number of products, such as "1,284". */
 							_n(
@@ -289,19 +292,19 @@ export function ConfirmApply( {
 						) }
 					</p>
 					{ gate.reasons.length > 0 && (
-						<ul className="bcm-confirm__reasons">
+						<ul className="bulkcat-confirm__reasons">
 							{ gate.reasons.map( ( reason ) => (
 								<li key={ reason }>{ reason }</li>
 							) ) }
 						</ul>
 					) }
-					<p className="bcm-bulk__hint">
+					<p className="bulkcat-bulk__hint">
 						{ __(
 							'You can undo this afterwards from History.',
 							'bulk-catalogue-manager-for-woocommerce'
 						) }
 					</p>
-					<div className="bcm-confirm__acts">
+					<div className="bulkcat-confirm__acts">
 						<button
 							ref={ yesRef }
 							type="button"

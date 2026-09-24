@@ -21,8 +21,8 @@ declare( strict_types = 1 );
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'BCM_FILE', __FILE__ );
-define( 'BCM_DIR', __DIR__ . '/' );
+define( 'BULKCAT_FILE', __FILE__ );
+define( 'BULKCAT_DIR', __DIR__ . '/' );
 
 if ( file_exists( __DIR__ . '/vendor/autoload.php' ) ) {
 	require_once __DIR__ . '/vendor/autoload.php';

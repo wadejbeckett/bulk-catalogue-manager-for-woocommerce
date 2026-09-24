@@ -43,7 +43,7 @@ const RESIZE_STEP = 16;
  * settings: `user.capabilities.manage_product_terms` or `user.canManageTerms`.
  * Anything else is read-only; the server checks again on every write.
  *
- * @param {Object} settings Localised settings (window.bcmSettings).
+ * @param {Object} settings Localised settings (window.bulkcatSettings).
  * @return {boolean} True when the edit controls should show.
  */
 export function canManageTerms( settings ) {
@@ -137,9 +137,9 @@ export default function CategoryPanel( {
 		const frame = window.requestAnimationFrame( () => {
 			const doc = window.document;
 			const target =
-				doc.getElementById( `bcm-cat-${ refocus.id }` ) ||
+				doc.getElementById( `bulkcat-cat-${ refocus.id }` ) ||
 				( refocus.parent
-					? doc.getElementById( `bcm-cat-${ refocus.parent }` )
+					? doc.getElementById( `bulkcat-cat-${ refocus.parent }` )
 					: null ) ||
 				doc.querySelector( '[role="treeitem"][tabindex="0"]' );
 			if ( target ) {
@@ -307,10 +307,10 @@ export default function CategoryPanel( {
 	const sentence = categorySentence( value, tree.byId );
 
 	const body = ( toggle = null ) => (
-		<div className="bcm-cat-panel__body">
-			<div className="bcm-cat-panel__head">
-				<div className="bcm-cat-panel__row">
-					<h2 className="bcm-cat-panel__title">
+		<div className="bulkcat-cat-panel__body">
+			<div className="bulkcat-cat-panel__head">
+				<div className="bulkcat-cat-panel__row">
+					<h2 className="bulkcat-cat-panel__title">
 						{ __(
 							'Categories',
 							'bulk-catalogue-manager-for-woocommerce'
@@ -318,7 +318,7 @@ export default function CategoryPanel( {
 					</h2>
 					<Button
 						variant="link"
-						className="bcm-cat-panel__all"
+						className="bulkcat-cat-panel__all"
 						onClick={ () => {
 							setSearch( '' );
 							emit( null );
@@ -364,9 +364,9 @@ export default function CategoryPanel( {
 					onDismiss={ () => setFailure( null ) }
 				/>
 			) }
-			<div className="bcm-cat-panel__scroll">
+			<div className="bulkcat-cat-panel__scroll">
 				{ tree.error && ! tree.loaded && (
-					<div className="bcm-cat-panel__state">
+					<div className="bulkcat-cat-panel__state">
 						<ErrorNotice
 							error={ tree.error }
 							fallback={ __(
@@ -383,7 +383,7 @@ export default function CategoryPanel( {
 					</div>
 				) }
 				{ ! tree.loaded && ! tree.error && (
-					<p className="bcm-cat-panel__state">
+					<p className="bulkcat-cat-panel__state">
 						{ __(
 							'Loading categories…',
 							'bulk-catalogue-manager-for-woocommerce'
@@ -391,7 +391,7 @@ export default function CategoryPanel( {
 					</p>
 				) }
 				{ tree.loaded && tree.nodes.length === 0 && (
-					<div className="bcm-cat-panel__state">
+					<div className="bulkcat-cat-panel__state">
 						<p>
 							{ __(
 								'You have no product categories yet.',
@@ -428,7 +428,7 @@ export default function CategoryPanel( {
 					/>
 				) }
 			</div>
-			<div className="bcm-cat-panel__foot">
+			<div className="bulkcat-cat-panel__foot">
 				{ canManage ? (
 					tree.loaded &&
 					tree.nodes.length > 0 && (
@@ -444,7 +444,7 @@ export default function CategoryPanel( {
 						</Button>
 					)
 				) : (
-					<p className="bcm-cat-readonly">
+					<p className="bulkcat-cat-readonly">
 						{ __(
 							'You can browse and filter by categories, but changing them needs permission to manage product categories.',
 							'bulk-catalogue-manager-for-woocommerce'
@@ -471,7 +471,7 @@ export default function CategoryPanel( {
 								)
 					}
 					onRequestClose={ () => setEditing( null ) }
-					className="bcm-cat-modal"
+					className="bulkcat-cat-modal"
 				>
 					<CategoryManager
 						tree={ tree }
@@ -498,7 +498,7 @@ export default function CategoryPanel( {
 
 	if ( narrow ) {
 		return (
-			<div className="bcm-cat-panel is-narrow">
+			<div className="bulkcat-cat-panel is-narrow">
 				<Button
 					variant="secondary"
 					aria-haspopup="dialog"
@@ -517,7 +517,7 @@ export default function CategoryPanel( {
 							'bulk-catalogue-manager-for-woocommerce'
 						) }
 						onRequestClose={ () => setSheet( false ) }
-						className="bcm-cat-sheet"
+						className="bulkcat-cat-sheet"
 					>
 						{ body() }
 					</Modal>
@@ -529,9 +529,9 @@ export default function CategoryPanel( {
 
 	if ( layout.collapsed ) {
 		return (
-			<div className="bcm-cat-panel is-collapsed">
+			<div className="bulkcat-cat-panel is-collapsed">
 				<Button
-					className="bcm-cat-panel__toggle"
+					className="bulkcat-cat-panel__toggle"
 					variant="tertiary"
 					aria-expanded={ false }
 					onClick={ () => setCollapsed( false ) }
@@ -550,7 +550,7 @@ export default function CategoryPanel( {
 
 	return (
 		<aside
-			className="bcm-cat-panel"
+			className="bulkcat-cat-panel"
 			style={ { width: layout.width } }
 			aria-label={ __(
 				'Product categories',
@@ -559,7 +559,7 @@ export default function CategoryPanel( {
 		>
 			{ body(
 				<Button
-					className="bcm-cat-panel__toggle"
+					className="bulkcat-cat-panel__toggle"
 					variant="tertiary"
 					size="small"
 					aria-expanded
@@ -576,7 +576,7 @@ export default function CategoryPanel( {
 			{ /* The separator is a focusable resize control (WAI-ARIA window splitter). */ }
 			{ /* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */ }
 			<div
-				className="bcm-cat-panel__edge"
+				className="bulkcat-cat-panel__edge"
 				role="separator"
 				aria-orientation="vertical"
 				aria-label={ __(

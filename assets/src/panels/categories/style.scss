@@ -2,15 +2,15 @@
 // a sunk column with a head (title, Show all, search), the tree, and a foot
 // holding + Add category. Colours follow the admin's own greys and the
 // admin colour scheme's accent where the admin exposes it.
-$bcm-rule: #dcdcde;
-$bcm-sunk: #f6f7f7;
-$bcm-ink: #1d2327;
-$bcm-ink-3: #646970;
-$bcm-accent: var(--wp-admin-theme-color, #2271b1);
-$bcm-accent-tint: #f0f6fc;
-$bcm-bad: #d63638;
+$bulkcat-rule: #dcdcde;
+$bulkcat-sunk: #f6f7f7;
+$bulkcat-ink: #1d2327;
+$bulkcat-ink-3: #646970;
+$bulkcat-accent: var(--wp-admin-theme-color, #2271b1);
+$bulkcat-accent-tint: #f0f6fc;
+$bulkcat-bad: #d63638;
 
-.bcm-sr-only {
+.bulkcat-sr-only {
 	position: absolute;
 	width: 1px;
 	height: 1px;
@@ -22,15 +22,15 @@ $bcm-bad: #d63638;
 	border: 0;
 }
 
-.bcm-cat-panel {
+.bulkcat-cat-panel {
 	position: relative;
 	display: flex;
 	flex-direction: column;
 	flex: none;
 	min-width: 0;
 	min-height: 0;
-	background: $bcm-sunk;
-	border-right: 1px solid $bcm-rule;
+	background: $bulkcat-sunk;
+	border-right: 1px solid $bulkcat-rule;
 	font-size: 13px;
 
 	&.is-collapsed {
@@ -62,7 +62,7 @@ $bcm-bad: #d63638;
 		flex-direction: column;
 		gap: 8px;
 		padding: 10px 11px 9px;
-		border-bottom: 1px solid $bcm-rule;
+		border-bottom: 1px solid $bulkcat-rule;
 	}
 
 	&__row {
@@ -97,7 +97,7 @@ $bcm-bad: #d63638;
 
 	&__state {
 		padding: 12px 8px;
-		color: $bcm-ink-3;
+		color: $bulkcat-ink-3;
 
 		p {
 			margin: 0 0 8px;
@@ -106,7 +106,7 @@ $bcm-bad: #d63638;
 
 	&__foot {
 		padding: 8px 10px;
-		border-top: 1px solid $bcm-rule;
+		border-top: 1px solid $bulkcat-rule;
 	}
 
 	&__edge {
@@ -120,36 +120,36 @@ $bcm-bad: #d63638;
 
 		&:hover,
 		&:focus-visible {
-			background: linear-gradient(to right, transparent 3px, $bcm-accent 3px, $bcm-accent 5px, transparent 5px);
+			background: linear-gradient(to right, transparent 3px, $bulkcat-accent 3px, $bulkcat-accent 5px, transparent 5px);
 			outline: none;
 		}
 	}
 }
 
-.bcm-cat-readonly {
+.bulkcat-cat-readonly {
 	margin: 0;
-	color: $bcm-ink-3;
+	color: $bulkcat-ink-3;
 	font-size: 12px;
 }
 
-.bcm-cat-tree {
+.bulkcat-cat-tree {
 	margin: 0;
 	padding: 0;
 	list-style: none;
 }
 
-.bcm-cat-item {
+.bulkcat-cat-item {
 	position: relative;
 	margin: 0;
 	outline: none;
 
-	&:focus-visible > .bcm-cat-row {
-		outline: 2px solid $bcm-accent;
+	&:focus-visible > .bulkcat-cat-row {
+		outline: 2px solid $bulkcat-accent;
 		outline-offset: -2px;
 	}
 }
 
-.bcm-cat-row {
+.bulkcat-cat-row {
 	position: relative;
 	display: flex;
 	align-items: center;
@@ -157,7 +157,7 @@ $bcm-bad: #d63638;
 	min-height: 28px;
 	border-radius: 3px;
 	cursor: pointer;
-	color: $bcm-ink;
+	color: $bulkcat-ink;
 
 	// One 1px guide per level, as the prototype's nested borders.
 	background-repeat: no-repeat;
@@ -167,12 +167,12 @@ $bcm-bad: #d63638;
 	}
 
 	&.is-selected {
-		background-color: $bcm-accent-tint;
-		box-shadow: inset 2px 0 0 $bcm-accent;
+		background-color: $bulkcat-accent-tint;
+		box-shadow: inset 2px 0 0 $bulkcat-accent;
 
-		.bcm-cat-name {
+		.bulkcat-cat-name {
 			font-weight: 600;
-			color: $bcm-accent;
+			color: $bulkcat-accent;
 		}
 	}
 
@@ -187,7 +187,7 @@ $bcm-bad: #d63638;
 		left: 4px;
 		right: 4px;
 		height: 2px;
-		background: $bcm-accent;
+		background: $bulkcat-accent;
 	}
 
 	&.is-drop-before::before {
@@ -199,22 +199,22 @@ $bcm-bad: #d63638;
 	}
 
 	&.is-drop-inside {
-		background: $bcm-accent-tint;
-		box-shadow: inset 0 0 0 2px $bcm-accent;
+		background: $bulkcat-accent-tint;
+		box-shadow: inset 0 0 0 2px $bulkcat-accent;
 	}
 
 	&.is-drop-blocked {
-		box-shadow: inset 0 0 0 2px $bcm-bad;
+		box-shadow: inset 0 0 0 2px $bulkcat-bad;
 		cursor: not-allowed;
 	}
 }
 
-.bcm-cat-grip {
+.bulkcat-cat-grip {
 	flex: none;
 	width: 14px;
 	height: 24px;
 	cursor: grab;
-	color: $bcm-ink-3;
+	color: $bulkcat-ink-3;
 	// Six dots, drawn so the handle clears 3:1 at rest (prototype).
 	background-image: radial-gradient(circle, currentColor 1px, transparent 1.2px);
 	background-size: 4px 4px;
@@ -229,13 +229,13 @@ $bcm-bad: #d63638;
 	}
 }
 
-.bcm-cat-twist {
+.bulkcat-cat-twist {
 	flex: none;
 	display: grid;
 	place-items: center;
 	width: 24px;
 	height: 24px;
-	color: $bcm-ink-3;
+	color: $bulkcat-ink-3;
 
 	&:not(.is-leaf)::before {
 		content: "";
@@ -252,11 +252,11 @@ $bcm-bad: #d63638;
 	}
 
 	&:hover {
-		color: $bcm-ink;
+		color: $bulkcat-ink;
 	}
 }
 
-.bcm-cat-name {
+.bulkcat-cat-name {
 	flex: 1;
 	min-width: 0;
 	padding: 4px 4px 4px 0;
@@ -265,15 +265,15 @@ $bcm-bad: #d63638;
 	white-space: nowrap;
 }
 
-.bcm-cat-count {
+.bulkcat-cat-count {
 	margin-left: auto;
 	padding: 0 6px;
-	color: $bcm-ink-3;
+	color: $bulkcat-ink-3;
 	font-size: 11px;
 	font-variant-numeric: tabular-nums;
 }
 
-.bcm-cat-kebab {
+.bulkcat-cat-kebab {
 	flex: none;
 	width: 24px;
 	height: 24px;
@@ -281,36 +281,36 @@ $bcm-bad: #d63638;
 	border: 0;
 	border-radius: 2px;
 	background: none;
-	color: $bcm-ink-3;
+	color: $bulkcat-ink-3;
 	cursor: pointer;
 	opacity: 0;
 	line-height: 1;
 
-	.bcm-cat-row:hover &,
-	.bcm-cat-item:focus-visible > .bcm-cat-row &,
-	.bcm-cat-row.is-menu-open &,
+	.bulkcat-cat-row:hover &,
+	.bulkcat-cat-item:focus-visible > .bulkcat-cat-row &,
+	.bulkcat-cat-row.is-menu-open &,
 	&:focus-visible {
 		opacity: 1;
 	}
 
 	&:hover {
 		background: #e2e4e7;
-		color: $bcm-ink;
+		color: $bulkcat-ink;
 	}
 }
 
-.bcm-cat-rename {
+.bulkcat-cat-rename {
 	flex: 1;
 	min-width: 0;
 	height: 24px;
 	padding: 0 5px;
 	font-size: 13px;
-	border: 1px solid $bcm-accent;
+	border: 1px solid $bulkcat-accent;
 	border-radius: 2px;
-	box-shadow: 0 0 0 1px $bcm-accent;
+	box-shadow: 0 0 0 1px $bulkcat-accent;
 }
 
-.bcm-cat-menu {
+.bulkcat-cat-menu {
 	position: absolute;
 	z-index: 70;
 	top: 26px;
@@ -331,45 +331,45 @@ $bcm-bad: #d63638;
 		border: 0;
 		border-radius: 2px;
 		background: none;
-		color: $bcm-ink;
+		color: $bulkcat-ink;
 		text-align: left;
 		cursor: pointer;
 
 		&:hover,
 		&:focus {
-			background: $bcm-accent-tint;
+			background: $bulkcat-accent-tint;
 			outline: none;
 		}
 
 		&:focus-visible {
-			outline: 2px solid $bcm-accent;
+			outline: 2px solid $bulkcat-accent;
 			outline-offset: -2px;
 		}
 	}
 }
 
-.bcm-cat-none {
+.bulkcat-cat-none {
 	margin: 8px;
-	color: $bcm-ink-3;
+	color: $bulkcat-ink-3;
 }
 
-.bcm-cat-drag-line {
+.bulkcat-cat-drag-line {
 	position: sticky;
 	bottom: 0;
 	margin: 6px 0 0;
 	padding: 6px 8px;
 	background: #fff;
-	border: 1px solid $bcm-rule;
+	border: 1px solid $bulkcat-rule;
 	border-radius: 3px;
 	font-size: 12px;
 
 	&.is-blocked {
-		border-color: $bcm-bad;
+		border-color: $bulkcat-bad;
 		color: #8a2424;
 	}
 }
 
-.bcm-cat-manager {
+.bulkcat-cat-manager {
 	display: flex;
 	flex-direction: column;
 	gap: 16px;
@@ -386,23 +386,23 @@ $bcm-bad: #d63638;
 	}
 }
 
-.bcm-cat-move__preview {
+.bulkcat-cat-move__preview {
 	margin: 16px 0;
-	color: $bcm-ink-3;
+	color: $bulkcat-ink-3;
 }
 
-.bcm-cat-move form {
+.bulkcat-cat-move form {
 	display: flex;
 	flex-direction: column;
 	gap: 16px;
 }
 
-.bcm-cat-error__details {
+.bulkcat-cat-error__details {
 	margin: 4px 0 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
-	.bcm-cat-twist::before {
+	.bulkcat-cat-twist::before {
 		transition: none;
 	}
 }
@@ -411,23 +411,23 @@ $bcm-bad: #d63638;
 // tree's `[role="treeitem"] span[aria-hidden]` as an absolutely placed
 // dashicon; the tree's own decorative spans (grip, disclosure, count, the
 // kebab's dots) stay in the row's flow.
-[role="treeitem"] .bcm-cat-row span[aria-hidden] {
+[role="treeitem"] .bulkcat-cat-row span[aria-hidden] {
 	position: static;
 	font-family: inherit;
 	font-size: inherit;
 	pointer-events: auto;
 }
 
-[role="treeitem"] .bcm-cat-row > .bcm-cat-grip[aria-hidden] {
+[role="treeitem"] .bulkcat-cat-row > .bulkcat-cat-grip[aria-hidden] {
 	display: block;
 	font-size: 0;
 }
 
-[role="treeitem"] .bcm-cat-row > .bcm-cat-twist[aria-hidden] {
+[role="treeitem"] .bulkcat-cat-row > .bulkcat-cat-twist[aria-hidden] {
 	display: grid;
 }
 
-[role="treeitem"] .bcm-cat-row > .bcm-cat-count[aria-hidden] {
+[role="treeitem"] .bulkcat-cat-row > .bulkcat-cat-count[aria-hidden] {
 	display: inline-block;
 	font-size: 11px;
 }

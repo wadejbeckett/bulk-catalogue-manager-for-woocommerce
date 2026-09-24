@@ -24,8 +24,8 @@ use PHPUnit\Framework\TestCase;
 
 final class SetValueTest extends TestCase {
 	protected function setUp(): void {
-		bcm_test_reset();
-		$GLOBALS['bcm_test']['terms'] = [ 'product_shipping_class' => [ 31 ] ];
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['terms'] = [ 'product_shipping_class' => [ 31 ] ];
 	}
 
 	private static function operation(): Operation {
@@ -182,7 +182,7 @@ final class SetValueTest extends TestCase {
 			$result  = $operation->compute( $product, $this->args( $operation, $key, $value ) );
 			$this->assertSame( Result::FAILED, $result->state(), $key );
 			$this->assertSame( $reason, $result->reason() );
-			$this->assertSame( 'bcm_not_available', $result->code() );
+			$this->assertSame( 'bulkcat_not_available', $result->code() );
 			$this->assertSame( $result->old(), $result->new() );
 			$operation->apply( $result, $product );
 			$this->assertSame( [], $product->sets, "$key: a failed row is not written." );
@@ -197,7 +197,7 @@ final class SetValueTest extends TestCase {
 				'skip_already' => true,
 			]
 		);
-		$this->assertSame( [ Result::FAILED, 'bcm_invalid_value' ], [ $bad->state(), $bad->code() ] );
+		$this->assertSame( [ Result::FAILED, 'bulkcat_invalid_value' ], [ $bad->state(), $bad->code() ] );
 		$this->assertNotSame( '', $bad->reason() );
 	}
 
@@ -209,14 +209,14 @@ final class SetValueTest extends TestCase {
 		$this->assertSame( stripslashes( wp_filter_post_kses( addslashes( $raw ) ) ), $result->new() );
 		$this->assertSame( 'alert(1)Shirt <b>bold</b> A\\B', $result->new(), 'Tags go, allowed markup and backslashes stay.' );
 
-		$GLOBALS['bcm_test']['caps']['unfiltered_html'] = true;
-		$trusted                                        = $operation->compute( new FakeProduct( 'simple', [ 'name' => 'Old' ] ), $this->args( $operation, 'name', $raw ) );
+		$GLOBALS['bulkcat_test']['caps']['unfiltered_html'] = true;
+		$trusted = $operation->compute( new FakeProduct( 'simple', [ 'name' => 'Old' ] ), $this->args( $operation, 'name', $raw ) );
 		$this->assertSame( $raw, $trusted->new(), 'A user with unfiltered_html writes the name as given.' );
 
 		// Arguments validated for a trusted user, computed later with no user (background work): filtered.
-		$args                        = $this->args( $operation, 'name', $raw );
-		$GLOBALS['bcm_test']['caps'] = [];
-		$later                       = $operation->compute( new FakeProduct( 'simple', [ 'name' => 'Old' ] ), $args );
+		$args                            = $this->args( $operation, 'name', $raw );
+		$GLOBALS['bulkcat_test']['caps'] = [];
+		$later                           = $operation->compute( new FakeProduct( 'simple', [ 'name' => 'Old' ] ), $args );
 		$this->assertSame( 'alert(1)Shirt <b>bold</b> A\\B', $later->new() );
 	}
 

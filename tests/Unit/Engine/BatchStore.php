@@ -59,10 +59,10 @@ final class BatchStore {
 	public function __construct( private SqlEvaluator $db ) {
 		global $wpdb;
 		$wpdb->responses = [
-			'/^INSERT INTO `wp_bcm_batch_items`/'      => fn( string $sql ): int => $this->insert_items( $sql ),
-			'/^DELETE FROM `(wp_bcm_batches|wp_bcm_batch_items)`/' => fn( string $sql ): int => $this->delete( $sql ),
-			'/^SELECT \* FROM `wp_bcm_batches` WHERE batch_id = (\d+)$/' => fn( string $sql ): ?array => $this->find( $sql ),
-			'/^SELECT batch_id FROM `wp_bcm_batches`/' => fn( string $sql ): ?string => $this->lookup( $sql ),
+			'/^INSERT INTO `wp_bulkcat_batch_items`/'      => fn( string $sql ): int => $this->insert_items( $sql ),
+			'/^DELETE FROM `(wp_bulkcat_batches|wp_bulkcat_batch_items)`/' => fn( string $sql ): int => $this->delete( $sql ),
+			'/^SELECT \* FROM `wp_bulkcat_batches` WHERE batch_id = (\d+)$/' => fn( string $sql ): ?array => $this->find( $sql ),
+			'/^SELECT batch_id FROM `wp_bulkcat_batches`/' => fn( string $sql ): ?string => $this->lookup( $sql ),
 		] + $wpdb->responses;
 	}
 
@@ -77,7 +77,7 @@ final class BatchStore {
 				continue;
 			}
 			$id = ++$this->inserts;
-			if ( 'wp_bcm_batches' !== $write[1] ) {
+			if ( 'wp_bulkcat_batches' !== $write[1] ) {
 				continue;
 			}
 			$this->batches[ $id ] = [ 'batch_id' => $id ] + $write[2] + [
@@ -122,10 +122,10 @@ final class BatchStore {
 
 	private function delete( string $sql ): int {
 		$this->sync();
-		preg_match( '/^DELETE FROM `(wp_bcm_batches|wp_bcm_batch_items)` WHERE batch_id = (\d+)$/', $sql, $m );
+		preg_match( '/^DELETE FROM `(wp_bulkcat_batches|wp_bulkcat_batch_items)` WHERE batch_id = (\d+)$/', $sql, $m );
 		$id          = (int) $m[2];
 		$this->log[] = 'discard:' . $m[1] . ':' . $id;
-		if ( 'wp_bcm_batches' === $m[1] ) {
+		if ( 'wp_bulkcat_batches' === $m[1] ) {
 			$gone = isset( $this->batches[ $id ] ) ? 1 : 0;
 			unset( $this->batches[ $id ] );
 			return $gone;
@@ -144,7 +144,7 @@ final class BatchStore {
 
 	private function lookup( string $sql ): ?string {
 		$this->sync();
-		$this->db->tables['wp_bcm_batches'] = array_values( $this->batches );
+		$this->db->tables['wp_bulkcat_batches'] = array_values( $this->batches );
 		return $this->db->value( $sql );
 	}
 }

@@ -20,7 +20,7 @@ use PHPUnit\Framework\TestCase;
 
 final class CriteriaTest extends TestCase {
 	protected function setUp(): void {
-		bcm_test_reset();
+		bulkcat_test_reset();
 	}
 
 	private static function refuses( array $args ): bool {

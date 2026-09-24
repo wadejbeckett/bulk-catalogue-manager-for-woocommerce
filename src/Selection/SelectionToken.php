@@ -5,18 +5,18 @@
  * again. The selection itself stays on the server: a snapshot — a filter's
  * normalised conditions (Criteria::conditions()) with the count they
  * matched, or the id list — plus the user it was made for and when it
- * expires, stored in a `bcm_selection_` transient under a random id.
+ * expires, stored in a `bulkcat_selection_` transient under a random id.
  *
  * Form: `id . '.' . signature`, the id 32 lower-case hex characters and the
  * signature the hex HMAC (SHA-256, keyed on `wp_salt( 'auth' )`) of the id,
  * compared with `hash_equals()`, so any altered character is refused before
  * anything is read. parse() gives back the materialised Selection, or
- * refuses 403 `bcm_invalid_selection` for a token that is malformed,
+ * refuses 403 `bulkcat_invalid_selection` for a token that is malformed,
  * altered, expired, made for another user or whose stored selection has
  * gone. A filter comes back through Criteria::from_conditions(), validated
  * again as a request would be.
  *
- * Tokens last TTL seconds, filterable through `bcm_selection_ttl` (clamped
+ * Tokens last TTL seconds, filterable through `bulkcat_selection_ttl` (clamped
  * to one minute to one day); the transient lasts as long.
  *
  * @package BulkCatalogueManager
@@ -39,7 +39,7 @@ final class SelectionToken {
 	/**
 	 * The refusal code for a token that cannot be used.
 	 */
-	public const INVALID = 'bcm_invalid_selection';
+	public const INVALID = 'bulkcat_invalid_selection';
 
 	/**
 	 * Default lifetime, in seconds.
@@ -60,7 +60,7 @@ final class SelectionToken {
 	/**
 	 * The transient name prefix a stored selection is kept under, followed by its id.
 	 */
-	public const PREFIX = 'bcm_selection_';
+	public const PREFIX = 'bulkcat_selection_';
 
 	/**
 	 * A token: the stored selection's id, a dot and the hex HMAC of the id.
@@ -138,15 +138,15 @@ final class SelectionToken {
 	}
 
 	/**
-	 * How long a token lasts, in seconds: TTL through `bcm_selection_ttl`, clamped.
+	 * How long a token lasts, in seconds: TTL through `bulkcat_selection_ttl`, clamped.
 	 */
 	public static function ttl(): int {
-		$ttl = apply_filters( 'bcm_selection_ttl', self::TTL );
+		$ttl = apply_filters( 'bulkcat_selection_ttl', self::TTL );
 		return is_int( $ttl ) ? max( self::MIN_TTL, min( self::MAX_TTL, $ttl ) ) : self::TTL;
 	}
 
 	/**
-	 * The refusal for any token that cannot be used: 403 `bcm_invalid_selection`.
+	 * The refusal for any token that cannot be used: 403 `bulkcat_invalid_selection`.
 	 */
 	public static function refusal(): \WP_Error {
 		return Refusal::create(

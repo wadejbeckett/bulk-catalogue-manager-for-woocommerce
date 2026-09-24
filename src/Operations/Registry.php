@@ -8,7 +8,7 @@
  * object in list order. validate_list() refuses an empty list, more than
  * MAX_OPERATIONS entries, a malformed entry, an unknown action id, an action
  * applied to a field it does not accept, and arguments the action refuses —
- * each a Rest\Refusal with status 400, a `bcm_` code and a §4.8 sentence
+ * each a Rest\Refusal with status 400, a `bulkcat_` code and a §4.8 sentence
  * naming the step — and otherwise returns the list with every entry's
  * arguments normalised, as preview, batches and the journal store it.
  *
@@ -37,17 +37,17 @@ final class Registry {
 	/**
 	 * Refusal code for a list with no operations.
 	 */
-	public const NO_OPERATIONS = 'bcm_no_operations';
+	public const NO_OPERATIONS = 'bulkcat_no_operations';
 
 	/**
 	 * Refusal code for a list above MAX_OPERATIONS.
 	 */
-	public const TOO_MANY = 'bcm_too_many_operations';
+	public const TOO_MANY = 'bulkcat_too_many_operations';
 
 	/**
 	 * Refusal code for an action id no operation has.
 	 */
-	public const UNKNOWN_ACTION = 'bcm_unknown_action';
+	public const UNKNOWN_ACTION = 'bulkcat_unknown_action';
 
 	/**
 	 * The instance runtime code shares.
@@ -263,7 +263,7 @@ final class Registry {
 	/**
 	 * A refusal of the list as a whole.
 	 *
-	 * @param string               $code    `bcm_` code.
+	 * @param string               $code    `bulkcat_` code.
 	 * @param string               $message Plain sentence.
 	 * @param array<string, mixed> $data    Extra data.
 	 */
@@ -276,7 +276,7 @@ final class Registry {
 	 *
 	 * @param int                  $step    Position in the list, from 1.
 	 * @param int                  $count   Steps in the list.
-	 * @param string               $code    `bcm_` code.
+	 * @param string               $code    `bulkcat_` code.
 	 * @param string               $message Plain sentence about the step.
 	 * @param array<string, mixed> $data    Extra data.
 	 */

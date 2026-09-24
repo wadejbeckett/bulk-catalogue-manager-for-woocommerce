@@ -29,13 +29,13 @@ final class ValidatorTest extends TestCase {
 	private const CANNOT_EDIT = 'You do not have permission to edit this product, so it was skipped. Ask an administrator for access to it.';
 
 	protected function setUp(): void {
-		bcm_test_reset();
-		$GLOBALS['bcm_test']['caps']  = [
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['caps']  = [
 			'edit_post'            => true,
 			'assign_product_terms' => true,
 		];
-		$GLOBALS['bcm_test']['skus']  = [ 'SHOE-42' => 99 ];
-		$GLOBALS['bcm_test']['terms'] = [
+		$GLOBALS['bulkcat_test']['skus']  = [ 'SHOE-42' => 99 ];
+		$GLOBALS['bulkcat_test']['terms'] = [
 			'product_cat' => [ 5 ],
 			'product_tag' => [ 6 ],
 		];
@@ -62,7 +62,7 @@ final class ValidatorTest extends TestCase {
 				Result::changed( 'sale_price', '8.00', '12.00' ),
 				[],
 				Result::SKIPPED,
-				'bcm_invalid_value',
+				'bulkcat_invalid_value',
 				self::SALE_NOT_BELOW,
 			],
 			'sale price equal to the regular'             => [
@@ -75,7 +75,7 @@ final class ValidatorTest extends TestCase {
 				Result::changed( 'sale_price', '', '10.00' ),
 				[],
 				Result::SKIPPED,
-				'bcm_invalid_value',
+				'bulkcat_invalid_value',
 				self::SALE_NOT_BELOW,
 			],
 			'regular price lowered to the sale price'     => [
@@ -88,7 +88,7 @@ final class ValidatorTest extends TestCase {
 				Result::changed( 'regular_price', '10.00', '7.50' ),
 				[],
 				Result::SKIPPED,
-				'bcm_invalid_value',
+				'bulkcat_invalid_value',
 				self::SALE_NOT_BELOW,
 			],
 			'a price below zero'                          => [
@@ -100,7 +100,7 @@ final class ValidatorTest extends TestCase {
 				Result::changed( 'regular_price', '10.00', '-1.00' ),
 				[],
 				Result::SKIPPED,
-				'bcm_invalid_value',
+				'bulkcat_invalid_value',
 				'Regular price has to be a price of 0 or more, like 12.50, or left empty.',
 			],
 			'a weight below zero'                         => [
@@ -112,7 +112,7 @@ final class ValidatorTest extends TestCase {
 				Result::changed( 'weight', '2', '-0.5' ),
 				[],
 				Result::SKIPPED,
-				'bcm_invalid_value',
+				'bulkcat_invalid_value',
 				'Weight has to be a number of 0 or more, like 1.5, or left empty.',
 			],
 			'a SKU another product holds'                 => [
@@ -124,7 +124,7 @@ final class ValidatorTest extends TestCase {
 				Result::changed( 'sku', 'SHOE-41', 'SHOE-42' ),
 				[],
 				Result::FAILED,
-				'bcm_invalid_value',
+				'bulkcat_invalid_value',
 				'A product with the SKU SHOE-42 already exists, so this SKU was not applied.',
 			],
 			'a SKU another product holds, on a variation' => [
@@ -136,7 +136,7 @@ final class ValidatorTest extends TestCase {
 				Result::changed( 'sku', '', 'SHOE-42' ),
 				[],
 				Result::FAILED,
-				'bcm_invalid_value',
+				'bulkcat_invalid_value',
 				'A product with the SKU SHOE-42 already exists, so this SKU was not applied.',
 			],
 			'stock quantity on unmanaged variation stock' => [
@@ -149,7 +149,7 @@ final class ValidatorTest extends TestCase {
 				Result::changed( 'stock_quantity', null, 4 ),
 				[],
 				Result::SKIPPED,
-				'bcm_not_available',
+				'bulkcat_not_available',
 				'This variation does not manage its own stock, so its stock quantity was not changed. Turn on Manage stock for the variation first.',
 			],
 			'categories on a variation'                   => [
@@ -161,7 +161,7 @@ final class ValidatorTest extends TestCase {
 				Result::changed( 'category_ids', [], [ 5 ] ),
 				[],
 				Result::FAILED,
-				'bcm_not_available',
+				'bulkcat_not_available',
 				'Categories belong to the product, not to each variation.',
 			],
 			'tags on a variation'                         => [
@@ -173,7 +173,7 @@ final class ValidatorTest extends TestCase {
 				Result::changed( 'tag_ids', [], [ 6 ] ),
 				[],
 				Result::FAILED,
-				'bcm_not_available',
+				'bulkcat_not_available',
 				'Tags belong to the product, not to each variation.',
 			],
 			'featured on a variation'                     => [
@@ -185,7 +185,7 @@ final class ValidatorTest extends TestCase {
 				Result::changed( 'featured', false, true ),
 				[],
 				Result::FAILED,
-				'bcm_not_available',
+				'bulkcat_not_available',
 				'Featured belongs to the product, not to each variation.',
 			],
 			'a price on a variable product'               => [
@@ -197,7 +197,7 @@ final class ValidatorTest extends TestCase {
 				Result::changed( 'regular_price', '', '10.00' ),
 				[],
 				Result::FAILED,
-				'bcm_not_available',
+				'bulkcat_not_available',
 				'A variable product takes its price from its variations. Change the variations instead.',
 			],
 			'draft on a variation'                        => [
@@ -209,7 +209,7 @@ final class ValidatorTest extends TestCase {
 				Result::changed( 'status', 'publish', 'draft' ),
 				[],
 				Result::FAILED,
-				'bcm_invalid_value',
+				'bulkcat_invalid_value',
 				'On a variation, Status can only be: Published, Private.',
 			],
 		];
@@ -223,7 +223,7 @@ final class ValidatorTest extends TestCase {
 			$this->assertSame( $state, $results[0]->state(), $case );
 			$this->assertSame( $code, $results[0]->code(), $case );
 			$this->assertSame( $sentence, $results[0]->reason(), $case );
-			$this->assertStringNotContainsString( 'bcm_', $results[0]->reason(), "$case: no code in the sentence." );
+			$this->assertStringNotContainsString( 'bulkcat_', $results[0]->reason(), "$case: no code in the sentence." );
 			$this->assertSame( $change->old(), $results[0]->new(), "$case: a refused row keeps its value." );
 			$this->assertSame( [], $product->sets, "$case: validation writes nothing." );
 		}
@@ -257,7 +257,7 @@ final class ValidatorTest extends TestCase {
 		foreach ( [
 			Result::already( 'category_ids', [ 5 ] ),
 			Result::skipped( 'regular_price', '', 'Regular price is empty, so there was nothing to change.' ),
-			Result::failed( 'sku', 'A', 'A product with the SKU A already exists, so this SKU was not applied.', 'bcm_invalid_value' ),
+			Result::failed( 'sku', 'A', 'A product with the SKU A already exists, so this SKU was not applied.', 'bulkcat_invalid_value' ),
 		] as $result ) {
 			$this->assertSame( [ $result ], self::validator()->check( $product, $result ) );
 		}
@@ -381,19 +381,19 @@ final class ValidatorTest extends TestCase {
 		);
 		$first   = self::validator();
 		$results = $first->check( $clash, Result::changed( 'sku', '', 'SHOE-42' ) );
-		$this->assertSame( 'bcm_invalid_value', $results[0]->code() );
+		$this->assertSame( 'bulkcat_invalid_value', $results[0]->code() );
 		$this->assertSame( Result::FAILED, $results[0]->state() );
 
-		$GLOBALS['bcm_test']['caps']['edit_post:62'] = false;
-		$variation                                   = new FakeProduct(
+		$GLOBALS['bulkcat_test']['caps']['edit_post:62'] = false;
+		$variation                                       = new FakeProduct(
 			'variation',
 			[
 				'id'           => 62,
 				'category_ids' => [],
 			]
 		);
-		$results                                     = self::validator()->check( $variation, Result::changed( 'category_ids', [], [ 5 ] ) );
-		$this->assertSame( [ Result::SKIPPED, 'bcm_cannot_edit', self::CANNOT_EDIT ], [ $results[0]->state(), $results[0]->code(), $results[0]->reason() ], 'Permission is checked before the field.' );
+		$results = self::validator()->check( $variation, Result::changed( 'category_ids', [], [ 5 ] ) );
+		$this->assertSame( [ Result::SKIPPED, 'bulkcat_cannot_edit', self::CANNOT_EDIT ], [ $results[0]->state(), $results[0]->code(), $results[0]->reason() ], 'Permission is checked before the field.' );
 	}
 
 	public function test_one_failing_row_leaves_the_rest_of_the_batch_validated(): void {
@@ -435,9 +435,9 @@ final class ValidatorTest extends TestCase {
 	}
 
 	public function test_each_object_is_authorised_in_a_request(): void {
-		$GLOBALS['bcm_test']['caps']['edit_post:81'] = false;
-		$validator                                   = self::validator();
-		$states                                      = [];
+		$GLOBALS['bulkcat_test']['caps']['edit_post:81'] = false;
+		$validator                                       = self::validator();
+		$states = [];
 		foreach ( [ 80, 81, 82 ] as $id ) {
 			$product       = new FakeProduct(
 				'simple',
@@ -452,7 +452,7 @@ final class ValidatorTest extends TestCase {
 		$this->assertSame(
 			[
 				80 => [ Result::CHANGED, '', '' ],
-				81 => [ Result::SKIPPED, 'bcm_cannot_edit', self::CANNOT_EDIT ],
+				81 => [ Result::SKIPPED, 'bulkcat_cannot_edit', self::CANNOT_EDIT ],
 				82 => [ Result::CHANGED, '', '' ],
 			],
 			$states,
@@ -462,19 +462,19 @@ final class ValidatorTest extends TestCase {
 		$already = $validator->check( new FakeProduct( 'simple', [ 'id' => 81 ] ), Result::already( 'status', 'publish' ) );
 		$this->assertSame( Result::SKIPPED, $already[0]->state(), 'A row the user may not edit is reported as skipped whatever it computed.' );
 		$this->assertNull( $validator->authorise( new FakeProduct( 'simple', [ 'id' => 80 ] ) ) );
-		$this->assertSame( 'bcm_cannot_edit', $validator->authorise( new FakeProduct( 'simple', [ 'id' => 81 ] ) )->get_error_code() );
+		$this->assertSame( 'bulkcat_cannot_edit', $validator->authorise( new FakeProduct( 'simple', [ 'id' => 81 ] ) )->get_error_code() );
 	}
 
 	public function test_background_work_is_authorised_against_the_recorded_user(): void {
-		$GLOBALS['bcm_test']['caps']      = [];
-		$GLOBALS['bcm_test']['user_caps'] = [
+		$GLOBALS['bulkcat_test']['caps']      = [];
+		$GLOBALS['bulkcat_test']['user_caps'] = [
 			5 => [
 				'edit_post'    => true,
 				'edit_post:91' => false,
 			],
 		];
-		$change                           = Result::changed( 'featured', false, true );
-		$states                           = [];
+		$change                               = Result::changed( 'featured', false, true );
+		$states                               = [];
 		foreach ( [ 90, 91 ] as $id ) {
 			$results       = Validator::for_user( new Fields(), 5 )->check( new FakeProduct( 'simple', [ 'id' => $id ] ), $change );
 			$states[ $id ] = $results[0]->state();
@@ -493,8 +493,8 @@ final class ValidatorTest extends TestCase {
 
 	public function test_a_variation_needs_edit_rights_on_its_parent_too(): void {
 		// The variation's own author may differ from its parent's; saving it resyncs the parent.
-		$GLOBALS['bcm_test']['caps']['edit_post:50'] = false;
-		$variation                                   = new FakeProduct(
+		$GLOBALS['bulkcat_test']['caps']['edit_post:50'] = false;
+		$variation                                       = new FakeProduct(
 			'variation',
 			[
 				'id'            => 60,
@@ -502,24 +502,24 @@ final class ValidatorTest extends TestCase {
 				'regular_price' => '10.00',
 			]
 		);
-		$change                                      = Result::changed( 'regular_price', '10.00', '12.00' );
+		$change = Result::changed( 'regular_price', '10.00', '12.00' );
 
 		$refused = self::validator()->check( $variation, $change )[0];
-		$this->assertSame( [ Result::SKIPPED, 'bcm_cannot_edit', self::CANNOT_EDIT ], [ $refused->state(), $refused->code(), $refused->reason() ] );
+		$this->assertSame( [ Result::SKIPPED, 'bulkcat_cannot_edit', self::CANNOT_EDIT ], [ $refused->state(), $refused->code(), $refused->reason() ] );
 
-		$GLOBALS['bcm_test']['caps']['edit_post:50'] = true;
+		$GLOBALS['bulkcat_test']['caps']['edit_post:50'] = true;
 		$this->assertSame( Result::CHANGED, self::validator()->check( $variation, $change )[0]->state() );
 
 		// In background work, against the batch's recorded user.
-		$GLOBALS['bcm_test']['caps']      = [];
-		$GLOBALS['bcm_test']['user_caps'] = [
+		$GLOBALS['bulkcat_test']['caps']      = [];
+		$GLOBALS['bulkcat_test']['user_caps'] = [
 			5 => [
 				'edit_post'    => true,
 				'edit_post:50' => false,
 			],
 		];
 		$this->assertSame( Result::SKIPPED, Validator::for_user( new Fields(), 5 )->check( $variation, $change )[0]->state() );
-		$GLOBALS['bcm_test']['user_caps'][5]['edit_post:50'] = true;
+		$GLOBALS['bulkcat_test']['user_caps'][5]['edit_post:50'] = true;
 		$this->assertSame( Result::CHANGED, Validator::for_user( new Fields(), 5 )->check( $variation, $change )[0]->state() );
 	}
 
@@ -536,25 +536,25 @@ final class ValidatorTest extends TestCase {
 			'categories' => Result::changed( 'category_ids', [], [ 5 ], true ),
 			'tags'       => Result::changed( 'tag_ids', [], [ 6 ], true ),
 		];
-		$GLOBALS['bcm_test']['caps']['assign_product_terms'] = false;
+		$GLOBALS['bulkcat_test']['caps']['assign_product_terms'] = false;
 		foreach ( $cases as $case => $change ) {
 			$refused = self::validator()->check( $product, $change )[0];
-			$this->assertSame( [ Result::SKIPPED, 'bcm_cannot_edit' ], [ $refused->state(), $refused->code() ], $case );
+			$this->assertSame( [ Result::SKIPPED, 'bulkcat_cannot_edit' ], [ $refused->state(), $refused->code() ], $case );
 			$this->assertStringContainsString( 'permission', $refused->reason(), $case );
-			$this->assertStringNotContainsString( 'bcm_', $refused->reason(), $case );
+			$this->assertStringNotContainsString( 'bulkcat_', $refused->reason(), $case );
 		}
 		$this->assertSame( Result::ALREADY, self::validator()->check( $product, Result::already( 'category_ids', [] ) )[0]->state(), 'Only a change needs it.' );
 
-		$GLOBALS['bcm_test']['caps']['assign_product_terms'] = true;
+		$GLOBALS['bulkcat_test']['caps']['assign_product_terms'] = true;
 		foreach ( $cases as $case => $change ) {
 			$this->assertSame( Result::CHANGED, self::validator()->check( $product, $change )[0]->state(), $case );
 		}
 
 		// In background work, against the batch's recorded user.
-		$GLOBALS['bcm_test']['caps']      = [];
-		$GLOBALS['bcm_test']['user_caps'] = [ 5 => [ 'edit_post' => true ] ];
+		$GLOBALS['bulkcat_test']['caps']      = [];
+		$GLOBALS['bulkcat_test']['user_caps'] = [ 5 => [ 'edit_post' => true ] ];
 		$this->assertSame( Result::SKIPPED, Validator::for_user( new Fields(), 5 )->check( $product, $cases['categories'] )[0]->state() );
-		$GLOBALS['bcm_test']['user_caps'][5]['assign_product_terms'] = true;
+		$GLOBALS['bulkcat_test']['user_caps'][5]['assign_product_terms'] = true;
 		$this->assertSame( Result::CHANGED, Validator::for_user( new Fields(), 5 )->check( $product, $cases['categories'] )[0]->state() );
 	}
 

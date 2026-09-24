@@ -2,7 +2,7 @@
  * T51, T52: the layout switch and the grid layout; saved views as the
  * segmented chips row — the built-ins from the registry, then the stored
  * views — with save, update, rename, duplicate, reorder (menu and drag),
- * default and delete each calling its /bcm/v1/views route; the default view
+ * default and delete each calling its /bulkcat/v1/views route; the default view
  * applied on load; and a view serialising and reading back unchanged,
  * an unrecognised key included.
  */
@@ -290,7 +290,7 @@ describe( 'saved views row', () => {
 			method === 'GET'
 				? Promise.resolve( answer )
 				: Promise.reject( {
-						code: 'bcm_view_exists',
+						code: 'bulkcat_view_exists',
 						message:
 							'You already have a view called "Shirts". Choose another name.',
 					} )
@@ -572,7 +572,7 @@ describe( 'layouts', () => {
 		).toBeTruthy();
 		// Thumbnail, name, price and stock status on each card.
 		expect(
-			grid.container.querySelectorAll( 'img.bcm-thumb' )
+			grid.container.querySelectorAll( 'img.bulkcat-thumb' )
 		).toHaveLength( 2 );
 		expect(
 			screen.getByRole( 'link', { name: 'Classic Cotton T-Shirt' } )

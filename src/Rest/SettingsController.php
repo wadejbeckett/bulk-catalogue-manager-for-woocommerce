@@ -2,16 +2,16 @@
 /**
  * The settings routes (SPEC §11, §12.1, §13; T73):
  *
- * - `GET /bcm/v1/settings` (Access::can_read, the screen capability) answers
+ * - `GET /bulkcat/v1/settings` (Access::can_read, the screen capability) answers
  *   `{ values, settings, groups, canEdit }`: every §11 value as stored and
  *   validated, and each setting's description for the Settings tab — its
  *   plain-English label, help text, type, choices, minimum and maximum,
  *   special values (0 days keeps history indefinitely) and any warning — in
  *   the tab's groups, plus whether the current user may change them.
- * - `PUT` (or `POST`) `/bcm/v1/settings` (Access::can_manage_settings,
+ * - `PUT` (or `POST`) `/bulkcat/v1/settings` (Access::can_manage_settings,
  *   `manage_options` only) takes `{ values: { … } }`, validates it through
  *   Settings\Schema::validate() and saves nothing unless every value passes:
- *   a refusal is 400 `bcm_invalid_setting` whose message names each refused
+ *   a refusal is 400 `bulkcat_invalid_setting` whose message names each refused
  *   setting with its §11 rule and whose `data.errors` holds the same messages
  *   keyed by setting. On success it answers the GET payload with the saved values.
  *
@@ -43,7 +43,7 @@ final class SettingsController implements ReadController {
 	/**
 	 * The refusal code for a value a setting does not accept.
 	 */
-	public const INVALID = 'bcm_invalid_setting';
+	public const INVALID = 'bulkcat_invalid_setting';
 
 	/**
 	 * The Settings tab's groups in order, each with its settings in order.
@@ -319,7 +319,7 @@ final class SettingsController implements ReadController {
 		}
 		return [
 			'$schema'    => 'http://json-schema.org/draft-04/schema#',
-			'title'      => 'bcm-settings',
+			'title'      => 'bulkcat-settings',
 			'type'       => 'object',
 			'properties' => [
 				'values'   => [

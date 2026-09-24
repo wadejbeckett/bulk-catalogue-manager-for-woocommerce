@@ -188,8 +188,8 @@ describe( 'Visible on site switch', () => {
 		const off = screen.getByRole( 'switch', {
 			name: 'Visible on site, Ladies Golf Shirt',
 		} );
-		const cell = off.closest( '.bcm-switch' );
-		const badge = cell.querySelector( '.bcm-switch__status' );
+		const cell = off.closest( '.bulkcat-switch' );
+		const badge = cell.querySelector( '.bulkcat-switch__status' );
 		expect( badge.textContent ).toBe( 'Draft' );
 		expect( badge.className ).toContain( 'is-neutral' );
 		fireEvent.click( off );
@@ -256,7 +256,7 @@ describe( 'Visible on site switch', () => {
 
 	it( 'restores the previous position and says why when the write fails', async () => {
 		patch.mockRejectedValue( {
-			code: 'bcm_cannot_edit',
+			code: 'bulkcat_cannot_edit',
 			message: 'You are not allowed to edit this product.',
 			data: { status: 403 },
 		} );

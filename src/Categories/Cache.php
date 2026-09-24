@@ -1,6 +1,6 @@
 <?php
 /**
- * The category tree's cache (SPEC §7, §12.2): one `bcm_category_tree_`
+ * The category tree's cache (SPEC §7, §12.2): one `bulkcat_category_tree_`
  * transient per set of grid conditions, keyed by a hash of those conditions
  * and of a version kept in its own transient.
  *
@@ -32,7 +32,7 @@ final class Cache {
 	/**
 	 * Every transient of the tree cache starts with this (Data\Registry).
 	 */
-	public const PREFIX = 'bcm_category_tree_';
+	public const PREFIX = 'bulkcat_category_tree_';
 
 	/**
 	 * The shape of a stored tree, in every key, so a tree stored before a

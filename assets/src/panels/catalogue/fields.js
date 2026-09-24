@@ -108,7 +108,7 @@ export function queryFields( view, descriptors ) {
  * The page size to start with: the setting's value when it is one of the
  * offered sizes, otherwise the first (SPEC §11 Rows per page).
  *
- * @param {Object} settings Localised settings (window.bcmSettings).
+ * @param {Object} settings Localised settings (window.bulkcatSettings).
  * @return {number} Rows per page.
  */
 export function defaultPerPage( settings ) {

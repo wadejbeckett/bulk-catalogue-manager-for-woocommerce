@@ -23,7 +23,7 @@ final class SchemaTest extends TestCase {
 	 * §9.2 transcribed: column => [ type without display width, nullable ], then indexes.
 	 */
 	private const SPEC = [
-		'bcm_batches'     => [
+		'bulkcat_batches'     => [
 			'columns' => [
 				'batch_id'        => [ 'bigint unsigned', false ],
 				'uuid'            => [ 'char(36)', false ],
@@ -53,7 +53,7 @@ final class SchemaTest extends TestCase {
 			],
 			'auto'    => 'batch_id',
 		],
-		'bcm_batch_items' => [
+		'bulkcat_batch_items' => [
 			'columns' => [
 				'item_id'     => [ 'bigint unsigned', false ],
 				'batch_id'    => [ 'bigint unsigned', false ],
@@ -73,7 +73,7 @@ final class SchemaTest extends TestCase {
 			],
 			'auto'    => 'item_id',
 		],
-		'bcm_changes'     => [
+		'bulkcat_changes'     => [
 			'columns' => [
 				'change_id'    => [ 'bigint unsigned', false ],
 				'batch_id'     => [ 'bigint unsigned', false ],
@@ -98,7 +98,7 @@ final class SchemaTest extends TestCase {
 	];
 
 	protected function setUp(): void {
-		bcm_test_reset();
+		bulkcat_test_reset();
 	}
 
 	/**
@@ -129,7 +129,7 @@ final class SchemaTest extends TestCase {
 	}
 
 	public function test_the_registry_holds_exactly_the_three_tables(): void {
-		$this->assertSame( [ 'bcm_batches', 'bcm_batch_items', 'bcm_changes' ], array_keys( Registry::plugin()->tables() ) );
+		$this->assertSame( [ 'bulkcat_batches', 'bulkcat_batch_items', 'bulkcat_changes' ], array_keys( Registry::plugin()->tables() ) );
 		$this->assertSame( Schema::TABLES, Registry::plugin()->tables() );
 	}
 
@@ -160,22 +160,22 @@ final class SchemaTest extends TestCase {
 		Migrator::activate();
 		$this->assertSame( Migrator::SCHEMA_VERSION, get_option( Migrator::VERSION_OPTION ) );
 
-		$statements = $GLOBALS['bcm_test']['dbdelta'][0];
+		$statements = $GLOBALS['bulkcat_test']['dbdelta'][0];
 		$this->assertCount( 3, $statements );
 		foreach ( array_keys( Schema::TABLES ) as $i => $name ) {
 			$this->assertSame( "CREATE TABLE wp_7_{$name} (\n" . Schema::TABLES[ $name ] . "\n) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci;", $statements[ $i ] );
 		}
-		$this->assertSame( [ 'wp_7_bcm_batches', 'wp_7_bcm_batch_items', 'wp_7_bcm_changes' ], array_keys( $GLOBALS['wpdb']->tables ) );
+		$this->assertSame( [ 'wp_7_bulkcat_batches', 'wp_7_bulkcat_batch_items', 'wp_7_bulkcat_changes' ], array_keys( $GLOBALS['wpdb']->tables ) );
 		$this->assertSame( '6', Migrator::SCHEMA_VERSION, 'T56\'s item operations bumped the schema version, so a site migrated at 5 gains the column.' );
 	}
 
 	public function test_table_names_come_only_from_the_registry_with_the_site_prefix(): void {
 		$registry = Registry::plugin();
-		$this->assertSame( 'wp_bcm_changes', $registry->table( 'bcm_changes' ) );
+		$this->assertSame( 'wp_bulkcat_changes', $registry->table( 'bulkcat_changes' ) );
 		$GLOBALS['wpdb']->prefix = 'shop_3_';
-		$this->assertSame( 'shop_3_bcm_batches', $registry->table( 'bcm_batches' ) );
+		$this->assertSame( 'shop_3_bulkcat_batches', $registry->table( 'bulkcat_batches' ) );
 
-		foreach ( [ 'bcm_other', 'posts', 'wp_bcm_changes', 'bcm_changes`; DROP TABLE x' ] as $name ) {
+		foreach ( [ 'bulkcat_other', 'posts', 'wp_bulkcat_changes', 'bulkcat_changes`; DROP TABLE x' ] as $name ) {
 			try {
 				$registry->table( $name );
 				$this->fail( "\"$name\" was accepted." );

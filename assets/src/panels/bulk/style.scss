@@ -1,30 +1,30 @@
 // The bulk change slide-over (SPEC §4.3, §4.4, §14), in the prototype's
 // admin palette (docs/prototype/index.html, screen 3).
-$bcm-ink: #1d2327;
-$bcm-ink-2: #50575e;
-$bcm-ink-3: #646970;
-$bcm-panel: #fff;
-$bcm-sunk: #f6f7f7;
-$bcm-rule: #dcdcde;
-$bcm-rule-strong: #c3c4c7;
-$bcm-rule-soft: #f0f0f1;
-$bcm-blue: #2271b1;
-$bcm-blue-tint: #f0f6fc;
-$bcm-blue-line: #a7c8e8;
-$bcm-good: #00a32a;
-$bcm-good-ink: #125c2a;
-$bcm-good-tint: #edfaef;
-$bcm-good-line: #b8e6c3;
-$bcm-warn: #dba617;
-$bcm-warn-ink: #6b5209;
-$bcm-warn-tint: #fcf9e8;
-$bcm-warn-line: #f0e0a8;
-$bcm-bad: #d63638;
-$bcm-bad-ink: #8a2424;
-$bcm-bad-tint: #fcf0f1;
-$bcm-bad-line: #f3c3c4;
+$bulkcat-ink: #1d2327;
+$bulkcat-ink-2: #50575e;
+$bulkcat-ink-3: #646970;
+$bulkcat-panel: #fff;
+$bulkcat-sunk: #f6f7f7;
+$bulkcat-rule: #dcdcde;
+$bulkcat-rule-strong: #c3c4c7;
+$bulkcat-rule-soft: #f0f0f1;
+$bulkcat-blue: #2271b1;
+$bulkcat-blue-tint: #f0f6fc;
+$bulkcat-blue-line: #a7c8e8;
+$bulkcat-good: #00a32a;
+$bulkcat-good-ink: #125c2a;
+$bulkcat-good-tint: #edfaef;
+$bulkcat-good-line: #b8e6c3;
+$bulkcat-warn: #dba617;
+$bulkcat-warn-ink: #6b5209;
+$bulkcat-warn-tint: #fcf9e8;
+$bulkcat-warn-line: #f0e0a8;
+$bulkcat-bad: #d63638;
+$bulkcat-bad-ink: #8a2424;
+$bulkcat-bad-tint: #fcf0f1;
+$bulkcat-bad-line: #f3c3c4;
 
-.bcm-bulk {
+.bulkcat-bulk {
 	position: fixed;
 	top: 32px;
 	right: 0;
@@ -34,9 +34,9 @@ $bcm-bad-line: #f3c3c4;
 	container-type: inline-size;
 	display: flex;
 	flex-direction: column;
-	background: $bcm-panel;
-	color: $bcm-ink;
-	border-left: 1px solid $bcm-rule;
+	background: $bulkcat-panel;
+	color: $bulkcat-ink;
+	border-left: 1px solid $bulkcat-rule;
 	box-shadow: -8px 0 24px rgba(16, 24, 40, 0.14);
 
 	@media (max-width: 782px) {
@@ -48,7 +48,7 @@ $bcm-bad-line: #f3c3c4;
 		align-items: center;
 		gap: 8px;
 		padding: 12px 20px;
-		border-bottom: 1px solid $bcm-rule;
+		border-bottom: 1px solid $bulkcat-rule;
 
 		h2 {
 			outline: none;
@@ -64,7 +64,7 @@ $bcm-bad-line: #f3c3c4;
 		min-height: 32px;
 		font-size: 22px;
 		line-height: 1;
-		color: $bcm-ink-2;
+		color: $bulkcat-ink-2;
 	}
 
 	&__steps {
@@ -74,7 +74,7 @@ $bcm-bad-line: #f3c3c4;
 		margin: 0;
 		padding: 6px 20px 0;
 		list-style: none;
-		border-bottom: 1px solid $bcm-rule;
+		border-bottom: 1px solid $bulkcat-rule;
 	}
 
 	&__step {
@@ -83,25 +83,25 @@ $bcm-bad-line: #f3c3c4;
 		gap: 8px;
 		margin: 0 0 -1px;
 		padding: 8px 14px 10px;
-		color: $bcm-ink-3;
+		color: $bulkcat-ink-3;
 		border-bottom: 2px solid transparent;
 
 		&.is-now {
-			color: $bcm-ink;
+			color: $bulkcat-ink;
 			font-weight: 600;
-			border-bottom-color: $bcm-blue;
+			border-bottom-color: $bulkcat-blue;
 
-			.bcm-bulk__n {
-				background: $bcm-blue;
-				border-color: $bcm-blue;
+			.bulkcat-bulk__n {
+				background: $bulkcat-blue;
+				border-color: $bulkcat-blue;
 				color: #fff;
 			}
 		}
 
-		&.is-done .bcm-bulk__n {
-			background: $bcm-good-tint;
-			border-color: $bcm-good-line;
-			color: $bcm-good-ink;
+		&.is-done .bulkcat-bulk__n {
+			background: $bulkcat-good-tint;
+			border-color: $bulkcat-good-line;
+			color: $bulkcat-good-ink;
 		}
 	}
 
@@ -111,9 +111,9 @@ $bcm-bad-line: #f3c3c4;
 		flex: none;
 		width: 21px;
 		height: 21px;
-		border: 1px solid $bcm-rule-strong;
+		border: 1px solid $bulkcat-rule-strong;
 		border-radius: 50%;
-		background: $bcm-panel;
+		background: $bulkcat-panel;
 		font-size: 11px;
 		font-weight: 600;
 	}
@@ -177,21 +177,21 @@ $bcm-bad-line: #f3c3c4;
 
 	&__sub {
 		margin: 0 0 12px;
-		color: $bcm-ink-2;
+		color: $bulkcat-ink-2;
 		max-width: 70ch;
 	}
 
 	&__card {
 		padding: 12px;
-		background: $bcm-panel;
-		border: 1px solid $bcm-rule;
+		background: $bulkcat-panel;
+		border: 1px solid $bulkcat-rule;
 		border-radius: 4px;
 
 		h3 {
 			margin: 0 0 8px;
 			font-size: 12px;
 			font-weight: 600;
-			color: $bcm-ink-2;
+			color: $bulkcat-ink-2;
 		}
 	}
 
@@ -208,14 +208,14 @@ $bcm-bad-line: #f3c3c4;
 		justify-content: space-between;
 		gap: 10px;
 		padding: 4px 0;
-		border-bottom: 1px solid $bcm-rule-soft;
+		border-bottom: 1px solid $bulkcat-rule-soft;
 
 		&:last-child {
 			border-bottom: 0;
 		}
 
 		dt {
-			color: $bcm-ink-2;
+			color: $bulkcat-ink-2;
 		}
 
 		dd {
@@ -244,13 +244,13 @@ $bcm-bad-line: #f3c3c4;
 		align-items: flex-start;
 		gap: 10px;
 		padding: 8px 10px;
-		border: 1px solid $bcm-rule;
+		border: 1px solid $bulkcat-rule;
 		border-radius: 4px;
-		background: $bcm-sunk;
+		background: $bulkcat-sunk;
 
 		&.is-editing {
-			border-color: $bcm-blue-line;
-			background: $bcm-blue-tint;
+			border-color: $bulkcat-blue-line;
+			background: $bulkcat-blue-tint;
 		}
 	}
 
@@ -276,7 +276,7 @@ $bcm-bad-line: #f3c3c4;
 		margin: 8px 0 6px;
 		font-size: 12px;
 		font-weight: 600;
-		color: $bcm-ink-2;
+		color: $bulkcat-ink-2;
 		text-transform: none;
 	}
 
@@ -287,17 +287,17 @@ $bcm-bad-line: #f3c3c4;
 
 	&__choice {
 		overflow: hidden;
-		background: $bcm-panel;
-		border: 1px solid $bcm-rule;
+		background: $bulkcat-panel;
+		border: 1px solid $bulkcat-rule;
 		border-radius: 4px;
 
 		&:hover {
-			border-color: $bcm-blue-line;
+			border-color: $bulkcat-blue-line;
 		}
 
 		&.is-on {
-			border-color: $bcm-blue;
-			box-shadow: inset 0 0 0 1px $bcm-blue;
+			border-color: $bulkcat-blue;
+			box-shadow: inset 0 0 0 1px $bulkcat-blue;
 		}
 
 		> label {
@@ -318,7 +318,7 @@ $bcm-bad-line: #f3c3c4;
 		display: block;
 		font-weight: 400;
 		margin-top: 1px;
-		color: $bcm-ink-2;
+		color: $bulkcat-ink-2;
 		font-size: 12px;
 	}
 
@@ -328,8 +328,8 @@ $bcm-bad-line: #f3c3c4;
 		align-items: flex-end;
 		gap: 12px 16px;
 		padding: 12px 12px 13px 40px;
-		background: $bcm-sunk;
-		border-top: 1px dashed $bcm-rule;
+		background: $bulkcat-sunk;
+		border-top: 1px dashed $bulkcat-rule;
 	}
 
 	&__fg {
@@ -347,7 +347,7 @@ $bcm-bad-line: #f3c3c4;
 		margin-bottom: 4px;
 		font-size: 12px;
 		font-weight: 600;
-		color: $bcm-ink-2;
+		color: $bulkcat-ink-2;
 	}
 
 	&__field {
@@ -357,7 +357,7 @@ $bcm-bad-line: #f3c3c4;
 
 	&__hint {
 		margin: 4px 0 0;
-		color: $bcm-ink-3;
+		color: $bulkcat-ink-3;
 		font-size: 12px;
 		line-height: 1.45;
 	}
@@ -365,7 +365,7 @@ $bcm-bad-line: #f3c3c4;
 	&__reason {
 		display: block;
 		margin: 4px 0 0;
-		color: $bcm-bad-ink;
+		color: $bulkcat-bad-ink;
 		font-size: 12px;
 		font-weight: 400;
 	}
@@ -393,8 +393,8 @@ $bcm-bad-line: #f3c3c4;
 		margin: 6px 0 0;
 		padding: 6px 8px;
 		list-style: none;
-		background: $bcm-panel;
-		border: 1px solid $bcm-rule;
+		background: $bulkcat-panel;
+		border: 1px solid $bulkcat-rule;
 		border-radius: 3px;
 
 		li {
@@ -406,15 +406,15 @@ $bcm-bad-line: #f3c3c4;
 		display: grid;
 		gap: 8px;
 		padding: 12px 13px;
-		background: $bcm-panel;
-		border: 1px solid $bcm-rule;
+		background: $bulkcat-panel;
+		border: 1px solid $bulkcat-rule;
 		border-radius: 4px;
 	}
 
 	&__why {
 		display: block;
 		margin: 0 0 0 24px;
-		color: $bcm-ink-2;
+		color: $bulkcat-ink-2;
 		font-size: 12px;
 		font-weight: 400;
 		max-width: 66ch;
@@ -459,8 +459,8 @@ $bcm-bad-line: #f3c3c4;
 		}
 
 		.button[aria-pressed="true"] {
-			background: $bcm-blue-tint;
-			border-color: $bcm-blue;
+			background: $bulkcat-blue-tint;
+			border-color: $bulkcat-blue;
 			color: #0a4b78;
 			font-weight: 600;
 		}
@@ -473,7 +473,7 @@ $bcm-bad-line: #f3c3c4;
 	&__table {
 		width: 100%;
 		min-width: 480px;
-		border: 1px solid $bcm-rule;
+		border: 1px solid $bulkcat-rule;
 		border-radius: 4px;
 		border-collapse: separate;
 		border-spacing: 0;
@@ -482,15 +482,15 @@ $bcm-bad-line: #f3c3c4;
 		td {
 			padding: 7px 10px;
 			text-align: left;
-			border-bottom: 1px solid $bcm-rule-soft;
+			border-bottom: 1px solid $bulkcat-rule-soft;
 		}
 
 		thead th {
-			background: $bcm-sunk;
+			background: $bulkcat-sunk;
 			font-size: 12px;
 			font-weight: 600;
-			color: $bcm-ink-2;
-			border-bottom-color: $bcm-rule;
+			color: $bulkcat-ink-2;
+			border-bottom-color: $bulkcat-rule;
 		}
 
 		tbody th {
@@ -503,35 +503,35 @@ $bcm-bad-line: #f3c3c4;
 
 		tr.is-variation > th {
 			padding-left: 26px;
-			color: $bcm-ink-2;
+			color: $bulkcat-ink-2;
 		}
 
 		tr.is-skip > *,
 		tr.is-already > * {
-			background: $bcm-sunk;
-			color: $bcm-ink-3;
+			background: $bulkcat-sunk;
+			color: $bulkcat-ink-3;
 		}
 	}
 
 	&__from {
-		color: $bcm-ink-2;
+		color: $bulkcat-ink-2;
 		font-variant-numeric: tabular-nums;
 	}
 
 	&__to {
-		color: $bcm-good-ink;
+		color: $bulkcat-good-ink;
 		font-variant-numeric: tabular-nums;
 	}
 
 	&__note {
-		color: $bcm-ink-3;
+		color: $bulkcat-ink-3;
 	}
 
 	&__notice {
 		padding: 10px 12px;
-		background: $bcm-panel;
-		border: 1px solid $bcm-rule;
-		border-left: 4px solid $bcm-blue;
+		background: $bulkcat-panel;
+		border: 1px solid $bulkcat-rule;
+		border-left: 4px solid $bulkcat-blue;
 		border-radius: 3px;
 		margin: 12px 0 0;
 
@@ -551,21 +551,21 @@ $bcm-bad-line: #f3c3c4;
 		}
 
 		&.is-ok {
-			border-left-color: $bcm-good;
+			border-left-color: $bulkcat-good;
 		}
 
 		&.is-warn {
-			background: $bcm-warn-tint;
-			border-color: $bcm-warn-line;
-			border-left-color: $bcm-warn;
-			color: $bcm-warn-ink;
+			background: $bulkcat-warn-tint;
+			border-color: $bulkcat-warn-line;
+			border-left-color: $bulkcat-warn;
+			color: $bulkcat-warn-ink;
 		}
 
 		&.is-error {
-			background: $bcm-bad-tint;
-			border-color: $bcm-bad-line;
-			border-left-color: $bcm-bad;
-			color: $bcm-bad-ink;
+			background: $bulkcat-bad-tint;
+			border-color: $bulkcat-bad-line;
+			border-left-color: $bulkcat-bad;
+			color: $bulkcat-bad-ink;
 		}
 	}
 
@@ -581,13 +581,13 @@ $bcm-bad-line: #f3c3c4;
 		height: 9px;
 		overflow: hidden;
 		background: #e5e7e9;
-		border: 1px solid $bcm-rule;
+		border: 1px solid $bulkcat-rule;
 		border-radius: 5px;
 
 		> i {
 			display: block;
 			height: 100%;
-			background: $bcm-blue;
+			background: $bulkcat-blue;
 			transition: width 0.25s linear;
 
 			@media (prefers-reduced-motion: reduce) {
@@ -604,20 +604,20 @@ $bcm-bad-line: #f3c3c4;
 		align-items: flex-start;
 		gap: 10px;
 		padding: 14px 20px;
-		background: $bcm-panel;
-		border-top: 1px solid $bcm-rule;
+		background: $bulkcat-panel;
+		border-top: 1px solid $bulkcat-rule;
 		box-shadow: 0 -6px 12px -6px rgba(16, 24, 40, 0.12);
 	}
 
 	&__footnote {
 		margin-left: auto;
-		color: $bcm-ink-3;
+		color: $bulkcat-ink-3;
 		font-size: 12px;
 		align-self: center;
 	}
 }
 
-.bcm-confirm {
+.bulkcat-confirm {
 	display: flex;
 	flex-direction: column;
 	gap: 6px;
@@ -625,11 +625,11 @@ $bcm-bad-line: #f3c3c4;
 
 	&__ask {
 		padding: 10px 12px;
-		background: $bcm-warn-tint;
-		border: 1px solid $bcm-warn-line;
-		border-left: 4px solid $bcm-warn;
+		background: $bulkcat-warn-tint;
+		border: 1px solid $bulkcat-warn-line;
+		border-left: 4px solid $bulkcat-warn;
 		border-radius: 3px;
-		color: $bcm-warn-ink;
+		color: $bulkcat-warn-ink;
 	}
 
 	&__title {

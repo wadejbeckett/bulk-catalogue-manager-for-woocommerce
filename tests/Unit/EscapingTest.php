@@ -119,12 +119,12 @@ final class EscapingTest extends TestCase {
 	private const ALLOWED_OUTPUT = [];
 
 	protected function setUp(): void {
-		bcm_test_reset();
-		$GLOBALS['bcm_test']['logged_in']                  = true;
-		$GLOBALS['bcm_test']['user_id']                    = 12;
-		$GLOBALS['bcm_test']['caps']['manage_woocommerce'] = true;
-		$GLOBALS['bcm_test']['caps']['edit_products']      = true;
-		$GLOBALS['bcm_test']['caps']['edit_post']          = true;
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['logged_in']                  = true;
+		$GLOBALS['bulkcat_test']['user_id']                    = 12;
+		$GLOBALS['bulkcat_test']['caps']['manage_woocommerce'] = true;
+		$GLOBALS['bulkcat_test']['caps']['edit_products']      = true;
+		$GLOBALS['bulkcat_test']['caps']['edit_post']          = true;
 	}
 
 	private static function root(): string {
@@ -177,7 +177,7 @@ final class EscapingTest extends TestCase {
 				],
 			]
 		);
-		foreach ( $GLOBALS['bcm_test']['term_list'] as $term ) {
+		foreach ( $GLOBALS['bulkcat_test']['term_list'] as $term ) {
 			if ( 70 === $term->term_id ) {
 				$term->name = self::TERM;
 			}
@@ -196,7 +196,7 @@ final class EscapingTest extends TestCase {
 	}
 
 	private static function dispatch( string $method, string $path, array $params = [] ): \WP_REST_Response|\WP_Error {
-		$request = new \WP_REST_Request( $method, '/bcm/v1' . $path );
+		$request = new \WP_REST_Request( $method, '/bulkcat/v1' . $path );
 		foreach ( $params as $key => $value ) {
 			$request->set_param( $key, $value );
 		}
@@ -268,7 +268,7 @@ final class EscapingTest extends TestCase {
 	public function test_the_preview_sample_carries_the_raw_name_and_a_plain_reason(): void {
 		self::boot();
 		self::seed();
-		$GLOBALS['bcm_test']['products'][ self::SIMPLE ] = new WatchedProduct(
+		$GLOBALS['bulkcat_test']['products'][ self::SIMPLE ] = new WatchedProduct(
 			'simple',
 			[
 				'id'     => self::SIMPLE,
@@ -277,7 +277,7 @@ final class EscapingTest extends TestCase {
 				'status' => 'publish',
 			]
 		);
-		$GLOBALS['bcm_test']['skus'][ self::CLASH ]      = 999;
+		$GLOBALS['bulkcat_test']['skus'][ self::CLASH ]      = 999;
 
 		$data = $this->ok(
 			self::dispatch(
@@ -309,10 +309,10 @@ final class EscapingTest extends TestCase {
 
 	public function test_the_batch_summary_changes_feed_and_audit_carry_raw_names_and_plain_messages(): void {
 		self::boot();
-		$owner                                      = 3;
-		$GLOBALS['bcm_test']['user_caps']           = [ $owner => [ 'edit_post' => true ] ];
-		$GLOBALS['bcm_test']['scheduled']           = [];
-		$GLOBALS['bcm_test']['products'][1001]      = new SavedProduct(
+		$owner                                     = 3;
+		$GLOBALS['bulkcat_test']['user_caps']      = [ $owner => [ 'edit_post' => true ] ];
+		$GLOBALS['bulkcat_test']['scheduled']      = [];
+		$GLOBALS['bulkcat_test']['products'][1001] = new SavedProduct(
 			'simple',
 			[
 				'id'            => 1001,
@@ -321,13 +321,13 @@ final class EscapingTest extends TestCase {
 				'regular_price' => '10',
 			]
 		);
-		$GLOBALS['bcm_test']['posts'][1001]         = [
+		$GLOBALS['bulkcat_test']['posts'][1001]    = [
 			'post_type'   => 'product',
 			'post_status' => 'publish',
 			'post_title'  => self::NAME,
 		];
-		$GLOBALS['bcm_test']['skus'][ self::CLASH ] = 999;
-		$operations                                 = ( new Registry( new Fields() ) )->validate_list(
+		$GLOBALS['bulkcat_test']['skus'][ self::CLASH ] = 999;
+		$operations                                     = ( new Registry( new Fields() ) )->validate_list(
 			[
 				[
 					'action' => 'adjust',
@@ -363,7 +363,7 @@ final class EscapingTest extends TestCase {
 				30
 			) )->run( 12 )
 		);
-		$this->assertSame( self::SKU, $GLOBALS['bcm_test']['products'][1001]->props['sku'], 'The clashing SKU was not written.' );
+		$this->assertSame( self::SKU, $GLOBALS['bulkcat_test']['products'][1001]->props['sku'], 'The clashing SKU was not written.' );
 
 		$reason = Field::clash_reason( self::CLASH );
 
@@ -396,7 +396,7 @@ final class EscapingTest extends TestCase {
 	}
 
 	public function test_category_nodes_carry_the_raw_name(): void {
-		$GLOBALS['bcm_test']['term_list']                                 = CatalogueFixture::terms( [ 3 => [ self::CATEGORY, 'shirts', 2 ] ] + CatalogueFixture::TERMS );
+		$GLOBALS['bulkcat_test']['term_list']                             = CatalogueFixture::terms( [ 3 => [ self::CATEGORY, 'shirts', 2 ] ] + CatalogueFixture::TERMS );
 		$GLOBALS['wpdb']->responses['/^SELECT a\.ancestor AS term_id, /'] = CatalogueFixture::answer();
 		self::boot();
 		$data  = $this->ok( self::dispatch( 'GET', '/categories' ) );
@@ -451,8 +451,8 @@ final class EscapingTest extends TestCase {
 	}
 
 	public function test_the_admin_notice_escapes_its_text(): void {
-		$GLOBALS['bcm_test']['caps']['activate_plugins']       = true;
-		$GLOBALS['bcm_test']['translate'][ self::NOTICE_TEXT ] = 'Needs ' . self::NAME . ' "10.0" & \'later\'';
+		$GLOBALS['bulkcat_test']['caps']['activate_plugins']       = true;
+		$GLOBALS['bulkcat_test']['translate'][ self::NOTICE_TEXT ] = 'Needs ' . self::NAME . ' "10.0" & \'later\'';
 		ob_start();
 		( new Plugin() )->render_requirement_notice();
 		$html = (string) ob_get_clean();
@@ -461,7 +461,7 @@ final class EscapingTest extends TestCase {
 		$this->assertSame( [ '<div class="notice notice-error">', '<p>', '</p>', '</div>' ], preg_match_all( '/<[^>]*>/', $html, $tags ) > 0 ? $tags[0] : [], 'Only the notice\'s own markup is HTML.' );
 
 		// Nothing for someone who cannot manage plugins.
-		$GLOBALS['bcm_test']['caps']['activate_plugins'] = false;
+		$GLOBALS['bulkcat_test']['caps']['activate_plugins'] = false;
 		ob_start();
 		( new Plugin() )->render_requirement_notice();
 		$this->assertSame( '', (string) ob_get_clean() );
@@ -594,7 +594,7 @@ final class EscapingTest extends TestCase {
 		}
 		foreach ( [
 			'<?php printf( \'<div class="notice"><p>%s</p></div>\', esc_html__( \'Hi\', \'d\' ) );',
-			'<?php echo \'<div id="bcm-root"></div>\';',
+			'<?php echo \'<div id="bulkcat-root"></div>\';',
 			'<?php echo esc_html( $name ), \' \', esc_attr( get_the_title( $id ) );',
 			'<?php echo wp_kses_post( $html ) . PHP_EOL;',
 			'<?php echo absint( $count );',

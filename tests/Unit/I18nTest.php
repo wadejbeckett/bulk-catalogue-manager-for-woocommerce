@@ -265,7 +265,7 @@ PHP;
 		$script   = (string) ( $composer['scripts']['make-pot'] ?? '' );
 		$this->assertStringStartsWith( 'wp i18n make-pot . ' . self::POT . ' ', $script, 'The make-pot script writes the committed .pot.' );
 
-		$fresh   = sys_get_temp_dir() . '/bcm-pot-' . bin2hex( random_bytes( 6 ) ) . '.pot';
+		$fresh   = sys_get_temp_dir() . '/bulkcat-pot-' . bin2hex( random_bytes( 6 ) ) . '.pot';
 		$command = sprintf(
 			'cd %s && %s i18n make-pot . %s %s 2>&1',
 			escapeshellarg( $root ),
@@ -289,12 +289,12 @@ PHP;
 		$calls   = '';
 		foreach ( self::sources() as $file ) {
 			$code = (string) file_get_contents( self::root() . '/' . $file );
-			if ( preg_match_all( '/wp_(?:register|enqueue)_script\(\s*\'(bcm-[a-z0-9-]+)\'/', $code, $matches ) ) {
+			if ( preg_match_all( '/wp_(?:register|enqueue)_script\(\s*\'(bulkcat-[a-z0-9-]+)\'/', $code, $matches ) ) {
 				$handles = array_merge( $handles, $matches[1] );
 			}
 			$calls .= $code;
 		}
-		$this->assertContains( 'bcm-app', $handles, 'The screen script (T8) is registered with a literal handle.' );
+		$this->assertContains( 'bulkcat-app', $handles, 'The screen script (T8) is registered with a literal handle.' );
 		foreach ( array_unique( $handles ) as $handle ) {
 			$this->assertSame(
 				1,

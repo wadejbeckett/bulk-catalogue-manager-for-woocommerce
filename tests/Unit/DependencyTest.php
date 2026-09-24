@@ -24,7 +24,7 @@ final class DependencyTest extends TestCase {
 	private const NOTICE_TEXT = 'Bulk Catalogue Manager for WooCommerce needs WooCommerce 10.0 or later. Install or update WooCommerce to use it.';
 
 	protected function setUp(): void {
-		bcm_test_reset();
+		bulkcat_test_reset();
 	}
 
 	private static function root(): string {
@@ -80,10 +80,10 @@ final class DependencyTest extends TestCase {
 				'admin_enqueue_scripts'   => 1,
 				'admin_init'              => 1,
 				'admin_menu'              => 1,
-				'bcm_batch_created'       => 1,
-				'bcm_prune_history'       => 1,
-				'bcm_run_chunk'           => 1,
 				'before_woocommerce_init' => 1,
+				'bulkcat_batch_created'   => 1,
+				'bulkcat_prune_history'   => 1,
+				'bulkcat_run_chunk'       => 1,
 				'heartbeat_received'      => 1,
 				'init'                    => 3,
 				'plugins_loaded'          => 1,
@@ -92,7 +92,7 @@ final class DependencyTest extends TestCase {
 			$result['hooks']
 		);
 		$this->assertSame( '', $result['notice'] );
-		$this->assertSame( [ 'bcm_settings' ], $result['settings'] );
+		$this->assertSame( [ 'bulkcat_settings' ], $result['settings'] );
 		$this->assertSame(
 			[
 				[ 'custom_order_tables', $file, true ],
@@ -132,10 +132,10 @@ final class DependencyTest extends TestCase {
 				'admin_enqueue_scripts'   => 1,
 				'admin_init'              => 1,
 				'admin_menu'              => 1,
-				'bcm_batch_created'       => 1,
-				'bcm_prune_history'       => 1,
-				'bcm_run_chunk'           => 1,
 				'before_woocommerce_init' => 1,
+				'bulkcat_batch_created'   => 1,
+				'bulkcat_prune_history'   => 1,
+				'bulkcat_run_chunk'       => 1,
 				'heartbeat_received'      => 1,
 				'init'                    => 3,
 				'plugins_loaded'          => 1,
@@ -154,8 +154,8 @@ final class DependencyTest extends TestCase {
 	}
 
 	public function test_notice_escapes_its_translation(): void {
-		$GLOBALS['bcm_test']['caps']['activate_plugins']       = true;
-		$GLOBALS['bcm_test']['translate'][ self::NOTICE_TEXT ] = 'Needs <script>alert(1)</script> & more';
+		$GLOBALS['bulkcat_test']['caps']['activate_plugins']       = true;
+		$GLOBALS['bulkcat_test']['translate'][ self::NOTICE_TEXT ] = 'Needs <script>alert(1)</script> & more';
 
 		ob_start();
 		( new Plugin() )->render_requirement_notice();

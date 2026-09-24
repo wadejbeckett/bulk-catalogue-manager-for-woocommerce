@@ -3,9 +3,9 @@
  * The one admin screen, Products → Bulk Catalogue Manager (SPEC §4, §13,
  * §15): registered here and nowhere else, behind the read capability
  * (`Rest\Access::capability()`: `manage_woocommerce`, `manage_options` under
- * administrators only, filtered by `bcm_capability`), rendering one mount
+ * administrators only, filtered by `bulkcat_capability`), rendering one mount
  * element for the React application built into assets/build. Its script and
- * style load on this screen alone, with the bcm/v1 root and the `wp_rest`
+ * style load on this screen alone, with the bulkcat/v1 root and the `wp_rest`
  * nonce localised beside them; the script depends on core's `heartbeat`,
  * through which the nonce is refreshed (Heartbeat). The bundle carries DataViews at the tag pinned
  * for one WordPress major; on any other major the screen shows a notice
@@ -42,7 +42,7 @@ final class Screen {
 	/**
 	 * Handle of the screen's script and style, and the id of its mount element.
 	 */
-	public const HANDLE = 'bcm-app';
+	public const HANDLE = 'bulkcat-app';
 
 	/**
 	 * The @wordpress/dataviews version bundled (package.json pins it exactly).
@@ -73,10 +73,10 @@ final class Screen {
 	 * Remember the main plugin file. Calls no WordPress function, so building
 	 * the hook list stays side-effect free.
 	 *
-	 * @param string|null $plugin_file The main plugin file; BCM_FILE when null.
+	 * @param string|null $plugin_file The main plugin file; BULKCAT_FILE when null.
 	 */
 	public function __construct( ?string $plugin_file = null ) {
-		$this->plugin_file = $plugin_file ?? ( defined( 'BCM_FILE' ) ? (string) BCM_FILE : dirname( __DIR__, 2 ) . '/bulk-catalogue-manager-for-woocommerce.php' );
+		$this->plugin_file = $plugin_file ?? ( defined( 'BULKCAT_FILE' ) ? (string) BULKCAT_FILE : dirname( __DIR__, 2 ) . '/bulk-catalogue-manager-for-woocommerce.php' );
 	}
 
 	/**
@@ -157,13 +157,13 @@ final class Screen {
 		}
 		$dir = $this->plugin_dir();
 
-		wp_register_script( 'bcm-app', plugins_url( 'assets/build/index.js', $this->plugin_file ), self::dependencies( $asset['dependencies'] ), $asset['version'], [ 'in_footer' => true ] );
-		wp_set_script_translations( 'bcm-app', 'bulk-catalogue-manager-for-woocommerce', $dir . 'languages' );
-		wp_add_inline_script( 'bcm-app', 'window.bcmSettings = ' . wp_json_encode( $this->client_settings(), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT ) . ';', 'before' );
-		wp_enqueue_script( 'bcm-app' );
+		wp_register_script( 'bulkcat-app', plugins_url( 'assets/build/index.js', $this->plugin_file ), self::dependencies( $asset['dependencies'] ), $asset['version'], [ 'in_footer' => true ] );
+		wp_set_script_translations( 'bulkcat-app', 'bulk-catalogue-manager-for-woocommerce', $dir . 'languages' );
+		wp_add_inline_script( 'bulkcat-app', 'window.bulkcatSettings = ' . wp_json_encode( $this->client_settings(), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT ) . ';', 'before' );
+		wp_enqueue_script( 'bulkcat-app' );
 
-		wp_enqueue_style( 'bcm-app', plugins_url( 'assets/build/style-index.css', $this->plugin_file ), [], $asset['version'] );
-		wp_style_add_data( 'bcm-app', 'rtl', 'replace' );
+		wp_enqueue_style( 'bulkcat-app', plugins_url( 'assets/build/style-index.css', $this->plugin_file ), [], $asset['version'] );
+		wp_style_add_data( 'bulkcat-app', 'rtl', 'replace' );
 	}
 
 	/**
@@ -190,7 +190,7 @@ final class Screen {
 	];
 
 	/**
-	 * What the application is given at page load: the bcm/v1 root and nonce,
+	 * What the application is given at page load: the bulkcat/v1 root and nonce,
 	 * the settings, the current user with the capabilities in
 	 * CLIENT_CAPABILITIES (each true or false), and the host's versions.
 	 *

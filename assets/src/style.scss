@@ -2,23 +2,23 @@
 // components' (SPEC §4: the page inherits the admin's look and colour schemes).
 // The header follows the prototype's (docs/prototype/index.html): the lede on
 // the left, the section switch, Export CSV and Settings on the right.
-.bcm-app {
-	--bcm-ink: #1d2327;
-	--bcm-ink-2: #50575e;
-	--bcm-ink-3: #646970;
-	--bcm-rule: #dcdcde;
-	--bcm-rule-strong: #8c8f94;
-	--bcm-blue: var(--wp-admin-theme-color, #2271b1);
-	--bcm-blue-dark: var(--wp-admin-theme-color-darker-10, #135e96);
-	--bcm-blue-tint: #f0f6fc;
-	--bcm-focus: 0 0 0 1px #fff, 0 0 0 3px var(--wp-admin-theme-color, #2271b1);
+.bulkcat-app {
+	--bulkcat-ink: #1d2327;
+	--bulkcat-ink-2: #50575e;
+	--bulkcat-ink-3: #646970;
+	--bulkcat-rule: #dcdcde;
+	--bulkcat-rule-strong: #8c8f94;
+	--bulkcat-blue: var(--wp-admin-theme-color, #2271b1);
+	--bulkcat-blue-dark: var(--wp-admin-theme-color-darker-10, #135e96);
+	--bulkcat-blue-tint: #f0f6fc;
+	--bulkcat-focus: 0 0 0 1px #fff, 0 0 0 3px var(--wp-admin-theme-color, #2271b1);
 
 	margin-top: 4px;
-	color: var(--bcm-ink);
+	color: var(--bulkcat-ink);
 	font-size: 13px;
 }
 
-.bcm-head {
+.bulkcat-head {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: flex-end;
@@ -30,7 +30,7 @@
 		flex: 1 1 22rem;
 		max-width: 38rem;
 		margin: 0;
-		color: var(--bcm-ink-2);
+		color: var(--bulkcat-ink-2);
 		font-size: 14px;
 		line-height: 1.45;
 	}
@@ -45,7 +45,7 @@
 	&__nav {
 		display: inline-flex;
 		flex-wrap: wrap;
-		border: 1px solid var(--bcm-rule-strong);
+		border: 1px solid var(--bulkcat-rule-strong);
 		border-radius: 2px;
 		background: #fff;
 	}
@@ -57,9 +57,9 @@
 		margin: 0;
 		padding: 0 12px;
 		border: 0;
-		border-right: 1px solid var(--bcm-rule);
+		border-right: 1px solid var(--bulkcat-rule);
 		background: transparent;
-		color: var(--bcm-ink);
+		color: var(--bulkcat-ink);
 		font: inherit;
 		font-weight: 600;
 		text-decoration: none;
@@ -70,19 +70,19 @@
 		}
 
 		&:hover {
-			color: var(--bcm-blue-dark);
+			color: var(--bulkcat-blue-dark);
 			background: #f6f7f7;
 		}
 
 		&.is-current {
-			background: var(--bcm-blue-tint);
-			color: var(--bcm-blue-dark);
-			box-shadow: inset 0 -2px 0 var(--bcm-blue);
+			background: var(--bulkcat-blue-tint);
+			color: var(--bulkcat-blue-dark);
+			box-shadow: inset 0 -2px 0 var(--bulkcat-blue);
 		}
 
 		&:focus {
 			outline: none;
-			box-shadow: var(--bcm-focus);
+			box-shadow: var(--bulkcat-focus);
 			position: relative;
 			z-index: 1;
 		}
@@ -100,7 +100,7 @@
 		display: inline-flex;
 		align-items: center;
 		min-height: 24px;
-		color: var(--bcm-blue);
+		color: var(--bulkcat-blue);
 		text-decoration: underline;
 
 		&.is-current {
@@ -110,7 +110,7 @@
 	}
 }
 
-.bcm-app__panel {
+.bulkcat-app__panel {
 	margin-top: 0;
 
 	&:focus {
@@ -118,17 +118,17 @@
 	}
 }
 
-.bcm-catalogue {
+.bulkcat-catalogue {
 	background: #fff;
 }
 
 // Every animation and transition on the screen stops when the viewer asks
 // for less motion (SPEC §14).
 @media (prefers-reduced-motion: reduce) {
-	.bcm-app *,
-	.bcm-bulk *,
-	.bcm-app *::before,
-	.bcm-app *::after {
+	.bulkcat-app *,
+	.bulkcat-bulk *,
+	.bulkcat-app *::before,
+	.bulkcat-app *::after {
 		animation-duration: 0.01ms !important;
 		animation-iteration-count: 1 !important;
 		transition-duration: 0.01ms !important;

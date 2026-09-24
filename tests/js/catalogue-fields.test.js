@@ -149,7 +149,9 @@ describe( 'cells', () => {
 	};
 
 	it( 'shows a choice by its label, as a badge with its tone', () => {
-		const badge = cell( 'status', ROWS[ 0 ] ).querySelector( '.bcm-badge' );
+		const badge = cell( 'status', ROWS[ 0 ] ).querySelector(
+			'.bulkcat-badge'
+		);
 		expect( badge.textContent ).toBe( 'Published' );
 		expect( badge.className ).toContain( 'is-good' );
 	} );
@@ -222,7 +224,7 @@ describe( 'cells', () => {
 			termNames: {},
 			pending: new Set( [ 11 ] ),
 		} );
-		const span = container.querySelector( '.bcm-cell' );
+		const span = container.querySelector( '.bulkcat-cell' );
 		expect( span.className ).toContain( 'is-pending' );
 		expect( span.getAttribute( 'aria-busy' ) ).toBe( 'true' );
 		expect(

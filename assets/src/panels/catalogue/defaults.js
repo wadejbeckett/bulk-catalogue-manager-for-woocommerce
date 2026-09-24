@@ -89,7 +89,7 @@ export const CATEGORY_FILTER = 'category_ids';
 /** Page sizes offered (SPEC §4.1); the first is the default. */
 export const PER_PAGE_SIZES = [ 25, 50, 100 ];
 
-/** Term sources the client can name through a bcm/v1 route: source => route. */
+/** Term sources the client can name through a bulkcat/v1 route: source => route. */
 export const TERM_ROUTES = {
 	categories: 'categories',
 	tags: 'terms/product_tag',

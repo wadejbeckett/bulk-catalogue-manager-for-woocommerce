@@ -36,4 +36,4 @@ Both are number arrays that split `ids`: a variation id is one the table has dra
 | `parent_only` | a parent-only field on a variation row, shown with the product's value greyed; `reason` is the field's `variationNote` | no |
 | `not_applicable` | a conditional field whose condition is off on that variation (stock quantity without managed stock) | no |
 
-Every non-`own` cell renders inside `.bcm-locked` with `data-bcm-editable="false"` and `data-bcm-cell="<kind>"`, its reason as the tooltip and as screen-reader text; it is focusable and swallows Enter. The editor must open only where `editable` is true.
+Every non-`own` cell renders inside `.bulkcat-locked` with `data-bulkcat-editable="false"` and `data-bulkcat-cell="<kind>"`, its reason as the tooltip and as screen-reader text; it is focusable and swallows Enter. The editor must open only where `editable` is true.

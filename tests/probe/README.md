@@ -31,25 +31,25 @@ Nothing here is committed as a compose file on purpose.
 Bring it up (from the repository root):
 
 ```sh
-docker network create bcm-probe
-docker volume create bcm-probe-wp
-docker run -d --name bcm-probe-db --network bcm-probe \
+docker network create bulkcat-probe
+docker volume create bulkcat-probe-wp
+docker run -d --name bulkcat-probe-db --network bulkcat-probe \
   -e MARIADB_ROOT_PASSWORD=root -e MARIADB_DATABASE=wordpress \
   -e MARIADB_USER=wordpress -e MARIADB_PASSWORD=wordpress mariadb:11
-docker run -d --name bcm-probe-wp --network bcm-probe -p 127.0.0.1:8888:80 \
-  -e WORDPRESS_DB_HOST=bcm-probe-db -e WORDPRESS_DB_USER=wordpress \
+docker run -d --name bulkcat-probe-wp --network bulkcat-probe -p 127.0.0.1:8888:80 \
+  -e WORDPRESS_DB_HOST=bulkcat-probe-db -e WORDPRESS_DB_USER=wordpress \
   -e WORDPRESS_DB_PASSWORD=wordpress -e WORDPRESS_DB_NAME=wordpress -e WORDPRESS_DEBUG=1 \
-  -v bcm-probe-wp:/var/www/html \
+  -v bulkcat-probe-wp:/var/www/html \
   -v "$PWD":/var/www/html/wp-content/plugins/bulk-catalogue-manager-for-woocommerce:ro \
   wordpress:php8.3-apache
-export WP_CMD="docker run --rm -i --network bcm-probe --user 33:33 -e HOME=/tmp \
-  -e WORDPRESS_DB_HOST=bcm-probe-db -e WORDPRESS_DB_USER=wordpress \
+export WP_CMD="docker run --rm -i --network bulkcat-probe --user 33:33 -e HOME=/tmp \
+  -e WORDPRESS_DB_HOST=bulkcat-probe-db -e WORDPRESS_DB_USER=wordpress \
   -e WORDPRESS_DB_PASSWORD=wordpress -e WORDPRESS_DB_NAME=wordpress -e WORDPRESS_DEBUG=1 \
-  -v bcm-probe-wp:/var/www/html \
+  -v bulkcat-probe-wp:/var/www/html \
   -v $PWD:/var/www/html/wp-content/plugins/bulk-catalogue-manager-for-woocommerce:ro \
   wordpress:cli-php8.3 wp"
 sleep 15   # the first start copies WordPress into the volume
-$WP_CMD core install --url=http://localhost:8888 --title=BCM --admin_user=admin \
+$WP_CMD core install --url=http://localhost:8888 --title=BULKCAT --admin_user=admin \
   --admin_password=password --admin_email=admin@example.com --skip-email
 $WP_CMD plugin install woocommerce --version=11.1.0 --activate
 ```
@@ -72,9 +72,9 @@ the plugin; run `seed.sh` again before the next probe run.
 Tear it down:
 
 ```sh
-docker rm -f -v bcm-probe-wp bcm-probe-db
-docker volume rm bcm-probe-wp
-docker network rm bcm-probe
+docker rm -f -v bulkcat-probe-wp bulkcat-probe-db
+docker volume rm bulkcat-probe-wp
+docker network rm bulkcat-probe
 ```
 
 `-v` also removes the anonymous volume the `mariadb` image creates for its
@@ -94,85 +94,85 @@ The stack is the docker one above with `mysql:8` in place of `mariadb:11`
 and its own names, so it can run beside a probe stack:
 
 ```sh
-docker network create bcm-perf
-docker volume create bcm-perf-wp
-docker run -d --name bcm-perf-db --network bcm-perf \
+docker network create bulkcat-perf
+docker volume create bulkcat-perf-wp
+docker run -d --name bulkcat-perf-db --network bulkcat-perf \
   -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=wordpress \
   -e MYSQL_USER=wordpress -e MYSQL_PASSWORD=wordpress mysql:8
-docker run -d --name bcm-perf-wp --network bcm-perf -p 127.0.0.1:8896:80 \
-  -e WORDPRESS_DB_HOST=bcm-perf-db -e WORDPRESS_DB_USER=wordpress \
+docker run -d --name bulkcat-perf-wp --network bulkcat-perf -p 127.0.0.1:8896:80 \
+  -e WORDPRESS_DB_HOST=bulkcat-perf-db -e WORDPRESS_DB_USER=wordpress \
   -e WORDPRESS_DB_PASSWORD=wordpress -e WORDPRESS_DB_NAME=wordpress \
-  -v bcm-perf-wp:/var/www/html \
+  -v bulkcat-perf-wp:/var/www/html \
   -v "$PWD":/var/www/html/wp-content/plugins/bulk-catalogue-manager-for-woocommerce:ro \
   wordpress:php8.3-apache
-export WP_CMD="docker run --rm -i --network bcm-perf --user 33:33 -e HOME=/tmp \
-  -e WORDPRESS_DB_HOST=bcm-perf-db -e WORDPRESS_DB_USER=wordpress \
+export WP_CMD="docker run --rm -i --network bulkcat-perf --user 33:33 -e HOME=/tmp \
+  -e WORDPRESS_DB_HOST=bulkcat-perf-db -e WORDPRESS_DB_USER=wordpress \
   -e WORDPRESS_DB_PASSWORD=wordpress -e WORDPRESS_DB_NAME=wordpress \
-  -v bcm-perf-wp:/var/www/html \
+  -v bulkcat-perf-wp:/var/www/html \
   -v $PWD:/var/www/html/wp-content/plugins/bulk-catalogue-manager-for-woocommerce:ro \
   wordpress:cli-php8.3 wp"
 sleep 20
-$WP_CMD core install --url=http://localhost:8896 --title=BCM --admin_user=admin \
+$WP_CMD core install --url=http://localhost:8896 --title=BULKCAT --admin_user=admin \
   --admin_password=password --admin_email=admin@example.com --skip-email
 $WP_CMD plugin install woocommerce --version=11.1.0 --activate
 $WP_CMD config set DISABLE_WP_CRON true --raw     # only perf.py drives Action Scheduler
-$WP_CMD config set SAVEQUERIES "isset( \$_SERVER['HTTP_X_BCM_PERF_SQL'] )" --raw   # SQL on demand
+$WP_CMD config set SAVEQUERIES "isset( \$_SERVER['HTTP_X_BULKCAT_PERF_SQL'] )" --raw   # SQL on demand
 bash tests/probe/seed.sh 20000                  # about two minutes; see seed.sh
 ```
 
 Then drop in the measurement mu-plugin. It is not part of the plugin and is
 never committed: it only adds the numbers `perf.py` reads. Save this as
-`bcm-perf-probe.php` and copy it in with
-`docker exec bcm-perf-wp mkdir -p /var/www/html/wp-content/mu-plugins &&
-docker cp bcm-perf-probe.php bcm-perf-wp:/var/www/html/wp-content/mu-plugins/`:
+`bulkcat-perf-probe.php` and copy it in with
+`docker exec bulkcat-perf-wp mkdir -p /var/www/html/wp-content/mu-plugins &&
+docker cp bulkcat-perf-probe.php bulkcat-perf-wp:/var/www/html/wp-content/mu-plugins/`:
 
 ```php
 <?php
-/* Plugin Name: BCM perf probe (throwaway) */
-$GLOBALS['bcm_perf'] = array( 't0' => (float) ( $_SERVER['REQUEST_TIME_FLOAT'] ?? microtime( true ) ) );
+/* Plugin Name: BULKCAT perf probe (throwaway) */
+$GLOBALS['bulkcat_perf'] = array( 't0' => (float) ( $_SERVER['REQUEST_TIME_FLOAT'] ?? microtime( true ) ) );
 add_filter( 'rest_pre_dispatch', function ( $r ) {
-	$GLOBALS['bcm_perf']['q0'] = $GLOBALS['wpdb']->num_queries;
-	$GLOBALS['bcm_perf']['d0'] = microtime( true );
+	$GLOBALS['bulkcat_perf']['q0'] = $GLOBALS['wpdb']->num_queries;
+	$GLOBALS['bulkcat_perf']['d0'] = microtime( true );
 	return $r;
 }, -1000 );
 add_filter( 'rest_post_dispatch', function ( $response ) {
 	global $wpdb;
-	if ( $response instanceof WP_HTTP_Response && isset( $GLOBALS['bcm_perf']['q0'] ) ) {
+	if ( $response instanceof WP_HTTP_Response && isset( $GLOBALS['bulkcat_perf']['q0'] ) ) {
 		$now = microtime( true );
-		$response->header( 'X-BCM-Perf', wp_json_encode( array(
-			'dispatch_queries' => $wpdb->num_queries - $GLOBALS['bcm_perf']['q0'],
+		$response->header( 'X-BULKCAT-Perf', wp_json_encode( array(
+			'dispatch_queries' => $wpdb->num_queries - $GLOBALS['bulkcat_perf']['q0'],
 			'queries'          => $wpdb->num_queries,
-			'dispatch_ms'      => round( ( $now - $GLOBALS['bcm_perf']['d0'] ) * 1000, 1 ),
-			'server_ms'        => round( ( $now - $GLOBALS['bcm_perf']['t0'] ) * 1000, 1 ),
+			'dispatch_ms'      => round( ( $now - $GLOBALS['bulkcat_perf']['d0'] ) * 1000, 1 ),
+			'server_ms'        => round( ( $now - $GLOBALS['bulkcat_perf']['t0'] ) * 1000, 1 ),
 			'peak_mb'          => round( memory_get_peak_usage() / 1048576, 2 ),
 		) ) );
 	}
 	return $response;
 }, PHP_INT_MAX );
-$bcm_perf_log = function ( array $row ) {
-	file_put_contents( WP_CONTENT_DIR . '/bcm-perf.log', wp_json_encode( $row ) . "\n", FILE_APPEND | LOCK_EX );
+$bulkcat_perf_log = function ( array $row ) {
+	file_put_contents( WP_CONTENT_DIR . '/bulkcat-perf.log', wp_json_encode( $row ) . "\n", FILE_APPEND | LOCK_EX );
 };
-if ( ! empty( $_SERVER['HTTP_X_BCM_PERF_LOG'] ) ) {
-	$id = substr( preg_replace( '/[^A-Za-z0-9_.-]/', '', $_SERVER['HTTP_X_BCM_PERF_LOG'] ), 0, 64 );
-	register_shutdown_function( function () use ( $id, $bcm_perf_log ) {
+if ( ! empty( $_SERVER['HTTP_X_BULKCAT_PERF_LOG'] ) ) {
+	$id = substr( preg_replace( '/[^A-Za-z0-9_.-]/', '', $_SERVER['HTTP_X_BULKCAT_PERF_LOG'] ), 0, 64 );
+	register_shutdown_function( function () use ( $id, $bulkcat_perf_log ) {
 		global $wpdb;
-		$row = array( 'kind' => 'request', 'id' => $id, 'total_ms' => round( ( microtime( true ) - $GLOBALS['bcm_perf']['t0'] ) * 1000, 1 ),
+		$row = array( 'kind' => 'request', 'id' => $id, 'total_ms' => round( ( microtime( true ) - $GLOBALS['bulkcat_perf']['t0'] ) * 1000, 1 ),
 			'queries' => $wpdb->num_queries, 'peak_mb' => round( memory_get_peak_usage() / 1048576, 2 ) );
 		if ( defined( 'SAVEQUERIES' ) && SAVEQUERIES ) {
 			$row['sql'] = array_map( fn( $q ) => array( round( $q[1] * 1000, 2 ), $q[0] ), $wpdb->queries );
 		}
-		$bcm_perf_log( $row );
+		$bulkcat_perf_log( $row );
 	} );
 }
-foreach ( array( 'bcm_run_chunk', 'bcm_prune_history' ) as $hook ) {
+foreach ( array( 'bulkcat_run_chunk', 'bulkcat_prune_history' ) as $hook ) {
 	add_action( $hook, function () {
 		gc_collect_cycles();
 		memory_reset_peak_usage();
-		$GLOBALS['bcm_perf']['a0'] = array( microtime( true ), $GLOBALS['wpdb']->num_queries, memory_get_usage() );
+		$GLOBALS['bulkcat_perf']['a0'] = array( microtime( true ), $GLOBALS['wpdb']->num_queries, memory_get_usage() );
 	}, PHP_INT_MIN );
-	add_action( $hook, function ( ...$args ) use ( $hook, $bcm_perf_log ) {
-		list( $t, $q, $m ) = $GLOBALS['bcm_perf']['a0'];
-		$bcm_perf_log( array( 'kind' => $hook, 'args' => $args, 'ms' => round( ( microtime( true ) - $t ) * 1000, 1 ),
+	add_action( $hook, function ( ...$args ) use ( $hook, $bulkcat_perf_log ) {
+		list( $t, $q, $m ) = $GLOBALS['bulkcat_perf']['a0'];
+		$bulkcat_perf_log( array( 'kind' => $hook, 'args' => $args, 'ms' => round( ( microtime( true ) - $t ) * 1000, 1 ),
 			'queries' => $GLOBALS['wpdb']->num_queries - $q, 'start_mb' => round( $m / 1048576, 2 ),
 			'peak_mb' => round( memory_get_peak_usage() / 1048576, 2 ), 'end_mb' => round( memory_get_usage() / 1048576, 2 ) ) );
 	}, PHP_INT_MAX, 5 );
@@ -180,8 +180,8 @@ foreach ( array( 'bcm_run_chunk', 'bcm_prune_history' ) as $hook ) {
 ```
 
 Query counts are `$wpdb->num_queries`, which counts exactly the statements
-SAVEQUERIES would list. A request sent with the header `X-BCM-Perf-Sql: 1`
-and `X-BCM-Perf-Log: <id>` also logs its statements with their times, for
+SAVEQUERIES would list. A request sent with the header `X-BULKCAT-Perf-Sql: 1`
+and `X-BULKCAT-Perf-Log: <id>` also logs its statements with their times, for
 profiling a missed budget (`EXPLAIN ANALYZE` the slow one in the database
 container).
 
@@ -204,7 +204,7 @@ last run and the reasoning behind each budget.
 Tear it down, the mu-plugin with it:
 
 ```sh
-docker rm -f -v bcm-perf-wp bcm-perf-db
-docker volume rm bcm-perf-wp
-docker network rm bcm-perf
+docker rm -f -v bulkcat-perf-wp bulkcat-perf-db
+docker volume rm bulkcat-perf-wp
+docker network rm bulkcat-perf
 ```

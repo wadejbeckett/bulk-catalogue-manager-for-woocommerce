@@ -181,10 +181,10 @@ describe( 'History links', () => {
 	it( 'does not carry one-time arguments to another panel', () => {
 		const href = panelHref(
 			'settings',
-			'https://example.test/wp-admin/edit.php?page=bcm&panel=history&batch=4&undo=1&product=9#x'
+			'https://example.test/wp-admin/edit.php?page=bulkcat&panel=history&batch=4&undo=1&product=9#x'
 		);
 		expect( href ).toBe(
-			'https://example.test/wp-admin/edit.php?page=bcm&panel=settings'
+			'https://example.test/wp-admin/edit.php?page=bulkcat&panel=settings'
 		);
 	} );
 } );

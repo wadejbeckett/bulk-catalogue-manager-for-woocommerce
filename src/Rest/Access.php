@@ -2,7 +2,7 @@
 /**
  * Who may do what (SPEC §13, §11). Reading: shop managers and administrators
  * (`manage_woocommerce`), or administrators alone (`manage_options`) under the
- * administrators-only setting, the result filterable through `bcm_capability`.
+ * administrators-only setting, the result filterable through `bulkcat_capability`.
  * Writing products: that, plus `edit_products`, and each object checked with
  * `edit_post` (which honours `edit_others_products`). Category writes: the read
  * capability plus `manage_product_terms`. Settings writes: `manage_options`.
@@ -28,7 +28,7 @@ final class Access {
 	/**
 	 * The REST namespace every route is registered under.
 	 */
-	public const REST_NAMESPACE = 'bcm/v1';
+	public const REST_NAMESPACE = 'bulkcat/v1';
 
 	/**
 	 * The capability product writes need on top of the read capability.
@@ -53,7 +53,7 @@ final class Access {
 	/**
 	 * The code for one object the user may not edit, skipped and reported.
 	 */
-	public const CANNOT_EDIT = 'bcm_cannot_edit';
+	public const CANNOT_EDIT = 'bulkcat_cannot_edit';
 
 	/**
 	 * The capability the screen and read routes need.
@@ -69,7 +69,7 @@ final class Access {
 		 * @param string $capability          The capability: manage_woocommerce, or manage_options under the administrators-only setting.
 		 * @param bool   $administrators_only Whether the administrators-only setting is on.
 		 */
-		$filtered = apply_filters( 'bcm_capability', $default, $settings->administrators_only() );
+		$filtered = apply_filters( 'bulkcat_capability', $default, $settings->administrators_only() );
 		return is_string( $filtered ) && '' !== $filtered ? $filtered : $default;
 	}
 
@@ -95,7 +95,7 @@ final class Access {
 	}
 
 	/**
-	 * Permission callback for the read routes: true, or a `bcm_forbidden`
+	 * Permission callback for the read routes: true, or a `bulkcat_forbidden`
 	 * refusal with a plain sentence and a 401 or 403 status.
 	 *
 	 * @param mixed $request The REST request; unused, accepted for the callback signature.
@@ -172,7 +172,7 @@ final class Access {
 	 * `edit_others_products` or `edit_published_products` as it applies, and
 	 * for a variation `edit_post` on its parent as well, since saving a
 	 * variation resynchronises and saves the parent. Otherwise a
-	 * `bcm_cannot_edit` refusal the writer records as a skipped row.
+	 * `bulkcat_cannot_edit` refusal the writer records as a skipped row.
 	 *
 	 * @param int $object_id Product or variation id.
 	 * @param int $parent_id A variation's parent product, or 0.
@@ -199,7 +199,7 @@ final class Access {
 	 * Whether a user may assign terms of a taxonomy to products: the
 	 * taxonomy's `assign_terms` capability (`assign_product_terms` for
 	 * WooCommerce's), which core checks besides `edit_post`. An unknown
-	 * taxonomy is refused. Otherwise a `bcm_cannot_edit` refusal naming the field.
+	 * taxonomy is refused. Otherwise a `bulkcat_cannot_edit` refusal naming the field.
 	 *
 	 * @param int|null $user_id  The batch's recorded user, or null for the current user.
 	 * @param string   $taxonomy The taxonomy.

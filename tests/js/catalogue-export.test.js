@@ -49,7 +49,7 @@ const QUERY = toQuery( VIEW, descriptorsOf( REGISTRY ), CATEGORY );
 
 afterEach( () => {
 	delete apiFetch.nonceMiddleware;
-	delete window.bcmSettings;
+	delete window.bulkcatSettings;
 	jest.useRealTimers();
 } );
 
@@ -121,7 +121,7 @@ describe( 'export arguments', () => {
 	} );
 
 	it( 'take the nonce apiFetch holds, else the page one', () => {
-		window.bcmSettings = { nonce: 'pagenonce1' };
+		window.bulkcatSettings = { nonce: 'pagenonce1' };
 		expect( currentNonce() ).toBe( 'pagenonce1' );
 		apiFetch.nonceMiddleware = { nonce: 'freshnonce' };
 		expect( currentNonce() ).toBe( 'freshnonce' );
@@ -179,7 +179,7 @@ describe( 'the Export control', () => {
 					new Error(
 						'These columns could not be exported. Choose the columns again and try again.'
 					),
-					{ code: 'bcm_invalid_value' }
+					{ code: 'bulkcat_invalid_value' }
 				)
 			)
 		);
@@ -189,10 +189,10 @@ describe( 'the Export control', () => {
 			)
 		).toBeTruthy();
 		expect( screen.getByText( 'Show details' ) ).toBeTruthy();
-		expect( screen.getByText( /^bcm_invalid_value:/ ) ).toBeTruthy();
+		expect( screen.getByText( /^bulkcat_invalid_value:/ ) ).toBeTruthy();
 		fireEvent.click( screen.getByRole( 'button', { name: 'Try again' } ) );
 		expect( start ).toHaveBeenCalledTimes( 2 );
-		expect( document.querySelector( '.bcm-error' ) ).toBeNull();
+		expect( document.querySelector( '.bulkcat-error' ) ).toBeNull();
 	} );
 
 	it( 'words a refusal from core in its own sentence', () => {
@@ -223,7 +223,7 @@ describe( 'the hidden frame', () => {
 			onError,
 			settle: 1000,
 		} );
-		const frame = document.querySelector( 'iframe.bcm-export__frame' );
+		const frame = document.querySelector( 'iframe.bulkcat-export__frame' );
 		expect( frame.hidden ).toBe( true );
 		expect( frame.getAttribute( 'src' ) ).toBe( 'about:blank#export' );
 		jest.advanceTimersByTime( 1000 );
@@ -231,7 +231,7 @@ describe( 'the hidden frame', () => {
 		expect( onError ).not.toHaveBeenCalled();
 		stop();
 		expect(
-			document.querySelector( 'iframe.bcm-export__frame' )
+			document.querySelector( 'iframe.bulkcat-export__frame' )
 		).toBeNull();
 	} );
 
@@ -239,14 +239,14 @@ describe( 'the hidden frame', () => {
 		const onDone = jest.fn();
 		const onError = jest.fn();
 		const stop = download( 'about:blank', { onDone, onError } );
-		const frame = document.querySelector( 'iframe.bcm-export__frame' );
+		const frame = document.querySelector( 'iframe.bulkcat-export__frame' );
 		frame.contentDocument.body.textContent = JSON.stringify( {
-			code: 'bcm_forbidden',
+			code: 'bulkcat_forbidden',
 			message: 'Your account does not have permission.',
 		} );
 		frame.dispatchEvent( new window.Event( 'load' ) );
 		expect( onError ).toHaveBeenCalledTimes( 1 );
-		expect( onError.mock.calls[ 0 ][ 0 ].code ).toBe( 'bcm_forbidden' );
+		expect( onError.mock.calls[ 0 ][ 0 ].code ).toBe( 'bulkcat_forbidden' );
 		expect( onDone ).not.toHaveBeenCalled();
 		stop();
 	} );

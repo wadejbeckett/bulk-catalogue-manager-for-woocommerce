@@ -1,7 +1,7 @@
 <?php
 /**
  * The screen's nonce refresh through the Heartbeat API (SPEC §13, T39). The
- * screen's script depends on core's `heartbeat` script and adds a `bcm_nonce`
+ * screen's script depends on core's `heartbeat` script and adds a `bulkcat_nonce`
  * key to every tick; the `heartbeat_received` filter here answers that key,
  * for a user holding the screen capability only, with a fresh `wp_rest` nonce
  * that the client installs on apiFetch's nonce middleware. Heartbeat requests
@@ -28,7 +28,7 @@ final class Heartbeat {
 	/**
 	 * The key the screen sends on each tick and the key of the answer.
 	 */
-	public const KEY = 'bcm_nonce';
+	public const KEY = 'bulkcat_nonce';
 
 	/**
 	 * Core's script handle for the Heartbeat API, a dependency of the screen's script.

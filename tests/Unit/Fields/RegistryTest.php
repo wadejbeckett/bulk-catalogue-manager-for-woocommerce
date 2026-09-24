@@ -27,7 +27,7 @@ final class RegistryTest extends TestCase {
 	private const DOMAIN = 'bulk-catalogue-manager-for-woocommerce';
 
 	/**
-	 * Refresh the snapshot with BCM_UPDATE_SNAPSHOT=1 composer test, then review the diff.
+	 * Refresh the snapshot with BULKCAT_UPDATE_SNAPSHOT=1 composer test, then review the diff.
 	 */
 	private const SNAPSHOT = __DIR__ . '/fields.snapshot.json';
 
@@ -74,8 +74,8 @@ final class RegistryTest extends TestCase {
 	];
 
 	protected function setUp(): void {
-		bcm_test_reset();
-		$GLOBALS['bcm_test']['terms'] = [
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['terms'] = [
 			'product_cat'            => [ 5, 6, 7 ],
 			'product_tag'            => [ 9 ],
 			'product_shipping_class' => [ 12 ],
@@ -143,7 +143,7 @@ final class RegistryTest extends TestCase {
 			$this->assertSame( $field->label(), $dataviews['label'] );
 			$this->assertContains( $dataviews['type'], [ 'text', 'integer', 'number', 'boolean', 'array', 'datetime' ] );
 			if ( $field->read_only() ) {
-				$this->assertSame( 'bcm_read_only', self::code( $field->validate( 'x' ) ), "$key refuses every write." );
+				$this->assertSame( 'bulkcat_read_only', self::code( $field->validate( 'x' ) ), "$key refuses every write." );
 				$this->assertNotNull( $field->unavailable_reason( new FakeProduct() ) );
 			} else {
 				$arg = $field->rest_arg();
@@ -159,13 +159,13 @@ final class RegistryTest extends TestCase {
 	}
 
 	public function test_labels_are_translated_with_the_text_domain_and_name_no_storage_key(): void {
-		$GLOBALS['bcm_test']['gettext'] = [];
-		$registry                       = new Registry();
+		$GLOBALS['bulkcat_test']['gettext'] = [];
+		$registry                           = new Registry();
 		foreach ( $registry->all() as $field ) {
 			$field->choices();
 		}
 		$texts = [];
-		foreach ( $GLOBALS['bcm_test']['gettext'] as [ $text, $domain ] ) {
+		foreach ( $GLOBALS['bulkcat_test']['gettext'] as [ $text, $domain ] ) {
 			$this->assertSame( self::DOMAIN, $domain, "\"$text\"." );
 			$texts[] = $text;
 		}
@@ -407,7 +407,7 @@ final class RegistryTest extends TestCase {
 				$this->assertSame( $row[3], $field->clean( $value ), "$label through clean()." );
 			} else {
 				$this->assertInstanceOf( \WP_Error::class, $result, "$label should be refused." );
-				$this->assertSame( 'bcm_invalid_value', $result->get_error_code() );
+				$this->assertSame( 'bulkcat_invalid_value', $result->get_error_code() );
 				$this->assertSame( [ 'status' => 400 ], $result->get_error_data() );
 				$this->assertStringContainsString( $field->label(), $result->get_error_message(), "$label: the refusal names the field." );
 				$this->assertInstanceOf( \WP_Error::class, $field->clean( $value ) );
@@ -424,13 +424,13 @@ final class RegistryTest extends TestCase {
 	}
 
 	public function test_money_uses_the_shop_precision_and_decimal_separator(): void {
-		$GLOBALS['bcm_test']['decimals']  = 3;
-		$GLOBALS['bcm_test']['separator'] = ',';
-		$price                            = self::field( 'regular_price' );
+		$GLOBALS['bulkcat_test']['decimals']  = 3;
+		$GLOBALS['bulkcat_test']['separator'] = ',';
+		$price                                = self::field( 'regular_price' );
 		$this->assertSame( '12.500', $price->clean( '12,5' ) );
 		$this->assertSame( '12.500', $price->clean( '12.5' ) );
 		$this->assertInstanceOf( \WP_Error::class, $price->clean( '1.234,5' ) );
-		$GLOBALS['bcm_test']['decimals'] = 0;
+		$GLOBALS['bulkcat_test']['decimals'] = 0;
 		$this->assertSame( '13', $price->clean( '12.5' ) );
 	}
 
@@ -442,7 +442,7 @@ final class RegistryTest extends TestCase {
 		foreach ( [ '10.00', '10', '12.00' ] as $sale ) {
 			$error = Registry::check_prices( '10.00', $sale );
 			$this->assertInstanceOf( \WP_Error::class, $error, "Sale $sale against regular 10.00." );
-			$this->assertSame( 'bcm_invalid_value', $error->get_error_code() );
+			$this->assertSame( 'bulkcat_invalid_value', $error->get_error_code() );
 			$this->assertStringContainsString( 'skipped', $error->get_error_message() );
 		}
 	}
@@ -451,7 +451,7 @@ final class RegistryTest extends TestCase {
 		$name = self::field( 'name' );
 		$this->assertSame( 'Shoe alert(1)', $name->sanitise( 'Shoe <script>alert(1)</script>' ) );
 		$this->assertSame( 'Shoe <strong>new</strong>', $name->sanitise( 'Shoe <strong>new</strong>' ) );
-		$GLOBALS['bcm_test']['caps']['unfiltered_html'] = true;
+		$GLOBALS['bulkcat_test']['caps']['unfiltered_html'] = true;
 		$this->assertSame( 'Shoe <script>alert(1)</script>', $name->sanitise( 'Shoe <script>alert(1)</script>' ) );
 	}
 
@@ -550,9 +550,9 @@ final class RegistryTest extends TestCase {
 		$this->assertNotContains( 'save', array_column( $product->gets, 0 ) );
 
 		$refused = self::field( 'regular_price' )->write( $product, '-1' );
-		$this->assertSame( 'bcm_invalid_value', self::code( $refused ) );
+		$this->assertSame( 'bulkcat_invalid_value', self::code( $refused ) );
 		$this->assertCount( 6, $product->sets, 'A refused value sets nothing.' );
-		$this->assertSame( 'bcm_read_only', self::code( self::field( 'units_sold' )->write( $product, 3 ) ) );
+		$this->assertSame( 'bulkcat_read_only', self::code( self::field( 'units_sold' )->write( $product, 3 ) ) );
 	}
 
 	public function test_variation_rules_refuse_with_the_reason(): void {
@@ -568,7 +568,7 @@ final class RegistryTest extends TestCase {
 			'name'               => 'X',
 		] as $key => $value ) {
 			$result = self::field( $key )->write( $variation, $value );
-			$this->assertSame( 'bcm_not_available', self::code( $result ), "$key on a variation." );
+			$this->assertSame( 'bulkcat_not_available', self::code( $result ), "$key on a variation." );
 		}
 		$this->assertSame( 'Categories belong to the product, not to each variation.', self::field( 'category_ids' )->write( $variation, [ 5 ] )->get_error_message() );
 		$this->assertSame( [], $variation->sets, 'Nothing parent-only is pushed down.' );
@@ -576,13 +576,13 @@ final class RegistryTest extends TestCase {
 		// Status: publish and private only on a variation.
 		$this->assertSame( 'private', self::field( 'status' )->write( $variation, 'private' ) );
 		$draft = self::field( 'status' )->write( $variation, 'draft' );
-		$this->assertSame( 'bcm_invalid_value', self::code( $draft ) );
+		$this->assertSame( 'bulkcat_invalid_value', self::code( $draft ) );
 		$this->assertSame( 'On a variation, Status can only be: Published, Private.', $draft->get_error_message() );
 		$this->assertSame( 'draft', self::field( 'status' )->write( new FakeProduct(), 'draft' ) );
 
 		// Tax class "same as product" only on a variation.
 		$this->assertSame( 'parent', self::field( 'tax_class' )->write( $variation, 'parent' ) );
-		$this->assertSame( 'bcm_invalid_value', self::code( self::field( 'tax_class' )->write( new FakeProduct(), 'parent' ) ) );
+		$this->assertSame( 'bulkcat_invalid_value', self::code( self::field( 'tax_class' )->write( new FakeProduct(), 'parent' ) ) );
 
 		// Shipping class 0 on a variation means the same as its product.
 		$this->assertSame( 0, self::field( 'shipping_class_id' )->write( $variation, 0 ) );
@@ -592,7 +592,7 @@ final class RegistryTest extends TestCase {
 		$parent = new FakeProduct( 'variable' );
 		foreach ( [ 'regular_price', 'sale_price' ] as $key ) {
 			$result = self::field( $key )->write( $parent, '5' );
-			$this->assertSame( 'bcm_not_available', self::code( $result ), "$key on a variable product." );
+			$this->assertSame( 'bulkcat_not_available', self::code( $result ), "$key on a variable product." );
 			$this->assertStringContainsString( 'variations', $result->get_error_message() );
 		}
 		$this->assertSame( [], $parent->sets );
@@ -602,11 +602,11 @@ final class RegistryTest extends TestCase {
 		$field = self::field( 'stock_quantity' );
 		foreach ( [ false, 'parent', null ] as $managed ) {
 			$variation = new FakeProduct( 'variation', [ 'manage_stock' => $managed ] );
-			$this->assertSame( 'bcm_not_available', self::code( $field->write( $variation, 3 ) ), 'manage_stock ' . wp_json_encode( $managed ) );
+			$this->assertSame( 'bulkcat_not_available', self::code( $field->write( $variation, 3 ) ), 'manage_stock ' . wp_json_encode( $managed ) );
 			$this->assertSame( [], $variation->sets );
 		}
 		$this->assertSame( 3, $field->write( new FakeProduct( 'variation', [ 'manage_stock' => true ] ), '3' ) );
-		$this->assertSame( 'bcm_not_available', self::code( $field->write( new FakeProduct( 'simple', [ 'manage_stock' => false ] ), 3 ) ) );
+		$this->assertSame( 'bulkcat_not_available', self::code( $field->write( new FakeProduct( 'simple', [ 'manage_stock' => false ] ), 3 ) ) );
 
 		$product = new FakeProduct( 'simple', [ 'manage_stock' => false ] );
 		self::field( 'manage_stock' )->write( $product, true );
@@ -614,13 +614,13 @@ final class RegistryTest extends TestCase {
 	}
 
 	public function test_a_sku_in_use_elsewhere_is_refused_for_that_row(): void {
-		$GLOBALS['bcm_test']['skus'] = [
+		$GLOBALS['bulkcat_test']['skus'] = [
 			'SHOE-42' => 10,
 			'OWN-1'   => 11,
 		];
-		$sku                         = self::field( 'sku' );
-		$clash                       = $sku->write( new FakeProduct( 'variation', [ 'id' => 12 ] ), 'SHOE-42' );
-		$this->assertSame( 'bcm_invalid_value', self::code( $clash ) );
+		$sku                             = self::field( 'sku' );
+		$clash                           = $sku->write( new FakeProduct( 'variation', [ 'id' => 12 ] ), 'SHOE-42' );
+		$this->assertSame( 'bulkcat_invalid_value', self::code( $clash ) );
 		$this->assertSame( 'A product with the SKU SHOE-42 already exists, so this SKU was not applied.', $clash->get_error_message() );
 		$this->assertSame( 'OWN-1', $sku->write( new FakeProduct( 'simple', [ 'id' => 11 ] ), 'OWN-1' ), 'Its own SKU is not a clash.' );
 		$this->assertSame( '', $sku->write( new FakeProduct( 'simple', [ 'id' => 12 ] ), '' ), 'Clearing a SKU never clashes.' );
@@ -675,11 +675,11 @@ final class RegistryTest extends TestCase {
 	public function test_the_fields_payload_matches_the_snapshot(): void {
 		// The whole `GET /fields` payload: fields, actions (T24) and groups.
 		$json = (string) wp_json_encode( ( new FieldsController( new Registry() ) )->payload(), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) . "\n";
-		if ( '1' === getenv( 'BCM_UPDATE_SNAPSHOT' ) ) {
+		if ( '1' === getenv( 'BULKCAT_UPDATE_SNAPSHOT' ) ) {
 			file_put_contents( self::SNAPSHOT, $json );
 		}
 		$this->assertFileExists( self::SNAPSHOT );
-		$this->assertSame( (string) file_get_contents( self::SNAPSHOT ), $json, 'The /fields payload changed. If that is deliberate, run BCM_UPDATE_SNAPSHOT=1 composer test and commit the snapshot.' );
+		$this->assertSame( (string) file_get_contents( self::SNAPSHOT ), $json, 'The /fields payload changed. If that is deliberate, run BULKCAT_UPDATE_SNAPSHOT=1 composer test and commit the snapshot.' );
 	}
 
 	/**

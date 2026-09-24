@@ -25,7 +25,7 @@ use PHPUnit\Framework\TestCase;
 
 final class RouteSchemaTest extends TestCase {
 	protected function setUp(): void {
-		bcm_test_reset();
+		bulkcat_test_reset();
 	}
 
 	/**
@@ -271,7 +271,7 @@ final class RouteSchemaTest extends TestCase {
 
 	public function test_there_is_one_schema_property_per_field(): void {
 		$registry = new Registry();
-		$schema   = ( new RouteSchema( $registry ) )->item_schema( 'bcm-product' );
+		$schema   = ( new RouteSchema( $registry ) )->item_schema( 'bulkcat-product' );
 
 		$this->assertSame( RouteSchema::DIALECT, $schema['$schema'] );
 		$this->assertSame( 'object', $schema['type'] );
@@ -281,7 +281,7 @@ final class RouteSchemaTest extends TestCase {
 			$this->assertSame( $expected, $schema['properties'][ $key ], $key );
 		}
 		$extra = ( new RouteSchema( $registry ) )->item_schema(
-			'bcm-variation',
+			'bulkcat-variation',
 			[
 				'parent_id' => [ 'type' => 'integer' ],
 				'name'      => [ 'type' => 'boolean' ],
@@ -327,11 +327,11 @@ final class RouteSchemaTest extends TestCase {
 		$this->assertSame( [ 'za', 'ie' ], $schema->query_args()['origin']['properties']['value']['items']['enum'] );
 		$this->assertContains( 'origin', $schema->query_args()['orderby']['items']['enum'] );
 		$this->assertContains( 'origin', $schema->query_args()['fields']['items']['enum'] );
-		$this->assertSame( [ 'type', 'enum' ], array_values( array_intersect( array_keys( $schema->item_schema( 'bcm-product' )['properties']['origin'] ), [ 'type', 'enum' ] ) ) );
+		$this->assertSame( [ 'type', 'enum' ], array_values( array_intersect( array_keys( $schema->item_schema( 'bulkcat-product' )['properties']['origin'] ), [ 'type', 'enum' ] ) ) );
 
 		// The unchanged products controller, built over the double, registers both.
 		( new Routes( [ new ProductsController( $registry ) ] ) )->register();
-		$route = $GLOBALS['bcm_test']['routes']['/bcm/v1/products'];
+		$route = $GLOBALS['bulkcat_test']['routes']['/bulkcat/v1/products'];
 		$this->assertArrayHasKey( 'origin', $route[0]['args'] );
 		$this->assertArrayHasKey( 'origin', call_user_func( $route['schema'] )['properties'] );
 		$item = [ 'origin' => 'ie' ] + self::sample_item( $registry );

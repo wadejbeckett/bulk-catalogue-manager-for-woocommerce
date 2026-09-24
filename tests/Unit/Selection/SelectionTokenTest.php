@@ -5,7 +5,7 @@
  * conditions, an id list in its order with each id once — and a token with
  * any one byte altered, an expired one, one minted for another user, one
  * signed under another salt or anything malformed is refused 403
- * `bcm_invalid_selection`.
+ * `bulkcat_invalid_selection`.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -24,9 +24,9 @@ final class SelectionTokenTest extends TestCase {
 	private const NOW = 1790000000;
 
 	protected function setUp(): void {
-		bcm_test_reset();
-		$GLOBALS['bcm_test']['logged_in'] = true;
-		$GLOBALS['bcm_test']['user_id']   = 7;
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['logged_in'] = true;
+		$GLOBALS['bulkcat_test']['user_id']   = 7;
 	}
 
 	/**
@@ -85,16 +85,16 @@ final class SelectionTokenTest extends TestCase {
 	}
 
 	/**
-	 * Assert a parse was refused 403 `bcm_invalid_selection`.
+	 * Assert a parse was refused 403 `bulkcat_invalid_selection`.
 	 *
 	 * @param mixed  $result  parse() result.
 	 * @param string $message Failure message.
 	 */
 	private function check_refused( mixed $result, string $message = '' ): void {
 		$this->assertInstanceOf( \WP_Error::class, $result, $message );
-		$this->assertSame( 'bcm_invalid_selection', $result->get_error_code(), $message );
+		$this->assertSame( 'bulkcat_invalid_selection', $result->get_error_code(), $message );
 		$this->assertSame( 403, $result->get_error_data()['status'], $message );
-		$this->assertStringNotContainsString( 'bcm_', $result->get_error_message() );
+		$this->assertStringNotContainsString( 'bulkcat_', $result->get_error_message() );
 	}
 
 	public function test_a_filter_token_rematerialises_to_the_same_normalised_conditions(): void {
@@ -175,17 +175,17 @@ final class SelectionTokenTest extends TestCase {
 	}
 
 	public function test_the_lifetime_is_filterable_within_bounds(): void {
-		add_filter( 'bcm_selection_ttl', static fn(): int => 120 );
+		add_filter( 'bulkcat_selection_ttl', static fn(): int => 120 );
 		$token = SelectionToken::mint( Selection::of_ids( [ 5 ] ), null, self::NOW );
 		$this->assertInstanceOf( Selection::class, SelectionToken::parse( $token, null, self::NOW + 119 ) );
 		$this->check_refused( SelectionToken::parse( $token, null, self::NOW + 120 ) );
 
-		bcm_test_reset();
-		add_filter( 'bcm_selection_ttl', static fn(): int => 1 );
+		bulkcat_test_reset();
+		add_filter( 'bulkcat_selection_ttl', static fn(): int => 1 );
 		$this->assertSame( SelectionToken::MIN_TTL, SelectionToken::ttl() );
-		add_filter( 'bcm_selection_ttl', static fn(): int => 10 * 86400, 20 );
+		add_filter( 'bulkcat_selection_ttl', static fn(): int => 10 * 86400, 20 );
 		$this->assertSame( SelectionToken::MAX_TTL, SelectionToken::ttl() );
-		add_filter( 'bcm_selection_ttl', static fn(): string => 'forever', 30 );
+		add_filter( 'bulkcat_selection_ttl', static fn(): string => 'forever', 30 );
 		$this->assertSame( SelectionToken::TTL, SelectionToken::ttl() );
 	}
 
@@ -195,13 +195,13 @@ final class SelectionTokenTest extends TestCase {
 		$this->check_refused( SelectionToken::parse( $token, 8, self::NOW ) );
 		$this->check_refused( SelectionToken::parse( $token, 0, self::NOW ), 'A visitor.' );
 
-		$GLOBALS['bcm_test']['user_id'] = 8;
+		$GLOBALS['bulkcat_test']['user_id'] = 8;
 		$this->check_refused( SelectionToken::parse( $token, null, self::NOW ), 'The current user by default.' );
 	}
 
 	public function test_a_token_signed_under_another_salt_is_refused(): void {
-		$token                       = SelectionToken::mint( Selection::of_ids( [ 5 ] ), null, self::NOW );
-		$GLOBALS['bcm_test']['salt'] = 'rotated';
+		$token                           = SelectionToken::mint( Selection::of_ids( [ 5 ] ), null, self::NOW );
+		$GLOBALS['bulkcat_test']['salt'] = 'rotated';
 		$this->check_refused( SelectionToken::parse( $token, null, self::NOW ) );
 	}
 
@@ -219,13 +219,13 @@ final class SelectionTokenTest extends TestCase {
 
 		$this->assertSame( 1, preg_match( '/^([0-9a-f]{32})\.[0-9a-f]{64}$/', $token, $m ), 'An id and a hex HMAC: short whatever the selection holds.' );
 		$name = SelectionToken::PREFIX . $m[1];
-		$this->assertSame( 'bcm_selection_', SelectionToken::PREFIX );
-		$this->assertArrayHasKey( $name, $GLOBALS['bcm_test']['transients'], 'The selection itself is stored in a transient under the id.' );
-		$this->assertSame( SelectionToken::ttl(), $GLOBALS['bcm_test']['transient_ttl'][ $name ] );
+		$this->assertSame( 'bulkcat_selection_', SelectionToken::PREFIX );
+		$this->assertArrayHasKey( $name, $GLOBALS['bulkcat_test']['transients'], 'The selection itself is stored in a transient under the id.' );
+		$this->assertSame( SelectionToken::ttl(), $GLOBALS['bulkcat_test']['transient_ttl'][ $name ] );
 		$this->assertContains( SelectionToken::PREFIX, \BulkCatalogueManager\Data\Registry::plugin()->transient_prefixes() );
 		$this->assertSame( $ids, SelectionToken::parse( $token, null, self::NOW )->ids );
 
-		unset( $GLOBALS['bcm_test']['transients'][ $name ] );
+		unset( $GLOBALS['bulkcat_test']['transients'][ $name ] );
 		$this->check_refused( SelectionToken::parse( $token, null, self::NOW ), 'A token whose stored selection has gone.' );
 
 		// Nothing encodes a token in base64 any more.
@@ -234,7 +234,7 @@ final class SelectionTokenTest extends TestCase {
 	}
 
 	public function test_a_token_is_made_only_for_a_user(): void {
-		$GLOBALS['bcm_test']['user_id'] = 0;
+		$GLOBALS['bulkcat_test']['user_id'] = 0;
 		try {
 			SelectionToken::mint( Selection::of_ids( [ 5 ] ) );
 			$this->fail( 'A token was minted for a visitor.' );

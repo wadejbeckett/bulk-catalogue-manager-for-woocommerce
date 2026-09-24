@@ -1,6 +1,6 @@
 <?php
 /**
- * `POST /bcm/v1/preview` (SPEC §4.4, §9.1, §12.1): what a change would do,
+ * `POST /bulkcat/v1/preview` (SPEC §4.4, §9.1, §12.1): what a change would do,
  * computed by Engine\Preview without writing or saving anything. The body
  * carries the operation list (`operations`, `[ { action, args } ]`), the
  * selection — an `ids` list or the signed `token` from `POST /selection`,
@@ -123,7 +123,7 @@ final class PreviewController implements Controller {
 				$selection = Selection::of_ids( (array) $ids );
 			} catch ( \InvalidArgumentException $e ) {
 				$selection = Refusal::invalid(
-					'bcm_invalid_value',
+					'bulkcat_invalid_value',
 					__( 'These products could not be selected. Choose the products again and try again.', 'bulk-catalogue-manager-for-woocommerce' ),
 					[ 'details' => $e->getMessage() ]
 				);

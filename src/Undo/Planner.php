@@ -30,7 +30,7 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Plans the undo of one batch.
  *
- * It refuses, 409 `bcm_not_reversible` with the reason code in
+ * It refuses, 409 `bulkcat_not_reversible` with the reason code in
  * `data.reason`, a batch that has not finished (queued, running, undoing),
  * one already undone (its status is `undone`, or a complete or partial undo
  * batch names it in `undo_of`), one being undone now (a queued or running
@@ -72,7 +72,7 @@ final class Planner {
 	/**
 	 * Refusal code for a batch that cannot be undone; the reason is in `data.reason`.
 	 */
-	public const NOT_REVERSIBLE = 'bcm_not_reversible';
+	public const NOT_REVERSIBLE = 'bulkcat_not_reversible';
 
 	/*
 	 * Refusal reasons.
@@ -182,7 +182,7 @@ final class Planner {
 	 *
 	 * @param int      $batch_id The batch to undo.
 	 * @param int|null $user_id  The person undoing; the current user by default.
-	 * @return Plan|\WP_Error The plan, or 404 `bcm_not_found`, or 409 `bcm_not_reversible` with its reason.
+	 * @return Plan|\WP_Error The plan, or 404 `bulkcat_not_found`, or 409 `bulkcat_not_reversible` with its reason.
 	 */
 	public function plan( int $batch_id, ?int $user_id = null ): Plan|\WP_Error {
 		$user_id ??= get_current_user_id();

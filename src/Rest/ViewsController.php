@@ -1,11 +1,11 @@
 <?php
 /**
  * Saved views (SPEC §4.1, §10, §12.1, §13; T52). Each user's views are JSON
- * in their own `bcm_views` user meta, so one user's views are never listed
+ * in their own `bulkcat_views` user meta, so one user's views are never listed
  * or readable by another: an id that is not in the current user's list is
  * 404, whoever else holds it.
  *
- * - `GET /bcm/v1/views` answers `{ items, default, max }`: the views in the
+ * - `GET /bulkcat/v1/views` answers `{ items, default, max }`: the views in the
  *   owner's order, each `{ id, name, view, category, isDefault }`, the id of
  *   the view the screen opens with (or null) and the most a user may keep.
  * - `POST /views` `{ name, view, category?, isDefault? }` saves a new view
@@ -51,7 +51,7 @@ final class ViewsController implements ReadController {
 	/**
 	 * The user meta key holding a user's views as JSON (registered in Data\Registry).
 	 */
-	public const META_KEY = 'bcm_views';
+	public const META_KEY = 'bulkcat_views';
 
 	/**
 	 * The most views one user may keep.
@@ -86,27 +86,27 @@ final class ViewsController implements ReadController {
 	/**
 	 * Refusal code for a view, category or order that breaks the schema.
 	 */
-	public const INVALID = 'bcm_invalid_view';
+	public const INVALID = 'bulkcat_invalid_view';
 
 	/**
 	 * Refusal code for a missing or over-long name.
 	 */
-	public const NAME = 'bcm_view_name_required';
+	public const NAME = 'bulkcat_view_name_required';
 
 	/**
 	 * Refusal code for a name another of the user's views has.
 	 */
-	public const EXISTS = 'bcm_view_exists';
+	public const EXISTS = 'bulkcat_view_exists';
 
 	/**
 	 * Refusal code for a save above MAX_VIEWS.
 	 */
-	public const TOO_MANY = 'bcm_too_many_views';
+	public const TOO_MANY = 'bulkcat_too_many_views';
 
 	/**
 	 * Refusal code for an id not in the current user's views.
 	 */
-	public const NOT_FOUND = 'bcm_view_not_found';
+	public const NOT_FOUND = 'bulkcat_view_not_found';
 
 	/**
 	 * The view keys the schema knows; any other is kept as plain JSON or dropped.
@@ -841,7 +841,7 @@ final class ViewsController implements ReadController {
 		];
 		return [
 			'$schema'    => 'http://json-schema.org/draft-04/schema#',
-			'title'      => 'bcm-views',
+			'title'      => 'bulkcat-views',
 			'type'       => 'object',
 			'properties' => [
 				'items'   => [

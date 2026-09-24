@@ -1,6 +1,6 @@
 <?php
 /**
- * `POST /bcm/v1/batches` (T31; SPEC §9.2, §12.1, §13) through the REST
+ * `POST /bulkcat/v1/batches` (T31; SPEC §9.2, §12.1, §13) through the REST
  * dispatcher: registered behind Access::can_write; an id list answers 201
  * with the queued batch; a selection token is materialised through its
  * filter; the same request id again answers 200 with the same batch id and
@@ -12,8 +12,8 @@
  *
  * Stale selection (T38; §9.1, §12.6): a filter token needs the hash of a
  * current preview (missing, altered or bound to another operation list is
- * 409 `bcm_preview_stale`); when a product that matches is published between
- * the preview and apply, apply is refused 409 `bcm_selection_changed` naming
+ * 409 `bulkcat_preview_stale`); when a product that matches is published between
+ * the preview and apply, apply is refused 409 `bulkcat_selection_changed` naming
  * the previewed and the current count in plain words, with nothing written,
  * and applies with `confirm_changed`, keeping the previewed count on the
  * batch. An id list or id token needs its preview's hash too (security
@@ -53,11 +53,11 @@ final class BatchesRouteTest extends TestCase {
 	private SqlEvaluator $db;
 
 	protected function setUp(): void {
-		bcm_test_reset();
-		$GLOBALS['bcm_test']['logged_in']                  = true;
-		$GLOBALS['bcm_test']['user_id']                    = 12;
-		$GLOBALS['bcm_test']['caps']['manage_woocommerce'] = true;
-		$GLOBALS['bcm_test']['caps']['edit_products']      = true;
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['logged_in']                  = true;
+		$GLOBALS['bulkcat_test']['user_id']                    = 12;
+		$GLOBALS['bulkcat_test']['caps']['manage_woocommerce'] = true;
+		$GLOBALS['bulkcat_test']['caps']['edit_products']      = true;
 		( new Plugin() )->boot();
 		do_action( 'rest_api_init' );
 		$this->db    = SeededCatalogue::seed();
@@ -70,7 +70,7 @@ final class BatchesRouteTest extends TestCase {
 	 * @param array<string, mixed> $params Parameters.
 	 */
 	private static function post( array $params ): \WP_REST_Response|\WP_Error {
-		$request = new \WP_REST_Request( 'POST', '/bcm/v1/batches' );
+		$request = new \WP_REST_Request( 'POST', '/bulkcat/v1/batches' );
 		foreach ( $params as $key => $value ) {
 			$request->set_param( $key, $value );
 		}
@@ -110,7 +110,7 @@ final class BatchesRouteTest extends TestCase {
 	}
 
 	public function test_the_route_needs_the_write_capability(): void {
-		$route = $GLOBALS['bcm_test']['routes']['/bcm/v1/batches'] ?? null;
+		$route = $GLOBALS['bulkcat_test']['routes']['/bulkcat/v1/batches'] ?? null;
 		$this->assertTrue( is_array( $route ), 'The route is registered.' );
 		$this->assertSame( [ Access::class, 'can_write' ], $route[0]['permission_callback'] );
 		$this->assertSame( 'POST', $route[0]['methods'] );
@@ -199,7 +199,7 @@ final class BatchesRouteTest extends TestCase {
 		$this->assertSame( 2, $response->get_error_data()['previewed'] );
 		$this->assertSame( 3, $response->get_error_data()['current'] );
 		$this->assertStringContainsString( 'it showed 2, and 3 match now', $response->get_error_message() );
-		$this->assertStringNotContainsString( 'bcm_', $response->get_error_message() );
+		$this->assertStringNotContainsString( 'bulkcat_', $response->get_error_message() );
 
 		// Without preview_count the token's own count is the one the owner saw.
 		$this->assert_refused( self::post( self::filter_body( $token ) ), BatchFactory::CHANGED, 409 );
@@ -289,12 +289,12 @@ final class BatchesRouteTest extends TestCase {
 	}
 
 	public function test_a_visitor_and_a_user_who_cannot_edit_products_are_refused(): void {
-		$GLOBALS['bcm_test']['caps']['edit_products'] = false;
-		$this->assert_refused( self::post( self::body() ), 'bcm_forbidden', 403 );
+		$GLOBALS['bulkcat_test']['caps']['edit_products'] = false;
+		$this->assert_refused( self::post( self::body() ), 'bulkcat_forbidden', 403 );
 
-		$GLOBALS['bcm_test']['logged_in'] = false;
-		$GLOBALS['bcm_test']['caps']      = [];
-		$this->assert_refused( self::post( self::body() ), 'bcm_forbidden', 401 );
+		$GLOBALS['bulkcat_test']['logged_in'] = false;
+		$GLOBALS['bulkcat_test']['caps']      = [];
+		$this->assert_refused( self::post( self::body() ), 'bulkcat_forbidden', 401 );
 	}
 
 	public function test_a_body_must_name_exactly_one_selection(): void {
@@ -320,6 +320,6 @@ final class BatchesRouteTest extends TestCase {
 	public function test_too_many_operations_are_refused_with_nothing_written(): void {
 		$body               = self::body();
 		$body['operations'] = array_fill( 0, 21, $body['operations'][0] );
-		$this->assert_refused( self::post( $body ), 'bcm_too_many_operations', 400 );
+		$this->assert_refused( self::post( $body ), 'bulkcat_too_many_operations', 400 );
 	}
 }

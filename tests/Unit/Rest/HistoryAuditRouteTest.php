@@ -67,10 +67,10 @@ final class HistoryAuditRouteTest extends TestCase {
 	private array $asked = [];
 
 	protected function setUp(): void {
-		bcm_test_reset();
-		$GLOBALS['bcm_test']['logged_in']                  = true;
-		$GLOBALS['bcm_test']['user_id']                    = 12;
-		$GLOBALS['bcm_test']['caps']['manage_woocommerce'] = true;
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['logged_in']                  = true;
+		$GLOBALS['bulkcat_test']['user_id']                    = 12;
+		$GLOBALS['bulkcat_test']['caps']['manage_woocommerce'] = true;
 		( new Plugin() )->boot();
 		do_action( 'rest_api_init' );
 		$this->batches   = [];
@@ -92,7 +92,7 @@ final class HistoryAuditRouteTest extends TestCase {
 		( new Routes( [ new BatchesController( null, null, null, null, $clock, $reversibility ) ] ) )->register();
 		$this->seed();
 		// User 3 owns most batches; 4 is Rosa; 9 ran no batch; 5 (below) is an account since removed.
-		$GLOBALS['bcm_test']['users'] = [
+		$GLOBALS['bulkcat_test']['users'] = [
 			3 => 'Sam Shop',
 			4 => 'Rosa Admin',
 			9 => 'Nobody',
@@ -206,16 +206,16 @@ final class HistoryAuditRouteTest extends TestCase {
 		$this->change( 2, 1009, 'regular_price', '5', '6', 'applied', '2026-09-22 13:00:00' );
 
 		foreach ( [ 1001, 1002, 1003 ] as $id ) {
-			$GLOBALS['bcm_test']['posts'][ $id ] = [
+			$GLOBALS['bulkcat_test']['posts'][ $id ] = [
 				'post_type'   => 1003 === $id ? 'product_variation' : 'product',
 				'post_status' => 'publish',
 				'post_title'  => "Shoe $id",
 			];
 		}
 
-		$tables          = '`wp_bcm_(batches|batch_items|changes)`';
+		$tables          = '`wp_bulkcat_(batches|batch_items|changes)`';
 		$wpdb->responses = [
-			'/^SELECT \* FROM `wp_bcm_batches` WHERE batch_id = (\d+)$/' => function ( string $sql ): ?array {
+			'/^SELECT \* FROM `wp_bulkcat_batches` WHERE batch_id = (\d+)$/' => function ( string $sql ): ?array {
 				preg_match( '/(\d+)$/', $sql, $m );
 				foreach ( $this->batches as $row ) {
 					if ( (int) $m[1] === $row['batch_id'] ) {
@@ -227,9 +227,9 @@ final class HistoryAuditRouteTest extends TestCase {
 			"/^SELECT .* FROM $tables/s" => function ( string $sql ): mixed {
 				$db = new SqlEvaluator(
 					[
-						'wp_bcm_batches'     => $this->batches,
-						'wp_bcm_batch_items' => [],
-						'wp_bcm_changes'     => $this->changes,
+						'wp_bulkcat_batches'     => $this->batches,
+						'wp_bulkcat_batch_items' => [],
+						'wp_bulkcat_changes'     => $this->changes,
 					]
 				);
 				return 1 === preg_match( '/^SELECT (COUNT\(\*\)|claimed_gmt) FROM/', $sql ) ? $db->value( $sql ) : $db->rows( $sql );
@@ -238,7 +238,7 @@ final class HistoryAuditRouteTest extends TestCase {
 	}
 
 	private static function dispatch( string $path, array $params = [] ): \WP_REST_Response|\WP_Error {
-		$request = new \WP_REST_Request( 'GET', '/bcm/v1' . $path );
+		$request = new \WP_REST_Request( 'GET', '/bulkcat/v1' . $path );
 		foreach ( $params as $key => $value ) {
 			$request->set_param( $key, $value );
 		}
@@ -285,22 +285,22 @@ final class HistoryAuditRouteTest extends TestCase {
 	}
 
 	public function test_the_routes_register_with_their_permissions_arguments_and_schemas(): void {
-		$routes = $GLOBALS['bcm_test']['routes'];
-		$audit  = $routes['/bcm/v1/audit'];
+		$routes = $GLOBALS['bulkcat_test']['routes'];
+		$audit  = $routes['/bulkcat/v1/audit'];
 		$this->assertSame( 'GET', $audit[0]['methods'] );
 		$this->assertSame( [ Access::class, 'can_read' ], $audit[0]['permission_callback'] );
 		$this->assertSame( [ 'page', 'per_page', 'product', 'field', 'user', 'after', 'before' ], array_keys( $audit[0]['args'] ) );
 		$this->assertSame( ( new Fields() )->keys(), $audit[0]['args']['field']['enum'], 'The field argument is the registry.' );
-		$this->assertSame( 'bcm-audit-change', call_user_func( $audit['schema'] )['title'] );
+		$this->assertSame( 'bulkcat-audit-change', call_user_func( $audit['schema'] )['title'] );
 		$this->assertSame( [ 'batch_id', 'user_id', 'user_name', 'change_id' ], array_slice( array_keys( call_user_func( $audit['schema'] )['properties'] ), 0, 4 ) );
 
-		$list = $routes['/bcm/v1/batches'][1];
+		$list = $routes['/bulkcat/v1/batches'][1];
 		$this->assertSame( [ Access::class, 'can_read' ], $list['permission_callback'] );
 		$this->assertSame( \BulkCatalogueManager\Operations\Registry::instance()->ids(), $list['args']['action']['enum'], 'The action argument is the operations registry.' );
-		$schema = call_user_func( $routes['/bcm/v1/batches']['schema'] )['properties']['reversibility'];
+		$schema = call_user_func( $routes['/bulkcat/v1/batches']['schema'] )['properties']['reversibility'];
 		$this->assertSame( Reversibility::STATES, $schema['properties']['state']['enum'] );
 		$this->assertSame( [ ...Reversibility::REASONS, null ], $schema['properties']['reason']['enum'] );
-		$this->assertSame( [], $GLOBALS['bcm_test']['wrong'] );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['wrong'] );
 	}
 
 	public function test_the_history_list_filters_by_action_type_with_its_other_filters(): void {
@@ -416,13 +416,13 @@ final class HistoryAuditRouteTest extends TestCase {
 	}
 
 	public function test_retention_follows_the_setting_and_never_applies_when_kept_indefinitely(): void {
-		$GLOBALS['bcm_test']['options']['bcm_settings'] = [ 'history_days' => 730 ];
+		$GLOBALS['bulkcat_test']['options']['bulkcat_settings'] = [ 'history_days' => 730 ];
 		$this->assertSame( [ 'reversible', null, null ], $this->states()[10] );
 
-		$GLOBALS['bcm_test']['options']['bcm_settings'] = [ 'history_days' => 0 ];
+		$GLOBALS['bulkcat_test']['options']['bulkcat_settings'] = [ 'history_days' => 0 ];
 		$this->assertSame( [ 'reversible', null, null ], $this->states()[10], 'Kept indefinitely: never outside retention.' );
 
-		$GLOBALS['bcm_test']['options']['bcm_settings'] = [ 'history_days' => 7 ];
+		$GLOBALS['bulkcat_test']['options']['bulkcat_settings'] = [ 'history_days' => 7 ];
 		$states = $this->states();
 		$this->assertSame( [ 'not_reversible', null, 'outside_retention' ], $states[10] );
 		$this->assertSame( [ 'reversible', null, null ], $states[1], 'Created three days ago, inside seven.' );
@@ -488,13 +488,13 @@ final class HistoryAuditRouteTest extends TestCase {
 			$items[13]['undone_by']
 		);
 		$this->assertSame( [ 13 ], array_keys( array_filter( array_column( $items, 'undone_by', 'batch_id' ) ) ), 'Only an undone row says who put it back.' );
-		$this->assertCount( 1, $GLOBALS['bcm_test']['get_users_calls'], 'Every name on the page from one get_users() call.' );
-		$this->assertSame( [ 3, 4, 5 ], $GLOBALS['bcm_test']['get_users_calls'][0]['include'] );
+		$this->assertCount( 1, $GLOBALS['bulkcat_test']['get_users_calls'], 'Every name on the page from one get_users() call.' );
+		$this->assertSame( [ 3, 4, 5 ], $GLOBALS['bulkcat_test']['get_users_calls'][0]['include'] );
 		$queries = array_slice( $GLOBALS['wpdb']->queries, $before );
 		$this->assertCount( 1, preg_grep( '/selection LIKE/', $queries ), 'One read for the variations flag.' );
 		$this->assertCount( 0, preg_grep( '/SELECT \\* |SELECT selection/', $queries ), 'The selection snapshot is never loaded.' );
 
-		$schema = call_user_func( $GLOBALS['bcm_test']['routes']['/bcm/v1/batches']['schema'] )['properties'];
+		$schema = call_user_func( $GLOBALS['bulkcat_test']['routes']['/bulkcat/v1/batches']['schema'] )['properties'];
 		foreach ( [ 'user_name', 'variations_included', 'undone_by' ] as $key ) {
 			$this->assertArrayHasKey( $key, $schema );
 		}
@@ -507,9 +507,9 @@ final class HistoryAuditRouteTest extends TestCase {
 
 	public function test_the_users_route_lists_every_batch_owner_by_name(): void {
 		$this->batch( 15, 'complete', [ 'adjust' ], [ 'user_id' => 5 ] );
-		$route = $GLOBALS['bcm_test']['routes']['/bcm/v1/batches/users'];
+		$route = $GLOBALS['bulkcat_test']['routes']['/bulkcat/v1/batches/users'];
 		$this->assertSame( [ Access::class, 'can_read' ], $route[0]['permission_callback'] );
-		$this->assertSame( 'bcm-batch-user', call_user_func( $route['schema'] )['title'] );
+		$this->assertSame( 'bulkcat-batch-user', call_user_func( $route['schema'] )['title'] );
 		$this->assertSame(
 			[
 				[
@@ -528,10 +528,10 @@ final class HistoryAuditRouteTest extends TestCase {
 			$this->ok( self::dispatch( '/batches/users' ) )['items'],
 			'Owners only (user 9 ran nothing), by name.'
 		);
-		$this->assertCount( 1, $GLOBALS['bcm_test']['get_users_calls'] );
+		$this->assertCount( 1, $GLOBALS['bulkcat_test']['get_users_calls'] );
 
-		$GLOBALS['bcm_test']['caps'] = [];
-		$this->refused( self::dispatch( '/batches/users' ), 'bcm_forbidden', 403 );
+		$GLOBALS['bulkcat_test']['caps'] = [];
+		$this->refused( self::dispatch( '/batches/users' ), 'bulkcat_forbidden', 403 );
 	}
 
 	public function test_the_audit_log_lists_changes_across_batches_newest_first_with_names_and_labels(): void {
@@ -553,8 +553,8 @@ final class HistoryAuditRouteTest extends TestCase {
 			array_keys( $row )
 		);
 		$this->assertSame( [ 'Rosa Admin', 'Rosa Admin', 'Rosa Admin' ], array_column( $page['items'], 'user_name' ) );
-		$this->assertCount( 1, $GLOBALS['bcm_test']['get_users_calls'], 'One get_users() call for the page.' );
-		$this->assertSame( [ 4 ], $GLOBALS['bcm_test']['get_users_calls'][0]['include'] );
+		$this->assertCount( 1, $GLOBALS['bulkcat_test']['get_users_calls'], 'One get_users() call for the page.' );
+		$this->assertSame( [ 4 ], $GLOBALS['bulkcat_test']['get_users_calls'][0]['include'] );
 		$this->assertSame( [ 2, 4, 1003, 'variation', 'Shoe 1003', 'regular_price', 'Regular price', '5', '6', 'applied', '2026-09-22 12:00:00' ], [ $row['batch_id'], $row['user_id'], $row['object_id'], $row['object_type'], $row['name'], $row['field'], $row['field_label'], $row['old_value'], $row['new_value'], $row['result'], $row['applied_gmt'] ] );
 		$this->assertSame( 'Product 1009', $page['items'][0]['name'], 'A product that is gone gets a plain stand-in.' );
 		$this->assertSame( 'Sale price', $page['items'][2]['field_label'] );
@@ -620,25 +620,25 @@ final class HistoryAuditRouteTest extends TestCase {
 	public function test_visitors_and_users_without_the_capability_are_refused_before_any_row_is_read(): void {
 		$reads = [ [ '/batches', [ 'action' => 'adjust' ] ], [ '/batches/1', [] ], [ '/audit', [ 'product' => 1001 ] ] ];
 
-		$GLOBALS['bcm_test']['caps'] = [];
+		$GLOBALS['bulkcat_test']['caps'] = [];
 		foreach ( $reads as [ $path, $params ] ) {
-			$this->refused( self::dispatch( $path, $params ), 'bcm_forbidden', 403 );
+			$this->refused( self::dispatch( $path, $params ), 'bulkcat_forbidden', 403 );
 		}
 
-		$GLOBALS['bcm_test']['options']['bcm_settings'] = [ 'administrators_only' => true ];
-		$GLOBALS['bcm_test']['caps']                    = [ 'manage_woocommerce' => true ];
+		$GLOBALS['bulkcat_test']['options']['bulkcat_settings'] = [ 'administrators_only' => true ];
+		$GLOBALS['bulkcat_test']['caps']                        = [ 'manage_woocommerce' => true ];
 		foreach ( $reads as [ $path, $params ] ) {
-			$this->refused( self::dispatch( $path, $params ), 'bcm_forbidden', 403 );
+			$this->refused( self::dispatch( $path, $params ), 'bulkcat_forbidden', 403 );
 		}
 
-		$GLOBALS['bcm_test']['logged_in'] = false;
+		$GLOBALS['bulkcat_test']['logged_in'] = false;
 		foreach ( $reads as [ $path, $params ] ) {
-			$this->refused( self::dispatch( $path, $params ), 'bcm_forbidden', 401 );
+			$this->refused( self::dispatch( $path, $params ), 'bulkcat_forbidden', 401 );
 		}
-		$this->assertSame( [], preg_grep( '/bcm_(batches|changes)/', $GLOBALS['wpdb']->queries ), 'Nothing was read.' );
+		$this->assertSame( [], preg_grep( '/bulkcat_(batches|changes)/', $GLOBALS['wpdb']->queries ), 'Nothing was read.' );
 
-		$GLOBALS['bcm_test']['logged_in'] = true;
-		$GLOBALS['bcm_test']['caps']      = [ 'manage_options' => true ];
+		$GLOBALS['bulkcat_test']['logged_in'] = true;
+		$GLOBALS['bulkcat_test']['caps']      = [ 'manage_options' => true ];
 		foreach ( $reads as [ $path, $params ] ) {
 			$this->ok( self::dispatch( $path, $params ) );
 		}

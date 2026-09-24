@@ -201,7 +201,9 @@ describe( 'inline cell editing', () => {
 		expect( editor( 'SKU' ).getAttribute( 'aria-busy' ) ).toBe( 'true' );
 		// The rest of the row is pending too.
 		const row = editor( 'SKU' ).closest( 'tr' );
-		expect( row.querySelector( '.bcm-cell.is-pending' ) ).not.toBeNull();
+		expect(
+			row.querySelector( '.bulkcat-cell.is-pending' )
+		).not.toBeNull();
 		await act( async () => {
 			fail( {
 				code: 'internal_server_error',
@@ -215,7 +217,7 @@ describe( 'inline cell editing', () => {
 			)
 		).toBeTruthy();
 		expect( editor( 'SKU' ).value ).toBe( 'TSH-200' );
-		expect( row.querySelector( '.bcm-cell.is-pending' ) ).toBeNull();
+		expect( row.querySelector( '.bulkcat-cell.is-pending' ) ).toBeNull();
 	} );
 
 	it( 'says why a field does not apply instead of opening', async () => {
@@ -230,8 +232,8 @@ describe( 'inline cell editing', () => {
 		const locked = screen
 			.getByText( 'Hoodie' )
 			.closest( 'tr' )
-			.querySelector( '[data-bcm-editable="false"]' );
-		expect( locked.getAttribute( 'data-bcm-cell' ) ).toBe( 'derived' );
+			.querySelector( '[data-bulkcat-editable="false"]' );
+		expect( locked.getAttribute( 'data-bulkcat-cell' ) ).toBe( 'derived' );
 		expect( locked.getAttribute( 'title' ) ).toMatch( /variations/ );
 		fireEvent.keyDown( locked, { key: 'Enter' } );
 		expect(

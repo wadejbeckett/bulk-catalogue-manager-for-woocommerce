@@ -243,11 +243,11 @@ describe( 'expandable variation rows (T67)', () => {
 			disclosure( 'Classic Tee' ).getAttribute( 'aria-expanded' )
 		).toBe( 'true' );
 		expect(
-			document.querySelectorAll( '.bcm-vrow.is-child' )
+			document.querySelectorAll( '.bulkcat-vrow.is-child' )
 		).toHaveLength( 50 );
-		const first = document.querySelector( '.bcm-vrow.is-child' );
+		const first = document.querySelector( '.bulkcat-vrow.is-child' );
 		expect(
-			[ ...first.querySelectorAll( '.bcm-chip' ) ].map(
+			[ ...first.querySelectorAll( '.bulkcat-chip' ) ].map(
 				( chip ) => chip.textContent
 			)
 		).toEqual( [ 'S', 'Navy' ] );
@@ -259,11 +259,11 @@ describe( 'expandable variation rows (T67)', () => {
 		// Closing and opening again uses what was fetched.
 		fireEvent.click( disclosure( 'Classic Tee' ) );
 		expect(
-			document.querySelectorAll( '.bcm-vrow.is-child' )
+			document.querySelectorAll( '.bulkcat-vrow.is-child' )
 		).toHaveLength( 0 );
 		fireEvent.click( disclosure( 'Classic Tee' ) );
 		expect(
-			document.querySelectorAll( '.bcm-vrow.is-child' )
+			document.querySelectorAll( '.bulkcat-vrow.is-child' )
 		).toHaveLength( 50 );
 		expect( calls( apiFetch, 'products/21/variations' ) ).toHaveLength( 1 );
 	} );
@@ -303,13 +303,13 @@ describe( 'expandable variation rows (T67)', () => {
 		await renderLoaded();
 		await open( 'Polo' );
 		expect(
-			document.querySelectorAll( '.bcm-vrow.is-child' )
+			document.querySelectorAll( '.bulkcat-vrow.is-child' )
 		).toHaveLength( 2 );
 		fireEvent.click(
 			screen.getByRole( 'button', { name: 'Hide options' } )
 		);
 		expect(
-			document.querySelectorAll( '.bcm-vrow.is-child' )
+			document.querySelectorAll( '.bulkcat-vrow.is-child' )
 		).toHaveLength( 0 );
 		expect( disclosure( 'Polo' ).getAttribute( 'aria-expanded' ) ).toBe(
 			'false'
@@ -324,12 +324,12 @@ describe( 'expandable variation rows (T67)', () => {
 		fireEvent.keyDown( control, { key: 'Enter' } );
 		await waitFor( () =>
 			expect(
-				document.querySelectorAll( '.bcm-vrow.is-child' )
+				document.querySelectorAll( '.bulkcat-vrow.is-child' )
 			).toHaveLength( 2 )
 		);
 		fireEvent.keyDown( disclosure( 'Polo' ), { key: ' ' } );
 		expect(
-			document.querySelectorAll( '.bcm-vrow.is-child' )
+			document.querySelectorAll( '.bulkcat-vrow.is-child' )
 		).toHaveLength( 0 );
 		expect( disclosure( 'Polo' ).getAttribute( 'aria-expanded' ) ).toBe(
 			'false'
@@ -340,7 +340,7 @@ describe( 'expandable variation rows (T67)', () => {
 		await renderLoaded();
 		await open( 'Polo' );
 		const rows = [
-			...document.querySelectorAll( '.bcm-vrow.is-child' ),
+			...document.querySelectorAll( '.bulkcat-vrow.is-child' ),
 		].map( ( cell ) => cell.closest( 'tr' ) );
 		rows.forEach( ( row ) => {
 			const box = row.querySelector( 'input[type="checkbox"]' );
@@ -358,7 +358,9 @@ describe( 'expandable variation rows (T67)', () => {
 		);
 		await waitFor( () =>
 			expect(
-				[ ...document.querySelectorAll( '.bcm-vrow.is-child' ) ].every(
+				[
+					...document.querySelectorAll( '.bulkcat-vrow.is-child' ),
+				].every(
 					( cell ) =>
 						cell
 							.closest( 'tr' )
@@ -384,13 +386,13 @@ describe( 'expandable variation rows (T67)', () => {
 		expect( calls( apiFetch, 'products/22/variations' ) ).toHaveLength( 1 );
 		expect( calls( apiFetch, 'products/23/variations' ) ).toHaveLength( 1 );
 		expect(
-			document.querySelectorAll( '.bcm-vrow.is-child' )
+			document.querySelectorAll( '.bulkcat-vrow.is-child' )
 		).toHaveLength( 52 );
 		fireEvent.click(
 			screen.getByRole( 'button', { name: 'Close all options' } )
 		);
 		expect(
-			document.querySelectorAll( '.bcm-vrow.is-child' )
+			document.querySelectorAll( '.bulkcat-vrow.is-child' )
 		).toHaveLength( 0 );
 	} );
 
@@ -411,9 +413,9 @@ describe( 'expandable variation rows (T67)', () => {
 				.getAttribute( 'aria-pressed' )
 		).toBe( 'true' );
 		// Flat rows show their product's name; nothing opens.
-		expect( document.querySelectorAll( '.bcm-vrow.is-flat' ) ).toHaveLength(
-			2
-		);
+		expect(
+			document.querySelectorAll( '.bulkcat-vrow.is-flat' )
+		).toHaveLength( 2 );
 		expect( screen.getAllByText( 'Polo' ).length ).toBeGreaterThan( 0 );
 		expect(
 			screen.queryByRole( 'button', { name: 'Open all with variations' } )
@@ -442,7 +444,7 @@ describe( 'expandable variation rows (T67)', () => {
 		expect( calls( apiFetch, 'products/21/variations' ) ).toHaveLength( 1 );
 		await waitFor( () =>
 			expect(
-				document.querySelectorAll( '.bcm-vrow.is-flat' )
+				document.querySelectorAll( '.bulkcat-vrow.is-flat' )
 			).toHaveLength( 25 )
 		);
 		fireEvent.click(
@@ -494,16 +496,18 @@ describe( 'inheritance display (T68)', () => {
 		await renderLoaded();
 		const teeRow = disclosure( 'Classic Tee' ).closest( 'tr' );
 		const price = cellOf( teeRow, 'Regular price' );
-		const locked = price.querySelector( '.bcm-locked' );
-		expect( locked.getAttribute( 'data-bcm-editable' ) ).toBe( 'false' );
+		const locked = price.querySelector( '.bulkcat-locked' );
+		expect( locked.getAttribute( 'data-bulkcat-editable' ) ).toBe(
+			'false'
+		);
 		expect( locked.textContent ).toContain( 'R10.00 – R15.00' );
 		expect( locked.getAttribute( 'title' ) ).toBe(
 			byKey( 'regular_price' ).variableParentNote
 		);
 		const stock = cellOf( teeRow, 'Stock status' ).querySelector(
-			'.bcm-locked'
+			'.bulkcat-locked'
 		);
-		expect( stock.getAttribute( 'data-bcm-cell' ) ).toBe( 'summary' );
+		expect( stock.getAttribute( 'data-bulkcat-cell' ) ).toBe( 'summary' );
 		expect( stock.textContent ).toContain( 'In stock' );
 
 		// Click and Enter open no editor and send nothing.
@@ -516,11 +520,11 @@ describe( 'inheritance display (T68)', () => {
 		// Once its variations are loaded the range comes from them.
 		await open( 'Classic Tee' );
 		expect(
-			cellOf( teeRow, 'Regular price' ).querySelector( '.bcm-locked' )
+			cellOf( teeRow, 'Regular price' ).querySelector( '.bulkcat-locked' )
 				.textContent
 		).toContain( '10.00 – 15.00' );
 		expect(
-			cellOf( teeRow, 'Stock status' ).querySelector( '.bcm-locked' )
+			cellOf( teeRow, 'Stock status' ).querySelector( '.bulkcat-locked' )
 				.textContent
 		).toContain( 'In stock · 250' );
 	} );
@@ -541,9 +545,9 @@ describe( 'inheritance display (T68)', () => {
 		await open( 'Polo' );
 		const poloRow = disclosure( 'Polo' ).closest( 'tr' );
 		const sale = cellOf( poloRow, 'Sale price' ).querySelector(
-			'.bcm-locked'
+			'.bulkcat-locked'
 		);
-		expect( sale.getAttribute( 'data-bcm-cell' ) ).toBe( 'mixed' );
+		expect( sale.getAttribute( 'data-bulkcat-cell' ) ).toBe( 'mixed' );
 		expect( within( sale ).getByText( 'Mixed' ) ).toBeTruthy();
 		expect( sale.getAttribute( 'title' ) ).toMatch(
 			/^Sale price differs between this product’s variations/
@@ -554,7 +558,7 @@ describe( 'inheritance display (T68)', () => {
 			sale.querySelector( '.screen-reader-text' ).textContent
 		).toContain( 'Sale price differs' );
 		const stock = cellOf( poloRow, 'Stock status' ).querySelector(
-			'.bcm-locked'
+			'.bulkcat-locked'
 		);
 		expect( within( stock ).getByText( 'Mixed' ) ).toBeTruthy();
 		expect( stock.getAttribute( 'title' ) ).toContain(
@@ -564,8 +568,9 @@ describe( 'inheritance display (T68)', () => {
 		expect( sale.querySelector( 'input' ) ).toBeNull();
 		// The regular prices agree, so the parent shows the one value.
 		expect(
-			cellOf( poloRow, 'Regular price' ).querySelector( '.bcm-locked' )
-				.textContent
+			cellOf( poloRow, 'Regular price' ).querySelector(
+				'.bulkcat-locked'
+			).textContent
 		).toMatch( /^20\.00/ );
 	} );
 
@@ -574,15 +579,15 @@ describe( 'inheritance display (T68)', () => {
 		await open( 'Polo' );
 		await screen.findAllByText( 'T-Shirts' );
 		const child = document
-			.querySelector( '.bcm-vrow.is-child' )
+			.querySelector( '.bulkcat-vrow.is-child' )
 			.closest( 'tr' );
 		const categories = cellOf( child, 'Categories' ).querySelector(
-			'.bcm-locked'
+			'.bulkcat-locked'
 		);
-		expect( categories.getAttribute( 'data-bcm-cell' ) ).toBe(
+		expect( categories.getAttribute( 'data-bulkcat-cell' ) ).toBe(
 			'parent_only'
 		);
-		expect( categories.getAttribute( 'data-bcm-editable' ) ).toBe(
+		expect( categories.getAttribute( 'data-bulkcat-editable' ) ).toBe(
 			'false'
 		);
 		expect( categories.getAttribute( 'title' ) ).toBe(
@@ -591,12 +596,12 @@ describe( 'inheritance display (T68)', () => {
 		expect( categories.textContent ).toContain( 'T-Shirts' );
 		// A per-variation field stays the variation's own.
 		expect(
-			cellOf( child, 'SKU' ).querySelector( '.bcm-locked' )
+			cellOf( child, 'SKU' ).querySelector( '.bulkcat-locked' )
 		).toBeNull();
 		expect( cellOf( child, 'SKU' ).textContent ).toBe( 'POLO-1' );
 		// T46 composes under T67: no locked cell anywhere holds an editor
 		// or the switch, and the variation's own SKU does edit.
-		document.querySelectorAll( '.bcm-locked' ).forEach( ( cell ) => {
+		document.querySelectorAll( '.bulkcat-locked' ).forEach( ( cell ) => {
 			expect(
 				cell.querySelector( 'button, input, [role="switch"]' )
 			).toBeNull();

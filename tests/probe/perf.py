@@ -12,12 +12,12 @@ them back, inserts 200 history rows and 50,000 journal rows and prunes them):
 * the scale catalogue: ``seed.sh 20000`` (20,000 products, 70,000 variations);
 * no persistent object cache, ``DISABLE_WP_CRON`` true (so only this script
   drives Action Scheduler);
-* the measurement mu-plugin ``bcm-perf-probe.php`` described in
+* the measurement mu-plugin ``bulkcat-perf-probe.php`` described in
   tests/probe/README.md (Performance). It is not part of the plugin: it adds
-  an ``X-BCM-Perf`` header to REST responses (queries and time inside the
+  an ``X-BULKCAT-Perf`` header to REST responses (queries and time inside the
   dispatch, the request's time so far, peak memory) and logs requests that
-  carry ``X-BCM-Perf-Log`` and every ``bcm_run_chunk`` / ``bcm_prune_history``
-  action to ``wp-content/bcm-perf.log``. Query counts are ``$wpdb->num_queries``,
+  carry ``X-BULKCAT-Perf-Log`` and every ``bulkcat_run_chunk`` / ``bulkcat_prune_history``
+  action to ``wp-content/bulkcat-perf.log``. Query counts are ``$wpdb->num_queries``,
   which counts exactly what SAVEQUERIES would list, without its overhead.
 
 Metrics (``--only`` takes these group names, comma separated, default all):
@@ -75,7 +75,7 @@ from probe import NS, SIXTY, SIXTY_SEED_PHP, Probe, filter_params  # noqa: E402
 
 GROUPS = ["grid", "categories", "selection", "preview", "write", "history", "export", "prune"]
 ADJUST = [{"action": "adjust", "args": {"field": "regular_price", "direction": "increase", "by": "percent", "amount": "10"}}]
-PERF_SIXTY_SKU = "bcm-perf-sixty"
+PERF_SIXTY_SKU = "bulkcat-perf-sixty"
 LIST_BATCHES = 200
 PRUNE_ROWS = 50000
 EXPORT_FLAT_MB = 8.0
@@ -132,7 +132,7 @@ class Perf:
             data = json.dumps(body).encode()
             headers["Content-Type"] = "application/json"
         if log:
-            headers["X-BCM-Perf-Log"] = log
+            headers["X-BULKCAT-Perf-Log"] = log
         request = urllib.request.Request(self.p.base + path, data=data, method=method, headers=headers)
         start = time.perf_counter()
         try:
@@ -143,9 +143,9 @@ class Perf:
         payload = reply.read()
         end = time.perf_counter()
         status = reply.status if hasattr(reply, "status") else reply.code
-        perf = json.loads(reply.headers.get("X-BCM-Perf") or "{}")
+        perf = json.loads(reply.headers.get("X-BULKCAT-Perf") or "{}")
         if not perf and "text/csv" not in (reply.headers.get("Content-Type") or ""):
-            raise RuntimeError(f"{method} {route}: no X-BCM-Perf header (status {status}); is the mu-plugin installed?")
+            raise RuntimeError(f"{method} {route}: no X-BULKCAT-Perf header (status {status}); is the mu-plugin installed?")
         out = {"status": status, "ttfb_ms": (first - start) * 1000, "total_ms": (end - start) * 1000, "body": payload, "perf": perf}
         if self.verbose:
             print(f"  {method} {route} {status} {out['total_ms']:.0f} ms {perf}", file=sys.stderr)
@@ -162,15 +162,15 @@ class Perf:
     def clear_transients(self, prefix: str) -> None:
         self.p.wp_eval(
             "global $wpdb; $like = $wpdb->esc_like( '_transient_" + prefix + "' ) . '%'; $t = $wpdb->esc_like( '_transient_timeout_" + prefix + "' ) . '%';"
-            " $wpdb->query( $wpdb->prepare( \"DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s\", $like, $t ) ); bcm_out( true );"
+            " $wpdb->query( $wpdb->prepare( \"DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s\", $like, $t ) ); bulkcat_out( true );"
         )
 
     def perf_log(self) -> list[dict[str, Any]]:
-        lines = self.p.wp_eval("$f = WP_CONTENT_DIR . '/bcm-perf.log'; bcm_out( file_exists( $f ) ? file( $f, FILE_IGNORE_NEW_LINES ) : array() );")
+        lines = self.p.wp_eval("$f = WP_CONTENT_DIR . '/bulkcat-perf.log'; bulkcat_out( file_exists( $f ) ? file( $f, FILE_IGNORE_NEW_LINES ) : array() );")
         return [json.loads(line) for line in lines if line.strip()]
 
     def reset_log(self) -> None:
-        self.p.wp_eval("$f = WP_CONTENT_DIR . '/bcm-perf.log'; if ( file_exists( $f ) ) { unlink( $f ); } bcm_out( true );")
+        self.p.wp_eval("$f = WP_CONTENT_DIR . '/bulkcat-perf.log'; if ( file_exists( $f ) ) { unlink( $f ); } bulkcat_out( true );")
 
     def run_actions(self, hook: str) -> float:
         """Runs every due action of one hook in one WP-CLI process; returns wall seconds."""
@@ -182,7 +182,7 @@ class Perf:
         wall = 0.0
         report: dict = {}
         for _ in range(50):
-            wall += self.run_actions("bcm_run_chunk")
+            wall += self.run_actions("bulkcat_run_chunk")
             report = self.json_of(self.call("GET", f"/batches/{batch_id}")) or {}
             if report.get("status") not in ("queued", "running", "undoing"):
                 break
@@ -192,12 +192,12 @@ class Perf:
 
     def preflight(self) -> None:
         state = self.p.wp_eval(
-            "global $wpdb; $cat = get_term_by( 'slug', 'bcm-scale', 'product_cat' );"
-            " bcm_out( array( 'cat' => $cat ? (int) $cat->term_id : 0,"
+            "global $wpdb; $cat = get_term_by( 'slug', 'bulkcat-scale', 'product_cat' );"
+            " bulkcat_out( array( 'cat' => $cat ? (int) $cat->term_id : 0,"
             " 'products' => (int) $wpdb->get_var( \"SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'product'\" ),"
             " 'variations' => (int) $wpdb->get_var( \"SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'product_variation'\" ),"
             " 'ext_cache' => wp_using_ext_object_cache(), 'cron_off' => defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON,"
-            " 'mu' => file_exists( WPMU_PLUGIN_DIR . '/bcm-perf-probe.php' ),"
+            " 'mu' => file_exists( WPMU_PLUGIN_DIR . '/bulkcat-perf-probe.php' ),"
             " 'php' => PHP_VERSION, 'db' => $wpdb->db_server_info(), 'wp' => get_bloginfo( 'version' ), 'wc' => WC_VERSION ) );"
         )
         problems = []
@@ -208,7 +208,7 @@ class Perf:
         if not state["cron_off"]:
             problems.append("DISABLE_WP_CRON is not true; WP-Cron would run batches behind the measurement")
         if not state["mu"]:
-            problems.append("the measurement mu-plugin bcm-perf-probe.php is missing")
+            problems.append("the measurement mu-plugin bulkcat-perf-probe.php is missing")
         if problems:
             raise SystemExit("perf.py: " + "; ".join(problems))
         self.scale_cat = state["cat"]
@@ -231,7 +231,7 @@ class Perf:
                     params = [("mode", mode), ("per_page", str(per_page)), ("orderby", "name"), ("order", "asc")]
                     if filtered:
                         params += self.three_filters()
-                    self.clear_transients("bcm_count_")
+                    self.clear_transients("bulkcat_count_")
                     cold = self.call("GET", "/products", params)
                     assert cold["status"] == 200, f"GET /products {cold['status']} {cold['body'][:200]!r}"
                     total = (self.json_of(cold) or {}).get("pagination", {}).get("total")
@@ -268,7 +268,7 @@ class Perf:
     def categories(self) -> None:
         cold = []
         for _ in range(3):
-            self.clear_transients("bcm_category_tree_")
+            self.clear_transients("bulkcat_category_tree_")
             cold.append(self.call("GET", "/categories"))
         warm = [self.call("GET", "/categories") for _ in range(self.runs)]
         worst = max(c["perf"]["server_ms"] for c in cold)
@@ -279,7 +279,7 @@ class Perf:
 
     def selection(self) -> None:
         for mode in ("products", "products_and_variations"):
-            self.clear_transients("bcm_count_")
+            self.clear_transients("bulkcat_count_")
             reply = self.call("POST", "/selection", body={"mode": mode})
             data = self.json_of(reply) or {}
             ms = reply["perf"]["server_ms"]
@@ -326,7 +326,7 @@ class Perf:
         base = self.call("GET", "/fields")["perf"]["peak_mb"]
         self.reset_log()
         wall, report = self.run_batch(batch_id)
-        chunks = [row for row in self.perf_log() if row["kind"] == "bcm_run_chunk"]
+        chunks = [row for row in self.perf_log() if row["kind"] == "bulkcat_run_chunk"]
         done = int(report.get("done_items") or 0)
         rate = done / (wall / 60) if wall else 0.0
         in_chunks = sum(c["ms"] for c in chunks) / 1000
@@ -344,15 +344,15 @@ class Perf:
 
     def history(self) -> None:
         have = self.p.wp_eval(
-            "global $wpdb; bcm_out( (int) $wpdb->get_var( \"SELECT COUNT(*) FROM {$wpdb->prefix}bcm_batches\" ) );"
+            "global $wpdb; bulkcat_out( (int) $wpdb->get_var( \"SELECT COUNT(*) FROM {$wpdb->prefix}bulkcat_batches\" ) );"
         )
         if have < LIST_BATCHES:
             # Copies of the newest real batch, spread over the past 60 days: the list reads them as it reads any batch.
             self.p.wp_eval(
-                "global $wpdb; $t = $wpdb->prefix . 'bcm_batches'; $src = (int) $wpdb->get_var( \"SELECT MAX(batch_id) FROM $t WHERE source = 'bulk'\" );"
+                "global $wpdb; $t = $wpdb->prefix . 'bulkcat_batches'; $src = (int) $wpdb->get_var( \"SELECT MAX(batch_id) FROM $t WHERE source = 'bulk'\" );"
                 " if ( ! $src ) { throw new RuntimeException( 'no bulk batch to copy; run the write group first' ); }"
                 " for ( $i = 0; $i < %d; $i++ ) { $wpdb->query( $wpdb->prepare( \"INSERT INTO $t (uuid, user_id, created_gmt, finished_gmt, status, source, undo_of, operations, selection, total_items, previewed_items, done_items, changed_items, failed_items, chunk_size, note, actions) SELECT %%s, user_id, DATE_SUB(UTC_TIMESTAMP(), INTERVAL %%d HOUR), DATE_SUB(UTC_TIMESTAMP(), INTERVAL %%d HOUR), 'complete', source, NULL, operations, selection, total_items, previewed_items, done_items, changed_items, failed_items, chunk_size, '', actions FROM $t WHERE batch_id = %%d\", wp_generate_uuid4(), $i * 7 + 1, $i * 7 + 1, $src ) ); }"
-                " bcm_out( true );" % (LIST_BATCHES - have)
+                " bulkcat_out( true );" % (LIST_BATCHES - have)
             )
         counts = {}
         for per_page in (25, 100):
@@ -389,7 +389,7 @@ class Perf:
 
     def prune(self) -> None:
         made = self.p.wp_eval(
-            "global $wpdb; $b = $wpdb->prefix . 'bcm_batches'; $c = $wpdb->prefix . 'bcm_changes'; $i = $wpdb->prefix . 'bcm_batch_items';"
+            "global $wpdb; $b = $wpdb->prefix . 'bulkcat_batches'; $c = $wpdb->prefix . 'bulkcat_changes'; $i = $wpdb->prefix . 'bulkcat_batch_items';"
             " $src = (int) $wpdb->get_var( \"SELECT batch_id FROM $c GROUP BY batch_id ORDER BY COUNT(*) DESC LIMIT 1\" );"
             " if ( 5000 > (int) $wpdb->get_var( $wpdb->prepare( \"SELECT COUNT(*) FROM $c WHERE batch_id = %d\", $src ) ) ) { throw new RuntimeException( 'no 5,000-row journal to copy; run the write group first' ); }"
             " $old = gmdate( 'Y-m-d H:i:s', time() - 400 * DAY_IN_SECONDS ); $rows = 0; $ids = array();"
@@ -400,20 +400,20 @@ class Perf:
             "  $rows += (int) $wpdb->rows_affected;"
             "  $wpdb->query( $wpdb->prepare( \"INSERT INTO $i (batch_id, object_id, object_type, state, attempts) SELECT %d, object_id, object_type, 'done', 1 FROM $i WHERE batch_id = %d ORDER BY item_id LIMIT 5000\", $id, $src ) );"
             " }"
-            " bcm_out( array( 'rows' => $rows, 'ids' => $ids ) );"
+            " bulkcat_out( array( 'rows' => $rows, 'ids' => $ids ) );"
         )
         ids = ",".join(str(int(i)) for i in made["ids"])
         self.reset_log()
-        self.p.wp_eval("as_enqueue_async_action( 'bcm_prune_history', array(), 'bulk-catalogue-manager-for-woocommerce' ); bcm_out( true );")
+        self.p.wp_eval("as_enqueue_async_action( 'bulkcat_prune_history', array(), 'bulk-catalogue-manager-for-woocommerce' ); bulkcat_out( true );")
         wall = 0.0
         for _ in range(20):
-            wall += self.run_actions("bcm_prune_history")
+            wall += self.run_actions("bulkcat_prune_history")
             left = self.p.wp_eval(
-                "global $wpdb; bcm_out( (int) $wpdb->get_var( \"SELECT COUNT(*) FROM {$wpdb->prefix}bcm_changes WHERE batch_id IN (" + ids + ")\" ) );"
+                "global $wpdb; bulkcat_out( (int) $wpdb->get_var( \"SELECT COUNT(*) FROM {$wpdb->prefix}bulkcat_changes WHERE batch_id IN (" + ids + ")\" ) );"
             )
             if left == 0:
                 break
-        runs = [r for r in self.perf_log() if r["kind"] == "bcm_prune_history"]
+        runs = [r for r in self.perf_log() if r["kind"] == "bulkcat_prune_history"]
         self.metric("prune", f"prune {made['rows']} journal rows", wall, "s", "", None if left == 0 else False,
                     f"{len(runs)} runs, longest {max((r['ms'] for r in runs), default=0):.0f} ms, peak {max((r['peak_mb'] for r in runs), default=0)} MB, {left} rows left")
 

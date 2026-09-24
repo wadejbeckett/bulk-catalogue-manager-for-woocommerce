@@ -227,7 +227,7 @@ describe( 'detail panel', () => {
 
 	it( 'shows the server refusal beside the field it names', async () => {
 		patch.mockRejectedValue( {
-			code: 'bcm_invalid_value',
+			code: 'bulkcat_invalid_value',
 			message:
 				'A product with the SKU GLF-120 already exists, so this SKU was not applied.',
 			data: { status: 400, field: 'sku' },

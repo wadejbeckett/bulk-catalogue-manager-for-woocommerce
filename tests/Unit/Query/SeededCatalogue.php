@@ -127,7 +127,7 @@ final class SeededCatalogue {
 	 */
 	public static function seed( array $extra = [] ): SqlEvaluator {
 		global $wpdb;
-		$state  = &$GLOBALS['bcm_test'];
+		$state  = &$GLOBALS['bulkcat_test'];
 		$tables = [
 			'wp_posts'                  => [],
 			'wp_wc_product_meta_lookup' => [],

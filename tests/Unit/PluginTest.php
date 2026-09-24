@@ -21,7 +21,7 @@ final class PluginTest extends TestCase {
 
 	/**
 	 * What the plugin file hooked to plugins_loaded when it was first loaded.
-	 * Kept because bcm_test_reset() empties the recorded hooks between tests
+	 * Kept because bulkcat_test_reset() empties the recorded hooks between tests
 	 * while require_once loads the file only once.
 	 *
 	 * @var array<int, array{0: callable, 1: int, 2: int}>|null
@@ -29,7 +29,7 @@ final class PluginTest extends TestCase {
 	private static ?array $plugins_loaded = null;
 
 	protected function setUp(): void {
-		bcm_test_reset();
+		bulkcat_test_reset();
 	}
 
 	private static function root(): string {
@@ -54,7 +54,7 @@ final class PluginTest extends TestCase {
 	 */
 	private static function registrations(): array {
 		$seen = [];
-		foreach ( $GLOBALS['bcm_test']['filters'] as $hook => $entries ) {
+		foreach ( $GLOBALS['bulkcat_test']['filters'] as $hook => $entries ) {
 			foreach ( $entries as [ $callback, $priority ] ) {
 				$owner        = is_array( $callback ) ? ( is_object( $callback[0] ) ? (string) spl_object_id( $callback[0] ) : (string) $callback[0] ) : '';
 				$id           = is_array( $callback ) ? $owner . '::' . $callback[1] : ( is_object( $callback ) ? (string) spl_object_id( $callback ) : (string) $callback );
@@ -75,9 +75,9 @@ final class PluginTest extends TestCase {
 	private static function load_plugin_file(): void {
 		if ( null === self::$plugins_loaded ) {
 			require_once self::root() . '/' . self::PLUGIN_FILE;
-			self::$plugins_loaded = $GLOBALS['bcm_test']['filters']['plugins_loaded'] ?? [];
+			self::$plugins_loaded = $GLOBALS['bulkcat_test']['filters']['plugins_loaded'] ?? [];
 		}
-		$GLOBALS['bcm_test']['filters']['plugins_loaded'] = self::$plugins_loaded;
+		$GLOBALS['bulkcat_test']['filters']['plugins_loaded'] = self::$plugins_loaded;
 	}
 
 	public function test_version_constant_equals_the_header_version(): void {
@@ -119,7 +119,7 @@ final class PluginTest extends TestCase {
 
 	public function test_plugins_loaded_firing_twice_boots_once(): void {
 		self::load_plugin_file();
-		$this->assertCount( 1, $GLOBALS['bcm_test']['filters']['plugins_loaded'] );
+		$this->assertCount( 1, $GLOBALS['bulkcat_test']['filters']['plugins_loaded'] );
 
 		do_action( 'plugins_loaded' );
 		$after_first = self::registrations();
@@ -129,7 +129,7 @@ final class PluginTest extends TestCase {
 		$this->assertSame( $after_first, self::registrations() );
 		$per_hook = array_count_values( array_column( Plugin::instance()->hooks(), 0 ) );
 		foreach ( $per_hook as $hook => $count ) {
-			$this->assertCount( $count, $GLOBALS['bcm_test']['filters'][ $hook ], "$hook must carry each of its callbacks once." );
+			$this->assertCount( $count, $GLOBALS['bulkcat_test']['filters'][ $hook ], "$hook must carry each of its callbacks once." );
 		}
 	}
 
@@ -141,13 +141,13 @@ final class PluginTest extends TestCase {
 
 		foreach ( Cache::HOOKS as $hook => $accepted ) {
 			$callback = 4 === $accepted ? [ Cache::class, 'on_object_terms' ] : [ Cache::class, 'on_term' ];
-			$mine     = array_values( array_filter( $GLOBALS['bcm_test']['filters'][ $hook ] ?? [], static fn( array $entry ): bool => is_array( $entry[0] ) && Cache::class === $entry[0][0] ) );
+			$mine     = array_values( array_filter( $GLOBALS['bulkcat_test']['filters'][ $hook ] ?? [], static fn( array $entry ): bool => is_array( $entry[0] ) && Cache::class === $entry[0][0] ) );
 			$this->assertSame( [ [ $callback, 10, $accepted ] ], $mine, "$hook." );
 		}
 
-		unset( $GLOBALS['bcm_test']['transients'][ Cache::VERSION ] );
+		unset( $GLOBALS['bulkcat_test']['transients'][ Cache::VERSION ] );
 		do_action( 'edited_term', 5, 5, 'product_cat' );
-		$this->assertTrue( is_string( $GLOBALS['bcm_test']['transients'][ Cache::VERSION ] ?? null ), 'A product category edit renews the tree cache version once the hooks are live.' );
+		$this->assertTrue( is_string( $GLOBALS['bulkcat_test']['transients'][ Cache::VERSION ] ?? null ), 'A product category edit renews the tree cache version once the hooks are live.' );
 	}
 
 	public function test_init_registers_the_count_cache_invalidation_hooks(): void {
@@ -157,14 +157,14 @@ final class PluginTest extends TestCase {
 		do_action( 'init' );
 
 		foreach ( CountCache::HOOKS as $hook => [ $method, $accepted ] ) {
-			$mine = array_values( array_filter( $GLOBALS['bcm_test']['filters'][ $hook ] ?? [], static fn( array $entry ): bool => is_array( $entry[0] ) && CountCache::class === $entry[0][0] ) );
+			$mine = array_values( array_filter( $GLOBALS['bulkcat_test']['filters'][ $hook ] ?? [], static fn( array $entry ): bool => is_array( $entry[0] ) && CountCache::class === $entry[0][0] ) );
 			$this->assertSame( [ [ [ CountCache::class, $method ], 10, $accepted ] ], $mine, "$hook." );
 		}
 
 		$renewed = static function ( callable $event ): bool {
-			unset( $GLOBALS['bcm_test']['transients'][ CountCache::VERSION ] );
+			unset( $GLOBALS['bulkcat_test']['transients'][ CountCache::VERSION ] );
 			$event();
-			return is_string( $GLOBALS['bcm_test']['transients'][ CountCache::VERSION ] ?? null );
+			return is_string( $GLOBALS['bulkcat_test']['transients'][ CountCache::VERSION ] ?? null );
 		};
 		$this->assertTrue( $renewed( static fn() => do_action( 'clean_post_cache', 7, (object) [ 'post_type' => 'product' ] ) ), 'A product save renews the count version.' );
 		$this->assertTrue( $renewed( static fn() => do_action( 'clean_post_cache', 8, (object) [ 'post_type' => 'product_variation' ] ) ), 'A variation save renews the count version.' );
@@ -177,7 +177,7 @@ final class PluginTest extends TestCase {
 	public function test_plugin_file_loads_without_composer_and_plugin_still_resolves(): void {
 		// A copy of the shipped files with no vendor/ beside them, loaded in a
 		// fresh PHP process so this suite's Composer autoloader cannot help.
-		$copy = sys_get_temp_dir() . '/bcm-no-composer-' . bin2hex( random_bytes( 6 ) );
+		$copy = sys_get_temp_dir() . '/bulkcat-no-composer-' . bin2hex( random_bytes( 6 ) );
 		mkdir( $copy . '/src', 0777, true );
 		copy( self::root() . '/' . self::PLUGIN_FILE, $copy . '/' . self::PLUGIN_FILE );
 		foreach ( (array) glob( self::root() . '/src/*', GLOB_ONLYDIR ) as $dir ) {
@@ -199,7 +199,7 @@ final class PluginTest extends TestCase {
 			. "\t'from'      => ( new ReflectionClass( BulkCatalogueManager\\Plugin::class ) )->getFileName(),\n"
 			. "\t'composer'  => class_exists( Composer\\Autoload\\ClassLoader::class, false ),\n"
 			. "\t'booted'    => BulkCatalogueManager\\Plugin::instance()->is_booted(),\n"
-			. "\t'bcm_file'  => BCM_FILE,\n"
+			. "\t'bulkcat_file'  => BULKCAT_FILE,\n"
 			. '] );'
 		);
 
@@ -215,7 +215,7 @@ final class PluginTest extends TestCase {
 			$this->assertFalse( $result['composer'], 'Composer must not be loaded in the fallback process.' );
 			$this->assertSame( realpath( $copy . '/src/Plugin.php' ), realpath( $result['from'] ) );
 			$this->assertTrue( $result['booted'] );
-			$this->assertSame( $copy . '/' . self::PLUGIN_FILE, $result['bcm_file'] );
+			$this->assertSame( $copy . '/' . self::PLUGIN_FILE, $result['bulkcat_file'] );
 		} finally {
 			foreach ( (array) glob( $copy . '/{,src/,src/*/}*.php', GLOB_BRACE ) as $file ) {
 				unlink( $file );
@@ -240,12 +240,12 @@ final class PluginTest extends TestCase {
 		}
 	}
 
-	public function test_constants_defined_by_the_plugin_file_are_bcm_prefixed(): void {
+	public function test_constants_defined_by_the_plugin_file_are_bulkcat_prefixed(): void {
 		$source = (string) file_get_contents( self::root() . '/' . self::PLUGIN_FILE );
 		preg_match_all( '/\bdefine\(\s*[\'"]([^\'"]+)[\'"]/', $source, $matches );
 		$this->assertNotEmpty( $matches[1] );
 		foreach ( $matches[1] as $constant ) {
-			$this->assertStringStartsWith( 'BCM_', $constant );
+			$this->assertStringStartsWith( 'BULKCAT_', $constant );
 		}
 	}
 }

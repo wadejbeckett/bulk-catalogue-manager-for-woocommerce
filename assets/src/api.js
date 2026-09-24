@@ -2,7 +2,7 @@
  * Requests to the plugin's own REST namespace. apiFetch sends the wp_rest
  * nonce through its nonce middleware, kept fresh by the Heartbeat API and
  * recovered once after an invalid-nonce failure (./nonce.js); every path is
- * resolved against the localised bcm/v1 root, which also works with plain
+ * resolved against the localised bulkcat/v1 root, which also works with plain
  * permalinks (index.php?rest_route=), so no route is ever built by hand
  * elsewhere.
  */
@@ -58,7 +58,7 @@ export function configureApi( settings, win = window ) {
 }
 
 /**
- * The full URL of a route under bcm/v1.
+ * The full URL of a route under bulkcat/v1.
  *
  * @param {string} route Route below the namespace, e.g. "products".
  * @param {Object} query Query arguments.
@@ -69,7 +69,7 @@ export function routeUrl( route, query = {} ) {
 }
 
 /**
- * Call a bcm/v1 route.
+ * Call a bulkcat/v1 route.
  *
  * @param {string} route         Route below the namespace.
  * @param {Object} options       apiFetch options plus `query`.

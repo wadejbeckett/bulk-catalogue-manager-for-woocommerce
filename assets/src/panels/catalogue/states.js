@@ -23,15 +23,15 @@ const WIDTHS = [ 140, 176, 212, 158 ];
  */
 export function LoadingRows( { rows = 10, columns = 6 } ) {
 	return (
-		<div className="bcm-skeleton">
-			<table className="bcm-skeleton__table" aria-hidden="true">
+		<div className="bulkcat-skeleton">
+			<table className="bulkcat-skeleton__table" aria-hidden="true">
 				<tbody>
 					{ Array.from( { length: rows }, ( _, row ) => (
-						<tr key={ row } className="bcm-skeleton__row">
-							<td className="bcm-skeleton__product">
-								<span className="bcm-skel is-thumb" />
+						<tr key={ row } className="bulkcat-skeleton__row">
+							<td className="bulkcat-skeleton__product">
+								<span className="bulkcat-skel is-thumb" />
 								<span
-									className="bcm-skel"
+									className="bulkcat-skel"
 									style={ {
 										width: WIDTHS[ row % WIDTHS.length ],
 									} }
@@ -41,7 +41,7 @@ export function LoadingRows( { rows = 10, columns = 6 } ) {
 								{ length: columns },
 								( __unused, c ) => (
 									<td key={ c }>
-										<span className="bcm-skel" />
+										<span className="bulkcat-skel" />
 									</td>
 								)
 							) }
@@ -49,7 +49,7 @@ export function LoadingRows( { rows = 10, columns = 6 } ) {
 					) ) }
 				</tbody>
 			</table>
-			<p className="bcm-skeleton__status" role="status">
+			<p className="bulkcat-skeleton__status" role="status">
 				{ __(
 					'Loading products…',
 					'bulk-catalogue-manager-for-woocommerce'
@@ -67,8 +67,8 @@ export function LoadingRows( { rows = 10, columns = 6 } ) {
  */
 export function NoProducts() {
 	return (
-		<div className="bcm-state">
-			<p className="bcm-state__title">
+		<div className="bulkcat-state">
+			<p className="bulkcat-state__title">
 				{ __(
 					'There are no products yet.',
 					'bulk-catalogue-manager-for-woocommerce'
@@ -164,11 +164,11 @@ export function NoMatches( { filters, onClear, variations = false } ) {
 				);
 	}
 	return (
-		<div className="bcm-state">
-			<p className="bcm-state__title">{ title }</p>
+		<div className="bulkcat-state">
+			<p className="bulkcat-state__title">{ title }</p>
 			{ filters.length > 0 && (
 				<ul
-					className="bcm-state__filters"
+					className="bulkcat-state__filters"
 					aria-label={ __(
 						'Active filters',
 						'bulk-catalogue-manager-for-woocommerce'
@@ -207,7 +207,7 @@ export function ErrorNotice( { message, error, onRetry } ) {
 		.join( ': ' );
 	return (
 		<Notice
-			className="bcm-error"
+			className="bulkcat-error"
 			status="error"
 			isDismissible={ false }
 			actions={ [
@@ -223,7 +223,7 @@ export function ErrorNotice( { message, error, onRetry } ) {
 		>
 			<p>{ message }</p>
 			{ detail && (
-				<details className="bcm-error__details">
+				<details className="bulkcat-error__details">
 					<summary>
 						{ __(
 							'Show details',

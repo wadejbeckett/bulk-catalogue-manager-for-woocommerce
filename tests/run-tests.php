@@ -12,11 +12,11 @@
 
 declare( strict_types = 1 );
 
-$bcm_phpunit = dirname( __DIR__ ) . '/vendor/bin/phpunit';
-if ( is_file( $bcm_phpunit ) ) {
+$bulkcat_phpunit = dirname( __DIR__ ) . '/vendor/bin/phpunit';
+if ( is_file( $bulkcat_phpunit ) ) {
 	// PHPUnit is installed: it owns the run. The shim runner exists only for hosts without it.
-	passthru( escapeshellarg( PHP_BINARY ) . ' ' . escapeshellarg( $bcm_phpunit ) . ' -c ' . escapeshellarg( dirname( __DIR__ ) . '/phpunit.xml.dist' ), $bcm_exit ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.system_calls_passthru -- CLI test runner.
-	exit( $bcm_exit );
+	passthru( escapeshellarg( PHP_BINARY ) . ' ' . escapeshellarg( $bulkcat_phpunit ) . ' -c ' . escapeshellarg( dirname( __DIR__ ) . '/phpunit.xml.dist' ), $bulkcat_exit ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.system_calls_passthru -- CLI test runner.
+	exit( $bulkcat_exit );
 }
 
 require_once __DIR__ . '/bootstrap.php';

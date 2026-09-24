@@ -117,9 +117,9 @@ function ConflictTable( { plan, byKey } ) {
 			} );
 		} );
 	return (
-		<div className="bcm-changes bcm-conflict-table">
-			<div className="bcm-changes__scroll">
-				<table className="bcm-changes__table">
+		<div className="bulkcat-changes bulkcat-conflict-table">
+			<div className="bulkcat-changes__scroll">
+				<table className="bulkcat-changes__table">
 					<caption>
 						{ __(
 							'The products edited after this change',
@@ -382,19 +382,19 @@ export default function BatchCard( {
 			ref={ cardRef }
 			tabIndex={ -1 }
 			className={
-				'bcm-batch' +
+				'bulkcat-batch' +
 				( settled ? ' is-undone' : '' ) +
 				( linked ? ' is-linked' : '' )
 			}
-			aria-labelledby={ `bcm-batch-${ batch.batch_id }` }
+			aria-labelledby={ `bulkcat-batch-${ batch.batch_id }` }
 		>
-			<div className="bcm-batch__top">
-				<div className="bcm-batch__what">
-					<h3 id={ `bcm-batch-${ batch.batch_id }` }>{ what }</h3>
-					<p className="bcm-batch__meta">
+			<div className="bulkcat-batch__top">
+				<div className="bulkcat-batch__what">
+					<h3 id={ `bulkcat-batch-${ batch.batch_id }` }>{ what }</h3>
+					<p className="bulkcat-batch__meta">
 						{ formatWhen( batch.created_gmt ) }
 						{ ' · ' }
-						<span className="bcm-batch__who">{ who }</span>
+						<span className="bulkcat-batch__who">{ who }</span>
 						{ ' · ' }
 						{ sourceLabel( batch.source ) }
 						{ ' · ' }
@@ -410,11 +410,11 @@ export default function BatchCard( {
 							' · ' + formatAgo( batch.created_gmt ) }
 					</p>
 				</div>
-				<div className="bcm-batch__actions">
+				<div className="bulkcat-batch__actions">
 					<Button
 						variant="secondary"
 						size="small"
-						className="bcm-batch__see"
+						className="bulkcat-batch__see"
 						aria-expanded={ open }
 						onClick={ () => setOpen( ( was ) => ! was ) }
 					>
@@ -459,15 +459,17 @@ export default function BatchCard( {
 				</div>
 			</div>
 
-			<div className="bcm-batch__tags">
-				<span className="bcm-pill">
+			<div className="bulkcat-batch__tags">
+				<span className="bulkcat-pill">
 					{ rowsLabel( batch.total_items ) }
 				</span>
-				<span className={ `bcm-pill bcm-pill--${ batch.status }` }>
+				<span
+					className={ `bulkcat-pill bulkcat-pill--${ batch.status }` }
+				>
 					{ statusLabel( batch.status ) }
 				</span>
 				{ state === STATES.PARTIAL && knownConflicts > 0 && (
-					<span className="bcm-pill bcm-pill--warn">
+					<span className="bulkcat-pill bulkcat-pill--warn">
 						{ sprintf(
 							/* translators: %s: number of products changed again since, such as "3". */
 							__(
@@ -479,7 +481,7 @@ export default function BatchCard( {
 					</span>
 				) }
 				{ state === STATES.WITH_ERRORS && (
-					<span className="bcm-pill bcm-pill--warn">
+					<span className="bulkcat-pill bulkcat-pill--warn">
 						{ sprintf(
 							/* translators: %s: number of products that failed, such as "3". */
 							_n(
@@ -495,7 +497,7 @@ export default function BatchCard( {
 					</span>
 				) }
 				{ batch.variations_included && (
-					<span className="bcm-pill">
+					<span className="bulkcat-pill">
 						{ __(
 							'Includes variations',
 							'bulk-catalogue-manager-for-woocommerce'
@@ -503,31 +505,31 @@ export default function BatchCard( {
 					</span>
 				) }
 				{ putBackBy( batch.undone_by ) && (
-					<span className="bcm-pill bcm-batch__put-back">
+					<span className="bulkcat-pill bulkcat-batch__put-back">
 						{ putBackBy( batch.undone_by ) }
 					</span>
 				) }
 				{ batch.undo?.sentence && (
-					<span className="bcm-pill bcm-pill--warn">
+					<span className="bulkcat-pill bulkcat-pill--warn">
 						{ batch.undo.sentence }
 					</span>
 				) }
 			</div>
 
 			{ state === STATES.NOT_REVERSIBLE && ! settled && (
-				<p className="bcm-batch__reason">
+				<p className="bulkcat-batch__reason">
 					{ reasonSentence( batch.reversibility?.reason ) }
 				</p>
 			) }
 
 			{ batch.selection_difference && (
-				<p className="bcm-batch__reason">
+				<p className="bulkcat-batch__reason">
 					{ batch.selection_difference }
 				</p>
 			) }
 
 			{ inProgress && (
-				<div className="bcm-batch__progress">
+				<div className="bulkcat-batch__progress">
 					<BatchProgress
 						report={ ( running ? undoReport : progress ) || batch }
 					/>
@@ -535,7 +537,7 @@ export default function BatchCard( {
 			) }
 
 			{ error && (
-				<div className="bcm-batch__error">
+				<div className="bulkcat-batch__error">
 					<ErrorNotice
 						error={ error }
 						fallback={ __(
@@ -549,7 +551,7 @@ export default function BatchCard( {
 
 			{ plan && conflicted > 0 && ! confirm && (
 				<div
-					className="bcm-conflict"
+					className="bulkcat-conflict"
 					role="region"
 					aria-label={ __(
 						'Products changed since',
@@ -575,7 +577,7 @@ export default function BatchCard( {
 								'bulk-catalogue-manager-for-woocommerce'
 							) }
 					</p>
-					<div className="bcm-conflict__choices">
+					<div className="bulkcat-conflict__choices">
 						<Button
 							variant="primary"
 							size="small"
@@ -660,7 +662,7 @@ export default function BatchCard( {
 						) }
 					</p>
 					{ confirm.force && conflicted > 0 && (
-						<p className="bcm-confirm__warning">
+						<p className="bulkcat-confirm__warning">
 							{ sprintf(
 								/* translators: %s: number of products changed again since, such as "3". */
 								_n(
@@ -687,7 +689,7 @@ export default function BatchCard( {
 							) }
 						</p>
 					) }
-					<div className="bcm-confirm__buttons">
+					<div className="bulkcat-confirm__buttons">
 						<Button variant="tertiary" onClick={ cancelUndo }>
 							{ __(
 								'Cancel',
@@ -716,7 +718,7 @@ export default function BatchCard( {
 			{ open &&
 				state === STATES.WITH_ERRORS &&
 				details?.summary?.length > 0 && (
-					<ul className="bcm-batch__reasons">
+					<ul className="bulkcat-batch__reasons">
 						{ details.summary.map( ( reason ) => (
 							<li key={ reason.message }>{ reason.sentence }</li>
 						) ) }

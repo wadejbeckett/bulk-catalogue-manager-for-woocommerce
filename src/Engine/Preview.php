@@ -455,7 +455,7 @@ final class Preview {
 		}
 		if ( $written instanceof \WP_Error ) {
 			$code = (string) $written->get_error_code();
-			return Result::failed( $result->field(), $result->old(), $written->get_error_message(), str_starts_with( $code, 'bcm_' ) ? $code : '' );
+			return Result::failed( $result->field(), $result->old(), $written->get_error_message(), str_starts_with( $code, 'bulkcat_' ) ? $code : '' );
 		}
 		return $result;
 	}

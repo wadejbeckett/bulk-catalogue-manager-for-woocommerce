@@ -25,7 +25,7 @@ const apiFetch = require( '@wordpress/api-fetch' ).default;
 const { configureApi } = require( '../../assets/src/api' );
 const History = require( '../../assets/src/panels/history/index.js' ).default;
 
-const ROOT = 'https://example.test/wp-json/bcm/v1/';
+const ROOT = 'https://example.test/wp-json/bulkcat/v1/';
 
 const LINE =
 	'Only changes made through this screen are recorded here. Edits made elsewhere in WordPress, such as on the product edit page, are not.';
@@ -79,13 +79,13 @@ function serve( empty ) {
 				totalPages: empty ? 0 : 1,
 			},
 		} );
-		if ( route.endsWith( '/bcm/v1/batches' ) ) {
+		if ( route.endsWith( '/bulkcat/v1/batches' ) ) {
 			return Promise.resolve( page( [ BATCH ] ) );
 		}
-		if ( route.endsWith( '/bcm/v1/audit' ) ) {
+		if ( route.endsWith( '/bulkcat/v1/audit' ) ) {
 			return Promise.resolve( page( [ CHANGE ] ) );
 		}
-		if ( route.endsWith( '/bcm/v1/fields' ) ) {
+		if ( route.endsWith( '/bulkcat/v1/fields' ) ) {
 			return Promise.resolve( {
 				fields: [ { key: 'sku', label: 'SKU', type: 'text' } ],
 				actions: [],
@@ -151,7 +151,9 @@ describe( 'scope notice', () => {
 		serve( false );
 		render( <History settings={ { root: ROOT, user: { id: 1 } } } /> );
 		await waitFor( () =>
-			expect( document.getElementById( 'bcm-batch-1' ) ).not.toBeNull()
+			expect(
+				document.getElementById( 'bulkcat-batch-1' )
+			).not.toBeNull()
 		);
 		expectScopeLine();
 

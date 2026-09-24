@@ -11,10 +11,10 @@ import { configureApi } from './api';
 import { readSettings } from './settings';
 import './style.scss';
 
-export const MOUNT_ID = 'bcm-app';
+export const MOUNT_ID = 'bulkcat-app';
 
 /**
- * Render the screen into #bcm-app.
+ * Render the screen into #bulkcat-app.
  *
  * @param {Document} doc Document to mount in.
  * @return {Object|null} The React root, or null when there is no mount element.

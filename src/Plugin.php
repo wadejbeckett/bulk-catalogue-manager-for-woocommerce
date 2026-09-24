@@ -137,7 +137,7 @@ final class Plugin {
 	}
 
 	/**
-	 * Register the `bcm_settings` option and its sanitiser.
+	 * Register the `bulkcat_settings` option and its sanitiser.
 	 */
 	public function register_settings(): void {
 		Settings\Settings::register();
@@ -151,7 +151,7 @@ final class Plugin {
 	}
 
 	/**
-	 * Register the `bcm/v1` REST routes, all through the one registrar.
+	 * Register the `bulkcat/v1` REST routes, all through the one registrar.
 	 */
 	public function register_routes(): void {
 		Rest\Routes::plugin()->register();
@@ -179,7 +179,7 @@ final class Plugin {
 		if ( ! class_exists( \Automattic\WooCommerce\Utilities\FeaturesUtil::class ) ) {
 			return;
 		}
-		$file = defined( 'BCM_FILE' ) ? (string) BCM_FILE : dirname( __DIR__ ) . '/bulk-catalogue-manager-for-woocommerce.php';
+		$file = defined( 'BULKCAT_FILE' ) ? (string) BULKCAT_FILE : dirname( __DIR__ ) . '/bulk-catalogue-manager-for-woocommerce.php';
 		$real = realpath( $file );
 		$file = false === $real ? $file : $real;
 		\Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility( 'custom_order_tables', $file, true );

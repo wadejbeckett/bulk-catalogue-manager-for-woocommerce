@@ -7,7 +7,7 @@ import { __ } from '@wordpress/i18n';
 
 export default function ScopeNotice() {
 	return (
-		<p className="bcm-scope-notice">
+		<p className="bulkcat-scope-notice">
 			{ __(
 				'Only changes made through this screen are recorded here. Edits made elsewhere in WordPress, such as on the product edit page, are not.',
 				'bulk-catalogue-manager-for-woocommerce'

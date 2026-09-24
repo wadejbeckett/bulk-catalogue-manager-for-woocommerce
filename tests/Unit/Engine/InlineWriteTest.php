@@ -41,12 +41,12 @@ final class InlineWriteTest extends TestCase {
 	private Registry $actions;
 
 	protected function setUp(): void {
-		bcm_test_reset();
-		$GLOBALS['bcm_test']['logged_in']         = true;
-		$GLOBALS['bcm_test']['user_id']           = self::USER;
-		$GLOBALS['bcm_test']['caps']['edit_post'] = true;
-		$GLOBALS['bcm_test']['scheduled']         = [];
-		// The chunk runner listens on bcm_batch_created, as it does on a live site.
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['logged_in']         = true;
+		$GLOBALS['bulkcat_test']['user_id']           = self::USER;
+		$GLOBALS['bulkcat_test']['caps']['edit_post'] = true;
+		$GLOBALS['bulkcat_test']['scheduled']         = [];
+		// The chunk runner listens on bulkcat_batch_created, as it does on a live site.
 		( new Plugin() )->boot();
 		$this->store   = new InlineStore();
 		$this->actions = new Registry( new Fields() );
@@ -54,7 +54,7 @@ final class InlineWriteTest extends TestCase {
 	}
 
 	protected function tearDown(): void {
-		$this->assertSame( [], $GLOBALS['bcm_test']['post_meta_updates'] ?? [], 'The write wrote meta of its own.' );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['post_meta_updates'] ?? [], 'The write wrote meta of its own.' );
 	}
 
 	/**
@@ -63,8 +63,8 @@ final class InlineWriteTest extends TestCase {
 	 * @param array<string, mixed> $props Props besides the id.
 	 */
 	private static function product( int $id, string $type, array $props ): StoredProduct {
-		$GLOBALS['bcm_test']['products'][ $id ] = new StoredProduct( $type, [ 'id' => $id ] + $props );
-		return $GLOBALS['bcm_test']['products'][ $id ];
+		$GLOBALS['bulkcat_test']['products'][ $id ] = new StoredProduct( $type, [ 'id' => $id ] + $props );
+		return $GLOBALS['bulkcat_test']['products'][ $id ];
 	}
 
 	private function writes(): InlineWrite {
@@ -79,10 +79,10 @@ final class InlineWriteTest extends TestCase {
 		$this->assertInstanceOf( \WP_Error::class, $result );
 		$this->assertSame( $code, $result->get_error_code() );
 		$this->assertSame( $status, $result->get_error_data()['status'] );
-		$this->assertStringNotContainsString( 'bcm_', $result->get_error_message() );
+		$this->assertStringNotContainsString( 'bulkcat_', $result->get_error_message() );
 		$this->assertSame( [], $wpdb->writes, 'No batch, item or journal row was written.' );
 		$this->assertSame( [], $this->store->items );
-		foreach ( $GLOBALS['bcm_test']['products'] as $product ) {
+		foreach ( $GLOBALS['bulkcat_test']['products'] as $product ) {
 			$this->assertSame( 0, $product->saves, 'Nothing was saved.' );
 			$this->assertSame( [], $product->sets, 'Nothing was set on the loaded product.' );
 		}
@@ -96,8 +96,8 @@ final class InlineWriteTest extends TestCase {
 		$this->assertSame( 'complete', $result['status'] );
 		$this->assertInstanceOf( WriteOutcome::class, $result['outcome'] );
 		$this->assertTrue( $result['outcome']->saved() );
-		$this->assertSame( '25.00', $GLOBALS['bcm_test']['products'][101]->props['regular_price'] );
-		$this->assertSame( 1, $GLOBALS['bcm_test']['products'][101]->saves );
+		$this->assertSame( '25.00', $GLOBALS['bulkcat_test']['products'][101]->props['regular_price'] );
+		$this->assertSame( 1, $GLOBALS['bulkcat_test']['products'][101]->saves );
 
 		$batch = $this->store->batch( $result['batch_id'] );
 		$this->assertSame( 'inline', $batch['source'] );
@@ -123,8 +123,8 @@ final class InlineWriteTest extends TestCase {
 		$this->assertSame( [ 101, 'product', 'done', '', 1 ], [ $item['object_id'], $item['object_type'], $item['state'], $item['message'], $item['attempts'] ] );
 		$this->assertSame( [ [ 101, 'regular_price', '20', '25.00', 'applied' ] ], $this->store->journal() );
 
-		$this->assertSame( [], $GLOBALS['bcm_test']['scheduled'], 'Nothing was queued: no chunk, no retry.' );
-		$this->assertSame( 0, did_action( 'bcm_batch_created' ), 'The runner was never told about the batch.' );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['scheduled'], 'Nothing was queued: no chunk, no retry.' );
+		$this->assertSame( 0, did_action( 'bulkcat_batch_created' ), 'The runner was never told about the batch.' );
 	}
 
 	public function test_it_journals_exactly_what_a_bulk_batch_journals_for_the_same_change(): void {
@@ -151,8 +151,8 @@ final class InlineWriteTest extends TestCase {
 
 		// The same operations as a queued bulk batch, worked by the chunk runner.
 		$operations = json_decode( (string) wp_json_encode( $this->writes()->operations( $values ) ), true );
-		bcm_test_reset();
-		$GLOBALS['bcm_test']['user_caps'] = [ self::USER => [ 'edit_post' => true ] ];
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['user_caps'] = [ self::USER => [ 'edit_post' => true ] ];
 		self::product(
 			101,
 			'simple',
@@ -207,7 +207,7 @@ final class InlineWriteTest extends TestCase {
 		$this->assertInstanceOf( \WP_Error::class, $refused );
 		$this->assertSame( 'status', $refused->get_error_data()['field'] );
 		$this->assertSame( 400, $refused->get_error_data()['status'] );
-		$this->assertSame( 'bcm_no_operations', $this->writes()->operations( [ 'id' => 5 ] )->get_error_code() );
+		$this->assertSame( 'bulkcat_no_operations', $this->writes()->operations( [ 'id' => 5 ] )->get_error_code() );
 	}
 
 	public function test_a_value_the_object_cannot_take_is_refused_naming_the_field_with_nothing_written(): void {
@@ -221,14 +221,14 @@ final class InlineWriteTest extends TestCase {
 				'inline',
 				self::USER
 			),
-			'bcm_invalid_value',
+			'bulkcat_invalid_value',
 			400
 		);
 		$this->assertSame( 'sale_price', $error->get_error_data()['field'] );
 		$this->assertSame( [ 'sale_price' ], array_keys( $error->get_error_data()['fields'] ) );
 		$this->assertStringContainsString( 'sale price', strtolower( $error->get_error_message() ) );
 
-		$error = $this->assert_refused( $this->writes()->write( 101, [ 'stock_quantity' => '1.5' ], 'inline', self::USER ), 'bcm_invalid_operation', 400 );
+		$error = $this->assert_refused( $this->writes()->write( 101, [ 'stock_quantity' => '1.5' ], 'inline', self::USER ), 'bulkcat_invalid_operation', 400 );
 		$this->assertSame( 'stock_quantity', $error->get_error_data()['field'] );
 		$this->assertSame( ( new Fields() )->get( 'stock_quantity' )->rule_text(), $error->get_error_message() );
 	}
@@ -242,7 +242,7 @@ final class InlineWriteTest extends TestCase {
 				'parent_id'     => 103,
 			]
 		);
-		$reason = ( new Fields() )->get( 'featured' )->unavailable_reason( $GLOBALS['bcm_test']['products'][201] );
+		$reason = ( new Fields() )->get( 'featured' )->unavailable_reason( $GLOBALS['bulkcat_test']['products'][201] );
 		$this->assertNotNull( $reason );
 
 		$error = $this->assert_refused(
@@ -255,7 +255,7 @@ final class InlineWriteTest extends TestCase {
 				'inline',
 				self::USER
 			),
-			'bcm_not_available',
+			'bulkcat_not_available',
 			400
 		);
 		$this->assertSame( 'featured', $error->get_error_data()['field'] );
@@ -266,25 +266,25 @@ final class InlineWriteTest extends TestCase {
 		$this->assertSame( 'complete', $result['status'] );
 		$this->assertSame( [ [ 201, 'regular_price', '60', '65.00', 'applied' ] ], $this->store->journal() );
 		$this->assertSame( 'variation', array_values( $this->store->items )[0]['object_type'] );
-		$this->assertSame( [ 103 ], $GLOBALS['bcm_test']['variable_syncs'], 'The parent was resynchronised once.' );
+		$this->assertSame( [ 103 ], $GLOBALS['bulkcat_test']['variable_syncs'], 'The parent was resynchronised once.' );
 	}
 
 	public function test_an_object_the_user_may_not_edit_is_refused_403(): void {
-		$GLOBALS['bcm_test']['caps']['edit_post:101'] = false;
-		$error                                        = $this->assert_refused( $this->writes()->write( 101, [ 'regular_price' => '25' ], 'inline', self::USER ), 'bcm_cannot_edit', 403 );
+		$GLOBALS['bulkcat_test']['caps']['edit_post:101'] = false;
+		$error = $this->assert_refused( $this->writes()->write( 101, [ 'regular_price' => '25' ], 'inline', self::USER ), 'bulkcat_cannot_edit', 403 );
 		$this->assertStringContainsString( 'permission', $error->get_error_message() );
 	}
 
 	public function test_a_missing_or_trashed_id_is_refused_404(): void {
-		$this->assert_refused( $this->writes()->write( 999, [ 'regular_price' => '25' ], 'inline', self::USER ), 'bcm_not_found', 404 );
+		$this->assert_refused( $this->writes()->write( 999, [ 'regular_price' => '25' ], 'inline', self::USER ), 'bulkcat_not_found', 404 );
 		self::product( 108, 'simple', [ 'regular_price' => '5' ] );
-		$this->assert_refused( $this->writes()->write( 108, [ 'regular_price' => '25' ], 'inline', self::USER ), 'bcm_not_found', 404 );
+		$this->assert_refused( $this->writes()->write( 108, [ 'regular_price' => '25' ], 'inline', self::USER ), 'bulkcat_not_found', 404 );
 	}
 
 	public function test_an_unexpected_error_is_logged_and_its_text_never_sent(): void {
-		$secret                               = 'SQLSTATE[42S02]: Table wp_secret missing in /var/www/html/wp-content/plugins/other/save-hook.php';
-		$stored                               = self::product( 101, 'simple', [ 'regular_price' => '20' ] );
-		$GLOBALS['bcm_test']['products'][101] = new class( $stored, $secret ) {
+		$secret                                   = 'SQLSTATE[42S02]: Table wp_secret missing in /var/www/html/wp-content/plugins/other/save-hook.php';
+		$stored                                   = self::product( 101, 'simple', [ 'regular_price' => '20' ] );
+		$GLOBALS['bulkcat_test']['products'][101] = new class( $stored, $secret ) {
 			public function __construct( private StoredProduct $stored, private string $secret ) {}
 
 			public function __clone() {
@@ -307,8 +307,8 @@ final class InlineWriteTest extends TestCase {
 		$this->assertSame( 500, $result->get_error_data()['status'] );
 		$this->assertArrayNotHasKey( 'details', $result->get_error_data() );
 		$this->assertStringNotContainsString( 'SQLSTATE', (string) wp_json_encode( [ $result->get_error_message(), $result->get_error_data() ] ) );
-		$this->assertCount( 1, $GLOBALS['bcm_test']['logged'] ?? [] );
-		[ $level, $message, $context ] = $GLOBALS['bcm_test']['logged'][0];
+		$this->assertCount( 1, $GLOBALS['bulkcat_test']['logged'] ?? [] );
+		[ $level, $message, $context ] = $GLOBALS['bulkcat_test']['logged'][0];
 		$this->assertSame( 'error', $level );
 		$this->assertStringContainsString( $secret, $message, 'The site owner finds the real cause in the WooCommerce log.' );
 		$this->assertSame( 'bulk-catalogue-manager-for-woocommerce', $context['source'] );
@@ -319,7 +319,7 @@ final class InlineWriteTest extends TestCase {
 		$this->assertTrue( is_array( $result ) );
 		$this->assertSame( 'complete', $result['status'] );
 		$this->assertSame( [ Result::ALREADY ], array_map( static fn( Result $r ): string => $r->state(), $result['outcome']->results() ) );
-		$this->assertSame( 0, $GLOBALS['bcm_test']['products'][101]->saves );
+		$this->assertSame( 0, $GLOBALS['bulkcat_test']['products'][101]->saves );
 		$this->assertSame( [], $this->store->journal(), 'An unchanged value is not journalled.' );
 		$this->assertSame( [ 1, 0, 0 ], [ $this->store->batch( $result['batch_id'] )['done_items'], $this->store->batch( $result['batch_id'] )['changed_items'], $this->store->batch( $result['batch_id'] )['failed_items'] ] );
 	}

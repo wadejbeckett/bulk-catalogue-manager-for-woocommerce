@@ -219,7 +219,7 @@ export default function Batches( {
 	const exportList = () => exporter.run( 'batches', toBatchQuery( view ) );
 
 	return (
-		<div className="bcm-history__list">
+		<div className="bulkcat-history__list">
 			<DataViews
 				data={ items }
 				fields={ fields }
@@ -232,9 +232,9 @@ export default function Batches( {
 				search={ false }
 				getItemId={ ( item ) => String( item.batch_id ) }
 			>
-				<div className="bcm-history__bar">
+				<div className="bulkcat-history__bar">
 					<DataViews.FiltersToggle />
-					<div className="bcm-history__bar-right">
+					<div className="bulkcat-history__bar-right">
 						<Button
 							variant="secondary"
 							onClick={ exportList }
@@ -269,7 +269,7 @@ export default function Batches( {
 					</Button>
 				) }
 				{ ! error && loading && ! items.length && (
-					<p className="bcm-history__loading">
+					<p className="bulkcat-history__loading">
 						{ __(
 							'Loading the history…',
 							'bulk-catalogue-manager-for-woocommerce'
@@ -277,7 +277,7 @@ export default function Batches( {
 					</p>
 				) }
 				{ ! error && ! loading && ! items.length && (
-					<div className="bcm-history__empty">
+					<div className="bulkcat-history__empty">
 						<p>
 							{ __(
 								'No changes match these filters yet.',
@@ -286,7 +286,7 @@ export default function Batches( {
 						</p>
 					</div>
 				) }
-				<div className="bcm-history__batches">
+				<div className="bulkcat-history__batches">
 					{ items.map( ( batch ) => (
 						<BatchCard
 							key={ batch.batch_id }
@@ -306,7 +306,7 @@ export default function Batches( {
 				</div>
 				<DataViews.Pagination />
 			</DataViews>
-			<p className="bcm-history__retention">
+			<p className="bulkcat-history__retention">
 				{ retentionLine( settings?.settings?.history_days ) }
 			</p>
 		</div>

@@ -352,7 +352,7 @@ describe( 'filter chips in the catalogue', () => {
 			stock_quantity: { operator: 'lessThanOrEqual', value: '0' },
 			featured: { operator: 'is', value: 'true' },
 		} );
-		const chips = document.querySelector( '.bcm-chips' );
+		const chips = document.querySelector( '.bulkcat-chips' );
 		expect(
 			Array.from( chips.querySelectorAll( 'li > span' ) ).map(
 				( span ) => span.textContent
@@ -384,13 +384,13 @@ describe( 'filter chips in the catalogue', () => {
 		);
 		await screen.findByText( 'Classic Cotton T-Shirt' );
 		fireEvent.click(
-			within( document.querySelector( '.bcm-chips' ) ).getByRole(
+			within( document.querySelector( '.bulkcat-chips' ) ).getByRole(
 				'button',
 				{ name: 'Clear filters' }
 			)
 		);
 		await waitFor( () =>
-			expect( document.querySelector( '.bcm-chips' ) ).toBeNull()
+			expect( document.querySelector( '.bulkcat-chips' ) ).toBeNull()
 		);
 		const after = calls( apiFetch, 'products' ).at( -1 );
 		expect( after.search ).toBeUndefined();

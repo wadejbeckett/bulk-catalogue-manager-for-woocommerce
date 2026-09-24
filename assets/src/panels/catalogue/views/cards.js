@@ -136,7 +136,7 @@ export function CatalogueCards( {
 	}
 	return edit.wrap(
 		<CellContext.Provider value={ context }>
-			<div className="bcm-catalogue__cards">
+			<div className="bulkcat-catalogue__cards">
 				<DataViews
 					data={ edit.items }
 					fields={ grid.fields }

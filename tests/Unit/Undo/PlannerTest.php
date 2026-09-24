@@ -45,18 +45,18 @@ final class PlannerTest extends TestCase {
 	private RunnerStore $store;
 
 	protected function setUp(): void {
-		bcm_test_reset();
-		$GLOBALS['bcm_test']['user_caps']   = [ self::USER => [ 'edit_post' => true ] ];
-		$GLOBALS['bcm_test']['user_id']     = self::USER; // The person undoing, unless a test says otherwise.
-		$GLOBALS['bcm_test']['terms']       = [
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['user_caps'] = [ self::USER => [ 'edit_post' => true ] ];
+		$GLOBALS['bulkcat_test']['user_id']   = self::USER; // The person undoing, unless a test says otherwise.
+		$GLOBALS['bulkcat_test']['terms']     = [
 			'product_cat' => [ 5, 7 ],
 			'product_tag' => [ 8 ],
 		];
-		$this->store                        = new RunnerStore( self::BATCH, [], [], self::USER );
-		$this->store->batch['status']       = 'complete';
-		$this->store->batch['finished_gmt'] = '2026-09-23 08:05:00';
-		$this->store->batch['done_items']   = 1;
-		$this->store->batch['total_items']  = 1;
+		$this->store                          = new RunnerStore( self::BATCH, [], [], self::USER );
+		$this->store->batch['status']         = 'complete';
+		$this->store->batch['finished_gmt']   = '2026-09-23 08:05:00';
+		$this->store->batch['done_items']     = 1;
+		$this->store->batch['total_items']    = 1;
 	}
 
 	protected function tearDown(): void {
@@ -65,7 +65,7 @@ final class PlannerTest extends TestCase {
 			// The read stubs log a cache priming as a pseudo-statement: a read too.
 			$this->assertSame( 1, preg_match( '#^(SELECT|/\* (_prime_post_caches|update_meta_cache) \*/)#', $sql ), 'The planner only reads: ' . $sql );
 		}
-		foreach ( $GLOBALS['bcm_test']['products'] ?? [] as $product ) {
+		foreach ( $GLOBALS['bulkcat_test']['products'] ?? [] as $product ) {
 			$this->assertSame( [], $product->sets, 'The planner set a value on a product.' );
 			$this->assertSame( [], $product->saves, 'The planner saved a product.' );
 		}
@@ -110,8 +110,8 @@ final class PlannerTest extends TestCase {
 	 * @param array<string, mixed> $props Props.
 	 */
 	private static function product( int $id, array $props, string $type = 'simple' ): SavedProduct {
-		$product                                = new SavedProduct( $type, [ 'id' => $id ] + $props );
-		$GLOBALS['bcm_test']['products'][ $id ] = $product;
+		$product                                    = new SavedProduct( $type, [ 'id' => $id ] + $props );
+		$GLOBALS['bulkcat_test']['products'][ $id ] = $product;
 		return $product;
 	}
 
@@ -147,17 +147,17 @@ final class PlannerTest extends TestCase {
 	private function undo_batches( array $undos ): void {
 		global $wpdb;
 		$wpdb->responses = [
-			'/^SELECT batch_id, status FROM `wp_bcm_batches` WHERE undo_of = /' => fn( string $sql ): array => ( new SqlEvaluator( [ 'wp_bcm_batches' => array_merge( [ $this->store->batch ], $undos ) ] ) )->rows( $sql ),
+			'/^SELECT batch_id, status FROM `wp_bulkcat_batches` WHERE undo_of = /' => fn( string $sql ): array => ( new SqlEvaluator( [ 'wp_bulkcat_batches' => array_merge( [ $this->store->batch ], $undos ) ] ) )->rows( $sql ),
 		] + $wpdb->responses;
 	}
 
 	private function assert_refused( string $reason, ?Planner $planner = null ): \WP_Error {
 		$refusal = ( $planner ?? $this->planner() )->plan( self::BATCH );
 		$this->assertInstanceOf( \WP_Error::class, $refusal );
-		$this->assertSame( 'bcm_not_reversible', $refusal->get_error_code() );
+		$this->assertSame( 'bulkcat_not_reversible', $refusal->get_error_code() );
 		$this->assertSame( 409, $refusal->get_error_data()['status'] );
 		$this->assertSame( $reason, $refusal->get_error_data()['reason'] );
-		$this->assertStringNotContainsString( 'bcm_', $refusal->get_error_message() );
+		$this->assertStringNotContainsString( 'bulkcat_', $refusal->get_error_message() );
 		return $refusal;
 	}
 
@@ -433,7 +433,7 @@ final class PlannerTest extends TestCase {
 		// 1004: the batch's user may no longer edit it.
 		$this->change( 1004, 'regular_price', '10.00', '11.00' );
 		self::product( 1004, [ 'regular_price' => '11.00' ] );
-		$GLOBALS['bcm_test']['user_caps'][ self::USER ]['edit_post:1004'] = false;
+		$GLOBALS['bulkcat_test']['user_caps'][ self::USER ]['edit_post:1004'] = false;
 		// 1005: the category it was in has been deleted.
 		$this->change( 1005, 'category_ids', [ 99 ], [ 5 ] );
 		self::product( 1005, [ 'category_ids' => [ 5 ] ] );
@@ -457,7 +457,7 @@ final class PlannerTest extends TestCase {
 			$this->assertSame( $code, $item['code'], "Object $id." );
 			$this->assertSame( [], $item['operations'], "Object $id." );
 			$this->assertNotSame( '', $item['reason'], "Object $id." );
-			$this->assertStringNotContainsString( 'bcm_', $item['reason'], "Object $id." );
+			$this->assertStringNotContainsString( 'bulkcat_', $item['reason'], "Object $id." );
 		}
 		$this->assertStringContainsString( 'no longer exists', self::item( $plan, 1002 )['reason'] );
 		$this->assertStringContainsString( 'can no longer edit', self::item( $plan, 1004 )['reason'] );
@@ -475,7 +475,7 @@ final class PlannerTest extends TestCase {
 		$this->change( 1001, 'regular_price', '10.00', '11.00' );
 		self::product( 1001, [ 'regular_price' => '11.00' ] );
 		// The author has since been demoted; an administrator undoes the batch.
-		$GLOBALS['bcm_test']['user_caps'] = [
+		$GLOBALS['bulkcat_test']['user_caps'] = [
 			self::USER => [],
 			9          => [ 'edit_post' => true ],
 		];
@@ -483,14 +483,14 @@ final class PlannerTest extends TestCase {
 		$plan = $this->planner()->plan( self::BATCH, 9 );
 		$this->assertSame( Plan::REVERTIBLE, self::item( $plan, 1001 )['state'], 'The batch can still be undone by someone who may edit the product.' );
 
-		$GLOBALS['bcm_test']['user_caps'] = [
+		$GLOBALS['bulkcat_test']['user_caps'] = [
 			self::USER => [ 'edit_post' => true ],
 			9          => [],
 		];
-		$item                             = self::item( $this->planner()->plan( self::BATCH, 9 ), 1001 );
+		$item                                 = self::item( $this->planner()->plan( self::BATCH, 9 ), 1001 );
 		$this->assertSame( [ Plan::SKIPPED, 'cannot_edit' ], [ $item['state'], $item['code'] ], 'The author\'s rights do not let someone else undo.' );
 
-		$GLOBALS['bcm_test']['user_id'] = 9;
+		$GLOBALS['bulkcat_test']['user_id'] = 9;
 		$this->assertSame( Plan::SKIPPED, self::item( $this->planner()->plan( self::BATCH ), 1001 )['state'], 'Without a user, the current user\'s rights apply.' );
 	}
 
@@ -617,7 +617,7 @@ final class PlannerTest extends TestCase {
 	public function test_a_missing_batch_is_not_found(): void {
 		$refusal = $this->planner()->plan( 999 );
 		$this->assertInstanceOf( \WP_Error::class, $refusal );
-		$this->assertSame( 'bcm_not_found', $refusal->get_error_code() );
+		$this->assertSame( 'bulkcat_not_found', $refusal->get_error_code() );
 		$this->assertSame( 404, $refusal->get_error_data()['status'] );
 	}
 
@@ -639,12 +639,12 @@ final class PlannerTest extends TestCase {
 			$this->change( 7000 + $n, 'regular_price', '10.00', '11.00' );
 			self::product( 7000 + $n, [ 'regular_price' => '11.00' ] );
 		}
-		$GLOBALS['bcm_test']['calls'] = [];
+		$GLOBALS['bulkcat_test']['calls'] = [];
 
 		$plan = $this->plan();
 
 		$this->assertSame( 250, $plan->counts()[ Plan::REVERTIBLE ] );
-		$calls  = array_values( array_filter( $GLOBALS['bcm_test']['calls'], static fn( array $call ): bool => in_array( $call[0], [ '_prime_post_caches', 'wp_cache_flush_runtime' ], true ) ) );
+		$calls  = array_values( array_filter( $GLOBALS['bulkcat_test']['calls'], static fn( array $call ): bool => in_array( $call[0], [ '_prime_post_caches', 'wp_cache_flush_runtime' ], true ) ) );
 		$primed = array_map( static fn( array $call ): int => count( $call[1][0] ), array_filter( $calls, static fn( array $call ): bool => '_prime_post_caches' === $call[0] ) );
 		$this->assertSame( [ 100, 100, 50 ], array_values( $primed ), 'Newest first, a page of 100 at a time.' );
 		$this->assertSame( [ '_prime_post_caches', 'wp_cache_flush_runtime', '_prime_post_caches', 'wp_cache_flush_runtime', '_prime_post_caches' ], array_column( $calls, 0 ) );
@@ -697,8 +697,8 @@ final class PlannerTest extends TestCase {
 		$this->store->batch['total_items'] = 2;
 		$this->store->batch['done_items']  = 2;
 		$wpdb->responses                   = [
-			'/^SELECT batch_id, undo_of FROM `wp_bcm_batches` WHERE undo_of IN /' => static fn(): array => [],
-			'/^SELECT batch_id, COUNT\(\*\) AS applied FROM `wp_bcm_changes` /' => static fn(): array => [
+			'/^SELECT batch_id, undo_of FROM `wp_bulkcat_batches` WHERE undo_of IN /' => static fn(): array => [],
+			'/^SELECT batch_id, COUNT\(\*\) AS applied FROM `wp_bulkcat_changes` /' => static fn(): array => [
 				[
 					'batch_id' => self::BATCH,
 					'applied'  => 2,
@@ -723,7 +723,7 @@ final class PlannerTest extends TestCase {
 
 		$progress = new Progress( null, null, $clock );
 		$this->assertSame( Reversibility::PARTIALLY_REVERSIBLE, $progress->report_for( $batch, false )['reversibility']['state'], 'Progress, and so the single batch read, counts conflicts with the planner by default.' );
-		$GLOBALS['bcm_test']['products_loaded'] = [];
+		$GLOBALS['bulkcat_test']['products_loaded'] = [];
 		$this->assertSame(
 			[
 				'state'     => Reversibility::REVERSIBLE,
@@ -733,7 +733,7 @@ final class PlannerTest extends TestCase {
 			$progress->reports( [ $batch ] )[0]['reversibility'],
 			'The history list reports from the cheap signals, conflicts not counted (T56).'
 		);
-		$this->assertSame( [], $GLOBALS['bcm_test']['products_loaded'], 'The list reads no product.' );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['products_loaded'], 'The list reads no product.' );
 
 		$changed->props['regular_price'] = '22.00';
 		$this->assertSame( Reversibility::REVERSIBLE, ( new Reversibility( null, null, new Settings( [] ), $clock, Planner::counter( null, null, $clock ) ) )->of( $batch )['state'], 'Back to what the batch left: reversible again.' );

@@ -132,7 +132,7 @@ test( 'move a category through the dialog by keyboard', async ( { page } ) => {
 	// Into Shirts.
 	await moveBy( page, SEED.hats, `${ SEED.root } › ${ SEED.shirts }` );
 	await expect(
-		page.locator( '#a11y-speak-polite, [data-bcm-announcer]' ).first()
+		page.locator( '#a11y-speak-polite, [data-bulkcat-announcer]' ).first()
 	).toContainText( SEED.hats );
 	const hats = tree.getByRole( 'treeitem', {
 		name: new RegExp( `^${ SEED.hats }` ),

@@ -19,7 +19,7 @@ import {
 The panel left of the table: collapsible, resizable by dragging its edge (or
 the arrow keys, Home and End on the focused edge), with width and collapsed
 state remembered per user in `localStorage` under
-`bcm-category-panel:{userId}`. The first visit takes its collapsed state from
+`bulkcat-category-panel:{userId}`. The first visit takes its collapsed state from
 the *Show the category panel by default* setting (`settings.category_panel`).
 Below 960 pixels it is a button (labelled with the active sentence, or
 "Categories") opening the same tree as a sheet.
@@ -30,7 +30,7 @@ Below 960 pixels it is a button (labelled with the active sentence, or
 | `onChange` | `( value \| null, sentence ) => void` | Called when the owner selects a node, toggles *Include sub-categories*, Ctrl/Cmd-clicks, chooses All products or Show all. `sentence` is the chip text: "Category is Shoes", "Category is Shoes or its sub-categories", "Category is Shoes or Hats", "Category is Shoes or Hats, or their sub-categories"; `''` for `null`. |
 | `query` | `Object` | The grid's `search`, `mode` and per-field filter arguments (`{ operator, value }` objects named after the field), passed to `GET /categories` so the counts follow the active filters. Leave the category filter out or in: the server ignores it for the counts. |
 | `tree` | `useCategoryTree()` result | Optional. Pass the catalogue's own instance to share one load (and to name the chip with `categorySentence( value, tree.byId )`). Without it the panel loads its own from `query`. |
-| `settings` | `window.bcmSettings` | Supplies `user.id` (the storage key), `settings.category_panel` (initial open state) and the capability flag below. |
+| `settings` | `window.bulkcatSettings` | Supplies `user.id` (the storage key), `settings.category_panel` (initial open state) and the capability flag below. |
 | `canManage` | `boolean` | Optional override of `canManageTerms( settings )`. |
 | `total` | `number` | Optional count shown on the All products row. |
 | `onDropSelection` | `( categoryId ) => void` | Called when the current product selection is dropped on a category (T65). The panel writes nothing; the catalogue opens the bulk action panel pre-filled with **Add categories** for that category and its own current scope (explicit ids or all rows matching the filter). Without this prop the tree does not accept a product drop. |
@@ -63,10 +63,10 @@ on the route.
 
 The catalogue makes its selection draggable and, in `dragstart`, sets
 `event.dataTransfer.setData( SELECTION_DRAG_TYPE, anything )` —
-`SELECTION_DRAG_TYPE` is `application/x-bcm-selection`. The panel only checks
+`SELECTION_DRAG_TYPE` is `application/x-bulkcat-selection`. The panel only checks
 that the type is present (browsers hide drag values until the drop) and
 calls `onDropSelection( categoryId )`; the value is never read. A dragged
-category uses `CATEGORY_DRAG_TYPE` (`application/x-bcm-category`) instead.
+category uses `CATEGORY_DRAG_TYPE` (`application/x-bulkcat-category`) instead.
 
 ## `<CategoryManager>`
 
@@ -86,8 +86,8 @@ node's **Edit details…**; the Categories tab can render it beside the tree.
 Create sends `POST /categories { name, slug?, description?, parent }`; edit
 sends `PATCH /categories/{id}` with only the properties that changed. An
 empty name is refused before any request, in the server's own sentence. A
-refusal (`bcm_category_exists`, `bcm_slug_taken`, `bcm_slug_invalid`,
-`bcm_parent_missing`, `bcm_category_cycle`, …) shows the server's §4.8
+refusal (`bulkcat_category_exists`, `bulkcat_slug_taken`, `bulkcat_slug_invalid`,
+`bulkcat_parent_missing`, `bulkcat_category_cycle`, …) shows the server's §4.8
 sentence; the code and HTTP status sit behind **Show details**.
 
 The tree nodes carry no description, so an edit shows an empty description

@@ -58,9 +58,9 @@ final class SpyStream {
 			// The stubs' own call logs grow with every translated string and
 			// recorded call; only tests keep them, so they are dropped before
 			// measuring what the export itself holds.
-			$GLOBALS['bcm_test']['gettext'] = [];
-			$GLOBALS['bcm_test']['calls']   = [];
-			self::$log[]                    = [ 'write', strlen( $data ), memory_get_usage() ];
+			$GLOBALS['bulkcat_test']['gettext'] = [];
+			$GLOBALS['bulkcat_test']['calls']   = [];
+			self::$log[]                        = [ 'write', strlen( $data ), memory_get_usage() ];
 		}
 		if ( strlen( self::$head ) < 65536 ) {
 			self::$head .= $data;

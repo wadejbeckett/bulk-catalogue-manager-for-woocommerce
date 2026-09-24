@@ -29,9 +29,9 @@ export function ModeBar( {
 } ) {
 	const flat = mode === MODES.variations;
 	return (
-		<div className="bcm-variations__bar">
+		<div className="bulkcat-variations__bar">
 			<div
-				className="bcm-segmented"
+				className="bulkcat-segmented"
 				role="group"
 				aria-label={ __(
 					'What the list shows',
@@ -87,7 +87,7 @@ export function ModeBar( {
  */
 export function FocusNotice( { focus, failed, onClear } ) {
 	return (
-		<p className="bcm-catalogue__chip bcm-variations__focus">
+		<p className="bulkcat-catalogue__chip bulkcat-variations__focus">
 			<span>
 				{ failed
 					? __(
@@ -158,5 +158,5 @@ export function CountLine( { mode, total } ) {
 			shown
 		);
 	}
-	return <p className="bcm-variations__count">{ text }</p>;
+	return <p className="bulkcat-variations__count">{ text }</p>;
 }

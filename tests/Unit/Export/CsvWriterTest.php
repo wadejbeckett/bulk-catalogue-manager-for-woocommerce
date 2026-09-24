@@ -18,7 +18,7 @@ use PHPUnit\Framework\TestCase;
 
 final class CsvWriterTest extends TestCase {
 	protected function setUp(): void {
-		bcm_test_reset();
+		bulkcat_test_reset();
 	}
 
 	/**

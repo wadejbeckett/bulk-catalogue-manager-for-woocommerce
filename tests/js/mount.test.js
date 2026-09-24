@@ -1,5 +1,5 @@
 /**
- * The entry mounts the screen into #bcm-app and is a silent no-op on a page
+ * The entry mounts the screen into #bulkcat-app and is a silent no-op on a page
  * without it (T8, T9).
  */
 import { screen } from '@testing-library/react';
@@ -25,10 +25,10 @@ jest.mock( '@wordpress/api-fetch', () => {
 } );
 
 const SETTINGS = {
-	root: 'https://example.test/wp-json/bcm/v1/',
+	root: 'https://example.test/wp-json/bulkcat/v1/',
 	nonce: 'abc123def4',
 	settings: { rows_per_page: 25 },
-	fieldsEndpoint: 'https://example.test/wp-json/bcm/v1/fields',
+	fieldsEndpoint: 'https://example.test/wp-json/bulkcat/v1/fields',
 	user: { id: 1, name: 'Admin' },
 	wpMajor: 7,
 };
@@ -40,13 +40,13 @@ describe( 'entry', () => {
 		jest.resetModules();
 		global.IS_REACT_ACT_ENVIRONMENT = true;
 		document.body.innerHTML = '';
-		window.bcmSettings = SETTINGS;
+		window.bulkcatSettings = SETTINGS;
 		errors = jest.spyOn( console, 'error' ).mockImplementation( () => {} );
 	} );
 
 	afterEach( () => {
 		errors.mockRestore();
-		delete window.bcmSettings;
+		delete window.bulkcatSettings;
 	} );
 
 	it( 'does nothing on a page without the mount element', () => {
@@ -56,7 +56,7 @@ describe( 'entry', () => {
 		} ).not.toThrow();
 		expect( entry.mount() ).toBeNull();
 		// Only the live regions @wordpress/a11y adds to every admin page.
-		expect( document.querySelector( '.bcm-app' ) ).toBeNull();
+		expect( document.querySelector( '.bulkcat-app' ) ).toBeNull();
 		expect( document.body.textContent ).toBe( 'Notifications' );
 		expect(
 			require( '@wordpress/api-fetch' ).default
@@ -72,9 +72,9 @@ describe( 'entry', () => {
 		).toEqual( [] );
 	} );
 
-	it( 'mounts the screen into #bcm-app with the nonce middleware wired', async () => {
+	it( 'mounts the screen into #bulkcat-app with the nonce middleware wired', async () => {
 		const element = document.createElement( 'div' );
-		element.id = 'bcm-app';
+		element.id = 'bulkcat-app';
 		document.body.appendChild( element );
 
 		await act( async () => {
@@ -109,13 +109,13 @@ describe( 'entry', () => {
 				.getAttribute( 'aria-current' )
 		).toBe( 'page' );
 		expect( apiFetch ).toHaveBeenCalledWith( {
-			url: 'https://example.test/wp-json/bcm/v1/fields',
+			url: 'https://example.test/wp-json/bulkcat/v1/fields',
 		} );
 	} );
 
 	it( 'moves between panels without reloading', async () => {
 		const element = document.createElement( 'div' );
-		element.id = 'bcm-app';
+		element.id = 'bulkcat-app';
 		document.body.appendChild( element );
 		await act( async () => {
 			require( '../../assets/src/index.js' );

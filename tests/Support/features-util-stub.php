@@ -2,7 +2,7 @@
 /**
  * Recording stand-in for WooCommerce's FeaturesUtil. Declared only when
  * WooCommerce's own class is absent, so under WooCommerce it defines nothing.
- * Each declaration is appended to $GLOBALS['bcm_test']['features'].
+ * Each declaration is appended to $GLOBALS['bulkcat_test']['features'].
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -22,7 +22,7 @@ if ( ! class_exists( FeaturesUtil::class ) ) {
 		 * Same signature as WooCommerce's method.
 		 */
 		public static function declare_compatibility( string $feature_id, string $plugin_file, bool $positive_compatibility = true ): bool {
-			$GLOBALS['bcm_test']['features'][] = [ $feature_id, $plugin_file, $positive_compatibility ];
+			$GLOBALS['bulkcat_test']['features'][] = [ $feature_id, $plugin_file, $positive_compatibility ];
 			return true;
 		}
 	}

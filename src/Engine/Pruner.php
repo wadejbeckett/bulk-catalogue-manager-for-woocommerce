@@ -1,7 +1,7 @@
 <?php
 /**
  * History retention (SPEC §9.5, §11, §12.4, §15 Data lifecycle; T60): the
- * daily `bcm_prune_history` action.
+ * daily `bulkcat_prune_history` action.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -36,7 +36,7 @@ defined( 'ABSPATH' ) || exit;
  *    Engine\Reversibility and Undo\Planner read) — so a run cut short leaves a batch refused for undo rather than half
  *    reversible; the batch row, its status and its counters stay, so History
  *    still lists it;
- * 4. deletes their `bcm_changes` rows and then their `bcm_batch_items` rows,
+ * 4. deletes their `bulkcat_changes` rows and then their `bulkcat_batch_items` rows,
  *    ROWS_PER_STATEMENT rows per DELETE and at most STATEMENTS_PER_RUN DELETEs
  *    in the run, so no run holds a lock or the request for long whatever the
  *    history's size; no row is read into memory;
@@ -51,7 +51,7 @@ final class Pruner {
 	/**
 	 * The recurring action, in Data\Registry::ACTION_GROUP and listed in its recurring actions.
 	 */
-	public const HOOK = 'bcm_prune_history';
+	public const HOOK = 'bulkcat_prune_history';
 
 	/**
 	 * Seconds between daily runs, and in a day of retention.
@@ -163,7 +163,7 @@ final class Pruner {
 	}
 
 	/**
-	 * `bcm_prune_history`: one bounded run.
+	 * `bulkcat_prune_history`: one bounded run.
 	 */
 	public static function handle(): void {
 		( new self() )->run();

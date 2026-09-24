@@ -46,7 +46,7 @@ final class BatchFactoryTest extends TestCase {
 	private int $now;
 
 	protected function setUp(): void {
-		bcm_test_reset();
+		bulkcat_test_reset();
 		$this->db    = SeededCatalogue::seed();
 		$this->store = new BatchStore( $this->db );
 		$this->now   = time();
@@ -102,7 +102,7 @@ final class BatchFactoryTest extends TestCase {
 		$this->assertSame( $code, $result->get_error_code() );
 		$this->assertSame( $status, $result->get_error_data()['status'] );
 		$this->assertSame( [], self::writes(), 'A refusal writes nothing.' );
-		$this->assertSame( [], $GLOBALS['bcm_test']['transients'] ?? [], 'A refusal leaves no replay record.' );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['transients'] ?? [], 'A refusal leaves no replay record.' );
 		$this->assertSame( 0, did_action( BatchFactory::CREATED ) );
 		return $result;
 	}
@@ -150,8 +150,8 @@ final class BatchFactoryTest extends TestCase {
 			],
 			$batch['selection']
 		);
-		$this->assertSame( 60, array_values( $GLOBALS['bcm_test']['transient_ttl'] )[0] );
-		$this->assertStringStartsWith( BatchFactory::PREFIX, array_key_first( $GLOBALS['bcm_test']['transients'] ) );
+		$this->assertSame( 60, array_values( $GLOBALS['bulkcat_test']['transient_ttl'] )[0] );
+		$this->assertStringStartsWith( BatchFactory::PREFIX, array_key_first( $GLOBALS['bulkcat_test']['transients'] ) );
 	}
 
 	public function test_ids_that_are_no_longer_a_listed_product_or_variation_are_left_out(): void {
@@ -222,10 +222,10 @@ final class BatchFactoryTest extends TestCase {
 	public function test_too_many_operations_are_refused_before_anything_is_read_or_written(): void {
 		global $wpdb;
 		$result = $this->factory()->create( self::UUID, self::USER, array_fill( 0, 21, self::operations()[0] ), Selection::of_ids( [ 101 ] ) );
-		$this->assert_refused_with_nothing_written( $result, 'bcm_too_many_operations' );
+		$this->assert_refused_with_nothing_written( $result, 'bulkcat_too_many_operations' );
 		$this->assertSame( [], $wpdb->queries, 'Nothing was even read.' );
 
-		$this->assert_refused_with_nothing_written( $this->factory()->create( self::UUID, self::USER, [], Selection::of_ids( [ 101 ] ) ), 'bcm_no_operations' );
+		$this->assert_refused_with_nothing_written( $this->factory()->create( self::UUID, self::USER, [], Selection::of_ids( [ 101 ] ) ), 'bulkcat_no_operations' );
 		$this->assert_refused_with_nothing_written(
 			$this->factory()->create(
 				self::UUID,
@@ -238,20 +238,20 @@ final class BatchFactoryTest extends TestCase {
 				],
 				Selection::of_ids( [ 101 ] )
 			),
-			'bcm_unknown_action'
+			'bulkcat_unknown_action'
 		);
 	}
 
 	public function test_a_selection_above_one_hundred_thousand_is_refused_before_anything_is_read_or_written(): void {
 		global $wpdb;
 		$ids    = range( 1, Selection::MAX_OBJECTS + 1 );
-		$result = $this->assert_refused_with_nothing_written( $this->factory()->create( self::UUID, self::USER, self::operations(), Selection::of_ids( $ids ) ), 'bcm_selection_too_large' );
+		$result = $this->assert_refused_with_nothing_written( $this->factory()->create( self::UUID, self::USER, self::operations(), Selection::of_ids( $ids ) ), 'bulkcat_selection_too_large' );
 		$this->assertSame( Selection::MAX_OBJECTS + 1, $result->get_error_data()['count'] );
 		$this->assertSame( [], $wpdb->queries );
 
 		$this->assert_refused_with_nothing_written(
 			$this->factory()->create( self::UUID, self::USER, self::operations(), Selection::of_filter( Criteria::from_array( [] ), Selection::MAX_OBJECTS + 1 ) ),
-			'bcm_selection_too_large'
+			'bulkcat_selection_too_large'
 		);
 		$this->assertSame( [], $wpdb->queries );
 
@@ -259,10 +259,10 @@ final class BatchFactoryTest extends TestCase {
 	}
 
 	public function test_a_selection_with_nothing_left_is_refused_with_nothing_written(): void {
-		$this->assert_refused_with_nothing_written( $this->factory()->create( self::UUID, self::USER, self::operations(), Selection::of_ids( [ 108, 5000 ] ) ), 'bcm_selection_empty' );
+		$this->assert_refused_with_nothing_written( $this->factory()->create( self::UUID, self::USER, self::operations(), Selection::of_ids( [ 108, 5000 ] ) ), 'bulkcat_selection_empty' );
 		$this->assert_refused_with_nothing_written(
 			$this->factory()->create( self::UUID, self::USER, self::operations(), Selection::of_filter( Criteria::from_array( [ 'search' => 'nothing matches this' ] ), 0 ) ),
-			'bcm_selection_empty'
+			'bulkcat_selection_empty'
 		);
 	}
 
@@ -316,24 +316,24 @@ final class BatchFactoryTest extends TestCase {
 		$this->assertTrue( $result['replayed'] );
 		$this->assertSame( [ $earlier ], array_keys( $this->store->batches ), 'Exactly one batch row is left.' );
 		$this->assertSame( [], $this->store->items, 'The later submission wrote no items.' );
-		$this->assertSame( [ 'batch:1', 'batch:2', 'discard:wp_bcm_batch_items:2', 'discard:wp_bcm_batches:2' ], $this->store->log );
+		$this->assertSame( [ 'batch:1', 'batch:2', 'discard:wp_bulkcat_batch_items:2', 'discard:wp_bulkcat_batches:2' ], $this->store->log );
 		$this->assertSame( 0, did_action( BatchFactory::CREATED ) );
 	}
 
 	public function test_items_that_cannot_be_written_leave_no_batch_behind(): void {
 		global $wpdb;
-		$wpdb->responses = [ '/^INSERT INTO `wp_bcm_batch_items`/' => false ] + $wpdb->responses;
+		$wpdb->responses = [ '/^INSERT INTO `wp_bulkcat_batch_items`/' => false ] + $wpdb->responses;
 
 		$result = $this->factory()->create( self::UUID, self::USER, self::operations(), Selection::of_ids( [ 101 ] ) );
 		$this->assertInstanceOf( \WP_Error::class, $result );
 		$this->assertSame( BatchFactory::NOT_RECORDED, $result->get_error_code() );
 		$this->assertSame( 500, $result->get_error_data()['status'] );
 		$this->assertArrayNotHasKey( 'details', $result->get_error_data(), 'The exception text is logged, never sent.' );
-		$this->assertSame( 'error', $GLOBALS['bcm_test']['logged'][0][0] ?? null );
-		$this->assertStringContainsString( 'The batch items could not be recorded.', $GLOBALS['bcm_test']['logged'][0][1] );
-		$this->assertSame( [ 'source' => 'bulk-catalogue-manager-for-woocommerce' ], $GLOBALS['bcm_test']['logged'][0][2] );
+		$this->assertSame( 'error', $GLOBALS['bulkcat_test']['logged'][0][0] ?? null );
+		$this->assertStringContainsString( 'The batch items could not be recorded.', $GLOBALS['bulkcat_test']['logged'][0][1] );
+		$this->assertSame( [ 'source' => 'bulk-catalogue-manager-for-woocommerce' ], $GLOBALS['bulkcat_test']['logged'][0][2] );
 		$this->assertSame( [], $this->store->batches, 'The batch row was removed again.' );
-		$this->assertSame( [], $GLOBALS['bcm_test']['transients'] ?? [] );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['transients'] ?? [] );
 		$this->assertSame( 0, did_action( BatchFactory::CREATED ) );
 	}
 
@@ -445,7 +445,7 @@ final class BatchFactoryTest extends TestCase {
 
 	public function test_selecting_a_parent_alone_never_reaches_its_variations(): void {
 		foreach ( [ false, null ] as $index => $switch ) {
-			bcm_test_reset();
+			bulkcat_test_reset();
 			$this->db    = SeededCatalogue::seed();
 			$this->store = new BatchStore( $this->db );
 			$result      = $this->factory()->create( sprintf( '3f2504e0-4f89-41d3-9a0c-0305e82c33%02d', $index ), self::USER, self::increase( $switch ), Selection::of_ids( [ 103 ] ) );
@@ -456,7 +456,7 @@ final class BatchFactoryTest extends TestCase {
 	}
 
 	public function test_the_default_comes_from_the_settings_per_field_group(): void {
-		$GLOBALS['bcm_test']['options']['bcm_settings'] = [ 'variations_price' => true ];
+		$GLOBALS['bulkcat_test']['options']['bulkcat_settings'] = [ 'variations_price' => true ];
 		$result = $this->factory()->create( self::UUID, self::USER, self::increase( null ), Selection::of_ids( [ 103 ] ) );
 		$this->assertSame( 2, $result['total_items'], 'With the price switch on, a price step reaches the variations by default.' );
 		$this->assertSame( [ [ 202, 'variation', null ], [ 201, 'variation', null ] ], $this->items() );
@@ -508,7 +508,7 @@ final class BatchFactoryTest extends TestCase {
 
 	public function test_the_variations_added_count_against_the_object_limit(): void {
 		$factory = new BatchFactory( new Actions( new Fields() ), null, fn(): int => $this->now, 3 );
-		$result  = $this->assert_refused_with_nothing_written( $factory->create( self::UUID, self::USER, self::increase( true ), Selection::of_ids( [ 101, 103, 104 ] ) ), 'bcm_selection_too_large' );
+		$result  = $this->assert_refused_with_nothing_written( $factory->create( self::UUID, self::USER, self::increase( true ), Selection::of_ids( [ 101, 103, 104 ] ) ), 'bulkcat_selection_too_large' );
 		$this->assertSame( [ 4, 3 ], [ $result->get_error_data()['count'], $result->get_error_data()['limit'] ], 'Two products and two variations pass a limit of three.' );
 		$this->assertStringContainsString( 'more than the 3 one change can include', $result->get_error_message() );
 

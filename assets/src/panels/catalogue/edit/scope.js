@@ -179,7 +179,7 @@ export function useEditScope( {
 			return;
 		}
 		const cell = document.querySelector(
-			`[data-bcm-row="${ String( id ).replace( /[^\d]/g, '' ) }"]`
+			`[data-bulkcat-row="${ String( id ).replace( /[^\d]/g, '' ) }"]`
 		);
 		// The row's action menu button is its last menu button.
 		const buttons = cell
@@ -225,7 +225,7 @@ export function useEditScope( {
 	const wrap = ( children ) => (
 		<EditContext.Provider value={ context }>
 			{ failure && (
-				<div className="bcm-edit__notice">
+				<div className="bulkcat-edit__notice">
 					<ErrorNotice
 						error={ failure.error }
 						fallback={ failure.message }

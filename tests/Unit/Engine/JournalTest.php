@@ -1,7 +1,7 @@
 <?php
 /**
  * The journal inside the writer (T33, T29; SPEC §9.3, §12.6, §5.4): one
- * bcm_changes row per touched field with its before and after value through
+ * bulkcat_changes row per touched field with its before and after value through
  * ValueCodec; no row for a field no step touched; a failed row for a refusal,
  * a failed save and an object that is not there, with the caller carrying
  * on; the object's post_modified_gmt captured before the write; the retry
@@ -34,17 +34,17 @@ final class JournalTest extends TestCase {
 	private const BATCH = 7;
 
 	protected function setUp(): void {
-		bcm_test_reset();
-		$GLOBALS['bcm_test']['caps']  = [
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['caps']  = [
 			'edit_post'            => true,
 			'assign_product_terms' => true,
 		];
-		$GLOBALS['bcm_test']['terms'] = [
+		$GLOBALS['bulkcat_test']['terms'] = [
 			'product_cat' => [ 11, 12 ],
 			'product_tag' => [ 21, 22 ],
 		];
 		// has_object() answers from the rows appended so far, as the table would.
-		$GLOBALS['wpdb']->responses['/^SELECT change_id FROM `wp_bcm_changes` WHERE batch_id = (\d+) AND object_id = (\d+) LIMIT 1$/'] = static function ( string $sql ): ?string {
+		$GLOBALS['wpdb']->responses['/^SELECT change_id FROM `wp_bulkcat_changes` WHERE batch_id = (\d+) AND object_id = (\d+) LIMIT 1$/'] = static function ( string $sql ): ?string {
 			preg_match( '/batch_id = (\d+) AND object_id = (\d+)/', $sql, $m );
 			foreach ( self::rows() as $row ) {
 				if ( (int) $m[1] === $row['batch_id'] && (int) $m[2] === $row['object_id'] ) {
@@ -56,7 +56,7 @@ final class JournalTest extends TestCase {
 	}
 
 	protected function tearDown(): void {
-		$this->assertSame( [], $GLOBALS['bcm_test']['post_meta_updates'] ?? [], 'The writer called update_post_meta().' );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['post_meta_updates'] ?? [], 'The writer called update_post_meta().' );
 	}
 
 	private static function journal( bool $record_unchanged = false ): Journal {
@@ -108,7 +108,7 @@ final class JournalTest extends TestCase {
 	 */
 	private static function product( array $props, string $type = 'simple' ): SavedProduct {
 		$product = new SavedProduct( $type, $props + [ 'date_modified' => self::date( '2026-09-20T10:15:00+02:00' ) ] );
-		$GLOBALS['bcm_test']['products'][ $props['id'] ] = $product;
+		$GLOBALS['bulkcat_test']['products'][ $props['id'] ] = $product;
 		return $product;
 	}
 
@@ -120,7 +120,7 @@ final class JournalTest extends TestCase {
 	private static function rows(): array {
 		$rows = [];
 		foreach ( $GLOBALS['wpdb']->writes as [ $method, $table, $data, , $where ] ) {
-			if ( 'wp_bcm_changes' !== $table ) {
+			if ( 'wp_bulkcat_changes' !== $table ) {
 				continue;
 			}
 			if ( 'insert' === $method && ! in_array( 'insert', $GLOBALS['wpdb']->failing, true ) ) {
@@ -350,11 +350,11 @@ final class JournalTest extends TestCase {
 		$this->assertSame( [], $product->saves );
 		$this->assertSame( [ [ 'sale_price', '', '', 'skipped' ] ], self::summary() );
 		$this->assertSame( $outcome->results()[0]->reason(), self::rows()[0]['message'] );
-		$this->assertStringNotContainsString( 'bcm_', self::rows()[0]['message'] );
+		$this->assertStringNotContainsString( 'bulkcat_', self::rows()[0]['message'] );
 	}
 
 	public function test_a_failed_save_writes_failed_rows_and_does_not_stop_the_caller(): void {
-		$broken                              = new class() {
+		$broken                                  = new class() {
 			/**
 			 * Props.
 			 *
@@ -382,14 +382,14 @@ final class JournalTest extends TestCase {
 				return $this->props[ substr( $method, 4 ) ] ?? null;
 			}
 		};
-		$GLOBALS['bcm_test']['products'][86] = $broken;
-		$next                                = self::product(
+		$GLOBALS['bulkcat_test']['products'][86] = $broken;
+		$next                                    = self::product(
 			[
 				'id'            => 87,
 				'regular_price' => '10',
 			]
 		);
-		$list                                = $this->steps(
+		$list                                    = $this->steps(
 			[
 				[
 					'set_value',
@@ -400,7 +400,7 @@ final class JournalTest extends TestCase {
 				],
 			]
 		);
-		$outcomes                            = self::writer()->run( static fn( Writer $w ): array => [ $w->write( 86, $list ), $w->write( 87, $list ) ] );
+		$outcomes                                = self::writer()->run( static fn( Writer $w ): array => [ $w->write( 86, $list ), $w->write( 87, $list ) ] );
 
 		$this->assertSame( [ Result::FAILED ], self::states( $outcomes[0] ) );
 		$this->assertFalse( $outcomes[0]->saved() );
@@ -408,7 +408,7 @@ final class JournalTest extends TestCase {
 		$this->assertStringNotContainsString( 'Deadlock', $outcomes[0]->results()[0]->reason(), 'The reason is plain English, not the database error.' );
 		$this->assertSame( [ Result::CHANGED ], self::states( $outcomes[1] ) );
 		$this->assertCount( 1, $next->saves );
-		$this->assertSame( [], $GLOBALS['bcm_test']['variable_syncs'] ?? [], 'A variation that was not saved does not resynchronise its parent.' );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['variable_syncs'] ?? [], 'A variation that was not saved does not resynchronise its parent.' );
 		$this->assertSame(
 			[
 				[ 'regular_price', '10', '10', 'failed' ],
@@ -504,13 +504,13 @@ final class JournalTest extends TestCase {
 		$writer  = self::writer();
 		$writer->write( 89, $list );
 		// The chunk is killed before 90, then retried from the start.
-		$GLOBALS['bcm_test']['products_loaded'] = [];
-		$retried                                = $writer->run( static fn( Writer $w ): array => [ $w->write( 89, $list ), $w->write( 90, $list ) ] );
+		$GLOBALS['bulkcat_test']['products_loaded'] = [];
+		$retried                                    = $writer->run( static fn( Writer $w ): array => [ $w->write( 89, $list ), $w->write( 90, $list ) ] );
 
 		$this->assertSame( [ Result::SKIPPED ], self::states( $retried[0] ) );
 		$this->assertSame( Journal::ALREADY_DONE, $retried[0]->results()[0]->code() );
-		$this->assertStringNotContainsString( 'bcm_', $retried[0]->results()[0]->reason() );
-		$this->assertSame( [ 90 ], $GLOBALS['bcm_test']['products_loaded'], 'The done object is not even loaded.' );
+		$this->assertStringNotContainsString( 'bulkcat_', $retried[0]->results()[0]->reason() );
+		$this->assertSame( [ 90 ], $GLOBALS['bulkcat_test']['products_loaded'], 'The done object is not even loaded.' );
 		$this->assertSame( '11.00', $product->props['regular_price'], 'The percentage increase applied once.' );
 		$this->assertCount( 1, $product->saves );
 		$this->assertSame( '22.00', $other->props['regular_price'] );
@@ -532,7 +532,7 @@ final class JournalTest extends TestCase {
 	 * Answer the intent-row read from the rows written so far, as the table would.
 	 */
 	private static function answer_intents(): void {
-		$GLOBALS['wpdb']->responses["/^SELECT prop, old_value, new_value FROM `wp_bcm_changes` WHERE batch_id = (\\d+) AND object_id = (\\d+) AND result = 'pending'/"] = static function ( string $sql ): array {
+		$GLOBALS['wpdb']->responses["/^SELECT prop, old_value, new_value FROM `wp_bulkcat_changes` WHERE batch_id = (\\d+) AND object_id = (\\d+) AND result = 'pending'/"] = static function ( string $sql ): array {
 			preg_match( '/batch_id = (\d+) AND object_id = (\d+)/', $sql, $m );
 			$found = [];
 			foreach ( self::rows() as $row ) {
@@ -590,13 +590,13 @@ final class JournalTest extends TestCase {
 		);
 
 		// WooCommerce saves the product, then the request dies before the journal catches up.
-		$stored                              = self::product(
+		$stored                                  = self::product(
 			[
 				'id'            => 91,
 				'regular_price' => '10',
 			]
 		);
-		$GLOBALS['bcm_test']['products'][91] = self::dying( $stored, true );
+		$GLOBALS['bulkcat_test']['products'][91] = self::dying( $stored, true );
 		try {
 			self::writer()->write( 91, $list );
 			$this->fail( 'The request was meant to die in save().' );
@@ -607,8 +607,8 @@ final class JournalTest extends TestCase {
 		$this->assertSame( [ [ 'regular_price', '10', '11.00', 'pending' ] ], self::summary(), 'The value being written is on record before save().' );
 
 		// The retry reloads the product: the recorded value is already there, so nothing is written again.
-		$GLOBALS['bcm_test']['products'][91] = $stored;
-		$retried                             = self::writer()->write( 91, $list );
+		$GLOBALS['bulkcat_test']['products'][91] = $stored;
+		$retried                                 = self::writer()->write( 91, $list );
 		$this->assertSame( '11.00', $stored->props['regular_price'], 'The increase applied once, not 12.10.' );
 		$this->assertCount( 1, $stored->saves );
 		$this->assertTrue( $retried->saved() );
@@ -621,7 +621,7 @@ final class JournalTest extends TestCase {
 
 	public function test_a_run_killed_before_the_save_landed_writes_the_recorded_value_on_retry(): void {
 		self::answer_intents();
-		$list                                = $this->steps(
+		$list                                    = $this->steps(
 			[
 				[
 					'adjust',
@@ -634,7 +634,7 @@ final class JournalTest extends TestCase {
 				],
 			]
 		);
-		$GLOBALS['bcm_test']['products'][92] = self::dying(
+		$GLOBALS['bulkcat_test']['products'][92] = self::dying(
 			new SavedProduct(
 				'simple',
 				[
@@ -672,7 +672,7 @@ final class JournalTest extends TestCase {
 			'skip off, record on'  => [ false, true, true ],
 		];
 		foreach ( $cases as $label => [ $skip_already, $record_unchanged, $expect_row ] ) {
-			bcm_test_reset();
+			bulkcat_test_reset();
 			$this->setUp();
 			$date    = self::date( '2026-09-20T10:15:00+02:00' );
 			$product = self::product(
@@ -721,7 +721,7 @@ final class JournalTest extends TestCase {
 					$label
 				);
 				$this->assertNotSame( '', self::rows()[0]['message'], "$label: the skipped row says why." );
-				$this->assertStringNotContainsString( 'bcm_', self::rows()[0]['message'] );
+				$this->assertStringNotContainsString( 'bulkcat_', self::rows()[0]['message'] );
 			} else {
 				$this->assertSame( [], self::rows(), "$label: nothing journalled." );
 			}

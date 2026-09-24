@@ -31,7 +31,7 @@ const {
 	fieldElements,
 } = require( '../../assets/src/panels/history/audit.js' );
 
-const ROOT = 'https://example.test/wp-json/bcm/v1/';
+const ROOT = 'https://example.test/wp-json/bulkcat/v1/';
 const NOW = Date.UTC( 2026, 8, 23, 12, 0, 0 );
 
 const FIELDS = [
@@ -182,10 +182,10 @@ describe( 'audit query', () => {
 describe( 'audit tab', () => {
 	it( 'lists changes with product names from the route and field labels, never keys', async () => {
 		serve( {
-			'GET bcm/v1/fields': { fields: FIELDS, actions: [] },
-			'GET bcm/v1/batches': page( [] ),
-			'GET bcm/v1/audit': page( [ ROW ] ),
-			'GET bcm/v1/batches/users': { items: [] },
+			'GET bulkcat/v1/fields': { fields: FIELDS, actions: [] },
+			'GET bulkcat/v1/batches': page( [] ),
+			'GET bulkcat/v1/audit': page( [ ROW ] ),
+			'GET bulkcat/v1/batches/users': { items: [] },
 		} );
 		await openAudit();
 		await waitFor( () =>
@@ -202,17 +202,19 @@ describe( 'audit tab', () => {
 		await waitFor( () =>
 			expect( within( table ).getByText( 'Sam Naidoo' ) ).toBeTruthy()
 		);
-		const audit = calls.find( ( c ) => c.route === 'bcm/v1/audit' );
+		const audit = calls.find( ( c ) => c.route === 'bulkcat/v1/audit' );
 		expect( audit.query ).toEqual( { page: '1', per_page: '25' } );
 	} );
 
 	it( 'finds a product by name and filters the log by it', async () => {
 		serve( {
-			'GET bcm/v1/fields': { fields: FIELDS, actions: [] },
-			'GET bcm/v1/batches': page( [] ),
-			'GET bcm/v1/audit': ( query ) =>
+			'GET bulkcat/v1/fields': { fields: FIELDS, actions: [] },
+			'GET bulkcat/v1/batches': page( [] ),
+			'GET bulkcat/v1/audit': ( query ) =>
 				page( query.product === '55' ? [ ROW ] : [] ),
-			'GET bcm/v1/products': page( [ { id: 55, name: 'Blue Widget' } ] ),
+			'GET bulkcat/v1/products': page( [
+				{ id: 55, name: 'Blue Widget' },
+			] ),
 		} );
 		jest.useFakeTimers();
 		try {
@@ -225,7 +227,9 @@ describe( 'audit tab', () => {
 			await act( async () => {
 				jest.advanceTimersByTime( 400 );
 			} );
-			const search = calls.find( ( c ) => c.route === 'bcm/v1/products' );
+			const search = calls.find(
+				( c ) => c.route === 'bulkcat/v1/products'
+			);
 			expect( search.query.search ).toBe( 'blue' );
 			expect( search.query.fields ).toEqual( [ 'id', 'name' ] );
 			const option = await screen.findByRole( 'option', {
@@ -239,7 +243,8 @@ describe( 'audit tab', () => {
 			expect(
 				calls.some(
 					( c ) =>
-						c.route === 'bcm/v1/audit' && c.query.product === '55'
+						c.route === 'bulkcat/v1/audit' &&
+						c.query.product === '55'
 				)
 			).toBe( true )
 		);
@@ -247,9 +252,9 @@ describe( 'audit tab', () => {
 
 	it( 'says so when nothing matches', async () => {
 		serve( {
-			'GET bcm/v1/fields': { fields: FIELDS, actions: [] },
-			'GET bcm/v1/batches': page( [] ),
-			'GET bcm/v1/audit': page( [] ),
+			'GET bulkcat/v1/fields': { fields: FIELDS, actions: [] },
+			'GET bulkcat/v1/batches': page( [] ),
+			'GET bulkcat/v1/audit': page( [] ),
 		} );
 		await openAudit();
 		await waitFor( () =>
@@ -263,31 +268,31 @@ describe( 'audit tab', () => {
 describe( 'audit export and product link', () => {
 	afterEach( () => {
 		document
-			.querySelectorAll( 'iframe.bcm-export__frame' )
+			.querySelectorAll( 'iframe.bulkcat-export__frame' )
 			.forEach( ( frame ) => frame.remove() );
 		window.history.replaceState( null, '', '/' );
 	} );
 
 	it( 'downloads GET /export?source=audit with the filters on screen', async () => {
 		serve( {
-			'GET bcm/v1/fields': { fields: FIELDS, actions: [] },
-			'GET bcm/v1/batches': page( [] ),
-			'GET bcm/v1/audit': page( [ ROW ] ),
+			'GET bulkcat/v1/fields': { fields: FIELDS, actions: [] },
+			'GET bulkcat/v1/batches': page( [] ),
+			'GET bulkcat/v1/audit': page( [ ROW ] ),
 		} );
 		window.history.replaceState(
 			null,
 			'',
-			'/wp-admin/admin.php?page=bcm&panel=history&product=55'
+			'/wp-admin/admin.php?page=bulkcat&panel=history&product=55'
 		);
 		await openAudit();
 		const button = screen.getByRole( 'button', {
 			name: 'Export log (CSV)',
 		} );
 		await act( async () => fireEvent.click( button ) );
-		const frame = document.querySelector( 'iframe.bcm-export__frame' );
+		const frame = document.querySelector( 'iframe.bulkcat-export__frame' );
 		expect( frame ).not.toBeNull();
 		const url = new URL( frame.src );
-		expect( url.pathname ).toBe( '/wp-json/bcm/v1/export' );
+		expect( url.pathname ).toBe( '/wp-json/bulkcat/v1/export' );
 		expect( url.searchParams.get( 'source' ) ).toBe( 'audit' );
 		expect( url.searchParams.get( 'product' ) ).toBe( '55' );
 		expect( url.searchParams.get( 'page' ) ).toBeNull();
@@ -305,14 +310,14 @@ describe( 'audit export and product link', () => {
 
 	it( 'opens on the product the URL names, and can show every product again', async () => {
 		serve( {
-			'GET bcm/v1/fields': { fields: FIELDS, actions: [] },
-			'GET bcm/v1/batches': page( [] ),
-			'GET bcm/v1/audit': page( [ ROW ] ),
+			'GET bulkcat/v1/fields': { fields: FIELDS, actions: [] },
+			'GET bulkcat/v1/batches': page( [] ),
+			'GET bulkcat/v1/audit': page( [ ROW ] ),
 		} );
 		window.history.replaceState(
 			null,
 			'',
-			'/wp-admin/admin.php?page=bcm&panel=history&product=55'
+			'/wp-admin/admin.php?page=bulkcat&panel=history&product=55'
 		);
 		render(
 			<History
@@ -325,7 +330,7 @@ describe( 'audit export and product link', () => {
 		);
 		await waitFor( () =>
 			expect(
-				document.querySelector( '.bcm-audit__linked' )?.textContent
+				document.querySelector( '.bulkcat-audit__linked' )?.textContent
 			).toContain( 'Showing changes to product #55.' )
 		);
 		expect(
@@ -337,7 +342,8 @@ describe( 'audit export and product link', () => {
 			expect(
 				calls.some(
 					( c ) =>
-						c.route === 'bcm/v1/audit' && c.query.product === '55'
+						c.route === 'bulkcat/v1/audit' &&
+						c.query.product === '55'
 				)
 			).toBe( true )
 		);
@@ -346,9 +352,11 @@ describe( 'audit export and product link', () => {
 				screen.getByRole( 'button', { name: 'Show every product' } )
 			)
 		);
-		expect( document.querySelector( '.bcm-audit__linked' ) ).toBeNull();
-		expect( window.location.search ).toBe( '?page=bcm&panel=history' );
-		const last = calls.filter( ( c ) => c.route === 'bcm/v1/audit' ).pop();
+		expect( document.querySelector( '.bulkcat-audit__linked' ) ).toBeNull();
+		expect( window.location.search ).toBe( '?page=bulkcat&panel=history' );
+		const last = calls
+			.filter( ( c ) => c.route === 'bulkcat/v1/audit' )
+			.pop();
 		expect( last.query.product ).toBeUndefined();
 	} );
 } );

@@ -16,7 +16,7 @@ export const MAX_WIDTH = 480;
  * @return {string} Key.
  */
 export function storageKey( userId ) {
-	return `bcm-category-panel:${ Number( userId ) || 0 }`;
+	return `bulkcat-category-panel:${ Number( userId ) || 0 }`;
 }
 
 /**

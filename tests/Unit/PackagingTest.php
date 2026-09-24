@@ -208,7 +208,7 @@ final class PackagingTest extends TestCase {
 		$this->assertContains( 'assets/build/index.js', $referenced );
 		$this->assertContains( 'assets/build/index.asset.php', $referenced );
 		$this->assertContains( 'assets/build/style-index.css', $referenced );
-		if ( str_contains( $screen, "wp_style_add_data( 'bcm-app', 'rtl', 'replace' )" ) ) {
+		if ( str_contains( $screen, "wp_style_add_data( 'bulkcat-app', 'rtl', 'replace' )" ) ) {
 			$referenced[] = 'assets/build/style-index-rtl.css';
 		}
 		$files = $this->archive_files();
@@ -220,8 +220,8 @@ final class PackagingTest extends TestCase {
 
 	public function test_script_translations_load_from_the_shipped_languages_directory(): void {
 		$screen = (string) file_get_contents( self::root() . '/src/Admin/Screen.php' );
-		$this->assertStringContainsString( "wp_register_script( 'bcm-app', plugins_url( 'assets/build/index.js', \$this->plugin_file )", $screen );
-		$this->assertStringContainsString( "wp_set_script_translations( 'bcm-app', 'bulk-catalogue-manager-for-woocommerce', \$dir . 'languages' )", $screen );
+		$this->assertStringContainsString( "wp_register_script( 'bulkcat-app', plugins_url( 'assets/build/index.js', \$this->plugin_file )", $screen );
+		$this->assertStringContainsString( "wp_set_script_translations( 'bulkcat-app', 'bulk-catalogue-manager-for-woocommerce', \$dir . 'languages' )", $screen );
 
 		// WordPress looks for <domain>-<locale>-<md5 of the script's path in the plugin>.json there.
 		$hash = md5( 'assets/build/index.js' );

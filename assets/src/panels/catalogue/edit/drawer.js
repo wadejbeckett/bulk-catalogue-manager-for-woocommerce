@@ -450,7 +450,7 @@ export default function DetailDrawer( {
 			{ /* A pointer-only shortcut; the close button and Escape do the same. */ }
 			{  }
 			<div
-				className="bcm-drawer__scrim"
+				className="bulkcat-drawer__scrim"
 				aria-hidden="true"
 				onClick={ requestClose }
 			/>
@@ -458,14 +458,14 @@ export default function DetailDrawer( {
 			{ /* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */ }
 			<aside
 				ref={ panel }
-				className="bcm-drawer"
+				className="bulkcat-drawer"
 				role="dialog"
 				aria-modal="true"
-				aria-labelledby="bcm-drawer-title"
+				aria-labelledby="bulkcat-drawer-title"
 				onKeyDown={ onKeyDown }
 			>
-				<header className="bcm-drawer__head">
-					<h2 id="bcm-drawer-title">
+				<header className="bulkcat-drawer__head">
+					<h2 id="bulkcat-drawer-title">
 						{ __(
 							'Details',
 							'bulk-catalogue-manager-for-woocommerce'
@@ -474,7 +474,7 @@ export default function DetailDrawer( {
 					<button
 						ref={ closeButton }
 						type="button"
-						className="bcm-drawer__close"
+						className="bulkcat-drawer__close"
 						aria-label={ __(
 							'Close details',
 							'bulk-catalogue-manager-for-woocommerce'
@@ -484,20 +484,20 @@ export default function DetailDrawer( {
 						<span aria-hidden="true">×</span>
 					</button>
 				</header>
-				<div className="bcm-drawer__body">
-					<div className="bcm-drawer__title">
+				<div className="bulkcat-drawer__body">
+					<div className="bulkcat-drawer__title">
 						<h3>{ name }</h3>
 						{ summary && (
-							<p className="bcm-drawer__hint">{ summary }</p>
+							<p className="bulkcat-drawer__hint">{ summary }</p>
 						) }
 					</div>
 					{ asking && (
 						<div
-							className="bcm-drawer__ask"
+							className="bulkcat-drawer__ask"
 							role="alertdialog"
-							aria-labelledby="bcm-drawer-ask"
+							aria-labelledby="bulkcat-drawer-ask"
 						>
-							<p id="bcm-drawer-ask">
+							<p id="bulkcat-drawer-ask">
 								{ __(
 									'You have changes that are not saved. Close without saving them?',
 									'bulk-catalogue-manager-for-woocommerce'
@@ -530,13 +530,13 @@ export default function DetailDrawer( {
 							status="error"
 							isDismissible
 							onRemove={ () => setFailure( null ) }
-							className="bcm-error"
+							className="bulkcat-error"
 						>
 							<p>{ failure.message }</p>
 						</Notice>
 					) }
 					{ ! data && (
-						<p className="bcm-drawer__loading">
+						<p className="bulkcat-drawer__loading">
 							<Spinner />
 							{ __(
 								'Loading the product…',
@@ -547,7 +547,7 @@ export default function DetailDrawer( {
 					{ data && (
 						<form
 							ref={ form }
-							className="bcm-drawer__form"
+							className="bulkcat-drawer__form"
 							onSubmit={ save }
 							noValidate
 						>
@@ -558,7 +558,7 @@ export default function DetailDrawer( {
 								onChange={ onChange }
 								validity={ validity }
 							/>
-							<div className="bcm-drawer__actions">
+							<div className="bulkcat-drawer__actions">
 								<Button
 									variant="primary"
 									type="submit"
@@ -572,7 +572,7 @@ export default function DetailDrawer( {
 								</Button>
 								{ savedNote && (
 									<span
-										className="bcm-drawer__saved"
+										className="bulkcat-drawer__saved"
 										role="status"
 									>
 										{ savedNote }
@@ -582,14 +582,14 @@ export default function DetailDrawer( {
 						</form>
 					) }
 					{ variations.length > 0 && (
-						<section className="bcm-drawer__section">
+						<section className="bulkcat-drawer__section">
 							<h4>
 								{ __(
 									'Variations',
 									'bulk-catalogue-manager-for-woocommerce'
 								) }
 							</h4>
-							<ul className="bcm-drawer__variations">
+							<ul className="bulkcat-drawer__variations">
 								{ variations.map( ( row ) => (
 									<li key={ row.id }>
 										<span>
@@ -599,7 +599,7 @@ export default function DetailDrawer( {
 												`#${ row.id }` }
 										</span>
 										{ priceField && (
-											<span className="bcm-drawer__hint">
+											<span className="bulkcat-drawer__hint">
 												{ textOf(
 													row[ priceField.key ]
 												) }
@@ -624,14 +624,14 @@ export default function DetailDrawer( {
 							) }
 						</section>
 					) }
-					<section className="bcm-drawer__section">
+					<section className="bulkcat-drawer__section">
 						<h4>
 							{ __(
 								'Recent changes',
 								'bulk-catalogue-manager-for-woocommerce'
 							) }
 						</h4>
-						<p className="bcm-drawer__hint">
+						<p className="bulkcat-drawer__hint">
 							{ recentLine }{ ' ' }
 							{ history && (
 								<a href={ history }>

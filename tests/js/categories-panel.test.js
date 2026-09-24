@@ -106,7 +106,7 @@ const item = ( name ) =>
 			el.getAttribute( 'aria-label' ).startsWith( name + ',' )
 		);
 
-const rowOf = ( name ) => item( name ).querySelector( '.bcm-cat-row' );
+const rowOf = ( name ) => item( name ).querySelector( '.bulkcat-cat-row' );
 
 const names = () =>
 	screen
@@ -152,7 +152,7 @@ describe( 'category panel', () => {
 		expect( clothing.getAttribute( 'aria-expanded' ) ).toBe( 'false' );
 		expect( clothing.getAttribute( 'aria-level' ) ).toBe( '1' );
 
-		fireEvent.click( clothing.querySelector( '.bcm-cat-twist' ) );
+		fireEvent.click( clothing.querySelector( '.bulkcat-cat-twist' ) );
 		expect( names() ).toEqual( [
 			'All products',
 			'Clothing, 20 products',
@@ -236,7 +236,7 @@ describe( 'category panel', () => {
 		fireEvent.click(
 			screen
 				.getAllByRole( 'treeitem' )[ 0 ]
-				.querySelector( '.bcm-cat-row' )
+				.querySelector( '.bulkcat-cat-row' )
 		);
 		expect( onChange ).toHaveBeenLastCalledWith( null, '' );
 		expect( speak ).toHaveBeenLastCalledWith(
@@ -297,9 +297,9 @@ describe( 'category panel', () => {
 		const { container } = await renderPanel( {
 			settings: { ...MANAGER, settings: { category_panel: false } },
 		} );
-		expect( container.querySelector( '.bcm-cat-panel' ).style.width ).toBe(
-			'300px'
-		);
+		expect(
+			container.querySelector( '.bulkcat-cat-panel' ).style.width
+		).toBe( '300px' );
 	} );
 
 	it( 'shows the empty state with Create your first category', async () => {
@@ -330,7 +330,8 @@ describe( 'category panel', () => {
 			screen.queryByRole( 'button', { name: '+ Add category' } )
 		).toBeNull();
 		expect(
-			document.querySelectorAll( '.bcm-cat-row[draggable="true"]' ).length
+			document.querySelectorAll( '.bulkcat-cat-row[draggable="true"]' )
+				.length
 		).toBe( 0 );
 		fireEvent.keyDown( item( 'Clothing' ), { key: 'F2' } );
 		expect( screen.queryByRole( 'textbox' ) ).toBeNull();
@@ -469,7 +470,7 @@ describe( 'category panel', () => {
 	it( 'shows a refused move in plain words with the details behind a toggle', async () => {
 		routes[ 'POST categories/6/move' ] = () =>
 			Promise.reject( {
-				code: 'bcm_category_exists',
+				code: 'bulkcat_category_exists',
 				message:
 					'A category called "Bags" already exists in "Clothing". Choose a different name, or put it somewhere else.',
 				data: { status: 400 },
@@ -494,13 +495,13 @@ describe( 'category panel', () => {
 			)
 		).toBeTruthy();
 		expect(
-			within( dialog ).queryByText( /bcm_category_exists/ )
+			within( dialog ).queryByText( /bulkcat_category_exists/ )
 		).toBeNull();
 		fireEvent.click(
 			within( dialog ).getByRole( 'button', { name: 'Show details' } )
 		);
 		expect(
-			within( dialog ).getByText( 'bcm_category_exists · HTTP 400' )
+			within( dialog ).getByText( 'bulkcat_category_exists · HTTP 400' )
 		).toBeTruthy();
 		expect( speak ).toHaveBeenCalledWith(
 			'A category called "Bags" already exists in "Clothing". Choose a different name, or put it somewhere else.',
@@ -543,7 +544,9 @@ describe( 'category panel', () => {
 
 	it( 'blocks dropping a category inside itself', async () => {
 		await renderPanel();
-		fireEvent.click( item( 'Clothing' ).querySelector( '.bcm-cat-twist' ) );
+		fireEvent.click(
+			item( 'Clothing' ).querySelector( '.bulkcat-cat-twist' )
+		);
 		const dataTransfer = { setData: () => {}, types: [] };
 		fireEvent.dragStart( rowOf( 'Clothing' ), { dataTransfer } );
 		fireEvent.dragOver( item( 'T-Shirts' ), { dataTransfer } );
@@ -582,7 +585,7 @@ describe( 'category panel', () => {
 	it( 'renames inline with F2 and reports a refusal', async () => {
 		routes[ 'PATCH categories/5' ] = () =>
 			Promise.reject( {
-				code: 'bcm_category_exists',
+				code: 'bulkcat_category_exists',
 				message:
 					'A category called "Bags" already exists at the top level. Choose a different name, or put it somewhere else.',
 				data: { status: 400 },
@@ -614,7 +617,7 @@ describe( 'category panel', () => {
 		await renderPanel();
 		fireEvent.click( rowOf( 'Bags' ) );
 		expect(
-			document.querySelector( '[data-bcm-announcer]' ).textContent
+			document.querySelector( '[data-bulkcat-announcer]' ).textContent
 		).toBe( 'Category is Bags or its sub-categories' );
 	} );
 

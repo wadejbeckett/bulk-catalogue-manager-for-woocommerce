@@ -2,11 +2,11 @@
 /**
  * The category write routes (SPEC §4.7, §7, §12.1, §13; T63, T64):
  *
- * - `POST /bcm/v1/categories` creates a category from `name` and optionally
+ * - `POST /bulkcat/v1/categories` creates a category from `name` and optionally
  *   `slug`, `description` and `parent`;
- * - `PATCH /bcm/v1/categories/{id}` edits any of `name`, `slug`,
+ * - `PATCH /bulkcat/v1/categories/{id}` edits any of `name`, `slug`,
  *   `description` and `parent`;
- * - `POST /bcm/v1/categories/{id}/move` moves a category to `parent` (0 for
+ * - `POST /bulkcat/v1/categories/{id}/move` moves a category to `parent` (0 for
  *   the top level) at `position` among its new siblings, counted from 0,
  *   last when omitted.
  *

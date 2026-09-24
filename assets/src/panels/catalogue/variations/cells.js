@@ -80,10 +80,10 @@ function Locked( { kind, reason, children } ) {
 	return (
 		// eslint-disable-next-line jsx-a11y/no-static-element-interactions
 		<span
-			className={ `bcm-locked is-${ kind }` }
+			className={ `bulkcat-locked is-${ kind }` }
 			title={ reason || undefined }
-			data-bcm-editable="false"
-			data-bcm-cell={ kind }
+			data-bulkcat-editable="false"
+			data-bulkcat-cell={ kind }
 			tabIndex={ 0 }
 			onKeyDown={ ( event ) => {
 				if ( event.key === 'Enter' ) {
@@ -134,10 +134,10 @@ function ParentTitle( { row, name, ctx, meta } ) {
 				title
 			);
 	return (
-		<span className="bcm-vparent">
+		<span className="bulkcat-vparent">
 			<button
 				type="button"
-				className="bcm-disclosure"
+				className="bulkcat-disclosure"
 				aria-expanded={ meta.open }
 				aria-label={ label }
 				aria-busy={ meta.entry?.status === 'loading' || undefined }
@@ -156,11 +156,14 @@ function ParentTitle( { row, name, ctx, meta } ) {
 					}
 				} }
 			>
-				<span className="bcm-disclosure__chevron" aria-hidden="true" />
+				<span
+					className="bulkcat-disclosure__chevron"
+					aria-hidden="true"
+				/>
 			</button>
 			{ name }
 			{ count !== null && (
-				<span className="bcm-pill">
+				<span className="bulkcat-pill">
 					{ sprintf(
 						/* translators: %d: how many variations a product has. */
 						_n(
@@ -193,13 +196,13 @@ function VariationTitle( { row, meta, name } ) {
 	return (
 		<span
 			className={
-				'bcm-vrow ' + ( meta.level > 0 ? 'is-child' : 'is-flat' )
+				'bulkcat-vrow ' + ( meta.level > 0 ? 'is-child' : 'is-flat' )
 			}
 		>
 			{ chips.length ? (
-				<span className="bcm-chips">
+				<span className="bulkcat-chips">
 					{ chips.map( ( chip, index ) => (
-						<span key={ index } className="bcm-chip">
+						<span key={ index } className="bulkcat-chip">
 							{ chip }
 						</span>
 					) ) }
@@ -210,7 +213,7 @@ function VariationTitle( { row, meta, name } ) {
 				</LockedContext.Provider>
 			) }
 			{ meta.level === 0 && ! isBlank( parentName ) && (
-				<span className="bcm-vrow__parent">{ parentName }</span>
+				<span className="bulkcat-vrow__parent">{ parentName }</span>
 			) }
 		</span>
 	);
@@ -236,7 +239,7 @@ function Footer( { meta, ctx } ) {
 	);
 	if ( ! entry || entry.status === 'loading' ) {
 		return (
-			<span className="bcm-vfoot" role="status">
+			<span className="bulkcat-vfoot" role="status">
 				{ __(
 					'Loading options…',
 					'bulk-catalogue-manager-for-woocommerce'
@@ -246,7 +249,7 @@ function Footer( { meta, ctx } ) {
 	}
 	if ( entry.status === 'error' ) {
 		return (
-			<span className="bcm-vfoot is-error">
+			<span className="bulkcat-vfoot is-error">
 				<span role="alert">
 					{ __(
 						'The options could not be loaded.',
@@ -267,7 +270,7 @@ function Footer( { meta, ctx } ) {
 	}
 	if ( ! total ) {
 		return (
-			<span className="bcm-vfoot">
+			<span className="bulkcat-vfoot">
 				{ __(
 					'This product has no variations yet.',
 					'bulk-catalogue-manager-for-woocommerce'
@@ -278,7 +281,7 @@ function Footer( { meta, ctx } ) {
 		);
 	}
 	return (
-		<span className="bcm-vfoot">
+		<span className="bulkcat-vfoot">
 			<span>
 				{ sprintf(
 					/* translators: 1: how many options (variations), 2: product name. */
@@ -325,7 +328,7 @@ function Footer( { meta, ctx } ) {
 
 function Dot() {
 	return (
-		<span className="bcm-vfoot__dot" aria-hidden="true">
+		<span className="bulkcat-vfoot__dot" aria-hidden="true">
 			·
 		</span>
 	);
@@ -359,7 +362,7 @@ function LockedValue( { state, row, descriptor, inner, ctx } ) {
 			}
 			const label = choiceLabel( descriptor, state.value );
 			return (
-				<span className="bcm-badge is-derived">
+				<span className="bulkcat-badge is-derived">
 					{ state.quantity === null
 						? label
 						: sprintf(
@@ -378,7 +381,7 @@ function LockedValue( { state, row, descriptor, inner, ctx } ) {
 			return state.parent ? (
 				inner( { item: state.parent } )
 			) : (
-				<span className="bcm-cell__muted">
+				<span className="bulkcat-cell__muted">
 					{ __(
 						'Same as product',
 						'bulk-catalogue-manager-for-woocommerce'
@@ -387,7 +390,7 @@ function LockedValue( { state, row, descriptor, inner, ctx } ) {
 			);
 		case STATES.notApplicable:
 			return (
-				<span className="bcm-cell__muted">
+				<span className="bulkcat-cell__muted">
 					{ __(
 						'Does not apply',
 						'bulk-catalogue-manager-for-woocommerce'
@@ -407,7 +410,7 @@ function LockedValue( { state, row, descriptor, inner, ctx } ) {
 				}
 			}
 			return (
-				<span className="bcm-cell__muted">
+				<span className="bulkcat-cell__muted">
 					{ __(
 						'Set on each option',
 						'bulk-catalogue-manager-for-woocommerce'

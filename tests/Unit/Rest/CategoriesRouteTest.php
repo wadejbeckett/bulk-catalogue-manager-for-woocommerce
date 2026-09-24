@@ -1,6 +1,6 @@
 <?php
 /**
- * `GET /bcm/v1/categories` (T21; SPEC §7, §12.1, §13): registered through the
+ * `GET /bulkcat/v1/categories` (T21; SPEC §7, §12.1, §13): registered through the
  * registrar behind Access::can_read with the grid's generated search, mode
  * and filter arguments and its own item schema; refuses a logged-out visitor
  * (401) and a subscriber (403) before any work; answers a shop manager 200
@@ -33,9 +33,9 @@ final class CategoriesRouteTest extends TestCase {
 	private const GROUPED = '/^SELECT a\.ancestor AS term_id, /';
 
 	protected function setUp(): void {
-		bcm_test_reset();
-		$GLOBALS['bcm_test']['logged_in']                  = true;
-		$GLOBALS['bcm_test']['caps']['manage_woocommerce'] = true;
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['logged_in']                  = true;
+		$GLOBALS['bulkcat_test']['caps']['manage_woocommerce'] = true;
 		CatalogueFixture::seed();
 		$GLOBALS['wpdb']->responses[ self::GROUPED ] = CatalogueFixture::answer();
 		( new Plugin() )->boot();
@@ -43,12 +43,12 @@ final class CategoriesRouteTest extends TestCase {
 	}
 
 	/**
-	 * Dispatch a GET to /bcm/v1/categories with query parameters.
+	 * Dispatch a GET to /bulkcat/v1/categories with query parameters.
 	 *
 	 * @param array<string, mixed> $params Query parameters.
 	 */
 	private static function get( array $params = [] ): \WP_REST_Response|\WP_Error {
-		$request = new \WP_REST_Request( 'GET', '/bcm/v1/categories' );
+		$request = new \WP_REST_Request( 'GET', '/bulkcat/v1/categories' );
 		foreach ( $params as $key => $value ) {
 			$request->set_param( $key, $value );
 		}
@@ -56,7 +56,7 @@ final class CategoriesRouteTest extends TestCase {
 	}
 
 	public function test_the_route_registers_behind_can_read_with_the_grid_arguments_and_a_schema(): void {
-		$route = $GLOBALS['bcm_test']['routes']['/bcm/v1/categories'] ?? null;
+		$route = $GLOBALS['bulkcat_test']['routes']['/bulkcat/v1/categories'] ?? null;
 		$this->assertNotNull( $route );
 		$this->assertSame( 'GET', $route[0]['methods'] );
 		$this->assertSame( [ Access::class, 'can_read' ], $route[0]['permission_callback'] );
@@ -68,29 +68,29 @@ final class CategoriesRouteTest extends TestCase {
 		$this->assertArrayNotHasKey( 'orderby', $route[0]['args'] );
 
 		$item = call_user_func( $route['schema'] );
-		$this->assertSame( 'bcm-category', $item['title'] );
+		$this->assertSame( 'bulkcat-category', $item['title'] );
 		$this->assertSame( [ 'id', 'name', 'slug', 'description', 'parent', 'depth', 'order', 'count', 'countWithDescendants', 'children' ], array_keys( $item['properties'] ) );
-		$this->assertSame( [], $GLOBALS['bcm_test']['wrong'] );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['wrong'] );
 	}
 
 	public function test_a_logged_out_visitor_is_refused_401_before_any_work(): void {
-		$GLOBALS['bcm_test']['logged_in'] = false;
-		$GLOBALS['bcm_test']['caps']      = [];
-		$result                           = self::get();
+		$GLOBALS['bulkcat_test']['logged_in'] = false;
+		$GLOBALS['bulkcat_test']['caps']      = [];
+		$result                               = self::get();
 		$this->assertInstanceOf( \WP_Error::class, $result );
-		$this->assertSame( 'bcm_forbidden', $result->get_error_code() );
+		$this->assertSame( 'bulkcat_forbidden', $result->get_error_code() );
 		$this->assertSame( 401, $result->get_error_data()['status'] );
-		$this->assertSame( [], $GLOBALS['bcm_test']['get_terms_calls'] ?? [] );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['get_terms_calls'] ?? [] );
 		$this->assertSame( [], $GLOBALS['wpdb']->queries );
 	}
 
 	public function test_a_subscriber_is_refused_403_before_any_work(): void {
-		$GLOBALS['bcm_test']['caps'] = [ 'read' => true ];
-		$result                      = self::get();
+		$GLOBALS['bulkcat_test']['caps'] = [ 'read' => true ];
+		$result                          = self::get();
 		$this->assertInstanceOf( \WP_Error::class, $result );
-		$this->assertSame( 'bcm_forbidden', $result->get_error_code() );
+		$this->assertSame( 'bulkcat_forbidden', $result->get_error_code() );
 		$this->assertSame( 403, $result->get_error_data()['status'] );
-		$this->assertSame( [], $GLOBALS['bcm_test']['get_terms_calls'] ?? [] );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['get_terms_calls'] ?? [] );
 		$this->assertSame( [], $GLOBALS['wpdb']->queries );
 	}
 
@@ -104,11 +104,11 @@ final class CategoriesRouteTest extends TestCase {
 		foreach ( CatalogueFixture::naive() as $id => [ $own, $total ] ) {
 			$this->assertSame( [ $own, $total ], [ $flat[ $id ]['count'], $flat[ $id ]['countWithDescendants'] ], "Counts of $id." );
 		}
-		$this->assertCount( 1, $GLOBALS['bcm_test']['get_terms_calls'] );
+		$this->assertCount( 1, $GLOBALS['bulkcat_test']['get_terms_calls'] );
 		$this->assertCount( 1, $GLOBALS['wpdb']->queries );
 
 		$this->assertSame( $tree, self::get()->get_data() );
-		$this->assertCount( 1, $GLOBALS['bcm_test']['get_terms_calls'], 'The second read is served from the cache.' );
+		$this->assertCount( 1, $GLOBALS['bulkcat_test']['get_terms_calls'], 'The second read is served from the cache.' );
 		$this->assertCount( 1, $GLOBALS['wpdb']->queries );
 	}
 
@@ -148,13 +148,13 @@ final class CategoriesRouteTest extends TestCase {
 		$this->assertInstanceOf( \WP_Error::class, $result );
 		$this->assertSame( 'rest_invalid_param', $result->get_error_code() );
 		$this->assertSame( 400, $result->get_error_data()['status'] );
-		$this->assertSame( [], $GLOBALS['bcm_test']['get_terms_calls'] ?? [] );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['get_terms_calls'] ?? [] );
 		$this->assertSame( [], $GLOBALS['wpdb']->queries );
 	}
 
 	public function test_registering_the_routes_adds_the_cache_hooks(): void {
 		foreach ( array_keys( Cache::HOOKS ) as $hook ) {
-			$this->assertNotEmpty( $GLOBALS['bcm_test']['filters'][ $hook ] ?? [], "$hook is hooked." );
+			$this->assertNotEmpty( $GLOBALS['bulkcat_test']['filters'][ $hook ] ?? [], "$hook is hooked." );
 		}
 	}
 

@@ -1,5 +1,5 @@
 // The History panel (T57–T59), in the admin's own look (docs/prototype screen 4).
-.bcm-history {
+.bulkcat-history {
 	background: #fff;
 	border: 1px solid #dcdcde;
 	padding: 16px 20px 24px;
@@ -9,7 +9,7 @@
 	}
 }
 
-.bcm-history__bar {
+.bulkcat-history__bar {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 8px;
@@ -17,28 +17,28 @@
 	margin: 12px 0;
 }
 
-.bcm-history__bar-right {
+.bulkcat-history__bar-right {
 	margin-left: auto;
 	display: flex;
 	gap: 8px;
 }
 
-.bcm-scope-notice,
-.bcm-history__retention {
+.bulkcat-scope-notice,
+.bulkcat-history__retention {
 	color: #50575e;
 	font-size: 12px;
 }
 
-.bcm-history__retention {
+.bulkcat-history__retention {
 	margin: 14px 0 0;
 }
 
-.bcm-history__empty {
+.bulkcat-history__empty {
 	padding: 24px 0;
 	color: #50575e;
 }
 
-.bcm-batch {
+.bulkcat-batch {
 	border: 1px solid #dcdcde;
 	border-radius: 4px;
 	background: #fff;
@@ -66,7 +66,7 @@
 	}
 }
 
-.bcm-batch__top {
+.bulkcat-batch__top {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 12px;
@@ -75,7 +75,7 @@
 }
 
 // T75: the prototype's quiet "See every change" beside the blue Undo.
-.bcm-batch__actions .bcm-batch__see.components-button.is-secondary {
+.bulkcat-batch__actions .bulkcat-batch__see.components-button.is-secondary {
 	color: #1d2327;
 	box-shadow: inset 0 0 0 1px #8c8f94;
 
@@ -85,50 +85,50 @@
 	}
 }
 
-.bcm-batch__what {
+.bulkcat-batch__what {
 	flex: 1;
 	min-width: 220px;
 }
 
-.bcm-batch__meta {
+.bulkcat-batch__meta {
 	color: #50575e;
 	font-size: 12px;
 	margin: 0;
 }
 
-.bcm-batch__who {
+.bulkcat-batch__who {
 	color: #1d2327;
 	font-weight: 600;
 }
 
-.bcm-batch__actions {
+.bulkcat-batch__actions {
 	display: flex;
 	gap: 8px;
 	align-items: center;
 	margin-left: auto;
 }
 
-.bcm-batch__tags {
+.bulkcat-batch__tags {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 6px;
 	padding: 0 14px 12px;
 }
 
-.bcm-batch__reason,
-.bcm-batch__progress,
-.bcm-batch__error,
-.bcm-batch__reasons {
+.bulkcat-batch__reason,
+.bulkcat-batch__progress,
+.bulkcat-batch__error,
+.bulkcat-batch__reasons {
 	margin: 0;
 	padding: 0 14px 12px;
 	font-size: 12px;
 }
 
-.bcm-batch__reasons {
+.bulkcat-batch__reasons {
 	list-style: disc inside;
 }
 
-.bcm-pill {
+.bulkcat-pill {
 	display: inline-flex;
 	align-items: center;
 	min-height: 20px;
@@ -157,7 +157,7 @@
 	}
 }
 
-.bcm-conflict {
+.bulkcat-conflict {
 	border-top: 1px solid #dba617;
 	background: #fcf9e8;
 	padding: 12px 14px;
@@ -174,30 +174,30 @@
 	}
 }
 
-.bcm-conflict__choices,
-.bcm-confirm__buttons {
+.bulkcat-conflict__choices,
+.bulkcat-confirm__buttons {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 8px;
 	align-items: center;
 }
 
-.bcm-confirm__buttons {
+.bulkcat-confirm__buttons {
 	justify-content: flex-end;
 	margin-top: 16px;
 }
 
-.bcm-confirm__warning {
+.bulkcat-confirm__warning {
 	color: #8a2424;
 }
 
-.bcm-changes {
+.bulkcat-changes {
 	border-top: 1px solid #dcdcde;
 	background: #f6f7f7;
 }
 
-.bcm-changes__bar,
-.bcm-changes__pages {
+.bulkcat-changes__bar,
+.bulkcat-changes__pages {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 8px;
@@ -205,11 +205,11 @@
 	padding: 8px 14px;
 }
 
-.bcm-changes__scroll {
+.bulkcat-changes__scroll {
 	overflow-x: auto;
 }
 
-.bcm-changes__table {
+.bulkcat-changes__table {
 	width: 100%;
 	min-width: 560px;
 	border-collapse: collapse;
@@ -243,39 +243,39 @@
 	}
 }
 
-.bcm-changes__empty,
-.bcm-changes__loading {
+.bulkcat-changes__empty,
+.bulkcat-changes__loading {
 	padding: 9px 14px;
 	color: #50575e;
 	font-size: 12px;
 }
 
-.bcm-result__reason,
-.bcm-result__detail {
+.bulkcat-result__reason,
+.bulkcat-result__detail {
 	display: block;
 	color: #50575e;
 }
 
-.bcm-result__detail {
+.bulkcat-result__detail {
 	font-family: monospace;
 }
 
-.bcm-progress {
+.bulkcat-progress {
 	display: flex;
 	gap: 10px;
 	align-items: center;
 }
 
-.bcm-progress__bar {
+.bulkcat-progress__bar {
 	width: 100%;
 	max-width: 520px;
 }
 
-.bcm-audit__product {
+.bulkcat-audit__product {
 	min-width: 260px;
 }
 
-.bcm-error__details {
+.bulkcat-error__details {
 	font-family: monospace;
 	font-size: 12px;
 }

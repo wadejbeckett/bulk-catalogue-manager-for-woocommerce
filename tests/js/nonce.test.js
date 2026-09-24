@@ -6,7 +6,7 @@
 const PAGE_NONCE = 'abc123def4';
 const ENDPOINT =
 	'https://example.test/wp-admin/admin-ajax.php?action=rest-nonce';
-const ROOT = 'https://example.test/wp-json/bcm/v1/';
+const ROOT = 'https://example.test/wp-json/bulkcat/v1/';
 
 const INVALID = {
 	code: 'rest_cookie_invalid_nonce',
@@ -169,11 +169,11 @@ describe( 'nonce refresh and retry', () => {
 
 		expect( fetch ).toHaveBeenCalledTimes( 3 );
 		expect( fetch.mock.calls[ 1 ][ 0 ] ).toBe( ENDPOINT );
-		expect( error.code ).toBe( 'bcm_nonce_expired' );
+		expect( error.code ).toBe( 'bulkcat_nonce_expired' );
 		expect( error.message ).toBe(
 			'Your sign-in check has expired and could not be renewed, so this request was not sent. Reload the page, then try again.'
 		);
-		expect( error.message ).not.toMatch( /rest_|bcm_|nonce/ );
+		expect( error.message ).not.toMatch( /rest_|bulkcat_|nonce/ );
 		expect( error.details ).toContain( 'rest_cookie_invalid_nonce' );
 		expect( answers ).toEqual( [] );
 	} );
@@ -189,13 +189,13 @@ describe( 'nonce refresh and retry', () => {
 			const error = await api.request( 'products' ).catch( ( e ) => e );
 			await flush();
 			expect( fetch ).toHaveBeenCalledTimes( 2 );
-			expect( error.code ).toBe( 'bcm_nonce_expired' );
+			expect( error.code ).toBe( 'bulkcat_nonce_expired' );
 		}
 	} );
 
 	it( 'leaves every other failure alone', async () => {
 		const forbidden = {
-			code: 'bcm_forbidden',
+			code: 'bulkcat_forbidden',
 			message: 'No.',
 			data: { status: 403 },
 		};
@@ -244,14 +244,14 @@ describe( 'nonce refresh and retry', () => {
 
 		const data = {};
 		heartbeat.trigger( 'heartbeat-send', data );
-		expect( data ).toEqual( { bcm_nonce: 1 } );
+		expect( data ).toEqual( { bulkcat_nonce: 1 } );
 
 		await api.request( 'fields' );
 		expect( nonceOf( 0 ) ).toBe( PAGE_NONCE );
 
-		heartbeat.trigger( 'heartbeat-tick', { bcm_nonce: 'beat000001' } );
+		heartbeat.trigger( 'heartbeat-tick', { bulkcat_nonce: 'beat000001' } );
 		expect( middleware.nonce ).toBe( 'beat000001' );
-		heartbeat.trigger( 'heartbeat-tick', { bcm_nonce: '0' } );
+		heartbeat.trigger( 'heartbeat-tick', { bulkcat_nonce: '0' } );
 		heartbeat.trigger( 'heartbeat-tick', { other: 'x' } );
 		heartbeat.trigger( 'heartbeat-tick', null );
 		expect( middleware.nonce ).toBe( 'beat000001' );
@@ -273,7 +273,7 @@ describe( 'nonce refresh and retry', () => {
 		} );
 		expect( middleware ).toBe( host );
 
-		heartbeat.trigger( 'heartbeat-tick', { bcm_nonce: 'beat000002' } );
+		heartbeat.trigger( 'heartbeat-tick', { bulkcat_nonce: 'beat000002' } );
 		await api.request( 'fields' );
 		expect( nonceOf( 0 ) ).toBe( 'beat000002' );
 	} );

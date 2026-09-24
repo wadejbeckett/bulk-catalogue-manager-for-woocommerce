@@ -44,7 +44,7 @@ export function describeTable( wrapper, caption, sortable = [] ) {
 	let node = table.caption;
 	if ( ! node ) {
 		node = table.ownerDocument.createElement( 'caption' );
-		node.className = 'bcm-sr-only';
+		node.className = 'bulkcat-sr-only';
 		table.prepend( node );
 	}
 	if ( node.textContent !== caption ) {
@@ -169,7 +169,7 @@ export default function CatalogueTable( {
 				ref={ wrapper }
 				onKeyDown={ onGridKeyDown }
 				className={
-					'bcm-catalogue__table' +
+					'bulkcat-catalogue__table' +
 					( view.layout?.density
 						? ` is-${ view.layout.density }`
 						: '' )

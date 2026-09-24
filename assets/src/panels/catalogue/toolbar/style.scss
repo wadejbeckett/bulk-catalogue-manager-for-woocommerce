@@ -1,6 +1,6 @@
 // Filter chips (T41, SPEC §4.1): each active filter as a sentence with its
 // own clear button, then Clear filters.
-.bcm-chips {
+.bulkcat-chips {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
@@ -9,7 +9,7 @@
 	border-bottom: 1px solid #dcdcde;
 }
 
-.bcm-chips__list {
+.bulkcat-chips__list {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 6px;
@@ -18,7 +18,7 @@
 	list-style: none;
 }
 
-.bcm-chips__chip {
+.bulkcat-chips__chip {
 	display: inline-flex;
 	align-items: center;
 	gap: 2px;
@@ -30,7 +30,7 @@
 	font-size: 12px;
 }
 
-.bcm-chips__clear.components-button {
+.bulkcat-chips__clear.components-button {
 	min-width: 24px;
 	height: 24px;
 	padding: 0;

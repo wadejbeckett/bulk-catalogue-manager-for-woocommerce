@@ -4,6 +4,24 @@
  * T35, T36): what the screen polls while a batch runs, and what the history
  * screen shows once it has finished.
  *
+ * @package BulkCatalogueManager
+ * @license GPL-3.0-or-later
+ */
+
+declare( strict_types = 1 );
+
+namespace BulkCatalogueManager\Engine;
+
+use BulkCatalogueManager\Data\BatchRepository;
+use BulkCatalogueManager\Data\ChangeRepository;
+use BulkCatalogueManager\Undo\Original;
+use BulkCatalogueManager\Undo\Planner;
+
+defined( 'ABSPATH' ) || exit;
+
+/**
+ * Batch progress, the stalled check, the grouped reasons and cancellation.
+ *
  * report() answers a batch's status, counters (updated by the chunk runner at
  * the end of every chunk, so a polling client counts up), its times, and:
  * - `stalled`: the batch is queued or running with items still pending, and
@@ -52,24 +70,6 @@
  * it sees the cancellation) and before enqueueing a successor, so the next
  * run exits without claiming. Applied chunks stay applied and journalled, so
  * the batch stays reversible for the part that ran (§9.4).
- *
- * @package BulkCatalogueManager
- * @license GPL-3.0-or-later
- */
-
-declare( strict_types = 1 );
-
-namespace BulkCatalogueManager\Engine;
-
-use BulkCatalogueManager\Data\BatchRepository;
-use BulkCatalogueManager\Data\ChangeRepository;
-use BulkCatalogueManager\Undo\Original;
-use BulkCatalogueManager\Undo\Planner;
-
-defined( 'ABSPATH' ) || exit;
-
-/**
- * Batch progress, the stalled check, the grouped reasons and cancellation.
  */
 final class Progress {
 	/**

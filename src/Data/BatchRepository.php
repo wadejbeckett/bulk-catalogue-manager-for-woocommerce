@@ -421,15 +421,12 @@ final class BatchRepository {
 		self::assert_in( $kind, [ self::CLAIM_ANY, self::CLAIM_PRODUCTS, self::CLAIM_VARIATIONS ], 'claim kind' );
 		$limit = max( 1, min( self::MAX_CLAIM, $limit ) );
 		$table = $this->registry->table( Schema::ITEMS );
-		$sql   = "UPDATE %i SET claim_token = %s, claimed_gmt = %s, attempts = attempts + 1 WHERE batch_id = %d AND state = 'pending' AND attempts < %d AND (claimed_gmt IS NULL OR claimed_gmt < %s)";
-		$args  = [ $table, $token, $now_gmt, $batch_id, self::MAX_ATTEMPTS, $stale_before ];
-		if ( self::CLAIM_ANY !== $kind ) {
-			$sql   .= self::CLAIM_VARIATIONS === $kind ? ' AND object_type = %s' : ' AND object_type <> %s';
-			$args[] = 'variation';
-		}
-		$args[] = $limit;
-		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- $sql holds only literals and placeholders; every value is an argument.
-		$claimed = $wpdb->query( $wpdb->prepare( $sql . ' ORDER BY item_id ASC LIMIT %d', ...$args ) );
+		// One literal statement per kind, so every template Plugin Check reads is a literal (T78).
+		$claimed = match ( $kind ) {
+			self::CLAIM_ANY        => $wpdb->query( $wpdb->prepare( "UPDATE %i SET claim_token = %s, claimed_gmt = %s, attempts = attempts + 1 WHERE batch_id = %d AND state = 'pending' AND attempts < %d AND (claimed_gmt IS NULL OR claimed_gmt < %s) ORDER BY item_id ASC LIMIT %d", $table, $token, $now_gmt, $batch_id, self::MAX_ATTEMPTS, $stale_before, $limit ) ),
+			self::CLAIM_VARIATIONS => $wpdb->query( $wpdb->prepare( "UPDATE %i SET claim_token = %s, claimed_gmt = %s, attempts = attempts + 1 WHERE batch_id = %d AND state = 'pending' AND attempts < %d AND (claimed_gmt IS NULL OR claimed_gmt < %s) AND object_type = %s ORDER BY item_id ASC LIMIT %d", $table, $token, $now_gmt, $batch_id, self::MAX_ATTEMPTS, $stale_before, 'variation', $limit ) ),
+			default                => $wpdb->query( $wpdb->prepare( "UPDATE %i SET claim_token = %s, claimed_gmt = %s, attempts = attempts + 1 WHERE batch_id = %d AND state = 'pending' AND attempts < %d AND (claimed_gmt IS NULL OR claimed_gmt < %s) AND object_type <> %s ORDER BY item_id ASC LIMIT %d", $table, $token, $now_gmt, $batch_id, self::MAX_ATTEMPTS, $stale_before, 'variation', $limit ) ),
+		};
 		if ( false === $claimed ) {
 			throw new \RuntimeException( 'The batch items could not be claimed.' );
 		}

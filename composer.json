@@ -26,11 +26,17 @@
         "lint": "phpcs",
         "lint:fix": "phpcbf",
         "make-pot": "wp i18n make-pot . languages/bulk-catalogue-manager-for-woocommerce.pot --slug=bulk-catalogue-manager-for-woocommerce --domain=bulk-catalogue-manager-for-woocommerce --exclude=tests,docs,bin,dist,languages --no-location",
-        "i18n": [ "@make-pot" ]
+        "make-json": "wp i18n make-json languages",
+        "i18n": [ "@make-pot", "@make-json" ],
+        "build-zip": "bin/build-zip.sh",
+        "plugin-check": "bin/plugin-check.sh"
     },
     "scripts-descriptions": {
         "make-pot": "Regenerate languages/bulk-catalogue-manager-for-woocommerce.pot with wp i18n make-pot (wp-cli/i18n-command, a dev dependency; no WordPress install needed).",
-        "i18n": "Regenerate every translation file: the .pot now; the JavaScript JSON files (wp i18n make-json) join when the screen's scripts land (T8)."
+        "make-json": "Split the JavaScript strings of every languages/*.po into the per-script JSON files wp_set_script_translations() loads (languages/<slug>-<locale>-<md5 of assets/build/index.js>.json). Safe with no .po files: it creates nothing. The committed .pot is made with --no-location, so a bundled .po must carry '#: assets/build/index.js' references for make-json to map its strings; directory language packs come from translate.wordpress.org and need none of this.",
+        "i18n": "Regenerate every translation file: the .pot (make-pot), then the JavaScript JSON files (make-json).",
+        "build-zip": "Build and verify dist/<slug>-<version>.zip from HEAD (bin/build-zip.sh).",
+        "plugin-check": "Compare a Plugin Check JSON report with bin/plugin-check-allowed.tsv (bin/plugin-check.sh --help)."
     },
     "config": {
         "allow-plugins": { "dealerdirect/phpcodesniffer-composer-installer": true },

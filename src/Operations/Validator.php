@@ -4,6 +4,25 @@
  * Result passes between compute() and apply(), in preview and in the writer
  * alike, so what the preview reports is what the write does.
  *
+ * @package BulkCatalogueManager
+ * @license GPL-3.0-or-later
+ */
+
+declare( strict_types = 1 );
+
+namespace BulkCatalogueManager\Operations;
+
+use BulkCatalogueManager\Fields\Field;
+use BulkCatalogueManager\Fields\Registry as Fields;
+use BulkCatalogueManager\Fields\Storage;
+use BulkCatalogueManager\Fields\Values;
+use BulkCatalogueManager\Rest\Access;
+
+defined( 'ABSPATH' ) || exit;
+
+/**
+ * The row validator.
+ *
  * In order, for one object and one step:
  *
  * 1. Permission. The object is authorised before anything else: in a
@@ -48,25 +67,6 @@
  *
  * One Validator serves one run (a preview or a batch), because it
  * remembers the SKUs it has let through.
- *
- * @package BulkCatalogueManager
- * @license GPL-3.0-or-later
- */
-
-declare( strict_types = 1 );
-
-namespace BulkCatalogueManager\Operations;
-
-use BulkCatalogueManager\Fields\Field;
-use BulkCatalogueManager\Fields\Registry as Fields;
-use BulkCatalogueManager\Fields\Storage;
-use BulkCatalogueManager\Fields\Values;
-use BulkCatalogueManager\Rest\Access;
-
-defined( 'ABSPATH' ) || exit;
-
-/**
- * The row validator.
  */
 final class Validator {
 	/**

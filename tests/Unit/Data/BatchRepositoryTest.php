@@ -390,6 +390,31 @@ final class BatchRepositoryTest extends TestCase {
 		}
 	}
 
+	public function test_claim_chunk_by_kind_is_one_literal_statement_each(): void {
+		$token = str_repeat( 'ef', 16 );
+		$where = "WHERE batch_id = 6 AND state = 'pending' AND attempts < 3 AND (claimed_gmt IS NULL OR claimed_gmt < '2026-09-23 10:00:00')";
+		self::db()->responses['/^UPDATE `wp_bcm_batch_items` SET claim_token/'] = 0;
+		$repo = new BatchRepository();
+		foreach (
+			[
+				BatchRepository::CLAIM_ANY        => '',
+				BatchRepository::CLAIM_VARIATIONS => " AND object_type = 'variation'",
+				BatchRepository::CLAIM_PRODUCTS   => " AND object_type <> 'variation'",
+			] as $kind => $type
+		) {
+			self::db()->queries  = [];
+			self::db()->prepared = [];
+			$this->assertSame( [], $repo->claim_chunk( 6, 20, $token, '2026-09-23 10:05:00', '2026-09-23 10:00:00', $kind ) );
+			$this->assertSame( "UPDATE `wp_bcm_batch_items` SET claim_token = '$token', claimed_gmt = '2026-09-23 10:05:00', attempts = attempts + 1 $where$type ORDER BY item_id ASC LIMIT 20", self::db()->queries[0], $kind );
+		}
+		$this->assert_all_prepared();
+		$this->assert_invalid( static fn() => $repo->claim_chunk( 6, 20, $token, '2026-09-23 10:05:00', '2026-09-23 10:00:00', 'everything' ) );
+
+		// Plugin Check traces a template held in a variable as unescaped (T78): the claim's templates are literals.
+		$source = (string) file_get_contents( dirname( __DIR__, 3 ) . '/src/Data/BatchRepository.php' );
+		$this->assertSame( 0, preg_match( '/->prepare\(\s*\$sql/', $source ) );
+	}
+
 	public function test_the_runner_statements_release_mark_fail_and_count(): void {
 		$token = str_repeat( 'cd', 16 );
 		$repo  = new BatchRepository();

@@ -6,6 +6,32 @@
  * is enqueued, so a filter whose membership shifts later cannot change what
  * the batch does, and undo is exact.
  *
+ * @package BulkCatalogueManager
+ * @license GPL-3.0-or-later
+ */
+
+declare( strict_types = 1 );
+
+namespace BulkCatalogueManager\Engine;
+
+use BulkCatalogueManager\Data\BatchRepository;
+use BulkCatalogueManager\Operations\BaseOperation;
+use BulkCatalogueManager\Operations\Registry as Actions;
+use BulkCatalogueManager\Query\ProductQuery;
+use BulkCatalogueManager\Rest\Refusal;
+use BulkCatalogueManager\Rest\SelectionController;
+use BulkCatalogueManager\Selection\Selection;
+use BulkCatalogueManager\Settings\Settings;
+use BulkCatalogueManager\Undo\Plan;
+use BulkCatalogueManager\Undo\Planner;
+
+defined( 'ABSPATH' ) || exit;
+
+// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- SPEC §9.2: materialisation must read the catalogue as it is at this moment, never a cached copy.
+
+/**
+ * Creates batches.
+ *
  * Order of work, and nothing is written until every refusal has been ruled out:
  *
  * 1. Replay. The same user sending the same `uuid` within REPLAY_TTL seconds
@@ -78,32 +104,6 @@
  * the same request: validated operations, the row and its items, the
  * status moved straight to running, and no `bcm_batch_created`, so no
  * chunk is ever enqueued for it.
- *
- * @package BulkCatalogueManager
- * @license GPL-3.0-or-later
- */
-
-declare( strict_types = 1 );
-
-namespace BulkCatalogueManager\Engine;
-
-use BulkCatalogueManager\Data\BatchRepository;
-use BulkCatalogueManager\Operations\BaseOperation;
-use BulkCatalogueManager\Operations\Registry as Actions;
-use BulkCatalogueManager\Query\ProductQuery;
-use BulkCatalogueManager\Rest\Refusal;
-use BulkCatalogueManager\Rest\SelectionController;
-use BulkCatalogueManager\Selection\Selection;
-use BulkCatalogueManager\Settings\Settings;
-use BulkCatalogueManager\Undo\Plan;
-use BulkCatalogueManager\Undo\Planner;
-
-defined( 'ABSPATH' ) || exit;
-
-// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- SPEC §9.2: materialisation must read the catalogue as it is at this moment, never a cached copy.
-
-/**
- * Creates batches.
  */
 final class BatchFactory {
 	/**
@@ -670,7 +670,8 @@ final class BatchFactory {
 	private static function children( array $parents, int $limit ): array {
 		global $wpdb;
 		$tables = ProductQuery::TABLES;
-		$sql    = 'SELECT v.ID AS id, v.post_parent AS parent_id FROM %i AS v WHERE v.post_parent IN (' . implode( ', ', array_fill( 0, count( $parents ), '%d' ) ) . ') AND v.post_type = %s AND v.post_status IN (' . implode( ', ', array_fill( 0, count( ProductQuery::CHILD_STATUSES ), '%s' ) ) . ') AND EXISTS (SELECT 1 FROM %i AS tr INNER JOIN %i AS tt ON tt.term_taxonomy_id = tr.term_taxonomy_id INNER JOIN %i AS t ON t.term_id = tt.term_id WHERE tr.object_id = v.post_parent AND tt.taxonomy = %s AND t.slug = %s) ORDER BY v.post_parent ASC, v.menu_order ASC, v.ID ASC LIMIT %d';
+		$in     = implode( ', ', array_fill( 0, count( $parents ), '%d' ) );
+		$status = implode( ', ', array_fill( 0, count( ProductQuery::CHILD_STATUSES ), '%s' ) );
 		$args   = [
 			$wpdb->prefix . $tables['posts'],
 			...$parents,
@@ -683,8 +684,8 @@ final class BatchFactory {
 			'variable',
 			$limit,
 		];
-		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- The template holds only literals and placeholders; every value is an argument.
-		$rows = $wpdb->get_results( $wpdb->prepare( $sql, ...$args ), ARRAY_A );
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in and $status are only placeholders; every value is an argument.
+		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT v.ID AS id, v.post_parent AS parent_id FROM %i AS v WHERE v.post_parent IN ({$in}) AND v.post_type = %s AND v.post_status IN ({$status}) AND EXISTS (SELECT 1 FROM %i AS tr INNER JOIN %i AS tt ON tt.term_taxonomy_id = tr.term_taxonomy_id INNER JOIN %i AS t ON t.term_id = tt.term_id WHERE tr.object_id = v.post_parent AND tt.taxonomy = %s AND t.slug = %s) ORDER BY v.post_parent ASC, v.menu_order ASC, v.ID ASC LIMIT %d", $args ), ARRAY_A );
 		return array_map( static fn( array $row ): array => [ (int) $row['id'], (int) $row['parent_id'] ], is_array( $rows ) ? $rows : [] );
 	}
 
@@ -729,10 +730,11 @@ final class BatchFactory {
 		$found   = [];
 		$objects = [];
 		foreach ( array_chunk( $ids, self::PAGE ) as $chunk ) {
-			$sql  = 'SELECT p.ID AS id, p.post_type AS post_type FROM %i AS p WHERE p.ID IN (' . implode( ', ', array_fill( 0, count( $chunk ), '%d' ) ) . ') AND p.post_type IN (%s, %s) AND p.post_status IN (' . implode( ', ', array_fill( 0, count( ProductQuery::STATUSES ), '%s' ) ) . ') LIMIT %d';
-			$args = [ $wpdb->prefix . ProductQuery::TABLES['posts'], ...$chunk, ...$types, ...ProductQuery::STATUSES, count( $chunk ) ];
-			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- The template holds only literals and placeholders; every value is an argument.
-			$rows = $wpdb->get_results( $wpdb->prepare( $sql, ...$args ), ARRAY_A );
+			$in     = implode( ', ', array_fill( 0, count( $chunk ), '%d' ) );
+			$status = implode( ', ', array_fill( 0, count( ProductQuery::STATUSES ), '%s' ) );
+			$args   = [ $wpdb->prefix . ProductQuery::TABLES['posts'], ...$chunk, ...$types, ...ProductQuery::STATUSES, count( $chunk ) ];
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in and $status are only placeholders; every value is an argument.
+			$rows = $wpdb->get_results( $wpdb->prepare( "SELECT p.ID AS id, p.post_type AS post_type FROM %i AS p WHERE p.ID IN ({$in}) AND p.post_type IN (%s, %s) AND p.post_status IN ({$status}) LIMIT %d", $args ), ARRAY_A );
 			foreach ( is_array( $rows ) ? $rows : [] as $row ) {
 				$found[ (int) $row['id'] ] = self::TYPES[ (string) $row['post_type'] ] ?? 'product';
 			}

@@ -3,6 +3,32 @@
  * The preview (SPEC §4.4, §9.1, §12.1): what a change would do to a
  * selection, computed without writing or saving anything.
  *
+ * @package BulkCatalogueManager
+ * @license GPL-3.0-or-later
+ */
+
+declare( strict_types = 1 );
+
+namespace BulkCatalogueManager\Engine;
+
+use BulkCatalogueManager\Fields\Field;
+use BulkCatalogueManager\Fields\Registry as Fields;
+use BulkCatalogueManager\Fields\Values;
+use BulkCatalogueManager\Operations\Operation;
+use BulkCatalogueManager\Operations\Registry as Actions;
+use BulkCatalogueManager\Operations\Result;
+use BulkCatalogueManager\Operations\Validator;
+use BulkCatalogueManager\Rest\Refusal;
+use BulkCatalogueManager\Rest\SelectionController;
+use BulkCatalogueManager\Selection\Selection;
+use BulkCatalogueManager\Settings\Schema;
+use BulkCatalogueManager\Settings\Settings;
+
+defined( 'ABSPATH' ) || exit;
+
+/**
+ * Computes a preview.
+ *
  * For one request it:
  * 1. validates the operation list through Operations\Registry::validate_list()
  *    (the same refusals, with the same codes, as a batch);
@@ -56,32 +82,6 @@
  * change what a batch does or who may run it; changing any of them gives a
  * different hash, and applying a filter selection requires it (T38,
  * BatchFactory::create()'s apply check).
- *
- * @package BulkCatalogueManager
- * @license GPL-3.0-or-later
- */
-
-declare( strict_types = 1 );
-
-namespace BulkCatalogueManager\Engine;
-
-use BulkCatalogueManager\Fields\Field;
-use BulkCatalogueManager\Fields\Registry as Fields;
-use BulkCatalogueManager\Fields\Values;
-use BulkCatalogueManager\Operations\Operation;
-use BulkCatalogueManager\Operations\Registry as Actions;
-use BulkCatalogueManager\Operations\Result;
-use BulkCatalogueManager\Operations\Validator;
-use BulkCatalogueManager\Rest\Refusal;
-use BulkCatalogueManager\Rest\SelectionController;
-use BulkCatalogueManager\Selection\Selection;
-use BulkCatalogueManager\Settings\Schema;
-use BulkCatalogueManager\Settings\Settings;
-
-defined( 'ABSPATH' ) || exit;
-
-/**
- * Computes a preview.
  */
 final class Preview {
 	/**

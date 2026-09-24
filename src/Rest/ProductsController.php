@@ -5,6 +5,24 @@
  * core refuses a malformed argument with 400 `rest_invalid_param` before the
  * handler runs.
  *
+ * @package BulkCatalogueManager
+ * @license GPL-3.0-or-later
+ */
+
+declare( strict_types = 1 );
+
+namespace BulkCatalogueManager\Rest;
+
+use BulkCatalogueManager\Fields\Registry;
+use BulkCatalogueManager\Query\Catalogue;
+use BulkCatalogueManager\Query\Criteria;
+use BulkCatalogueManager\Query\Hydrator;
+
+defined( 'ABSPATH' ) || exit;
+
+/**
+ * The products route.
+ *
  * The handler reads one page through Query\Catalogue: ProductQuery's count
  * and page statements, hydrated by Query\Hydrator in a fixed number of
  * queries without instantiating a product, cached per last-changed window.
@@ -30,24 +48,6 @@
  * found by its own SKU (the history's product filter uses this to reach a
  * variation, then filters `GET /audit` by its id); in the products mode no
  * variation is listed, so a variation's SKU finds nothing.
- *
- * @package BulkCatalogueManager
- * @license GPL-3.0-or-later
- */
-
-declare( strict_types = 1 );
-
-namespace BulkCatalogueManager\Rest;
-
-use BulkCatalogueManager\Fields\Registry;
-use BulkCatalogueManager\Query\Catalogue;
-use BulkCatalogueManager\Query\Criteria;
-use BulkCatalogueManager\Query\Hydrator;
-
-defined( 'ABSPATH' ) || exit;
-
-/**
- * The products route.
  */
 final class ProductsController implements ReadController {
 	/**

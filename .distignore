@@ -1,25 +1,33 @@
 # Files that never ship in the release archive (wp dist-archive reads this;
-# .gitattributes carries the same list for git archive / bin/build-zip.sh).
+# .gitattributes carries the same list for git archive / bin/build-zip.sh, and
+# tests/Unit/PackagingTest.php keeps the two in step). The readable assets/src
+# and its build configuration (webpack.config.js, package.json,
+# package-lock.json) ship beside assets/build on purpose (SPEC §15).
 .github/
 .gitignore
 .gitattributes
 .distignore
 .phpcs.xml.dist
 .wp-env.json
-.phpunit.cache/
-.phpunit.result.cache
-phpunit.xml.dist
-composer.json
-composer.lock
-package.json
-package-lock.json
-node_modules/
-docs/
-tests/
-bin/
-dist/
 .remember/
 .claude/
-vendor/
 AGENTS.md
+CHANGELOG.md
+README.md
+assets-wporg/
+bin/
+composer.json
+composer.lock
+docs/
+eslint.config.cjs
 jest.config.js
+phpunit.xml.dist
+scratch/
+tests/
+vendor/
+# Untracked, never committed; listed for wp dist-archive, which works on the checkout.
+node_modules/
+dist/
+.phpunit.cache/
+.phpunit.result.cache
+.wp-env.override.json

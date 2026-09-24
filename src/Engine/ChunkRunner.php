@@ -4,6 +4,27 @@
  * items in chunks, one Action Scheduler action per chunk, as a chain rather
  * than a fan-out, through Action Scheduler's public `as_*` functions only.
  *
+ * @package BulkCatalogueManager
+ * @license GPL-3.0-or-later
+ */
+
+declare( strict_types = 1 );
+
+namespace BulkCatalogueManager\Engine;
+
+use BulkCatalogueManager\Data\BatchRepository;
+use BulkCatalogueManager\Data\ChangeRepository;
+use BulkCatalogueManager\Data\Registry as Data;
+use BulkCatalogueManager\Operations\Registry as Actions;
+use BulkCatalogueManager\Operations\Result;
+use BulkCatalogueManager\Settings\Settings;
+use BulkCatalogueManager\Undo\Original;
+
+defined( 'ABSPATH' ) || exit;
+
+/**
+ * Runs one chunk of a batch per scheduled action.
+ *
  * `bcm_batch_created` (BatchFactory) enqueues the first `bcm_run_chunk`
  * action in the plugin's group (Data\Registry::ACTION_GROUP, the full slug)
  * with as_enqueue_async_action(). Each run:
@@ -87,27 +108,6 @@
  *
  * The queue runner's own batch size and concurrency options are never
  * touched; chunk size is the only knob (§12.4).
- *
- * @package BulkCatalogueManager
- * @license GPL-3.0-or-later
- */
-
-declare( strict_types = 1 );
-
-namespace BulkCatalogueManager\Engine;
-
-use BulkCatalogueManager\Data\BatchRepository;
-use BulkCatalogueManager\Data\ChangeRepository;
-use BulkCatalogueManager\Data\Registry as Data;
-use BulkCatalogueManager\Operations\Registry as Actions;
-use BulkCatalogueManager\Operations\Result;
-use BulkCatalogueManager\Settings\Settings;
-use BulkCatalogueManager\Undo\Original;
-
-defined( 'ABSPATH' ) || exit;
-
-/**
- * Runs one chunk of a batch per scheduled action.
  */
 final class ChunkRunner {
 	/**

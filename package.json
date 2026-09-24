@@ -13,7 +13,10 @@
     "lint:js": "wp-scripts lint-js assets/src tests/js tests/e2e webpack.config.js eslint.config.cjs --max-warnings=0",
     "format": "wp-scripts format assets/src tests/js tests/e2e webpack.config.js eslint.config.cjs",
     "test": "wp-scripts test-unit-js",
-    "e2e": "playwright test -c tests/e2e"
+    "e2e": "playwright test -c tests/e2e",
+    "make-json": "composer make-json",
+    "build:zip": "bin/build-zip.sh",
+    "plugin-check": "bin/plugin-check.sh"
   },
   "dependencies": {
     "@wordpress/api-fetch": "7.40.1",

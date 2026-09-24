@@ -5,6 +5,25 @@
  * path — never from a hook after the fact — so every saved change has its
  * before state beside it and undo can put it back.
  *
+ * @package BulkCatalogueManager
+ * @license GPL-3.0-or-later
+ */
+
+declare( strict_types = 1 );
+
+namespace BulkCatalogueManager\Engine;
+
+use BulkCatalogueManager\Data\ChangeRepository;
+use BulkCatalogueManager\Data\Schema;
+use BulkCatalogueManager\Fields\Registry as Fields;
+use BulkCatalogueManager\Operations\Result;
+use BulkCatalogueManager\Settings\Settings;
+
+defined( 'ABSPATH' ) || exit;
+
+/**
+ * Writes the per-field journal rows for one object.
+ *
  * The writer calls it per object:
  * - already_done() before loading the object: an object that already has
  *   journal rows for this batch was dealt with by an earlier run of the same
@@ -45,25 +64,6 @@
  *
  * Values are stored through ChangeRepository, which encodes them with
  * ValueCodec, so '' and '0' and null come back as themselves.
- *
- * @package BulkCatalogueManager
- * @license GPL-3.0-or-later
- */
-
-declare( strict_types = 1 );
-
-namespace BulkCatalogueManager\Engine;
-
-use BulkCatalogueManager\Data\ChangeRepository;
-use BulkCatalogueManager\Data\Schema;
-use BulkCatalogueManager\Fields\Registry as Fields;
-use BulkCatalogueManager\Operations\Result;
-use BulkCatalogueManager\Settings\Settings;
-
-defined( 'ABSPATH' ) || exit;
-
-/**
- * Writes the per-field journal rows for one object.
  */
 final class Journal {
 	/**

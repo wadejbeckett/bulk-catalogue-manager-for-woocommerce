@@ -3,6 +3,24 @@
  * History retention (SPEC §9.5, §11, §12.4, §15 Data lifecycle; T60): the
  * daily `bcm_prune_history` action.
  *
+ * @package BulkCatalogueManager
+ * @license GPL-3.0-or-later
+ */
+
+declare( strict_types = 1 );
+
+namespace BulkCatalogueManager\Engine;
+
+use BulkCatalogueManager\Data\BatchRepository;
+use BulkCatalogueManager\Data\ChangeRepository;
+use BulkCatalogueManager\Data\Registry as Data;
+use BulkCatalogueManager\Settings\Settings;
+
+defined( 'ABSPATH' ) || exit;
+
+/**
+ * Removes the detail of batches older than the retention limit.
+ *
  * Activation schedules it once through as_schedule_recurring_action() in the
  * plugin's group (Data\Registry::ACTION_GROUP, the full slug), guarded by
  * as_next_scheduled_action() so a reactivation does not add a second one;
@@ -28,24 +46,6 @@
  *    stops when nothing is left.
  *
  * Uses the public `as_*` functions only (§12.4).
- *
- * @package BulkCatalogueManager
- * @license GPL-3.0-or-later
- */
-
-declare( strict_types = 1 );
-
-namespace BulkCatalogueManager\Engine;
-
-use BulkCatalogueManager\Data\BatchRepository;
-use BulkCatalogueManager\Data\ChangeRepository;
-use BulkCatalogueManager\Data\Registry as Data;
-use BulkCatalogueManager\Settings\Settings;
-
-defined( 'ABSPATH' ) || exit;
-
-/**
- * Removes the detail of batches older than the retention limit.
  */
 final class Pruner {
 	/**

@@ -3,6 +3,33 @@
  * The undo planner (SPEC §9.4, §9.5, §12.6; T55): turns a finished batch
  * into an Undo\Plan without writing anything.
  *
+ * @package BulkCatalogueManager
+ * @license GPL-3.0-or-later
+ */
+
+declare( strict_types = 1 );
+
+namespace BulkCatalogueManager\Undo;
+
+use BulkCatalogueManager\Data\BatchRepository;
+use BulkCatalogueManager\Data\ChangeRepository;
+use BulkCatalogueManager\Data\Schema;
+use BulkCatalogueManager\Engine\Memory;
+use BulkCatalogueManager\Engine\Preview;
+use BulkCatalogueManager\Engine\Writer;
+use BulkCatalogueManager\Fields\Field;
+use BulkCatalogueManager\Fields\Values;
+use BulkCatalogueManager\Operations\Registry as Actions;
+use BulkCatalogueManager\Operations\Terms;
+use BulkCatalogueManager\Rest\Access;
+use BulkCatalogueManager\Rest\Refusal;
+use BulkCatalogueManager\Settings\Settings;
+
+defined( 'ABSPATH' ) || exit;
+
+/**
+ * Plans the undo of one batch.
+ *
  * It refuses, 409 `bcm_not_reversible` with the reason code in
  * `data.reason`, a batch that has not finished (queued, running, undoing),
  * one already undone (its status is `undone`, or a complete or partial undo
@@ -40,33 +67,6 @@
  * through wc_format_decimal() at the shop's precision (10 and 10.00 are the
  * same price, '' and 0.00 are not), a whole number with null distinct from
  * 0, a switch as a boolean, a term list as a sorted id list, text exactly.
- *
- * @package BulkCatalogueManager
- * @license GPL-3.0-or-later
- */
-
-declare( strict_types = 1 );
-
-namespace BulkCatalogueManager\Undo;
-
-use BulkCatalogueManager\Data\BatchRepository;
-use BulkCatalogueManager\Data\ChangeRepository;
-use BulkCatalogueManager\Data\Schema;
-use BulkCatalogueManager\Engine\Memory;
-use BulkCatalogueManager\Engine\Preview;
-use BulkCatalogueManager\Engine\Writer;
-use BulkCatalogueManager\Fields\Field;
-use BulkCatalogueManager\Fields\Values;
-use BulkCatalogueManager\Operations\Registry as Actions;
-use BulkCatalogueManager\Operations\Terms;
-use BulkCatalogueManager\Rest\Access;
-use BulkCatalogueManager\Rest\Refusal;
-use BulkCatalogueManager\Settings\Settings;
-
-defined( 'ABSPATH' ) || exit;
-
-/**
- * Plans the undo of one batch.
  */
 final class Planner {
 	/**

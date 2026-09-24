@@ -4,6 +4,29 @@
  * subset of the field registry's editable fields to one product or
  * variation, recorded as a batch of one.
  *
+ * @package BulkCatalogueManager
+ * @license GPL-3.0-or-later
+ */
+
+declare( strict_types = 1 );
+
+namespace BulkCatalogueManager\Rest;
+
+use BulkCatalogueManager\Engine\InlineWrite;
+use BulkCatalogueManager\Engine\Writer;
+use BulkCatalogueManager\Fields\Registry;
+use BulkCatalogueManager\Operations\Registry as Actions;
+use BulkCatalogueManager\Operations\Result;
+use BulkCatalogueManager\Query\Catalogue;
+use BulkCatalogueManager\Query\Criteria;
+use BulkCatalogueManager\Query\Hydrator;
+use BulkCatalogueManager\Query\ProductQuery;
+
+defined( 'ABSPATH' ) || exit;
+
+/**
+ * The single-object route: its read and its write.
+ *
  * Every field argument is the field's own Field::rest_arg() — its schema,
  * validator and sanitiser — so a malformed value is refused 400
  * `rest_invalid_param` by core, naming the field with its sentence in
@@ -30,29 +53,6 @@
  * shape as a `/products` item, so the grid can replace the row; `status` is
  * the batch's final status (complete, partial or failed); `results` holds
  * one outcome per step (field, old, new, state, reason, code).
- *
- * @package BulkCatalogueManager
- * @license GPL-3.0-or-later
- */
-
-declare( strict_types = 1 );
-
-namespace BulkCatalogueManager\Rest;
-
-use BulkCatalogueManager\Engine\InlineWrite;
-use BulkCatalogueManager\Engine\Writer;
-use BulkCatalogueManager\Fields\Registry;
-use BulkCatalogueManager\Operations\Registry as Actions;
-use BulkCatalogueManager\Operations\Result;
-use BulkCatalogueManager\Query\Catalogue;
-use BulkCatalogueManager\Query\Criteria;
-use BulkCatalogueManager\Query\Hydrator;
-use BulkCatalogueManager\Query\ProductQuery;
-
-defined( 'ABSPATH' ) || exit;
-
-/**
- * The single-object route: its read and its write.
  */
 final class ProductWriteController implements ReadController {
 	/**

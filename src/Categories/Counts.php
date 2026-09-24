@@ -3,6 +3,24 @@
  * Product counts for the whole category tree in one grouped statement
  * (SPEC §7, §12.2), honouring the grid's active filters.
  *
+ * @package BulkCatalogueManager
+ * @license GPL-3.0-or-later
+ */
+
+declare( strict_types = 1 );
+
+namespace BulkCatalogueManager\Categories;
+
+use BulkCatalogueManager\Query\Criteria;
+use BulkCatalogueManager\Query\ProductQuery;
+
+defined( 'ABSPATH' ) || exit;
+
+// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- SPEC §7, §12.2: one deliberate grouped statement for the whole tree; CategoryTree caches its result in a transient.
+
+/**
+ * The grouped category count.
+ *
  * The rows the grid would list come from ProductQuery itself: the statement
  * embeds ProductQuery::conditions_sql() (its FROM and WHERE with their
  * arguments) for the same criteria and prepares the whole once, so the tree
@@ -33,24 +51,6 @@
  * the parent). Nothing is concatenated, so a product in any number of
  * categories counts exactly (the GROUP_CONCAT form this replaces cut a list
  * at MySQL's default 1024 bytes).
- *
- * @package BulkCatalogueManager
- * @license GPL-3.0-or-later
- */
-
-declare( strict_types = 1 );
-
-namespace BulkCatalogueManager\Categories;
-
-use BulkCatalogueManager\Query\Criteria;
-use BulkCatalogueManager\Query\ProductQuery;
-
-defined( 'ABSPATH' ) || exit;
-
-// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- SPEC §7, §12.2: one deliberate grouped statement for the whole tree; CategoryTree caches its result in a transient.
-
-/**
- * The grouped category count.
  */
 final class Counts {
 	/**

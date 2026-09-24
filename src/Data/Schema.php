@@ -9,6 +9,19 @@
  * ignores that difference. The migrator adds `$wpdb->prefix` and
  * `$wpdb->get_charset_collate()`.
  *
+ * @package BulkCatalogueManager
+ * @license GPL-3.0-or-later
+ */
+
+declare( strict_types = 1 );
+
+namespace BulkCatalogueManager\Data;
+
+defined( 'ABSPATH' ) || exit;
+
+/**
+ * Table names, allowed values and CREATE TABLE bodies.
+ *
  * Columns the specification marks NULL are nullable; every other column is
  * NOT NULL. Counters and attempts default to zero and item state to pending.
  *
@@ -34,19 +47,6 @@
  * their own operations (an undo batch puts each object's own old values
  * back); NULL for every other item, which takes the batch's list.
  * Bump Migrator::SCHEMA_VERSION whenever a body here changes.
- *
- * @package BulkCatalogueManager
- * @license GPL-3.0-or-later
- */
-
-declare( strict_types = 1 );
-
-namespace BulkCatalogueManager\Data;
-
-defined( 'ABSPATH' ) || exit;
-
-/**
- * Table names, allowed values and CREATE TABLE bodies.
  */
 final class Schema {
 	/**

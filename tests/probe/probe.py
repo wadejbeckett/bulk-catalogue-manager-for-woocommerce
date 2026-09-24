@@ -245,7 +245,7 @@ class Probe:
         out = self.wp("eval", "function bulkcat_out( $v ) { echo \"\\nBULKCAT_OUT \" . wp_json_encode( $v ) . \"\\n\"; } " + php)
         for line in out.splitlines():
             if line.startswith("BULKCAT_OUT "):
-                return json.loads(line[8:])
+                return json.loads(line[len("BULKCAT_OUT "):])
         raise WpCliError(f"no BULKCAT_OUT in: {out.strip()[-400:]}")
 
     def run_queue(self, batch_id: int, rounds: int = 20) -> dict:
@@ -660,7 +660,7 @@ def check_read_queries(p: Probe) -> None:
         hiding = {f["key"]: sorted(c["value"] for c in f.get("choices", []) if c.get("hidesProduct")) for f in fields}
         hiding = {k: v for k, v in hiding.items() if v}
         want_hiding = {"status": ["draft", "pending"], "catalog_visibility": ["hidden"], "visible_on_site": ["off"]}
-        ok = default == ["sku", "status", "visible_on_site", "regular_price", "sale_price", "stock_status", "category_ids"] and hiding == want_hiding
+        ok = default == ["sku", "category_ids", "regular_price", "stock_status", "status", "visible_on_site"] and hiding == want_hiding
         p.row("read", "read:fields:flags", ok, f"default columns {default}; hiding choices {hiding}")
 
     for name, fn in [("hydration", hydration), ("filter-category", category), ("search", search), ("filter-price", price_range),

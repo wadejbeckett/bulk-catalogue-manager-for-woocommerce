@@ -33,11 +33,13 @@ final class BatchRecovery {
 	 *
 	 * @param array<string,mixed> $result The accepted or replayed outcome, with `batch_id`.
 	 * @return array<string,mixed> The same outcome, with the status read now.
-	 * @throws \RuntimeException When the batch needs a chunk and none could be queued; resolving the same request retries.
+	 * @throws \RuntimeException When the batch cannot be read, or needs a chunk and none could be queued; resolving the same request retries.
 	 */
 	public static function finish( array $result ): array {
 		$batch_id = (int) $result['batch_id'];
-		$status   = ( new BatchRepository() )->status( $batch_id );
+		// A failed read throws (retry the same request); it is never taken for a batch with nothing to schedule.
+		$batch  = ( new BatchRepository() )->find_strict( $batch_id );
+		$status = null === $batch ? null : $batch['status'];
 		if ( in_array( $status, [ 'queued', 'running' ], true ) && ! ChunkRunner::ensure_queued( $batch_id ) ) {
 			throw new \RuntimeException( 'Scheduling was interrupted; resolve the same request.' );
 		}

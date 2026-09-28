@@ -179,6 +179,28 @@ final class ChunkRunnerTest extends TestCase {
 		$this->assertCount( 2, $GLOBALS['bulkcat_test']['scheduled'], 'Another batch is queued on its own.' );
 	}
 
+	public function test_a_batch_is_still_queued_when_the_scheduling_lock_cannot_be_taken(): void {
+		// Review finding: scheduling must never stop for want of the lock.
+		foreach ( [
+			'refused' => null,
+			'timeout' => '0',
+		] as $case => $answer ) {
+			bulkcat_test_reset();
+			$batch = 'refused' === $case ? 51 : 52;
+			$GLOBALS['wpdb']->responses[ "SELECT GET_LOCK('bulkcat_schedule_" . md5( 'wp_bulkcat_batches|' . $batch ) . "', 10)" ] = $answer;
+			$this->assertTrue( ChunkRunner::ensure_queued( $batch ), $case );
+			$this->assertSame( [ [ 'enqueue', 'bulkcat_run_chunk', [ $batch ], 'bulk-catalogue-manager-for-woocommerce', null ] ], $GLOBALS['bulkcat_test']['scheduled'], "Queued unlocked when the lock is $case." );
+			$this->assertSame( [], preg_grep( '/^SELECT RELEASE_LOCK/', $GLOBALS['wpdb']->queries ), 'A lock not taken is not released.' );
+		}
+	}
+
+	public function test_a_batch_waiting_on_its_retry_is_not_queued_early(): void {
+		// A chunk that stopped early backs off; resolving its request must not cut the delay short.
+		as_schedule_single_action( time() + ChunkRunner::RETRY_DELAY, 'bulkcat_run_chunk', [ 44, ChunkRunner::RETRY ], 'bulk-catalogue-manager-for-woocommerce' );
+		$this->assertTrue( ChunkRunner::ensure_queued( 44 ) );
+		$this->assertSame( [], self::scheduled( 'enqueue' ), 'Nothing is queued before the retry.' );
+	}
+
 	public function test_one_chunk_claims_exactly_n_pending_items_with_one_update_and_enqueues_its_successor(): void {
 		$ids   = self::products( 60 );
 		$store = new RunnerStore( self::BATCH, $ids, $this->increase(), self::USER );

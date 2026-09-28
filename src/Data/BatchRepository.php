@@ -691,28 +691,74 @@ final class BatchRepository {
 	}
 
 	/**
-	 * Run $work holding a MySQL named lock for one batch's scheduling (T83):
+	 * Run $work under a MySQL named lock for one batch's scheduling (T83):
 	 * two requests answering the same accepted batch at once — the one that
 	 * committed it and a concurrent retry — must queue one first chunk, and
 	 * Action Scheduler's unique enqueue does not serialise concurrent
-	 * inserts. The lock is per site table and batch, is held only around the
-	 * check and the enqueue, and writes nothing.
+	 * inserts. The lock is per site table and batch, is held only around
+	 * $work, and writes nothing. When it cannot be taken — the server
+	 * refuses named locks (NULL) or another request holds it past
+	 * SCHEDULE_LOCK_WAIT seconds — $work still runs, unlocked: scheduling
+	 * must never stop, and the worst an unserialised run can do is queue a
+	 * duplicate chunk action, which is harmless because items are claimed
+	 * one by one.
 	 *
 	 * @param int      $batch_id The batch.
-	 * @param callable $work     What to run under the lock.
-	 * @return mixed What $work answered, or null when the lock was not taken within SCHEDULE_LOCK_WAIT seconds.
+	 * @param callable $work     What to run.
+	 * @return mixed What $work answered.
 	 */
 	public function with_schedule_lock( int $batch_id, callable $work ): mixed {
 		global $wpdb;
-		$name = 'bulkcat_schedule_' . md5( $this->registry->table( Schema::BATCHES ) . '|' . $batch_id );
-		if ( '1' !== (string) $wpdb->get_var( $wpdb->prepare( 'SELECT GET_LOCK(%s, %d)', $name, self::SCHEDULE_LOCK_WAIT ) ) ) {
-			return null;
-		}
+		$name   = 'bulkcat_schedule_' . md5( $this->registry->table( Schema::BATCHES ) . '|' . $batch_id );
+		$locked = '1' === (string) $wpdb->get_var( $wpdb->prepare( 'SELECT GET_LOCK(%s, %d)', $name, self::SCHEDULE_LOCK_WAIT ) );
 		try {
 			return $work();
 		} finally {
-			$wpdb->get_var( $wpdb->prepare( 'SELECT RELEASE_LOCK(%s)', $name ) );
+			if ( $locked ) {
+				$wpdb->get_var( $wpdb->prepare( 'SELECT RELEASE_LOCK(%s)', $name ) );
+			}
 		}
+	}
+
+	/**
+	 * Record a batch's still pending items for some objects as failed, with
+	 * a plain reason (T83): the members an exact scope found unavailable are
+	 * recorded with the batch so its outcome names them, but must never be
+	 * written, whatever becomes of the object before the chunk runs. Only
+	 * pending items of exactly these objects and kinds are touched.
+	 *
+	 * @param int                            $batch_id Batch.
+	 * @param list<array{0: int, 1: string}> $objects  [ object_id, object_type ] pairs.
+	 * @param string                         $message  The plain reason.
+	 * @return int Items marked.
+	 * @throws \InvalidArgumentException On a malformed pair.
+	 * @throws \RuntimeException When a statement fails.
+	 */
+	public function fail_objects( int $batch_id, array $objects, string $message ): int {
+		global $wpdb;
+		self::assert_ids( [ $batch_id ], 'batch id' );
+		$by_type = [];
+		foreach ( $objects as $object ) {
+			if ( ! is_array( $object ) || ! is_int( $object[0] ?? null ) || ! is_string( $object[1] ?? null ) ) {
+				throw new \InvalidArgumentException( 'Each object is an [ object_id, object_type ] pair.' );
+			}
+			self::assert_ids( [ $object[0] ], 'object id' );
+			self::assert_in( $object[1], Schema::OBJECT_TYPES, 'object type' );
+			$by_type[ $object[1] ][] = $object[0];
+		}
+		$marked = 0;
+		foreach ( $by_type as $type => $ids ) {
+			foreach ( array_chunk( $ids, self::INSERT_CHUNK ) as $chunk ) {
+				$in     = implode( ', ', array_fill( 0, count( $chunk ), '%d' ) );
+				$args   = [ $this->registry->table( Schema::ITEMS ), self::cut( $message ), $batch_id, $type, ...$chunk ];
+				$result = $wpdb->query( $wpdb->prepare( "UPDATE %i SET state = 'failed', message = %s WHERE batch_id = %d AND state = 'pending' AND object_type = %s AND object_id IN ({$in})", $args ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in is only placeholders; every value is an argument.
+				if ( false === $result ) {
+					throw new \RuntimeException( 'The batch items could not be updated.' );
+				}
+				$marked += (int) $result;
+			}
+		}
+		return $marked;
 	}
 
 	/**

@@ -96,14 +96,54 @@ final class BatchIntentTest extends TestCase {
 		$retired                            = $intent;
 		$retired['operations'][0]['action'] = 'retired_action';
 		$this->assertSame( $retired, BatchIntent::normalize( 'batch.apply', $retired, 1 ), 'Only its shape is checked; its fingerprint is what was signed.' );
-		$refusal = BatchIntent::current( $retired );
+		$refusal = BatchIntent::current_operations( $retired );
 		$this->assertInstanceOf( \WP_Error::class, $refusal, 'A new acceptance asks the registry.' );
 		$this->assertSame( 'bulkcat_unknown_action', $refusal->get_error_code() );
-		$this->assertTrue( BatchIntent::current( $intent ) );
+		$this->assertSame( $intent['operations'], BatchIntent::current_operations( $intent ) );
 
 		$drifted = $intent;
 		unset( $drifted['operations'][0]['args']['skip_already'] );
-		$this->assertFalse( BatchIntent::current( $drifted ), 'A list the registry would now fill in differently is stale.' );
+		$this->assertFalse( BatchIntent::current_operations( $drifted ), 'A list the registry would now fill in differently is stale.' );
+	}
+
+	public function test_what_a_new_acceptance_records_is_the_registrys_own_list_not_the_shape_sent(): void {
+		// Review finding: the fingerprint sorts map keys, so it cannot tell a list from a map with
+		// the same numbered keys, nor one key order from another; the registry's list is recorded.
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['terms'] = [ 'product_cat' => [ 10, 11 ] ];
+		$intent                           = BatchIntent::normalize(
+			'batch.apply',
+			[
+				'ids'        => [ 3 ],
+				'operations' => [
+					[
+						'action' => 'add_terms',
+						'args'   => [
+							'field' => 'category_ids',
+							'terms' => [ 10, 11 ],
+						],
+					],
+				],
+				'scope_hash' => str_repeat( 'c', 64 ),
+			],
+			1
+		);
+		$this->assertTrue( is_array( $intent ), $intent instanceof \WP_Error ? $intent->get_error_message() : '' );
+
+		$reordered                          = $intent;
+		$reordered['operations'][0]['args'] = array_reverse( $intent['operations'][0]['args'], true );
+		$this->assertSame( CaptureIntent::fingerprint( $intent ), CaptureIntent::fingerprint( $reordered ), 'Both key orders carry the same signature.' );
+		$this->assertNotSame( $intent['operations'], $reordered['operations'] );
+		$this->assertSame( $intent['operations'], BatchIntent::current_operations( $reordered ), 'The registry\'s list is what is recorded.' );
+
+		$mapped                                   = $intent;
+		$mapped['operations'][0]['args']['terms'] = [
+			1 => 11,
+			0 => 10,
+		];
+		$this->assertSame( CaptureIntent::fingerprint( $intent ), CaptureIntent::fingerprint( $mapped ), 'A numbered map carries the same signature as the list.' );
+		$refused = BatchIntent::current_operations( $mapped );
+		$this->assertInstanceOf( \WP_Error::class, $refused, 'A map where a list belongs is never accepted.' );
 	}
 
 	public function test_a_canonical_intent_has_exactly_its_shape(): void {

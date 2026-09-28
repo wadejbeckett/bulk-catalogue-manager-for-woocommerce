@@ -237,8 +237,8 @@ if ( ! function_exists( 'add_filter' ) ) {
 		}
 
 		/**
-		 * T83: whether an enqueued action with this hook (and args and group,
-		 * when given) was recorded and not unscheduled since.
+		 * T83: whether an enqueued or single action with this hook (and args
+		 * and group, when given) was recorded and not unscheduled since.
 		 */
 		function as_has_scheduled_action( string $hook, ?array $args = null, string $group = '' ): bool {
 			$found = false;
@@ -246,7 +246,7 @@ if ( ! function_exists( 'add_filter' ) ) {
 				if ( $hook !== $entry_hook || ( null !== $args && $args !== $entry_args ) || ( '' !== $group && $group !== $entry_group ) ) {
 					continue;
 				}
-				$found = 'enqueue' === $kind ? true : ( 'unschedule' === $kind ? false : $found );
+				$found = in_array( $kind, [ 'enqueue', 'single' ], true ) ? true : ( 'unschedule' === $kind ? false : $found );
 			}
 			return $found;
 		}

@@ -536,17 +536,23 @@ final class BatchFactory {
 	}
 
 	/**
-	 * Persist exactly verified objects inside the request owner's transaction.
-	 * This method never schedules work, resolves a UUID, or queries membership.
+	 * Record exactly a verified scope inside a durable request's acceptance
+	 * transaction (T83): the header, then every item. Items for the members
+	 * the scope found unavailable are recorded already failed with a plain
+	 * reason (and counted as done and failed), so they are never claimed or
+	 * written — not even if the object comes back before the chunk runs.
+	 * Never schedules work, resolves a request id or reads the catalogue.
 	 *
-	 * @param array $claims Verified request.
-	 * @param array $operations Normalized operations.
-	 * @param array $objects Materialized scope.
-	 * @param array $snapshot Stored selection summary.
-	 * @param int|null $undo_of Original batch.
-	 * @return array
+	 * @param array<string,mixed>            $claims      Verified grant claims (`uuid`, `owner`).
+	 * @param array<mixed>                   $operations  The normalised operation list.
+	 * @param list<array>                    $objects     The scope's items, unavailable members included.
+	 * @param array<string,mixed>            $snapshot    The selection summary the header keeps.
+	 * @param int|null                       $undo_of     The batch an undo undoes.
+	 * @param list<array{0: int, 1: string}> $unavailable Unavailable members, as [ object_id, object_type ].
+	 * @return array{batch_id: int, status: string, total_items: int, replayed: bool}
+	 * @throws \RuntimeException When the items are not all recorded.
 	 */
-	public function record_scope( array $claims, array $operations, array $objects, array $snapshot, ?int $undo_of = null ): array {
+	public function record_scope( array $claims, array $operations, array $objects, array $snapshot, ?int $undo_of = null, array $unavailable = [] ): array {
 		$id    = $this->batches->create( $claims['uuid'], $claims['owner'], null === $undo_of ? 'bulk' : 'undo', $operations, $snapshot, count( $objects ), $undo_of );
 		$plain = [];
 		$own   = [];
@@ -563,12 +569,26 @@ final class BatchFactory {
 		if ( count( $objects ) !== $written ) {
 			throw new \RuntimeException( 'Incomplete materialization.' );
 		}
+		if ( [] !== $unavailable ) {
+			$failed = $this->batches->fail_objects( $id, $unavailable, self::unavailable_reason() );
+			if ( count( $unavailable ) !== $failed ) {
+				throw new \RuntimeException( 'Unavailable items were not all recorded.' );
+			}
+			$this->batches->increment_counters( $id, $failed, 0, $failed );
+		}
 		return [
 			'batch_id'    => $id,
 			'status'      => 'queued',
 			'total_items' => count( $objects ),
 			'replayed'    => false,
 		];
+	}
+
+	/**
+	 * The reason an unavailable member's item is recorded failed (T83).
+	 */
+	public static function unavailable_reason(): string {
+		return __( 'This item could not be changed: since it was chosen it was deleted, moved to the bin, taken out of the list or changed between a product and a variation. It was left unchanged.', 'bulk-catalogue-manager-for-woocommerce' );
 	}
 
 	/**

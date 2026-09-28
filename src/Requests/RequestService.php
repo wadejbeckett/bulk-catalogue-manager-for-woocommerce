@@ -70,7 +70,8 @@ final class RequestService {
 					'operation' => $operation,
 					'intent'    => $intent,
 				];
-			}
+			},
+			str_starts_with( $operation, 'batch.' )
 		);
 	}
 
@@ -241,18 +242,21 @@ final class RequestService {
 						return ( new SnapshotService() )->envelope( $snapshot, ( $this->clock )(), false );
 					}
 				);
-			}
+			},
+			str_starts_with( $operation, 'batch.' )
 		);
 		if ( is_wp_error( $result ) || ! isset( $result['batch_id'] ) ) {
 			return $result;
 		}
 		return $this->guard(
 			static function () use ( $result ): array {
+				// Scheduled first, so a listener that fails cannot hold the batch back.
+				$finished = BatchRecovery::finish( $result );
 				if ( false === $result['replayed'] ) {
 					/** This action is documented in Engine\BatchFactory::create(). */
 					do_action( 'bulkcat_batch_created', (int) $result['batch_id'] );
 				}
-				return BatchRecovery::finish( $result );
+				return $finished;
 			}
 		);
 	}
@@ -303,9 +307,10 @@ final class RequestService {
 	 * Authentication and fail-closed storage errors, with no SQL exposed to users.
 	 *
 	 * @param callable $operation Service operation.
+	 * @param bool     $change    Whether it concerns an Apply or undo, whose malformed input is refused in those words.
 	 * @return array<string,mixed>|\WP_Error
 	 */
-	private function guard( callable $operation ): array|\WP_Error {
+	private function guard( callable $operation, bool $change = false ): array|\WP_Error {
 		$access = Access::can_write();
 		if ( is_wp_error( $access ) ) {
 			return $access;
@@ -318,7 +323,9 @@ final class RequestService {
 		} catch ( \LengthException $error ) {
 			return Refusal::invalid( 'bulkcat_selection_too_large', __( 'This selection is too large. Add a filter to narrow it and try again.', 'bulk-catalogue-manager-for-woocommerce' ) );
 		} catch ( \InvalidArgumentException $error ) {
-			return Refusal::invalid( 'bulkcat_invalid_value', __( 'These products or filters could not be selected. Check your selection and try again.', 'bulk-catalogue-manager-for-woocommerce' ) );
+			return $change
+				? Refusal::invalid( 'bulkcat_invalid_value', __( 'This change could not be read. Reload the page, preview the change again, then apply it.', 'bulk-catalogue-manager-for-woocommerce' ) )
+				: Refusal::invalid( 'bulkcat_invalid_value', __( 'These products or filters could not be selected. Check your selection and try again.', 'bulk-catalogue-manager-for-woocommerce' ) );
 		} catch ( \Throwable $error ) {
 			return Refusal::unexpected( 'bulkcat_request_storage', __( 'The request could not be resolved safely. Retry the same request; if this continues, ask an administrator to check catalogue storage.', 'bulk-catalogue-manager-for-woocommerce' ), 503, $error );
 		}

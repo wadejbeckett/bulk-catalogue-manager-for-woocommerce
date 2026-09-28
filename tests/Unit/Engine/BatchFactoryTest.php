@@ -433,6 +433,30 @@ final class BatchFactoryTest extends TestCase {
 		$this->assertNull( $created['previewed_items'], 'Only a filter records the count it showed.' );
 	}
 
+	public function test_a_durable_scope_records_its_unavailable_members_already_failed(): void {
+		global $wpdb;
+		// Review finding: an unavailable member (here 108, in the bin) must never be written, even if it comes back.
+		$claims = [
+			'uuid'  => self::UUID,
+			'owner' => self::USER,
+		];
+		$result = $this->factory()->record_scope( $claims, self::operations(), [ [ 101, 'product' ], [ 108, 'product' ], [ 203, 'variation' ] ], [ 'kind' => 'ids' ], null, [ [ 108, 'product' ], [ 203, 'variation' ] ] );
+		$this->assertSame( 3, $result['total_items'] );
+		$this->assertSame( [ 'batch:1', 'items:1:3', 'failed:1:1', 'failed:1:1' ], $this->store->log, 'The header, every item, then the unavailable ones marked failed, per kind.' );
+		$states = array_column( $this->store->items, 'state', 'object_id' );
+		$this->assertSame(
+			[
+				101 => 'pending',
+				108 => 'failed',
+				203 => 'failed',
+			],
+			$states
+		);
+		$this->assertSame( BatchFactory::unavailable_reason(), $this->store->items[1]['message'] );
+		$this->assertStringNotContainsString( 'bulkcat_', BatchFactory::unavailable_reason() );
+		$this->assertContains( 'UPDATE `wp_bulkcat_batches` SET done_items = done_items + 2, changed_items = changed_items + 0, failed_items = failed_items + 2 WHERE batch_id = 1', $wpdb->queries, 'They count as done and failed at once.' );
+	}
+
 	public function test_items_that_cannot_be_written_leave_no_batch_behind(): void {
 		global $wpdb;
 		$wpdb->responses = [ '/^INSERT INTO `wp_bulkcat_batch_items`/' => false ] + $wpdb->responses;

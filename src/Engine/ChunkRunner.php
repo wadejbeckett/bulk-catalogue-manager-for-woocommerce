@@ -259,9 +259,10 @@ final class ChunkRunner {
 	 * may do so at once from two requests answering the same batch, so the
 	 * check and the enqueue run under BatchRepository::with_schedule_lock()
 	 * (Action Scheduler's unique enqueue alone lets two concurrent inserts
-	 * through). An Action Scheduler whose uniqueness ignores arguments refuses
-	 * the unique enqueue while another batch's chunk is queued; then a plain
-	 * enqueue follows.
+	 * through); if that lock cannot be taken they still run, unlocked. A
+	 * pending retry of the batch counts as queued. An Action Scheduler whose
+	 * uniqueness ignores arguments refuses the unique enqueue while another
+	 * batch's chunk is queued; then a plain enqueue follows.
 	 *
 	 * @param int $batch_id The batch.
 	 * @return bool Whether a chunk of the batch is now pending or running.
@@ -288,12 +289,15 @@ final class ChunkRunner {
 	}
 
 	/**
-	 * Whether a chunk of the batch is pending or running.
+	 * Whether a chunk of the batch is pending or running, or its delayed
+	 * retry is waiting (a chunk that stopped early backs off RETRY_DELAY
+	 * seconds; resolving the request must not cut that short).
 	 *
 	 * @param int $batch_id The batch.
 	 */
 	private static function queued( int $batch_id ): bool {
-		return function_exists( 'as_has_scheduled_action' ) && as_has_scheduled_action( self::HOOK, [ $batch_id ], Data::ACTION_GROUP );
+		return function_exists( 'as_has_scheduled_action' )
+			&& ( as_has_scheduled_action( self::HOOK, [ $batch_id ], Data::ACTION_GROUP ) || as_has_scheduled_action( self::HOOK, [ $batch_id, self::RETRY ], Data::ACTION_GROUP ) );
 	}
 
 	/**

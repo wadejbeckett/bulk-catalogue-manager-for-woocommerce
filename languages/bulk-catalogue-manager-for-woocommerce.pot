@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-09-28T10:58:17+00:00\n"
+"POT-Creation-Date: 2026-09-28T11:39:12+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -102,6 +102,9 @@ msgid "Everything this batch changed has been changed again since, so nothing wa
 msgstr ""
 
 msgid "Nothing this batch changed can be put back now, so nothing was undone. The preview lists why for each product."
+msgstr ""
+
+msgid "This item could not be changed: since it was chosen it was deleted, moved to the bin, taken out of the list or changed between a product and a variation. It was left unchanged."
 msgstr ""
 
 #. translators: 1: number of products the preview showed, such as "120"; 2: number that match the filters now, such as "123".
@@ -1046,6 +1049,9 @@ msgid "This operation is not available. Choose a supported catalogue action and 
 msgstr ""
 
 msgid "This selection is too large. Add a filter to narrow it and try again."
+msgstr ""
+
+msgid "This change could not be read. Reload the page, preview the change again, then apply it."
 msgstr ""
 
 msgid "These products or filters could not be selected. Check your selection and try again."

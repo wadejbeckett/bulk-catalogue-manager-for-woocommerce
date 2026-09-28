@@ -303,7 +303,8 @@ try {
 	foreach ( $variants as $what => $intent ) {
 		$refused( $service->apply( [ 'intent' => $intent ] + $case['submit'] ), 'bulkcat_request_conflict', "Changed $what under an accepted id conflicts." );
 	}
-	$refused( $service->apply( [ 'intent' => [ 'source' => 'undo' ] + $case['submit']['intent'] ] + $case['submit'] ), 'bulkcat_invalid_value', 'A changed source is not an Apply intent.' );
+	$malformed = $refused( $service->apply( [ 'intent' => [ 'source' => 'undo' ] + $case['submit']['intent'] ] + $case['submit'] ), 'bulkcat_invalid_value', 'A changed source is not an Apply intent.' );
+	$check( str_contains( $malformed->get_error_message(), 'This change could not be read' ), 'A malformed change is refused in the words of a change, not of a selection.' );
 	$refused( $service->undo( $case['submit'] ), 'bulkcat_invalid_value', 'An Apply intent is not an undo intent.' );
 	$first_plan = ( new Planner() )->plan( $first['batch_id'], 1 );
 	$undo_grant = $accepted(
@@ -582,6 +583,70 @@ try {
 		'The 1.0 batch is undone durably.'
 	);
 	$check( 'complete' === $drain( $undo['batch_id'] ) && 110.0 === $price( $k ) && 'undone' === ( new BatchRepository() )->status( $job['batch_id'] ), 'Its history still undoes it.' );
+
+	// P. Members in the bin at preview are recorded failed and never written, even when restored before the run.
+	$kept     = $simple( '120' );
+	$restored = $simple( '130' );
+	$binned   = $simple( '140' );
+	$capture  = $accepted( $service->capture( $service->issue( 'selection.capture', [ 'ids' => [ $kept, $restored, $binned ] ] ) ), 'Capture three.' );
+	wp_trash_post( $restored );
+	wp_trash_post( $binned );
+	$preview = $accepted(
+		$service->preview(
+			[
+				'token'      => $capture['token'],
+				'operations' => $set( '1' ),
+			]
+		),
+		'Preview with two members in the bin.'
+	);
+	$check( [ $restored, $binned ] === $preview['unreadable'] && 1 === $preview['totals']['would_change'], 'The preview says the two in the bin cannot be changed.' );
+	$grant  = $accepted(
+		$service->issue(
+			'batch.apply',
+			[
+				'token'      => $capture['token'],
+				'operations' => $preview['operations'],
+				'scope_hash' => $preview['scope_hash'],
+			]
+		),
+		'Grant.'
+	);
+	$result = $accepted(
+		$service->apply(
+			$grant + [
+				'token'        => $capture['token'],
+				'preview_hash' => $preview['hash'],
+			]
+		),
+		'Apply.'
+	);
+	$states = $wpdb->get_results( $wpdb->prepare( 'SELECT object_id, state, message FROM %i WHERE batch_id = %d ORDER BY item_id', $tables['items'], $result['batch_id'] ), ARRAY_A );
+	$check( [ 'pending', 'failed', 'failed' ] === array_column( $states, 'state' ) && BatchFactory::unavailable_reason() === $states[1]['message'], 'The two are recorded failed, with the plain reason, at acceptance.' );
+	wp_untrash_post( $restored );
+	wp_cache_flush();
+	$status = $drain( $result['batch_id'] );
+	$report = ( new BatchRepository() )->find( $result['batch_id'] );
+	$check( 'partial' === $status && 1 === $report['changed_items'] && 2 === $report['failed_items'] && 3 === $report['done_items'], 'The outcome is partial: one changed, two failed.' );
+	$check( 1.0 === $price( $kept ) && 130.0 === $price( $restored ) && 140.0 === $price( $binned ), 'Neither the restored member nor the one still in the bin was written.' );
+
+	// Q. A failing bulkcat_batch_created listener that runs before the plugin's own cannot hold the batch back: it is scheduled first.
+	$l       = $simple( '150' );
+	$case    = $prepare( [ $l ], $set( '151' ) );
+	$failing = static function (): void {
+		throw new RuntimeException( 'A listener failed.' );
+	};
+	add_action( 'bulkcat_batch_created', $failing, 1 );
+	try {
+		$refused( $service->apply( $case['submit'] ), 'bulkcat_request_storage', 'A failing listener makes the answer uncertain.' );
+	} finally {
+		remove_action( 'bulkcat_batch_created', $failing, 1 );
+	}
+	$id = (int) $receipt( $case['grant']['uuid'] )['result_id'];
+	$check( $id > 0 && 1 === count( $pending( $id ) ), 'The batch was accepted and scheduled before the listener ran.' );
+	$again = $accepted( $service->apply( $case['submit'] ), 'The retry resolves.' );
+	$check( $id === $again['batch_id'] && true === $again['replayed'] && 1 === count( $pending( $id ) ), 'The retry answers it, still queued once.' );
+	$check( 'complete' === $drain( $id ) && 151.0 === $price( $l ), 'It runs once.' );
 
 	echo wp_json_encode( [ 'checks' => $checks ], JSON_PRETTY_PRINT ) . "\n";
 } finally {

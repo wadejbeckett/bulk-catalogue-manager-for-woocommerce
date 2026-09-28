@@ -31,13 +31,15 @@ defined( 'ABSPATH' ) || exit;
  * transaction and schedules work only after it commits. Nothing here
  * enqueues, fires hooks or writes a product.
  *
- * Apply: the operations must still be what the registry makes of them; the
- * snapshot credential must be the owner's live one for the intent's
- * snapshot; the exact scope is built once (ExactScope) and must carry the
- * intent's scope hash, and the preview hash must bind that scope, the
- * credential, the operations and the settings; the snapshot lease is
- * checked again after expansion; then exactly the checked scope is
- * recorded (BatchFactory::record_scope()), unavailable members included.
+ * Apply: the operations must still be what the registry makes of them
+ * (and the registry's list is what is used and recorded); the snapshot
+ * credential must be the owner's live one for the intent's snapshot; the
+ * exact scope is built once (ExactScope) and must carry the intent's scope
+ * hash, and the preview hash must bind that scope, the credential, the
+ * operations and the settings; the snapshot lease is checked again after
+ * expansion; then exactly the checked scope is recorded
+ * (BatchFactory::record_scope()), unavailable members as items already
+ * failed.
  *
  * Undo: the batch undone is locked first, before this transaction reads
  * anything, then planned afresh and must still have the intent's plan hash; the undo batch is recorded and the batch undone moved
@@ -89,9 +91,9 @@ final class BatchAcceptance {
 	 * @return array<string,mixed>|\WP_Error
 	 */
 	private static function apply( array $claims, array $intent, array $credentials, \Closure $clock, BatchFactory $factory ): array|\WP_Error {
-		$current = BatchIntent::current( $intent );
-		if ( true !== $current ) {
-			return false === $current ? self::stale() : $current;
+		$operations = BatchIntent::current_operations( $intent );
+		if ( ! is_array( $operations ) ) {
+			return false === $operations ? self::stale() : $operations;
 		}
 		$token = $credentials['token'] ?? null;
 		if ( isset( $intent['snapshot'] ) ) {
@@ -111,8 +113,8 @@ final class BatchAcceptance {
 			$selection = Selection::of_ids( $intent['ids'] );
 			$bound     = $selection->ids;
 		}
-		$scope = ExactScope::build( $selection, $intent['operations'], $factory );
-		$hash  = Preview::hash( $bound, $intent['operations'], Settings::load(), $scope['scope_hash'] );
+		$scope = ExactScope::build( $selection, $operations, $factory );
+		$hash  = Preview::hash( $bound, $operations, Settings::load(), $scope['scope_hash'] );
 		if ( ! hash_equals( $scope['scope_hash'], $intent['scope_hash'] ) || ! is_string( $credentials['preview_hash'] ?? null ) || ! hash_equals( $hash, $credentials['preview_hash'] ) ) {
 			return self::stale();
 		}
@@ -141,7 +143,7 @@ final class BatchAcceptance {
 		} else {
 			$summary['ids'] = $selection->ids;
 		}
-		return $factory->record_scope( $claims, $intent['operations'], $scope['objects'], $summary );
+		return $factory->record_scope( $claims, $operations, $scope['objects'], $summary, null, $scope['missing'] );
 	}
 
 	/**

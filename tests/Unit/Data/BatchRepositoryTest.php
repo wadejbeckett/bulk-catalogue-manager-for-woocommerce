@@ -182,8 +182,36 @@ final class BatchRepositoryTest extends TestCase {
 			( new BatchRepository() )->request_candidates( self::UUID, 3 );
 			$this->fail( 'A failed lookup answered as if the id were unknown.' );
 		} catch ( \RuntimeException $error ) {
-			$this->assertNotEmpty( $error->getMessage() );
+			$this->assertStringContainsString( 'could not be looked up', $error->getMessage() );
 		}
+	}
+
+	public function test_scheduling_work_runs_with_or_without_its_lock(): void {
+		$name = 'bulkcat_schedule_' . md5( 'wp_bulkcat_batches|7' );
+		foreach ( [
+			'taken'   => '1',
+			'refused' => null,
+			'timeout' => '0',
+		] as $case => $answer ) {
+			bulkcat_test_reset();
+			self::db()->responses[ "SELECT GET_LOCK('$name', 10)" ] = $answer;
+			$ran = ( new BatchRepository() )->with_schedule_lock( 7, static fn(): string => 'ran' );
+			$this->assertSame( 'ran', $ran, $case );
+			$this->assertSame( 'taken' === $case ? [ "SELECT GET_LOCK('$name', 10)", "SELECT RELEASE_LOCK('$name')" ] : [ "SELECT GET_LOCK('$name', 10)" ], self::db()->queries, $case );
+		}
+	}
+
+	public function test_unavailable_objects_are_failed_by_kind_and_only_while_pending(): void {
+		self::db()->responses['/^UPDATE `wp_bulkcat_batch_items` SET state/'] = 1;
+		$this->assertSame( 2, ( new BatchRepository() )->fail_objects( 5, [ [ 9, 'product' ], [ 12, 'variation' ] ], 'Left unchanged.' ) );
+		$this->assertSame(
+			[
+				"UPDATE `wp_bulkcat_batch_items` SET state = 'failed', message = 'Left unchanged.' WHERE batch_id = 5 AND state = 'pending' AND object_type = 'product' AND object_id IN (9)",
+				"UPDATE `wp_bulkcat_batch_items` SET state = 'failed', message = 'Left unchanged.' WHERE batch_id = 5 AND state = 'pending' AND object_type = 'variation' AND object_id IN (12)",
+			],
+			self::db()->queries
+		);
+		$this->assert_all_prepared();
 	}
 
 	public function test_set_status_stamps_the_finish_only_for_a_final_status(): void {

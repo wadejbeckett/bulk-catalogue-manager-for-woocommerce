@@ -60,6 +60,7 @@ final class BatchStore {
 		global $wpdb;
 		$wpdb->responses = [
 			'/^INSERT INTO `wp_bulkcat_batch_items`/'      => fn( string $sql ): int => $this->insert_items( $sql ),
+			'/^UPDATE `wp_bulkcat_batch_items` SET state = \'failed\', message = /' => fn( string $sql ): int => $this->fail_objects( $sql ),
 			'/^DELETE FROM `(wp_bulkcat_batches|wp_bulkcat_batch_items)`/' => fn( string $sql ): int => $this->delete( $sql ),
 			'/^SELECT \* FROM `wp_bulkcat_batches` WHERE batch_id = (\d+)$/' => fn( string $sql ): ?array => $this->find( $sql ),
 			'/^SELECT batch_id FROM `wp_bulkcat_batches` WHERE uuid = /' => fn( string $sql ): array => $this->candidates( $sql ),
@@ -119,6 +120,25 @@ final class BatchStore {
 		}
 		$this->log[] = 'items:' . $rows[0][1] . ':' . count( $rows );
 		return count( $rows );
+	}
+
+	/**
+	 * BatchRepository::fail_objects(): pending items of the named objects and kind become failed with the message.
+	 */
+	private function fail_objects( string $sql ): int {
+		$this->sync();
+		preg_match( "/message = '((?:[^'\\\\]|\\\\.)*)' WHERE batch_id = (\d+) AND state = 'pending' AND object_type = '([a-z]+)' AND object_id IN \(([\d, ]+)\)$/", $sql, $m );
+		$ids    = array_map( 'intval', explode( ',', $m[4] ) );
+		$marked = 0;
+		foreach ( $this->items as $index => $item ) {
+			if ( (int) $m[2] === $item['batch_id'] && 'pending' === $item['state'] && $m[3] === $item['object_type'] && in_array( $item['object_id'], $ids, true ) ) {
+				$this->items[ $index ]['state']   = 'failed';
+				$this->items[ $index ]['message'] = stripslashes( $m[1] );
+				++$marked;
+			}
+		}
+		$this->log[] = 'failed:' . $m[2] . ':' . $marked;
+		return $marked;
 	}
 
 	private function delete( string $sql ): int {

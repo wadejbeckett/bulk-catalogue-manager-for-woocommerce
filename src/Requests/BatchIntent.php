@@ -31,8 +31,9 @@ defined( 'ABSPATH' ) || exit;
  * the settings, defaults or actions of a later day cannot change what an
  * accepted request was, so a retry always fingerprints to its receipt.
  * Whether the operations are still what the registry would make of them is
- * asked only before a new acceptance (current()), where a difference means
- * the preview is stale.
+ * asked only before a new acceptance (current_operations()), where a
+ * difference means the preview is stale, and the registry's own list is
+ * what is then recorded.
  *
  * Apply: `{ version, source: bulk, operations, scope_hash, snapshot | ids }`.
  * Undo: `{ version, source: undo, batch_id, plan_hash, force }`. Transport
@@ -66,18 +67,21 @@ final class BatchIntent {
 	}
 
 	/**
-	 * Whether a canonical Apply intent's operations are still exactly what
-	 * the registry makes of them, asked before a new acceptance only.
+	 * The operations a new acceptance records, asked before a new
+	 * acceptance only: the registry's own normalised list, and only when it
+	 * is exactly the intent's (the signed fingerprint cannot tell a list
+	 * from a map with the same numbered keys, so what is recorded is always
+	 * what the registry produced, never the shape a client sent).
 	 *
 	 * @param array<string,mixed> $intent Canonical Apply intent.
-	 * @return bool|\WP_Error False when the registry would now normalise them differently; the registry's refusal when it no longer accepts them.
+	 * @return list<array<string,mixed>>|false|\WP_Error The normalised list; false when the registry would now normalise the intent differently; the registry's refusal when it no longer accepts it.
 	 */
-	public static function current( array $intent ): bool|\WP_Error {
+	public static function current_operations( array $intent ): array|false|\WP_Error {
 		$operations = Actions::instance()->validate_list( $intent['operations'] ?? null );
 		if ( is_wp_error( $operations ) ) {
 			return $operations;
 		}
-		return wp_json_encode( Preview::canonical( $operations ) ) === wp_json_encode( Preview::canonical( $intent['operations'] ) );
+		return wp_json_encode( Preview::canonical( $operations ) ) === wp_json_encode( Preview::canonical( $intent['operations'] ) ) ? $operations : false;
 	}
 
 	/**

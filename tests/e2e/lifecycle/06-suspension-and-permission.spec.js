@@ -445,7 +445,7 @@ test.describe( 'a real 30-minute suspension (BULKCAT_E2E_REAL_SUSPENSION=1)', ()
 		test.setTimeout( 45 * 60 * 1000 );
 		const names = [ 'Lifecycle Real A', 'Lifecycle Real B' ];
 		const made = makeProducts( names, '10.00' );
-		const [ seven ] = idsByName( [ SEED.simple( 7 ) ] );
+		const [ seven ] = makeProducts( [ 'Lifecycle Open Page' ], '20.00' );
 		const before = prices( [ seven ] );
 		const open = await context.newPage();
 		const frozen = await context.newPage();
@@ -456,8 +456,12 @@ test.describe( 'a real 30-minute suspension (BULKCAT_E2E_REAL_SUSPENSION=1)', ()
 			// The open page: one product, previewed.
 			await openScreen( open );
 			const parts = screenParts( open );
-			await searchFor( open, 'Probe Simple', SEED.simple( 7 ) );
-			await parts.box( SEED.simple( 7 ) ).check();
+			await searchFor(
+				open,
+				'Lifecycle Open Page',
+				'Lifecycle Open Page'
+			);
+			await parts.box( 'Lifecycle Open Page' ).check();
 			await expect( parts.bar ).toContainText( '1 product selected' );
 			const openToken = await currentToken( open );
 			const openPanel = await checkIncrease(
@@ -477,6 +481,11 @@ test.describe( 'a real 30-minute suspension (BULKCAT_E2E_REAL_SUSPENSION=1)', ()
 				'Apply to 2 products'
 			);
 			await frozen.clock.pauseAt( Date.now() + 1000 );
+			// The open page is the tab in front: a tab behind is throttled by
+			// the browser (the first real run, where it renewed once in 30
+			// minutes and so behaved like the frozen one), which is what a
+			// suspended tab is; this page stands for one left open in view.
+			await open.bringToFront();
 
 			const started = Date.now();
 			log.push( `wait started ${ new Date( started ).toISOString() }` );
@@ -569,7 +578,7 @@ test.describe( 'a real 30-minute suspension (BULKCAT_E2E_REAL_SUSPENSION=1)', ()
 			// eslint-disable-next-line no-console
 			console.log( log.join( '\n' ) );
 			undoLeftovers( mark );
-			deleteProducts( made );
+			deleteProducts( [ ...made, seven ] );
 		}
 	} );
 } );

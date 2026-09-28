@@ -434,6 +434,63 @@ describe( 'preview inside the panel', () => {
 		).toBeDisabled();
 	} );
 
+	it( 'never lets a preview of an older version of the change enable Apply (T85)', async () => {
+		const answers = [];
+		routeApi( apiFetch, {
+			'POST preview': ( options ) =>
+				new Promise( ( resolve ) => {
+					answers.push( { resolve, options } );
+				} ),
+		} );
+		render(
+			<BulkChangePanel
+				selection={ { kind: 'ids', ids: IDS } }
+				registry={ REGISTRY }
+				settings={ SETTINGS }
+			/>
+		);
+		checkIncrease();
+		expect( answers ).toHaveLength( 1 );
+		// Check the change waits while it is worked out.
+		expect(
+			screen.getByRole( 'button', { name: 'Check the change' } )
+		).toBeDisabled();
+		// The change is edited while the first answer is still out.
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Edit step 1' } )
+		);
+		fireEvent.change( screen.getByLabelText( 'How much' ), {
+			target: { value: '12' },
+		} );
+		// The answer for 10 arrives: it is not the change on screen.
+		answers[ 0 ].resolve(
+			previewResponse( {
+				operations: answers[ 0 ].options.data.operations,
+			} )
+		);
+		const again = await screen.findByRole( 'button', {
+			name: /^(Check the change|Preview again)$/,
+		} );
+		expect(
+			screen.queryByRole( 'button', { name: /^Apply to / } )
+		).toBeNull();
+		fireEvent.click( again );
+		await waitFor( () => expect( answers ).toHaveLength( 2 ) );
+		expect( answers[ 1 ].options.data.operations[ 0 ].args.amount ).toBe(
+			'12'
+		);
+		answers[ 1 ].resolve(
+			previewResponse( {
+				operations: answers[ 1 ].options.data.operations,
+			} )
+		);
+		expect(
+			await screen.findByRole( 'button', {
+				name: 'Apply to 20 products',
+			} )
+		).toBeEnabled();
+	} );
+
 	it( 'shows a failed preview in plain words with the code behind Show details', async () => {
 		routeApi( apiFetch, {
 			'POST preview': {

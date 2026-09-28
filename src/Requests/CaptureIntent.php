@@ -81,7 +81,18 @@ final class CaptureIntent {
 	 * @param array<string,mixed> $intent Canonical intent.
 	 */
 	public static function fingerprint( array $intent ): string {
-		return hash( 'sha256', (string) wp_json_encode( self::sort( $intent ) ) );
+		return hash( 'sha256', self::encode( $intent ) );
+	}
+
+	/**
+	 * The canonical JSON a fingerprint hashes: map keys sorted, list order
+	 * kept. Encoding is compositional, so a large value may be hashed part
+	 * by part from the encodings of its elements (ExactScope::signature()).
+	 *
+	 * @param array<mixed> $value JSON-compatible value.
+	 */
+	public static function encode( array $value ): string {
+		return (string) wp_json_encode( self::sort( $value ) );
 	}
 
 	/**

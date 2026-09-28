@@ -553,6 +553,37 @@ describe( 'bulk panel: preview, apply and done', () => {
 		).toBeEnabled();
 	} );
 
+	it( 'says a server failure of the preview in plain words, never the server’s own page (T85)', async () => {
+		routeApi( apiFetch, {
+			'POST preview': restError(
+				'internal_server_error',
+				'<p>There has been a critical error on this website.</p><p><a href="https://wordpress.org/documentation/article/faq-troubleshooting/">Learn more about troubleshooting WordPress.</a></p>',
+				{ status: 500 }
+			),
+		} );
+		renderPanel();
+		chooseIncrease();
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Check the change' } )
+		);
+		const alert = await screen.findByRole( 'alert' );
+		expect( alert.textContent ).toContain(
+			'Something went wrong. Try again in a moment.'
+		);
+		expect( alert.textContent ).not.toContain( '<p>' );
+		expect( alert.textContent ).not.toContain( 'critical error' );
+		// The code stays behind Show details, and Check the change is offered again.
+		fireEvent.click(
+			within( alert ).getByRole( 'button', { name: 'Show details' } )
+		);
+		expect(
+			within( alert ).getByText( 'internal_server_error' )
+		).toBeVisible();
+		expect(
+			screen.getByRole( 'button', { name: 'Check the change' } )
+		).toBeEnabled();
+	} );
+
 	it( 'disables Apply when the preview is empty', async () => {
 		routeApi( apiFetch, {
 			'POST preview': previewResponse( {

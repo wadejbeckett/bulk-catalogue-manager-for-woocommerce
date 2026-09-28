@@ -80,15 +80,29 @@ final class ExactScope {
 	 * @param list<int>    $unavailable Unavailable selected members.
 	 */
 	public static function signature( array $objects, array $operations, array $unavailable ): string {
-		$items = array_map( static fn( array $entry ): array => [ $entry[0], $entry[1], $entry[2] ?? $operations ], $objects );
+		// The fingerprint of { items: [ [ id, kind, steps ], … ], unavailable }
+		// in canonical JSON, hashed a part at a time (T85): the whole array
+		// and its encoding cost about 2 KB an object — over 200 MB for the
+		// whole catalogue — while the stream needs the shared step list's
+		// encoding once. The hash is the one the whole-array form gave.
+		$shared  = null;
+		$context = hash_init( 'sha256' );
+		hash_update( $context, '{"items":[' );
+		$first = true;
+		foreach ( $objects as $entry ) {
+			if ( isset( $entry[2] ) ) {
+				$steps = CaptureIntent::encode( $entry[2] );
+			} else {
+				$shared ??= CaptureIntent::encode( $operations );
+				$steps    = $shared;
+			}
+			hash_update( $context, ( $first ? '' : ',' ) . '[' . wp_json_encode( $entry[0] ) . ',' . wp_json_encode( $entry[1] ) . ',' . $steps . ']' );
+			$first = false;
+		}
+		hash_update( $context, '],"unavailable":' . CaptureIntent::encode( $unavailable ) . '}' );
 		return hash_hmac(
 			'sha256',
-			'bulk-catalogue-manager-for-woocommerce/scope/1/' . CaptureIntent::fingerprint(
-				[
-					'items'       => $items,
-					'unavailable' => $unavailable,
-				]
-			),
+			'bulk-catalogue-manager-for-woocommerce/scope/1/' . hash_final( $context ),
 			wp_salt( 'auth' )
 		);
 	}

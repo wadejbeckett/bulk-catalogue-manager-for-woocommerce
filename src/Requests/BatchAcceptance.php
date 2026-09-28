@@ -39,8 +39,8 @@ defined( 'ABSPATH' ) || exit;
  * checked again after expansion; then exactly the checked scope is
  * recorded (BatchFactory::record_scope()), unavailable members included.
  *
- * Undo: the batch undone is locked, planned afresh and must still have the
- * intent's plan hash; the undo batch is recorded and the batch undone moved
+ * Undo: the batch undone is locked first, before this transaction reads
+ * anything, then planned afresh and must still have the intent's plan hash; the undo batch is recorded and the batch undone moved
  * to undoing in the same transaction, so two undos of one batch serialise
  * and the loser records nothing.
  */
@@ -57,6 +57,10 @@ final class BatchAcceptance {
 	public static function accept( array $claims, array $intent, array $credentials, \Closure $clock ): array|\WP_Error {
 		$batches = new BatchRepository();
 		$factory = new BatchFactory( null, $batches );
+		if ( 'batch.undo' === $claims['operation'] ) {
+			// Locked before this transaction reads anything, so it plans from what a concurrent undo committed.
+			$batches->lock( $intent['batch_id'] );
+		}
 		// A batch already under this request id was not made by this grant: refuse, never make another.
 		$earlier = $factory->earlier( $claims['uuid'], $claims['owner'], static fn(): bool => false );
 		if ( null !== $earlier ) {
@@ -150,7 +154,6 @@ final class BatchAcceptance {
 	 * @return array<string,mixed>|\WP_Error
 	 */
 	private static function undo( array $claims, array $intent, BatchRepository $batches, BatchFactory $factory ): array|\WP_Error {
-		$batches->lock( $intent['batch_id'] );
 		$plan = ( new Planner( $batches ) )->plan( $intent['batch_id'], $claims['owner'] );
 		if ( is_wp_error( $plan ) ) {
 			return $plan;

@@ -1,6 +1,6 @@
 # Exact selection contract
 
-Status: follow-up to 1.0.0, 25 September 2026. T81 capture/receipt foundation is accepted locally; T82 lifecycle/composition is in progress. Later preview/Apply/UI integration remains planned. No production rollout is implied.
+Status: follow-up to 1.0.0 on branch `codex/exact-selection-plan`. T81 (capture and receipts) was accepted locally on 25 September and T82 (composition and lifecycle) on 26 September; T83 (exact preview, durable Apply and undo, 1.0 request ids) is built and verified locally as of 28 September and awaits independent review and acceptance; T84 (the screen) and T85 (integration proof) are next. Engineering rulings made during T83 are in the plan. No merge, release or production rollout is implied.
 
 ## Behaviour
 

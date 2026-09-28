@@ -208,3 +208,27 @@ docker rm -f -v bulkcat-perf-wp bulkcat-perf-db
 docker volume rm bulkcat-perf-wp
 docker network rm bulkcat-perf
 ```
+
+## Exact selection and durable requests (T81–T83)
+
+The PHP probes named `exact-*.php` and `selection-*.php` run inside WordPress
+through WP-CLI on a disposable stack whose plugin directory is this checkout,
+never on a real shop: each refuses to run unless `siteurl` is the fixture's
+(`http://localhost:18925`), and its header gives its command, for example
+
+```sh
+wp eval 'require "wp-content/plugins/bulk-catalogue-manager-for-woocommerce/tests/probe/exact-batch.php";'
+```
+
+(`eval` with `require`, not `eval-file`, so the file's `strict_types` holds).
+T83's are `exact-batch.php` (the service journey: capture, exact preview,
+durable Apply and its retries, the plugin's queue, journal, undo),
+`exact-batch-routes.php` (the same through the REST routes, with their
+refusals), `exact-batch-faults.php` (rollback, lost COMMIT, scheduling gaps,
+expiry, conflicts, tombstones, changed kinds, unavailable members, epochs,
+pruning and 1.0 request ids) and `exact-batch-race.php`, whose phases two
+overlapping WP-CLI processes run (`$phase="prepare_apply"; require …`, then
+`hold_apply` and `peer_apply` at once, then `verify_apply`; the same for
+`undo`). They print their checks as JSON and exit 1 on the first failure,
+cleaning up the products they made. `probe.py`'s write and variations
+chapters take selections and changes through `POST /requests` grants.

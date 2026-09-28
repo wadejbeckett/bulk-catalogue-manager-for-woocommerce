@@ -14,6 +14,7 @@ const {
 	untilVisible,
 	productByName,
 	tabTo,
+	focusOn,
 } = require( './helpers' );
 
 const PRODUCTS = /\/bulkcat\/v1\/products(\?|%3F|$)/;
@@ -82,7 +83,7 @@ test( 'no matches lists the filters and clears them', async ( { page } ) => {
 	const search = page.getByRole( 'searchbox', {
 		name: 'Search by name or SKU',
 	} );
-	await tabTo( page, search );
+	await focusOn( search );
 	await page.keyboard.type( 'zzz-no-such-product' );
 	await expect(
 		page.getByText( 'No products match these filters.' )
@@ -113,7 +114,7 @@ test( 'a failed read says what failed and keeps the rows', async ( {
 	const search = page.getByRole( 'searchbox', {
 		name: 'Search by name or SKU',
 	} );
-	await tabTo( page, search );
+	await focusOn( search );
 	await page.keyboard.type( 'Probe' );
 	await expect(
 		page

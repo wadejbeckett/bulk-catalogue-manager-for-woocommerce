@@ -210,11 +210,15 @@ test( 'animation stops for reduced motion', async ( { page } ) => {
 	);
 	const skeleton = page.locator( '.bulkcat-skel' ).first();
 	await expect( skeleton ).toBeVisible();
-	const animation = await skeleton.evaluate(
-		( node ) =>
-			node.ownerDocument.defaultView.getComputedStyle( node )
-				.animationName
-	);
+	// Found and measured in one task of the page (T85): a redraw between
+	// finding the node and reading its style would measure a detached node,
+	// whose computed style is empty.
+	const animation = await page.evaluate( () => {
+		const node = document.querySelector( '.bulkcat-skel' );
+		return node && node.isConnected
+			? window.getComputedStyle( node ).animationName
+			: null;
+	} );
 	release();
 	expect( animation ).toBe( 'none' );
 } );

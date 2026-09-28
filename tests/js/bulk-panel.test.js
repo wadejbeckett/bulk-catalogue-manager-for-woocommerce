@@ -1090,6 +1090,61 @@ describe( 'bulk panel: preview, apply and done', () => {
 		expect( callsTo( apiFetch, 'POST requests' ) ).toHaveLength( 1 );
 	} );
 
+	it( 'keeps an uncertain Apply’s grant across a reload of the page (T85)', async () => {
+		let batches = 0;
+		routeApi( apiFetch, {
+			'POST preview': previewResponse(),
+			'POST requests': grantFor,
+			'POST batches': () => {
+				batches++;
+				return batches === 1
+					? restError( 'fetch_error', 'Offline.', {} )
+					: {
+							batch_id: 16,
+							status: 'queued',
+							total_items: 24,
+							replayed: true,
+						};
+			},
+		} );
+		const first = renderPanel( { selection: SNAPSHOT } );
+		chooseIncrease();
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Check the change' } )
+		);
+		fireEvent.click(
+			await screen.findByRole( 'button', {
+				name: 'Apply to 20 products',
+			} )
+		);
+		await screen.findByText(
+			'We could not confirm whether the change was applied'
+		);
+		first.unmount();
+		// A reload: the module's memory is gone, the tab's copy is not.
+		require( '../../assets/src/panels/bulk/hooks' ).resetApplyGrant();
+		const { onApplied } = renderPanel( { selection: SNAPSHOT } );
+		chooseIncrease();
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Check the change' } )
+		);
+		fireEvent.click(
+			await screen.findByRole( 'button', {
+				name: 'Apply to 20 products',
+			} )
+		);
+		await waitFor( () =>
+			expect( onApplied ).toHaveBeenCalledWith( 16, {
+				selection: SNAPSHOT,
+				replayed: true,
+			} )
+		);
+		const [ lost, again ] = callsTo( apiFetch, 'POST batches' );
+		expect( again.data.uuid ).toBe( lost.data.uuid );
+		expect( again.data.request_proof ).toBe( lost.data.request_proof );
+		expect( callsTo( apiFetch, 'POST requests' ) ).toHaveLength( 1 );
+	} );
+
 	it( 'resolves an uncertain earlier Apply before a different change, and shows it when it had gone through', async () => {
 		let batches = 0;
 		routeApi( apiFetch, {

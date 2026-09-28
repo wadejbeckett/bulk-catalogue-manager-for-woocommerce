@@ -65,6 +65,22 @@ async function tabTo( page, target, { back = false, max = 120 } = {} ) {
 }
 
 /**
+ * Give keyboard focus to a control found by its role and name, wherever it
+ * sits in the tab order. The admin menu and notices ahead of the screen are
+ * as long as the site makes them, so counting Tab presses from the top of the
+ * page breaks on a site with a longer menu (T85); the control is found by
+ * what a screen reader announces instead, focused without a pointer event,
+ * and everything after it is typed.
+ *
+ * @param {import('@playwright/test').Locator} target Control, by role and name.
+ */
+async function focusOn( target ) {
+	await expect( target ).toBeVisible();
+	await target.focus();
+	await expect( target ).toBeFocused();
+}
+
+/**
  * The element with focus, described for assertions and messages.
  *
  * @param {import('@playwright/test').Page} page Page.
@@ -227,6 +243,7 @@ module.exports = {
 	SEED,
 	openScreen,
 	tabTo,
+	focusOn,
 	focused,
 	rest,
 	productByName,

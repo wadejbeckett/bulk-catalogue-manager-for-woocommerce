@@ -7,7 +7,15 @@
 import { useCallback, useEffect, useRef, useState } from '@wordpress/element';
 
 import { request } from '../../api';
-import { envelope, isUncertain, sendWithGrant } from '../../requests';
+import {
+	envelope,
+	isUncertain,
+	keptHolder,
+	resolveHeld,
+	sendWithGrant,
+} from '../../requests';
+import { readSettings } from '../../settings';
+import { tabScope, tabStore } from '../../tab-store';
 
 /** The 409 codes the apply answers (Engine\BatchFactory, Requests\*). */
 export const SELECTION_CHANGED = 'bulkcat_selection_changed';
@@ -156,15 +164,56 @@ export function usePreview() {
 /**
  * The Apply grant held between attempts. It belongs to the screen, not to
  * one opening of the panel: closing the panel after an uncertain Apply and
- * opening it again still resends, or first resolves, that grant.
+ * opening it again still resends, or first resolves, that grant. Since T85
+ * it is also kept in the tab's copy (tab-store.js, beside the selection's
+ * handles), so a reload while the answer is unknown still resends or
+ * resolves the same grant instead of asking for a new one: a relative change
+ * such as "increase by 10 per cent" can then never be made twice.
  */
-const applyHolder = { current: null };
+let applyHolder = null;
 
 /**
- * Forget the held Apply grant (tests).
+ * The screen's Apply holder, read from the tab's copy on first use.
+ *
+ * @return {Object} `{ current, store }`.
+ */
+function applyGrant() {
+	if ( ! applyHolder ) {
+		applyHolder = keptHolder(
+			tabStore( tabScope( readSettings(), 'apply' ) )
+		);
+	}
+	return applyHolder;
+}
+
+/**
+ * Forget the held Apply grant (tests). The tab's copy is left alone.
  */
 export function resetApplyGrant() {
-	applyHolder.current = null;
+	applyHolder = null;
+}
+
+/**
+ * After a reload: whether the tab still held an Apply grant whose answer was
+ * unknown, and if so what became of it (POST /requests/resolve, which never
+ * creates work). When it had been accepted, the answer is its batch
+ * (`{ batch_id, status, … }`) with the snapshot handle it was applied to
+ * (`selectionKey`); otherwise null, and the grant is kept for the same change
+ * or resolved again before a different one.
+ *
+ * @return {Promise<Object|null>} The earlier change, or null.
+ */
+export async function resumeApply() {
+	const holder = applyGrant();
+	const held = holder.current;
+	if ( ! held?.restored ) {
+		return null;
+	}
+	const outcome = await resolveHeld( holder );
+	if ( ! outcome?.batch_id ) {
+		return null;
+	}
+	return { ...outcome, selectionKey: held.meta?.selectionKey || '' };
 }
 
 /**
@@ -188,8 +237,14 @@ export function useApply() {
 			const args = selectionArgs( selection );
 			setState( { status: 'applying' } );
 			try {
-				const batch = await sendWithGrant( applyHolder, {
+				const batch = await sendWithGrant( applyGrant(), {
 					key: applyKey( selection, preview ),
+					meta: {
+						selectionKey:
+							selection?.kind === 'snapshot'
+								? selection.key || ''
+								: '',
+					},
 					operation: 'batch.apply',
 					intent: {
 						source: 'bulk',

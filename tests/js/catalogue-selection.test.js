@@ -623,6 +623,157 @@ describe( 'selection in the catalogue', () => {
 		);
 	} );
 
+	describe( 'an Apply whose answer was lost, then a reload (T85)', () => {
+		const { previewResponse } = require( './bulk-fixtures' );
+		const {
+			resetApplyGrant,
+		} = require( '../../assets/src/panels/bulk/hooks' );
+
+		beforeEach( () => {
+			route( apiFetch, {
+				fields: () => REGISTRY,
+				products,
+				categories: () => CATEGORIES,
+				...server.routes(),
+				preview: () => previewResponse(),
+				'batches/101': () => ( {
+					batch_id: 101,
+					status: 'queued',
+					total_items: 2,
+					done_items: 0,
+					failed_items: 0,
+				} ),
+			} );
+		} );
+
+		/**
+		 * Select the page, open the panel, check an increase and apply it.
+		 */
+		async function applyIncrease() {
+			fireEvent.click(
+				within( bar() ).getByRole( 'button', {
+					name: 'Make a change to these',
+				} )
+			);
+			const dialog = await screen.findByRole( 'dialog', {
+				name: 'Bulk change',
+			} );
+			fireEvent.click(
+				within( dialog ).getAllByRole( 'radio', {
+					name: /^Increase or decrease/,
+				} )[ 0 ]
+			);
+			fireEvent.change( within( dialog ).getByLabelText( 'How much' ), {
+				target: { value: '1' },
+			} );
+			fireEvent.click(
+				within( dialog ).getByRole( 'button', {
+					name: 'Check the change',
+				} )
+			);
+			fireEvent.click(
+				await within( dialog ).findByRole( 'button', {
+					name: 'Apply to 20 products',
+				} )
+			);
+			return dialog;
+		}
+
+		/**
+		 * A reload: a new page in the same tab, the modules' memory gone.
+		 *
+		 * @param {Object} rendered The screen to unmount.
+		 */
+		async function reload( rendered ) {
+			rendered.unmount();
+			resetSelectionSession();
+			resetApplyGrant();
+			await renderLoaded();
+		}
+
+		it( 'resolves the same grant after a reload and shows the change it had made', async () => {
+			const rendered = await renderLoaded();
+			fireEvent.click( header() );
+			await counted( '2 products selected' );
+			await settled();
+			// The batch is made; only its answer is lost.
+			server.fail(
+				'POST batches',
+				{ code: 'fetch_error', message: 'You are probably offline.' },
+				{ after: true }
+			);
+			const dialog = await applyIncrease();
+			await within( dialog ).findByText(
+				'We could not confirm whether the change was applied'
+			);
+			const [ lost ] = server.calls( 'POST batches' );
+
+			await reload( rendered );
+			const banner = await screen.findByRole( 'group', {
+				name: 'Change in progress',
+			} );
+			expect( banner.textContent ).toContain(
+				'This change had already been accepted, so it was not sent again.'
+			);
+			const [ resolved ] = server.calls( 'POST requests/resolve' );
+			expect( resolved.data.uuid ).toBe( lost.data.uuid );
+			expect( resolved.data.request_proof ).toBe(
+				lost.data.request_proof
+			);
+			// One batch; nothing was sent again.
+			expect( server.batches.size ).toBe( 1 );
+			expect( server.calls( 'POST batches' ) ).toHaveLength( 1 );
+			// The snapshot it was applied to is the one kept until it finishes.
+			expect( getSelectionSession().getState().submitted ).toEqual( {
+				batchId: 101,
+			} );
+			expect(
+				window.sessionStorage.getItem( 'bulkcat-selection::0:apply' )
+			).toBeNull();
+		} );
+
+		it( 'keeps a grant the server never received and sends it again for the same change', async () => {
+			const rendered = await renderLoaded();
+			fireEvent.click( header() );
+			await counted( '2 products selected' );
+			await settled();
+			// Refused before it acts: nothing is made.
+			server.fail( 'POST batches', {
+				code: 'fetch_error',
+				message: 'You are probably offline.',
+			} );
+			const dialog = await applyIncrease();
+			await within( dialog ).findByText(
+				'We could not confirm whether the change was applied'
+			);
+			const [ lost ] = server.calls( 'POST batches' );
+
+			await reload( rendered );
+			await waitFor( () =>
+				expect( server.calls( 'POST requests/resolve' ) ).toHaveLength(
+					1
+				)
+			);
+			expect(
+				screen.queryByRole( 'group', { name: 'Change in progress' } )
+			).toBeNull();
+			expect( server.batches.size ).toBe( 0 );
+
+			await applyIncrease();
+			await waitFor( () =>
+				expect( server.calls( 'POST batches' ) ).toHaveLength( 2 )
+			);
+			const [ , again ] = server.calls( 'POST batches' );
+			expect( again.data.uuid ).toBe( lost.data.uuid );
+			expect(
+				server
+					.calls( 'POST requests' )
+					.filter( ( call ) => call.data.operation === 'batch.apply' )
+			).toHaveLength( 1 );
+			expect( server.batches.size ).toBe( 1 );
+		} );
+	} );
+
 	it( 'opens the panel on the snapshot and previews its token', async () => {
 		await renderLoaded();
 		fireEvent.click( header() );

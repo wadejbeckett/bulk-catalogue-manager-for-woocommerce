@@ -36,7 +36,7 @@ import { __ } from '@wordpress/i18n';
 import { request } from '../../api';
 import { ShellContext } from '../../shell';
 import BulkChangePanel from '../bulk';
-import { FINISHED, useBatchProgress } from '../bulk/hooks';
+import { FINISHED, resumeApply, useBatchProgress } from '../bulk/hooks';
 import { useProgressAnnouncer } from '../bulk/announce';
 import { doneSentence } from '../bulk/progress';
 import { announce } from '../categories/announce';
@@ -450,6 +450,29 @@ export function CatalogueGrid( {
 		},
 		[ bulk, tableSelection, setPending, session ]
 	);
+	// T85: after a reload, an Apply whose answer was never known is resolved
+	// with its own grant (never a new one). When it had gone through, its
+	// progress is shown as for any Apply and the snapshot it was applied to
+	// is the submitted one, so a change that finishes in full still clears
+	// what it applied; otherwise the grant stays for the same change.
+	useEffect( () => {
+		let live = true;
+		resumeApply().then( ( earlier ) => {
+			if ( live && earlier?.batch_id ) {
+				onApplied( earlier.batch_id, {
+					selection: earlier.selectionKey
+						? { kind: 'snapshot', key: earlier.selectionKey }
+						: null,
+					replayed: true,
+				} );
+			}
+		} );
+		return () => {
+			live = false;
+		};
+		// Once, when the grid first mounts after a load.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [] );
 	// Once per change, whichever of the panel and the banner sees it end:
 	// full success clears what was applied from the selection (T84).
 	const finished = useCallback(

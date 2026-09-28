@@ -33,6 +33,7 @@
  * (`visible`, from inspection) and the ids of pending intents.
  */
 import { issueGrant, isUncertain } from '../../../requests';
+import { TAB_PREFIX, tabScope, tabStore } from '../../../tab-store';
 import * as routes from './client';
 
 /** Most ids in one capture or composition (the contract's mutation limit). */
@@ -44,8 +45,8 @@ export const PROBE_MAX = 100;
 /** The shortest wait between two renewals. */
 export const MIN_RENEW_MS = 15000;
 
-/** What the tab keeps, and its format version. */
-export const STORAGE_KEY = 'bulkcat-selection';
+/** What the tab keeps (tab-store.js), and its format version. */
+export const STORAGE_KEY = TAB_PREFIX;
 const VERSION = 1;
 
 /** The refusal asking for a renewal before a lapsed lease is used. */
@@ -131,47 +132,7 @@ export function toHandle( envelope, key ) {
 	};
 }
 
-/**
- * The tab's own storage, or null where there is none. Every read and write is
- * guarded: a private window or blocked storage simply keeps nothing.
- *
- * @param {string} key Storage key.
- * @param {Window} win Window.
- * @return {Object|null} `{ read, write, clear }`.
- */
-export function tabStore(
-	key,
-	win = typeof window === 'undefined' ? null : window
-) {
-	let storage = null;
-	try {
-		storage = win?.sessionStorage || null;
-	} catch {
-		storage = null;
-	}
-	if ( ! storage ) {
-		return null;
-	}
-	return {
-		read() {
-			try {
-				return JSON.parse( storage.getItem( key ) || 'null' );
-			} catch {
-				return null;
-			}
-		},
-		write( value ) {
-			try {
-				storage.setItem( key, JSON.stringify( value ) );
-			} catch {}
-		},
-		clear() {
-			try {
-				storage.removeItem( key );
-			} catch {}
-		},
-	};
-}
+export { tabStore };
 
 /**
  * An error as the session reports it.
@@ -1469,10 +1430,9 @@ export function getSelectionSession( settings = {} ) {
 	if ( shared ) {
 		return shared;
 	}
-	const scope = `${ STORAGE_KEY }:${ settings?.root || '' }:${
-		Number( settings?.user?.id ) || 0
-	}`;
-	shared = createSelectionSession( { store: tabStore( scope ) } );
+	shared = createSelectionSession( {
+		store: tabStore( tabScope( settings ) ),
+	} );
 	const session = shared;
 	if ( typeof document !== 'undefined' ) {
 		const onVisible = () => {

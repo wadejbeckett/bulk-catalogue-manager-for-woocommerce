@@ -79,7 +79,8 @@ final class RequestService {
 	 * @param array $request Original grant and current preview credential.
 	 * @return array|\WP_Error
 	 */
-	public function apply( array $request ): array|\WP_Error { return $this->run( $request, true, 'batch.apply' ); }
+	public function apply( array $request ): array|\WP_Error {
+		return $this->run( $request, true, 'batch.apply' ); }
 
 	/**
 	 * Durable undo acceptance.
@@ -87,7 +88,8 @@ final class RequestService {
 	 * @param array $request Original grant.
 	 * @return array|\WP_Error
 	 */
-	public function undo( array $request ): array|\WP_Error { return $this->run( $request, true, 'batch.undo' ); }
+	public function undo( array $request ): array|\WP_Error {
+		return $this->run( $request, true, 'batch.undo' ); }
 
 	/**
 	 * Preview exact IDs with current authorization; a preview never creates work.
@@ -96,14 +98,18 @@ final class RequestService {
 	 * @return array|\WP_Error
 	 */
 	public function preview( array $input ): array|\WP_Error {
-		return $this->guard( function () use ( $input ): array|\WP_Error {
-			if ( array_key_exists( 'token', $input ) === array_key_exists( 'ids', $input ) ) { throw new \InvalidArgumentException( 'Exactly one selection is required.' ); }
-			$selection = isset( $input['token'] )
+		return $this->guard(
+			function () use ( $input ): array|\WP_Error {
+				if ( array_key_exists( 'token', $input ) === array_key_exists( 'ids', $input ) ) {
+					throw new \InvalidArgumentException( 'Exactly one selection is required.' ); }
+				$selection = isset( $input['token'] )
 				? FoundationStorage::atomic( fn() => ( new SnapshotService( $this->clock ) )->selection( $input['token'], get_current_user_id() ) )
 				: \BulkCatalogueManager\Selection\Selection::of_ids( BatchIntent::ids( $input['ids'] ) );
-			if ( is_wp_error( $selection ) ) { return $selection; }
-			return ( new \BulkCatalogueManager\Engine\Preview() )->run( $selection, $input['operations'] ?? null, (int) ( $input['sample_size'] ?? 25 ), $input['token'] ?? '', null, true );
-		} );
+				if ( is_wp_error( $selection ) ) {
+					return $selection; }
+				return ( new \BulkCatalogueManager\Engine\Preview() )->run( $selection, $input['operations'] ?? null, (int) ( $input['sample_size'] ?? 25 ), $input['token'] ?? '', null, true );
+			}
+		);
 	}
 
 	/**
@@ -185,9 +191,11 @@ final class RequestService {
 						}
 						if ( str_starts_with( $operation, 'batch.' ) ) {
 							$result = BatchAcceptance::accept( $claims, $intent, $request, $this->clock );
-							if ( is_wp_error( $result ) ) { return $result; }
+							if ( is_wp_error( $result ) ) {
+								return $result; }
 							$receipts->accepted_batch( $claims, $result['batch_id'] );
-							if ( $claims['accept_until'] <= ( $this->clock )() ) { return self::expired(); }
+							if ( $claims['accept_until'] <= ( $this->clock )() ) {
+								return self::expired(); }
 							return $result;
 						}
 						$service  = new SnapshotService( $this->clock );
@@ -222,9 +230,17 @@ final class RequestService {
 		}
 		if ( 'batch' === $row['result_kind'] ) {
 			$batch = ( new \BulkCatalogueManager\Data\BatchRepository() )->find( (int) $row['result_id'] );
-			if ( null === $batch ) { ( new RequestRepository() )->batch_gone( $claims ); return BatchRecovery::gone(); }
-			if ( $batch['user_id'] !== $claims['owner'] || $batch['uuid'] !== $claims['uuid'] ) { throw new \RuntimeException( 'Receipt does not match its batch.' ); }
-			return [ 'batch_id' => $batch['batch_id'], 'status' => $batch['status'], 'total_items' => $batch['total_items'], 'replayed' => true ];
+			if ( null === $batch ) {
+				( new RequestRepository() )->batch_gone( $claims );
+				return BatchRecovery::gone(); }
+			if ( $batch['user_id'] !== $claims['owner'] || $batch['uuid'] !== $claims['uuid'] ) {
+				throw new \RuntimeException( 'Receipt does not match its batch.' ); }
+			return [
+				'batch_id'    => $batch['batch_id'],
+				'status'      => $batch['status'],
+				'total_items' => $batch['total_items'],
+				'replayed'    => true,
+			];
 		}
 		if ( 'snapshot' !== $row['result_kind'] || '' === $row['result_id'] ) {
 			throw new \RuntimeException( 'Stored outcome is incomplete.' );

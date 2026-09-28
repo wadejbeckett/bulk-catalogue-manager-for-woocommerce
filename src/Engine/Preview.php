@@ -77,6 +77,13 @@ defined( 'ABSPATH' ) || exit;
  * warning count extrapolated from those, in proportion, and `estimated` is
  * true; the sample always comes from the objects computed.
  *
+ * After the 1.0 keys (totals, summary, sample, warnings, unreadable,
+ * selection, hash) the answer carries, in this order, `unavailable_count`
+ * (every chosen object that cannot be changed; `unreadable` lists at most
+ * SAMPLE_ALL of them), `scope_hash` (ExactScope's signature on the exact
+ * path, T83; null otherwise) and `operations` (the normalised list, which a
+ * durable Apply request's intent carries).
+ *
  * The hash (hash()) binds the answer to the selection (the token as sent,
  * or the id list), the normalised operation list and the settings that
  * change what a batch does or who may run it; changing any of them gives a
@@ -177,13 +184,13 @@ final class Preview {
 		if ( $selection->too_large() ) {
 			return self::too_large( $selection->count );
 		}
-		$scope = $exact ? ExactScope::build( $selection, $operations, $this->factory ) : null;
+		$scope    = $exact ? ExactScope::build( $selection, $operations, $this->factory ) : null;
 		$selected = $scope['selected'] ?? $this->factory->materialise( $selection );
 		if ( count( $selected ) > Selection::MAX_OBJECTS ) {
 			return self::too_large( count( $selected ) );
 		}
 		$expanded = $scope ?? $this->factory->expand( $selected, $operations );
-		$objects = $expanded['objects'];
+		$objects  = $expanded['objects'];
 		if ( count( $objects ) > Selection::MAX_OBJECTS ) {
 			return self::too_large( count( $objects ) );
 		}
@@ -207,8 +214,9 @@ final class Preview {
 		}
 
 		$settings ??= Settings::load();
+		$missing    = array_values( array_unique( array_merge( $unreadable, $tally['unreadable'] ) ) );
 		return [
-			'totals'     => [
+			'totals'            => [
 				'matched'      => $matched,
 				'computed'     => count( $computed ) - count( $tally['unreadable'] ),
 				'estimated'    => $matched > count( $computed ),
@@ -218,12 +226,11 @@ final class Preview {
 				'rows'         => array_map( static fn( int $n ): int => self::scale( $n, $factor ), $tally['rows'] ),
 				'by_type'      => $by_type,
 			],
-			'summary'    => self::summary( $tally['fields'], $by_type['product']['would_change'], $by_type['variation']['would_change'] ),
-			'sample'     => $tally['sample'],
-			'warnings'   => array_map( static fn( int $n ): int => self::scale( $n, $factor ), $tally['warnings'] ),
-			'unreadable' => array_slice( array_values( array_unique( array_merge( $unreadable, $tally['unreadable'] ) ) ), 0, self::SAMPLE_ALL ),
-			'unavailable_count' => count( array_unique( array_merge( $unreadable, $tally['unreadable'] ) ) ),
-			'selection'  => ( $selection->is_filter()
+			'summary'           => self::summary( $tally['fields'], $by_type['product']['would_change'], $by_type['variation']['would_change'] ),
+			'sample'            => $tally['sample'],
+			'warnings'          => array_map( static fn( int $n ): int => self::scale( $n, $factor ), $tally['warnings'] ),
+			'unreadable'        => array_slice( $missing, 0, self::SAMPLE_ALL ),
+			'selection'         => ( $selection->is_filter()
 				? [
 					'kind'          => 'filter',
 					'count'         => $selection->count,
@@ -236,9 +243,10 @@ final class Preview {
 					'variations_added' => $expanded['added'],
 					'parents_left_out' => $expanded['left_out'],
 				],
-			'hash'       => self::hash( '' !== $token ? $token : $selection->ids, $operations, $settings, $scope['scope_hash'] ?? '' ),
-			'scope_hash' => $scope['scope_hash'] ?? null,
-			'operations' => $operations,
+			'hash'              => self::hash( '' !== $token ? $token : $selection->ids, $operations, $settings, $scope['scope_hash'] ?? '' ),
+			'unavailable_count' => count( $missing ),
+			'scope_hash'        => $scope['scope_hash'] ?? null,
+			'operations'        => $operations,
 		];
 	}
 

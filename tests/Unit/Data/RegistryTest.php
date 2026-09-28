@@ -27,6 +27,8 @@ final class RegistryTest extends TestCase {
 		'bulkcat_selection_expired'        => 'refusal for a removed membership payload',
 		'bulkcat_request_storage'          => 'refusal when durable request storage is unavailable',
 		'bulkcat_request_expired'          => 'refusal for an unaccepted grant past its deadline',
+		'bulkcat_legacy_request'           => 'refusal for a request id from an older screen that no receipt proves; nothing is created',
+		'bulkcat_request_gone'             => 'refusal for an accepted change whose batch is no longer in the history; nothing is created again',
 		'bulkcat_invalid_'                 => 'prefix of the settings error codes passed to add_settings_error()',
 		'bulkcat_capability'               => 'filter hook for the capability the screen and read routes need',
 		'bulkcat_forbidden'                => 'REST refusal code for a user without that capability',

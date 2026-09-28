@@ -593,6 +593,7 @@ final class ChunkRunnerTest extends TestCase {
 				"Engine/Progress.php: 'queued' -> 'cancelled'",
 				"Engine/Progress.php: 'running' -> 'cancelled'",
 				"Engine/Progress.php: 'running' -> 'failed'",
+				"Requests/BatchAcceptance.php: \$previous -> 'undoing'",
 				"Undo/Original.php: 'undoing' -> \$previous",
 				"Undo/Original.php: 'undoing' -> 'undone'",
 			],

@@ -643,7 +643,8 @@ final class BatchRepository {
 	public function request_candidates( string $uuid, int $owner ): array {
 		global $wpdb;
 		$ids = $wpdb->get_col( $wpdb->prepare( 'SELECT batch_id FROM %i WHERE uuid = %s AND user_id = %d ORDER BY batch_id ASC LIMIT 2', $this->registry->table( Schema::BATCHES ), $uuid, $owner ) );
-		if ( '' !== $wpdb->last_error ) { throw new \RuntimeException( 'Cannot resolve legacy request.' ); }
+		if ( '' !== $wpdb->last_error ) {
+			throw new \RuntimeException( 'Cannot resolve legacy request.' ); }
 		return array_map( 'intval', $ids );
 	}
 
@@ -655,7 +656,8 @@ final class BatchRepository {
 	public function lock( int $id ): void {
 		global $wpdb;
 		$wpdb->get_var( $wpdb->prepare( 'SELECT batch_id FROM %i WHERE batch_id = %d LIMIT 1 FOR UPDATE', $this->registry->table( Schema::BATCHES ), $id ) );
-		if ( '' !== $wpdb->last_error ) { throw new \RuntimeException( 'Cannot lock original batch.' ); }
+		if ( '' !== $wpdb->last_error ) {
+			throw new \RuntimeException( 'Cannot lock original batch.' ); }
 	}
 
 	/**

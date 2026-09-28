@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-09-25T19:26:57+00:00\n"
+"POT-Creation-Date: 2026-09-28T10:33:15+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -1015,6 +1015,18 @@ msgstr ""
 msgid "Any %s"
 msgstr ""
 
+msgid "No products are selected. Choose products before making a change."
+msgstr ""
+
+msgid "This change no longer matches its preview. Preview the exact selected products again, then apply it."
+msgstr ""
+
+msgid "This request came from an older screen. Check its existing change in History, then reload before starting new work."
+msgstr ""
+
+msgid "The original change is no longer in History. This request cannot be applied again."
+msgstr ""
+
 msgid "This request belongs to a different change. Resolve the original change before starting another."
 msgstr ""
 
@@ -1237,6 +1249,21 @@ msgid "Whether setting this choice takes the product out of shoppers' sight, so 
 msgstr ""
 
 msgid "How it hides the product: off_site (its status keeps it off the site) or hidden (hidden from the shop and from search); null when it does not."
+msgstr ""
+
+msgid "Chosen products that cannot be changed now, by id; at most 1,000 are listed."
+msgstr ""
+
+msgid "The preview's hash, which applying the change must send back."
+msgstr ""
+
+msgid "How many chosen products cannot be changed now, including any the list leaves out."
+msgstr ""
+
+msgid "The signature of the exact products and variations this change covers; null for a preview that is not exact."
+msgstr ""
+
+msgid "The change as it will be recorded, with every default written out."
 msgstr ""
 
 msgid "How many rows of the preview to return: 25, 100, or all for every row up to 1,000."

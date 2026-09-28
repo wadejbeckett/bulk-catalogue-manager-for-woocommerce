@@ -86,9 +86,18 @@ final class Selection {
 	 * @param array<string,int[]> $members Immutable membership.
 	 */
 	public static function of_members( array $members ): self {
-		$members = Membership::union( $members, [ 'products' => [], 'variations' => [] ] );
+		$members = Membership::union(
+			$members,
+			[
+				'products'   => [],
+				'variations' => [],
+			]
+		);
 		$objects = [];
-		foreach ( [ 'products' => 'product', 'variations' => 'variation' ] as $key => $type ) {
+		foreach ( [
+			'products'   => 'product',
+			'variations' => 'variation',
+		] as $key => $type ) {
 			foreach ( $members[ $key ] as $id ) {
 				$objects[] = [ $id, $type ];
 			}

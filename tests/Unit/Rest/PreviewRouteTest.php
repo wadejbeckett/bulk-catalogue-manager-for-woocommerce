@@ -4,7 +4,8 @@
  * dispatcher: registered behind Access::can_write with the batch route's
  * operations, ids and token plus the sample size; an id list and a
  * selection token each answer totals, sample, warnings, unreadable,
- * selection and hash; `all` returns every row up to 1,000 and another size
+ * selection and hash, then (T83) unavailable_count, scope_hash and the
+ * normalised operations, all named by the route's published schema; `all` returns every row up to 1,000 and another size
  * is refused before the handler; a visitor is refused 401 and a reader 403;
  * an operation list the registry refuses is 400 with the registry's code;
  * a body without exactly one of ids and token, or with a bad token, is
@@ -106,6 +107,9 @@ final class PreviewRouteTest extends TestCase {
 		$this->assertTrue( $route[0]['args']['operations']['required'] );
 		$this->assertSame( [ 25, 100, 'all' ], $route[0]['args']['sample_size']['enum'] );
 		$this->assertSame( 25, $route[0]['args']['sample_size']['default'] );
+		$schema = call_user_func( $GLOBALS['bulkcat_test']['routes']['/bulkcat/v1/preview']['schema'] );
+		$this->assertSame( 'bulkcat-preview', $schema['title'] );
+		$this->assertSame( [ 'totals', 'summary', 'sample', 'warnings', 'unreadable', 'selection', 'hash', 'unavailable_count', 'scope_hash', 'operations' ], array_keys( $schema['properties'] ), 'The published schema names every key the preview answers, in order.' );
 	}
 
 	public function test_an_id_list_answers_the_preview(): void {
@@ -118,7 +122,9 @@ final class PreviewRouteTest extends TestCase {
 		$this->assertInstanceOf( \WP_REST_Response::class, $response );
 		$this->assertSame( 200, $response->get_status() );
 		$data = $response->get_data();
-		$this->assertSame( [ 'totals', 'summary', 'sample', 'warnings', 'unreadable', 'selection', 'hash' ], array_keys( $data ) );
+		$this->assertSame( [ 'totals', 'summary', 'sample', 'warnings', 'unreadable', 'selection', 'hash', 'unavailable_count', 'scope_hash', 'operations' ], array_keys( $data ), 'The 1.0 keys keep their order; the exact-selection keys (T83) follow them.' );
+		$this->assertSame( 1, $data['unavailable_count'] );
+		$this->assertTrue( is_array( $data['operations'] ) && 'featured' === $data['operations'][0]['args']['field'], 'The normalised operation list comes back for the durable request intent.' );
 		$this->assertSame( 2, $data['totals']['matched'] );
 		$this->assertSame( 1, $data['totals']['would_change'] );
 		$this->assertEquals( (object) [ 'Featured belongs to the product, not to each variation.' => 1 ], $data['totals']['would_fail'] );

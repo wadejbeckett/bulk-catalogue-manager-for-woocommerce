@@ -32,11 +32,16 @@ defined( 'ABSPATH' ) || exit;
 /**
  * The preview route.
  */
-final class PreviewController implements Controller {
+final class PreviewController implements ReadController {
 	/**
 	 * The route, under Access::REST_NAMESPACE.
 	 */
 	public const ROUTE = '/preview';
+
+	/**
+	 * The response schema's title.
+	 */
+	public const TITLE = 'bulkcat-preview';
 
 	/**
 	 * The `sample_size` value asking for every row up to Preview::SAMPLE_ALL.
@@ -74,8 +79,57 @@ final class PreviewController implements Controller {
 					'permission_callback' => [ Access::class, 'can_write' ],
 					'args'                => self::args(),
 				],
+				'schema' => [ $this, 'get_item_schema' ],
 			]
 		);
+	}
+
+	/**
+	 * The preview's answer. The first seven keys are the 1.0 shape and keep
+	 * their meaning; `unavailable_count`, `scope_hash` and `operations` were
+	 * added for exact selections (T83) and follow them, so a client reading
+	 * the old keys is unaffected.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function get_item_schema(): array {
+		$object  = [ 'type' => 'object' ];
+		$objects = [
+			'type'  => 'array',
+			'items' => $object,
+		];
+		return [
+			'$schema'    => RouteSchema::DIALECT,
+			'title'      => self::TITLE,
+			'type'       => 'object',
+			'properties' => [
+				'totals'            => $object,
+				'summary'           => [ 'type' => 'string' ],
+				'sample'            => $objects,
+				'warnings'          => $object,
+				'unreadable'        => [
+					'description' => __( 'Chosen products that cannot be changed now, by id; at most 1,000 are listed.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'type'        => 'array',
+					'items'       => [ 'type' => 'integer' ],
+				],
+				'selection'         => $object,
+				'hash'              => [
+					'description' => __( 'The preview\'s hash, which applying the change must send back.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'type'        => 'string',
+				],
+				'unavailable_count' => [
+					'description' => __( 'How many chosen products cannot be changed now, including any the list leaves out.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'type'        => 'integer',
+				],
+				'scope_hash'        => [
+					'description' => __( 'The signature of the exact products and variations this change covers; null for a preview that is not exact.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'type'        => [ 'string', 'null' ],
+				],
+				'operations'        => [
+					'description' => __( 'The change as it will be recorded, with every default written out.', 'bulk-catalogue-manager-for-woocommerce' ),
+				] + $objects,
+			],
+		];
 	}
 
 	/**

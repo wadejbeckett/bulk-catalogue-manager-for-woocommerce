@@ -365,7 +365,8 @@ final class BatchFactory {
 			return $this->replay( $existing );
 		}
 		$prepared = $this->undo_scope( $plan, $force );
-		if ( is_wp_error( $prepared ) ) { return $prepared; }
+		if ( is_wp_error( $prepared ) ) {
+			return $prepared; }
 		[ $undo_of, $previous, $objects, $outline, $snapshot ] = $prepared;
 
 		$now = ( $this->clock )();
@@ -491,15 +492,28 @@ final class BatchFactory {
 	 * @return array
 	 */
 	public function record_scope( array $claims, array $operations, array $objects, array $snapshot, ?int $undo_of = null ): array {
-		$id = $this->batches->create( $claims['uuid'], $claims['owner'], null === $undo_of ? 'bulk' : 'undo', $operations, $snapshot, count( $objects ), $undo_of );
-		$plain = []; $own = [];
+		$id    = $this->batches->create( $claims['uuid'], $claims['owner'], null === $undo_of ? 'bulk' : 'undo', $operations, $snapshot, count( $objects ), $undo_of );
+		$plain = [];
+		$own   = [];
 		foreach ( $objects as $entry ) {
-			if ( isset( $entry[2] ) ) { $own[] = $entry; } else { $plain[] = $entry; }
+			if ( isset( $entry[2] ) ) {
+				$own[] = $entry;
+			} else {
+				$plain[] = $entry; }
 		}
 		$written = $this->batches->materialise_items( $id, $plain );
-		if ( [] !== $own ) { $written += $this->batches->materialise_items( $id, $own ); }
-		if ( $written !== count( $objects ) ) { throw new \RuntimeException( 'Incomplete materialization.' ); }
-		return [ 'batch_id' => $id, 'status' => 'queued', 'total_items' => count( $objects ), 'replayed' => false ];
+		if ( [] !== $own ) {
+			$written += $this->batches->materialise_items( $id, $own );
+		}
+		if ( count( $objects ) !== $written ) {
+			throw new \RuntimeException( 'Incomplete materialization.' );
+		}
+		return [
+			'batch_id'    => $id,
+			'status'      => 'queued',
+			'total_items' => count( $objects ),
+			'replayed'    => false,
+		];
 	}
 
 	/**

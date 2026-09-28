@@ -165,6 +165,13 @@ async function expectAxeClean(
 			builder = builder.include( selector );
 		}
 	}
+	// Check the page from the top, as it first draws. The selection bar is
+	// sticky, and at the bottom of the page (where ticking the last row
+	// scrolls) whatever control is passing under it reads to axe's
+	// target-size rule as partly covered by the bar's buttons. axe leaves a
+	// position: fixed header out of that count but not a stuck sticky one,
+	// and which control is caught depends on the fonts (CI run 36409629277).
+	await page.evaluate( () => window.scrollTo( 0, 0 ) );
 	// WordPress's own update nag sits inside .wrap on an out-of-date site.
 	builder = builder
 		.exclude( '.update-nag' )

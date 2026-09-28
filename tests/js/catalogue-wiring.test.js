@@ -94,13 +94,6 @@ describe( 'catalogue wiring', () => {
 		await waitFor( () =>
 			expect( bar.textContent ).toContain( '1 product selected' )
 		);
-		await waitFor( () =>
-			expect(
-				within( bar )
-					.getByRole( 'button', { name: 'Make a change to these' } )
-					.getAttribute( 'aria-disabled' )
-			).not.toBe( 'true' )
-		);
 		fireEvent.click(
 			within( bar ).getByRole( 'button', {
 				name: 'Make a change to these',

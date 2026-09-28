@@ -262,6 +262,16 @@ export function CatalogueGrid( {
 	const [ applied, setApplied ] = useState( null );
 	// T84: the rows drawn, for inspecting which are selected; the review.
 	const [ drawn, setDrawn ] = useState( [] );
+	const onDrawn = useCallback(
+		( ids ) =>
+			setDrawn( ( was ) =>
+				was.length === ids.length &&
+				was.every( ( id, at ) => id === ids[ at ] )
+					? was
+					: ids
+			),
+		[]
+	);
 	const [ reviewing, setReviewing ] = useState( false );
 	const extra = useMemo( () => categoryArgs( category ), [ category ] );
 	const catalogue = useCatalogue( view, descriptors, extra );
@@ -579,7 +589,7 @@ export function CatalogueGrid( {
 					pending={ catalogue.pending }
 					selection={ selection.tableSelection }
 					onChangeSelection={ selection.onChangeSelection }
-					onDrawn={ setDrawn }
+					onDrawn={ onDrawn }
 					empty={
 						catalogue.error ? null : (
 							<NoMatches

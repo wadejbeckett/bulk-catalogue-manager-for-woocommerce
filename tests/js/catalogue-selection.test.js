@@ -20,6 +20,7 @@ import {
 
 import Catalogue from '../../assets/src/panels/catalogue';
 import {
+	SelectionBar,
 	countPhrase,
 	getSelectionSession,
 	panelSelection,
@@ -200,6 +201,67 @@ describe( 'selection model', () => {
 				true
 			)
 		).toBeNull();
+	} );
+} );
+
+describe( 'the selection bar’s notices', () => {
+	const state = ( notice ) => ( {
+		count: 2,
+		byType: { products: 2, variations: 0 },
+		status: 'idle',
+		hasSelection: notice?.kind !== 'done',
+		notice,
+		offerAll: false,
+		dismiss: jest.fn(),
+		clear: jest.fn(),
+		retry: jest.fn(),
+	} );
+
+	it( 'moves from a plain notice to one with actions without breaking (the live crash)', () => {
+		const onUndo = jest.fn();
+		const onViewHistory = jest.fn();
+		const props = {
+			pageCount: 2,
+			total: 2,
+			filtered: false,
+			onMakeChange: jest.fn(),
+			onUndo,
+			onViewHistory,
+		};
+		const { rerender } = render(
+			<SelectionBar
+				{ ...props }
+				selection={ state( { kind: 'restored' } ) }
+			/>
+		);
+		const shown = () =>
+			document.querySelector( '.bulkcat-selection' ).textContent;
+		expect( shown() ).toContain(
+			'Your selection is still here: 2 products.'
+		);
+		rerender(
+			<SelectionBar
+				{ ...props }
+				selection={ state( { kind: 'done', batchId: 7, kept: 0 } ) }
+			/>
+		);
+		expect( shown() ).toContain(
+			'The change finished, so your selection was cleared.'
+		);
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Undo this change' } )
+		);
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'View in History' } )
+		);
+		expect( onUndo ).toHaveBeenCalledWith( 7 );
+		expect( onViewHistory ).toHaveBeenCalledWith( 7 );
+		rerender(
+			<SelectionBar
+				{ ...props }
+				selection={ state( { kind: 'restored' } ) }
+			/>
+		);
 	} );
 } );
 
@@ -530,15 +592,35 @@ describe( 'selection in the catalogue', () => {
 		expect(
 			document.querySelector( '.bulkcat-selection' ).textContent
 		).toContain( 'Your selection could not be saved just now.' );
-		// Changes cannot be checked while it is unsettled.
-		const make = within( bar() ).getByRole( 'button', {
-			name: 'Make a change to these',
+		// The panel opens, but a change cannot be checked while it is unsettled.
+		fireEvent.click(
+			within( bar() ).getByRole( 'button', {
+				name: 'Make a change to these',
+			} )
+		);
+		const dialog = await screen.findByRole( 'dialog', {
+			name: 'Bulk change',
 		} );
-		expect( make.getAttribute( 'aria-disabled' ) ).toBe( 'true' );
+		fireEvent.click(
+			within( dialog ).getAllByRole( 'radio', {
+				name: /^Increase or decrease/,
+			} )[ 0 ]
+		);
+		expect(
+			within( dialog ).getByRole( 'button', { name: 'Check the change' } )
+				.disabled
+		).toBe( true );
+		expect( dialog.textContent ).toContain(
+			'A change to your selection was not confirmed. Try again, or clear the selection, before checking a change.'
+		);
 		fireEvent.click( retry );
 		await counted( '2 products selected' );
 		const [ lost, again ] = server.calls( 'POST selection/compose' );
 		expect( again.data.uuid ).toBe( lost.data.uuid );
+		// Settled: the open panel reads the new selection at once.
+		await waitFor( () =>
+			expect( dialog.textContent ).toContain( '2 selected products' )
+		);
 	} );
 
 	it( 'opens the panel on the snapshot and previews its token', async () => {

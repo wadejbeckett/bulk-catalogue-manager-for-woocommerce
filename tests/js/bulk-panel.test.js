@@ -787,7 +787,9 @@ describe( 'bulk panel: preview, apply and done', () => {
 			'POST requests': grantFor,
 			'POST batches': { batch_id: 9, status: 'queued', total_items: 24 },
 		} );
-		const { onApplied } = renderPanel( { selection: SNAPSHOT } );
+		const { onApplied, rerenderWith } = renderPanel( {
+			selection: SNAPSHOT,
+		} );
 		chooseIncrease();
 		fireEvent.click(
 			screen.getByRole( 'button', { name: 'Check the change' } )
@@ -828,6 +830,18 @@ describe( 'bulk panel: preview, apply and done', () => {
 			} )
 		);
 		await screen.findByText( 'Applying the change' );
+		// Clearing the live selection afterwards leaves the scope applied.
+		rerenderWith( {
+			selection: {
+				...SNAPSHOT,
+				token: '',
+				count: 0,
+				byType: { products: 0, variations: 0 },
+			},
+		} );
+		expect(
+			screen.getByText( '1,200 products and 50 variations selected' )
+		).toBeVisible();
 	} );
 
 	it( 'shows the server’s sentence on 409 bulkcat_selection_changed and offers only Preview again', async () => {

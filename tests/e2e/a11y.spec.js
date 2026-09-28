@@ -30,6 +30,10 @@ test.describe( 'axe-core on each screen', () => {
 	test( 'bulk panel and preview', async ( { page } ) => {
 		await openScreen( page );
 		await page.getByRole( 'checkbox', { name: SEED.simple( 1 ) } ).check();
+		// T84: the server holds the selection before the change is checked.
+		await expect(
+			page.getByRole( 'region', { name: 'Selection' } )
+		).toContainText( '1 product selected' );
 		await page
 			.getByRole( 'button', { name: 'Make a change to these' } )
 			.click();
@@ -254,6 +258,9 @@ test.describe( 'in the Default admin colour scheme', () => {
 			1
 		);
 		await page.getByRole( 'checkbox', { name: SEED.simple( 1 ) } ).check();
+		await expect(
+			page.getByRole( 'region', { name: 'Selection' } )
+		).toContainText( '1 product selected' );
 		await expectAxeClean( page, 'the catalogue in Default colours' );
 		await page
 			.getByRole( 'button', { name: 'Make a change to these' } )

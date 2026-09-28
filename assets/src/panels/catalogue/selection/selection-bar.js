@@ -6,6 +6,10 @@
  * Above it, the selection's notices: restored after a reload, checked again
  * after an idle spell (drift), no longer kept (lost), a change that could
  * not be confirmed with Try again, and the result once a change finished.
+ *
+ * The actions stay available while the selection is being saved: the bulk
+ * panel reads the live selection and holds Check the change, with the
+ * reason, until it has settled, so a quick Make a change is never lost.
  */
 import { Button, Notice } from '@wordpress/components';
 import { __, _n, sprintf } from '@wordpress/i18n';
@@ -126,38 +130,44 @@ export default function SelectionBar( {
 	return (
 		<div className="bulkcat-selection">
 			{ notice && noticeText( notice, selection ) && (
+				// Actions go through `actions` and the words through
+				// `spokenMessage`: Notice renders element children to a
+				// string, which would run the buttons' hooks inside it.
 				<Notice
+					key={ `notice-${ notice.kind }` }
 					status={ notice.kind === 'cleanup' ? 'warning' : 'info' }
 					className="bulkcat-selection__notice"
+					spokenMessage={ noticeText( notice, selection ) }
 					onRemove={ () => selection.dismiss( 'notice' ) }
+					actions={ [
+						...( doneBatch > 0 && onUndo
+							? [
+									{
+										label: __(
+											'Undo this change',
+											'bulk-catalogue-manager-for-woocommerce'
+										),
+										onClick: () => onUndo( doneBatch ),
+										variant: 'link',
+									},
+								]
+							: [] ),
+						...( doneBatch > 0 && onViewHistory
+							? [
+									{
+										label: __(
+											'View in History',
+											'bulk-catalogue-manager-for-woocommerce'
+										),
+										onClick: () =>
+											onViewHistory( doneBatch ),
+										variant: 'link',
+									},
+								]
+							: [] ),
+					] }
 				>
-					<p>{ noticeText( notice, selection ) }</p>
-					{ doneBatch > 0 && ( onUndo || onViewHistory ) && (
-						<p className="bulkcat-selection__acts">
-							{ onUndo && (
-								<Button
-									variant="link"
-									onClick={ () => onUndo( doneBatch ) }
-								>
-									{ __(
-										'Undo this change',
-										'bulk-catalogue-manager-for-woocommerce'
-									) }
-								</Button>
-							) }
-							{ onViewHistory && (
-								<Button
-									variant="link"
-									onClick={ () => onViewHistory( doneBatch ) }
-								>
-									{ __(
-										'View in History',
-										'bulk-catalogue-manager-for-woocommerce'
-									) }
-								</Button>
-							) }
-						</p>
-					) }
+					{ noticeText( notice, selection ) }
 				</Notice>
 			) }
 			{ drift && (
@@ -180,32 +190,36 @@ export default function SelectionBar( {
 			) }
 			{ error && (
 				<Notice
+					key={ `error-${ status === 'uncertain' }` }
 					status="error"
 					className="bulkcat-selection__notice"
 					isDismissible={ status !== 'uncertain' }
+					spokenMessage={ errorText( error ) }
 					onRemove={ () => selection.dismiss( 'error' ) }
+					actions={
+						status === 'uncertain'
+							? [
+									{
+										label: __(
+											'Try again',
+											'bulk-catalogue-manager-for-woocommerce'
+										),
+										onClick: selection.retry,
+										variant: 'secondary',
+									},
+									{
+										label: __(
+											'Clear selection',
+											'bulk-catalogue-manager-for-woocommerce'
+										),
+										onClick: selection.clear,
+										variant: 'link',
+									},
+								]
+							: []
+					}
 				>
-					<p>{ errorText( error ) }</p>
-					{ status === 'uncertain' && (
-						<p className="bulkcat-selection__acts">
-							<Button
-								variant="secondary"
-								size="compact"
-								onClick={ selection.retry }
-							>
-								{ __(
-									'Try again',
-									'bulk-catalogue-manager-for-woocommerce'
-								) }
-							</Button>
-							<Button variant="link" onClick={ selection.clear }>
-								{ __(
-									'Clear selection',
-									'bulk-catalogue-manager-for-woocommerce'
-								) }
-							</Button>
-						</p>
-					) }
+					{ errorText( error ) }
 				</Notice>
 			) }
 			{ blocked && ! error && (
@@ -297,8 +311,6 @@ export default function SelectionBar( {
 								variant="secondary"
 								size="compact"
 								onClick={ onShow }
-								disabled={ busy || ! hasSelection }
-								accessibleWhenDisabled
 							>
 								{ __(
 									'Show on site',
@@ -311,8 +323,6 @@ export default function SelectionBar( {
 								variant="secondary"
 								size="compact"
 								onClick={ onHide }
-								disabled={ busy || ! hasSelection }
-								accessibleWhenDisabled
 							>
 								{ __(
 									'Hide from site',
@@ -324,8 +334,6 @@ export default function SelectionBar( {
 							variant="primary"
 							size="compact"
 							onClick={ onMakeChange }
-							disabled={ busy || ! hasSelection }
-							accessibleWhenDisabled
 							aria-describedby={
 								waiting
 									? 'bulkcat-selection-waiting'
@@ -345,8 +353,8 @@ export default function SelectionBar( {
 						</Button>
 					</span>
 					{ waiting && (
-						// Why the actions wait, for the disabled buttons; the
-						// "Saving…" line and the notices above say it on screen.
+						// What the panel will wait for; the "Saving…" line and
+						// the notices above say it on screen.
 						<span
 							className="bulkcat-sr-only"
 							id="bulkcat-selection-waiting"

@@ -143,6 +143,10 @@ test( 'a change in progress: pending rows, Cancel and View in History, then read
 	const name = SEED.simple( 5 );
 	const before = ( await productByName( page, name ) ).regular_price;
 	await page.getByRole( 'checkbox', { name } ).press( 'Space' );
+	// T84: the server holds the selection before the change is checked.
+	await expect(
+		page.getByRole( 'region', { name: 'Selection' } )
+	).toContainText( '1 product selected' );
 	await page
 		.getByRole( 'button', { name: 'Make a change to these' } )
 		.press( 'Enter' );
@@ -225,6 +229,10 @@ test( 'Cancel stops a queued change', async ( { page } ) => {
 	const name = SEED.simple( 6 );
 	const before = ( await productByName( page, name ) ).regular_price;
 	await page.getByRole( 'checkbox', { name } ).press( 'Space' );
+	// T84: the server holds the selection before the change is checked.
+	await expect(
+		page.getByRole( 'region', { name: 'Selection' } )
+	).toContainText( '1 product selected' );
 	await page
 		.getByRole( 'button', { name: 'Make a change to these' } )
 		.press( 'Enter' );

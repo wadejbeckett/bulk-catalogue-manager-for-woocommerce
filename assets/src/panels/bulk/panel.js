@@ -234,6 +234,9 @@ export default function BulkChangePanel( {
 	const [ sampleSize, setSampleSize ] = useState( 25 );
 	const [ changedOnly, setChangedOnly ] = useState( false );
 	const [ batch, setBatch ] = useState( null );
+	// What the change was applied to: the live selection moves on (a change
+	// that finished in full clears it), the Done step's scope does not.
+	const [ applied, setApplied ] = useState( null );
 	const [ reran, setReran ] = useState( false );
 	const [ details, setDetails ] = useState( false );
 	const preview = usePreview();
@@ -343,6 +346,7 @@ export default function BulkChangePanel( {
 	const apply = () =>
 		applier.apply( { selection, preview: response } ).then( ( created ) => {
 			if ( created?.batch_id ) {
+				setApplied( selection );
 				setBatch( created );
 				// An earlier attempt that turned out to have gone through
 				// belongs to whatever it was applied to, not this selection.
@@ -527,7 +531,9 @@ export default function BulkChangePanel( {
 									) }
 						</h3>
 						<p className="bulkcat-bulk__big">
-							{ scopeLine( selection ) }
+							{ scopeLine(
+								batch && applied ? applied : selection
+							) }
 						</p>
 						{ ! batch && (
 							<p className="bulkcat-bulk__acts">

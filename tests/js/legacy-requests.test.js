@@ -233,13 +233,6 @@ describe( 'no way around the gate', () => {
 		await counted( '4 products selected' );
 		tick( 'Cap' );
 		await counted( '3 products selected' );
-		await waitFor( () =>
-			expect(
-				within( bar() )
-					.getByRole( 'button', { name: 'Make a change to these' } )
-					.getAttribute( 'aria-disabled' )
-			).not.toBe( 'true' )
-		);
 		fireEvent.click(
 			within( bar() ).getByRole( 'button', { name: 'Hide from site' } )
 		);

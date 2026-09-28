@@ -501,14 +501,17 @@ class SelectionSession {
 	 */
 	async probe( ids ) {
 		const key = this.currentKey;
-		const wanted = cleanIds( ids );
 		if ( ! key ) {
-			this.visible = new Map(
-				wanted.map( ( id ) => [ String( id ), false ] )
-			);
-			this.changed( false );
+			// Nothing is selected: nothing to ask, and nothing to redraw
+			// unless a row was shown as selected.
+			const shown = [ ...this.visible.values() ].some( Boolean );
+			this.visible.clear();
+			if ( shown ) {
+				this.changed( false );
+			}
 			return;
 		}
+		const wanted = cleanIds( ids );
 		if ( ! wanted.length ) {
 			return;
 		}

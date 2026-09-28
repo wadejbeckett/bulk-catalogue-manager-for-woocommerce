@@ -7,6 +7,7 @@
  * elsewhere.
  */
 import apiFetch from '@wordpress/api-fetch';
+import { __ } from '@wordpress/i18n';
 import { addQueryArgs } from '@wordpress/url';
 
 import { createRetryMiddleware, fetchNonce, subscribeHeartbeat } from './nonce';
@@ -69,7 +70,34 @@ export function routeUrl( route, query = {} ) {
 }
 
 /**
- * Call a bulkcat/v1 route.
+ * Whether a request is a 1.0 write body (T84): a POST to a route that since
+ * T83 takes only durable requests — capture (`selection`), Apply (`batches`)
+ * or undo (`batches/{id}/undo`, other than its preview) — without a server
+ * grant's `uuid`, `request_proof` and `intent`.
+ *
+ * @param {string} route   Route below the namespace.
+ * @param {Object} options apiFetch options.
+ * @return {boolean} True for a body the screen must never send.
+ */
+export function isLegacyWrite( route, options = {} ) {
+	if ( String( options.method || 'GET' ).toUpperCase() !== 'POST' ) {
+		return false;
+	}
+	const path = String( route ).replace( /^\/+/, '' ).split( '?' )[ 0 ];
+	const data = options.data || {};
+	const undo = /^batches\/\d+\/undo$/.test( path );
+	if ( path !== 'selection' && path !== 'batches' && ! undo ) {
+		return false;
+	}
+	if ( undo && data.preview === true ) {
+		return false;
+	}
+	return ! ( data.uuid && data.request_proof && data.intent );
+}
+
+/**
+ * Call a bulkcat/v1 route. A 1.0 write body is refused here, before
+ * anything is sent (isLegacyWrite()).
  *
  * @param {string} route         Route below the namespace.
  * @param {Object} options       apiFetch options plus `query`.
@@ -77,5 +105,15 @@ export function routeUrl( route, query = {} ) {
  * @return {Promise<*>} The parsed answer.
  */
 export function request( route, { query = {}, ...options } = {} ) {
+	if ( isLegacyWrite( route, options ) ) {
+		return Promise.reject( {
+			code: 'bulkcat_legacy_request',
+			message: __(
+				'This page tried to send a change in a form the site no longer accepts, so nothing was sent. Reload the page, then try again.',
+				'bulk-catalogue-manager-for-woocommerce'
+			),
+			data: { status: 409 },
+		} );
+	}
 	return apiFetch( { ...options, url: routeUrl( route, query ) } );
 }

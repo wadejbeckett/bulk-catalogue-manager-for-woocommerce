@@ -135,9 +135,12 @@ describe( 'nonce refresh and retry', () => {
 		];
 		setUp();
 
+		// A durable Apply (T84): the retry keeps the same grant.
 		const body = {
 			uuid: '0f8e1c2a-3b4d-4e5f-8a9b-0c1d2e3f4a5b',
-			operations: [],
+			request_proof: 'proof',
+			intent: { version: 1 },
+			preview_hash: 'a'.repeat( 64 ),
 		};
 		await expect(
 			api.request( 'batches', { method: 'POST', data: body } )
@@ -153,6 +156,7 @@ describe( 'nonce refresh and retry', () => {
 		expect( nonceOf( 2 ) ).toBe( 'fresh12345' );
 		expect( retry[ 1 ].body ).toBe( first[ 1 ].body );
 		expect( JSON.parse( retry[ 1 ].body ).uuid ).toBe( body.uuid );
+		expect( JSON.parse( retry[ 1 ].body ).request_proof ).toBe( 'proof' );
 		expect( apiFetch.nonceMiddleware.nonce ).toBe( 'fresh12345' );
 	} );
 

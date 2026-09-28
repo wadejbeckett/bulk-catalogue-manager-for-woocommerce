@@ -1,7 +1,5 @@
 # Bulk Catalogue Manager for WooCommerce
 
-> **Branch note (`codex/exact-selection-plan`):** This branch is not releasable between T83 and T84: the screen still sends 1.0 requests, which the routes now refuse with 409 `bulkcat_legacy_request`.
-
 One screen inside wp-admin for changing many WooCommerce products and variations at once. Every bulk change is shown to you before it is saved, recorded with the value it replaced, and can be undone.
 
 It edits WooCommerce's own product data only, through WooCommerce's own product classes, and works on a plain WordPress and WooCommerce site with nothing else installed. It makes no request outside your site, collects no data and has no paid version. Free under GPL-3.0-or-later.

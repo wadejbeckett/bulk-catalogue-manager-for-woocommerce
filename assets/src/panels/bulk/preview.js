@@ -258,6 +258,10 @@ export function PreviewResult( {
 	const unreadable = Array.isArray( response?.unreadable )
 		? response.unreadable
 		: [];
+	// T83: every chosen object that cannot be changed now, even beyond the
+	// listed ones; they stay in the change and are recorded as not changed.
+	const unavailable =
+		Number( response?.unavailable_count ?? unreadable.length ) || 0;
 	const allRows = Object.values( totals.rows || {} ).reduce(
 		( sum, each ) => sum + ( Number( each ) || 0 ),
 		0
@@ -586,7 +590,7 @@ export function PreviewResult( {
 				</div>
 			) }
 
-			{ unreadable.length > 0 && (
+			{ unavailable > 0 && (
 				<div
 					className="bulkcat-bulk__notice is-warn"
 					data-block="unreadable"
@@ -595,12 +599,12 @@ export function PreviewResult( {
 						{ sprintf(
 							/* translators: %s: a number, such as "3". */
 							_n(
-								'%s product could not be read and is left out of this change.',
-								'%s products could not be read and are left out of this change.',
-								unreadable.length,
+								'%s chosen product cannot be changed now. It stays in this change and will be recorded as not changed.',
+								'%s chosen products cannot be changed now. They stay in this change and will be recorded as not changed.',
+								unavailable,
 								'bulk-catalogue-manager-for-woocommerce'
 							),
-							formatNumber( unreadable.length )
+							formatNumber( unavailable )
 						) }
 					</strong>
 					<p>

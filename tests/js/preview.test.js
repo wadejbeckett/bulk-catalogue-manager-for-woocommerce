@@ -239,13 +239,22 @@ describe( 'preview', () => {
 		).toBeNull();
 	} );
 
-	it( 'lists the products that could not be read when partially computable', () => {
+	it( 'lists the chosen products that cannot be changed, kept in the change (T83)', () => {
 		const { container } = renderPreview();
 		const block = container.querySelector( '[data-block="unreadable"]' );
 		expect( block.textContent ).toContain(
-			'1 product could not be read and is left out of this change.'
+			'1 chosen product cannot be changed now. It stays in this change and will be recorded as not changed.'
 		);
 		expect( block.textContent ).toContain( '#999' );
+	} );
+
+	it( 'counts every unavailable product, beyond those listed', () => {
+		const { container } = renderPreview( {
+			response: previewResponse( { unavailable_count: 1200 } ),
+		} );
+		expect(
+			container.querySelector( '[data-block="unreadable"]' ).textContent
+		).toContain( '1,200 chosen products cannot be changed now.' );
 	} );
 
 	it( 'says when the counts are estimated', () => {

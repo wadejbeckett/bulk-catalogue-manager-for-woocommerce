@@ -21,11 +21,14 @@ import BulkChangePanel from './panels/bulk';
 
 | Prop | Required | What it is |
 | --- | --- | --- |
-| `selection` | yes | What to change. `{ kind: 'ids', ids: number[] }` for ticked rows (optionally with `token` when the ids were exchanged at `POST /selection`), or `{ kind: 'filter', token: string, count: number, filters?: Array<{ label, value }> }` for *all rows matching the current filter* (T42). `filters` are listed under the scope line as the owner reads them. A new selection object with different ids, token or count makes a preview stale. |
+| `selection` | yes | What to change (T84). `{ kind: 'snapshot', token, key, count, byType: { products, variations }, waiting }` for the catalogue's exact selection (`panelSelection()` in `catalogue/selection/model.js`: the snapshot's current token, the handle's `key` that a renewed token keeps, the server's counts, and `waiting`, the reason the selection is not settled yet, which blocks Check the change), or `{ kind: 'ids', ids: number[] }` for a row's own Make a change (sent sorted). A new selection object with a different token or ids makes a preview stale. |
 | `registry` | yes | The `GET /bulkcat/v1/fields` payload, `{ fields, actions, groups }`, as is. The chooser, the argument controls, the reasons shown in place and the variations rule all come from it; no action is listed in the panel. |
 | `settings` | yes | The `bulkcat_settings` values (`confirm_threshold`, `variations_status`, `variations_visibility`, `variations_price`, `variations_stock`), or the screen's `window.bulkcatSettings` object, which carries them under `settings`. Changing them makes a preview stale. |
 | `onClose` | no | Called by the close button, **Change the selection**, **Back to products** and Escape. The panel returns focus to the element focused when it opened when it unmounts. |
-| `onApplied` | no | Called with the new batch id once `POST /batches` succeeds. The panel then shows the Done step with progress; the caller may close it and show progress in the selection bar instead (§4.3 "After apply"). |
+| `onApplied` | no | Called with the batch id and `{ selection, replayed }` once `POST /batches` answers a batch: `selection` is the panel's selection (null for an earlier attempt that turned out to have gone through), `replayed` whether the server answered a request it had already accepted. The panel then shows the Done step with progress; the caller may close it and show progress above the table instead (§4.3 "After apply"). |
+| `onFinished` | no | Called once with the batch's final report when the Done step sees it finish (T84: the catalogue clears the applied selection only on full success). |
+| `onReview` | no | Opens Review selected products; shown in the scope card when given. |
+| `onRenewSelection` | no | Restores a snapshot whose lease lapsed (`bulkcat_selection_renew_required`), offered as **Restore the selection**. |
 | `categories` | no | The `GET /categories` tree (`[ { id, name, children } ]`), for the categories picker of add, remove and replace. |
 | `tags` | no | Tags as `[ { id, name } ]`, for the tags picker. |
 | `shippingClasses` | no | Shipping classes as `[ { id, name } ]`, for **Set a value** on Shipping class. |
@@ -53,14 +56,28 @@ confirms.
 
 ## Requests
 
-- `POST /preview` with `operations`, `ids` or `token`, and `sample_size`
-  (25, 100 or `all`).
-- `POST /batches` with `uuid` (one per previewed change, reused when the same
-  preview is retried, fresh after a new preview), `operations`, `ids` or
-  `token`, `source: 'bulk'`, `preview_hash`, and for a filter `preview_count`
-  (the preview's `selection.current_count`). A 409 `bulkcat_selection_changed`
-  states both counts and offers **Apply anyway** (`confirm_changed: true`) or
-  **Preview again**; a 409 `bulkcat_preview_stale` runs the preview again.
+- `POST /preview` with `operations`, the snapshot's `token` or sorted `ids`,
+  and `sample_size` (25, 100 or `all`). The answer's `operations` (the change
+  with every default written out), `scope_hash` and `hash` are what Apply
+  sends; `unavailable_count` counts chosen objects that stay in the change and
+  are recorded as not changed.
+- Apply is a durable request (T83, T84): `POST /requests` with
+  `{ operation: 'batch.apply', intent: { source: 'bulk', operations,
+  scope_hash, token | ids } }` issues a grant, then `POST /batches` sends
+  `uuid`, `request_proof`, the canonical `intent`, `preview_hash` and, for a
+  snapshot, its current `token`. The grant is held for the screen (not one
+  opening of the panel) until the answer is definite: a retry of the same
+  change (same operations, scope and selection handle) resends it, and the
+  server answers the batch it already made (`replayed: true`). A different
+  change first resolves an uncertain grant (`POST /requests/resolve`) and
+  shows its batch if it had gone through. Nothing 1.0 is sent: no bare `uuid`,
+  `source`, `preview_count` or `confirm_changed`.
+- Refusals, in the server's words (§4.8): an unknown outcome offers **Try
+  again** (same grant); `bulkcat_preview_stale` previews again (the same grant
+  is reused when the scope is unchanged); `bulkcat_selection_changed` offers
+  **Preview again**; `bulkcat_legacy_request` links to the batch History
+  names; `bulkcat_selection_renew_required` offers **Restore the selection**;
+  `bulkcat_request_gone` and `bulkcat_request_expired` are stated.
 - `GET /batches/{id}` every `pollInterval` until the batch finishes.
 
 ## Variations (T69)
@@ -75,7 +92,7 @@ confirms.
 ## Mounted by the catalogue
 
 `panels/catalogue` opens the panel from **Make a change to these** on the
-table's selection (ticked ids; T42 brings all rows matching the filter),
+exact selection (T84: the live snapshot, so a renewal or a tick reaches it),
 passes the settings from `useSettings()` and the category tree, renders
 T44's `<StalledNotice>` through `renderStalled`, and shows `<BatchProgress>`
 above the table once the panel is closed on an applied change.

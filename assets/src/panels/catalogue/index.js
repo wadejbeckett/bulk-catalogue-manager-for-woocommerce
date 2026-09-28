@@ -425,11 +425,12 @@ export function CatalogueGrid( {
 	const done = useRef( new Set() );
 	const onApplied = useCallback(
 		( id, answer = {} ) => {
-			const scope = answer.selection || bulk?.selection;
+			const scope =
+				'selection' in answer ? answer.selection : bulk?.selection;
 			covered.current =
 				scope?.kind === 'ids'
 					? scope.ids.map( Number )
-					: tableSelection.map( Number );
+					: ( scope ? tableSelection : [] ).map( Number );
 			setPending( covered.current, true );
 			setApplied( { id, replayed: !! answer.replayed } );
 			// T84: the snapshot applied is kept until the change finishes.

@@ -58,6 +58,23 @@ global.expect.extend( {
 
 const HASH = 'a'.repeat( 64 );
 const HASH_2 = 'b'.repeat( 64 );
+const SCOPE = 'c'.repeat( 64 );
+const SCOPE_2 = 'd'.repeat( 64 );
+
+/** The change as the preview normalises it (T83's `operations`). */
+const OPERATIONS = [
+	{
+		action: 'adjust',
+		args: {
+			field: 'regular_price',
+			direction: 'increase',
+			by: 'percent',
+			amount: '10',
+			skip_already: true,
+			apply_to_variations: false,
+		},
+	},
+];
 
 const SETTINGS = {
 	confirm_threshold: 200,
@@ -172,6 +189,9 @@ function previewResponse( overrides = {} ) {
 		unreadable: [ 999 ],
 		selection: { kind: 'ids', count: 24 },
 		hash: HASH,
+		unavailable_count: 1,
+		scope_hash: SCOPE,
+		operations: OPERATIONS,
 		...overrides,
 	};
 }
@@ -225,10 +245,36 @@ function restError( code, message, data = {} ) {
 	return { reject: { code, message, data } };
 }
 
+let grants = 0;
+
+/**
+ * A `POST /requests` answer: a new grant over the intent sent (T84).
+ *
+ * @param {Object} options The request's options.
+ * @return {Object} Grant.
+ */
+function grantFor( options ) {
+	grants += 1;
+	return {
+		uuid: `00000000-0000-4000-8000-${ String( grants ).padStart(
+			12,
+			'0'
+		) }`,
+		request_proof: `proof.${ grants }`,
+		accept_until: 1790000000,
+		operation: options.data.operation,
+		intent: { version: 1, ...options.data.intent },
+	};
+}
+
 module.exports = {
 	CATEGORIES,
 	HASH,
 	HASH_2,
+	OPERATIONS,
+	SCOPE,
+	SCOPE_2,
+	grantFor,
 	IDS,
 	REASON,
 	REGISTRY,

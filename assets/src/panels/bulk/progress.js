@@ -4,6 +4,7 @@
  * History. A stalled queue is handed to `renderStalled` (T44's notice) when
  * given, else the server's own sentence is shown.
  */
+import { useEffect, useRef } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 
 import { FINISHED, useBatchProgress } from './hooks';
@@ -63,6 +64,9 @@ export function doneSentence( report ) {
  * @param {Function} props.onUndo        Receives the batch id, or null.
  * @param {Function} props.onViewHistory Receives the batch id, or null.
  * @param {Function} props.renderStalled Receives the report, or null.
+ * @param {Function} props.onFinished    Receives the finished report, once (T84).
+ * @param {boolean}  props.replayed      The server answered a change it had already accepted.
+ * @param {boolean}  props.earlier       That change was an earlier attempt, resolved before a new one.
  * @return {Element} Done step.
  */
 export function DoneStep( {
@@ -72,6 +76,9 @@ export function DoneStep( {
 	onUndo,
 	onViewHistory,
 	renderStalled,
+	onFinished = null,
+	replayed = false,
+	earlier = false,
 } ) {
 	const { report, error } = useBatchProgress( batchId, interval );
 	const total = Number( report?.total_items ?? count ) || 0;
@@ -80,6 +87,27 @@ export function DoneStep( {
 	const percent = total > 0 ? Math.min( 100, ( done / total ) * 100 ) : 0;
 	// T75: milestones, not every read; the result below is a status, said once.
 	useProgressAnnouncer( done, total, finished );
+	const tell = useRef( onFinished );
+	tell.current = onFinished;
+	const told = useRef( false );
+	useEffect( () => {
+		if ( finished && ! told.current && tell.current ) {
+			told.current = true;
+			tell.current( report );
+		}
+	}, [ finished, report ] );
+	let receipt = '';
+	if ( earlier ) {
+		receipt = __(
+			'An earlier attempt to apply a change had gone through, so nothing new was sent. This is that change.',
+			'bulk-catalogue-manager-for-woocommerce'
+		);
+	} else if ( replayed ) {
+		receipt = __(
+			'This change had already been accepted, so it was not made again. This is its result.',
+			'bulk-catalogue-manager-for-woocommerce'
+		);
+	}
 
 	if ( ! finished ) {
 		return (
@@ -90,6 +118,7 @@ export function DoneStep( {
 						'bulk-catalogue-manager-for-woocommerce'
 					) }
 				</h3>
+				{ receipt && <p className="bulkcat-bulk__hint">{ receipt }</p> }
 				<p className="bulkcat-bulk__sub">
 					{ sprintf(
 						/* translators: %s: a number of products, such as "1,284 products". */
@@ -166,6 +195,7 @@ export function DoneStep( {
 				role="status"
 			>
 				<strong>{ doneSentence( report ) }</strong>
+				{ receipt && <p>{ receipt }</p> }
 				{ report.selection_difference && (
 					<p>{ report.selection_difference }</p>
 				) }

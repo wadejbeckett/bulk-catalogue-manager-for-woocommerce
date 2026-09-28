@@ -65,19 +65,22 @@ async function tabTo( page, target, { back = false, max = 120 } = {} ) {
 }
 
 /**
- * Give keyboard focus to a control found by its role and name, wherever it
- * sits in the tab order. The admin menu and notices ahead of the screen are
- * as long as the site makes them, so counting Tab presses from the top of the
- * page breaks on a site with a longer menu (T85); the control is found by
- * what a screen reader announces instead, focused without a pointer event,
- * and everything after it is typed.
+ * Reach a control in the screen by keyboard alone, however long the admin
+ * menu before it is (T85): the first Tab lands on WordPress's own "Skip to
+ * main content" link, Enter moves focus past the menu to the content, and Tab
+ * goes on from there to the control. Counting Tab presses from the top of the
+ * page broke on a site with a longer admin menu and more notices.
  *
- * @param {import('@playwright/test').Locator} target Control, by role and name.
+ * @param {import('@playwright/test').Page}    page   Page.
+ * @param {import('@playwright/test').Locator} target Control to reach.
  */
-async function focusOn( target ) {
-	await expect( target ).toBeVisible();
-	await target.focus();
-	await expect( target ).toBeFocused();
+async function tabFromContent( page, target ) {
+	await page.keyboard.press( 'Tab' );
+	await expect(
+		page.getByRole( 'link', { name: 'Skip to main content' } )
+	).toBeFocused();
+	await page.keyboard.press( 'Enter' );
+	await tabTo( page, target );
 }
 
 /**
@@ -243,7 +246,7 @@ module.exports = {
 	SEED,
 	openScreen,
 	tabTo,
-	focusOn,
+	tabFromContent,
 	focused,
 	rest,
 	productByName,

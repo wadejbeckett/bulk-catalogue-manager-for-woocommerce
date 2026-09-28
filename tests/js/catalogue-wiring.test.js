@@ -31,6 +31,7 @@ const {
 	route,
 	calls,
 } = require( './catalogue-fixture' );
+const { createSelectionServer } = require( './selection-server' );
 
 const SETTINGS = {
 	settings: { rows_per_page: 25, category_panel: true },
@@ -41,6 +42,7 @@ beforeEach( () => {
 	apiFetch.mockReset();
 	window.localStorage.clear();
 	route( apiFetch, {
+		...createSelectionServer().routes(),
 		fields: () => REGISTRY,
 		products: () => page(),
 		categories: () => CATEGORIES,
@@ -88,6 +90,17 @@ describe( 'catalogue wiring', () => {
 			.closest( 'tr' );
 		fireEvent.click( within( row ).getByRole( 'checkbox' ) );
 		const bar = await screen.findByRole( 'region', { name: 'Selection' } );
+		// T84: the server holds the selection before a change is made on it.
+		await waitFor( () =>
+			expect( bar.textContent ).toContain( '1 product selected' )
+		);
+		await waitFor( () =>
+			expect(
+				within( bar )
+					.getByRole( 'button', { name: 'Make a change to these' } )
+					.getAttribute( 'aria-disabled' )
+			).not.toBe( 'true' )
+		);
 		fireEvent.click(
 			within( bar ).getByRole( 'button', {
 				name: 'Make a change to these',

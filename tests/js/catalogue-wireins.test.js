@@ -44,6 +44,7 @@ const {
 	route,
 	calls,
 } = require( './catalogue-fixture' );
+const { createSelectionServer } = require( './selection-server' );
 
 // DataViews' grid measures itself; jsdom has no ResizeObserver.
 global.ResizeObserver =
@@ -79,6 +80,7 @@ const VARIATION = {
 
 function routes( overrides = {} ) {
 	route( apiFetch, {
+		...createSelectionServer().routes(),
 		fields: () => REGISTRY,
 		products: ( query ) =>
 			query.mode === 'variations'
@@ -206,7 +208,10 @@ describe( 'dropping the selection on a category (T65)', () => {
 			.closest( 'tr' );
 		fireEvent.click( within( row ).getByRole( 'checkbox' ) );
 		const bar = await screen.findByRole( 'region', { name: 'Selection' } );
-		expect( bar.getAttribute( 'draggable' ) ).toBe( 'true' );
+		// Draggable once the server has the selection (T84).
+		await waitFor( () =>
+			expect( bar.getAttribute( 'draggable' ) ).toBe( 'true' )
+		);
 		const setData = jest.fn();
 		fireEvent.dragStart( bar, { dataTransfer: { setData } } );
 		expect( setData ).toHaveBeenCalledWith( SELECTION_DRAG_TYPE, '1' );
@@ -220,8 +225,13 @@ describe( 'dropping the selection on a category (T65)', () => {
 		expect(
 			within( panel ).getAllByText( /Add categories or tags/ ).length
 		).toBeGreaterThan( 0 );
+		// Only the selection was saved (T84); no product, preview or batch write.
 		expect(
-			apiFetch.mock.calls.some( ( [ options ] ) => options.method )
+			apiFetch.mock.calls.some(
+				( [ options ] ) =>
+					options.method &&
+					! /^(requests|selection)(\/|$)/.test( options.url )
+			)
 		).toBe( false );
 	} );
 } );

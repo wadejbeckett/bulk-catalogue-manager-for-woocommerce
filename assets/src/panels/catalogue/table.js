@@ -88,6 +88,7 @@ export function describeTable( wrapper, caption, sortable = [] ) {
  * @param {Set}           props.pending           Row ids with a change in flight.
  * @param {Array<string>} props.selection         Selected row ids, as strings.
  * @param {Function}      props.onChangeSelection Selection change.
+ * @param {Function}      props.onDrawn           Receives the ids of every row drawn (the page and opened variations), T84.
  * @return {Element} Table.
  */
 export default function CatalogueTable( {
@@ -104,6 +105,7 @@ export default function CatalogueTable( {
 	pending,
 	selection,
 	onChangeSelection,
+	onDrawn = null,
 } ) {
 	// T46's editing scope first (its rows as last written and its row
 	// actions), then T67's row tree over them: the tree wraps each cell's
@@ -132,6 +134,15 @@ export default function CatalogueTable( {
 		onChangeSelection,
 	} ); // T67–T68.
 	expand.current = tree.expand;
+	// T84: the selection inspects exactly the rows drawn.
+	const drawnKey = ( tree.props.data || [] )
+		.map( ( row ) => String( row.id ) )
+		.join( ',' );
+	useEffect( () => {
+		if ( onDrawn ) {
+			onDrawn( drawnKey ? drawnKey.split( ',' ) : [] );
+		}
+	}, [ drawnKey, onDrawn ] );
 	const wrapper = useRef( null );
 	const caption = __(
 		'Products. Sort with the column headings; arrow keys move between cells.',

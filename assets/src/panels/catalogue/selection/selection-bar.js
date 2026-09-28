@@ -1,63 +1,25 @@
 /**
- * The sticky selection bar (T42, SPEC §4.1): the count in words, the line
- * offering every product matching the view once the page is selected, the
- * Show on site and Hide from site quick actions, Make a change to these and
- * Clear. It renders only while something is selected, or while the notice
- * that a view change cleared the selection is showing.
+ * The sticky selection bar (T42, T84; SPEC §4.1): the whole selection's count
+ * in words, from the server, whatever the view shows; the offer to add every
+ * product matching the view; Review selected products; the Show on site and
+ * Hide from site quick actions; Make a change to these; and Clear selection.
+ * Above it, the selection's notices: restored after a reload, checked again
+ * after an idle spell (drift), no longer kept (lost), a change that could
+ * not be confirmed with Try again, and the result once a change finished.
  */
 import { Button, Notice } from '@wordpress/components';
 import { __, _n, sprintf } from '@wordpress/i18n';
 
 import { SELECTION_DRAG_TYPE } from '../../categories/category-tree';
-
 import { formatNumber } from '../../bulk/words';
-
-/**
- * "1 product selected", "25 products selected", or for a matching
- * selection "All 1,284 products matching these filters are selected".
- *
- * @param {number}  count    Selected count.
- * @param {boolean} matching Whether every matching row is selected.
- * @param {boolean} filtered Whether the view narrows the catalogue.
- * @return {string} Words.
- */
-export function countWords( count, matching, filtered ) {
-	const number = formatNumber( count );
-	if ( matching && filtered ) {
-		return sprintf(
-			/* translators: %s: a number of products, such as "1,284". */
-			_n(
-				'The %s product matching these filters is selected.',
-				'All %s products matching these filters are selected.',
-				count,
-				'bulk-catalogue-manager-for-woocommerce'
-			),
-			number
-		);
-	}
-	if ( matching ) {
-		return sprintf(
-			/* translators: %s: a number of products, such as "1,284". */
-			_n(
-				'The %s product in the catalogue is selected.',
-				'All %s products in the catalogue are selected.',
-				count,
-				'bulk-catalogue-manager-for-woocommerce'
-			),
-			number
-		);
-	}
-	return sprintf(
-		/* translators: %s: a number of products, such as "25". */
-		_n(
-			'%s product selected',
-			'%s products selected',
-			count,
-			'bulk-catalogue-manager-for-woocommerce'
-		),
-		number
-	);
-}
+import {
+	driftText,
+	errorText,
+	lostText,
+	noticeText,
+	selectedWords,
+	waitingReason,
+} from './model';
 
 /**
  * "All 25 on this page are selected."
@@ -113,15 +75,18 @@ export function selectAllWords( total, filtered ) {
 /**
  * The bar.
  *
- * @param {Object}        props              Props.
- * @param {Object}        props.selection    useSelection().
- * @param {number}        props.pageCount    Rows on this page.
- * @param {number}        props.total        Rows matching the view.
- * @param {boolean}       props.filtered     Whether the view narrows the catalogue.
- * @param {Function}      props.onMakeChange Open the bulk change panel.
- * @param {Function|null} props.onShow       Show on site, or null when the registry offers none.
- * @param {Function|null} props.onHide       Hide from site, or null.
- * @param {boolean}       props.draggable    The bar can be dragged onto a category (T65).
+ * @param {Object}        props               Props.
+ * @param {Object}        props.selection     useSelection().
+ * @param {number}        props.pageCount     Rows on this page.
+ * @param {number}        props.total         Rows matching the view.
+ * @param {boolean}       props.filtered      Whether the view narrows the catalogue.
+ * @param {Function}      props.onMakeChange  Open the bulk change panel.
+ * @param {Function}      props.onReview      Open the review of the selection.
+ * @param {Function|null} props.onShow        Show on site, or null when the registry offers none.
+ * @param {Function|null} props.onHide        Hide from site, or null.
+ * @param {Function|null} props.onUndo        Undo a finished change by id, or null.
+ * @param {Function|null} props.onViewHistory Open a change in History by id, or null.
+ * @param {boolean}       props.draggable     The bar can be dragged onto a category (T65).
  * @return {Element|null} Bar.
  */
 export default function SelectionBar( {
@@ -130,58 +95,142 @@ export default function SelectionBar( {
 	total,
 	filtered,
 	onMakeChange,
+	onReview = null,
 	onShow = null,
 	onHide = null,
+	onUndo = null,
+	onViewHistory = null,
 	draggable = false,
 } ) {
-	const { count, matching, error, notice } = selection;
-	const loading = matching?.status === 'loading';
-	const ready = matching?.status === 'ready';
-	if ( ! count && ! matching && ! notice && ! error ) {
+	const {
+		count,
+		byType,
+		status,
+		notice,
+		drift,
+		lost,
+		error,
+		blocked,
+		hasSelection,
+	} = selection;
+	const showBar =
+		hasSelection || status === 'saving' || status === 'uncertain';
+	if ( ! showBar && ! notice && ! drift && ! lost && ! error && ! blocked ) {
 		return null;
 	}
-	// T75: the offer stands beside any partial selection, as the
-	// prototype's bar has it, not only once the whole page is ticked.
-	const offerAll = ! matching && count > 0 && total > selection.ids.length;
+	const waiting = waitingReason( selection );
+	const busy = status !== 'idle';
+	const canDrag = draggable && hasSelection && ! busy;
+	const offerAll = hasSelection && selection.offerAll && total > 0;
+	const doneBatch = notice?.kind === 'done' ? notice.batchId : 0;
 	return (
 		<div className="bulkcat-selection">
-			{ notice && (
+			{ notice && noticeText( notice, selection ) && (
 				<Notice
-					status="info"
+					status={ notice.kind === 'cleanup' ? 'warning' : 'info' }
 					className="bulkcat-selection__notice"
-					onRemove={ selection.dismissNotice }
+					onRemove={ () => selection.dismiss( 'notice' ) }
 				>
-					{ notice }
+					<p>{ noticeText( notice, selection ) }</p>
+					{ doneBatch > 0 && ( onUndo || onViewHistory ) && (
+						<p className="bulkcat-selection__acts">
+							{ onUndo && (
+								<Button
+									variant="link"
+									onClick={ () => onUndo( doneBatch ) }
+								>
+									{ __(
+										'Undo this change',
+										'bulk-catalogue-manager-for-woocommerce'
+									) }
+								</Button>
+							) }
+							{ onViewHistory && (
+								<Button
+									variant="link"
+									onClick={ () => onViewHistory( doneBatch ) }
+								>
+									{ __(
+										'View in History',
+										'bulk-catalogue-manager-for-woocommerce'
+									) }
+								</Button>
+							) }
+						</p>
+					) }
+				</Notice>
+			) }
+			{ drift && (
+				<Notice
+					status="warning"
+					className="bulkcat-selection__notice"
+					onRemove={ () => selection.dismiss( 'drift' ) }
+				>
+					{ driftText() }
+				</Notice>
+			) }
+			{ lost && (
+				<Notice
+					status="warning"
+					className="bulkcat-selection__notice"
+					onRemove={ () => selection.dismiss( 'lost' ) }
+				>
+					{ lostText( lost ) }
 				</Notice>
 			) }
 			{ error && (
 				<Notice
 					status="error"
 					className="bulkcat-selection__notice"
-					isDismissible={ false }
+					isDismissible={ status !== 'uncertain' }
+					onRemove={ () => selection.dismiss( 'error' ) }
 				>
-					{ /^bulkcat_/.test( error?.code || '' ) && error.message
-						? error.message
-						: __(
-								'All the matching products could not be selected. Try again.',
-								'bulk-catalogue-manager-for-woocommerce'
-							) }
+					<p>{ errorText( error ) }</p>
+					{ status === 'uncertain' && (
+						<p className="bulkcat-selection__acts">
+							<Button
+								variant="secondary"
+								size="compact"
+								onClick={ selection.retry }
+							>
+								{ __(
+									'Try again',
+									'bulk-catalogue-manager-for-woocommerce'
+								) }
+							</Button>
+							<Button variant="link" onClick={ selection.clear }>
+								{ __(
+									'Clear selection',
+									'bulk-catalogue-manager-for-woocommerce'
+								) }
+							</Button>
+						</p>
+					) }
 				</Notice>
 			) }
-			{ ( count > 0 || matching ) && (
+			{ blocked && ! error && (
+				<Notice
+					status="warning"
+					className="bulkcat-selection__notice"
+					isDismissible={ false }
+				>
+					{ waiting }
+				</Notice>
+			) }
+			{ showBar && (
 				<div
 					className={
 						'bulkcat-selection__bar' +
-						( draggable && ! loading ? ' is-draggable' : '' )
+						( canDrag ? ' is-draggable' : '' )
 					}
 					role="region"
 					aria-label={ __(
 						'Selection',
 						'bulk-catalogue-manager-for-woocommerce'
 					) }
-					draggable={ draggable && ! loading }
+					draggable={ canDrag }
 					title={
-						draggable && ! loading
+						canDrag
 							? __(
 									'Drag onto a category to add these products to it.',
 									'bulk-catalogue-manager-for-woocommerce'
@@ -204,13 +253,21 @@ export default function SelectionBar( {
 						className="bulkcat-selection__count"
 						aria-live="polite"
 					>
-						{ loading
-							? __(
-									'Selecting every matching product…',
+						{ hasSelection
+							? selectedWords( count, byType )
+							: __(
+									'Saving your selection…',
 									'bulk-catalogue-manager-for-woocommerce'
-								)
-							: countWords( count, ready, filtered ) }
+								) }
 					</span>
+					{ hasSelection && status === 'saving' && (
+						<span className="bulkcat-selection__state">
+							{ __(
+								'Saving…',
+								'bulk-catalogue-manager-for-woocommerce'
+							) }
+						</span>
+					) }
 					{ offerAll && (
 						<span className="bulkcat-selection__line">
 							{ selection.pageSelected && (
@@ -219,15 +276,17 @@ export default function SelectionBar( {
 							<Button
 								variant="link"
 								onClick={ selection.selectAllMatching }
+								disabled={ status === 'uncertain' }
+								accessibleWhenDisabled
 							>
 								{ selectAllWords( total, filtered ) }
 							</Button>
 						</span>
 					) }
-					{ ready && (
-						<Button variant="link" onClick={ selection.selectPage }>
+					{ hasSelection && onReview && (
+						<Button variant="link" onClick={ onReview }>
 							{ __(
-								'Select only this page',
+								'Review selected products',
 								'bulk-catalogue-manager-for-woocommerce'
 							) }
 						</Button>
@@ -238,7 +297,8 @@ export default function SelectionBar( {
 								variant="secondary"
 								size="compact"
 								onClick={ onShow }
-								disabled={ loading }
+								disabled={ busy || ! hasSelection }
+								accessibleWhenDisabled
 							>
 								{ __(
 									'Show on site',
@@ -251,7 +311,8 @@ export default function SelectionBar( {
 								variant="secondary"
 								size="compact"
 								onClick={ onHide }
-								disabled={ loading }
+								disabled={ busy || ! hasSelection }
+								accessibleWhenDisabled
 							>
 								{ __(
 									'Hide from site',
@@ -263,7 +324,13 @@ export default function SelectionBar( {
 							variant="primary"
 							size="compact"
 							onClick={ onMakeChange }
-							disabled={ loading }
+							disabled={ busy || ! hasSelection }
+							accessibleWhenDisabled
+							aria-describedby={
+								waiting
+									? 'bulkcat-selection-waiting'
+									: undefined
+							}
 						>
 							{ __(
 								'Make a change to these',
@@ -272,11 +339,21 @@ export default function SelectionBar( {
 						</Button>
 						<Button variant="link" onClick={ selection.clear }>
 							{ __(
-								'Clear',
+								'Clear selection',
 								'bulk-catalogue-manager-for-woocommerce'
 							) }
 						</Button>
 					</span>
+					{ waiting && (
+						// Why the actions wait, for the disabled buttons; the
+						// "Saving…" line and the notices above say it on screen.
+						<span
+							className="bulkcat-sr-only"
+							id="bulkcat-selection-waiting"
+						>
+							{ waiting }
+						</span>
+					) }
 				</div>
 			) }
 		</div>

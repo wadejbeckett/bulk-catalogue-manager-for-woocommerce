@@ -387,13 +387,23 @@ export function filterChips( view, descriptors, termNames = {} ) {
  * The chip row: one chip per active filter, each clearing itself, and Clear
  * filters. Nothing renders when nothing filters.
  *
- * @param {Object}        props            Props.
- * @param {Array<Object>} props.chips      filterChips().
- * @param {Function}      props.onChange   Receives an updater `( view ) => view`.
- * @param {Function}      props.onClearAll Clear every filter and the search.
+ * The search chip's button is **Clear search** (T84, SPEC §4.1): with
+ * `onClearSearch` it is the deliberate control that clears the search and
+ * the selection, unlike editing the search box, even through empty text.
+ *
+ * @param {Object}        props               Props.
+ * @param {Array<Object>} props.chips         filterChips().
+ * @param {Function}      props.onChange      Receives an updater `( view ) => view`.
+ * @param {Function}      props.onClearAll    Clear every filter and the search.
+ * @param {Function}      props.onClearSearch Clear search: the search and the selection.
  * @return {Element|null} Chips.
  */
-export function FilterChips( { chips, onChange, onClearAll } ) {
+export function FilterChips( {
+	chips,
+	onChange,
+	onClearAll,
+	onClearSearch = null,
+} ) {
 	if ( ! chips.length ) {
 		return null;
 	}
@@ -409,20 +419,34 @@ export function FilterChips( { chips, onChange, onClearAll } ) {
 				{ chips.map( ( chip ) => (
 					<li key={ chip.id } className="bulkcat-chips__chip">
 						<span>{ chip.sentence }</span>
-						<Button
-							size="small"
-							icon="no-alt"
-							className="bulkcat-chips__clear"
-							label={ sprintf(
-								/* translators: %s: a filter as a sentence, such as "Stock quantity is 0 or less". */
-								__(
-									'Clear the filter “%s”',
+						{ chip.id === 'search' && onClearSearch ? (
+							<Button
+								size="small"
+								icon="no-alt"
+								className="bulkcat-chips__clear"
+								label={ __(
+									'Clear search',
 									'bulk-catalogue-manager-for-woocommerce'
-								),
-								chip.sentence
-							) }
-							onClick={ () => onChange( chip.clear ) }
-						/>
+								) }
+								showTooltip
+								onClick={ onClearSearch }
+							/>
+						) : (
+							<Button
+								size="small"
+								icon="no-alt"
+								className="bulkcat-chips__clear"
+								label={ sprintf(
+									/* translators: %s: a filter as a sentence, such as "Stock quantity is 0 or less". */
+									__(
+										'Clear the filter “%s”',
+										'bulk-catalogue-manager-for-woocommerce'
+									),
+									chip.sentence
+								) }
+								onClick={ () => onChange( chip.clear ) }
+							/>
+						) }
 					</li>
 				) ) }
 			</ul>

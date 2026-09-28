@@ -355,3 +355,8 @@ $bulkcat-bad-tint: #fcf0f1;
 		}
 	}
 }
+
+// T84: the review of the selection opens over the bulk panel too.
+.bulkcat-drawer.bulkcat-review {
+	z-index: 9995;
+}

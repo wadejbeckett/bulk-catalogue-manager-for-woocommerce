@@ -148,7 +148,7 @@ function prices( ids ) {
  */
 function setPrices( byId ) {
 	php(
-		`foreach ( $in as $id => $price ) { $p = wc_get_product( $id ); if ( $p ) { $p->set_regular_price( (string) $price ); $p->save(); } } echo 'true';`,
+		`foreach ( $in as $id => $price ) { $p = wc_get_product( $id ); if ( $p ) { $p->set_regular_price( number_format( (float) $price, 2, '.', '' ) ); $p->save(); } } echo 'true';`,
 		byId
 	);
 }

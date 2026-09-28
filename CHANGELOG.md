@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Selections are exact and kept on the server: ticked rows and **Select all matching** add to one selection that survives searches, filters, pages and a reload, until **Clear selection**, **Clear search**, unticking, or a change that finished in full. **Review selected products** lists and removes members, including ones no longer available.
+- Preview covers exactly the selected products and variations; Apply and undo are durable requests with a server-issued grant, so a retry after a lost answer is answered with the change already made instead of making it twice. Chosen products that cannot be changed stay in the change and are recorded as not changed.
+- Pages from 1.0 cannot apply or undo: their requests are refused with `bulkcat_legacy_request` and a request to reload.
+
 - `bulkcat_batch_created` now fires after the first chunk is scheduled, at most once per accepted batch, and not on a retry after `BatchRecovery::finish()` throws (`src/Requests/RequestService.php`, the post-acceptance guard). 1.0 listeners that assumed one call per `POST /batches` must check the batch id.
 
 ## [1.0.0] - 2026-09-24

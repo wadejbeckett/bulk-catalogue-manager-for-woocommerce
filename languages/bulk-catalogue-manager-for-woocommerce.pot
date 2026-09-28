@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-09-28T11:39:12+00:00\n"
+"POT-Creation-Date: 2026-09-28T12:42:11+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -180,7 +180,8 @@ msgstr[0] ""
 msgstr[1] ""
 
 #. translators: 1: a number of products, such as "1,284 products"; 2: a number of variations, such as "3,915 variations".
-#, php-format
+#. translators: 1: a number of products, such as "1,200 products"; 2: a number of variations, such as "50 variations".
+#, php-format,js-format
 msgid "%1$s and %2$s"
 msgstr ""
 
@@ -1682,6 +1683,9 @@ msgstr ""
 msgid "Your sign-in check has expired and could not be renewed, so this request was not sent. Reload the page, then try again."
 msgstr ""
 
+msgid "This page tried to send a change in a form the site no longer accepts, so nothing was sent. Reload the page, then try again."
+msgstr ""
+
 #. translators: %s: a number of products, such as "24 products".
 #, js-format
 msgid "Apply to %s"
@@ -1884,8 +1888,8 @@ msgstr ""
 
 #. translators: %s: a number, such as "3".
 #, js-format
-msgid "%s product could not be read and is left out of this change."
-msgid_plural "%s products could not be read and are left out of this change."
+msgid "%s chosen product cannot be changed now. It stays in this change and will be recorded as not changed."
+msgid_plural "%s chosen products cannot be changed now. They stay in this change and will be recorded as not changed."
 msgstr[0] ""
 msgstr[1] ""
 
@@ -1911,6 +1915,12 @@ msgid "%s product updated."
 msgid_plural "%s products updated."
 msgstr[0] ""
 msgstr[1] ""
+
+msgid "An earlier attempt to apply a change had gone through, so nothing new was sent. This is that change."
+msgstr ""
+
+msgid "This change had already been accepted, so it was not made again. This is its result."
+msgstr ""
 
 msgid "Applying the change"
 msgstr ""
@@ -1947,12 +1957,78 @@ msgstr ""
 msgid "View in History"
 msgstr ""
 
-#. translators: %s: a number of products, such as "4,312".
+#. translators: 1: a number of products, such as "1,200 products"; 2: a number of variations, such as "50 variations".
 #, js-format
-msgid "All %s product matching the current filter"
-msgid_plural "All %s products matching the current filter"
+msgid "%1$s and %2$s selected"
+msgstr ""
+
+#. translators: %s: a number of variations, such as "3".
+#, js-format
+msgid "%s variation selected"
+msgid_plural "%s variations selected"
 msgstr[0] ""
 msgstr[1] ""
+
+#. translators: %s: a number of products, such as "25".
+#, js-format
+msgid "%s product selected"
+msgid_plural "%s products selected"
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "Your selection is still being saved. Wait a moment, then check the change."
+msgstr ""
+
+msgid "A change to your selection was not confirmed. Try again, or clear the selection, before checking a change."
+msgstr ""
+
+msgid "Your selection is kept, but it cannot be used until you sign in again. Reload the page, then try again."
+msgstr ""
+
+#. translators: %s: what is selected, such as "25 products".
+#, js-format
+msgid "Your selection is still here: %s."
+msgstr ""
+
+msgid "The search and the selection were cleared."
+msgstr ""
+
+msgid "The change finished, so the products it covered are no longer selected. Anything you selected after applying it is still selected."
+msgstr ""
+
+msgid "The change finished, so your selection was cleared."
+msgstr ""
+
+msgid "The change did not finish for every product, so your selection is kept. History shows what was not changed."
+msgstr ""
+
+msgid "The change finished, but the products it covered could not be taken out of your selection because they are no longer kept. Your selection is unchanged; review it before your next change."
+msgstr ""
+
+#. translators: %s: what was selected, such as "25 products".
+#, js-format
+msgid "You had %s selected."
+msgstr ""
+
+msgid "These selected products are no longer kept. Choose them again before starting a new change."
+msgstr ""
+
+msgid "Your last change to the selection was not confirmed before the page was reloaded. Try again to finish it, or clear the selection."
+msgstr ""
+
+msgid "Your selection could not be saved just now. Try again: the same change is sent again, so nothing is added twice."
+msgstr ""
+
+msgid "Your selection could not be saved because you need to sign in again. Reload the page, then try again."
+msgstr ""
+
+msgid "Your selection could not be changed. Check it and try again."
+msgstr ""
+
+#. translators: %s: what is selected, such as "1,200 products and 50 variations".
+#, js-format
+msgid "%s selected"
+msgstr ""
 
 #. translators: %s: a number of products, such as "24".
 #, js-format
@@ -2010,6 +2086,9 @@ msgstr ""
 msgid "This change will affect"
 msgstr ""
 
+msgid "Review selected products"
+msgstr ""
+
 msgid "Change the selection"
 msgstr ""
 
@@ -2051,20 +2130,6 @@ msgstr ""
 msgid "Variations carry their own prices and stock. Nothing happens to them until you switch on Also apply to variations for this change."
 msgstr ""
 
-msgid "The filter now matches a different number of products"
-msgstr ""
-
-#. translators: 1: products when previewed, such as "1,284 products"; 2: products now, such as "1,290 products".
-#, js-format
-msgid "When you checked the change it matched %1$s. It matches %2$s now."
-msgstr ""
-
-msgid "Apply anyway"
-msgstr ""
-
-msgid "Preview again"
-msgstr ""
-
 msgid "Back to products"
 msgstr ""
 
@@ -2079,13 +2144,28 @@ msgstr ""
 msgid "Nothing would change, so there is nothing to apply."
 msgstr ""
 
+msgid "Preview again"
+msgstr ""
+
 msgid "Check the change"
+msgstr ""
+
+msgid "We could not confirm whether the change was applied"
+msgstr ""
+
+msgid "The connection dropped before the answer arrived. Try again: the same request is sent again, so the change can only be made once."
+msgstr ""
+
+msgid "Try again"
+msgstr ""
+
+msgid "Show details"
 msgstr ""
 
 msgid "Something went wrong. Try again in a moment."
 msgstr ""
 
-msgid "Show details"
+msgid "Restore the selection"
 msgstr ""
 
 #. translators: %d: an HTTP status code such as 400.
@@ -2298,9 +2378,6 @@ msgid "Include sub-categories"
 msgstr ""
 
 msgid "The categories could not be loaded."
-msgstr ""
-
-msgid "Try again"
 msgstr ""
 
 msgid "Loading categories…"
@@ -2872,6 +2949,9 @@ msgstr[1] ""
 msgid "Includes variations"
 msgstr ""
 
+msgid "We could not confirm whether the undo started. Try again: the same request is sent again, so it can only happen once."
+msgstr ""
+
 msgid "The undo could not be started. Reload the page and try again."
 msgstr ""
 
@@ -3130,31 +3210,13 @@ msgstr ""
 msgid "%1$s is after %2$s"
 msgstr ""
 
+msgid "Clear search"
+msgstr ""
+
 #. translators: %s: a filter as a sentence, such as "Stock quantity is 0 or less".
 #, js-format
 msgid "Clear the filter “%s”"
 msgstr ""
-
-#. translators: %s: a number of products, such as "1,284".
-#, js-format
-msgid "The %s product matching these filters is selected."
-msgid_plural "All %s products matching these filters are selected."
-msgstr[0] ""
-msgstr[1] ""
-
-#. translators: %s: a number of products, such as "1,284".
-#, js-format
-msgid "The %s product in the catalogue is selected."
-msgid_plural "All %s products in the catalogue are selected."
-msgstr[0] ""
-msgstr[1] ""
-
-#. translators: %s: a number of products, such as "25".
-#, js-format
-msgid "%s product selected"
-msgid_plural "%s products selected"
-msgstr[0] ""
-msgstr[1] ""
 
 #. translators: %s: the number of products on this page, such as "25".
 #, js-format
@@ -3177,7 +3239,10 @@ msgid_plural "Select all %s products in the catalogue."
 msgstr[0] ""
 msgstr[1] ""
 
-msgid "All the matching products could not be selected. Try again."
+msgid "This page was idle for a while, so your selection was checked again. The same products are still selected; check any change again before applying it."
+msgstr ""
+
+msgid "Clear selection"
 msgstr ""
 
 msgid "Selection"
@@ -3186,10 +3251,10 @@ msgstr ""
 msgid "Drag onto a category to add these products to it."
 msgstr ""
 
-msgid "Selecting every matching product…"
+msgid "Saving your selection…"
 msgstr ""
 
-msgid "Select only this page"
+msgid "Saving…"
 msgstr ""
 
 msgid "Show on site"
@@ -3201,7 +3266,49 @@ msgstr ""
 msgid "Make a change to these"
 msgstr ""
 
-msgid "Clear"
+msgid "Selected products"
+msgstr ""
+
+msgid "Close the selected products"
+msgstr ""
+
+msgid "Nothing is selected."
+msgstr ""
+
+msgid "Everything selected, including products the list is not showing now. Removing one leaves the rest selected."
+msgstr ""
+
+msgid "The selected products could not be listed. Close this and try again."
+msgstr ""
+
+msgid "Loading the selected products…"
+msgstr ""
+
+msgid "No longer available"
+msgstr ""
+
+msgid "The product that is no longer available"
+msgstr ""
+
+#. translators: %s: a product's name.
+#, js-format
+msgid "%s was removed from the selection."
+msgstr ""
+
+#. translators: %s: a product's name.
+#, js-format
+msgid "Remove %s from the selection"
+msgstr ""
+
+msgid "Remove this product that is no longer available from the selection"
+msgstr ""
+
+msgid "Pages of selected products"
+msgstr ""
+
+#. translators: 1: this page's number, such as "2"; 2: the number of pages, such as "5".
+#, js-format
+msgid "Page %1$s of %2$s"
 msgstr ""
 
 #. translators: %s: a saved view's name.
@@ -3305,6 +3412,9 @@ msgstr ""
 msgid "Change in progress"
 msgstr ""
 
+msgid "This change had already been accepted, so it was not sent again. Its progress is shown here."
+msgstr ""
+
 msgid "The change could not be cancelled. Try again in a moment."
 msgstr ""
 
@@ -3323,9 +3433,6 @@ msgstr ""
 #. translators: %s: the text searched for.
 #, js-format
 msgid "Name or SKU contains “%s”"
-msgstr ""
-
-msgid "The selection was cleared because the filters changed."
 msgstr ""
 
 msgid "The products could not be loaded."
@@ -3374,9 +3481,6 @@ msgid "Nothing was saved. Correct the settings marked below and save again."
 msgstr ""
 
 msgid "The settings could not be saved. Try again in a moment."
-msgstr ""
-
-msgid "Saving…"
 msgstr ""
 
 msgid "Save settings"

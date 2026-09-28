@@ -1025,8 +1025,10 @@ describe( 'bulk panel: preview, apply and done', () => {
 		expect( second.data.uuid ).toBe( first.data.uuid );
 		expect( second.data.request_proof ).toBe( first.data.request_proof );
 		expect( callsTo( apiFetch, 'POST requests' ) ).toHaveLength( 1 );
+		// The receipt's outcome, once the batch has been read.
+		await screen.findByText( '24 products updated.' );
 		expect(
-			await screen.findByText(
+			screen.getByText(
 				'This change had already been accepted, so it was not made again. This is its result.'
 			)
 		).toBeVisible();
@@ -1131,11 +1133,11 @@ describe( 'bulk panel: preview, apply and done', () => {
 		expect( callsTo( apiFetch, 'POST requests' ) ).toHaveLength( 1 );
 		const [ resolved ] = callsTo( apiFetch, 'POST requests/resolve' );
 		expect( resolved.data.operation ).toBe( 'batch.apply' );
-		expect(
-			await screen.findByText(
+		await waitFor( () =>
+			expect( panel().textContent ).toContain(
 				'An earlier attempt to apply a change had gone through, so nothing new was sent. This is that change.'
 			)
-		).toBeVisible();
+		);
 	} );
 
 	it.each( [

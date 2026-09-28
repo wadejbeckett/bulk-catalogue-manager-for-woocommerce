@@ -34,13 +34,14 @@ import { userName } from './users';
 import {
 	applyUndo,
 	confirmSentence,
-	newUuid,
 	previewUndo,
 	putBackCount,
 	readBatch,
+	undoHolder,
 	undoneNotice,
 	valueKind,
 } from './undo';
+import { isUncertain } from '../../requests';
 
 /** How often a running batch is read again, in milliseconds. */
 export const POLL_MS = 3000;
@@ -252,7 +253,9 @@ export default function BatchCard( {
 	const [ details, setDetails ] = useState( null );
 	const undoButton = useRef( null );
 	const cardRef = useRef( null );
-	const uuid = useRef( null );
+	// T84: the undo's grant, kept until its answer is definite.
+	const grant = undoHolder( batch.batch_id );
+	const [ uncertain, setUncertain ] = useState( null );
 
 	// A batch in progress is followed until it finishes, then the list is read again.
 	const progress = useFollow(
@@ -304,7 +307,6 @@ export default function BatchCard( {
 		try {
 			const preview = await previewUndo( batch.batch_id );
 			setPlan( preview );
-			uuid.current = newUuid();
 			if ( ( Number( preview?.counts?.conflicted ) || 0 ) === 0 ) {
 				setConfirm( { force: false } );
 			}
@@ -319,19 +321,24 @@ export default function BatchCard( {
 		setPlan( null );
 		setConfirm( null );
 		setSeeConflicts( false );
+		setUncertain( null );
 		undoButton.current?.focus();
 	};
 
-	const apply = async () => {
-		const force = !! confirm?.force;
+	// The durable undo (T84). An unknown outcome keeps the plan and offers
+	// Try again, which sends the same grant; a refusal ends this attempt, so
+	// Undo starts again from a new preview.
+	const send = async ( force ) => {
 		setConfirm( null );
 		setBusy( true );
+		setError( null );
+		setUncertain( null );
 		try {
 			const answer = await applyUndo(
+				grant,
 				batch.batch_id,
 				plan,
-				force,
-				uuid.current
+				force
 			);
 			setPlan( null );
 			setSeeConflicts( false );
@@ -341,11 +348,18 @@ export default function BatchCard( {
 			window.requestAnimationFrame( () => cardRef.current?.focus() );
 		} catch ( caught ) {
 			setError( caught );
+			if ( isUncertain( caught ) ) {
+				setUncertain( { force } );
+			} else {
+				setPlan( null );
+				setSeeConflicts( false );
+			}
 			undoButton.current?.focus();
 		} finally {
 			setBusy( false );
 		}
 	};
+	const apply = () => send( !! confirm?.force );
 
 	const conflicted = Number( plan?.counts?.conflicted ) || 0;
 	const revertible = Number( plan?.counts?.revertible ) || 0;
@@ -539,13 +553,44 @@ export default function BatchCard( {
 			{ error && (
 				<div className="bulkcat-batch__error">
 					<ErrorNotice
-						error={ error }
+						error={
+							uncertain
+								? {
+										...error,
+										message: __(
+											'We could not confirm whether the undo started. Try again: the same request is sent again, so it can only happen once.',
+											'bulk-catalogue-manager-for-woocommerce'
+										),
+									}
+								: error
+						}
 						fallback={ __(
 							'The undo could not be started. Reload the page and try again.',
 							'bulk-catalogue-manager-for-woocommerce'
 						) }
-						onRemove={ () => setError( null ) }
+						onRemove={ uncertain ? null : () => setError( null ) }
 					/>
+					{ uncertain && plan && (
+						<p className="bulkcat-batch__retry">
+							<Button
+								variant="secondary"
+								size="small"
+								disabled={ busy }
+								onClick={ () => send( uncertain.force ) }
+							>
+								{ __(
+									'Try again',
+									'bulk-catalogue-manager-for-woocommerce'
+								) }
+							</Button>
+							<Button variant="link" onClick={ cancelUndo }>
+								{ __(
+									'Cancel',
+									'bulk-catalogue-manager-for-woocommerce'
+								) }
+							</Button>
+						</p>
+					) }
 				</div>
 			) }
 

@@ -1,46 +1,16 @@
 /**
- * The undo flow's requests and words (SPEC §4.6, §9.4; T56, T57): preview
- * first (POST /batches/{id}/undo with `preview: true`), then a plain
- * confirmation sentence, then apply with the client's `uuid`, the
- * preview's `plan_hash` and `force` (**Revert anyway**, off unless the
- * owner chose "Undo all anyway").
+ * The undo flow's requests and words (SPEC §4.6, §9.4; T56, T57, T84):
+ * preview first (POST /batches/{id}/undo with `preview: true`), then a plain
+ * confirmation sentence, then the durable undo: a `batch.undo` grant from
+ * POST /requests over the batch, the preview's `plan_hash` and `force`
+ * (**Revert anyway**, off unless the owner chose "Undo all anyway"), sent to
+ * POST /batches/{id}/undo. A retry of the same undo sends the same grant, so
+ * it can only happen once.
  */
 import { __, _n, sprintf } from '@wordpress/i18n';
 
 import { request } from '../../api';
-
-/**
- * A request id for one undo, so a double click undoes once.
- *
- * @return {string} UUID v4.
- */
-export function newUuid() {
-	if ( typeof window?.crypto?.randomUUID === 'function' ) {
-		return window.crypto.randomUUID();
-	}
-	const bytes = new Uint8Array( 16 );
-	if ( typeof window?.crypto?.getRandomValues === 'function' ) {
-		window.crypto.getRandomValues( bytes );
-	} else {
-		for ( let i = 0; i < 16; i++ ) {
-			bytes[ i ] = Math.floor( Math.random() * 256 );
-		}
-	}
-	const digits = Array.from( bytes, ( b ) =>
-		b.toString( 16 ).padStart( 2, '0' )
-	).join( '' );
-	// Version 4, variant 10xx, set on the hexadecimal digits themselves.
-	const hex =
-		digits.slice( 0, 12 ) +
-		'4' +
-		digits.slice( 13, 16 ) +
-		'89ab'[ bytes[ 8 ] % 4 ] +
-		digits.slice( 17 );
-	return `${ hex.slice( 0, 8 ) }-${ hex.slice( 8, 12 ) }-${ hex.slice(
-		12,
-		16
-	) }-${ hex.slice( 16, 20 ) }-${ hex.slice( 20 ) }`;
-}
+import { envelope, sendWithGrant } from '../../requests';
 
 /**
  * Plan an undo and show it, changing nothing.
@@ -56,18 +26,75 @@ export function previewUndo( batchId ) {
 }
 
 /**
- * Apply a previewed undo.
+ * The identity of one undo's intent: the batch, the plan previewed and
+ * whether it reverts anyway. The same identity sends the grant it holds.
  *
  * @param {number}  batchId Batch.
  * @param {Object}  plan    The preview answer.
  * @param {boolean} force   Revert anyway.
- * @param {string}  uuid    Request id.
- * @return {Promise<Object>} `{ batch_id, status, total_items, replayed, undo }`.
+ * @return {string} Key.
  */
-export function applyUndo( batchId, plan, force, uuid ) {
-	return request( `batches/${ batchId }/undo`, {
-		method: 'POST',
-		data: { uuid, plan_hash: plan.plan_hash, force: !! force },
+export function undoKey( batchId, plan, force ) {
+	return JSON.stringify( {
+		batch: Number( batchId ),
+		plan: plan?.plan_hash || '',
+		force: !! force,
+	} );
+}
+
+/**
+ * The grant each batch's undo holds between attempts, for as long as the
+ * screen is open, so a card drawn again after the list is read still
+ * resends, or first resolves, an uncertain undo.
+ */
+const holders = new Map();
+
+/**
+ * The holder of a batch's undo grant.
+ *
+ * @param {number} batchId Batch.
+ * @return {Object} `{ current }`.
+ */
+export function undoHolder( batchId ) {
+	const id = Number( batchId );
+	if ( ! holders.has( id ) ) {
+		holders.set( id, { current: null } );
+	}
+	return holders.get( id );
+}
+
+/**
+ * Forget every held undo grant (tests).
+ */
+export function resetUndoGrants() {
+	holders.clear();
+}
+
+/**
+ * Apply a previewed undo as a durable request.
+ *
+ * @param {Object}  holder  `{ current }`: the grant kept between attempts (undoHolder()).
+ * @param {number}  batchId Batch.
+ * @param {Object}  plan    The preview answer.
+ * @param {boolean} force   Revert anyway.
+ * @return {Promise<Object>} `{ batch_id, status, total_items, replayed }`.
+ */
+export function applyUndo( holder, batchId, plan, force ) {
+	const id = Number( batchId );
+	return sendWithGrant( holder, {
+		key: undoKey( id, plan, force ),
+		operation: 'batch.undo',
+		intent: {
+			source: 'undo',
+			batch_id: id,
+			plan_hash: plan.plan_hash,
+			force: !! force,
+		},
+		send: ( grant ) =>
+			request( `batches/${ id }/undo`, {
+				method: 'POST',
+				data: envelope( grant ),
+			} ),
 	} );
 }
 

@@ -525,15 +525,31 @@ test( '100,000 members: composed exactly through the screen, 100,002 refused, pr
 		page.locator( '.dataviews-view-table tbody tr' ).first()
 	).toBeVisible();
 	const sixty = await selectOffer( page );
+	// Then options of Probe Variable, one at a time, up to exactly 100,000.
+	const selectedCount = async () =>
+		Number(
+			( ( await bar.innerText() ).match( /^([\d,]+) products?/ ) || [
+				'',
+				'0',
+			] )[ 1 ].replace( /,/g, '' )
+		) +
+		Number(
+			( ( await bar.innerText() ).match(
+				/([\d,]+) variations? selected/
+			) || [ '', '0' ] )[ 1 ].replace( /,/g, '' )
+		);
 	await search.fill( 'Probe Variable' );
-	const oneMore = page
+	const options = page
 		.locator( '.dataviews-view-table tbody tr' )
-		.getByRole( 'checkbox' )
-		.first();
-	await oneMore.check();
-	await expect( bar.getByText( /Saving/ ) ).toHaveCount( 0, {
-		timeout: 120_000,
-	} );
+		.getByRole( 'checkbox' );
+	await expect( options.first() ).toBeVisible();
+	for ( let i = 0; ( await selectedCount() ) < 100000 && i < 3; i++ ) {
+		await options.nth( i ).check();
+		await expect( bar.getByText( /Saving/ ) ).toHaveCount( 0, {
+			timeout: 120_000,
+		} );
+	}
+	expect( await selectedCount() ).toBe( 100000 );
 	const words = ( await bar.innerText() ).split( '\n' )[ 0 ];
 	await shot( page, 'scale-100k-selected.png' );
 	const composes = writes.filter( ( w ) => w.path === 'selection/compose' );
@@ -551,7 +567,6 @@ test( '100,000 members: composed exactly through the screen, 100,002 refused, pr
 			...composes.map( ( w ) => w.perf?.peak_mb || 0 )
 		),
 	} );
-	expect( words ).toContain( '100,000' );
 
 	// Preview an increase of 10 per cent.
 	const before = priceChecksum();

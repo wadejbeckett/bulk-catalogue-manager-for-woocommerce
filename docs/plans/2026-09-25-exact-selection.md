@@ -1,6 +1,6 @@
 # Exact selections and preview/Apply follow-up
 
-**Stage:** T81 accepted by Main Build on 25 September and T82 on 26 September. T83 is built and verified locally (28 September; rulings below; evidence `evidence-20260928/t83-runtime.md` in the client workspace) and awaits independent review and Main Build acceptance. T84–T85 are next. The branch is pushed to the private remote; no merge, release or production change is included.
+**Stage:** T81 accepted by Main Build on 25 September and T82 on 26 September. T83 is built and verified locally (28 September; rulings below; evidence `evidence-20260928/t83-runtime.md` in the client workspace); its independent review's findings are closed and it awaits Main Build acceptance. T84–T85 are next. The branch is pushed to the private remote; no merge, release or production change is included.
 
 **Goal:** accumulate an exact selection across searches, inspect it, preview a native change, Apply, and clear only genuinely completed scope while retaining recovery on partial failure.
 
@@ -82,7 +82,7 @@ These are individual local measurements, not p95 results or production guarantee
 - [x] Write failing regressions: relative Apply accepted → response lost → transient evicted → >60-second retry returns same batch; repeat after authorization and membership expiry. Concurrent matching submission yields one header/items/queue; changed operation/selection/source/undo intent under same UUID conflicts. Cover rollback, ambiguous commit, scheduling gap, pruned history details/header tombstones, expired missing receipt and legacy duplicates. Assert one application of the relative change.
 - [x] Extend preview/route/batch-factory/repository/undo tests. Native journey: select → drift fixture → preview (no catalogue write) → Apply → plugin queue only → values/journal readback → undo → restored values. Include a native category assignment, variation expansion and explicit-ID bulk path.
 
-T83 verification (28 September): 781 PHP tests / 18,600 assertions and WPCS clean; 13 new unit regressions red against the step-2 source; native `exact-batch.php` 46, `exact-batch-routes.php` 48 and `exact-batch-faults.php` 118 checks, two overlapping-process races, `probe.py` write and variations 42 passed over HTTP, T81/T82 probes still green, Plugin Check clean apart from the 11 documented warnings. Not yet run here: the browser journeys and the full seven lifecycle groups through the screen (T84/T85) and a 100,000-member Apply timing (T85).
+T83 verification (28 September, head `f179077`): 789 PHP tests / 18,644 assertions and WPCS clean; 13 new unit regressions red against the step-2 source and 8 against the pre-review source; native `exact-batch.php` 46, `exact-batch-routes.php` 48 and `exact-batch-faults.php` 135 checks, two overlapping-process races, `probe.py` write and variations 42 passed over HTTP, T81/T82 probes still green, Plugin Check clean apart from the 11 documented warnings. Not yet run here: the browser journeys and the full seven lifecycle groups through the screen (T84/T85) and a 100,000-member Apply timing (T85).
 
 ### T83 engineering rulings (28 September)
 

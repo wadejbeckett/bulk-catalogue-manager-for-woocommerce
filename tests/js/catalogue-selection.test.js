@@ -382,7 +382,9 @@ describe( 'selection in the catalogue', () => {
 		await counted( '1 product selected' );
 		const token = getSelectionSession().getState().current.token;
 		fireEvent.click(
-			screen.getByRole( 'button', { name: 'Clear search' } )
+			screen.getByRole( 'button', {
+				name: 'Clear search and selection (1)',
+			} )
 		);
 		await screen.findByText( 'Classic Cotton T-Shirt' );
 		expect(
@@ -411,6 +413,40 @@ describe( 'selection in the catalogue', () => {
 				name: 'Clear the filter “Stock quantity is 0 or less”',
 			} )
 		).toBeTruthy();
+	} );
+
+	it( 'names Clear search by what it clears, and restores the selection it cleared (T85)', async () => {
+		await renderLoaded();
+		await search( 'Cap' );
+		await screen.findByRole( 'link', { name: 'Cap' } );
+		tick( 'Cap' );
+		await counted( '1 product selected' );
+		await settled();
+		const token = getSelectionSession().getState().current.token;
+		// Beside Clear filters and the search box's own ×, which keep it.
+		const clearSearch = screen.getByRole( 'button', {
+			name: 'Clear search and selection (1)',
+		} );
+		fireEvent.click( clearSearch );
+		await screen.findByText( 'Classic Cotton T-Shirt' );
+		await waitFor( () => expect( server.released( token ) ).toBe( true ) );
+		const notice = document.querySelector( '.bulkcat-selection__notice' );
+		expect( notice.textContent ).toContain(
+			'The search and the selection were cleared.'
+		);
+		fireEvent.click(
+			within( notice ).getByRole( 'button', {
+				name: 'Restore selection',
+			} )
+		);
+		await counted( '1 product selected' );
+		expect( getSelectionSession().getState().current.token ).toBe( token );
+		expect( server.released( token ) ).toBe( false );
+		expect(
+			document.querySelector( '.bulkcat-selection__notice' ).textContent
+		).toContain( 'Your selection is still here: 1 product.' );
+		// No capture of the search again: the same frozen snapshot.
+		expect( server.calls( 'POST selection' ) ).toHaveLength( 1 );
 	} );
 
 	it( 'reviews the whole selection, removes one and an unavailable one, a page at a time', async () => {
@@ -636,13 +672,7 @@ describe( 'selection in the catalogue', () => {
 				categories: () => CATEGORIES,
 				...server.routes(),
 				preview: () => previewResponse(),
-				'batches/101': () => ( {
-					batch_id: 101,
-					status: 'queued',
-					total_items: 2,
-					done_items: 0,
-					failed_items: 0,
-				} ),
+				'batches/101': ( query, options ) => server.handle( options ),
 			} );
 		} );
 
@@ -730,6 +760,39 @@ describe( 'selection in the catalogue', () => {
 			expect(
 				window.sessionStorage.getItem( 'bulkcat-selection::0:apply' )
 			).toBeNull();
+		} );
+
+		it( 'clears what a change applied once it finished, even when the page was reloaded while it ran', async () => {
+			const rendered = await renderLoaded();
+			fireEvent.click( header() );
+			await counted( '2 products selected' );
+			await settled();
+			const token = getSelectionSession().getState().current.token;
+			await applyIncrease();
+			await waitFor( () => expect( server.batches.size ).toBe( 1 ) );
+			// It finishes while the page is away; the new page has no banner.
+			server.setBatch( 101, 'complete', {
+				total_items: 2,
+				done_items: 2,
+				failed_items: 0,
+				pending_items: 0,
+			} );
+			await reload( rendered );
+			await waitFor( () =>
+				expect(
+					document.querySelector( '.bulkcat-selection' )?.textContent
+				).toContain(
+					'The change finished, so your selection was cleared.'
+				)
+			);
+			expect(
+				screen.queryByRole( 'region', { name: 'Selection' } )
+			).toBeNull();
+			expect( getSelectionSession().getState() ).toMatchObject( {
+				count: 0,
+				submitted: null,
+			} );
+			expect( server.released( token ) ).toBe( true );
 		} );
 
 		it( 'keeps a grant the server never received and sends it again for the same change', async () => {

@@ -384,18 +384,42 @@ export function filterChips( view, descriptors, termNames = {} ) {
 }
 
 /**
+ * The name of the search chip's button: "Clear search" with nothing
+ * selected, else "Clear search and selection (N)", N the whole selection.
+ *
+ * @param {number} count What is selected, products and variations.
+ * @return {string} Label.
+ */
+export function clearSearchLabel( count ) {
+	return count > 0
+		? sprintf(
+				/* translators: %s: how many products and variations are selected, such as "12". */
+				__(
+					'Clear search and selection (%s)',
+					'bulk-catalogue-manager-for-woocommerce'
+				),
+				formatNumber( count )
+			)
+		: __( 'Clear search', 'bulk-catalogue-manager-for-woocommerce' );
+}
+
+/**
  * The chip row: one chip per active filter, each clearing itself, and Clear
  * filters. Nothing renders when nothing filters.
  *
  * The search chip's button is **Clear search** (T84, SPEC §4.1): with
  * `onClearSearch` it is the deliberate control that clears the search and
  * the selection, unlike editing the search box, even through empty text.
+ * Since it sits beside Clear filters and the search box's own ×, which keep
+ * the selection, its name and tooltip say so when something is selected:
+ * "Clear search and selection (12)" (T85, Main Build's review).
  *
- * @param {Object}        props               Props.
- * @param {Array<Object>} props.chips         filterChips().
- * @param {Function}      props.onChange      Receives an updater `( view ) => view`.
- * @param {Function}      props.onClearAll    Clear every filter and the search.
- * @param {Function}      props.onClearSearch Clear search: the search and the selection.
+ * @param {Object}        props                Props.
+ * @param {Array<Object>} props.chips          filterChips().
+ * @param {Function}      props.onChange       Receives an updater `( view ) => view`.
+ * @param {Function}      props.onClearAll     Clear every filter and the search.
+ * @param {Function}      props.onClearSearch  Clear search: the search and the selection.
+ * @param {number}        props.selectionCount What is selected, products and variations.
  * @return {Element|null} Chips.
  */
 export function FilterChips( {
@@ -403,6 +427,7 @@ export function FilterChips( {
 	onChange,
 	onClearAll,
 	onClearSearch = null,
+	selectionCount = 0,
 } ) {
 	if ( ! chips.length ) {
 		return null;
@@ -424,10 +449,7 @@ export function FilterChips( {
 								size="small"
 								icon="no-alt"
 								className="bulkcat-chips__clear"
-								label={ __(
-									'Clear search',
-									'bulk-catalogue-manager-for-woocommerce'
-								) }
+								label={ clearSearchLabel( selectionCount ) }
 								showTooltip
 								onClick={ onClearSearch }
 							/>

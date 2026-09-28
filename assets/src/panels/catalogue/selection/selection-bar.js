@@ -90,6 +90,7 @@ export function selectAllWords( total, filtered ) {
  * @param {Function|null} props.onHide        Hide from site, or null.
  * @param {Function|null} props.onUndo        Undo a finished change by id, or null.
  * @param {Function|null} props.onViewHistory Open a change in History by id, or null.
+ * @param {Function|null} props.onRestore     Bring back the selection Clear search released, or null.
  * @param {boolean}       props.draggable     The bar can be dragged onto a category (T65).
  * @return {Element|null} Bar.
  */
@@ -104,6 +105,7 @@ export default function SelectionBar( {
 	onHide = null,
 	onUndo = null,
 	onViewHistory = null,
+	onRestore = null,
 	draggable = false,
 } ) {
 	const {
@@ -127,6 +129,8 @@ export default function SelectionBar( {
 	const canDrag = draggable && hasSelection && ! busy;
 	const offerAll = hasSelection && selection.offerAll && total > 0;
 	const doneBatch = notice?.kind === 'done' ? notice.batchId : 0;
+	const restorable =
+		notice?.kind === 'searchCleared' && notice.restorable && onRestore;
 	return (
 		<div className="bulkcat-selection">
 			{ notice && noticeText( notice, selection ) && (
@@ -134,12 +138,24 @@ export default function SelectionBar( {
 				// `spokenMessage`: Notice renders element children to a
 				// string, which would run the buttons' hooks inside it.
 				<Notice
-					key={ `notice-${ notice.kind }` }
+					key={ `notice-${ notice.kind }-${ !! restorable }` }
 					status={ notice.kind === 'cleanup' ? 'warning' : 'info' }
 					className="bulkcat-selection__notice"
 					spokenMessage={ noticeText( notice, selection ) }
 					onRemove={ () => selection.dismiss( 'notice' ) }
 					actions={ [
+						...( restorable
+							? [
+									{
+										label: __(
+											'Restore selection',
+											'bulk-catalogue-manager-for-woocommerce'
+										),
+										onClick: onRestore,
+										variant: 'link',
+									},
+								]
+							: [] ),
 						...( doneBatch > 0 && onUndo
 							? [
 									{

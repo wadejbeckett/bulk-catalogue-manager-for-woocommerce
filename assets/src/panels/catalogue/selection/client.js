@@ -75,3 +75,14 @@ export function release( tokens ) {
 		data: { tokens },
 	} );
 }
+
+/**
+ * A change's progress report (GET /batches/{id}), read while the selection
+ * waits for the change applied to it to finish.
+ *
+ * @param {number} id Batch id.
+ * @return {Promise<Object>} The report.
+ */
+export function batch( id ) {
+	return request( 'batches/' + Number( id ) );
+}

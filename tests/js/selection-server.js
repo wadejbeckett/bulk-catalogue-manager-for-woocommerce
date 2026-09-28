@@ -364,6 +364,13 @@ function createSelectionServer( { objects = OBJECTS } = {} ) {
 			released: ( data.tokens || [] ).map( ( token ) => {
 				const snap = snapshots.get( parse( token )?.id );
 				if ( snap ) {
+					// First release: kept an hour at most (the contract).
+					if ( ! snap.released ) {
+						snap.retainedUntil = Math.min(
+							snap.retainedUntil,
+							now + 3600 * 1000
+						);
+					}
 					snap.released = true;
 				}
 				return { token };
@@ -403,6 +410,26 @@ function createSelectionServer( { objects = OBJECTS } = {} ) {
 		const key = `${ method } ${ path }`;
 		const data = options.data || {};
 		log.push( { key, data, query: getQueryArgs( options.url ) } );
+		const read = /^GET batches\/(\d+)$/.exec( key );
+		if ( read && ! acts[ key ] ) {
+			// A change's progress report (GET /batches/{id}).
+			const batch = batches.get( Number( read[ 1 ] ) );
+			if ( ! batch ) {
+				return Promise.reject(
+					restError( 'bulkcat_not_found', 404, 'Not found.' )
+				);
+			}
+			const done = batch.status === 'queued' ? 0 : batch.total_items;
+			return Promise.resolve( {
+				batch_id: Number( read[ 1 ] ),
+				status: batch.status,
+				total_items: batch.total_items,
+				done_items: done,
+				failed_items: 0,
+				pending_items: batch.total_items - done,
+				...( batch.report || {} ),
+			} );
+		}
 		const failure = failures.find(
 			( each ) => each.key === key && each.times > 0
 		);
@@ -502,6 +529,23 @@ function createSelectionServer( { objects = OBJECTS } = {} ) {
 		 */
 		advance( ms ) {
 			now += ms;
+		},
+		/**
+		 * Move a batch on: its status, and any report fields to answer.
+		 *
+		 * @param {number} id     Batch id.
+		 * @param {string} status New status.
+		 * @param {Object} report More report fields.
+		 */
+		setBatch( id, status, report = {} ) {
+			const batch = batches.get( id ) || {
+				status,
+				total_items: 0,
+				uuid: '',
+			};
+			batch.status = status;
+			batch.report = report;
+			batches.set( id, batch );
 		},
 		/** Let every lease lapse (a suspended tab). */
 		expireLeases() {

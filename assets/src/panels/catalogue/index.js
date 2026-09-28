@@ -396,7 +396,11 @@ export function CatalogueGrid( {
 		setSentence( '' );
 	}, [] );
 	// T84: Clear search is deliberate: the search and the selection go.
-	const { clearWithSearch } = selection;
+	// T85: its notice offers Restore selection, which brings the selection
+	// back while the server still keeps it. The search is not put back: the
+	// search box's own 250 ms debounce would write the cleared text over it
+	// when Restore follows Clear quickly.
+	const { clearWithSearch, restore } = selection;
 	const clearSearch = useCallback( () => {
 		setView( ( current ) => ( { ...current, search: '', page: 1 } ) );
 		clearWithSearch();
@@ -574,6 +578,7 @@ export function CatalogueGrid( {
 					onChange={ setView }
 					onClearAll={ clear }
 					onClearSearch={ clearSearch }
+					selectionCount={ selection.count }
 				/>
 				<SelectionBar
 					selection={ selection }
@@ -588,6 +593,7 @@ export function CatalogueGrid( {
 						toHistory ? ( id ) => toHistory( id, true ) : null
 					}
 					onViewHistory={ toHistory }
+					onRestore={ restore }
 					draggable
 				/>
 				{ applied && ! bulk && (

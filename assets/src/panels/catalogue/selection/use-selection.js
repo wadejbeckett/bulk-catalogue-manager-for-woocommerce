@@ -116,6 +116,7 @@ export default function useSelection( {
 			() => session.clear( 'search' ),
 			[ session ]
 		),
+		restore: useCallback( () => session.restore(), [ session ] ),
 		retry: useCallback( () => session.retry(), [ session ] ),
 		dismiss: useCallback(
 			( what ) => session.dismiss( what ),

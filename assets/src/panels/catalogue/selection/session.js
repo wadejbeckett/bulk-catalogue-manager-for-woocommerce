@@ -24,10 +24,14 @@
  * (`drift`). A snapshot past its retention is reported as lost work with the
  * count it had, never as an empty selection.
  *
- * The handles, and the grants of an intent still in flight, are kept in the
- * tab's sessionStorage (never localStorage, never ids), so a reload or a tab
- * the browser discarded while it was suspended comes back to the same
- * selection; closing the tab ends it.
+ * The tab's sessionStorage (never localStorage) keeps the opaque handles
+ * with their counts and, while an intent is not yet confirmed, that intent:
+ * its own arguments (the ids ticked or unticked, or the view's query for
+ * Select all matching) and its grants. A snapshot's membership is never
+ * kept there. So a reload or a tab the browser discarded while it was
+ * suspended comes back to the same selection, and an unconfirmed intent can
+ * be resent with its own grant; closing the tab ends it (corrected in T85:
+ * T84 said "never ids", which was not so for a pending intent).
  *
  * The session keeps no whole id set: the browser holds the rows on screen
  * (`visible`, from inspection) and the ids of pending intents.
@@ -44,6 +48,22 @@ export const PROBE_MAX = 100;
 
 /** The shortest wait between two renewals. */
 export const MIN_RENEW_MS = 15000;
+
+/** How often the session reads a running change it applied (T85). */
+export const WATCH_MS = 5000;
+
+/** How long a snapshot released by Clear search can still be restored. */
+export const RESTORE_MS = 3600 * 1000;
+
+/** Batch statuses after which nothing more happens (Data\Schema). */
+const FINAL = [
+	'complete',
+	'partial',
+	'failed',
+	'cancelled',
+	'undoing',
+	'undone',
+];
 
 /** What the tab keeps (tab-store.js), and its format version. */
 export const STORAGE_KEY = TAB_PREFIX;
@@ -205,6 +225,10 @@ class SelectionSession {
 		this.blocked = null;
 		this.renewing = null;
 		this.cancelRenew = null;
+		this.watching = 0;
+		this.cancelWatch = null;
+		this.finished = new Set();
+		this.restorable = null;
 		this.revision = 0;
 		this.disposed = false;
 		this.snapshot = null;
@@ -323,11 +347,26 @@ class SelectionSession {
 
 	/**
 	 * Clear the selection: a new generation, nothing queued survives, late
-	 * answers are ignored, and unreferenced snapshots are released.
+	 * answers are ignored, and unreferenced snapshots are released. After
+	 * Clear search the released snapshot can be restored (restore()) for as
+	 * long as the server still keeps it: an hour after its release at most.
 	 *
 	 * @param {string} reason 'selection' or 'search' (Clear search).
 	 */
 	clear( reason = 'selection' ) {
+		const was = this.currentKey
+			? this.handles.get( this.currentKey )
+			: null;
+		this.restorable =
+			reason === 'search' && was
+				? {
+						...was,
+						until: Math.min(
+							was.retainedUntil || Infinity,
+							this.now() + RESTORE_MS
+						),
+					}
+				: null;
 		this.generation += 1;
 		const dropped = [ this.paused, ...this.queue ].filter( Boolean );
 		this.queue = [];
@@ -346,9 +385,27 @@ class SelectionSession {
 		this.error = null;
 		this.drift = false;
 		this.lost = null;
-		this.notice = reason === 'search' ? { kind: 'searchCleared' } : null;
+		this.notice =
+			reason === 'search'
+				? { kind: 'searchCleared', restorable: !! this.restorable }
+				: null;
 		this.release( released );
 		this.changed();
+	}
+
+	/**
+	 * Bring back the selection Clear search released, while the server still
+	 * keeps it and nothing new has been selected since: the same snapshot,
+	 * kept again (a renewal), never a new capture of the search.
+	 *
+	 * @return {Promise<boolean>} Whether it came back.
+	 */
+	restore() {
+		const was = this.restorable;
+		if ( ! was || this.currentKey || this.queue.length || this.running ) {
+			return Promise.resolve( false );
+		}
+		return this.enqueue( 'restore', {} );
 	}
 
 	/**
@@ -400,6 +457,55 @@ class SelectionSession {
 		this.additionsKey = null;
 		this.release( previous );
 		this.changed();
+		this.watch();
+	}
+
+	/**
+	 * Follow the change applied to the selection until it has finished, and
+	 * then finish() it, whichever panel is open and whether or not its
+	 * progress is on screen (T85): after a reload or a visit to History the
+	 * catalogue's banner is gone, and without this a change that finished in
+	 * full would leave its products selected. finish() acts once per change.
+	 */
+	watch() {
+		const id = this.submitted?.batchId || 0;
+		if ( ! id || this.watching === id || this.disposed ) {
+			return;
+		}
+		if ( this.cancelWatch ) {
+			this.cancelWatch();
+			this.cancelWatch = null;
+		}
+		this.watching = id;
+		const following = () =>
+			! this.disposed &&
+			this.watching === id &&
+			this.submitted?.batchId === id;
+		const poll = async () => {
+			this.cancelWatch = null;
+			if ( ! following() ) {
+				return;
+			}
+			let answer = null;
+			try {
+				answer = await this.api.batch( id );
+			} catch {
+				answer = null;
+			}
+			if ( ! following() ) {
+				return;
+			}
+			if ( answer && FINAL.includes( answer.status ) ) {
+				this.watching = 0;
+				this.finish( id, answer );
+				return;
+			}
+			this.cancelWatch = this.schedule(
+				poll,
+				answer ? WATCH_MS : WATCH_MS * 2
+			);
+		};
+		poll();
 	}
 
 	/**
@@ -414,10 +520,14 @@ class SelectionSession {
 	finish( batchId, outcome = {} ) {
 		if (
 			! this.submitted ||
-			this.submitted.batchId !== Number( batchId )
+			this.submitted.batchId !== Number( batchId ) ||
+			this.finished.has( Number( batchId ) )
 		) {
 			return Promise.resolve( false );
 		}
+		// Once per change, whoever sees it end first (the banner, the panel,
+		// or the session's own watch).
+		this.finished.add( Number( batchId ) );
 		const success =
 			outcome?.status === 'complete' &&
 			( Number( outcome.failed_items ) || 0 ) === 0 &&
@@ -690,6 +800,13 @@ class SelectionSession {
 	 * @return {Promise<boolean>} Settles when the job does.
 	 */
 	enqueue( type, args ) {
+		if ( type !== 'restore' && type !== 'complete' && this.restorable ) {
+			// Something new is selected: Restore would replace it.
+			this.restorable = null;
+			if ( this.notice?.kind === 'searchCleared' ) {
+				this.notice = { kind: 'searchCleared', restorable: false };
+			}
+		}
 		const job = this.makeJob( {
 			id: newKey( 'j' ),
 			type,
@@ -959,6 +1076,8 @@ class SelectionSession {
 				return this.runMatching( job );
 			case 'complete':
 				return this.runComplete( job );
+			case 'restore':
+				return this.runRestore( job );
 			default:
 				return Promise.resolve();
 		}
@@ -1152,6 +1271,51 @@ class SelectionSession {
 	}
 
 	/**
+	 * Restore: keep the snapshot Clear search released again (a renewal,
+	 * which the server allows while it still holds the payload) and make it
+	 * the selection. A snapshot no longer kept is lost work, said so with
+	 * the count it had; an unknown answer pauses for Try again.
+	 *
+	 * @param {Object} job Job.
+	 */
+	async runRestore( job ) {
+		const was = this.restorable;
+		if ( ! was || this.currentKey ) {
+			return;
+		}
+		if ( this.now() >= was.until ) {
+			this.restorable = null;
+			this.notice = null;
+			this.lost = { count: was.count, byType: was.byType, message: '' };
+			return;
+		}
+		let envelope;
+		try {
+			envelope = await this.api.renew( was.token );
+		} catch ( error ) {
+			if ( LOST.includes( error?.code ) ) {
+				this.restorable = null;
+				this.notice = null;
+				this.lost = {
+					count: was.count,
+					byType: was.byType,
+					message: report( error, 'renew' ).message,
+				};
+				return;
+			}
+			throw error;
+		}
+		this.check( job );
+		const key = this.keep( envelope );
+		if ( envelope.requires_preview || envelope.token !== was.token ) {
+			this.drift = true;
+		}
+		this.restorable = null;
+		this.setCurrent( key );
+		this.notice = this.currentKey ? { kind: 'restored' } : null;
+	}
+
+	/**
 	 * A change finished in full: (current minus submitted) union additions,
 	 * committed only once both compositions have succeeded.
 	 *
@@ -1310,6 +1474,10 @@ class SelectionSession {
 				final: known( stored.final ),
 			} );
 			job.gen = this.generation;
+			if ( stored.type === 'complete' ) {
+				// Its completion is already under way: never a second one.
+				this.finished.add( Number( stored.args?.batchId ) || 0 );
+			}
 			Object.entries( stored.grants || {} ).forEach( ( [ key, grant ] ) =>
 				this.grants.set( key, grant )
 			);
@@ -1334,6 +1502,9 @@ class SelectionSession {
 		}
 		this.changed();
 		this.renewAll();
+		// A change applied before the reload is followed to its end here,
+		// since no banner on this page knows about it (T85).
+		this.watch();
 		return restored;
 	}
 
@@ -1345,6 +1516,9 @@ class SelectionSession {
 		this.generation += 1;
 		if ( this.cancelRenew ) {
 			this.cancelRenew();
+		}
+		if ( this.cancelWatch ) {
+			this.cancelWatch();
 		}
 		this.listeners.clear();
 	}

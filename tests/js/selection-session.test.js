@@ -10,6 +10,7 @@
  */
 import {
 	MAX_IDS,
+	WATCH_MS,
 	cleanIds,
 	createSelectionSession,
 } from '../../assets/src/panels/catalogue/selection/session';
@@ -488,8 +489,257 @@ describe( 'selection session: leases, recovery and release', () => {
 		] );
 		expect( store.raw() ).toBeNull();
 		session.clear( 'search' );
+		// Nothing was selected, so there is nothing to restore.
 		expect( session.getState().notice ).toEqual( {
 			kind: 'searchCleared',
+			restorable: false,
+		} );
+	} );
+
+	it( 'keeps in the tab the handles and counts, and a pending intent’s own ids, query and grants until it is confirmed — never a snapshot’s members', async () => {
+		const store = memoryStore();
+		const session = makeSession( { store } );
+		server.setMatches( () => [ 11, 12, 21, 22, 31 ] );
+		await session.addMatching( { search: 'Shirt' } );
+		// Idle: handles and counts only; the five members are nowhere.
+		let kept = JSON.parse( store.raw() );
+		expect( kept.jobs ).toEqual( [] );
+		expect( kept.handles ).toHaveLength( 1 );
+		expect( Object.keys( kept.handles[ 0 ] ).sort() ).toEqual( [
+			'byType',
+			'count',
+			'epoch',
+			'expiresAt',
+			'key',
+			'retainedUntil',
+			'token',
+		] );
+		expect( store.raw() ).not.toContain( '"ids"' );
+		expect( store.raw() ).not.toContain( '[11,12,21,22,31]' );
+
+		// A tick whose answer is lost: its own id and grant are kept.
+		server.fail( 'POST selection/compose', {
+			code: 'fetch_error',
+			message: 'offline',
+		} );
+		session.add( [ 41 ] );
+		await flush();
+		kept = JSON.parse( store.raw() );
+		expect( kept.jobs ).toHaveLength( 1 );
+		expect( kept.jobs[ 0 ] ).toMatchObject( {
+			type: 'add',
+			args: { ids: [ 41 ] },
+		} );
+		const [ grant ] = Object.values( kept.jobs[ 0 ].grants );
+		expect( grant ).toMatchObject( {
+			uuid: expect.any( String ),
+			request_proof: expect.any( String ),
+		} );
+		// Confirmed: the intent and its grant are gone from the tab.
+		session.retry();
+		await flush();
+		kept = JSON.parse( store.raw() );
+		expect( kept.jobs ).toEqual( [] );
+		expect( store.raw() ).not.toContain( '"ids"' );
+
+		// A Select all matching whose answer is lost keeps its query.
+		server.fail( 'POST selection', {
+			code: 'fetch_error',
+			message: 'offline',
+		} );
+		session.addMatching( { search: 'Cap' } );
+		await flush();
+		kept = JSON.parse( store.raw() );
+		expect( kept.jobs[ 0 ] ).toMatchObject( {
+			type: 'matching',
+			args: { query: { search: 'Cap' } },
+		} );
+	} );
+} );
+
+describe( 'selection session: completion the screen did not see (T85)', () => {
+	/**
+	 * Fire the session's latest pending watch.
+	 */
+	const fireWatch = () => {
+		const timer = timers
+			.filter(
+				( each ) =>
+					! each.cancelled &&
+					[ WATCH_MS, WATCH_MS * 2 ].includes( each.ms )
+			)
+			.pop();
+		expect( timer ).toBeTruthy();
+		timer.cancelled = true;
+		timer.fn();
+	};
+	const COMPLETE = {
+		total_items: 2,
+		done_items: 2,
+		failed_items: 0,
+		pending_items: 0,
+	};
+
+	it( 'follows a change applied before a reload to its end and clears what it applied, once', async () => {
+		const store = memoryStore();
+		const first = makeSession( { store } );
+		await first.add( [ 11, 12 ] );
+		const token = tokenOf( first );
+		server.setBatch( 40, 'running', { total_items: 2, done_items: 0 } );
+		first.submit( 40 );
+		await flush();
+		first.dispose();
+
+		// A reload while it runs: no banner on the new page knows about it.
+		const reloaded = makeSession( { store } );
+		reloaded.recover();
+		await flush();
+		expect( reloaded.getState() ).toMatchObject( {
+			count: 2,
+			submitted: { batchId: 40 },
+		} );
+		server.setBatch( 40, 'complete', COMPLETE );
+		fireWatch();
+		await flush();
+		expect( reloaded.getState() ).toMatchObject( {
+			count: 0,
+			current: null,
+			submitted: null,
+			notice: { kind: 'done', batchId: 40, kept: 0 },
+		} );
+		expect( server.released( token ) ).toBe( true );
+		// The banner of another page seeing it end too changes nothing.
+		const before = server.calls().length;
+		await expect(
+			reloaded.finish( 40, { status: 'complete', ...COMPLETE } )
+		).resolves.toBe( false );
+		await flush();
+		expect( server.calls().length ).toBe( before );
+		expect( reloaded.getState().notice ).toMatchObject( {
+			kind: 'done',
+			batchId: 40,
+		} );
+	} );
+
+	it( 'finishes a change while another panel is open, keeping what was selected since', async () => {
+		const session = makeSession();
+		await session.add( [ 11, 12 ] );
+		server.setBatch( 41, 'queued', { total_items: 2 } );
+		session.submit( 41 );
+		await flush();
+		// History is open: the catalogue's banner is not there to finish it.
+		await session.add( [ 21 ] );
+		server.setBatch( 41, 'complete', COMPLETE );
+		fireWatch();
+		await flush( 12 );
+		expect( members( session ) ).toEqual( [ 21 ] );
+		expect( session.getState().notice ).toMatchObject( {
+			kind: 'done',
+			batchId: 41,
+			kept: 1,
+		} );
+		// Exactly once: one subtraction and one union, no second round.
+		const composes = posted( 'POST requests' ).filter(
+			( each ) =>
+				each.operation === 'selection.compose' &&
+				( each.intent.remove_token || each.intent.add_token )
+		);
+		expect( composes ).toHaveLength( 2 );
+		await session.finish( 41, { status: 'complete', ...COMPLETE } );
+		await flush();
+		expect(
+			posted( 'POST requests' ).filter(
+				( each ) =>
+					each.operation === 'selection.compose' &&
+					( each.intent.remove_token || each.intent.add_token )
+			)
+		).toHaveLength( 2 );
+	} );
+
+	it( 'keeps the selection when the change it followed ended in part', async () => {
+		const session = makeSession();
+		await session.add( [ 11, 12 ] );
+		server.setBatch( 42, 'running', { total_items: 2 } );
+		session.submit( 42 );
+		await flush();
+		server.setBatch( 42, 'partial', {
+			total_items: 2,
+			done_items: 2,
+			failed_items: 1,
+		} );
+		fireWatch();
+		await flush();
+		expect( session.getState() ).toMatchObject( {
+			count: 2,
+			submitted: null,
+			notice: { kind: 'kept', batchId: 42 },
+		} );
+	} );
+} );
+
+describe( 'selection session: redraws', () => {
+	it( 'does not redraw when the grid probes its rows with nothing selected (the reduced-motion flake)', async () => {
+		const session = makeSession();
+		const listener = jest.fn();
+		session.subscribe( listener );
+		await session.probe( [ 11, 12 ] );
+		await session.probe( [ 11, 12 ] );
+		expect( listener ).not.toHaveBeenCalled();
+		expect( server.calls( 'POST selection/inspect' ) ).toHaveLength( 0 );
+	} );
+} );
+
+describe( 'selection session: Restore after Clear search (T85)', () => {
+	it( 'restores the same snapshot while the server keeps it, never capturing again', async () => {
+		const session = makeSession();
+		await session.add( [ 11, 12 ] );
+		const token = tokenOf( session );
+		session.clear( 'search' );
+		await flush();
+		expect( session.getState() ).toMatchObject( {
+			count: 0,
+			notice: { kind: 'searchCleared', restorable: true },
+		} );
+		expect( server.released( token ) ).toBe( true );
+		await expect( session.restore() ).resolves.toBe( true );
+		expect( tokenOf( session ) ).toBe( token );
+		expect( members( session ) ).toEqual( [ 11, 12 ] );
+		expect( session.getState() ).toMatchObject( {
+			count: 2,
+			notice: { kind: 'restored' },
+		} );
+		// Kept again by a renewal of the released snapshot.
+		expect( posted( 'POST selection/renew' ).at( -1 ) ).toEqual( {
+			token,
+		} );
+		expect( server.released( token ) ).toBe( false );
+		expect( posted( 'POST selection' ) ).toHaveLength( 1 );
+	} );
+
+	it( 'offers no Restore once something new is selected, and reports one past the hour as lost', async () => {
+		const session = makeSession();
+		await session.add( [ 11 ] );
+		session.clear( 'search' );
+		await session.add( [ 21 ] );
+		expect( session.getState().notice ).toEqual( {
+			kind: 'searchCleared',
+			restorable: false,
+		} );
+		await expect( session.restore() ).resolves.toBe( false );
+		expect( members( session ) ).toEqual( [ 21 ] );
+
+		const other = makeSession();
+		await other.add( [ 11, 12 ] );
+		other.clear( 'search' );
+		await flush();
+		// The server keeps a released snapshot an hour at most.
+		server.advance( 61 * 60 * 1000 );
+		await other.restore();
+		expect( other.getState() ).toMatchObject( {
+			current: null,
+			count: 0,
+			notice: null,
+			lost: { count: 2 },
 		} );
 	} );
 } );

@@ -308,6 +308,8 @@ final class BatchFactoryTest extends TestCase {
 	public function test_a_request_id_answers_its_batch_at_any_age(): void {
 		// T83: 1.0 answered from a 60-second window and then made a second batch.
 		$first = $this->factory()->create( self::UUID, self::USER, self::operations(), Selection::of_ids( [ 101 ] ) );
+		// The response was lost, any cache evicted, and the retry comes a month later.
+		$GLOBALS['bulkcat_test']['transients']                     = [];
 		$this->store->batches[ $first['batch_id'] ]['created_gmt'] = gmdate( 'Y-m-d H:i:s', time() - 30 * 86400 );
 		$later = $this->factory()->create( self::UUID, self::USER, self::operations(), Selection::of_ids( [ 101 ] ) );
 		$this->assertTrue( $later['replayed'] );

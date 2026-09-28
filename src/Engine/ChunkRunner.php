@@ -249,10 +249,51 @@ final class ChunkRunner {
 	 * @param mixed $batch_id The new batch.
 	 */
 	public static function enqueue( mixed $batch_id ): void {
-		$batch_id = (int) $batch_id;
-		if ( $batch_id > 0 && function_exists( 'as_enqueue_async_action' ) ) {
-			as_enqueue_async_action( self::HOOK, [ $batch_id ], Data::ACTION_GROUP );
+		self::ensure_queued( (int) $batch_id );
+	}
+
+	/**
+	 * Queue a batch's first chunk unless one is already pending or running
+	 * (T83). The `bulkcat_batch_created` listener and a durable request's
+	 * scheduling reconciliation (Requests\BatchRecovery) both come here, and
+	 * may do so at once from two requests answering the same batch, so the
+	 * check and the enqueue run under BatchRepository::with_schedule_lock()
+	 * (Action Scheduler's unique enqueue alone lets two concurrent inserts
+	 * through). An Action Scheduler whose uniqueness ignores arguments refuses
+	 * the unique enqueue while another batch's chunk is queued; then a plain
+	 * enqueue follows.
+	 *
+	 * @param int $batch_id The batch.
+	 * @return bool Whether a chunk of the batch is now pending or running.
+	 */
+	public static function ensure_queued( int $batch_id ): bool {
+		if ( $batch_id < 1 || ! function_exists( 'as_enqueue_async_action' ) ) {
+			return false;
 		}
+		// Checked and enqueued under the batch's scheduling lock: two requests answering one batch queue one chunk.
+		$queued = ( new BatchRepository() )->with_schedule_lock(
+			$batch_id,
+			static function () use ( $batch_id ): bool {
+				if ( self::queued( $batch_id ) ) {
+					return true;
+				}
+				$action = as_enqueue_async_action( self::HOOK, [ $batch_id ], Data::ACTION_GROUP, true );
+				if ( 0 === (int) $action && ! self::queued( $batch_id ) ) {
+					as_enqueue_async_action( self::HOOK, [ $batch_id ], Data::ACTION_GROUP );
+				}
+				return self::queued( $batch_id );
+			}
+		);
+		return true === $queued;
+	}
+
+	/**
+	 * Whether a chunk of the batch is pending or running.
+	 *
+	 * @param int $batch_id The batch.
+	 */
+	private static function queued( int $batch_id ): bool {
+		return function_exists( 'as_has_scheduled_action' ) && as_has_scheduled_action( self::HOOK, [ $batch_id ], Data::ACTION_GROUP );
 	}
 
 	/**

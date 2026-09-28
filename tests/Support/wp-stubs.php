@@ -236,6 +236,21 @@ if ( ! function_exists( 'add_filter' ) ) {
 			return count( $GLOBALS['bulkcat_test']['scheduled'] );
 		}
 
+		/**
+		 * T83: whether an enqueued action with this hook (and args and group,
+		 * when given) was recorded and not unscheduled since.
+		 */
+		function as_has_scheduled_action( string $hook, ?array $args = null, string $group = '' ): bool {
+			$found = false;
+			foreach ( $GLOBALS['bulkcat_test']['scheduled'] ?? [] as [ $kind, $entry_hook, $entry_args, $entry_group ] ) {
+				if ( $hook !== $entry_hook || ( null !== $args && $args !== $entry_args ) || ( '' !== $group && $group !== $entry_group ) ) {
+					continue;
+				}
+				$found = 'enqueue' === $kind ? true : ( 'unschedule' === $kind ? false : $found );
+			}
+			return $found;
+		}
+
 		function as_schedule_single_action( int $timestamp, string $hook, array $args = [], string $group = '', bool $unique = false, int $priority = 10 ): int {
 			$GLOBALS['bulkcat_test']['scheduled'][] = [ 'single', $hook, $args, $group, $timestamp ];
 			return count( $GLOBALS['bulkcat_test']['scheduled'] );

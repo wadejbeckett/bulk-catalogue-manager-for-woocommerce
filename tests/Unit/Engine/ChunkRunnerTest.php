@@ -170,6 +170,13 @@ final class ChunkRunnerTest extends TestCase {
 		do_action( 'bulkcat_batch_created', 42 );
 
 		$this->assertSame( [ [ 'enqueue', 'bulkcat_run_chunk', [ 42 ], 'bulk-catalogue-manager-for-woocommerce', null ] ], $GLOBALS['bulkcat_test']['scheduled'], 'One async action in the plugin group, and nothing else scheduled.' );
+
+		// T83: the listener and a durable request's reconciliation may both reach one batch; it is queued once.
+		do_action( 'bulkcat_batch_created', 42 );
+		$this->assertTrue( ChunkRunner::ensure_queued( 42 ) );
+		$this->assertCount( 1, $GLOBALS['bulkcat_test']['scheduled'], 'A batch already queued is not queued again.' );
+		$this->assertTrue( ChunkRunner::ensure_queued( 43 ) );
+		$this->assertCount( 2, $GLOBALS['bulkcat_test']['scheduled'], 'Another batch is queued on its own.' );
 	}
 
 	public function test_one_chunk_claims_exactly_n_pending_items_with_one_update_and_enqueues_its_successor(): void {

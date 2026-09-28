@@ -168,6 +168,10 @@ if ( ! class_exists( WpdbStub::class ) ) {
 
 		public function get_var( string $query, int $x = 0, int $y = 0 ): ?string {
 			$this->queries[] = $query;
+			// MySQL named locks (T83's scheduling lock) are granted unless a test answers that exact statement.
+			if ( 1 === preg_match( '/^SELECT (GET_LOCK|RELEASE_LOCK)\(/', $query ) && ! array_key_exists( $query, $this->responses ) ) {
+				return '1';
+			}
 			if ( 1 === preg_match( "/^SHOW TABLES LIKE '(.*)'$/", $query, $m ) ) {
 				$name = self::unlike( stripslashes( $m[1] ) );
 				return isset( $this->tables[ $name ] ) ? $name : null;

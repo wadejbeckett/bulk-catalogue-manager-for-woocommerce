@@ -45,6 +45,11 @@ final class BatchRepository {
 	public const LEASE_SECONDS = 300;
 
 	/**
+	 * Seconds with_schedule_lock() waits for another request queueing the same batch.
+	 */
+	public const SCHEDULE_LOCK_WAIT = 10;
+
+	/**
 	 * claim_chunk(): any pending item.
 	 */
 	public const CLAIM_ANY = 'any';
@@ -682,6 +687,31 @@ final class BatchRepository {
 		$wpdb->get_var( $wpdb->prepare( 'SELECT batch_id FROM %i WHERE batch_id = %d LIMIT 1 FOR UPDATE', $this->registry->table( Schema::BATCHES ), $batch_id ) );
 		if ( '' !== $wpdb->last_error ) {
 			throw new \RuntimeException( 'The batch could not be locked.' );
+		}
+	}
+
+	/**
+	 * Run $work holding a MySQL named lock for one batch's scheduling (T83):
+	 * two requests answering the same accepted batch at once — the one that
+	 * committed it and a concurrent retry — must queue one first chunk, and
+	 * Action Scheduler's unique enqueue does not serialise concurrent
+	 * inserts. The lock is per site table and batch, is held only around the
+	 * check and the enqueue, and writes nothing.
+	 *
+	 * @param int      $batch_id The batch.
+	 * @param callable $work     What to run under the lock.
+	 * @return mixed What $work answered, or null when the lock was not taken within SCHEDULE_LOCK_WAIT seconds.
+	 */
+	public function with_schedule_lock( int $batch_id, callable $work ): mixed {
+		global $wpdb;
+		$name = 'bulkcat_schedule_' . md5( $this->registry->table( Schema::BATCHES ) . '|' . $batch_id );
+		if ( '1' !== (string) $wpdb->get_var( $wpdb->prepare( 'SELECT GET_LOCK(%s, %d)', $name, self::SCHEDULE_LOCK_WAIT ) ) ) {
+			return null;
+		}
+		try {
+			return $work();
+		} finally {
+			$wpdb->get_var( $wpdb->prepare( 'SELECT RELEASE_LOCK(%s)', $name ) );
 		}
 	}
 

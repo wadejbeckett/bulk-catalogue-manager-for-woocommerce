@@ -27,13 +27,16 @@ Chapters (``--chapters``, comma separated, default all, run in this order):
              unchanged (page aside), unreachable to another user (404), the
              schema refusals, deleted; the export with the nonce as a
              ``_wpnonce`` query argument instead of the header.
-  write      The engine live: selection -> preview (nothing saved) -> batch
-             (apply, replay) -> Action Scheduler run through ``wp
-             action-scheduler run`` -> progress until complete -> values
-             checked with wc_get_product() -> undo preview -> undo apply ->
-             run -> values restored; a skip-already batch leaving
-             post_modified_gmt alone; PATCH /products/{id}; category create,
-             edit and move; the write routes' refusals.
+  write      The engine live: a captured selection (grant -> /selection)
+             -> exact preview (nothing saved) -> durable batch under a
+             /requests grant (apply, replay; a 1.0 body refused) -> Action
+             Scheduler run through ``wp action-scheduler run`` -> progress
+             until complete -> values checked with wc_get_product() -> undo
+             preview -> durable undo -> run -> values restored; a product
+             that starts matching after capture stays out of the batch; a
+             skip-already batch leaving post_modified_gmt alone; PATCH
+             /products/{id}; category create, edit and move; the write
+             routes' refusals.
   access     The administrators-only setting flips a shop manager to 403
              while an administrator keeps 200.
   variations T72. A variable product with 60 variations (upserted by the
@@ -260,6 +263,29 @@ class Probe:
                 return report
             time.sleep(1)
         return report
+
+    # ---- durable requests (T83) ---------------------------------------------------
+
+    def capture(self, user: str, intent: dict) -> dict:
+        """A v2 snapshot captured under a server grant: `intent` is `{"ids": [...]}` or `{"query": {...}}`."""
+        grant = self.http(user, "POST", "/requests", body={"operation": "selection.capture", "intent": intent}).json() or {}
+        body = {key: grant.get(key) for key in ("uuid", "request_proof", "intent")}
+        return self.http(user, "POST", "/selection", body=body).json() or {}
+
+    def apply_body(self, user: str, preview: dict, selection: dict) -> dict:
+        """The durable POST /batches body for an exact preview: `selection` is `{"token": ...}` or `{"ids": [...]}`."""
+        intent = {**selection, "operations": preview.get("operations"), "scope_hash": preview.get("scope_hash")}
+        grant = self.http(user, "POST", "/requests", body={"operation": "batch.apply", "intent": intent}).json() or {}
+        body = {"uuid": grant.get("uuid"), "request_proof": grant.get("request_proof"), "intent": grant.get("intent"), "preview_hash": preview.get("hash")}
+        if "token" in selection:
+            body["token"] = selection["token"]
+        return body
+
+    def undo_body(self, user: str, batch_id: int, plan_hash: str | None, force: bool = False) -> dict:
+        """The durable POST /batches/{id}/undo body for an undo preview's plan."""
+        intent = {"batch_id": batch_id, "plan_hash": plan_hash, "force": force}
+        grant = self.http(user, "POST", "/requests", body={"operation": "batch.undo", "intent": intent}).json() or {}
+        return {key: grant.get(key) for key in ("uuid", "request_proof", "intent")}
 
     # ---- shared fixtures ---------------------------------------------------------
 
@@ -762,18 +788,21 @@ def check_write_engine(p: Probe) -> None:
 
     def preview() -> None:
         before = p.modified(ids)
-        sel = p.http("manager", "POST", "/selection", body={"category_ids": {"operator": "isAny", "value": [shirts]}}).json()
+        sel = p.capture("manager", {"query": {"category_ids": {"operator": "isAny", "value": [shirts]}}})
         r = p.http("manager", "POST", "/preview", body={"token": sel["token"], "operations": ADJUST})
         d = r.json() or {}
-        state.update(token=sel["token"], hash=d.get("hash"), count=sel["count"])
+        state.update(token=sel["token"], hash=d.get("hash"), count=sel["count"], preview=d)
         totals = d.get("totals", {})
         untouched = p.modified(ids) == before and p.prices(ids) == {str(t["id"]): t["regular_price"] for t in targets}
-        ok = r.status == 200 and totals.get("would_change") == 5 and re.fullmatch(r"[0-9a-f]{64}", d.get("hash") or "") and untouched
+        ok = (r.status == 200 and totals.get("would_change") == 5 and re.fullmatch(r"[0-9a-f]{64}", d.get("hash") or "")
+              and re.fullmatch(r"[0-9a-f]{64}", d.get("scope_hash") or "") and sel["token"].startswith("v2.") and untouched)
         p.row("write", "write:preview", bool(ok), f"{r.status} would_change {totals.get('would_change')} matched {totals.get('matched')}, nothing saved: {untouched}")
 
     def apply() -> None:
-        body = {"uuid": str(uuid.uuid4()), "token": state["token"], "operations": ADJUST,
-                "preview_hash": state["hash"], "preview_count": state["count"]}
+        legacy = p.http("manager", "POST", "/batches", body={"uuid": str(uuid.uuid4()), "token": state["token"], "operations": ADJUST,
+                                                             "preview_hash": state["hash"], "preview_count": state["count"]})
+        p.row("write", "write:legacy-request-refused", legacy.status == 409 and legacy.code() == "bulkcat_legacy_request", f"a 1.0 body: {legacy.brief()}")
+        body = p.apply_body("manager", state["preview"], {"token": state["token"]})
         r = p.http("manager", "POST", "/batches", body=body)
         d = r.json() or {}
         again = p.http("manager", "POST", "/batches", body=body).json() or {}
@@ -805,7 +834,7 @@ def check_write_engine(p: Probe) -> None:
         d = pre.json() or {}
         p.row("write", "write:undo-preview", pre.status == 200 and d.get("preview") is True and re.fullmatch(r"[0-9a-f]{64}", d.get("plan_hash") or "") is not None,
               f"{pre.brief()} counts {d.get('counts')}")
-        r = p.http("manager", "POST", route, body={"uuid": str(uuid.uuid4()), "plan_hash": d.get("plan_hash")})
+        r = p.http("manager", "POST", route, body=p.undo_body("manager", state["batch"], d.get("plan_hash")))
         u = r.json() or {}
         p.row("write", "write:undo-apply", r.status == 201 and bool(u.get("batch_id")), f"{r.brief()} {u.get('batch_id')}")
         report = p.run_queue(u["batch_id"])
@@ -817,23 +846,25 @@ def check_write_engine(p: Probe) -> None:
         p.row("write", "write:undo-values", got == want, f"{got} want {want}")
 
     def ids_need_preview() -> None:
-        # Security review m6: ticked rows are held to their preview as a filter is.
+        # Security review m6: ticked rows are held to their preview as a filter is; T83: through a grant.
         target = p.simple(2)
         ops = [{"action": "set_value", "args": {"field": "regular_price", "value": target["regular_price"]}}]
         before = p.modified([target["id"]])
         bare = p.http("manager", "POST", "/batches", body={"uuid": str(uuid.uuid4()), "ids": [target["id"]], "operations": ops})
-        wrong = p.http("manager", "POST", "/batches", body={"uuid": str(uuid.uuid4()), "ids": [target["id"]], "operations": ops, "preview_hash": "0" * 64})
+        pre = p.http("manager", "POST", "/preview", body={"ids": [target["id"]], "operations": ops}).json() or {}
+        body = p.apply_body("manager", pre, {"ids": [target["id"]]})
+        body["preview_hash"] = "0" * 64
+        wrong = p.http("manager", "POST", "/batches", body=body)
         untouched = p.modified([target["id"]]) == before
-        ok = bare.status == 409 and bare.code() == "bulkcat_preview_stale" and wrong.status == 409 and wrong.code() == "bulkcat_preview_stale" and untouched
-        p.row("write", "write:ids-need-preview", ok, f"no hash {bare.brief()}, wrong hash {wrong.brief()}, nothing written: {untouched}")
+        ok = bare.status == 409 and bare.code() == "bulkcat_legacy_request" and wrong.status == 409 and wrong.code() == "bulkcat_preview_stale" and untouched
+        p.row("write", "write:ids-need-preview", ok, f"a 1.0 body {bare.brief()}, wrong hash {wrong.brief()}, nothing written: {untouched}")
 
     def skip_already() -> None:
         target = p.simple(4)
         before = p.modified([target["id"]])
         ops = [{"action": "set_value", "args": {"field": "regular_price", "value": target["regular_price"]}}]
         pre = p.http("manager", "POST", "/preview", body={"ids": [target["id"]], "operations": ops}).json() or {}
-        body = {"uuid": str(uuid.uuid4()), "ids": [target["id"]], "operations": ops, "preview_hash": pre.get("hash")}
-        d = p.http("manager", "POST", "/batches", body=body).json() or {}
+        d = p.http("manager", "POST", "/batches", body=p.apply_body("manager", pre, {"ids": [target["id"]]})).json() or {}
         report = p.run_queue(d.get("batch_id", 0))
         same = p.modified([target["id"]]) == before
         p.row("write", "write:skip-already", report.get("status") in ("complete", "partial") and report.get("changed_items") == 0 and same,
@@ -858,23 +889,19 @@ def check_write_stale(p: Probe) -> None:
     grid = filter_params("category_ids", "isAny", [hats])
 
     def run() -> None:
-        sel = p.http("manager", "POST", "/selection", body=hat_filter).json()
+        # T83: a captured selection is exact; a product that starts matching later never enters it.
+        sel = p.capture("manager", {"query": hat_filter})
         pre = p.http("manager", "POST", "/preview", body={"token": sel["token"], "operations": ops}).json()
         total_before = p.http("manager", "GET", "/products", grid).json()["pagination"]["total"]
         p.wp_eval(f"$p = wc_get_product( {draft} ); $p->set_category_ids( array( {hats} ) ); $p->save(); bulkcat_out( 1 );")
         try:
             total_after = p.http("manager", "GET", "/products", grid).json()["pagination"]["total"]
             p.row("write", "write:count-cache-renewed", total_after == total_before + 1, f"hats total {total_before} -> {total_after} after a product save")
-            body = {"uuid": str(uuid.uuid4()), "token": sel["token"], "operations": ops, "preview_hash": pre["hash"], "preview_count": sel["count"]}
-            first = p.http("manager", "POST", "/batches", body=body)
-            p.row("write", "write:stale-selection-refused", first.status == 409 and first.code() == "bulkcat_selection_changed", first.brief())
-            body["uuid"] = str(uuid.uuid4())
-            body["confirm_changed"] = True
-            second = p.http("manager", "POST", "/batches", body=body)
+            second = p.http("manager", "POST", "/batches", body=p.apply_body("manager", pre, {"token": sel["token"]}))
             d = second.json() or {}
             report = p.http("manager", "GET", f"/batches/{d.get('batch_id', 0)}").json() or {}
-            p.row("write", "write:stale-selection-confirmed", second.status == 201 and report.get("previewed_count") == sel["count"] and report.get("total_items") == sel["count"] + 1,
-                  f"{second.brief()} previewed {report.get('previewed_count')} total {report.get('total_items')}: {report.get('selection_difference')}")
+            p.row("write", "write:snapshot-excludes-new-match", second.status == 201 and report.get("total_items") == sel["count"] == pre["totals"]["matched"],
+                  f"{second.brief()} captured {sel['count']} total {report.get('total_items')} (the new match stays out)")
             before = p.modified([t["id"] for t in p.seed["simple"]] + [draft])
             cancel = p.http("manager", "POST", f"/batches/{d.get('batch_id', 0)}/cancel")
             p.run_queue(d.get("batch_id", 0), rounds=2)
@@ -1323,6 +1350,7 @@ def check_variations(p: Probe) -> None:
         r = p.http("manager", "POST", "/preview", body={"ids": [state["parent"]], "operations": increase, "sample_size": "all"})
         d = r.json() or {}
         state["hash"] = d.get("hash")
+        state["preview"] = d
         totals = d.get("totals", {})
         by = totals.get("by_type", {})
         sample_ids = {row["object_id"] for row in d.get("sample", [])}
@@ -1334,7 +1362,7 @@ def check_variations(p: Probe) -> None:
         p.row("variations", "variations:preview", ok, f"{r.brief()} matched {totals.get('matched')} by_type {by} summary {d.get('summary')!r}, nothing saved: {untouched}")
 
     def apply() -> None:
-        r = p.http("manager", "POST", "/batches", body={"uuid": str(uuid.uuid4()), "ids": [state["parent"]], "operations": increase, "preview_hash": state["hash"]})
+        r = p.http("manager", "POST", "/batches", body=p.apply_body("manager", state["preview"], {"ids": [state["parent"]]}))
         d = r.json() or {}
         state["batch"] = d.get("batch_id")
         p.row("variations", "variations:batch-create", r.status == 201 and d.get("total_items") == SIXTY, f"{r.brief()} total_items {d.get('total_items')}")
@@ -1358,7 +1386,7 @@ def check_variations(p: Probe) -> None:
     def undo() -> None:
         route = f"/batches/{state['batch']}/undo"
         pre = p.http("manager", "POST", route, body={"preview": True}).json() or {}
-        r = p.http("manager", "POST", route, body={"uuid": str(uuid.uuid4()), "plan_hash": pre.get("plan_hash")})
+        r = p.http("manager", "POST", route, body=p.undo_body("manager", state["batch"], pre.get("plan_hash")))
         u = r.json() or {}
         report = p.run_queue(u.get("batch_id", 0))
         original = p.http("manager", "GET", f"/batches/{state['batch']}").json() or {}

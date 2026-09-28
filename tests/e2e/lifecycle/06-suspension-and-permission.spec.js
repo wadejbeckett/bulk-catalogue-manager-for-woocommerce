@@ -441,6 +441,7 @@ test.describe( 'a real 30-minute suspension (BULKCAT_E2E_REAL_SUSPENSION=1)', ()
 
 	test( 'thirty minutes at the default lease: the open page keeps its token and preview, the frozen page comes back under a new epoch without the new match', async ( {
 		context,
+		browser,
 	} ) => {
 		test.setTimeout( 45 * 60 * 1000 );
 		const names = [ 'Lifecycle Real A', 'Lifecycle Real B' ];
@@ -448,7 +449,19 @@ test.describe( 'a real 30-minute suspension (BULKCAT_E2E_REAL_SUSPENSION=1)', ()
 		const [ seven ] = makeProducts( [ 'Lifecycle Open Page' ], '20.00' );
 		const before = prices( [ seven ] );
 		const open = await context.newPage();
-		const frozen = await context.newPage();
+		// Playwright's clock belongs to the browser context, so the frozen
+		// page gets a context of its own (the second real run froze both
+		// pages' timers through the shared clock: one renewal in 30 minutes).
+		const frozenContext = await browser.newContext( {
+			storageState: require( 'path' ).join(
+				__dirname,
+				'..',
+				'.results',
+				'admin.json'
+			),
+			viewport: { width: 1440, height: 900 },
+		} );
+		const frozen = await frozenContext.newPage();
 		const openWrites = recordWrites( open );
 		const frozenWrites = recordWrites( frozen );
 		const log = [];
@@ -481,10 +494,7 @@ test.describe( 'a real 30-minute suspension (BULKCAT_E2E_REAL_SUSPENSION=1)', ()
 				'Apply to 2 products'
 			);
 			await frozen.clock.pauseAt( Date.now() + 1000 );
-			// The open page is the tab in front: a tab behind is throttled by
-			// the browser (the first real run, where it renewed once in 30
-			// minutes and so behaved like the frozen one), which is what a
-			// suspended tab is; this page stands for one left open in view.
+			// The open page is the tab in front, a page left open in view.
 			await open.bringToFront();
 
 			const started = Date.now();
@@ -577,6 +587,7 @@ test.describe( 'a real 30-minute suspension (BULKCAT_E2E_REAL_SUSPENSION=1)', ()
 		} finally {
 			// eslint-disable-next-line no-console
 			console.log( log.join( '\n' ) );
+			await frozenContext.close();
 			undoLeftovers( mark );
 			deleteProducts( [ ...made, seven ] );
 		}

@@ -1,6 +1,6 @@
 # Exact selection contract
 
-Status: follow-up to 1.0.0 on branch `codex/exact-selection-plan`. T81 (capture and receipts) was accepted locally on 25 September, T82 (composition and lifecycle) on 26 September and T83 (exact preview, durable Apply and undo, 1.0 request ids) on 28 September. T84 (the screen) is built and verified locally as of 28 September and awaits review and acceptance; T85 (integration proof) is next. Engineering rulings made during T83 and T84 are in the plan. No merge, release or production rollout is implied.
+Status: follow-up to 1.0.0 on branch `codex/exact-selection-plan`. T81 (capture and receipts) was accepted locally on 25 September, T82 (composition and lifecycle) on 26 September and T83 (exact preview, durable Apply and undo, 1.0 request ids) on 28 September. T84 (the screen) was accepted on 28 September. T85 (integration proof: the seven lifecycle groups through the screen, whole-catalogue scale) is built and verified locally as of 28 September and awaits review and acceptance. Engineering rulings made during T83–T85 are in the plan. No merge, release or production rollout is implied.
 
 ## Behaviour
 

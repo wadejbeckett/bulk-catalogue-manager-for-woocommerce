@@ -1,6 +1,6 @@
 # Exact selections and preview/Apply follow-up
 
-**Stage:** T81 accepted by Main Build on 25 September, T82 on 26 September and T83 on 28 September. T84 (the screen) is built and verified locally (28 September; rulings in section 4; evidence `evidence-20260928/t84-runtime.md` in the client workspace) and awaits review and Main Build acceptance; T85 is next. The branch is pushed to the private remote and, as the release candidate, carries its built bundle; no merge, release or production change is included.
+**Stage:** T81 accepted by Main Build on 25 September, T82 on 26 September, T83 and T84 (the screen; rulings in section 4) on 28 September. T85 (section 5; evidence `evidence-20260928/t85-runtime.md` in the client workspace) is built and verified locally (28 September) and awaits review and Main Build acceptance. The branch is pushed to the private remote and, as the release candidate, carries its built bundle; no merge, release or production change is included.
 
 **Goal:** accumulate an exact selection across searches, inspect it, preview a native change, Apply, and clear only genuinely completed scope while retaining recovery on partial failure.
 

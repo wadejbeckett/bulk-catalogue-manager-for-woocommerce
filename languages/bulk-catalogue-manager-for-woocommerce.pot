@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-09-28T10:33:15+00:00\n"
+"POT-Creation-Date: 2026-09-28T10:58:17+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -80,13 +80,19 @@ msgstr ""
 msgid "The category could not be saved, so nothing was changed. Check the name and slug, then try again."
 msgstr ""
 
+msgid "This change was sent by an older version of this page, so it was not made. Reload the page, then preview the change and apply it again."
+msgstr ""
+
+msgid "This change was sent by an older version of this page. Check History for the change it may already have made, then reload the page before starting new work."
+msgstr ""
+
+msgid "The change could not be saved, so nothing was changed. Try again in a moment."
+msgstr ""
+
 msgid "This change no longer matches its preview: the products, the change or the settings have moved on since. Preview the change again, then apply it."
 msgstr ""
 
 msgid "None of the chosen products can be changed now: they have been deleted or no longer match the filters. Choose the products again and try again."
-msgstr ""
-
-msgid "The change could not be saved, so nothing was changed. Try again in a moment."
 msgstr ""
 
 msgid "That batch could not be found. It may have been removed. Reload the history and try again."
@@ -262,6 +268,9 @@ msgid "WooCommerce could not save this product, so this change was not made. Try
 msgstr ""
 
 msgid "This product was already updated by this change, so it was not changed again."
+msgstr ""
+
+msgid "This item has changed between a product and a variation since it was chosen, so it was left unchanged. Choose it again to change it."
 msgstr ""
 
 msgid "Yes"
@@ -1015,13 +1024,13 @@ msgstr ""
 msgid "Any %s"
 msgstr ""
 
-msgid "No products are selected. Choose products before making a change."
-msgstr ""
-
 msgid "This change no longer matches its preview. Preview the exact selected products again, then apply it."
 msgstr ""
 
-msgid "This request came from an older screen. Check its existing change in History, then reload before starting new work."
+msgid "No products are selected. Choose products before making a change."
+msgstr ""
+
+msgid "This undo no longer matches its preview: the products or the settings have changed since. Preview the undo again, then confirm it."
 msgstr ""
 
 msgid "The original change is no longer in History. This request cannot be applied again."
@@ -1135,6 +1144,12 @@ msgid "This change has already finished, so it cannot be cancelled. Use Undo in 
 msgstr ""
 
 msgid "That change could not be found. It may have been removed from the history; reload the page and try again."
+msgstr ""
+
+msgid "The signed proof issued with the request id, for a durable change."
+msgstr ""
+
+msgid "The change exactly as issued with the request id: its operations, the preview's scope and the selection."
 msgstr ""
 
 msgid "A request id the screen makes once per change, so sending it twice creates one change."
@@ -1452,10 +1467,10 @@ msgstr ""
 msgid "This undo could not be sent because its preview is missing or damaged. Preview the undo again, then confirm it."
 msgstr ""
 
-msgid "This undo could not be sent because its request id is missing or damaged. Reload the page and try again."
+msgid "This undo does not match the change it names. Reload the history and try again."
 msgstr ""
 
-msgid "This undo no longer matches its preview: the products or the settings have changed since. Preview the undo again, then confirm it."
+msgid "This undo could not be sent because its request id is missing or damaged. Reload the page and try again."
 msgstr ""
 
 #. translators: 1: number of products changed since the batch, such as "12"; 2: number of products the batch changed, such as "1,284".

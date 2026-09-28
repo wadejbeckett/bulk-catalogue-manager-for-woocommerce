@@ -62,4 +62,90 @@ final class BatchIntentTest extends TestCase {
 			$this->assertNotEmpty( $error->getMessage() );
 		}
 	}
+
+	/**
+	 * A canonical Apply intent over explicit ids.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private static function canonical(): array {
+		bulkcat_test_reset();
+		$intent = BatchIntent::normalize(
+			'batch.apply',
+			[
+				'ids'        => [ 7, 3 ],
+				'operations' => [
+					[
+						'action' => 'set_value',
+						'args'   => [
+							'field' => 'regular_price',
+							'value' => '12',
+						],
+					],
+				],
+				'scope_hash' => str_repeat( 'c', 64 ),
+			],
+			1
+		);
+		return is_array( $intent ) ? $intent : [];
+	}
+
+	public function test_a_canonical_intent_is_never_normalised_again(): void {
+		// T83: an action the registry no longer takes must not stop an accepted request resolving.
+		$intent                             = self::canonical();
+		$retired                            = $intent;
+		$retired['operations'][0]['action'] = 'retired_action';
+		$this->assertSame( $retired, BatchIntent::normalize( 'batch.apply', $retired, 1 ), 'Only its shape is checked; its fingerprint is what was signed.' );
+		$refusal = BatchIntent::current( $retired );
+		$this->assertInstanceOf( \WP_Error::class, $refusal, 'A new acceptance asks the registry.' );
+		$this->assertSame( 'bulkcat_unknown_action', $refusal->get_error_code() );
+		$this->assertTrue( BatchIntent::current( $intent ) );
+
+		$drifted = $intent;
+		unset( $drifted['operations'][0]['args']['skip_already'] );
+		$this->assertFalse( BatchIntent::current( $drifted ), 'A list the registry would now fill in differently is stale.' );
+	}
+
+	public function test_a_canonical_intent_has_exactly_its_shape(): void {
+		$intent = self::canonical();
+		$this->assertSame( [ 3, 7 ], $intent['ids'] );
+		$cases = [
+			'an extra key'         => [ 'preview_hash' => str_repeat( 'a', 64 ) ] + $intent,
+			'unsorted ids'         => [ 'ids' => [ 7, 3 ] ] + $intent,
+			'repeated ids'         => [ 'ids' => [ 3, 3, 7 ] ] + $intent,
+			'ids as text'          => [ 'ids' => [ '3', '7' ] ] + $intent,
+			'another source'       => [ 'source' => 'undo' ] + $intent,
+			'another version'      => [ 'version' => 2 ] + $intent,
+			'a bad scope hash'     => [ 'scope_hash' => 'abc' ] + $intent,
+			'no operations'        => [ 'operations' => [] ] + $intent,
+			'a step without args'  => [ 'operations' => [ [ 'action' => 'set_value' ] ] ] + $intent,
+			'ids and a snapshot'   => [ 'snapshot' => str_repeat( 'a', 32 ) ] + $intent,
+			'a malformed snapshot' => [ 'snapshot' => 'nope' ] + array_diff_key( $intent, [ 'ids' => 0 ] ),
+		];
+		foreach ( $cases as $case => $input ) {
+			try {
+				BatchIntent::normalize( 'batch.apply', $input, 1 );
+				$this->fail( "Accepted $case." );
+			} catch ( \InvalidArgumentException $error ) {
+				$this->assertNotEmpty( $error->getMessage(), $case );
+			}
+		}
+		$undo = BatchIntent::normalize(
+			'batch.undo',
+			[
+				'batch_id'  => 4,
+				'plan_hash' => str_repeat( 'd', 64 ),
+			],
+			1
+		);
+		$this->assertSame( false, $undo['force'], 'Force is written out.' );
+		foreach ( [ [ 'force' => 1 ] + $undo, [ 'batch_id' => '4' ] + $undo, array_diff_key( $undo, [ 'force' => 0 ] ) ] as $index => $input ) {
+			try {
+				BatchIntent::normalize( 'batch.undo', $input, 1 );
+				$this->fail( "Accepted undo case $index." );
+			} catch ( \InvalidArgumentException $error ) {
+				$this->assertNotEmpty( $error->getMessage() );
+			}
+		}
+	}
 }

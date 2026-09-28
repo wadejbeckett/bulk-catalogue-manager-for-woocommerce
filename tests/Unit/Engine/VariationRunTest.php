@@ -218,7 +218,7 @@ final class VariationRunTest extends TestCase {
 				],
 			]
 		);
-		$created  = ( new BatchFactory( new Registry( new Fields() ), null, fn(): int => (int) $this->now ) )->create( self::UUID, self::USER, $increase, Selection::of_ids( [ 600, 500 ] ) );
+		$created  = ( new BatchFactory( new Registry( new Fields() ) ) )->create( self::UUID, self::USER, $increase, Selection::of_ids( [ 600, 500 ] ) );
 		$this->assertTrue( is_array( $created ), $created instanceof \WP_Error ? $created->get_error_message() : '' );
 		$batch_id = $created['batch_id'];
 		$this->assertSame( 4, $created['total_items'] );
@@ -237,7 +237,7 @@ final class VariationRunTest extends TestCase {
 
 		$plan = ( new Planner( null, null, new Registry( new Fields() ), new Settings( [] ), fn(): int => (int) $this->now ) )->plan( $batch_id, self::USER );
 		$this->assertFalse( $plan instanceof \WP_Error, $plan instanceof \WP_Error ? $plan->get_error_message() : '' );
-		$undo = ( new BatchFactory( new Registry( new Fields() ), null, fn(): int => (int) $this->now ) )->create_undo( '9b2d8a4e-1c3f-4e5a-8b7c-6d5e4f3a2b11', self::USER, $plan, false );
+		$undo = ( new BatchFactory( new Registry( new Fields() ) ) )->create_undo( '9b2d8a4e-1c3f-4e5a-8b7c-6d5e4f3a2b11', self::USER, $plan, false );
 		$this->assertTrue( is_array( $undo ), $undo instanceof \WP_Error ? $undo->get_error_message() : '' );
 		$this->assertSame( 4, $undo['total_items'], 'The undo names exactly the objects the batch touched.' );
 		$this->assertSame( 'complete', $this->run_all( $undo['batch_id'] ) );

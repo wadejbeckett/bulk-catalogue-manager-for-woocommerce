@@ -12,7 +12,8 @@
  * `summary`, `selection.variations_added`).
  *
  * It precedes a write, so it needs the write capability (Access::can_write);
- * each object is checked for the current user as the writer would. An
+ * each object is checked for the current user as the writer would, and an
+ * object the user may not edit is shown only as skipped with its reason. An
  * operation list the registry refuses is 400 with the registry's code.
  *
  * @package BulkCatalogueManager
@@ -24,6 +25,8 @@ declare( strict_types = 1 );
 namespace BulkCatalogueManager\Rest;
 
 use BulkCatalogueManager\Engine\Preview;
+use BulkCatalogueManager\Requests\BatchIntent;
+use BulkCatalogueManager\Requests\RequestService;
 use BulkCatalogueManager\Selection\Selection;
 use BulkCatalogueManager\Selection\SelectionToken;
 
@@ -31,6 +34,16 @@ defined( 'ABSPATH' ) || exit;
 
 /**
  * The preview route.
+ *
+ * Every preview is exact (T83): an `ids` list (sorted, each once) or a
+ * `v2.` snapshot token from the durable selection routes is resolved to its
+ * exact typed members and expanded once (Engine\ExactScope), members that
+ * are missing or changed in kind stay in the scope as unavailable, and the
+ * answer carries the `scope_hash` and normalised `operations` a durable
+ * Apply's intent needs, with a `hash` bound to the scope and to the
+ * credential as sent (a snapshot's current authorization epoch). A 1.0
+ * selection token (the transient kind) is refused with the reselect
+ * refusal; it never turns back into a filter.
  */
 final class PreviewController implements ReadController {
 	/**
@@ -153,7 +166,9 @@ final class PreviewController implements ReadController {
 		};
 		$schema['sanitize_callback'] = static fn( mixed $value ): int => self::ALL === $value ? Preview::SAMPLE_ALL : (int) $value;
 
-		return array_intersect_key( BatchesController::args(), array_flip( [ 'operations', 'ids', 'token' ] ) ) + [ 'sample_size' => $schema ];
+		$args                           = array_intersect_key( BatchesController::args(), array_flip( [ 'operations', 'ids', 'token' ] ) );
+		$args['operations']['required'] = true;
+		return $args + [ 'sample_size' => $schema ];
 	}
 
 	/**
@@ -170,34 +185,41 @@ final class PreviewController implements ReadController {
 				__( 'This preview does not say which products to change. Choose the products again and try again.', 'bulk-catalogue-manager-for-woocommerce' )
 			);
 		}
+		$size = (int) ( $request->get_param( 'sample_size' ) ?? Preview::DEFAULT_SAMPLE );
 		if ( null !== $token ) {
-			$selection = SelectionToken::parse( $token, get_current_user_id() );
-		} else {
-			try {
-				$selection = Selection::of_ids( (array) $ids );
-			} catch ( \InvalidArgumentException $e ) {
-				$selection = Refusal::invalid(
-					'bulkcat_invalid_value',
-					__( 'These products could not be selected. Choose the products again and try again.', 'bulk-catalogue-manager-for-woocommerce' ),
-					[ 'details' => $e->getMessage() ]
-				);
+			if ( ! is_string( $token ) || ! str_starts_with( $token, 'v2.' ) ) {
+				// A 1.0 transient token: choose the products again (T83).
+				return SelectionToken::refusal();
 			}
+			$result = ( new RequestService() )->preview(
+				[
+					'token'       => $token,
+					'operations'  => $request->get_param( 'operations' ),
+					'sample_size' => $size,
+				]
+			);
+			return $result instanceof \WP_Error ? $result : self::respond( $result );
 		}
-		if ( $selection instanceof \WP_Error ) {
-			return $selection;
+		try {
+			$selection = Selection::of_ids( BatchIntent::ids( (array) $ids ) );
+		} catch ( \InvalidArgumentException $e ) {
+			return Refusal::invalid(
+				'bulkcat_invalid_value',
+				__( 'These products could not be selected. Choose the products again and try again.', 'bulk-catalogue-manager-for-woocommerce' ),
+				[ 'details' => $e->getMessage() ]
+			);
 		}
-
 		$this->preview ??= new Preview();
-		$result          = $this->preview->run(
-			$selection,
-			$request->get_param( 'operations' ),
-			(int) ( $request->get_param( 'sample_size' ) ?? Preview::DEFAULT_SAMPLE ),
-			null === $token ? '' : (string) $token
-		);
-		if ( $result instanceof \WP_Error ) {
-			return $result;
-		}
-		// Maps keyed by reason or kind stay JSON objects when empty.
+		$result          = $this->preview->run( $selection, $request->get_param( 'operations' ), $size, '', null, true );
+		return $result instanceof \WP_Error ? $result : self::respond( $result );
+	}
+
+	/**
+	 * The preview as a response; maps keyed by reason stay JSON objects when empty.
+	 *
+	 * @param array<string, mixed> $result The preview.
+	 */
+	private static function respond( array $result ): \WP_REST_Response {
 		$result['totals']['would_fail'] = (object) $result['totals']['would_fail'];
 		return new \WP_REST_Response( $result, 200 );
 	}

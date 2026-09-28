@@ -203,7 +203,7 @@ final class Preview {
 
 		$matched  = count( $objects );
 		$computed = array_slice( $objects, 0, max( 1, $this->cap ) );
-		$tally    = $this->compute( $computed, $operations, max( 1, min( self::SAMPLE_ALL, $sample_size ) ) );
+		$tally    = $this->compute( $computed, $operations, max( 1, min( self::SAMPLE_ALL, $sample_size ) ), $scope['unavailable'] ?? [] );
 		$factor   = [] === $computed ? 1.0 : $matched / count( $computed );
 		$by_type  = [];
 		foreach ( [ 'product', 'variation' ] as $type ) {
@@ -281,9 +281,10 @@ final class Preview {
 	 * @param list<array{0: int, 1: string, 2?: list<array{action: string, args: array<string, mixed>}>}> $objects    The objects to compute, in order, each with its own step list when it has one.
 	 * @param list<array{action: string, args: array<string, mixed>}>                                      $operations The normalised list.
 	 * @param int                                                                                          $limit      Sample rows wanted.
+	 * @param list<int>                                                                                    $unavailable Chosen objects the exact scope found missing or changed in kind (T83): listed as unreadable, never loaded.
 	 * @return array{would_change: int, already: int, would_fail: array<string, int>, rows: array<string, int>, sample: list<array<string, mixed>>, warnings: array<string, int>, unreadable: list<int>, by_type: array<string, int>, fields: array<string, string>}
 	 */
-	private function compute( array $objects, array $operations, int $limit ): array {
+	private function compute( array $objects, array $operations, int $limit, array $unavailable = [] ): array {
 		$fields    = $this->actions->fields();
 		$all       = $this->steps( $operations );
 		$validator = Validator::for_request( $fields );
@@ -303,19 +304,28 @@ final class Preview {
 			'fields'       => [],
 		];
 
+		$skip = array_flip( $unavailable );
 		foreach ( $objects as $index => $entry ) {
 			if ( 0 === $index % self::PAGE ) {
 				Memory::next_page( array_column( array_slice( $objects, $index, self::PAGE ), 0 ), 0 < $index );
 			}
 			[ $id, $type ] = $entry;
 			$steps         = isset( $entry[2] ) ? $this->steps( $entry[2] ) : $all;
-			$subject       = self::load( $id );
+			$subject       = isset( $skip[ $id ] ) ? null : self::load( $id );
 			if ( null === $subject ) {
 				$tally['unreadable'][] = $id;
 				continue;
 			}
-			$label   = null === $name ? '' : (string) $name->read( $subject );
-			$results = [];
+			$denied = $validator->authorise( $subject );
+			if ( null !== $denied ) {
+				// Nothing of an object the user may not edit is computed or shown: no name, no values, the reason only.
+				$results = array_map( static fn( array $step ): Result => Result::skipped( (string) $step[1]['field'], null, $denied->get_error_message(), (string) $denied->get_error_code() ), $steps );
+				$label   = '';
+				$steps   = [];
+			} else {
+				$label   = null === $name ? '' : (string) $name->read( $subject );
+				$results = [];
+			}
 			foreach ( $steps as [ $operation, $args ] ) {
 				$computed = $operation->compute( $subject, $args );
 				$this->warn( $tally['warnings'], $subject, $computed );
@@ -563,11 +573,12 @@ final class Preview {
 	}
 
 	/**
-	 * A value with every associative array's keys sorted, lists kept in order.
+	 * A value with every associative array's keys sorted, lists kept in
+	 * order: the form operation lists are hashed and compared in.
 	 *
 	 * @param mixed $value A normalised value.
 	 */
-	private static function canonical( mixed $value ): mixed {
+	public static function canonical( mixed $value ): mixed {
 		if ( ! is_array( $value ) ) {
 			return $value;
 		}

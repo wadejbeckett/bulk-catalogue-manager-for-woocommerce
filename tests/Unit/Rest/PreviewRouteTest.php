@@ -125,7 +125,8 @@ final class PreviewRouteTest extends TestCase {
 		$this->assertSame( [ 'totals', 'summary', 'sample', 'warnings', 'unreadable', 'selection', 'hash', 'unavailable_count', 'scope_hash', 'operations' ], array_keys( $data ), 'The 1.0 keys keep their order; the exact-selection keys (T83) follow them.' );
 		$this->assertSame( 1, $data['unavailable_count'] );
 		$this->assertTrue( is_array( $data['operations'] ) && 'featured' === $data['operations'][0]['args']['field'], 'The normalised operation list comes back for the durable request intent.' );
-		$this->assertSame( 2, $data['totals']['matched'] );
+		$this->assertSame( 3, $data['totals']['matched'], 'The exact scope keeps the missing id (T83).' );
+		$this->assertSame( 2, $data['totals']['computed'] );
 		$this->assertSame( 1, $data['totals']['would_change'] );
 		$this->assertEquals( (object) [ 'Featured belongs to the product, not to each variation.' => 1 ], $data['totals']['would_fail'] );
 		$this->assertSame( [ 104, 201 ], array_column( $data['sample'], 'object_id' ) );
@@ -153,37 +154,49 @@ final class PreviewRouteTest extends TestCase {
 		);
 	}
 
-	public function test_a_token_answers_the_filter_and_its_current_count(): void {
-		$token    = SelectionToken::mint( Selection::of_filter( Criteria::from_array( [ 'mode' => Criteria::MODE_PRODUCTS ] ), 5 ) );
-		$response = self::post(
+	public function test_an_id_list_is_previewed_exactly_in_id_order_with_its_scope(): void {
+		$first  = self::post(
 			[
 				'operations' => self::operations(),
-				'token'      => $token,
+				'ids'        => [ 201, 104, 104 ],
 			]
-		);
-		$this->assertInstanceOf( \WP_REST_Response::class, $response );
-		$data = $response->get_data();
-		$this->assertSame(
+		)->get_data();
+		$sorted = self::post(
 			[
-				'kind'             => 'filter',
-				'count'            => 5,
-				'current_count'    => 7,
-				'variations_added' => 0,
-				'parents_left_out' => 0,
-			],
-			$data['selection']
-		);
-		$this->assertSame( 7, $data['totals']['would_change'] );
-		$this->assertNotSame(
-			$data['hash'],
-			self::post(
+				'operations' => self::operations(),
+				'ids'        => [ 104, 201 ],
+			]
+		)->get_data();
+		$this->assertSame( [ 104, 201 ], array_column( $first['sample'], 'object_id' ), 'Ids are sorted and each kept once.' );
+		$this->assertSame( $sorted['hash'], $first['hash'], 'The same exact selection, the same hash.' );
+		$this->assertSame( 1, preg_match( '/^[a-f0-9]{64}$/', (string) $first['scope_hash'] ) );
+		$this->assertSame( $sorted['scope_hash'], $first['scope_hash'] );
+		$other = self::post(
+			[
+				'operations' => self::operations(),
+				'ids'        => [ 104, 202 ],
+			]
+		)->get_data();
+		$this->assertNotSame( $first['scope_hash'], $other['scope_hash'], 'A substituted member of the same count changes the scope.' );
+		$this->assertNotSame( $first['hash'], $other['hash'] );
+	}
+
+	public function test_a_1_0_selection_token_is_refused_and_never_resolved_as_a_filter(): void {
+		// T83: transient tokens from before the exact selection must be chosen again.
+		foreach ( [
+			SelectionToken::mint( Selection::of_filter( Criteria::from_array( [ 'mode' => Criteria::MODE_PRODUCTS ] ), 5 ) ),
+			SelectionToken::mint( Selection::of_ids( [ 101 ] ) ),
+		] as $token ) {
+			$response = self::post(
 				[
 					'operations' => self::operations(),
-					'token'      => SelectionToken::mint( Selection::of_filter( Criteria::from_array( [ 'mode' => Criteria::MODE_VARIATIONS ] ), 2 ) ),
+					'token'      => $token,
 				]
-			)->get_data()['hash'],
-			'Another selection, another hash.'
-		);
+			);
+			$this->assert_refused( $response, SelectionToken::INVALID, 403 );
+			$this->assertStringContainsString( 'Choose the products again', $response->get_error_message() );
+		}
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['products_loaded'] ?? [], 'Nothing was loaded.' );
 	}
 
 	public function test_sample_sizes(): void {

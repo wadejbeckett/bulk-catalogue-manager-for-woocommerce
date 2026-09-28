@@ -12,7 +12,13 @@ use BulkCatalogueManager\Fields\Registry;
 use BulkCatalogueManager\Requests\RequestService;
 defined( 'ABSPATH' ) || exit;
 
-/** Request routes always share the existing write authorization boundary. */
+/**
+ * `POST /requests` issues a server grant for a capture, composition, Apply
+ * or undo intent (the kinds in RequestService::OPERATIONS) without acting on
+ * it; `POST /requests/resolve` answers what became of a grant — the original
+ * outcome, a definite refusal, or `not_accepted` — and never creates work.
+ * Both share the existing write authorization boundary.
+ */
 final class RequestsController implements Controller {
 	/** Registry-derived arguments. */
 	private RouteSchema $schema;
@@ -46,7 +52,7 @@ final class RequestsController implements Controller {
 						'args'                => $this->schema->request_args( 'issue' === $method ) + ( 'resolve' === $method ? [
 							'operation' => [
 								'type' => 'string',
-								'enum' => [ 'selection.capture', 'selection.compose' ],
+								'enum' => RequestService::OPERATIONS,
 							],
 						] : [] ),
 					],

@@ -34,9 +34,18 @@ defined( 'ABSPATH' ) || exit;
  *
  * Order of work, and nothing is written until every refusal has been ruled out:
  *
- * 1. Replay. The same user sending the same `uuid` within REPLAY_TTL seconds
- *    gets the batch the first request created (a `bulkcat_batch_request_`
- *    transient keyed by a hash of the request id and user).
+ * 1. The earlier request (T83; earlier()). The batches the same user already
+ *    created under the same `uuid` are looked up at any age, before anything
+ *    is validated or written: exactly one that is this same request (same
+ *    source, normalised operations and selection; same_bulk()) is answered
+ *    as a replay, and any other use of a known request id — a changed
+ *    payload, or two batches already sharing it — is refused 409
+ *    `bulkcat_legacy_request` naming them. No time window decides, and no
+ *    batch is ever created and then found to be a duplicate. (1.0 answered
+ *    a repeat from a 60-second transient and discarded a row that raced
+ *    past it; both are gone.) Durable Apply and undo requests from the
+ *    screen do not come through here: Requests\RequestService accepts them
+ *    under a server-issued grant and record_scope() writes their batch.
  * 2. The operation list, through Operations\Registry::validate_list() (an
  *    empty list, more than twenty operations, an unknown action or a bad
  *    argument is refused), stored normalised.
@@ -66,14 +75,12 @@ defined( 'ABSPATH' ) || exit;
  *    resolved to), `variations_added` and `parents_left_out`. The T38 count check compares the
  *    preview's count with the selection's own objects, before expansion.
  * 4. The batch row (status queued, operations and selection JSON,
- *    total_items, source, user), then its items. Two submissions that raced
- *    past step 1 both insert a row; the later row sees the earlier one and
- *    removes itself before writing items, answering the earlier batch id.
- *    If the items cannot be written the row is removed and the request
- *    refused 500 `bulkcat_batch_not_recorded`.
- * 5. The replay transient, then the `bulkcat_batch_created` action with the
- *    batch id: the point where the chunk runner (T34) enqueues its first
- *    chunk. Nothing is enqueued here.
+ *    total_items, source, user), then its items. If the items cannot be
+ *    written the row is removed and the request refused 500
+ *    `bulkcat_batch_not_recorded`.
+ * 5. The `bulkcat_batch_created` action with the batch id: the point where
+ *    the chunk runner (T34) enqueues its first chunk. Nothing is enqueued
+ *    here.
  *
  * Applying a filter selection (T38, §9.1, §12.6). When the caller passes the
  * apply check (`$apply`: the token as sent, the preview's hash, the count the
@@ -96,9 +103,10 @@ defined( 'ABSPATH' ) || exit;
  * their operations come from an Undo\Plan rather than a selection, each
  * item carrying its own operation list (the object's own old values), so
  * nothing is re-resolved or re-validated beyond what the planner did. It
- * shares the replay check, the race guard, the items-before-work order and
- * `bulkcat_batch_created`, and moves the batch undone to `undoing` before the
- * first chunk can run (Undo\Original moves it on when the undo finishes).
+ * shares the earlier-request lookup (same_undo()), the items-before-work
+ * order and `bulkcat_batch_created`, and moves the batch undone to
+ * `undoing` before the first chunk can run (Undo\Original moves it on when
+ * the undo finishes).
  *
  * open() (T37) is the synchronous variant for a batch its caller writes in
  * the same request: validated operations, the row and its items, the
@@ -107,14 +115,17 @@ defined( 'ABSPATH' ) || exit;
  */
 final class BatchFactory {
 	/**
-	 * Every replay transient starts with this (Data\Registry).
+	 * The prefix of 1.0's 60-second replay transients. Nothing writes them
+	 * since T83; Data\Registry keeps the prefix so uninstall still removes
+	 * any an upgraded site has left.
 	 */
 	public const PREFIX = 'bulkcat_batch_request_';
 
 	/**
-	 * Seconds a request id keeps answering the same batch (SPEC §12.6).
+	 * Refusal code for a request id that no durable receipt proves (T83): one
+	 * that names batches it does not exactly match, or none at all.
 	 */
-	public const REPLAY_TTL = 60;
+	public const LEGACY = 'bulkcat_legacy_request';
 
 	/**
 	 * Ids read per statement when materialising.
@@ -184,13 +195,6 @@ final class BatchFactory {
 	private Actions $actions;
 
 	/**
-	 * Current Unix time.
-	 *
-	 * @var \Closure(): int
-	 */
-	private \Closure $clock;
-
-	/**
 	 * Most objects a batch may hold.
 	 *
 	 * @var int
@@ -202,28 +206,100 @@ final class BatchFactory {
 	 *
 	 * @param Actions|null         $actions     Action registry; the shared one by default.
 	 * @param BatchRepository|null $batches     Repository; the plugin's by default.
-	 * @param \Closure|null        $clock       Returns the current Unix time; time() by default.
 	 * @param int|null             $max_objects Most objects a batch may hold; Selection::MAX_OBJECTS by default (tests lower it).
 	 */
-	public function __construct( ?Actions $actions = null, ?BatchRepository $batches = null, ?\Closure $clock = null, ?int $max_objects = null ) {
+	public function __construct( ?Actions $actions = null, ?BatchRepository $batches = null, ?int $max_objects = null ) {
 		$this->actions     = $actions ?? Actions::instance();
 		$this->batches     = $batches ?? new BatchRepository();
-		$this->clock       = $clock ?? static fn(): int => time();
 		$this->max_objects = max( 1, $max_objects ?? Selection::MAX_OBJECTS );
 	}
 
 	/**
-	 * The batch a request id already created for a user within REPLAY_TTL, or null.
+	 * The durable earlier-request lookup (T83). The batches this user
+	 * created under the request id are read at any age: none answers null
+	 * (the caller decides whether it may create one); exactly one that
+	 * $same says is this very request answers its replay; anything else —
+	 * a changed payload, or two batches already sharing the id — is refused
+	 * 409 `bulkcat_legacy_request` naming them, so no third is ever made.
 	 *
-	 * @param string $uuid    Client request id.
-	 * @param int    $user_id User.
+	 * @param string   $uuid    Request id.
+	 * @param int      $user_id The user who sent it.
+	 * @param callable $same    fn( array $batch ): bool — whether a found batch is exactly this request.
+	 * @return array{batch_id: int, status: string, total_items: int, previewed_items: int|null, replayed: bool}|\WP_Error|null
+	 * @throws \RuntimeException When the lookup fails.
 	 */
-	public function replayed( string $uuid, int $user_id ): ?int {
-		$entry = get_transient( self::key( $uuid, $user_id ) );
-		if ( ! is_array( $entry ) || ! is_int( $entry['batch_id'] ?? null ) || ! is_int( $entry['at'] ?? null ) ) {
+	public function earlier( string $uuid, int $user_id, callable $same ): array|\WP_Error|null {
+		$ids = $this->batches->request_candidates( $uuid, $user_id );
+		if ( [] === $ids ) {
 			return null;
 		}
-		return ( $this->clock )() - $entry['at'] < self::REPLAY_TTL ? $entry['batch_id'] : null;
+		if ( 1 === count( $ids ) ) {
+			$batch = $this->batches->find_strict( $ids[0] );
+			if ( null !== $batch && true === $same( $batch ) ) {
+				return $this->replay( $ids[0] );
+			}
+		}
+		return self::legacy( $ids );
+	}
+
+	/**
+	 * The refusal for a request id no durable receipt proves (T83). With
+	 * batches, they are the owner's own history entries the id already
+	 * names; without any, the request came from a screen that must reload.
+	 *
+	 * @param list<int> $batch_ids The user's batches under this request id.
+	 */
+	public static function legacy( array $batch_ids ): \WP_Error {
+		return Refusal::create(
+			self::LEGACY,
+			[] === $batch_ids
+				? __( 'This change was sent by an older version of this page, so it was not made. Reload the page, then preview the change and apply it again.', 'bulk-catalogue-manager-for-woocommerce' )
+				: __( 'This change was sent by an older version of this page. Check History for the change it may already have made, then reload the page before starting new work.', 'bulk-catalogue-manager-for-woocommerce' ),
+			409,
+			[ 'batch_ids' => array_values( $batch_ids ) ]
+		);
+	}
+
+	/**
+	 * Whether a recorded batch is exactly this bulk request: the same
+	 * source, the same normalised operation list and the same selection (the
+	 * same ids in the same order, or the same filter conditions).
+	 *
+	 * @param array<string, mixed> $batch      The batch, as BatchRepository::find() reads it.
+	 * @param array<mixed>         $operations The normalised operation list.
+	 * @param Selection            $selection  The selection.
+	 * @param string               $source     The request's source.
+	 */
+	public static function same_bulk( array $batch, array $operations, Selection $selection, string $source = 'bulk' ): bool {
+		$recorded = is_array( $batch['selection'] ?? null ) ? $batch['selection'] : [];
+		$wanted   = self::snapshot( $selection, 0 );
+		unset( $wanted['materialised'], $wanted['count'] );
+		$same = null === $selection->criteria
+			? ( $recorded['ids'] ?? null ) === $wanted['ids']
+			: ( $recorded['conditions'] ?? null ) === $wanted['conditions'];
+		return ( $batch['source'] ?? null ) === $source
+			&& ( $recorded['kind'] ?? null ) === $wanted['kind']
+			&& $same
+			&& wp_json_encode( Preview::canonical( $batch['operations'] ?? null ) ) === wp_json_encode( Preview::canonical( $operations ) );
+	}
+
+	/**
+	 * Whether a recorded batch is exactly this undo request: an undo of the
+	 * same batch, from the same plan, forced or not alike.
+	 *
+	 * @param array<string, mixed> $batch     The batch, as BatchRepository::find() reads it.
+	 * @param int                  $undo_of   The batch to undo.
+	 * @param string               $plan_hash The plan's hash the request carries.
+	 * @param bool                 $force     Whether conflicted objects are put back too.
+	 */
+	public static function same_undo( array $batch, int $undo_of, string $plan_hash, bool $force ): bool {
+		$recorded = is_array( $batch['selection'] ?? null ) ? $batch['selection'] : [];
+		return 'undo' === ( $batch['source'] ?? null )
+			&& ( $batch['undo_of'] ?? null ) === $undo_of
+			&& 'undo' === ( $recorded['kind'] ?? null )
+			&& is_string( $recorded['plan_hash'] ?? null )
+			&& hash_equals( $recorded['plan_hash'], $plan_hash )
+			&& ( $recorded['force'] ?? null ) === $force;
 	}
 
 	/**
@@ -239,12 +315,15 @@ final class BatchFactory {
 	 * @return array{batch_id: int, status: string, total_items: int, previewed_items: int|null, replayed: bool}|\WP_Error
 	 */
 	public function create( string $uuid, int $user_id, mixed $operations, Selection $selection, string $source = 'bulk', ?int $undo_of = null, ?array $apply = null ): array|\WP_Error {
-		$existing = $this->replayed( $uuid, $user_id );
-		if ( null !== $existing ) {
-			return $this->replay( $existing );
-		}
-
 		$operations = $this->actions->validate_list( $operations );
+		try {
+			$earlier = $this->earlier( $uuid, $user_id, static fn( array $batch ): bool => is_array( $operations ) && self::same_bulk( $batch, $operations, $selection, $source ) );
+		} catch ( \RuntimeException $e ) {
+			return Refusal::unexpected( self::NOT_RECORDED, __( 'The change could not be saved, so nothing was changed. Try again in a moment.', 'bulk-catalogue-manager-for-woocommerce' ), 500, $e );
+		}
+		if ( null !== $earlier ) {
+			return $earlier;
+		}
 		if ( $operations instanceof \WP_Error ) {
 			return $operations;
 		}
@@ -294,14 +373,8 @@ final class BatchFactory {
 			}
 		}
 
-		$now = ( $this->clock )();
 		try {
 			$batch_id = $this->batches->create( $uuid, $user_id, $source, $operations, $snapshot, $total, $undo_of, $previewed );
-			$earlier  = $this->batches->earlier_request( $uuid, $user_id, $batch_id, gmdate( 'Y-m-d H:i:s', $now - self::REPLAY_TTL ) );
-			if ( null !== $earlier ) {
-				$this->batches->discard( $batch_id );
-				return $this->replay( $earlier );
-			}
 			try {
 				$this->batches->materialise_items( $batch_id, $plain );
 				if ( [] !== $own ) {
@@ -315,14 +388,6 @@ final class BatchFactory {
 			return Refusal::unexpected( self::NOT_RECORDED, __( 'The change could not be saved, so nothing was changed. Try again in a moment.', 'bulk-catalogue-manager-for-woocommerce' ), 500, $e );
 		}
 
-		set_transient(
-			self::key( $uuid, $user_id ),
-			[
-				'batch_id' => $batch_id,
-				'at'       => $now,
-			],
-			self::REPLAY_TTL
-		);
 		/**
 		 * Fires once a batch and its pending items are written, before any
 		 * work on it is queued. The chunk runner enqueues its first chunk here.
@@ -360,23 +425,21 @@ final class BatchFactory {
 	 * @return array{batch_id: int, status: string, total_items: int, previewed_items: int|null, replayed: bool}|\WP_Error
 	 */
 	public function create_undo( string $uuid, int $user_id, Plan $plan, bool $force ): array|\WP_Error {
-		$existing = $this->replayed( $uuid, $user_id );
-		if ( null !== $existing ) {
-			return $this->replay( $existing );
+		try {
+			$earlier = $this->earlier( $uuid, $user_id, static fn( array $batch ): bool => self::same_undo( $batch, $plan->batch_id(), $plan->hash(), $force ) );
+		} catch ( \RuntimeException $e ) {
+			return Refusal::unexpected( self::NOT_RECORDED, __( 'The change could not be saved, so nothing was changed. Try again in a moment.', 'bulk-catalogue-manager-for-woocommerce' ), 500, $e );
+		}
+		if ( null !== $earlier ) {
+			return $earlier;
 		}
 		$prepared = $this->undo_scope( $plan, $force );
 		if ( is_wp_error( $prepared ) ) {
 			return $prepared; }
 		[ $undo_of, $previous, $objects, $outline, $snapshot ] = $prepared;
 
-		$now = ( $this->clock )();
 		try {
 			$batch_id = $this->batches->create( $uuid, $user_id, 'undo', array_values( $outline ), $snapshot, count( $objects ), $undo_of );
-			$earlier  = $this->batches->earlier_request( $uuid, $user_id, $batch_id, gmdate( 'Y-m-d H:i:s', $now - self::REPLAY_TTL ) );
-			if ( null !== $earlier ) {
-				$this->batches->discard( $batch_id );
-				return $this->replay( $earlier );
-			}
 			try {
 				$this->batches->materialise_items( $batch_id, $objects );
 			} catch ( \RuntimeException $e ) {
@@ -392,14 +455,6 @@ final class BatchFactory {
 			return Refusal::unexpected( self::NOT_RECORDED, __( 'The change could not be saved, so nothing was changed. Try again in a moment.', 'bulk-catalogue-manager-for-woocommerce' ), 500, $e );
 		}
 
-		set_transient(
-			self::key( $uuid, $user_id ),
-			[
-				'batch_id' => $batch_id,
-				'at'       => $now,
-			],
-			self::REPLAY_TTL
-		);
 		/** This action is documented in create(). */
 		do_action( 'bulkcat_batch_created', $batch_id );
 		return [
@@ -862,15 +917,5 @@ final class BatchFactory {
 				'limit' => $limit,
 			]
 		);
-	}
-
-	/**
-	 * The replay transient's name for a request id and user.
-	 *
-	 * @param string $uuid    Client request id.
-	 * @param int    $user_id User.
-	 */
-	private static function key( string $uuid, int $user_id ): string {
-		return self::PREFIX . md5( strtolower( $uuid ) . '|' . $user_id );
 	}
 }

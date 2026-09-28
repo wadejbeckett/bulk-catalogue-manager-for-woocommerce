@@ -648,6 +648,40 @@ final class WriterTest extends TestCase {
 		$this->assertSame( 404, $outcome->to_array()['id'] );
 	}
 
+	public function test_an_object_that_became_the_other_kind_is_never_written_as_it_was_chosen(): void {
+		// T83: a batch item chosen as a product is a variation now.
+		$product = self::product(
+			'variation',
+			[
+				'id'            => 5,
+				'parent_id'     => 4,
+				'regular_price' => '10',
+			]
+		);
+		$steps   = $this->steps(
+			[
+				[
+					'set_value',
+					[
+						'field' => 'regular_price',
+						'value' => '12',
+					],
+				],
+			]
+		);
+		$outcome = ( new Writer( self::registry() ) )->write( 5, $steps, 'product' );
+		$this->assertSame( [ Result::FAILED ], self::states( $outcome ) );
+		$this->assertSame( Writer::CHANGED_KIND, $outcome->results()[0]->code() );
+		$this->assertStringContainsString( 'left unchanged', $outcome->results()[0]->reason() );
+		$this->assertFalse( $outcome->saved() );
+		$this->assertSame( [], $product->sets, 'Nothing is set.' );
+		$this->assertSame( [], $product->saves, 'Nothing is saved.' );
+
+		$outcome = ( new Writer( self::registry() ) )->write( 5, $steps, 'variation' );
+		$this->assertSame( [ Result::CHANGED ], self::states( $outcome ), 'The kind it was chosen as is written.' );
+		$this->assertTrue( $outcome->saved() );
+	}
+
 	public function test_a_list_that_was_not_validated_is_refused_before_loading(): void {
 		$writer = new Writer( self::registry() );
 		foreach ( [

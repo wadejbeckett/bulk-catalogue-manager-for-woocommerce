@@ -1,17 +1,23 @@
 <?php
 /**
  * Undo a batch end to end (T56; SPEC §4.6, §9.4, §12.3, §12.4, §12.6)
- * through `POST /bulkcat/v1/batches/{id}/undo`, the undo batch factory and the
- * chunk runner, over the runner's in-memory batches, items and journal: the
- * preview's counts with conflicts first, bound to the plan hash; the hash
- * required to apply; the undo batch created with `undo_of` and each item's
- * own operations before any work; the runner writing the reverse
- * operations through the same writer and journal; the batch undone moved
- * to `undoing` and then `undone` (or back after a failed or cancelled
- * undo); conflicted objects left alone unless forced, and the count stated
- * ("Undo of #12", "1 of 3 was changed again…"); the uuid replay; an undo of
- * the undo; the planner's refusals; 401, 403 and 404; and the history list
- * reading no product.
+ * through `POST /bulkcat/v1/batches/{id}/undo`'s preview, the undo batch
+ * factory and the chunk runner, over the runner's in-memory batches, items
+ * and journal: the preview's counts with conflicts first, bound to the plan
+ * hash; the undo batch created with `undo_of` and each item's own
+ * operations before any work; the runner writing the reverse operations
+ * through the same writer and journal; the batch undone moved to `undoing`
+ * and then `undone` (or back after a failed or cancelled undo); conflicted
+ * objects left alone unless forced, and the count stated ("Undo of #12",
+ * "1 of 3 was changed again…"); an undo of the undo; the planner's
+ * refusals; 401, 403 and 404; and the history list reading no product.
+ *
+ * Since T83 the route applies an undo only as a durable request (grant,
+ * canonical intent; Requests\RequestService), proved on native storage
+ * (tests/probe/exact-batch*.php); these tests make the undo batch through
+ * Engine\BatchFactory::create_undo(), the engine the durable path shares
+ * (undo_scope()). A 1.0 screen's bare request id answers only the one undo
+ * batch it exactly made and never plans or creates one.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -23,7 +29,9 @@ namespace BulkCatalogueManager\Tests\Unit\Undo;
 
 use BulkCatalogueManager\Data\BatchRepository;
 use BulkCatalogueManager\Data\ValueCodec;
+use BulkCatalogueManager\Engine\BatchFactory;
 use BulkCatalogueManager\Engine\ChunkRunner;
+use BulkCatalogueManager\Engine\Progress;
 use BulkCatalogueManager\Fields\Registry as Fields;
 use BulkCatalogueManager\Operations\Registry;
 use BulkCatalogueManager\Plugin;
@@ -34,6 +42,7 @@ use BulkCatalogueManager\Settings\Settings;
 use BulkCatalogueManager\Tests\Support\SavedProduct;
 use BulkCatalogueManager\Tests\Unit\Engine\RunnerStore;
 use BulkCatalogueManager\Undo\Original;
+use BulkCatalogueManager\Undo\Plan;
 use BulkCatalogueManager\Undo\Planner;
 use PHPUnit\Framework\TestCase;
 
@@ -191,24 +200,25 @@ final class UndoRouteTest extends TestCase {
 	}
 
 	/**
-	 * Preview, then apply, the undo of a batch.
+	 * Preview the undo of a batch through the route, then make the undo batch
+	 * of that plan through the engine, answered as the route answers it.
 	 *
-	 * @return array<string, mixed> The 201 answer.
+	 * @return array<string, mixed> `{ batch_id, status, total_items, replayed, undo }`.
 	 */
 	private function undo( int $batch_id = self::BATCH, bool $force = false, string $uuid = self::UUID ): array {
 		$hash = $this->preview( $batch_id )['plan_hash'];
-		return $this->ok(
-			self::dispatch(
-				'POST',
-				"/batches/$batch_id/undo",
-				[
-					'uuid'      => $uuid,
-					'plan_hash' => $hash,
-					'force'     => $force,
-				]
-			),
-			201
-		);
+		$plan = ( new Planner( null, null, null, null, static fn(): int => self::NOW ) )->plan( $batch_id, self::USER );
+		$this->assertInstanceOf( Plan::class, $plan );
+		$this->assertSame( $hash, $plan->hash(), 'The engine undoes the plan the route previewed.' );
+		$result = ( new BatchFactory( null, new BatchRepository() ) )->create_undo( $uuid, self::USER, $plan, $force );
+		$this->assertTrue( is_array( $result ), $result instanceof \WP_Error ? $result->get_error_message() : '' );
+		return [
+			'batch_id'    => $result['batch_id'],
+			'status'      => $result['status'],
+			'total_items' => $result['total_items'],
+			'replayed'    => $result['replayed'],
+			'undo'        => Progress::undo_summary( ( new BatchRepository() )->find( $result['batch_id'] ) ),
+		];
 	}
 
 	/**
@@ -235,7 +245,7 @@ final class UndoRouteTest extends TestCase {
 		$route = $GLOBALS['bulkcat_test']['routes']['/bulkcat/v1/batches/(?P<id>[\d]+)/undo'];
 		$this->assertSame( 'POST', $route[0]['methods'] );
 		$this->assertSame( [ Access::class, 'can_write' ], $route[0]['permission_callback'] );
-		$this->assertSame( [ 'id', 'page', 'per_page', 'uuid', 'preview', 'force', 'plan_hash' ], array_keys( $route[0]['args'] ) );
+		$this->assertSame( [ 'id', 'page', 'per_page', 'request_proof', 'intent', 'uuid', 'preview', 'force', 'plan_hash' ], array_keys( $route[0]['args'] ) );
 		$this->assertSame( [], $GLOBALS['bulkcat_test']['wrong'] ?? [] );
 	}
 
@@ -287,14 +297,10 @@ final class UndoRouteTest extends TestCase {
 		}
 	}
 
-	public function test_applying_requires_the_current_plan_hash(): void {
-		$missing = $this->refused( self::dispatch( 'POST', '/batches/12/undo', [ 'uuid' => self::UUID ] ), 'bulkcat_preview_stale', 409 );
-		$this->assertStringContainsString( 'Preview the undo again', $missing->get_error_message() );
-
-		$hash = $this->preview()['plan_hash'];
-		// The catalogue moves on after the preview: the plan, and so its hash, changes.
-		$GLOBALS['bulkcat_test']['products'][1001]->props['regular_price'] = '12.00';
-		$this->refused(
+	public function test_a_1_0_undo_never_plans_or_creates_an_undo(): void {
+		$hash                                       = $this->preview()['plan_hash'];
+		$GLOBALS['bulkcat_test']['products_loaded'] = [];
+		$refusal                                    = $this->refused(
 			self::dispatch(
 				'POST',
 				'/batches/12/undo',
@@ -303,9 +309,12 @@ final class UndoRouteTest extends TestCase {
 					'plan_hash' => $hash,
 				]
 			),
-			'bulkcat_preview_stale',
+			'bulkcat_legacy_request',
 			409
 		);
+		$this->assertSame( [], $refusal->get_error_data()['batch_ids'] );
+		$this->assertStringContainsString( 'Reload the page', $refusal->get_error_message() );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['products_loaded'], 'Nothing was planned.' );
 		$this->refused( self::dispatch( 'POST', '/batches/12/undo', [ 'plan_hash' => $hash ] ), 'bulkcat_invalid_value', 400 );
 		$this->refused(
 			self::dispatch(
@@ -321,6 +330,34 @@ final class UndoRouteTest extends TestCase {
 		);
 		$this->assertSame( [], $this->store->others, 'No undo batch was created.' );
 		$this->assertSame( [], $GLOBALS['bulkcat_test']['scheduled'] );
+		$this->assertSame( 'complete', $this->store->batch()['status'] );
+	}
+
+	public function test_a_durable_undo_names_its_batch_and_only_its_own_parameters(): void {
+		$durable = [
+			'uuid'          => self::UUID,
+			'request_proof' => str_repeat( 'a', 64 ) . '.' . str_repeat( 'b', 64 ),
+			'intent'        => [
+				'version'   => 1,
+				'source'    => 'undo',
+				'batch_id'  => 13,
+				'plan_hash' => str_repeat( 'c', 64 ),
+				'force'     => false,
+			],
+		];
+		$this->assertStringContainsString( 'does not match the change it names', $this->refused( self::dispatch( 'POST', '/batches/12/undo', $durable ), 'bulkcat_invalid_value', 400 )->get_error_message() );
+		$durable['intent']['batch_id'] = self::BATCH;
+		foreach ( [
+			'plan_hash'  => str_repeat( 'c', 64 ),
+			'force'      => true,
+			'operations' => [],
+		] as $key => $value ) {
+			$this->assertStringContainsString( 'unknown option', $this->refused( self::dispatch( 'POST', '/batches/12/undo', [ $key => $value ] + $durable ), 'bulkcat_invalid_value', 400 )->get_error_message(), $key );
+		}
+		// The unit stubs hold no transactional storage: the durable path fails closed, recording nothing.
+		$this->refused( self::dispatch( 'POST', '/batches/12/undo', $durable ), 'bulkcat_request_storage', 503 );
+		$this->assertSame( [], $this->store->others );
+		$this->assertSame( 'complete', $this->store->batch()['status'] );
 	}
 
 	public function test_undo_creates_a_batch_with_undo_of_and_each_items_own_operations_before_any_work(): void {
@@ -476,8 +513,10 @@ final class UndoRouteTest extends TestCase {
 		$this->assertSame( [ 1002, 1001 ], array_column( $this->store->items_of( $created['batch_id'] ), 'object_id' ) );
 	}
 
-	public function test_the_same_uuid_within_sixty_seconds_answers_the_same_batch(): void {
+	public function test_a_1_0_request_id_answers_the_one_undo_it_exactly_made(): void {
 		$first = $this->undo();
+		$plan  = $this->store->other( $first['batch_id'] );
+		$hash  = ValueCodec::decode( (string) $plan['selection'] )['plan_hash'];
 
 		$again = $this->ok(
 			self::dispatch(
@@ -485,13 +524,24 @@ final class UndoRouteTest extends TestCase {
 				'/batches/12/undo',
 				[
 					'uuid'      => self::UUID,
-					'plan_hash' => str_repeat( 'a', 64 ),
+					'plan_hash' => $hash,
 				]
 			)
 		);
 		$this->assertSame( $first['batch_id'], $again['batch_id'] );
 		$this->assertTrue( $again['replayed'] );
 		$this->assertSame( 'Undo of #12', $again['undo']['label'] );
+
+		foreach ( [
+			'another plan' => [ 'plan_hash' => str_repeat( 'a', 64 ) ],
+			'forced'       => [
+				'plan_hash' => $hash,
+				'force'     => true,
+			],
+		] as $case => $params ) {
+			$refusal = $this->refused( self::dispatch( 'POST', '/batches/12/undo', [ 'uuid' => self::UUID ] + $params ), 'bulkcat_legacy_request', 409 );
+			$this->assertSame( [ $first['batch_id'] ], $refusal->get_error_data()['batch_ids'], $case );
+		}
 		$this->assertCount( 1, $this->store->others, 'One undo batch.' );
 		$this->assertCount( 1, array_filter( $GLOBALS['bulkcat_test']['scheduled'], static fn( array $call ): bool => 'enqueue' === $call[0] ) );
 	}
@@ -522,18 +572,8 @@ final class UndoRouteTest extends TestCase {
 		$this->run_batch( $this->undo()['batch_id'] );
 		$refusal = $this->refused( self::dispatch( 'POST', '/batches/12/undo', [ 'preview' => true ] ), 'bulkcat_not_reversible', 409 );
 		$this->assertSame( 'already_undone', $refusal->get_error_data()['reason'] );
-		$refusal = $this->refused(
-			self::dispatch(
-				'POST',
-				'/batches/12/undo',
-				[
-					'uuid'      => self::UUID_2,
-					'plan_hash' => str_repeat( 'a', 64 ),
-				]
-			),
-			'bulkcat_not_reversible',
-			409
-		);
+		$refusal = ( new Planner( null, null, null, null, static fn(): int => self::NOW ) )->plan( self::BATCH, self::USER );
+		$this->assertInstanceOf( \WP_Error::class, $refusal, 'The durable path plans again and is refused the same way.' );
 		$this->assertSame( 'already_undone', $refusal->get_error_data()['reason'] );
 
 		$this->store->batch['status'] = 'running';
@@ -544,39 +584,18 @@ final class UndoRouteTest extends TestCase {
 		foreach ( [ 1001, 1002, 2001 ] as $id ) {
 			$GLOBALS['bulkcat_test']['products'][ $id ]->props['regular_price'] = '1.00';
 		}
-		$hash    = $this->preview()['plan_hash'];
-		$refusal = $this->refused(
-			self::dispatch(
-				'POST',
-				'/batches/12/undo',
-				[
-					'uuid'      => self::UUID,
-					'plan_hash' => $hash,
-				]
-			),
-			'bulkcat_nothing_to_undo',
-			409
-		);
+		$this->preview();
+		$plan    = ( new Planner( null, null, null, null, static fn(): int => self::NOW ) )->plan( self::BATCH, self::USER );
+		$refusal = $this->refused( ( new BatchFactory( null, new BatchRepository() ) )->create_undo( self::UUID, self::USER, $plan, false ), 'bulkcat_nothing_to_undo', 409 );
 		$this->assertStringContainsString( 'Revert anyway', $refusal->get_error_message() );
 		$this->assertSame( [], $this->store->others );
 		$this->assertSame( 'complete', $this->store->batch()['status'] );
 	}
 
 	public function test_a_lost_race_to_undo_the_same_batch_removes_the_new_batch(): void {
-		$hash                     = $this->preview()['plan_hash'];
+		$plan                     = ( new Planner( null, null, null, null, static fn(): int => self::NOW ) )->plan( self::BATCH, self::USER );
 		$GLOBALS['wpdb']->failing = [ 'update' ];
-		$refusal                  = $this->refused(
-			self::dispatch(
-				'POST',
-				'/batches/12/undo',
-				[
-					'uuid'      => self::UUID,
-					'plan_hash' => $hash,
-				]
-			),
-			'bulkcat_not_reversible',
-			409
-		);
+		$refusal                  = $this->refused( ( new BatchFactory( null, new BatchRepository() ) )->create_undo( self::UUID, self::USER, $plan, false ), 'bulkcat_not_reversible', 409 );
 		$GLOBALS['wpdb']->failing = [];
 		$this->assertSame( 'undo_in_progress', $refusal->get_error_data()['reason'] );
 		$this->assertSame( [], $this->store->others, 'The new batch was removed.' );

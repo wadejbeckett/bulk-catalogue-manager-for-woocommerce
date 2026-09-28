@@ -8,15 +8,36 @@
 declare( strict_types = 1 );
 namespace BulkCatalogueManager\Requests;
 
+use BulkCatalogueManager\Data\BatchRepository;
 use BulkCatalogueManager\Data\FoundationStorage;
+use BulkCatalogueManager\Engine\Preview;
 use BulkCatalogueManager\Rest\Access;
 use BulkCatalogueManager\Rest\Refusal;
+use BulkCatalogueManager\Selection\Selection;
 use BulkCatalogueManager\Selection\SnapshotRepository;
 use BulkCatalogueManager\Selection\SnapshotService;
 defined( 'ABSPATH' ) || exit;
 
-/** New operation kinds require their own later normalized acceptance consumers. */
+/**
+ * Every durable request — capture, compose, Apply and undo — resolves its
+ * receipt before anything else and is accepted at most once.
+ *
+ * Apply and undo (T83): the receipt is read first, so an accepted request
+ * answers its batch (`replayed: true`) even after its selection, its preview
+ * or its grant has expired. A new request claims the receipt, and
+ * BatchAcceptance records the batch header and items, and the receipt its
+ * batch, in one transaction; only after it commits does the
+ * `bulkcat_batch_created` action fire — once, for the request that committed
+ * it, never on a replay — and BatchRecovery make sure its chunk is queued,
+ * which every replay repeats, so a lost response or a crash before
+ * scheduling is repaired by resolving the same request.
+ */
 final class RequestService {
+	/**
+	 * Every operation kind a grant can be issued for.
+	 */
+	public const OPERATIONS = [ 'selection.capture', 'selection.compose', 'batch.apply', 'batch.undo' ];
+
 	/** Clock injection keeps retention tests deterministic without test hooks. */
 	private \Closure $clock;
 
@@ -39,7 +60,7 @@ final class RequestService {
 	public function issue( string $operation, array $input ): array|\WP_Error {
 		return $this->guard(
 			function () use ( $operation, $input ): array|\WP_Error {
-				if ( ! in_array( $operation, [ 'selection.capture', 'selection.compose', 'batch.apply', 'batch.undo' ], true ) ) {
+				if ( ! in_array( $operation, self::OPERATIONS, true ) ) {
 						return Refusal::invalid( 'bulkcat_invalid_operation', __( 'This operation is not available. Choose a supported catalogue action and try again.', 'bulk-catalogue-manager-for-woocommerce' ) );
 				}
 				$intent = $this->normalize( $operation, $input );
@@ -74,40 +95,48 @@ final class RequestService {
 	}
 
 	/**
-	 * Durable Apply, with credentials consulted only for new acceptance.
+	 * Accept an Apply, or answer the batch its receipt names.
 	 *
-	 * @param array $request Original grant and current preview credential.
-	 * @return array|\WP_Error
+	 * @param array<string,mixed> $request `uuid`, `request_proof` and canonical `intent`, plus `preview_hash` and, for a snapshot, its current `token`.
+	 * @return array<string,mixed>|\WP_Error `{ batch_id, status, total_items, replayed }`.
 	 */
 	public function apply( array $request ): array|\WP_Error {
-		return $this->run( $request, true, 'batch.apply' ); }
+		return $this->run( $request, true, 'batch.apply' );
+	}
 
 	/**
-	 * Durable undo acceptance.
+	 * Accept an undo, or answer the undo batch its receipt names.
 	 *
-	 * @param array $request Original grant.
-	 * @return array|\WP_Error
+	 * @param array<string,mixed> $request `uuid`, `request_proof` and canonical `intent`.
+	 * @return array<string,mixed>|\WP_Error `{ batch_id, status, total_items, replayed }`.
 	 */
 	public function undo( array $request ): array|\WP_Error {
-		return $this->run( $request, true, 'batch.undo' ); }
+		return $this->run( $request, true, 'batch.undo' );
+	}
 
 	/**
-	 * Preview exact IDs with current authorization; a preview never creates work.
+	 * The exact preview of a change over a snapshot or explicit ids: the
+	 * scope ExactScope builds, its `scope_hash`, and a preview hash bound to
+	 * the credential as sent (for a snapshot, its current authorization
+	 * epoch). A preview never writes anything.
 	 *
-	 * @param array $input Operations and exactly one selection credential.
-	 * @return array|\WP_Error
+	 * @param array<string,mixed> $input `operations`, exactly one of `token` and `ids`, and optionally `sample_size`.
+	 * @return array<string,mixed>|\WP_Error
 	 */
 	public function preview( array $input ): array|\WP_Error {
 		return $this->guard(
 			function () use ( $input ): array|\WP_Error {
 				if ( array_key_exists( 'token', $input ) === array_key_exists( 'ids', $input ) ) {
-					throw new \InvalidArgumentException( 'Exactly one selection is required.' ); }
-				$selection = isset( $input['token'] )
-				? FoundationStorage::atomic( fn() => ( new SnapshotService( $this->clock ) )->selection( $input['token'], get_current_user_id() ) )
-				: \BulkCatalogueManager\Selection\Selection::of_ids( BatchIntent::ids( $input['ids'] ) );
+					throw new \InvalidArgumentException( 'Exactly one selection is required.' );
+				}
+				$token     = isset( $input['token'] ) && is_string( $input['token'] ) ? $input['token'] : '';
+				$selection = array_key_exists( 'token', $input )
+					? FoundationStorage::atomic( fn(): Selection|\WP_Error => ( new SnapshotService( $this->clock ) )->selection( $token, get_current_user_id() ) )
+					: Selection::of_ids( BatchIntent::ids( $input['ids'] ) );
 				if ( is_wp_error( $selection ) ) {
-					return $selection; }
-				return ( new \BulkCatalogueManager\Engine\Preview() )->run( $selection, $input['operations'] ?? null, (int) ( $input['sample_size'] ?? 25 ), $input['token'] ?? '', null, true );
+					return $selection;
+				}
+				return ( new Preview() )->run( $selection, $input['operations'] ?? null, (int) ( $input['sample_size'] ?? Preview::DEFAULT_SAMPLE ), $token, null, true );
 			}
 		);
 	}
@@ -159,7 +188,7 @@ final class RequestService {
 	private function run( array $request, bool $accept, string $operation ): array|\WP_Error {
 		$result = $this->guard(
 			function () use ( $request, $accept, $operation ): array|\WP_Error {
-				if ( ! is_array( $request['intent'] ?? null ) || 1 !== ( $request['intent']['version'] ?? null ) || ! is_string( $request['uuid'] ?? null ) || ! is_string( $request['request_proof'] ?? null ) || ! in_array( $operation, [ 'selection.capture', 'selection.compose', 'batch.apply', 'batch.undo' ], true ) || ( $request['operation'] ?? $operation ) !== $operation ) {
+				if ( ! is_array( $request['intent'] ?? null ) || 1 !== ( $request['intent']['version'] ?? null ) || ! is_string( $request['uuid'] ?? null ) || ! is_string( $request['request_proof'] ?? null ) || ! in_array( $operation, self::OPERATIONS, true ) || ( $request['operation'] ?? $operation ) !== $operation ) {
 						throw new \InvalidArgumentException( 'Missing or unsupported request envelope.' );
 				}
 				$intent = $this->normalize( $operation, $request['intent'] );
@@ -192,10 +221,13 @@ final class RequestService {
 						if ( str_starts_with( $operation, 'batch.' ) ) {
 							$result = BatchAcceptance::accept( $claims, $intent, $request, $this->clock );
 							if ( is_wp_error( $result ) ) {
-								return $result; }
+								return $result;
+							}
 							$receipts->accepted_batch( $claims, $result['batch_id'] );
+							// Checked again last, just before the commit: an expired grant records nothing.
 							if ( $claims['accept_until'] <= ( $this->clock )() ) {
-								return self::expired(); }
+								return self::expired();
+							}
 							return $result;
 						}
 						$service  = new SnapshotService( $this->clock );
@@ -211,7 +243,18 @@ final class RequestService {
 				);
 			}
 		);
-			return is_wp_error( $result ) || ! isset( $result['batch_id'] ) ? $result : $this->guard( static fn(): array => BatchRecovery::finish( $result ) );
+		if ( is_wp_error( $result ) || ! isset( $result['batch_id'] ) ) {
+			return $result;
+		}
+		return $this->guard(
+			static function () use ( $result ): array {
+				if ( false === $result['replayed'] ) {
+					/** This action is documented in Engine\BatchFactory::create(). */
+					do_action( 'bulkcat_batch_created', (int) $result['batch_id'] );
+				}
+				return BatchRecovery::finish( $result );
+			}
+		);
 	}
 
 	/**
@@ -229,12 +272,15 @@ final class RequestService {
 			return 'batch' === $row['result_kind'] ? BatchRecovery::gone() : SnapshotService::gone();
 		}
 		if ( 'batch' === $row['result_kind'] ) {
-			$batch = ( new \BulkCatalogueManager\Data\BatchRepository() )->find( (int) $row['result_id'] );
+			// A failed read throws (503, retry the same request); only a batch that is truly gone is tombstoned.
+			$batch = ( new BatchRepository() )->find_strict( (int) $row['result_id'] );
 			if ( null === $batch ) {
 				( new RequestRepository() )->batch_gone( $claims );
-				return BatchRecovery::gone(); }
+				return BatchRecovery::gone();
+			}
 			if ( $batch['user_id'] !== $claims['owner'] || $batch['uuid'] !== $claims['uuid'] ) {
-				throw new \RuntimeException( 'Receipt does not match its batch.' ); }
+				throw new \RuntimeException( 'Receipt does not match its batch.' );
+			}
 			return [
 				'batch_id'    => $batch['batch_id'],
 				'status'      => $batch['status'],

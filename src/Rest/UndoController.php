@@ -18,6 +18,7 @@ use BulkCatalogueManager\Data\ChangeRepository;
 use BulkCatalogueManager\Engine\BatchFactory;
 use BulkCatalogueManager\Engine\Progress;
 use BulkCatalogueManager\Fields\Registry as Fields;
+use BulkCatalogueManager\Requests\RequestService;
 use BulkCatalogueManager\Undo\Plan;
 use BulkCatalogueManager\Undo\Planner;
 
@@ -33,19 +34,27 @@ defined( 'ABSPATH' ) || exit;
  * back and, when conflicted, each changed field with the value the batch
  * left and the value found now), bound to the plan's hash like any preview.
  *
- * Applied (`preview` false, the default) it needs the client's `uuid` and
- * the preview's `plan_hash`: the same uuid within sixty seconds answers 200
- * with the batch the first request created (BatchFactory's replay), before
- * anything is planned again; otherwise the plan is made again now and a
- * missing or different hash is refused 409 `bulkcat_preview_stale`, and
- * Engine\BatchFactory::create_undo() creates the undo batch — source `undo`,
- * `undo_of` the batch, the revertible objects (and the conflicted ones with
- * `force: true`, **Revert anyway**) materialised with their own operations
- * before any work starts — and moves the batch undone to `undoing`. The
- * chunk runner then works it like any other batch, through the same writer
- * and journal. It answers 201 `{ batch_id, status, total_items, replayed,
- * undo }`, `undo` being Engine\Progress::undo_summary(): "Undo of #418" and
- * how many objects were left alone.
+ * Applied (`preview` false, the default) it is a durable request (T83):
+ * the body carries the server-issued `uuid` and `request_proof` from `POST
+ * /requests` (operation `batch.undo`) and the canonical `intent` (`{ version,
+ * source: undo, batch_id, plan_hash, force }`, its `batch_id` the one in the
+ * path), and nothing else. Requests\RequestService resolves the receipt
+ * first — an accepted undo answers 200 with its undo batch before anything
+ * is planned again — and otherwise, in one transaction, locks the batch,
+ * plans it again (a different hash is 409 `bulkcat_preview_stale`), records
+ * the undo batch — source `undo`, `undo_of` the batch, the revertible
+ * objects (and the conflicted ones with `force: true`, **Revert anyway**)
+ * with their own operations — with its receipt, and moves the batch undone
+ * to `undoing`; only then is its chunk queued. The chunk runner works it
+ * like any other batch, through the same writer and journal. It answers
+ * 201 `{ batch_id, status, total_items, replayed, undo }`, `undo` being
+ * Engine\Progress::undo_summary(): "Undo of #418" and how many objects were
+ * left alone.
+ *
+ * A body with a bare `uuid`, `plan_hash` and `force` comes from a 1.0 screen
+ * and never creates an undo: the one undo batch that id exactly made (same
+ * batch, plan and force) answers 200, anything else 409
+ * `bulkcat_legacy_request` (Engine\BatchFactory::earlier()).
  *
  * A batch the planner refuses (running, already undone or being undone,
  * pruned, outside retention) answers its 409 `bulkcat_not_reversible` with the
@@ -148,10 +157,12 @@ final class UndoController implements Controller {
 		$uuid['required']    = false;
 		$uuid['description'] = __( 'A request id the screen makes once per undo, so sending it twice undoes once; required unless previewing.', 'bulk-catalogue-manager-for-woocommerce' );
 		return BatchesController::id_arg() + ( new RouteSchema( $this->fields ) )->paging_args() + [
-			'uuid'      => $uuid,
-			'preview'   => self::flag( __( 'Plan the undo and show it, changing nothing.', 'bulk-catalogue-manager-for-woocommerce' ) ),
-			'force'     => self::flag( __( 'Revert anyway: also put back products that were changed again after this batch.', 'bulk-catalogue-manager-for-woocommerce' ) ),
-			'plan_hash' => [
+			'request_proof' => BatchesController::args()['request_proof'],
+			'intent'        => BatchesController::args()['intent'],
+			'uuid'          => $uuid,
+			'preview'       => self::flag( __( 'Plan the undo and show it, changing nothing.', 'bulk-catalogue-manager-for-woocommerce' ) ),
+			'force'         => self::flag( __( 'Revert anyway: also put back products that were changed again after this batch.', 'bulk-catalogue-manager-for-woocommerce' ) ),
+			'plan_hash'     => [
 				'description'       => __( 'The hash the undo preview answered; required to undo.', 'bulk-catalogue-manager-for-woocommerce' ),
 				'type'              => 'string',
 				'pattern'           => '^[0-9a-f]{64}$',
@@ -168,43 +179,50 @@ final class UndoController implements Controller {
 	 */
 	public function undo( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
 		$batch_id = (int) $request->get_param( 'id' );
-		$preview  = true === $request->get_param( 'preview' );
-		$user_id  = get_current_user_id();
-		$uuid     = $request->get_param( 'uuid' );
+		if ( true === $request->get_param( 'preview' ) ) {
+			$this->planner ??= new Planner( $this->batches, $this->changes, null, null, $this->clock );
+			$plan            = $this->planner->plan( $batch_id, get_current_user_id() );
+			return $plan instanceof \WP_Error ? $plan : $this->preview( $plan, (int) ( $request->get_param( 'page' ) ?? 1 ), (int) ( $request->get_param( 'per_page' ) ?? 25 ) );
+		}
+		if ( null === $request->get_param( 'request_proof' ) && null === $request->get_param( 'intent' ) ) {
+			return $this->legacy( $request, $batch_id );
+		}
+		$intent = $request->get_param( 'intent' );
+		// Force belongs in the intent; everything else a durable undo sends is named here.
+		if ( ! RequestsController::known( $request, [ 'id', 'uuid', 'request_proof', 'intent', 'preview', 'force', 'page', 'per_page' ] ) || true === $request->get_param( 'force' ) ) {
+			return RequestsController::unknown();
+		}
+		if ( ! is_array( $intent ) || ( $intent['batch_id'] ?? null ) !== $batch_id ) {
+			return Refusal::invalid( 'bulkcat_invalid_value', __( 'This undo does not match the change it names. Reload the history and try again.', 'bulk-catalogue-manager-for-woocommerce' ) );
+		}
+		$result = ( new RequestService( $this->clock ) )->undo( array_intersect_key( $request->get_params(), array_flip( [ 'uuid', 'request_proof', 'intent' ] ) ) );
+		return $result instanceof \WP_Error ? $result : $this->created( $result, $result['replayed'] ? 200 : 201 );
+	}
 
-		if ( ! $preview ) {
-			if ( ! is_string( $uuid ) || '' === $uuid ) {
-				return Refusal::invalid( 'bulkcat_invalid_value', __( 'This undo could not be sent because its request id is missing or damaged. Reload the page and try again.', 'bulk-catalogue-manager-for-woocommerce' ) );
-			}
-			// A repeat answers before anything is planned: the batch is being undone by then.
-			$existing = $this->factory()->replayed( $uuid, $user_id );
-			if ( null !== $existing ) {
-				return $this->created( $this->factory()->replay( $existing ), 200 );
-			}
+	/**
+	 * An undo from a 1.0 screen: its bare request id answers the one undo
+	 * batch it exactly made, or is refused; it never plans or creates one.
+	 *
+	 * @param \WP_REST_Request $request  The request.
+	 * @param int              $batch_id The batch to undo.
+	 */
+	private function legacy( \WP_REST_Request $request, int $batch_id ): \WP_REST_Response|\WP_Error {
+		$uuid = $request->get_param( 'uuid' );
+		if ( ! is_string( $uuid ) || '' === $uuid ) {
+			return Refusal::invalid( 'bulkcat_invalid_value', __( 'This undo could not be sent because its request id is missing or damaged. Reload the page and try again.', 'bulk-catalogue-manager-for-woocommerce' ) );
 		}
-
-		$this->planner ??= new Planner( $this->batches, $this->changes, null, null, $this->clock );
-		$plan            = $this->planner->plan( $batch_id, $user_id );
-		if ( $plan instanceof \WP_Error ) {
-			return $plan;
+		$hash  = $request->get_param( 'plan_hash' );
+		$force = true === $request->get_param( 'force' );
+		$same  = static fn( array $batch ): bool => is_string( $hash ) && BatchFactory::same_undo( $batch, $batch_id, $hash, $force );
+		try {
+			$earlier = $this->factory()->earlier( $uuid, get_current_user_id(), $same );
+		} catch ( \RuntimeException $e ) {
+			return Refusal::unexpected( 'bulkcat_request_storage', __( 'The request could not be resolved safely. Retry the same request; if this continues, ask an administrator to check catalogue storage.', 'bulk-catalogue-manager-for-woocommerce' ), 503, $e );
 		}
-		if ( $preview ) {
-			return $this->preview( $plan, (int) ( $request->get_param( 'page' ) ?? 1 ), (int) ( $request->get_param( 'per_page' ) ?? 25 ) );
+		if ( null === $earlier ) {
+			return BatchFactory::legacy( [] );
 		}
-
-		$hash = $request->get_param( 'plan_hash' );
-		if ( ! is_string( $hash ) || '' === $hash || ! hash_equals( $plan->hash(), $hash ) ) {
-			return Refusal::create(
-				BatchFactory::STALE_PREVIEW,
-				__( 'This undo no longer matches its preview: the products or the settings have changed since. Preview the undo again, then confirm it.', 'bulk-catalogue-manager-for-woocommerce' ),
-				409
-			);
-		}
-		$result = $this->factory()->create_undo( $uuid, $user_id, $plan, true === $request->get_param( 'force' ) );
-		if ( $result instanceof \WP_Error ) {
-			return $result;
-		}
-		return $this->created( $result, $result['replayed'] ? 200 : 201 );
+		return $earlier instanceof \WP_Error ? $earlier : $this->created( $earlier, 200 );
 	}
 
 	/**

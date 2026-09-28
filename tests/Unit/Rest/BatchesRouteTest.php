@@ -1,23 +1,23 @@
 <?php
 /**
- * `POST /bulkcat/v1/batches` (T31; SPEC §9.2, §12.1, §13) through the REST
- * dispatcher: registered behind Access::can_write; an id list answers 201
- * with the queued batch; a selection token is materialised through its
- * filter; the same request id again answers 200 with the same batch id and
- * writes nothing; a visitor is refused 401 and a user who may not edit
- * products 403; a body without exactly one of `ids` and `token`, a bad
- * token, a bad request id, too many operations or any source but `bulk`
- * (inline and tree batches come only from their own routes) is refused
- * with nothing written.
+ * `POST /bulkcat/v1/batches` (T31, T83; SPEC §9.2, §12.1, §12.6, §13)
+ * through the REST dispatcher: registered behind Access::can_write; a
+ * visitor is refused 401 and a user who may not edit products 403; a bad
+ * request id or any source but `bulk` is refused before the handler.
  *
- * Stale selection (T38; §9.1, §12.6): a filter token needs the hash of a
- * current preview (missing, altered or bound to another operation list is
- * 409 `bulkcat_preview_stale`); when a product that matches is published between
- * the preview and apply, apply is refused 409 `bulkcat_selection_changed` naming
- * the previewed and the current count in plain words, with nothing written,
- * and applies with `confirm_changed`, keeping the previewed count on the
- * batch. An id list or id token needs its preview's hash too (security
- * review m6: every bulk write is previewed first), but no count.
+ * Since T83 the route creates a batch only as a durable request (grant,
+ * canonical intent, preview hash; Requests\RequestService). Its receipt,
+ * transaction, scope and scheduling behaviour run on native storage and
+ * are proved on the fixture (tests/probe/exact-batch*.php); here: a durable
+ * body with an unknown key is refused before any storage work, and on
+ * storage that is not ready it fails closed with nothing written.
+ *
+ * A body from a 1.0 screen (a bare request id) never creates a batch: an
+ * unknown id asks the page to reload; the one batch the id exactly made
+ * (same operations and ids) answers 200 at any age; the id reused for
+ * anything else, or shared by two batches, is refused 409
+ * `bulkcat_legacy_request` naming the user's own batches, and nothing is
+ * written. The T38 apply check moved with create() to BatchFactoryTest.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -27,6 +27,7 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Tests\Unit\Rest;
 
+use BulkCatalogueManager\Data\BatchRepository;
 use BulkCatalogueManager\Engine\BatchFactory;
 use BulkCatalogueManager\Engine\Preview;
 use BulkCatalogueManager\Operations\Registry as Actions;
@@ -114,39 +115,11 @@ final class BatchesRouteTest extends TestCase {
 		$this->assertTrue( is_array( $route ), 'The route is registered.' );
 		$this->assertSame( [ Access::class, 'can_write' ], $route[0]['permission_callback'] );
 		$this->assertSame( 'POST', $route[0]['methods'] );
-		$this->assertSame( [ 'uuid', 'operations', 'ids', 'token', 'source', 'preview_hash', 'preview_count', 'confirm_changed' ], array_keys( $route[0]['args'] ) );
+		$this->assertSame( [ 'request_proof', 'intent', 'uuid', 'operations', 'ids', 'token', 'source', 'preview_hash', 'preview_count', 'confirm_changed' ], array_keys( $route[0]['args'] ) );
 		$this->assertTrue( $route[0]['args']['uuid']['required'] );
+		$this->assertFalse( $route[0]['args']['operations']['required'] ?? false, 'A durable change carries its operations in its intent.' );
 		$this->assertSame( BatchesController::SOURCES, $route[0]['args']['source']['enum'] );
-	}
-
-	public function test_an_id_list_queues_a_batch_and_a_repeat_answers_the_same_one(): void {
-		global $wpdb;
-		$response = self::post( self::body() );
-		$this->assertInstanceOf( \WP_REST_Response::class, $response );
-		$this->assertSame( 201, $response->get_status() );
-		$this->assertSame(
-			[
-				'batch_id'    => 1,
-				'status'      => 'queued',
-				'total_items' => 2,
-				'replayed'    => false,
-			],
-			$response->get_data()
-		);
-		$this->assertSame( [ 104, 201 ], $this->store->object_ids( 1 ) );
-		$this->assertSame( [ 'product', 'variation' ], array_column( $this->store->items, 'object_type' ) );
-		$this->assertSame( 12, $this->store->batches[1]['user_id'] );
-		$this->assertSame( 'bulk', $this->store->batches[1]['source'] );
-
-		$writes  = $wpdb->writes;
-		$queries = count( $wpdb->queries );
-		$again   = self::post( [ 'ids' => [ 101 ] ] + self::body() );
-		$this->assertSame( 200, $again->get_status() );
-		$this->assertSame( 1, $again->get_data()['batch_id'] );
-		$this->assertTrue( $again->get_data()['replayed'] );
-		$this->assertSame( $writes, $wpdb->writes, 'The double-click inserts no batch.' );
-		$this->assertSame( [], preg_grep( '/^INSERT/', array_slice( $wpdb->queries, $queries ) ), 'The double-click inserts no items.' );
-		$this->assertCount( 2, $this->store->items );
+		$this->assertArrayNotHasKey( 'default', $route[0]['args']['source'], 'Only what a body sends counts as sent.' );
 	}
 
 	/**
@@ -161,122 +134,131 @@ final class BatchesRouteTest extends TestCase {
 	}
 
 	/**
-	 * A body applying a filter token with its preview's hash.
-	 *
-	 * @param string $token The selection token.
-	 * @return array<string, mixed>
+	 * A batch a 1.0 screen made under the test's request id.
 	 */
-	private static function filter_body( string $token ): array {
-		$body = array_diff_key( self::body(), [ 'ids' => 0 ] );
-		return [
-			'token'        => $token,
-			'preview_hash' => self::preview_hash( $token, $body['operations'] ),
-		] + $body;
+	private function legacy_batch(): int {
+		$body   = self::body();
+		$result = ( new BatchFactory() )->create( self::UUID, 12, $body['operations'], Selection::of_ids( $body['ids'] ) );
+		$this->assertTrue( is_array( $result ) && false === $result['replayed'] );
+		$this->store->sync();
+		return $result['batch_id'];
 	}
 
-	/**
-	 * Publish a product the "Shirt" search matches, after the preview.
-	 */
-	private function publish_a_shirt(): void {
-		$this->db->tables['wp_posts'][] = [
-			'ID'                => 109,
-			'post_type'         => 'product',
-			'post_title'        => 'Linen Shirt',
-			'post_status'       => 'publish',
-			'post_parent'       => 0,
-			'menu_order'        => 0,
-			'post_date_gmt'     => '2026-09-23 08:00:00',
-			'post_modified_gmt' => '2026-09-23 08:00:00',
+	public function test_an_unknown_1_0_request_id_never_creates_a_batch(): void {
+		$response = self::post( self::body() );
+		$this->assert_refused( $response, BatchFactory::LEGACY, 409 );
+		$this->assertSame( [], $response->get_error_data()['batch_ids'] );
+		$this->assertStringContainsString( 'Reload the page', $response->get_error_message() );
+		$this->assertSame( [], $this->store->batches );
+		$this->assertSame( 0, did_action( BatchFactory::CREATED ) );
+	}
+
+	public function test_a_1_0_request_id_answers_the_one_batch_it_exactly_made_at_any_age(): void {
+		global $wpdb;
+		$batch_id = $this->legacy_batch();
+		$this->store->batches[ $batch_id ]['created_gmt'] = '2026-01-01 00:00:00';
+		$writes  = $wpdb->writes;
+		$queries = count( $wpdb->queries );
+
+		$again = self::post( self::body() );
+		$this->assertInstanceOf( \WP_REST_Response::class, $again );
+		$this->assertSame( 200, $again->get_status() );
+		$this->assertSame(
+			[
+				'batch_id'    => $batch_id,
+				'status'      => 'queued',
+				'total_items' => 2,
+				'replayed'    => true,
+			],
+			$again->get_data()
+		);
+		$this->assertSame( $writes, $wpdb->writes, 'The double-click inserts no batch.' );
+		$this->assertSame( [], preg_grep( '/^(INSERT|UPDATE|DELETE)/', array_slice( $wpdb->queries, $queries ) ), 'Nothing is written.' );
+		$this->assertCount( 1, $this->store->batches );
+	}
+
+	public function test_a_1_0_request_id_reused_for_another_change_is_refused_with_its_history_reference(): void {
+		global $wpdb;
+		$batch_id                                = $this->legacy_batch();
+		$writes                                  = $wpdb->writes;
+		$other                                   = self::body();
+		$other['operations'][0]['args']['value'] = 'private';
+		foreach ( [
+			'other ids'        => [ 'ids' => [ 101 ] ] + self::body(),
+			'other operations' => $other,
+			'a 1.0 token'      => [ 'token' => SelectionToken::mint( Selection::of_ids( [ 101 ] ), 12 ) ] + array_diff_key( self::body(), [ 'ids' => 0 ] ),
+		] as $case => $body ) {
+			$response = self::post( $body );
+			$this->assertInstanceOf( \WP_Error::class, $response, $case );
+			$this->assertSame( BatchFactory::LEGACY, $response->get_error_code(), $case );
+			$this->assertSame( 409, $response->get_error_data()['status'], $case );
+			$this->assertSame( [ $batch_id ], $response->get_error_data()['batch_ids'], $case );
+			$this->assertStringContainsString( 'Check History', $response->get_error_message(), $case );
+		}
+		$this->assertSame( $writes, $wpdb->writes, 'Nothing is written.' );
+		$this->assertCount( 1, $this->store->batches );
+	}
+
+	public function test_two_batches_sharing_a_1_0_request_id_are_ambiguous_and_no_third_is_made(): void {
+		global $wpdb;
+		$repository = new BatchRepository();
+		$first      = $repository->create( self::UUID, 12, 'bulk', self::body()['operations'], [ 'kind' => 'ids' ], 1 );
+		$second     = $repository->create( self::UUID, 12, 'bulk', self::body()['operations'], [ 'kind' => 'ids' ], 1 );
+		$this->store->sync();
+		$writes = $wpdb->writes;
+
+		$response = self::post( self::body() );
+		$this->assertInstanceOf( \WP_Error::class, $response );
+		$this->assertSame( BatchFactory::LEGACY, $response->get_error_code() );
+		$this->assertSame( [ $first, $second ], $response->get_error_data()['batch_ids'] );
+		$this->assertSame( $writes, $wpdb->writes );
+		$this->assertSame( [ $first, $second ], array_keys( $this->store->batches ), 'No third batch.' );
+	}
+
+	public function test_another_users_request_id_is_not_theirs_to_resolve(): void {
+		$this->legacy_batch();
+		$GLOBALS['bulkcat_test']['user_id'] = 13;
+		$response                           = self::post( self::body() );
+		$this->assertInstanceOf( \WP_Error::class, $response );
+		$this->assertSame( BatchFactory::LEGACY, $response->get_error_code() );
+		$this->assertSame( [], $response->get_error_data()['batch_ids'], 'Another user\'s batches are never named.' );
+		$this->assertCount( 1, $this->store->batches );
+	}
+
+	public function test_a_durable_body_names_only_its_own_parameters(): void {
+		global $wpdb;
+		$durable = [
+			'uuid'          => self::UUID,
+			'request_proof' => str_repeat( 'a', 64 ) . '.' . str_repeat( 'b', 64 ),
+			'intent'        => [ 'version' => 1 ],
+			'preview_hash'  => str_repeat( 'c', 64 ),
 		];
+		foreach ( [
+			'operations'      => self::body()['operations'],
+			'ids'             => [ 104 ],
+			'preview_count'   => 2,
+			'confirm_changed' => true,
+			'source'          => 'bulk',
+		] as $key => $value ) {
+			$response = self::post( [ $key => $value ] + $durable );
+			$this->assert_refused( $response, 'bulkcat_invalid_value', 400 );
+			$this->assertStringContainsString( 'unknown option', $response->get_error_message(), $key );
+		}
+		$this->assertSame( [], preg_grep( '/^(START TRANSACTION|INSERT|SELECT \* FROM `wp_bulkcat_requests`)/', $wpdb->queries ), 'No storage work before the body is known.' );
 	}
 
-	public function test_a_filter_whose_count_moved_since_the_preview_is_refused_with_both_numbers(): void {
-		$token = SelectionToken::mint( Selection::of_filter( Criteria::from_array( [ 'search' => 'Shirt' ] ), 2 ), 12 );
-		$this->publish_a_shirt();
-
-		$response = self::post( [ 'preview_count' => 2 ] + self::filter_body( $token ) );
-		$this->assert_refused( $response, BatchFactory::CHANGED, 409 );
-		$this->assertSame( 2, $response->get_error_data()['previewed'] );
-		$this->assertSame( 3, $response->get_error_data()['current'] );
-		$this->assertStringContainsString( 'it showed 2, and 3 match now', $response->get_error_message() );
-		$this->assertStringNotContainsString( 'bulkcat_', $response->get_error_message() );
-
-		// Without preview_count the token's own count is the one the owner saw.
-		$this->assert_refused( self::post( self::filter_body( $token ) ), BatchFactory::CHANGED, 409 );
-		// A preview that already showed 3 applies as it is.
-		$response = self::post( [ 'preview_count' => 3 ] + self::filter_body( $token ) );
-		$this->assertSame( 201, $response->get_status() );
-		$this->assertSame( 3, $this->store->batches[1]['previewed_items'] );
-	}
-
-	public function test_confirming_the_changed_count_applies_and_keeps_the_previewed_count(): void {
-		$token = SelectionToken::mint( Selection::of_filter( Criteria::from_array( [ 'search' => 'Shirt' ] ), 2 ), 12 );
-		$this->publish_a_shirt();
-
+	public function test_a_durable_body_fails_closed_when_storage_is_not_ready(): void {
 		$response = self::post(
 			[
-				'preview_count'   => 2,
-				'confirm_changed' => true,
-			] + self::filter_body( $token )
+				'uuid'          => self::UUID,
+				'request_proof' => str_repeat( 'a', 64 ) . '.' . str_repeat( 'b', 64 ),
+				'intent'        => [ 'version' => 1 ],
+				'preview_hash'  => str_repeat( 'c', 64 ),
+			]
 		);
-		$this->assertInstanceOf( \WP_REST_Response::class, $response );
-		$this->assertSame( 201, $response->get_status() );
-		$this->assertSame( 3, $response->get_data()['total_items'] );
-		$this->assertSame( [ 101, 102, 109 ], $this->store->object_ids( 1 ) );
-		$this->assertSame( 2, $this->store->batches[1]['previewed_items'], 'The previewed count is stored on the batch.' );
-		$this->assertSame( 3, $this->store->batches[1]['total_items'] );
-	}
-
-	public function test_a_filter_apply_needs_the_hash_of_a_current_preview(): void {
-		$token = SelectionToken::mint( Selection::of_filter( Criteria::from_array( [ 'search' => 'Shirt' ] ), 2 ), 12 );
-		$body  = self::filter_body( $token );
-
-		$response = self::post( array_diff_key( $body, [ 'preview_hash' => 0 ] ) );
-		$this->assert_refused( $response, BatchFactory::STALE_PREVIEW, 409 );
-		$this->assertStringContainsString( 'Preview the change again', $response->get_error_message() );
-		$this->assert_refused( self::post( [ 'preview_hash' => str_repeat( '0', 64 ) ] + $body ), BatchFactory::STALE_PREVIEW, 409 );
-
-		// A preview of another change, or of another selection, does not match.
-		$other                     = $body['operations'];
-		$other[0]['args']['value'] = 'private';
-		$this->assert_refused( self::post( [ 'preview_hash' => self::preview_hash( $token, $other ) ] + $body ), BatchFactory::STALE_PREVIEW, 409 );
-		$again = SelectionToken::mint( Selection::of_filter( Criteria::from_array( [ 'search' => 'Shirt' ] ), 2 ), 12, time() + 1 );
-		$this->assertNotSame( $token, $again );
-		$this->assert_refused( self::post( [ 'preview_hash' => self::preview_hash( $again, $body['operations'] ) ] + $body ), BatchFactory::STALE_PREVIEW, 409 );
-		$this->assertSame( 201, self::post( $body )->get_status(), 'The current preview\'s hash applies.' );
-	}
-
-	public function test_an_id_token_needs_the_hash_of_its_preview_but_no_count(): void {
-		$token = SelectionToken::mint( Selection::of_ids( [ 104, 201 ] ), 12 );
-		$body  = [ 'token' => $token ] + array_diff_key( self::body(), [ 'ids' => 0 ] );
-		$this->assert_refused( self::post( $body ), BatchFactory::STALE_PREVIEW, 409 );
-
-		$response = self::post( [ 'preview_hash' => self::preview_hash( $token, $body['operations'] ) ] + $body );
-		$this->assertSame( 201, $response->get_status() );
-		$this->assertNull( $this->store->batches[1]['previewed_items'] ?? null );
-	}
-
-	public function test_an_id_list_needs_the_hash_of_its_preview(): void {
-		// Every bulk write is previewed first: ticked rows as much as a filter.
-		$body     = self::body();
-		$response = self::post( array_diff_key( $body, [ 'preview_hash' => 0 ] ) );
-		$this->assert_refused( $response, BatchFactory::STALE_PREVIEW, 409 );
-		$this->assertStringContainsString( 'Preview the change again', $response->get_error_message() );
-		$this->assert_refused( self::post( [ 'preview_hash' => self::preview_hash( [ 104 ], $body['operations'] ) ] + $body ), BatchFactory::STALE_PREVIEW, 409 );
-		$this->assert_refused( self::post( [ 'preview_hash' => self::preview_hash( [ 201, 104 ], $body['operations'] ) ] + $body ), BatchFactory::STALE_PREVIEW, 409 );
-
-		$response = self::post( $body );
-		$this->assertSame( 201, $response->get_status(), 'The preview of these ids and this change applies.' );
-		$this->assertNull( $this->store->batches[1]['previewed_items'], 'Only a filter records the count it showed.' );
-	}
-
-	public function test_a_selection_token_is_materialised_through_its_filter(): void {
-		$token    = SelectionToken::mint( Selection::of_filter( Criteria::from_array( [ 'mode' => Criteria::MODE_VARIATIONS ] ), 2 ), 12 );
-		$response = self::post( self::filter_body( $token ) );
-		$this->assertSame( 201, $response->get_status() );
-		$this->assertSame( 2, $response->get_data()['total_items'] );
-		$this->assertSame( SeededCatalogue::VARIATIONS, $this->store->object_ids( 1 ) );
-		$this->assertSame( 'bulk', $this->store->batches[1]['source'] );
+		$this->assert_refused( $response, 'bulkcat_request_storage', 503 );
+		$this->assertStringContainsString( 'Retry the same request', $response->get_error_message() );
+		$this->assertSame( [], $this->store->batches );
 	}
 
 	public function test_a_request_cannot_label_its_batch_inline_or_tree(): void {
@@ -297,29 +279,10 @@ final class BatchesRouteTest extends TestCase {
 		$this->assert_refused( self::post( self::body() ), 'bulkcat_forbidden', 401 );
 	}
 
-	public function test_a_body_must_name_exactly_one_selection(): void {
-		$body = self::body();
-		$this->assert_refused( self::post( array_diff_key( $body, [ 'ids' => 0 ] ) ), BatchesController::SELECTION_REQUIRED, 400 );
-		$this->assert_refused( self::post( [ 'token' => 'abc.def' ] + $body ), BatchesController::SELECTION_REQUIRED, 400 );
-	}
-
-	public function test_a_token_that_cannot_be_used_is_refused(): void {
-		$body  = array_diff_key( self::body(), [ 'ids' => 0 ] );
-		$other = SelectionToken::mint( Selection::of_ids( [ 101 ] ), 13 );
-		$this->assert_refused( self::post( [ 'token' => $other ] + $body ), SelectionToken::INVALID, 403 );
-		$this->assert_refused( self::post( [ 'token' => 'not-a-token' ] + $body ), SelectionToken::INVALID, 403 );
-	}
-
 	public function test_bad_arguments_are_refused_before_the_handler(): void {
 		$this->assert_refused( self::post( [ 'uuid' => 'not-a-uuid' ] + self::body() ), 'rest_invalid_param', 400 );
 		$this->assert_refused( self::post( array_diff_key( self::body(), [ 'uuid' => 0 ] ) ), 'rest_missing_callback_param', 400 );
 		$this->assert_refused( self::post( [ 'source' => 'undo' ] + self::body() ), 'rest_invalid_param', 400 );
 		$this->assert_refused( self::post( [ 'ids' => [ 0 ] ] + self::body() ), 'rest_invalid_param', 400 );
-	}
-
-	public function test_too_many_operations_are_refused_with_nothing_written(): void {
-		$body               = self::body();
-		$body['operations'] = array_fill( 0, 21, $body['operations'][0] );
-		$this->assert_refused( self::post( $body ), 'bulkcat_too_many_operations', 400 );
 	}
 }

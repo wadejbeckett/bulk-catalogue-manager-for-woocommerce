@@ -162,8 +162,37 @@ final class BatchRepository {
 	 * @return array{batch_id: int, uuid: string, user_id: int, created_gmt: string, finished_gmt: ?string, status: string, source: string, undo_of: ?int, operations: array, selection: array, total_items: int, previewed_items: ?int, done_items: int, changed_items: int, failed_items: int, chunk_size: int, note: string, actions: list<string>, pruned_gmt: ?string}|null
 	 */
 	public function find( int $batch_id ): ?array {
+		return $this->read( $batch_id, false );
+	}
+
+	/**
+	 * find(), except that a read the database fails throws instead of
+	 * answering null (T83): a durable request receipt names its batch, and a
+	 * transient read failure must never be taken for a removed batch and
+	 * turned into a gone tombstone.
+	 *
+	 * @param int $batch_id Batch.
+	 * @return array<string, mixed>|null The batch as find() types it, or null when no such row exists.
+	 * @throws \RuntimeException When the read fails.
+	 */
+	public function find_strict( int $batch_id ): ?array {
+		return $this->read( $batch_id, true );
+	}
+
+	/**
+	 * One batch row, typed.
+	 *
+	 * @param int  $batch_id Batch.
+	 * @param bool $strict   Whether a failed read throws.
+	 * @return array<string, mixed>|null
+	 * @throws \RuntimeException When $strict and the read fails.
+	 */
+	private function read( int $batch_id, bool $strict ): ?array {
 		global $wpdb;
 		$row = $wpdb->get_row( $wpdb->prepare( 'SELECT * FROM %i WHERE batch_id = %d', $this->registry->table( Schema::BATCHES ), $batch_id ), ARRAY_A );
+		if ( $strict && '' !== $wpdb->last_error ) {
+			throw new \RuntimeException( 'The batch could not be read.' );
+		}
 		return is_array( $row ) ? self::typed( $row ) : null;
 	}
 
@@ -618,46 +647,42 @@ final class BatchRepository {
 	}
 
 	/**
-	 * The earliest batch before `$before_id` that the same user created with
-	 * the same request id since a moment, or null (T31: two submissions of
-	 * one request that raced past the replay check; the earlier one wins).
+	 * The batches a user created under one request id, at any age, oldest
+	 * first and at most two (T83). This is the durable legacy lookup: a
+	 * request id with no server-issued grant is resolved against the batch
+	 * headers the history keeps, never against a time window, and two
+	 * answers mean the id is ambiguous. Old request ids were never unique,
+	 * so no unique index backs this and callers must never create a batch
+	 * on the strength of an empty answer from an old screen.
 	 *
-	 * @param string $uuid      Client request id.
-	 * @param int    $user_id   Initiating user.
-	 * @param int    $before_id Only batches with a lower id.
-	 * @param string $since_gmt Only batches created at or after this GMT time, `Y-m-d H:i:s`.
+	 * @param string $uuid    Request id.
+	 * @param int    $user_id The user who sent it.
+	 * @return list<int>
+	 * @throws \RuntimeException When the read fails.
 	 */
-	public function earlier_request( string $uuid, int $user_id, int $before_id, string $since_gmt ): ?int {
+	public function request_candidates( string $uuid, int $user_id ): array {
 		global $wpdb;
-		$id = $wpdb->get_var( $wpdb->prepare( 'SELECT batch_id FROM %i WHERE uuid = %s AND user_id = %d AND batch_id < %d AND created_gmt >= %s ORDER BY batch_id ASC LIMIT 1', $this->registry->table( Schema::BATCHES ), strtolower( $uuid ), $user_id, $before_id, $since_gmt ) );
-		return null === $id ? null : (int) $id;
-	}
-
-	/**
-	 * Retained legacy candidates, bounded and owner-scoped, without an age cutoff.
-	 *
-	 * @param string $uuid Request identity.
-	 * @param int $owner User.
-	 * @return int[] At most two; two means ambiguous.
-	 */
-	public function request_candidates( string $uuid, int $owner ): array {
-		global $wpdb;
-		$ids = $wpdb->get_col( $wpdb->prepare( 'SELECT batch_id FROM %i WHERE uuid = %s AND user_id = %d ORDER BY batch_id ASC LIMIT 2', $this->registry->table( Schema::BATCHES ), $uuid, $owner ) );
+		$ids = $wpdb->get_col( $wpdb->prepare( 'SELECT batch_id FROM %i WHERE uuid = %s AND user_id = %d ORDER BY batch_id ASC LIMIT 2', $this->registry->table( Schema::BATCHES ), strtolower( $uuid ), $user_id ) );
 		if ( '' !== $wpdb->last_error ) {
-			throw new \RuntimeException( 'Cannot resolve legacy request.' ); }
+			throw new \RuntimeException( 'The earlier request could not be looked up.' );
+		}
 		return array_map( 'intval', $ids );
 	}
 
 	/**
-	 * Serialize undo acceptance against another undo of the same original.
+	 * Lock one batch row for the rest of the caller's transaction (T83): a
+	 * durable undo holds the batch it undoes while it plans, records the undo
+	 * and moves the batch to undoing, so two undos of one batch serialise.
 	 *
-	 * @param int $id Original batch.
+	 * @param int $batch_id The batch undone.
+	 * @throws \RuntimeException When the lock cannot be taken.
 	 */
-	public function lock( int $id ): void {
+	public function lock( int $batch_id ): void {
 		global $wpdb;
-		$wpdb->get_var( $wpdb->prepare( 'SELECT batch_id FROM %i WHERE batch_id = %d LIMIT 1 FOR UPDATE', $this->registry->table( Schema::BATCHES ), $id ) );
+		$wpdb->get_var( $wpdb->prepare( 'SELECT batch_id FROM %i WHERE batch_id = %d LIMIT 1 FOR UPDATE', $this->registry->table( Schema::BATCHES ), $batch_id ) );
 		if ( '' !== $wpdb->last_error ) {
-			throw new \RuntimeException( 'Cannot lock original batch.' ); }
+			throw new \RuntimeException( 'The batch could not be locked.' );
+		}
 	}
 
 	/**

@@ -606,6 +606,29 @@ final class PreviewTest extends TestCase {
 		$this->assertSame( [ 'changed', 'skipped' ], array_column( $result['sample'], 'state' ) );
 		$this->assertSame( 'bulkcat_cannot_edit', $result['sample'][1]['code'] );
 		$this->assertSame( 1, $result['totals']['would_change'] );
+		// T83: nothing of an object the user may not edit is shown — no name, no current or new value.
+		$this->assertSame( [ 104, 'regular_price', null, null, 'skipped' ], self::rows( $result )[1] );
+		$this->assertSame( '', $result['sample'][1]['name'] );
+		$this->assertSame( 0, $result['warnings']['stock_negative'], 'Its stock is not read for a warning either.' );
+	}
+
+	public function test_an_exact_scope_member_that_changed_kind_is_unreadable_and_never_computed(): void {
+		// Chosen as a variation, 104 is a simple product now; 999 no longer exists.
+		$selection = Selection::of_members(
+			[
+				'products'   => [ 101 ],
+				'variations' => [ 104, 999 ],
+			]
+		);
+		$result    = self::preview()->run( $selection, self::set( 'regular_price', '25' ), 1000, '', new Settings( [] ), true );
+		$this->assertTrue( is_array( $result ) );
+		$this->assertSame( [ 104, 999 ], $result['unreadable'] );
+		$this->assertSame( 2, $result['unavailable_count'] );
+		$this->assertSame( [ 101 ], array_column( $result['sample'], 'object_id' ), 'The changed member is not computed under the kind it was chosen as.' );
+		$this->assertSame( 1, $result['totals']['would_change'] );
+		$this->assertSame( 3, $result['totals']['matched'], 'Unavailable members stay in the scope.' );
+		$this->assertSame( 1, $result['totals']['computed'] );
+		$this->assertSame( 1, preg_match( '/^[a-f0-9]{64}$/', (string) $result['scope_hash'] ) );
 	}
 
 	public function test_refusals_come_before_anything_is_read(): void {

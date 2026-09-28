@@ -117,7 +117,7 @@ The four "apply to variations" settings only set where the **Also apply to varia
 | `bulkcat_capability` | filter | `string $capability`, `bool $administrators_only` | The capability that opens the screen and its read routes |
 | `bulkcat_batch_size` | filter | `int $size`, `int $batch_id`, `string $kind` (`product` or `variation`) | Objects per background run; clamped to 10–100 |
 | `bulkcat_selection_ttl` | filter | `int $seconds` | How long a "select all matching" token lasts; default 900, clamped to 60–86,400 |
-| `bulkcat_batch_created` | action | `int $batch_id` | Fires once a batch and its items are recorded, before any work |
+| `bulkcat_batch_created` | action | `int $batch_id` | Fires once a batch and its items are recorded, before any work. A bulk change or undo sent from the screen fires it once, after it is safely recorded, and never again when the same request is retried |
 
 ## Development
 

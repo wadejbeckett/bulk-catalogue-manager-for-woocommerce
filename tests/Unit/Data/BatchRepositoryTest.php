@@ -158,6 +158,34 @@ final class BatchRepositoryTest extends TestCase {
 		$this->assert_all_prepared();
 	}
 
+	public function test_a_failed_read_is_never_mistaken_for_a_missing_batch(): void {
+		// T83: a durable receipt names its batch; a lost read must not look like a removed batch.
+		$repo                  = new BatchRepository();
+		self::db()->last_error = 'Lost connection to MySQL server during query';
+		$this->assertNull( $repo->find( 7 ), 'find() stays lenient for its many readers.' );
+		try {
+			$repo->find_strict( 7 );
+			$this->fail( 'A failed read answered as if the batch were missing.' );
+		} catch ( \RuntimeException $error ) {
+			$this->assertStringContainsString( 'could not be read', $error->getMessage() );
+		}
+		self::db()->last_error = '';
+		$this->assertNull( $repo->find_strict( 7 ), 'A batch that is really missing answers null.' );
+	}
+
+	public function test_the_earlier_request_lookup_has_no_time_window_and_is_bounded(): void {
+		self::db()->responses['/^SELECT batch_id FROM `wp_bulkcat_batches` WHERE uuid = /'] = [ '4', '9' ];
+		$this->assertSame( [ 4, 9 ], ( new BatchRepository() )->request_candidates( strtoupper( self::UUID ), 3 ) );
+		$this->assertSame( [ 'SELECT batch_id FROM %i WHERE uuid = %s AND user_id = %d ORDER BY batch_id ASC LIMIT 2', [ 'wp_bulkcat_batches', self::UUID, 3 ] ], self::db()->prepared[0], 'Owner-scoped, any age, at most two, the id lower-cased as stored.' );
+		self::db()->last_error = 'Deadlock found';
+		try {
+			( new BatchRepository() )->request_candidates( self::UUID, 3 );
+			$this->fail( 'A failed lookup answered as if the id were unknown.' );
+		} catch ( \RuntimeException $error ) {
+			$this->assertNotEmpty( $error->getMessage() );
+		}
+	}
+
 	public function test_set_status_stamps_the_finish_only_for_a_final_status(): void {
 		$repo = new BatchRepository();
 		$this->assertTrue( $repo->set_status( 4, 'running' ) );

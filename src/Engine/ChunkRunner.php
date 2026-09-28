@@ -389,7 +389,8 @@ final class ChunkRunner {
 							continue;
 						}
 						try {
-							$outcome = $writer->write( $item['object_id'], $own[ $item['item_id'] ] ?? $operations );
+							// The item's kind is checked: an object that became the other kind is never written as it was chosen (T83).
+							$outcome = $writer->write( $item['object_id'], $own[ $item['item_id'] ] ?? $operations, $item['object_type'] );
 						} catch ( \Throwable $e ) {
 							$marks[ $item['item_id'] ] = [ 'failed', self::error_reason() ];
 							$error                     = $e;

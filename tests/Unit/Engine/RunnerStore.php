@@ -169,9 +169,13 @@ final class RunnerStore {
 			]
 		);
 		$rows = $db->rows( $sql );
-		// A single value: a count, the last claim, or an earlier batch of the same request (T56).
-		if ( 1 === preg_match( '/^SELECT (COUNT\(\*\)|claimed_gmt) FROM/', $sql ) || 1 === preg_match( '/^SELECT batch_id FROM \S+ WHERE uuid = /', $sql ) ) {
+		// A single value: a count or the last claim.
+		if ( 1 === preg_match( '/^SELECT (COUNT\(\*\)|claimed_gmt) FROM/', $sql ) ) {
 			return [] === $rows ? null : reset( $rows[0] );
+		}
+		// A column: the batches under a request id (T83's earlier-request lookup).
+		if ( 1 === preg_match( '/^SELECT batch_id FROM \S+ WHERE uuid = /', $sql ) ) {
+			return array_map( static fn( array $row ): string => (string) reset( $row ), $rows );
 		}
 		return $rows;
 	}

@@ -104,6 +104,11 @@ final class Writer {
 	public const NOT_FOUND = 'bulkcat_not_found';
 
 	/**
+	 * The code for an object that is no longer the kind it was chosen as (T83).
+	 */
+	public const CHANGED_KIND = 'bulkcat_changed_kind';
+
+	/**
 	 * The code for a value WooCommerce's own setter refused.
 	 */
 	public const INVALID = 'bulkcat_invalid_value';
@@ -182,11 +187,12 @@ final class Writer {
 	 *
 	 * @param int                                                $id         Product or variation id.
 	 * @param list<array{action: string, args: array<string, mixed>}> $operations The list Registry::validate_list() returned.
+	 * @param string|null                                        $type       The kind the object was chosen as (`product` or `variation`, a batch item's object_type), or null not to check. An object that is now the other kind fails every step with CHANGED_KIND and is not written (T83).
 	 * @throws \LogicException When the list was not validated.
 	 */
-	public function write( int $id, array $operations ): WriteOutcome {
+	public function write( int $id, array $operations, ?string $type = null ): WriteOutcome {
 		// Background work acts for the batch's user: their unfiltered_html decides, as in their own edit.
-		return null === $this->user_id ? $this->write_one( $id, $operations ) : Field::acting_as( $this->user_id, fn(): WriteOutcome => $this->write_one( $id, $operations ) );
+		return null === $this->user_id ? $this->write_one( $id, $operations, $type ) : Field::acting_as( $this->user_id, fn(): WriteOutcome => $this->write_one( $id, $operations, $type ) );
 	}
 
 	/**
@@ -194,9 +200,10 @@ final class Writer {
 	 *
 	 * @param int                                                $id         Product or variation id.
 	 * @param list<array{action: string, args: array<string, mixed>}> $operations The list Registry::validate_list() returned.
+	 * @param string|null                                        $type       The kind the object was chosen as, or null not to check.
 	 * @throws \LogicException When the list was not validated.
 	 */
-	private function write_one( int $id, array $operations ): WriteOutcome {
+	private function write_one( int $id, array $operations, ?string $type = null ): WriteOutcome {
 		$steps = $this->resolve( $operations );
 		if ( null !== $this->journal && $this->journal->already_done( $this->batch_id, $id ) ) {
 			$intents = $this->journal->intents( $this->batch_id, $id );
@@ -206,6 +213,12 @@ final class Writer {
 		$product = wc_get_product( $id );
 		if ( ! is_object( $product ) ) {
 			$results = self::not_found( $steps );
+			$this->journal( $id, null, '', self::entries( $results, $steps ), [], null );
+			return new WriteOutcome( $id, $results, false );
+		}
+		if ( null !== $type && Journal::object_type( $product ) !== $type ) {
+			// Chosen as one kind, now another: never written under the kind it was chosen as.
+			$results = self::changed_kind( $steps );
 			$this->journal( $id, null, '', self::entries( $results, $steps ), [], null );
 			return new WriteOutcome( $id, $results, false );
 		}
@@ -529,6 +542,18 @@ final class Writer {
 	private static function not_found( array $steps ): array {
 		$reason = __( 'That product could not be found. It may have been deleted; reload the list and try again.', 'bulk-catalogue-manager-for-woocommerce' );
 		return array_map( static fn( array $step ): Result => Result::failed( $step[1]['field'], null, $reason, self::NOT_FOUND ), $steps );
+	}
+
+	/**
+	 * A failed result for every step of an object that is no longer the kind
+	 * it was chosen as.
+	 *
+	 * @param list<array{0: Operation, 1: array<string, mixed>}> $steps Resolved steps.
+	 * @return list<Result>
+	 */
+	private static function changed_kind( array $steps ): array {
+		$reason = __( 'This item has changed between a product and a variation since it was chosen, so it was left unchanged. Choose it again to change it.', 'bulk-catalogue-manager-for-woocommerce' );
+		return array_map( static fn( array $step ): Result => Result::failed( $step[1]['field'], null, $reason, self::CHANGED_KIND ), $steps );
 	}
 
 	/**

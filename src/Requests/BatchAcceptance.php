@@ -1,11 +1,13 @@
 <?php
 /**
- * Prepare and persist batches under a durable receipt claim. Never enqueue here.
+ * New acceptance of a durable Apply or undo request (T83).
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
  */
+
 declare( strict_types = 1 );
+
 namespace BulkCatalogueManager\Requests;
 
 use BulkCatalogueManager\Data\BatchRepository;
@@ -18,102 +20,153 @@ use BulkCatalogueManager\Selection\SnapshotService;
 use BulkCatalogueManager\Selection\SnapshotToken;
 use BulkCatalogueManager\Settings\Settings;
 use BulkCatalogueManager\Undo\Planner;
+
 defined( 'ABSPATH' ) || exit;
 
-/** Only the already materialized, signature-checked scope reaches persistence. */
+/**
+ * Runs inside RequestService's acceptance transaction, after the receipt's
+ * unique claim and only for a request no receipt has answered. It checks
+ * the request against the catalogue as it is now and records the batch
+ * header and every item; RequestService records the receipt in the same
+ * transaction and schedules work only after it commits. Nothing here
+ * enqueues, fires hooks or writes a product.
+ *
+ * Apply: the operations must still be what the registry makes of them; the
+ * snapshot credential must be the owner's live one for the intent's
+ * snapshot; the exact scope is built once (ExactScope) and must carry the
+ * intent's scope hash, and the preview hash must bind that scope, the
+ * credential, the operations and the settings; the snapshot lease is
+ * checked again after expansion; then exactly the checked scope is
+ * recorded (BatchFactory::record_scope()), unavailable members included.
+ *
+ * Undo: the batch undone is locked, planned afresh and must still have the
+ * intent's plan hash; the undo batch is recorded and the batch undone moved
+ * to undoing in the same transaction, so two undos of one batch serialise
+ * and the loser records nothing.
+ */
 final class BatchAcceptance {
 	/**
-	 * Called after the receipt's unique claim, in its owned transaction.
+	 * Accept a request whose grant is verified and whose receipt is claimed.
 	 *
-	 * @param array $claims Verified grant.
-	 * @param array $intent Immutable semantics.
-	 * @param array $credentials Preview and current selection credentials.
-	 * @param \Closure $clock Current time.
-	 * @return array|\WP_Error
+	 * @param array<string,mixed> $claims      Verified grant claims.
+	 * @param array<string,mixed> $intent      Canonical intent.
+	 * @param array<string,mixed> $credentials Transport values: `token` (a snapshot's current credential) and `preview_hash`.
+	 * @param \Closure            $clock       Current Unix time.
+	 * @return array<string,mixed>|\WP_Error The recorded batch, or the refusal (the caller rolls back).
 	 */
 	public static function accept( array $claims, array $intent, array $credentials, \Closure $clock ): array|\WP_Error {
 		$batches = new BatchRepository();
-		$factory = new BatchFactory();
-		if ( [] !== $batches->request_candidates( $claims['uuid'], $claims['owner'] ) ) {
-			return self::legacy( $claims['uuid'], $claims['owner'] );}
-		if ( 'batch.undo' === $claims['operation'] ) {
-			$batches->lock( $intent['batch_id'] );
-			$plan = ( new Planner() )->plan( $intent['batch_id'], $claims['owner'] );
-			if ( is_wp_error( $plan ) ) {
-				return $plan;}
-			if ( ! hash_equals( $plan->hash(), $intent['plan_hash'] ) ) {
-				return self::stale();}
-			$scope = $factory->undo_scope( $plan, $intent['force'] );
-			if ( is_wp_error( $scope ) ) {
-				return $scope;}
-			[$original, $previous, $objects, $outline, $snapshot] = $scope;
-			$result = $factory->record_scope( $claims, array_values( $outline ), $objects, $snapshot, $original );
-			if ( ! $batches->transition( $original, $previous, 'undoing' ) ) {
-				return Refusal::create( Planner::NOT_REVERSIBLE, Planner::undoing_sentence(), 409 );}
-			return $result;
+		$factory = new BatchFactory( null, $batches );
+		// A batch already under this request id was not made by this grant: refuse, never make another.
+		$earlier = $factory->earlier( $claims['uuid'], $claims['owner'], static fn(): bool => false );
+		if ( null !== $earlier ) {
+			return $earlier;
 		}
-		$token = $credentials['token'] ?? '';
+		return 'batch.undo' === $claims['operation']
+			? self::undo( $claims, $intent, $batches, $factory )
+			: self::apply( $claims, $intent, $credentials, $clock, $factory );
+	}
+
+	/**
+	 * The refusal for an Apply that no longer matches its preview.
+	 */
+	public static function stale(): \WP_Error {
+		return Refusal::create( BatchFactory::STALE_PREVIEW, __( 'This change no longer matches its preview. Preview the exact selected products again, then apply it.', 'bulk-catalogue-manager-for-woocommerce' ), 409 );
+	}
+
+	/**
+	 * Accept an Apply.
+	 *
+	 * @param array<string,mixed> $claims      Verified grant claims.
+	 * @param array<string,mixed> $intent      Canonical Apply intent.
+	 * @param array<string,mixed> $credentials Transport values.
+	 * @param \Closure            $clock       Current Unix time.
+	 * @param BatchFactory        $factory     The factory.
+	 * @return array<string,mixed>|\WP_Error
+	 */
+	private static function apply( array $claims, array $intent, array $credentials, \Closure $clock, BatchFactory $factory ): array|\WP_Error {
+		$current = BatchIntent::current( $intent );
+		if ( true !== $current ) {
+			return false === $current ? self::stale() : $current;
+		}
+		$token = $credentials['token'] ?? null;
 		if ( isset( $intent['snapshot'] ) ) {
 			$identity = SnapshotToken::identify( is_string( $token ) ? $token : '', $claims['owner'] );
 			if ( is_wp_error( $identity ) ) {
-				return $identity;}
+				return $identity;
+			}
 			if ( $identity['id'] !== $intent['snapshot'] ) {
-				return SnapshotToken::invalid();}
+				return SnapshotToken::invalid();
+			}
 			$selection = ( new SnapshotService( $clock ) )->selection( $token, $claims['owner'] );
 			if ( is_wp_error( $selection ) ) {
-				return $selection;}
+				return $selection;
+			}
+			$bound = $token;
 		} else {
 			$selection = Selection::of_ids( $intent['ids'] );
-			$token     = '';}
-		$scope = ExactScope::build( $selection, $intent['operations'], $factory );
-		$hash  = Preview::hash( '' !== $token ? $token : $selection->ids, $intent['operations'], Settings::load(), $scope['scope_hash'] );
-		if ( ! hash_equals( $scope['scope_hash'], $intent['scope_hash'] ) || ! is_string( $credentials['preview_hash'] ?? null ) || ! hash_equals( $hash, $credentials['preview_hash'] ) ) {
-			return self::stale();}
-		if ( [] === $scope['objects'] ) {
-			return Refusal::invalid( BatchFactory::EMPTY, __( 'No products are selected. Choose products before making a change.', 'bulk-catalogue-manager-for-woocommerce' ) );}
-		// Recheck lease after expansion/verification, under the same snapshot lock.
-		if ( isset( $intent['snapshot'] ) ) {
-			$valid = ( new SnapshotService( $clock ) )->selection( $token, $claims['owner'] );
-			if ( is_wp_error( $valid ) ) {
-				return $valid;}
+			$bound     = $selection->ids;
 		}
-		$snapshot = [
-			'kind'             => 'snapshot',
+		$scope = ExactScope::build( $selection, $intent['operations'], $factory );
+		$hash  = Preview::hash( $bound, $intent['operations'], Settings::load(), $scope['scope_hash'] );
+		if ( ! hash_equals( $scope['scope_hash'], $intent['scope_hash'] ) || ! is_string( $credentials['preview_hash'] ?? null ) || ! hash_equals( $hash, $credentials['preview_hash'] ) ) {
+			return self::stale();
+		}
+		if ( [] === $scope['objects'] ) {
+			return Refusal::invalid( BatchFactory::EMPTY, __( 'No products are selected. Choose products before making a change.', 'bulk-catalogue-manager-for-woocommerce' ) );
+		}
+		if ( isset( $intent['snapshot'] ) ) {
+			// Expansion may take a while: the lease must still be live, under the same lock.
+			$live = ( new SnapshotService( $clock ) )->selection( $token, $claims['owner'] );
+			if ( is_wp_error( $live ) ) {
+				return $live;
+			}
+		}
+		$summary = [
+			'kind'             => isset( $intent['snapshot'] ) ? 'snapshot' : 'ids',
 			'count'            => $selection->count,
 			'selected'         => $selection->count,
 			'materialised'     => count( $scope['objects'] ),
 			'scope_hash'       => $scope['scope_hash'],
 			'variations_added' => $scope['added'],
 			'parents_left_out' => $scope['left_out'],
-			'unavailable'      => $scope['unavailable'],
+			'unavailable'      => count( $scope['unavailable'] ),
 		];
 		if ( isset( $intent['snapshot'] ) ) {
-			$snapshot['snapshot_id'] = $intent['snapshot'];
+			$summary['snapshot_id'] = $intent['snapshot'];
 		} else {
-			$snapshot['kind'] = 'ids';
-			$snapshot['ids']  = $selection->ids;}
-		return $factory->record_scope( $claims, $intent['operations'], $scope['objects'], $snapshot );
+			$summary['ids'] = $selection->ids;
+		}
+		return $factory->record_scope( $claims, $intent['operations'], $scope['objects'], $summary );
 	}
-	/** Preview freshness refusal shared by both batch operations. */
-	public static function stale(): \WP_Error {
-		return Refusal::create( BatchFactory::STALE_PREVIEW, __( 'This change no longer matches its preview. Preview the exact selected products again, then apply it.', 'bulk-catalogue-manager-for-woocommerce' ), 409 );
-	}
+
 	/**
-	 * Old screens cannot prove semantic equivalence. Never guess or create again.
+	 * Accept an undo.
 	 *
-	 * @param string $uuid Old request.
-	 * @param int $owner Current owner.
+	 * @param array<string,mixed> $claims  Verified grant claims.
+	 * @param array<string,mixed> $intent  Canonical undo intent.
+	 * @param BatchRepository     $batches Batches.
+	 * @param BatchFactory        $factory The factory.
+	 * @return array<string,mixed>|\WP_Error
 	 */
-	public static function legacy( string $uuid, int $owner ): \WP_Error {
-		$ids = ( new BatchRepository() )->request_candidates( $uuid, $owner );
-		return Refusal::create(
-			'bulkcat_legacy_request',
-			__( 'This request came from an older screen. Check its existing change in History, then reload before starting new work.', 'bulk-catalogue-manager-for-woocommerce' ),
-			409,
-			[
-				'batch_ids' => $ids,
-				'history'   => 'history',
-			]
-		);
+	private static function undo( array $claims, array $intent, BatchRepository $batches, BatchFactory $factory ): array|\WP_Error {
+		$batches->lock( $intent['batch_id'] );
+		$plan = ( new Planner( $batches ) )->plan( $intent['batch_id'], $claims['owner'] );
+		if ( is_wp_error( $plan ) ) {
+			return $plan;
+		}
+		if ( ! hash_equals( $plan->hash(), $intent['plan_hash'] ) ) {
+			return Refusal::create( BatchFactory::STALE_PREVIEW, __( 'This undo no longer matches its preview: the products or the settings have changed since. Preview the undo again, then confirm it.', 'bulk-catalogue-manager-for-woocommerce' ), 409 );
+		}
+		$scope = $factory->undo_scope( $plan, $intent['force'] );
+		if ( is_wp_error( $scope ) ) {
+			return $scope;
+		}
+		[ $original, $previous, $objects, $outline, $snapshot ] = $scope;
+		$result = $factory->record_scope( $claims, array_values( $outline ), $objects, $snapshot, $original );
+		if ( ! $batches->transition( $original, $previous, 'undoing' ) ) {
+			return Refusal::create( Planner::NOT_REVERSIBLE, Planner::undoing_sentence(), 409, [ 'reason' => Planner::UNDO_IN_PROGRESS ] );
+		}
+		return $result;
 	}
 }

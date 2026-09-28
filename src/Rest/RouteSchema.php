@@ -31,6 +31,7 @@ use BulkCatalogueManager\Fields\Registry;
 use BulkCatalogueManager\Query\Criteria;
 use BulkCatalogueManager\Query\Hydrator;
 use BulkCatalogueManager\Query\Sort;
+use BulkCatalogueManager\Requests\RequestService;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -308,7 +309,7 @@ final class RouteSchema {
 		if ( $issue ) {
 			$args['operation'] = [
 				'type'     => 'string',
-				'enum'     => [ 'selection.capture', 'selection.compose' ],
+				'enum'     => RequestService::OPERATIONS,
 				'required' => true,
 			];
 		} else {

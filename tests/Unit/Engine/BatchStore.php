@@ -4,8 +4,8 @@
  * catalogue: batch rows come from the recording `$wpdb`'s insert() calls,
  * item rows from the INSERT statements BatchRepository::materialise_items()
  * prepares, and DELETE and SELECT statements on either table answer from
- * them — the dedupe lookup through the SqlEvaluator, a `SELECT *` by id
- * directly. Every write is logged in order in $log, so a test can say which
+ * them — the earlier-request lookup through the SqlEvaluator, a `SELECT *`
+ * by id directly. Every write is logged in order in $log, so a test can say which
  * came first.
  *
  * @package BulkCatalogueManager
@@ -62,6 +62,7 @@ final class BatchStore {
 			'/^INSERT INTO `wp_bulkcat_batch_items`/'      => fn( string $sql ): int => $this->insert_items( $sql ),
 			'/^DELETE FROM `(wp_bulkcat_batches|wp_bulkcat_batch_items)`/' => fn( string $sql ): int => $this->delete( $sql ),
 			'/^SELECT \* FROM `wp_bulkcat_batches` WHERE batch_id = (\d+)$/' => fn( string $sql ): ?array => $this->find( $sql ),
+			'/^SELECT batch_id FROM `wp_bulkcat_batches` WHERE uuid = /' => fn( string $sql ): array => $this->candidates( $sql ),
 			'/^SELECT batch_id FROM `wp_bulkcat_batches`/' => fn( string $sql ): ?string => $this->lookup( $sql ),
 		] + $wpdb->responses;
 	}
@@ -140,6 +141,17 @@ final class BatchStore {
 		preg_match( '/batch_id = (\d+)$/', $sql, $m );
 		$row = $this->batches[ (int) $m[1] ] ?? null;
 		return null === $row ? null : array_map( static fn( mixed $value ): ?string => null === $value ? null : (string) $value, $row );
+	}
+
+	/**
+	 * BatchRepository::request_candidates(): the batch ids under a request id, through the SqlEvaluator.
+	 *
+	 * @return list<string>
+	 */
+	private function candidates( string $sql ): array {
+		$this->sync();
+		$this->db->tables['wp_bulkcat_batches'] = array_values( $this->batches );
+		return array_map( static fn( array $row ): string => (string) $row['batch_id'], $this->db->rows( $sql ) );
 	}
 
 	private function lookup( string $sql ): ?string {

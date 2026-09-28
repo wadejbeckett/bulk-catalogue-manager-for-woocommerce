@@ -206,13 +206,14 @@ test( 'animation stops for reduced motion', async ( { page } ) => {
 	);
 	const skeleton = page.locator( '.bulkcat-skel' ).first();
 	await expect( skeleton ).toBeVisible();
-	const animation = await skeleton.evaluate(
-		( node ) =>
-			node.ownerDocument.defaultView.getComputedStyle( node )
-				.animationName
-	);
-	release();
-	expect( animation ).toBe( 'none' );
+	// toHaveCSS re-resolves the locator on each try: the skeleton can be
+	// remounted while the screen loads, and a detached node's computed
+	// animation-name reads as "".
+	try {
+		await expect( skeleton ).toHaveCSS( 'animation-name', 'none' );
+	} finally {
+		release();
+	}
 } );
 
 // SPEC §14: text 4.5:1 and components 3:1 in both admin colour schemes. The

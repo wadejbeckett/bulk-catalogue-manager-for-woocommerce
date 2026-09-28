@@ -99,7 +99,7 @@ final class RegistryTest extends TestCase {
 			'affix_sku'     => [
 				'field'    => 'sku',
 				'position' => 'prefix',
-				'text'     => 'ACME-',
+				'text'     => 'SHOP-',
 			],
 			'add_terms'     => [
 				'field' => 'category_ids',

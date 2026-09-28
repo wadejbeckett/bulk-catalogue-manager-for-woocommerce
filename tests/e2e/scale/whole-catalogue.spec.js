@@ -460,3 +460,220 @@ test( 'products and variations: every product and every option selected, then an
 		apply_button: await apply.innerText(),
 	} );
 } );
+
+/**
+ * A checksum of every regular price (the change the 100,000 run makes).
+ *
+ * @return {Object} `{ n, total }`.
+ */
+function priceChecksum() {
+	return rows(
+		"SELECT COUNT(*) AS n, ROUND(SUM(CAST(m.meta_value AS DECIMAL(14,4))), 4) AS total FROM {p}postmeta m JOIN {p}posts p ON p.ID = m.post_id WHERE m.meta_key = '_regular_price' AND m.meta_value <> '' AND p.post_type IN ('product','product_variation')"
+	)[ 0 ];
+}
+
+test( '100,000 members: composed exactly through the screen, 100,002 refused, previewed, accepted; a sample of the queue, cancelled and undone', async ( {
+	page,
+} ) => {
+	test.skip(
+		! process.env.BULKCAT_E2E_SCALE_100K,
+		'Needs seed.sh 22206 and BULKCAT_E2E_SCALE_100K=1.'
+	);
+	test.setTimeout( 3 * 3600 * 1000 );
+	const writes = timeWrites( page );
+	const sampleMs = Number(
+		process.env.BULKCAT_E2E_SCALE_SAMPLE_MS || 600_000
+	);
+	await openScreen( page );
+	const { bar, search } = screenParts( page );
+	const products = await selectEverything( page );
+
+	// Every option too would be 100,002: refused, the selection kept.
+	await page
+		.getByRole( 'button', { name: 'Variations', exact: true } )
+		.click();
+	await expect(
+		page.locator( '.dataviews-view-table tbody tr' ).first()
+	).toBeVisible();
+	const offer = bar.getByRole( 'button', { name: /^Select all [\d,]+ / } );
+	const allOptions = ( await offer.innerText() ).match( /([\d,]+)/ )[ 1 ];
+	await offer.click();
+	await expect( page.locator( '.bulkcat-selection' ) ).toContainText(
+		'This selection is too large. Add a filter to narrow it and try again.',
+		{ timeout: 120_000 }
+	);
+	const refusedWords = ( await bar.innerText() ).split( '\n' )[ 0 ];
+	await shot( page, 'scale-100k-refused.png' );
+	await page
+		.locator( '.bulkcat-selection' )
+		.getByRole( 'button', { name: /Dismiss/ } )
+		.first()
+		.click()
+		.catch( () => {} );
+
+	// Exactly 100,000: the scale options, the sixty, and one more option.
+	await search.fill( 'Scale Product' );
+	await expect(
+		page.locator( '.dataviews-view-table tbody tr' ).first()
+	).toBeVisible();
+	await expect( bar.getByText( /Saving/ ) ).toHaveCount( 0, {
+		timeout: 120_000,
+	} );
+	const scaleOptions = await selectOffer( page );
+	await search.fill( 'Probe Sixty' );
+	await expect(
+		page.locator( '.dataviews-view-table tbody tr' ).first()
+	).toBeVisible();
+	const sixty = await selectOffer( page );
+	await search.fill( 'Probe Variable' );
+	const oneMore = page
+		.locator( '.dataviews-view-table tbody tr' )
+		.getByRole( 'checkbox' )
+		.first();
+	await oneMore.check();
+	await expect( bar.getByText( /Saving/ ) ).toHaveCount( 0, {
+		timeout: 120_000,
+	} );
+	const words = ( await bar.innerText() ).split( '\n' )[ 0 ];
+	await shot( page, 'scale-100k-selected.png' );
+	const composes = writes.filter( ( w ) => w.path === 'selection/compose' );
+	record( 'hundred_thousand_selection', {
+		products_select_all_ms: products.ms,
+		all_options_offer: allOptions,
+		refused_left_selection: refusedWords,
+		scale_options_select_all_ms: scaleOptions,
+		sixty_select_all_ms: sixty,
+		selected_words: words,
+		compose_server_ms_max: Math.max(
+			...composes.map( ( w ) => w.perf?.server_ms || 0 )
+		),
+		compose_peak_mb_max: Math.max(
+			...composes.map( ( w ) => w.perf?.peak_mb || 0 )
+		),
+	} );
+	expect( words ).toContain( '100,000' );
+
+	// Preview an increase of 10 per cent.
+	const before = priceChecksum();
+	const opened = Date.now();
+	await bar.getByRole( 'button', { name: 'Make a change to these' } ).click();
+	const panel = page.getByRole( 'dialog', { name: 'Bulk change' } );
+	await panel
+		.getByRole( 'radio', { name: /^Increase or decrease/ } )
+		.first()
+		.check();
+	await panel
+		.getByLabel( 'By' )
+		.selectOption( 'percent' )
+		.catch( () => {} );
+	await panel.getByRole( 'textbox', { name: 'How much' } ).fill( '10' );
+	const checking = Date.now();
+	await panel.getByRole( 'button', { name: 'Check the change' } ).click();
+	const apply = panel.getByRole( 'button', { name: /^Apply to / } );
+	const previewMs = await timed( apply, checking );
+	await expect( apply ).toBeEnabled();
+	await shot( page, 'scale-100k-ready.png' );
+	const preview = writes.filter( ( w ) => w.path === 'preview' ).pop();
+	record( 'hundred_thousand_preview', {
+		check_to_enabled_apply_ms: previewMs,
+		open_panel_to_enabled_apply_ms: Date.now() - opened,
+		preview_server_ms: preview?.perf?.server_ms,
+		preview_queries: preview?.perf?.dispatch_queries,
+		preview_peak_mb: preview?.perf?.peak_mb,
+		apply_button: await apply.innerText(),
+	} );
+
+	// Apply: acceptance materialises every item in one transaction.
+	await apply.click();
+	const confirmed = Date.now();
+	await panel.getByRole( 'button', { name: /^Yes, change / } ).click();
+	await expect( panel ).toContainText( 'Applying the change', {
+		timeout: 600_000,
+	} );
+	const accepted = writes.filter( ( w ) => w.path === 'batches' ).pop();
+	const batchId = Number(
+		rows(
+			"SELECT MAX(batch_id) AS id FROM {p}bulkcat_batches WHERE source = 'bulk'"
+		)[ 0 ].id
+	);
+	const base = await lightPeak( page );
+	record( 'hundred_thousand_accept', {
+		batch_id: batchId,
+		click_to_accepted_ms: Date.now() - confirmed,
+		batches_http_ms: accepted?.ms,
+		batches_server_ms: accepted?.perf?.server_ms,
+		batches_queries: accepted?.perf?.dispatch_queries,
+		batches_peak_mb: accepted?.perf?.peak_mb,
+		request_bytes: accepted?.bytes,
+		items: Number(
+			rows(
+				'SELECT COUNT(*) AS n FROM {p}bulkcat_batch_items WHERE batch_id = %d',
+				[ batchId ]
+			)[ 0 ].n
+		),
+	} );
+
+	// A sample of the queue, then Cancel from the screen.
+	const sample = runBatch( batchId, sampleMs, base );
+	record( 'hundred_thousand_queue_sample', sample );
+	await panel.getByRole( 'button', { name: 'Back to products' } ).click();
+	const banner = page.getByRole( 'group', { name: 'Change in progress' } );
+	if ( 'running' === sample.status || 'queued' === sample.status ) {
+		await banner.getByRole( 'button', { name: 'Cancel' } ).click();
+		await expect( banner ).toBeHidden( { timeout: 120_000 } );
+	}
+	execSync(
+		`${ WP } action-scheduler run --hooks=bulkcat_run_chunk --batch-size=5`,
+		{
+			stdio: 'ignore',
+			timeout: 900_000,
+		}
+	);
+	const header = rows(
+		'SELECT status, done_items, changed_items FROM {p}bulkcat_batches WHERE batch_id = %d',
+		[ batchId ]
+	)[ 0 ];
+	record( 'hundred_thousand_cancelled', header );
+	await shot( page, 'scale-100k-cancelled.png' );
+
+	// Undo what was applied, from History.
+	await page.goto(
+		`/wp-admin/edit.php?post_type=product&page=bulk-catalogue-manager-for-woocommerce&panel=history&batch=${ batchId }&undo=1`
+	);
+	const confirm = page.getByRole( 'dialog', { name: 'Undo this change?' } );
+	const planned = Date.now();
+	await expect( confirm ).toBeVisible( { timeout: 900_000 } );
+	const planMs = Date.now() - planned;
+	await confirm.getByRole( 'button', { name: 'Undo', exact: true } ).click();
+	await expect( confirm ).toBeHidden( { timeout: 600_000 } );
+	const undoId = Number(
+		rows(
+			'SELECT batch_id FROM {p}bulkcat_batches WHERE undo_of = %d ORDER BY batch_id DESC LIMIT 1',
+			[ batchId ]
+		)[ 0 ].batch_id
+	);
+	const undone = runBatch( undoId, 0, base );
+	record( 'hundred_thousand_undo', { undo_preview_ms: planMs, ...undone } );
+	const after = priceChecksum();
+	record( 'hundred_thousand_prices', { before, after } );
+	expect( after ).toEqual( before );
+} );
+
+/**
+ * Take the bar's Select all offer for the view; returns how long it took.
+ *
+ * @param {import('@playwright/test').Page} page Page.
+ * @return {Promise<number>} Milliseconds.
+ */
+async function selectOffer( page ) {
+	const { bar } = screenParts( page );
+	const offer = bar.getByRole( 'button', { name: /^Select all [\d,]+ / } );
+	const before = ( await bar.innerText() ).split( '\n' )[ 0 ];
+	const started = Date.now();
+	await offer.click();
+	await expect( bar ).not.toContainText( before, { timeout: 120_000 } );
+	await expect( bar.getByText( /Saving/ ) ).toHaveCount( 0, {
+		timeout: 120_000,
+	} );
+	return Date.now() - started;
+}

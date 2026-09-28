@@ -59,6 +59,8 @@ final class Routes {
 				new TermsController(),
 				new ExportController( Registry::instance() ),
 				new SelectionController( Registry::instance() ),
+				new RequestsController( Registry::instance() ),
+				new SelectionActionsController( Registry::instance() ),
 				new BatchesController(),
 				new AuditController(),
 				new PreviewController(),

@@ -44,6 +44,7 @@ final class Registry {
 	private const OPTIONS = [
 		Settings::OPTION,
 		Migrator::VERSION_OPTION,
+		FoundationStorage::EPOCH_OPTION,
 	];
 
 	/**
@@ -76,6 +77,8 @@ final class Registry {
 	 */
 	private const RECURRING_ACTIONS = [
 		'bulkcat_prune_history',
+		'bulkcat_prune_selections',
+		'bulkcat_prune_requests',
 	];
 
 	/**

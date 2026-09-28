@@ -33,3 +33,5 @@ phpunit.xml.dist    export-ignore
 scratch/**          export-ignore
 tests/**            export-ignore
 vendor/**           export-ignore
+
+.superpowers/**     export-ignore

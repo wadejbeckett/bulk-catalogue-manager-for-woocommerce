@@ -4,6 +4,8 @@ Agreed with Wade Beckett in a scoping session on 21 September 2026. This is the 
 
 Sections are numbered so tickets can cite them, for example §4.2.
 
+**25 September follow-up:** exact-selection changes below are planned, not implemented by 1.0.0. [Exact selection contract](EXACT-SELECTION.md) defines the API/storage/lifecycle; [implementation plan and baseline](plans/2026-09-25-exact-selection.md) defines the work. Completed tickets describe their original release behaviour.
+
 ## 1. Purpose
 
 A shop owner with thousands of products needs to change many at once. WooCommerce offers a twenty-row list and a bulk edit form covering a handful of fields, on the current page only, with no preview and no way back. This plugin adds one screen under **Products** where the whole catalogue can be filtered and edited in bulk, safely. Three promises shape every decision.
@@ -29,7 +31,7 @@ Free under GPL-3.0-or-later, built to WordPress.org directory standards from the
 ## 3. Definitions
 
 - **View** — the current filters, search, sort, columns, layout and page size.
-- **Selection** — an explicit list of identifiers, or *all rows matching the current view*, stored as the view's query rather than as a list.
+- **Selection** — an exact server-held set of product/variation identities. Ticking rows or selecting every match captures identities, independently of later changes to the view or catalogue. Composition adds/removes identities without re-running earlier filters.
 - **Batch** — a selection plus an ordered list of operations, applied in the background and recorded as a unit. It is the unit of preview, progress, history and undo, and the interface calls it a **change**.
 - **Chunk** — a slice of a batch processed by one scheduled action. Never appears in the interface.
 - **Journal** — every touched field's before and after value, written inside the same code path that saves the product. Undo reads it. Never appears in the interface.
@@ -51,6 +53,8 @@ One admin page, **Products → Bulk Catalogue Manager**, registered with `add_su
 
 **Selection.** A header checkbox selects the page, then one line appears above the table: "All 25 on this page are selected. Select all 1,284 products matching these filters."
 
+Both choices add exact identities to the existing selection. Search, filters, sorting, paging and mode changes retain it; **Review selected products** shows/removes off-page members. Deliberate **Clear search** clears search and selection; **Clear selection** clears only selection. Transient empty text while replacing a search is not an explicit clear. Checkboxes reflect actual page membership; unticking one row after selecting all matches removes only that row. An open tab returning after the 15-minute authorization lease reauthorizes the same retained identities and previews again; membership is retained for seven days of inactivity, independently of the lease. Released intermediate sets become eligible for cleanup after one hour. Explain genuinely pruned work without silently re-running a former filter. See [the selection contract](EXACT-SELECTION.md).
+
 **States.**
 
 - *Loading* — skeleton rows at real row height, so the page does not jump.
@@ -69,7 +73,7 @@ In **Variations only** mode the grid lists variation rows, each showing its pare
 
 A slide-over on the right, never a modal that hides the rows it is about to change, in four steps on one scrollable form.
 
-1. **Scope.** "24 selected products", or "All 4,312 products matching the current filter" with the active filters listed.
+1. **Scope.** The total exact selection, such as "24 selected products", with product/variation counts and review access. It may include rows outside the current view. A combined selection is never labelled as all matches of the current filter.
 2. **Action.** Grouped as Pricing, Stock, Organisation, Shipping and tax, and Publishing. Choosing one reveals only its controls plus a plain description such as "Takes the regular price of each product and reduces it by the percentage you give." **Also apply to variations** appears where the field supports it — a field a variation has a value of its own for (§5.2 last column: per variation, or conditional such as status and stock quantity) — starting where the shop's setting for the field's group puts it (§11), with **Skip rows where the value is already correct**, on by default. The panel sends it as the step's `apply_to_variations` argument; left out, the server takes the same default; on for a parent-only or derived field, the step is refused with a plain sentence.
 3. **Preview.** **Preview changes** produces §4.4. Nothing is written yet.
 4. **Apply.** Enabled only after a preview that is still current.
@@ -77,6 +81,8 @@ A slide-over on the right, never a modal that hides the rows it is about to chan
 **States.** Idle, configuring, previewing, preview ready, preview empty which disables Apply, blocked by validation with the reason in place, stale where the selection or settings changed so Apply becomes **Preview again**, applying, done. A disabled action carries a one-line reason.
 
 **After apply.** The panel closes and progress moves into the selection bar: "Updating 1,284 products — 312 done." The owner may leave the screen; work continues on the server. On completion: "1,284 products updated. **Undo this change** · **View in History**".
+
+Only actual full success clears submitted selection. Queuing/polling is not success. Failed, partial or cancelled work retains recoverable scope and an honest outcome. If the operator builds another selection while work runs, clear submitted identities while preserving later explicit additions, as specified in [the completion contract](EXACT-SELECTION.md#preview-apply-and-completion).
 
 ### 4.4 Preview
 
@@ -196,16 +202,18 @@ A parent carries its variation count from a grouped count query, so variation ro
 
 ### 9.1 Preview
 
-`POST /bulkcat/v1/preview` returns the computed change for the sample plus totals: matched, would change, already at target, would fail validation. With **Also apply to variations** on, the variations it adds are computed and sampled too, `totals.by_type` splits matched and would change into products and variations, and `summary` says it in one sentence ("Regular price will change on 1,284 products and 3,915 variations."); the selection's `current_count` stays the selection's own objects, before expansion, and `variations_added` and `parents_left_out` say what the switch did. It uses the same lean query and operation classes as the writer and writes nothing. A result is bound to a hash of the selection and settings; changing either invalidates it. For a filter selection it also returns the filter's current count, and if that has moved by the time Apply is pressed the dialog says so and asks again. Every bulk apply sends the preview's hash — for ticked rows (an `ids` list or a token made from one) as much as for a filter, so no bulk write reaches the queue unpreviewed — and a filter apply also the count it showed; the server refuses 409 `bulkcat_preview_stale` when the hash is missing or no longer what a preview gives now, and 409 `bulkcat_selection_changed`, naming the previewed and the current count, when the filter now matches a different number of products, unless the request carries `confirm_changed: true`. The previewed count is stored on the batch.
+`POST /bulkcat/v1/preview` returns the computed sample and totals: matched, would change, already at target and would fail validation. With **Also apply to variations** on, `totals.by_type` splits products/variations; `variations_added` and `parents_left_out` explain expansion. `current_count` remains the exact selected count before expansion, including subsequently unavailable members. The writer's operation classes compute without saving products or terms. Above the existing 10,000-object computation cap, totals remain explicitly labelled estimates; this planning increment does not change that algorithm.
+
+Every bulk apply carries the preview hash, binding selection, operations and relevant settings. New grant-based bulk requests also carry an authenticated `scope_hash` covering expanded IDs, per-step assignments and unavailable members, including explicit-ID selections. For v2 snapshots the preview binds the current authorization epoch: live renewal preserves it; reauthorization after lease expiry requires preview again without changing membership. Accepted-request resolution precedes all selection/preview expiry checks (§12.6). Apply refuses 409 `bulkcat_preview_stale` on a changed scope, including a same-count substitution or newly added variation. It never re-runs a former filter. The v1 live-filter `preview_count`/`confirm_changed` escape is not part of v2; old tokens require reselection after upgrade. Missing/refused objects remain visible in scope/outcomes and cannot make a partial result claim full success. This is scope validation, not a lock on field values; the writer still checks current values and permissions. Detailed schemas/compatibility: [EXACT-SELECTION.md](EXACT-SELECTION.md).
 
 ### 9.2 Schema
 
-Applying creates a batch row and materialises the selection into `bulkcat_batch_items` before any work starts, so a filter whose membership shifts mid-run cannot change what the batch does, and so undo is exact.
+Fresh grant-based Apply creates the batch header, complete validated item scope and accepted request receipt in one transaction, then schedules that same batch idempotently. Resolve a matching owner/UUID/fingerprint receipt before any new header or selection check. Running batches own their targets independently of interactive selection retention. Planned schema migration 6 → 7 adds `bulkcat_selections` and `bulkcat_requests` (five tables total), plus the non-autoloaded installation epoch option. Membership, authorization and request replay have separate lifetimes; columns, transactional preconditions, migration and cleanup: [EXACT-SELECTION.md](EXACT-SELECTION.md#storage-decision). The existing journal tables below are retained.
 
 ```
 {prefix}bulkcat_batches
   batch_id      BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY
-  uuid          CHAR(36)            -- client request id, for idempotent submission
+  uuid          CHAR(36)            -- request id; new bulk/undo requests use a server-issued grant
   user_id       BIGINT UNSIGNED
   created_gmt   DATETIME
   finished_gmt  DATETIME NULL
@@ -213,9 +221,9 @@ Applying creates a batch row and materialises the selection into `bulkcat_batch_
   source        VARCHAR(20)         -- bulk|inline|tree|undo
   undo_of       BIGINT UNSIGNED NULL
   operations    LONGTEXT            -- JSON
-  selection     LONGTEXT            -- JSON snapshot of the filter or id list
+  selection     LONGTEXT            -- JSON exact scope; older rows may retain a filter or id list
   total_items   INT UNSIGNED
-  previewed_items INT UNSIGNED NULL -- the count the preview of a filter selection showed; NULL for an id selection
+  previewed_items INT UNSIGNED NULL -- preview count; older rows may be NULL for an id selection
   done_items    INT UNSIGNED
   changed_items INT UNSIGNED
   failed_items  INT UNSIGNED
@@ -263,11 +271,11 @@ The journal is written inside the same code path that saves the product, recordi
 
 Undo creates a batch with `source = undo` and `undo_of` set, whose operations are the recorded changes in reverse order, written back through the same CRUD path, queue and journal, with its own preview. Before reverting, the current value is compared with `new_value`; if they differ the item is skipped and reported as "changed since this batch ran". The preview lists conflicts first, and **Revert anyway** is off by default. The result reports plainly: "12 of 1,284 were changed again after this batch and were left alone." A partial, failed or cancelled batch can be undone for the part that was applied.
 
-`POST /batches/{id}/undo` with `preview: true` returns the plan's counts and a page of its objects, conflicts first, with a `plan_hash`; applying sends the client `uuid`, that hash (409 `bulkcat_preview_stale` when the plan has moved on since) and `force` for **Revert anyway**. The undo batch's items each carry their own operations (`bulkcat_batch_items.operations`), materialised before any work; the batch undone is `undoing` while it runs, `undone` once it completes or finishes partial, and back to its old status if the undo fails or is cancelled. The history list shows reversibility from the cheap signals only (`conflicts: null`, no product read); the single batch read counts conflicts.
+`POST /batches/{id}/undo` with `preview: true` returns the plan's counts and a page of its objects, conflicts first, with a `plan_hash`; applying sends the server-issued `uuid`/`request_proof` bound to its original batch, plan and force choice (§12.6), that hash (409 `bulkcat_preview_stale` when the plan has moved on since) and `force` for **Revert anyway**. The undo batch's items each carry their own operations (`bulkcat_batch_items.operations`), materialised before any work; the batch undone is `undoing` while it runs, `undone` once it completes or finishes partial, and back to its old status if the undo fails or is cancelled. The history list shows reversibility from the cheap signals only (`conflicts: null`, no product read); the single batch read counts conflicts.
 
 ### 9.5 Retention
 
-`bulkcat_history_retention_days` defaults to 90, adjustable between 7 and 730, or kept indefinitely. A daily action, `bulkcat_prune_history`, removes batches past the limit in bounded chunks. A pruned batch stays in the list, marked no longer reversible. Running batches are never pruned.
+`bulkcat_history_retention_days` defaults to 90, adjustable between 7 and 730, or kept indefinitely. A daily action, `bulkcat_prune_history`, removes item/journal details past the limit in bounded chunks, retaining batch headers. A pruned batch stays in the list, marked no longer reversible. Running batches are never pruned. Planned Apply/undo request receipts stay as long as their headers, independently of selection cleanup and this undo-retention setting. A future header-removal path must leave a gone receipt through at least grant issuance plus eight days; later retries are still rejected by the signed acceptance deadline (§12.6).
 
 ## 10. Saved views and export
 
@@ -299,9 +307,9 @@ One option, `bulkcat_settings`, an array sanitised on save against an explicit s
 
 Routes are registered under `bulkcat/v1` with `register_rest_route()`. Every route declares an explicit `permission_callback`; none returns `true`. Authentication is the logged-in cookie plus the `wp_rest` nonce through `apiFetch`'s nonce middleware. There is no REST API key or application password path, and no request outside the site. The plugin does not extend the WooCommerce REST namespace.
 
-The routes are `/fields`; `GET /products` returning `{ items, pagination: { page, perPage, total, totalPages } }`; `PATCH /products/{id}`, recorded as a one-item batch and answering `{ item, batch_id, status, results }` — the updated row in the `/products` item shape, the batch's id, its final status (complete, partial or failed) and one result per step; `GET /products/{id}/variations`, returning `{ items, pagination }` in WooCommerce's variation order with each variation's parent name and attribute summary, and 404 for an id that is not a product; `POST /selection`, resolving a filter to a count and a token (the selection itself is kept on the server in a `bulkcat_selection_` transient; the token is its random id and a hex HMAC of it, bound to the user and an expiry); `POST /preview`; `/batches` to queue and to list, `/batches/{id}` for live progress, `/batches/{id}/changes`, and `/batches/{id}/cancel` and `/undo`, the latter accepting `force`; `/audit`; `/categories`, `/categories/{id}` and `/categories/{id}/move`; `/views` and `/views/{id}`; `/export`; and `/settings`.
+The routes are `/fields`; `GET /products` returning `{ items, pagination: { page, perPage, total, totalPages } }`; `PATCH /products/{id}`, recorded as a one-item batch and answering `{ item, batch_id, status, results }` — the updated row in the `/products` item shape, the batch's id, its final status (complete, partial or failed) and one result per step; `GET /products/{id}/variations`, returning `{ items, pagination }` in WooCommerce's variation order with each variation's parent name and attribute summary, and 404 for an id that is not a product; `POST /selection`, capturing an exact set with a signed owner-bound token; `POST /selection/compose`, `/selection/inspect`, `/selection/renew` and `/selection/release`, plus `POST /requests` for signed request grants and `/requests/resolve` for durable outcome lookup, as defined in [EXACT-SELECTION.md](EXACT-SELECTION.md#api); `POST /preview`; `/batches` to queue and to list, `/batches/{id}` for live progress, `/batches/{id}/changes`, and `/batches/{id}/cancel` and `/undo`, the latter accepting `force`; `/audit`; `/categories`, `/categories/{id}` and `/categories/{id}/move`; `/views` and `/views/{id}`; `/export`; and `/settings`.
 
-`/products` accepts paging with `per_page` capped at 100, `search`, `orderby`, `order`, `mode`, `fields[]` and one argument per filter in §4.1. Every argument is generated from the registry with its own type, sanitise and validate callbacks, so a malformed or unknown parameter is rejected before any handler runs. The batch body carries a client-supplied `uuid`, the preview's `preview_hash` (required for every selection), and with a filter selection token the preview's `preview_count` and, after the owner has seen a changed count, `confirm_changed` (§9.1). Other limits: 20 operations per batch, 100,000 objects per selection (the variations **Also apply to variations** adds included), 100 terms per term operation.
+`/products` accepts paging with `per_page` capped at 100, `search`, `orderby`, `order`, `mode`, `fields[]` and one argument per filter in §4.1. Every argument is generated from the registry with its own type, sanitise and validate callbacks, so a malformed or unknown parameter is rejected before any handler runs. New bulk batch bodies carry the server-issued `uuid` and `request_proof`, the preview's `preview_hash` and authenticated `scope_hash` (§9.1). Capture, compose and queued undo also use these grants. Issuance/resolution use current cookie/nonce/capability checks and do not write catalogue data. Unknown legacy bare UUIDs cannot create work; existing legacy UUIDs follow the conservative retained-header resolution in §12.6. Other limits: 20 operations per batch, 100,000 objects per selection (the variations **Also apply to variations** adds included), 100 terms per term operation.
 
 ### 12.2 Reads
 
@@ -341,10 +349,10 @@ On 20,000 seeded products and 70,000 variations, PHP 8.3, MySQL 8, no persistent
 - **Timeouts.** A chunk killed mid-way leaves completed objects journalled and its chunk row incomplete; the retry continues with the remainder. Chunk size is bounded to fit a conservative execution limit.
 - **Concurrent edits.** Batches touching the same product are serialised by the queue's single concurrency. A product edited in the native editor is not locked; the journal records the value immediately before the plugin's write, which is what undo needs.
 - **Undo conflicts.** Reported, not overwritten, unless **Revert anyway** is chosen.
-- **Stale selection.** A view-based selection resolved at batch start may include products created after the preview; the difference from the previewed count is stated on the result.
+- **Stale selection.** Frozen membership never gains new matches. Missing/revoked objects remain reported; changed expansion requires preview again. Expired authorization is renewable under current permissions while exact membership is retained (seven days since creation/authorized keepalive). Reauthorization rotates the epoch and requires fresh preview. Only genuinely pruned membership requires explicit reselection; never silently replay its old filter. Best-effort release bounds unreferenced intermediate payloads to one hour, with seven-day inactivity cleanup if release is lost. Late responses after Clear cannot restore discarded selection. Partial/failed/cancelled jobs retain recoverable scope; full success clears only submitted scope, preserving later intent (EXACT-SELECTION.md).
 - **Abandoned inline edit.** An inline batch is written in the request that opened it; if that request dies, the batch stays running with no runner behind it. The next read of it after ten minutes without activity marks it failed, its unwritten item failed with a plain reason, and says why in its note.
 - **Scheduler stalled.** If the queue has not run for five minutes while a batch is pending, the screen says so and points at the scheduled actions tool rather than showing false progress; the batch applies nothing.
-- **Duplicate submission.** Batch creation is idempotent over the `uuid` for sixty seconds, so a double-click creates one batch.
+- **Duplicate submission (planned).** The existing 60-second replay cache and age-limited database fallback are insufficient for delayed retries. New capture/compose/Apply/undo requests use a server-issued, non-renewable UUID/proof with a signed 24-hour acceptance deadline and an immutable canonical fingerprint. Resolve durable owner/UUID/fingerprint receipts before selection authorization, payload retention, preview freshness or grant deadline checks and before creating any header. Matching retries identify the original result; altered input returns 409. Unique receipt claim, result/header/items and acceptance commit atomically before idempotent scheduling; rollback, ambiguous commit and post-commit scheduling failure never trigger a new UUID or a duplicate batch. Selection receipts/gone tombstones last eight days from issuance; Apply/undo receipts last with their batch header (§9.5). After receipt cleanup, expired signed grants still refuse new acceptance. A 60-second cache can only accelerate durable lookup. Unknown bare legacy UUIDs require reload; known legacy headers are checked without an age cutoff and ambiguities refuse, preserving existing jobs/history. See [request lifecycle, migration and regressions](EXACT-SELECTION.md#request-identities-and-durable-replay).
 
 ## 13. Security
 
@@ -375,14 +383,14 @@ The target is WCAG 2.2 AA, verified rather than asserted.
 - **Standards.** WordPress Coding Standards under PHPCS, `@wordpress/eslint-plugin` and Prettier, `declare( strict_types = 1 )` throughout, no `eval` and no debug output. Every string wrapped with a literal text domain, translator comments on every placeholder, `_n()` for plurals, escaping at output, JavaScript strings through `@wordpress/i18n` with `wp_set_script_translations()`, and a generated `.pot`.
 - **readme.txt.** Correct stable tag and tested-up-to, a short description under 150 characters, screenshots, changelog, and an FAQ covering what the plugin writes and how to reverse it. No marketing claims and no comparison with any other plugin.
 - **No external calls.** No CDN, remote font, update check or analytics. Dependencies are bundled and GPL-compatible, and the built JavaScript ships beside its readable source and build configuration so a reviewer can reproduce it. Plugin Check runs on every push and must be clean; any unavoidable notice, such as the direct database access on the read path, carries an inline justification and appears in the release checklist rather than being hidden.
-- **Data lifecycle.** Tables created with `dbDelta()` under a versioned schema option; scheduled actions registered on activation; deactivation only unschedules the prune. `uninstall.php` removes the three tables, every `bulkcat_` option, user meta, transient and term meta, and all scheduled actions in the plugin's `bulk-catalogue-manager-for-woocommerce` group, on every site of a network, unless *Remove all data when the plugin is deleted* is off, which is the default.
+- **Data lifecycle.** Tables created with `dbDelta()` under a versioned schema option; scheduled actions registered on activation; deactivation unschedules history pruning and both planned hourly hooks `bulkcat_prune_selections` / `bulkcat_prune_requests`. Each new cleanup transaction handles at most 100 eligible rows, rechecking retention under lock; payload deletion tombstones its request receipt atomically. `uninstall.php` removes the three journal tables plus planned selection/request tables, every `bulkcat_` option, user meta, transient and term meta, and all scheduled actions in the plugin's `bulk-catalogue-manager-for-woocommerce` group, on every site of a network, unless *Remove all data when the plugin is deleted* is off, which is the default. Both new tables/hooks and `bulkcat_request_epoch` belong to `Data\Registry`; retaining data preserves the epoch and replay protection, deleting data removes it so reinstall rejects old grants. Migration 6 → 7 is idempotent, leaves existing jobs/history intact and refuses new grants/writes if storage is incomplete or nontransactional.
 - **Behaviour when inactive.** If WooCommerce is absent or below the minimum, the plugin registers nothing but one admin notice. A fatal error is not possible.
 
 ## 16. Testing
 
 **16.1 PHPUnit** for the registry, every operation's computation including rounding, percentage and negative edges, sanitisers and validators, the query builder's SQL, the selection materialiser and the undo conflict rules.
 
-**16.2 Integration** in `@wordpress/env`: each route's authentication, capability and response shape; a batch's lifecycle including chunk chaining, resumption after a killed chunk, retry idempotency and cancellation; an undo round trip asserting the catalogue is identical afterwards; retention pruning; uninstall leaving nothing.
+**16.2 Integration** in `@wordpress/env`: each route's authentication, capability and response shape; a batch's lifecycle including chunk chaining, resumption after a killed chunk, retry idempotency and cancellation; an undo round trip asserting the catalogue is identical afterwards; retention pruning; uninstall leaving nothing. The planned exact-selection increment additionally gates release on lost-response retries beyond 60 seconds, receipt/payload pruning, concurrent duplicate/changed-input requests, rollback and ambiguous-commit recovery, retained legacy jobs/UUID ambiguity, and suspended-tab reauthorization without membership drift (EXACT-SELECTION.md lifecycle regressions).
 
 **16.3 End-to-end probe** at `tests/probe/probe.py`, the house pattern: seeds a catalogue through WP-CLI, drives filter, preview, apply, verify, undo, verify, and asserts that unauthenticated and under-privileged requests are refused on every route. It is the definition of done for each ticket and each release.
 

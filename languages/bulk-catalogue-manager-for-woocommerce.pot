@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-09-24T08:38:03+00:00\n"
+"POT-Creation-Date: 2026-09-25T19:26:57+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -1015,6 +1015,27 @@ msgstr ""
 msgid "Any %s"
 msgstr ""
 
+msgid "This request belongs to a different change. Resolve the original change before starting another."
+msgstr ""
+
+msgid "This request cannot be verified. Reload the catalogue before starting a new change."
+msgstr ""
+
+msgid "This operation is not available. Choose a supported catalogue action and try again."
+msgstr ""
+
+msgid "This selection is too large. Add a filter to narrow it and try again."
+msgstr ""
+
+msgid "These products or filters could not be selected. Check your selection and try again."
+msgstr ""
+
+msgid "The request could not be resolved safely. Retry the same request; if this continues, ask an administrator to check catalogue storage."
+msgstr ""
+
+msgid "This request is past its acceptance deadline. Resolve the original result before starting a new change."
+msgstr ""
+
 msgid "Your account does not have permission to use Bulk Catalogue Manager. Ask an administrator for access."
 msgstr ""
 
@@ -1242,6 +1263,9 @@ msgstr ""
 msgid "You need to log in to use Bulk Catalogue Manager. Log in and try again."
 msgstr ""
 
+msgid "This request contains an unknown option. Reload the catalogue and try again."
+msgstr ""
+
 msgid "Page of results, from 1."
 msgstr ""
 
@@ -1463,6 +1487,15 @@ msgid "This view could not be saved because part of it is not valid. Clear the f
 msgstr ""
 
 msgid "This selection has expired or can no longer be used. Choose the products again and try again."
+msgstr ""
+
+msgid "Your selected products are still saved. Restore your selection, then preview the change again."
+msgstr ""
+
+msgid "These selected products are no longer retained. Choose them again before starting a new change."
+msgstr ""
+
+msgid "These selected products could not be verified. Reload the catalogue and choose them again."
 msgstr ""
 
 msgid "Only administrators can use this screen"

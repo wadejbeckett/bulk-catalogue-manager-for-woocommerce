@@ -123,6 +123,8 @@ final class Plugin {
 			[ Engine\BatchFactory::CREATED, [ Engine\ChunkRunner::class, 'enqueue' ], 10, 1 ],
 			[ Engine\ChunkRunner::HOOK, [ Engine\ChunkRunner::class, 'handle' ], 10, 2 ],
 			[ Engine\Pruner::HOOK, [ Engine\Pruner::class, 'handle' ], 10, 0 ],
+			[ 'bulkcat_prune_selections', [ Requests\Cleanup::class, 'selections' ], 10, 0 ],
+			[ 'bulkcat_prune_requests', [ Requests\Cleanup::class, 'requests' ], 10, 0 ],
 		];
 	}
 
@@ -147,7 +149,9 @@ final class Plugin {
 	 * Bring the plugin's tables up to the code's schema version; a no-op once current.
 	 */
 	public function migrate(): void {
-		( new Data\Migrator( Data\Registry::plugin() ) )->run();
+		if ( ( new Data\Migrator( Data\Registry::plugin() ) )->run() ) {
+			Requests\Cleanup::schedule();
+		}
 	}
 
 	/**

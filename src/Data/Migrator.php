@@ -25,9 +25,9 @@ final class Migrator {
 	 * changes, so existing installs re-run dbDelta(). 1: no tables (T5);
 	 * 2: the three §9.2 tables (T6); 3: the chunk runner's claim lease, item
 	 * message, chunk size and note (T34); 4: the batch's previewed count (T38); 5: the batch's action list and
-	 * pruned time (T54); 6: the item's own operations (T56).
+	 * pruned time (T54); 6: the item's own operations (T56); 7: immutable selections and durable request receipts (T81).
 	 */
-	public const SCHEMA_VERSION = '6';
+	public const SCHEMA_VERSION = '7';
 
 	/**
 	 * The option holding the schema version the database was last migrated to.
@@ -85,7 +85,8 @@ final class Migrator {
 			$collate    = $wpdb->get_charset_collate();
 			$statements = [];
 			foreach ( $tables as $name => $body ) {
-				$statements[] = "CREATE TABLE {$wpdb->prefix}{$name} (\n" . trim( $body ) . "\n) {$collate};";
+				$engine       = in_array( $name, [ Schema::SELECTIONS, Schema::REQUESTS ], true ) ? ' ENGINE=InnoDB' : '';
+				$statements[] = "CREATE TABLE {$wpdb->prefix}{$name} (\n" . trim( $body ) . "\n) {$collate}{$engine};";
 			}
 			dbDelta( $statements );
 			foreach ( array_keys( $tables ) as $name ) {
@@ -93,6 +94,9 @@ final class Migrator {
 					return false;
 				}
 			}
+		}
+		if ( array_key_exists( Schema::REQUESTS, $tables ) && ! FoundationStorage::initialize() ) {
+			return false;
 		}
 		update_option( self::VERSION_OPTION, self::SCHEMA_VERSION );
 		return true;

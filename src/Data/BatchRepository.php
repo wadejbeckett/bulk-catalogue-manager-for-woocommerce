@@ -634,6 +634,31 @@ final class BatchRepository {
 	}
 
 	/**
+	 * Retained legacy candidates, bounded and owner-scoped, without an age cutoff.
+	 *
+	 * @param string $uuid Request identity.
+	 * @param int $owner User.
+	 * @return int[] At most two; two means ambiguous.
+	 */
+	public function request_candidates( string $uuid, int $owner ): array {
+		global $wpdb;
+		$ids = $wpdb->get_col( $wpdb->prepare( 'SELECT batch_id FROM %i WHERE uuid = %s AND user_id = %d ORDER BY batch_id ASC LIMIT 2', $this->registry->table( Schema::BATCHES ), $uuid, $owner ) );
+		if ( '' !== $wpdb->last_error ) { throw new \RuntimeException( 'Cannot resolve legacy request.' ); }
+		return array_map( 'intval', $ids );
+	}
+
+	/**
+	 * Serialize undo acceptance against another undo of the same original.
+	 *
+	 * @param int $id Original batch.
+	 */
+	public function lock( int $id ): void {
+		global $wpdb;
+		$wpdb->get_var( $wpdb->prepare( 'SELECT batch_id FROM %i WHERE batch_id = %d LIMIT 1 FOR UPDATE', $this->registry->table( Schema::BATCHES ), $id ) );
+		if ( '' !== $wpdb->last_error ) { throw new \RuntimeException( 'Cannot lock original batch.' ); }
+	}
+
+	/**
 	 * Remove a batch and its items. Only for undoing a creation that did not
 	 * complete (T31), before any work was queued for it; a batch that has
 	 * run is kept for its history.

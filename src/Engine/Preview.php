@@ -169,7 +169,7 @@ final class Preview {
 	 * @param Settings|null $settings    Settings; the stored ones by default.
 	 * @return array<string, mixed>|\WP_Error
 	 */
-	public function run( Selection $selection, mixed $operations, int $sample_size = self::DEFAULT_SAMPLE, string $token = '', ?Settings $settings = null ): array|\WP_Error {
+	public function run( Selection $selection, mixed $operations, int $sample_size = self::DEFAULT_SAMPLE, string $token = '', ?Settings $settings = null, bool $exact = false ): array|\WP_Error {
 		$operations = $this->actions->validate_list( $operations );
 		if ( $operations instanceof \WP_Error ) {
 			return $operations;
@@ -177,18 +177,19 @@ final class Preview {
 		if ( $selection->too_large() ) {
 			return self::too_large( $selection->count );
 		}
-		$selected = $this->factory->materialise( $selection );
+		$scope = $exact ? ExactScope::build( $selection, $operations, $this->factory ) : null;
+		$selected = $scope['selected'] ?? $this->factory->materialise( $selection );
 		if ( count( $selected ) > Selection::MAX_OBJECTS ) {
 			return self::too_large( count( $selected ) );
 		}
-		$expanded = $this->factory->expand( $selected, $operations );
-		$objects  = $expanded['objects'];
+		$expanded = $scope ?? $this->factory->expand( $selected, $operations );
+		$objects = $expanded['objects'];
 		if ( count( $objects ) > Selection::MAX_OBJECTS ) {
 			return self::too_large( count( $objects ) );
 		}
 
-		$unreadable = [];
-		if ( ! $selection->is_filter() ) {
+		$unreadable = $scope['unavailable'] ?? [];
+		if ( ! $exact && ! $selection->is_filter() ) {
 			$found      = array_flip( array_column( $selected, 0 ) );
 			$unreadable = array_values( array_filter( $selection->ids, static fn( int $id ): bool => ! isset( $found[ $id ] ) ) );
 		}
@@ -220,7 +221,8 @@ final class Preview {
 			'summary'    => self::summary( $tally['fields'], $by_type['product']['would_change'], $by_type['variation']['would_change'] ),
 			'sample'     => $tally['sample'],
 			'warnings'   => array_map( static fn( int $n ): int => self::scale( $n, $factor ), $tally['warnings'] ),
-			'unreadable' => array_merge( $unreadable, $tally['unreadable'] ),
+			'unreadable' => array_slice( array_values( array_unique( array_merge( $unreadable, $tally['unreadable'] ) ) ), 0, self::SAMPLE_ALL ),
+			'unavailable_count' => count( array_unique( array_merge( $unreadable, $tally['unreadable'] ) ) ),
 			'selection'  => ( $selection->is_filter()
 				? [
 					'kind'          => 'filter',
@@ -234,7 +236,9 @@ final class Preview {
 					'variations_added' => $expanded['added'],
 					'parents_left_out' => $expanded['left_out'],
 				],
-			'hash'       => self::hash( '' !== $token ? $token : $selection->ids, $operations, $settings ),
+			'hash'       => self::hash( '' !== $token ? $token : $selection->ids, $operations, $settings, $scope['scope_hash'] ?? '' ),
+			'scope_hash' => $scope['scope_hash'] ?? null,
+			'operations' => $operations,
 		];
 	}
 
@@ -248,7 +252,7 @@ final class Preview {
 	 * @param array<mixed>      $operations The normalised operation list.
 	 * @param Settings          $settings   The settings.
 	 */
-	public static function hash( string|array $selection, array $operations, Settings $settings ): string {
+	public static function hash( string|array $selection, array $operations, Settings $settings, string $scope_hash = '' ): string {
 		$bound = array_intersect_key( $settings->values(), array_flip( self::SETTINGS ) );
 		ksort( $bound );
 		$payload = [
@@ -256,6 +260,9 @@ final class Preview {
 			'operations' => self::canonical( $operations ),
 			'settings'   => $bound,
 		];
+		if ( '' !== $scope_hash ) {
+			$payload['scope_hash'] = $scope_hash;
+		}
 		return hash_hmac( 'sha256', self::CONTEXT . (string) wp_json_encode( $payload ), wp_salt( 'auth' ) );
 	}
 

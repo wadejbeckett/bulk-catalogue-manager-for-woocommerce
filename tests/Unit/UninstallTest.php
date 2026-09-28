@@ -32,9 +32,10 @@ final class UninstallTest extends TestCase {
 	 */
 	private static function seed( mixed $settings ): void {
 		$GLOBALS['bulkcat_test']['options'] = [
-			'bulkcat_settings'   => $settings,
-			'bulkcat_db_version' => '1',
-			'unrelated_option'   => 'keep',
+			'bulkcat_settings'      => $settings,
+			'bulkcat_db_version'    => '1',
+			'bulkcat_request_epoch' => str_repeat( 'a', 64 ),
+			'unrelated_option'      => 'keep',
 		];
 	}
 
@@ -96,6 +97,8 @@ final class UninstallTest extends TestCase {
 			'wp_bulkcat_batches'     => true,
 			'wp_bulkcat_batch_items' => true,
 			'wp_bulkcat_changes'     => true,
+			'wp_bulkcat_selections'  => true,
+			'wp_bulkcat_requests'    => true,
 		];
 
 		self::run_uninstall();
@@ -112,6 +115,7 @@ final class UninstallTest extends TestCase {
 					[ 'metadata', 'term', 0, 'bulkcat_order', '', true ],
 					[ 'option', 'bulkcat_settings' ],
 					[ 'option', 'bulkcat_db_version' ],
+					[ 'option', 'bulkcat_request_epoch' ],
 				],
 				'unscheduled' => [
 					[ '', [], 'bulk-catalogue-manager-for-woocommerce' ],
@@ -120,6 +124,8 @@ final class UninstallTest extends TestCase {
 					'DROP TABLE IF EXISTS `wp_bulkcat_batches`',
 					'DROP TABLE IF EXISTS `wp_bulkcat_batch_items`',
 					'DROP TABLE IF EXISTS `wp_bulkcat_changes`',
+					'DROP TABLE IF EXISTS `wp_bulkcat_selections`',
+					'DROP TABLE IF EXISTS `wp_bulkcat_requests`',
 					"SELECT option_name FROM wp_options WHERE option_name LIKE '\\\\_transient\\\\_bulkcat\\\\_category\\\\_tree\\\\_%'",
 					"SELECT option_name FROM wp_options WHERE option_name LIKE '\\\\_site\\\\_transient\\\\_bulkcat\\\\_category\\\\_tree\\\\_%'",
 					"SELECT option_name FROM wp_options WHERE option_name LIKE '\\\\_transient\\\\_bulkcat\\\\_count\\\\_%'",
@@ -206,7 +212,7 @@ final class UninstallTest extends TestCase {
 
 	public function test_deactivation_unschedules_only_the_recurring_actions(): void {
 		Cleanup::deactivate();
-		$this->assertSame( [ [ 'bulkcat_prune_history', [], 'bulk-catalogue-manager-for-woocommerce' ] ], $GLOBALS['bulkcat_test']['unscheduled'] );
+		$this->assertSame( [ [ 'bulkcat_prune_history', [], 'bulk-catalogue-manager-for-woocommerce' ], [ 'bulkcat_prune_selections', [], 'bulk-catalogue-manager-for-woocommerce' ], [ 'bulkcat_prune_requests', [], 'bulk-catalogue-manager-for-woocommerce' ] ], $GLOBALS['bulkcat_test']['unscheduled'] );
 		$this->assertSame( [], $GLOBALS['bulkcat_test']['deleted'], 'Deactivation deletes no data.' );
 		$this->assertSame( [], $GLOBALS['wpdb']->queries );
 
@@ -225,7 +231,7 @@ final class UninstallTest extends TestCase {
 		$this->assertTrue( is_array( $result ), $text );
 		$this->assertFalse( $result['scheduler'] );
 		$this->assertSame( [], $result['unscheduled'] );
-		$this->assertSame( [ [ 'metadata', 'user', 0, 'bulkcat_views', '', true ], [ 'metadata', 'term', 0, 'bulkcat_order', '', true ], [ 'option', 'bulkcat_settings' ], [ 'option', 'bulkcat_db_version' ] ], $result['deleted'] );
+		$this->assertSame( [ [ 'metadata', 'user', 0, 'bulkcat_views', '', true ], [ 'metadata', 'term', 0, 'bulkcat_order', '', true ], [ 'option', 'bulkcat_settings' ], [ 'option', 'bulkcat_db_version' ], [ 'option', 'bulkcat_request_epoch' ] ], $result['deleted'] );
 	}
 
 	public function test_tables_are_dropped_through_prepare_with_an_identifier_placeholder(): void {

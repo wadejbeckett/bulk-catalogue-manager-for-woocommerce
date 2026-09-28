@@ -128,8 +128,8 @@ final class SchemaTest extends TestCase {
 		return $parsed;
 	}
 
-	public function test_the_registry_holds_exactly_the_three_tables(): void {
-		$this->assertSame( [ 'bulkcat_batches', 'bulkcat_batch_items', 'bulkcat_changes' ], array_keys( Registry::plugin()->tables() ) );
+	public function test_the_registry_holds_exactly_the_five_tables(): void {
+		$this->assertSame( [ 'bulkcat_batches', 'bulkcat_batch_items', 'bulkcat_changes', 'bulkcat_selections', 'bulkcat_requests' ], array_keys( Registry::plugin()->tables() ) );
 		$this->assertSame( Schema::TABLES, Registry::plugin()->tables() );
 	}
 
@@ -161,12 +161,12 @@ final class SchemaTest extends TestCase {
 		$this->assertSame( Migrator::SCHEMA_VERSION, get_option( Migrator::VERSION_OPTION ) );
 
 		$statements = $GLOBALS['bulkcat_test']['dbdelta'][0];
-		$this->assertCount( 3, $statements );
+		$this->assertCount( 5, $statements );
 		foreach ( array_keys( Schema::TABLES ) as $i => $name ) {
-			$this->assertSame( "CREATE TABLE wp_7_{$name} (\n" . Schema::TABLES[ $name ] . "\n) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci;", $statements[ $i ] );
+			$this->assertSame( "CREATE TABLE wp_7_{$name} (\n" . Schema::TABLES[ $name ] . "\n) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci" . ( in_array( $name, [ Schema::SELECTIONS, Schema::REQUESTS ], true ) ? ' ENGINE=InnoDB' : '' ) . ';', $statements[ $i ] );
 		}
-		$this->assertSame( [ 'wp_7_bulkcat_batches', 'wp_7_bulkcat_batch_items', 'wp_7_bulkcat_changes' ], array_keys( $GLOBALS['wpdb']->tables ) );
-		$this->assertSame( '6', Migrator::SCHEMA_VERSION, 'T56\'s item operations bumped the schema version, so a site migrated at 5 gains the column.' );
+		$this->assertSame( [ 'wp_7_bulkcat_batches', 'wp_7_bulkcat_batch_items', 'wp_7_bulkcat_changes', 'wp_7_bulkcat_selections', 'wp_7_bulkcat_requests' ], array_keys( $GLOBALS['wpdb']->tables ) );
+		$this->assertSame( '7', Migrator::SCHEMA_VERSION, 'T81 adds snapshot and receipt storage on upgrade.' );
 	}
 
 	public function test_table_names_come_only_from_the_registry_with_the_site_prefix(): void {

@@ -77,17 +77,19 @@ final class DependencyTest extends TestCase {
 
 		$this->assertSame(
 			[
-				'admin_enqueue_scripts'   => 1,
-				'admin_init'              => 1,
-				'admin_menu'              => 1,
-				'before_woocommerce_init' => 1,
-				'bulkcat_batch_created'   => 1,
-				'bulkcat_prune_history'   => 1,
-				'bulkcat_run_chunk'       => 1,
-				'heartbeat_received'      => 1,
-				'init'                    => 3,
-				'plugins_loaded'          => 1,
-				'rest_api_init'           => 1,
+				'admin_enqueue_scripts'    => 1,
+				'admin_init'               => 1,
+				'admin_menu'               => 1,
+				'before_woocommerce_init'  => 1,
+				'bulkcat_batch_created'    => 1,
+				'bulkcat_prune_history'    => 1,
+				'bulkcat_prune_requests'   => 1,
+				'bulkcat_prune_selections' => 1,
+				'bulkcat_run_chunk'        => 1,
+				'heartbeat_received'       => 1,
+				'init'                     => 3,
+				'plugins_loaded'           => 1,
+				'rest_api_init'            => 1,
 			],
 			$result['hooks']
 		);
@@ -110,6 +112,7 @@ final class DependencyTest extends TestCase {
 				[
 					[ $file, [ Migrator::class, 'activate' ] ],
 					[ $file, [ Pruner::class, 'schedule' ] ],
+					[ $file, [ \BulkCatalogueManager\Requests\Cleanup::class, 'schedule' ] ],
 				],
 				$result['activate'],
 				"WooCommerce $version."
@@ -129,17 +132,19 @@ final class DependencyTest extends TestCase {
 
 		$this->assertSame(
 			[
-				'admin_enqueue_scripts'   => 1,
-				'admin_init'              => 1,
-				'admin_menu'              => 1,
-				'before_woocommerce_init' => 1,
-				'bulkcat_batch_created'   => 1,
-				'bulkcat_prune_history'   => 1,
-				'bulkcat_run_chunk'       => 1,
-				'heartbeat_received'      => 1,
-				'init'                    => 3,
-				'plugins_loaded'          => 1,
-				'rest_api_init'           => 1,
+				'admin_enqueue_scripts'    => 1,
+				'admin_init'               => 1,
+				'admin_menu'               => 1,
+				'before_woocommerce_init'  => 1,
+				'bulkcat_batch_created'    => 1,
+				'bulkcat_prune_history'    => 1,
+				'bulkcat_prune_requests'   => 1,
+				'bulkcat_prune_selections' => 1,
+				'bulkcat_run_chunk'        => 1,
+				'heartbeat_received'       => 1,
+				'init'                     => 3,
+				'plugins_loaded'           => 1,
+				'rest_api_init'            => 1,
 			],
 			$result['hooks']
 		);

@@ -36,6 +36,8 @@ if ( ! class_exists( WpdbStub::class ) ) {
 
 		public string $last_error = '';
 
+		public int $reconnect_retries = 5;
+
 		/**
 		 * Every statement run, in order.
 		 *

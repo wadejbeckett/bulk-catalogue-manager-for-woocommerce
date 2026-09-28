@@ -304,6 +304,49 @@ final class ProductQuery {
 	}
 
 	/**
+	 * Capture typed identities in one statement, independent of view paging.
+	 *
+	 * @param int[]|null $ids Optional validated explicit identities.
+	 * @return array{products: int[], variations: int[]}
+	 * @throws \RuntimeException On an unreadable catalogue.
+	 * @throws \LengthException Above the selection ceiling.
+	 */
+	public function snapshot_members( ?array $ids = null ): array {
+		global $wpdb;
+		$conditions = $this->conditions_sql();
+		$sql        = 'SELECT ' . $this->hint( $this->lookup ) . 'p.ID AS id, p.post_type AS object_type ' . $conditions['sql'];
+		$args       = $conditions['args'];
+		if ( null !== $ids ) {
+			if ( [] === $ids ) {
+				return [
+					'products'   => [],
+					'variations' => [],
+				];
+			}
+			$sql .= ' AND p.ID IN (' . implode( ', ', array_fill( 0, count( $ids ), '%d' ) ) . ')';
+			$args = [ ...$args, ...$ids ];
+		}
+		$sql   .= ' ORDER BY p.ID ASC LIMIT %d';
+		$args[] = \BulkCatalogueManager\Selection\Selection::MAX_OBJECTS + 1;
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Allow-listed conditions and identifier placeholders, bounded integer limit.
+		$rows = $wpdb->get_results( $wpdb->prepare( $sql, ...$args ), ARRAY_A );
+		if ( ! is_array( $rows ) || '' !== $wpdb->last_error ) {
+			throw new \RuntimeException( 'Catalogue capture failed.' );
+		}
+		if ( count( $rows ) > \BulkCatalogueManager\Selection\Selection::MAX_OBJECTS ) {
+			throw new \LengthException( 'Selection exceeds its object limit.' );
+		}
+		$members = [
+			'products'   => [],
+			'variations' => [],
+		];
+		foreach ( $rows as $row ) {
+			$members[ 'product' === $row['object_type'] ? 'products' : 'variations' ][] = (int) $row['id'];
+		}
+		return $members;
+	}
+
+	/**
 	 * Run the count statement.
 	 */
 	public function total(): int {

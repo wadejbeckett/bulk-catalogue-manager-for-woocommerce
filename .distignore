@@ -10,6 +10,7 @@
 .phpcs.xml.dist
 .wp-env.json
 .remember/
+.superpowers/
 .claude/
 AGENTS.md
 CHANGELOG.md

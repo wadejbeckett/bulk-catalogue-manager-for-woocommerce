@@ -817,3 +817,18 @@ if ( ! function_exists( 'wp_insert_term' ) ) {
 		return true;
 	}
 }
+
+if ( ! function_exists( 'add_option' ) ) {
+	function add_option( string $name, mixed $value = '', string $deprecated = '', mixed $autoload = null ): bool {
+		if ( array_key_exists( $name, $GLOBALS['bulkcat_test']['options'] ) ) {
+			return false;
+		}
+		$GLOBALS['bulkcat_test']['options'][ $name ] = $value;
+		return true;
+	}
+}
+
+if ( ! function_exists( 'get_current_blog_id' ) ) {
+	function get_current_blog_id(): int {
+		return 1; }
+}

@@ -8,7 +8,7 @@
 # placeholders by the plugin's own query builders: Plugin Check cannot trace
 # a template through a method or an array, so it reports them. Every value is
 # still bound by $wpdb->prepare(); identifiers come from allow-lists.
-src/Query/ProductQuery.php	PluginCheck.Security.DirectDB.UnescapedDBParameter	2	The catalogue list and its count (SPEC §12.2): statement() and count_statement() return $wpdb->prepare() output built from literal fragments and placeholders; filters, sorts and columns come from the field registry's allow-list.
+src/Query/ProductQuery.php	PluginCheck.Security.DirectDB.UnescapedDBParameter	3	The catalogue list, its count and bounded frozen ID/type capture (SPEC §12.2): statement() and count_statement() return $wpdb->prepare() output built from literal fragments and placeholders; filters, sorts and columns come from the field registry's allow-list.
 src/Categories/Counts.php	PluginCheck.Security.DirectDB.UnescapedDBParameter	1	Category product counts in one grouped read (SPEC §7): statement() returns $wpdb->prepare() output; term ids are bound as %d.
 src/Engine/BatchFactory.php	PluginCheck.Security.DirectDB.UnescapedDBParameter	1	Reading the ids a filter selects, PAGE at a time, through ProductQuery's own FROM and WHERE (conditions_sql(): literal fragments and placeholders), so a batch covers exactly what the grid lists.
 src/Data/ChangeRepository.php	PluginCheck.Security.DirectDB.UnescapedDBParameter	4	History and audit feeds (SPEC §9.3): {$where} is joined from literal conditions with placeholders chosen by feed_conditions()/audit_conditions(); every value is an argument to $wpdb->prepare().

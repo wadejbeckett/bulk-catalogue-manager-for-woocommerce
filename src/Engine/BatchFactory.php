@@ -364,6 +364,60 @@ final class BatchFactory {
 		if ( null !== $existing ) {
 			return $this->replay( $existing );
 		}
+		$prepared = $this->undo_scope( $plan, $force );
+		if ( is_wp_error( $prepared ) ) { return $prepared; }
+		[ $undo_of, $previous, $objects, $outline, $snapshot ] = $prepared;
+
+		$now = ( $this->clock )();
+		try {
+			$batch_id = $this->batches->create( $uuid, $user_id, 'undo', array_values( $outline ), $snapshot, count( $objects ), $undo_of );
+			$earlier  = $this->batches->earlier_request( $uuid, $user_id, $batch_id, gmdate( 'Y-m-d H:i:s', $now - self::REPLAY_TTL ) );
+			if ( null !== $earlier ) {
+				$this->batches->discard( $batch_id );
+				return $this->replay( $earlier );
+			}
+			try {
+				$this->batches->materialise_items( $batch_id, $objects );
+			} catch ( \RuntimeException $e ) {
+				$this->batches->discard( $batch_id );
+				throw $e;
+			}
+			if ( ! $this->batches->transition( $undo_of, $previous, 'undoing' ) ) {
+				// Another undo of the same batch started first; it wins.
+				$this->batches->discard( $batch_id );
+				return Refusal::create( Planner::NOT_REVERSIBLE, Planner::undoing_sentence(), 409, [ 'reason' => Planner::UNDO_IN_PROGRESS ] );
+			}
+		} catch ( \RuntimeException $e ) {
+			return Refusal::unexpected( self::NOT_RECORDED, __( 'The change could not be saved, so nothing was changed. Try again in a moment.', 'bulk-catalogue-manager-for-woocommerce' ), 500, $e );
+		}
+
+		set_transient(
+			self::key( $uuid, $user_id ),
+			[
+				'batch_id' => $batch_id,
+				'at'       => $now,
+			],
+			self::REPLAY_TTL
+		);
+		/** This action is documented in create(). */
+		do_action( 'bulkcat_batch_created', $batch_id );
+		return [
+			'batch_id'        => $batch_id,
+			'status'          => 'queued',
+			'total_items'     => count( $objects ),
+			'previewed_items' => null,
+			'replayed'        => false,
+		];
+	}
+
+	/**
+	 * Prepare an undo once; reusable by legacy and durable acceptance.
+	 *
+	 * @param Plan $plan Fresh plan.
+	 * @param bool $force Include conflicts.
+	 * @return array|\WP_Error
+	 */
+	public function undo_scope( Plan $plan, bool $force ): array|\WP_Error {
 		$undo_of  = $plan->batch_id();
 		$original = $this->batches->find( $undo_of );
 		if ( null === $original ) {
@@ -422,46 +476,30 @@ final class BatchFactory {
 			'materialised'    => count( $objects ),
 		];
 
-		$now = ( $this->clock )();
-		try {
-			$batch_id = $this->batches->create( $uuid, $user_id, 'undo', array_values( $outline ), $snapshot, count( $objects ), $undo_of );
-			$earlier  = $this->batches->earlier_request( $uuid, $user_id, $batch_id, gmdate( 'Y-m-d H:i:s', $now - self::REPLAY_TTL ) );
-			if ( null !== $earlier ) {
-				$this->batches->discard( $batch_id );
-				return $this->replay( $earlier );
-			}
-			try {
-				$this->batches->materialise_items( $batch_id, $objects );
-			} catch ( \RuntimeException $e ) {
-				$this->batches->discard( $batch_id );
-				throw $e;
-			}
-			if ( ! $this->batches->transition( $undo_of, $previous, 'undoing' ) ) {
-				// Another undo of the same batch started first; it wins.
-				$this->batches->discard( $batch_id );
-				return Refusal::create( Planner::NOT_REVERSIBLE, Planner::undoing_sentence(), 409, [ 'reason' => Planner::UNDO_IN_PROGRESS ] );
-			}
-		} catch ( \RuntimeException $e ) {
-			return Refusal::unexpected( self::NOT_RECORDED, __( 'The change could not be saved, so nothing was changed. Try again in a moment.', 'bulk-catalogue-manager-for-woocommerce' ), 500, $e );
-		}
+		return [ $undo_of, $previous, $objects, $outline, $snapshot ];
+	}
 
-		set_transient(
-			self::key( $uuid, $user_id ),
-			[
-				'batch_id' => $batch_id,
-				'at'       => $now,
-			],
-			self::REPLAY_TTL
-		);
-		/** This action is documented in create(). */
-		do_action( 'bulkcat_batch_created', $batch_id );
-		return [
-			'batch_id'        => $batch_id,
-			'status'          => 'queued',
-			'total_items'     => count( $objects ),
-			'previewed_items' => null,
-			'replayed'        => false,
-		];
+	/**
+	 * Persist exactly verified objects inside the request owner's transaction.
+	 * This method never schedules work, resolves a UUID, or queries membership.
+	 *
+	 * @param array $claims Verified request.
+	 * @param array $operations Normalized operations.
+	 * @param array $objects Materialized scope.
+	 * @param array $snapshot Stored selection summary.
+	 * @param int|null $undo_of Original batch.
+	 * @return array
+	 */
+	public function record_scope( array $claims, array $operations, array $objects, array $snapshot, ?int $undo_of = null ): array {
+		$id = $this->batches->create( $claims['uuid'], $claims['owner'], null === $undo_of ? 'bulk' : 'undo', $operations, $snapshot, count( $objects ), $undo_of );
+		$plain = []; $own = [];
+		foreach ( $objects as $entry ) {
+			if ( isset( $entry[2] ) ) { $own[] = $entry; } else { $plain[] = $entry; }
+		}
+		$written = $this->batches->materialise_items( $id, $plain );
+		if ( [] !== $own ) { $written += $this->batches->materialise_items( $id, $own ); }
+		if ( $written !== count( $objects ) ) { throw new \RuntimeException( 'Incomplete materialization.' ); }
+		return [ 'batch_id' => $id, 'status' => 'queued', 'total_items' => count( $objects ), 'replayed' => false ];
 	}
 
 	/**

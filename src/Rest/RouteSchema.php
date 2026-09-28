@@ -273,7 +273,7 @@ final class RouteSchema {
 	 * @return array<string, array<string, mixed>>
 	 */
 	public function selection_args(): array {
-		return array_intersect_key( $this->query_args(), array_flip( [ 'search', 'mode', 'parent' ] ) ) + $this->filter_args() + [
+		$args = array_intersect_key( $this->query_args(), array_flip( [ 'search', 'mode', 'parent' ] ) ) + $this->filter_args() + [
 			'ids' => self::arg(
 				[
 					'description' => __( 'The chosen products or variations, by id, instead of a filter.', 'bulk-catalogue-manager-for-woocommerce' ),
@@ -287,6 +287,104 @@ final class RouteSchema {
 				static fn( mixed $value ): array => array_map( 'intval', self::as_list( $value ) )
 			),
 		];
+		unset( $args['mode']['default'] );
+		return $args + $this->request_args( false, false );
+	}
+
+	/**
+	 * Durable request envelope; deeper immutable intent is checked by its service.
+	 *
+	 * @param bool $issue Whether this endpoint issues a new grant.
+	 * @param bool $required Whether this standalone endpoint requires the envelope.
+	 * @return array<string,array<string,mixed>>
+	 */
+	public function request_args( bool $issue, bool $required = true ): array {
+		$args = [
+			'intent' => [
+				'type'     => 'object',
+				'required' => $required,
+			],
+		];
+		if ( $issue ) {
+			$args['operation'] = [
+				'type'     => 'string',
+				'enum'     => [ 'selection.capture', 'selection.compose' ],
+				'required' => true,
+			];
+		} else {
+			$args['uuid']          = [
+				'type'     => 'string',
+				'pattern'  => '^[a-f0-9-]{36}$',
+				'required' => $required,
+			];
+			$args['request_proof'] = [
+				'type'      => 'string',
+				'maxLength' => 4096,
+				'required'  => $required,
+			];
+		}
+		return $args;
+	}
+
+	/**
+	 * Snapshot lifecycle/composition arguments, bounded before service work.
+	 *
+	 * @param string $operation Endpoint operation.
+	 * @return array<string,array<string,mixed>>
+	 */
+	public function selection_handle_args( string $operation ): array {
+		$token = [
+			'type'      => 'string',
+			'maxLength' => 120,
+			'required'  => true,
+		];
+		if ( 'release' === $operation ) {
+			return [
+				'tokens' => [
+					'type'     => 'array',
+					'items'    => [
+						'type'      => 'string',
+						'maxLength' => 120,
+					],
+					'minItems' => 1,
+					'maxItems' => 4,
+					'required' => true,
+				],
+			];
+		}
+		$args = [ 'token' => $token ];
+		if ( 'inspect' === $operation ) {
+			$args += [
+				'page'      => [
+					'type'    => 'integer',
+					'minimum' => 1,
+					'maximum' => 100000,
+					'default' => 1,
+				],
+				'per_page'  => [
+					'type'    => 'integer',
+					'minimum' => 1,
+					'maximum' => 100,
+					'default' => 25,
+				],
+				'probe_ids' => [
+					'type'     => 'array',
+					'items'    => [
+						'type'    => 'integer',
+						'minimum' => 1,
+					],
+					'maxItems' => 100,
+				],
+			];
+		} elseif ( 'compose' === $operation ) {
+			$args             += $this->request_args( false );
+			$token['required'] = false;
+			$args             += [
+				'add_token'    => $token,
+				'remove_token' => $token,
+			];
+		}
+		return $args;
 	}
 
 	/**

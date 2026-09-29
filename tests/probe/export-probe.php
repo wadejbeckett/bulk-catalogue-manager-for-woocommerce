@@ -259,7 +259,28 @@ if ( ! function_exists( 'bulkcat_export_probe' ) ) {
 				],
 			]
 		);
-		$ids['rt-grouped']   = bulkcat_export_probe_upsert(
+		// The variable product the round trip switches Off through the manager (ticket 04's Status Off/On).
+		// Kept On here, with no Off record, so every run switches it Off afresh.
+		$ids['rt-off'] = $variable(
+			'rt-off',
+			'RT Off Variable',
+			'bulkcat-rt-off',
+			$round,
+			[
+				'S' => [
+					'sku'           => 'bulkcat-rt-off-s',
+					'regular_price' => '50.00',
+				],
+				'M' => [
+					'sku'           => '',
+					'regular_price' => '51.00',
+					'virtual'       => true,
+				],
+			]
+		);
+		delete_post_meta( $ids['rt-off'], \BulkCatalogueManager\Availability\OffRecord::META_KEY );
+		clean_post_cache( $ids['rt-off'] );
+		$ids['rt-grouped']  = bulkcat_export_probe_upsert(
 			'rt-grouped',
 			WC_Product_Grouped::class,
 			[
@@ -269,7 +290,7 @@ if ( ! function_exists( 'bulkcat_export_probe' ) ) {
 				'children'     => [ $ids['rt-simple-plain'], $ids['rt-simple-dl'] ],
 			]
 		);
-		$ids['rt-external']  = bulkcat_export_probe_upsert(
+		$ids['rt-external'] = bulkcat_export_probe_upsert(
 			'rt-external',
 			WC_Product_External::class,
 			[
@@ -422,6 +443,7 @@ if ( ! function_exists( 'bulkcat_export_probe' ) ) {
 			$row['type']          = $product->get_type();
 			$row['post_parent']   = (int) get_post_field( 'post_parent', $id );
 			$row['post_status']   = get_post_status( $id );
+			$row['off_record']    = (string) get_post_meta( $id, \BulkCatalogueManager\Availability\OffRecord::META_KEY, true );
 			$rows[ $id ]          = $row;
 		}
 		$terms = [];

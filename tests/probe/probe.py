@@ -103,6 +103,7 @@ from __future__ import annotations
 import argparse
 import base64
 import csv
+import hashlib
 import http.cookiejar
 import io
 import json
@@ -1565,6 +1566,20 @@ def compose(p: Probe, user: str, token: str, mutation: dict) -> dict:
     return p.http(user, "POST", "/selection/compose", body={**body, "token": token}).json() or {}
 
 
+def t96_views(p: Probe) -> dict[str, tuple[list[str], list[tuple[str, str]], str]]:
+    """T96's three live views: (columns, filter arguments, separator). The default view's columns come from the
+    registry's defaultColumn/defaultOrder as the screen exports them (the name first, no image)."""
+    fields = (p.http("manager", "GET", "/fields").json() or {}).get("fields", [])
+    defaults = sorted((f for f in fields if f.get("defaultColumn") and f.get("type") != "image"), key=lambda f: f.get("defaultOrder") or 0)
+    default = ["name", *[f["key"] for f in defaults if f["key"] != "name"]]
+    every = [f["key"] for f in fields if f.get("type") != "image"]
+    return {
+        "default view": (default, [("mode", "products")], "comma"),
+        "every column, products and variations": (every, [("mode", "products_and_variations")], "comma"),
+        "filtered, semicolons": (default, [("mode", "products")] + filter_params("category_ids", "isAny", [p.seed["categories"]["root"]]), "semicolon"),
+    }
+
+
 def check_read_export_post(p: Probe) -> None:
     """T101: POST /export's row sources, refusals and footprint, on the live fixture."""
     if p.wp_cmd is None:
@@ -1693,7 +1708,21 @@ def check_read_export_post(p: Probe) -> None:
               f"{with_parent} rows with a Parent, {sum(1 for v in parents.values() if v[0].startswith('id:'))} as id:N; differing {bad_parents}")
 
     def switch_off_identical() -> None:
-        p.skip("read", "read:export:switch-off-identical", "pending T96: waits for ticket 04's T93 relabel (parallel start); POST and GET bytes are compared in ExportPostRouteTest meanwhile")
+        # T96's three live views: the GET (today's export) and the switch-off POST give the same bytes.
+        views = t96_views(p)
+        rows, ok = [], True
+        for name, (columns, filters, separator) in views.items():
+            export_native(p, "sql", {"what": "separator", "value": separator})
+            try:
+                get = p.http("manager", "GET", "/export", [("columns[]", c) for c in columns] + filters)
+                post = export_form(p, "manager", [("columns", ",".join(columns))] + filters + ([("confirm_all", "1")] if len(filters) == 1 else []))  # only the mode: the whole catalogue
+            finally:
+                export_native(p, "sql", {"what": "separator", "value": "comma"})
+            same = get.status == 200 and post.status == 200 and get.body == post.body and "text/csv" in post.headers.get("Content-Type", "")
+            ok = ok and same and len(get.body) > 100
+            rows.append(f"{name}: {len(csv_table(get, ';' if separator == 'semicolon' else ','))} lines, sha256 {hashlib.sha256(get.body).hexdigest()[:16]}, POST identical {same}, "
+                        f"names {attachment(get)} / {attachment(post)}")
+        p.row("read", "read:export:switch-off-identical", ok, "; ".join(rows))
 
     def writes_nothing() -> None:
         tokens = [p.capture("manager", {"ids": [s1, s2, variation]}).get("token", ""),
@@ -1735,6 +1764,15 @@ def check_read_export_post(p: Probe) -> None:
             p.row("read", f"read:export:{name}", False, "no fixtures from the fixtures step")
             continue
         p.guard("read", f"read:export:{name}", fn)
+
+
+def own_off_record(raw: str, pid: int) -> dict | None:
+    """Ticket 04's Off record when it is this product's own ({id, status, at, batch}), else None."""
+    try:
+        data = json.loads(raw) if raw else None
+    except ValueError:
+        return None
+    return data if isinstance(data, dict) and data.get("id") == pid and list(data) == ["id", "status", "at", "batch"] else None
 
 
 # The version 1 headings with the switch on, as the importer must map them (T102).
@@ -1813,6 +1851,16 @@ def check_read_export_roundtrip(p: Probe) -> None:
 
     def roundtrip() -> None:
         category = state["fx"]["categories"]["roundtrip"]
+        fixture = state["fx"]["ids"]
+        off, off_vars = fixture["rt-off"], [fixture["rt-off-s"], fixture["rt-off-m"]]
+        # Ticket 04: switched Off through the manager (preview, grant, Apply, the queue), Status to Draft on the
+        # product alone, as the offon chapter does. (Until ticket 04's T94 the inline PATCH also sent Status to a
+        # variable product's variations, which refuse Draft.)
+        switched = offon.switch(p, [off], "draft")
+        start = export_native(p, "snapshot", {"ids": [off, *off_vars]})["rows"]
+        record = own_off_record(start[str(off)]["off_record"], off)
+        state["off"] = {"switched": f"batch {switched['batch']} {switched['report'].get('status')}", "status": start[str(off)]["post_status"], "record": record,
+                        "variations": [start[str(v)]["post_status"] for v in off_vars], "legs": []}
         legs = []
         ok = True
         for setting, sep in (("comma", ","), ("semicolon", ";")):
@@ -1824,6 +1872,11 @@ def check_read_export_roundtrip(p: Probe) -> None:
                 result = import_file(r.body, sep)
                 after = export_native(p, "snapshot", {"ids": ids})
                 changed = diff(before, after)
+                if off in ids:
+                    b, a = before["rows"][str(off)], after["rows"][str(off)]
+                    state["off"]["legs"].append(
+                        f"{setting}/{source}: {b['post_status']} -> {a['post_status']}, record kept {bool(b['off_record']) and a['off_record'] == b['off_record']}, "
+                        f"variations {[after['rows'][str(v)]['post_status'] for v in off_vars]}")
                 good = (r.status == 200 and len(ids) >= 16 and result.get("updated") == len(ids) and result.get("imported") == 0
                         and not result.get("failed") and not result.get("skipped") and result.get("new_posts") == 0
                         and result.get("importing") == 0 and not changed)
@@ -1834,7 +1887,15 @@ def check_read_export_roundtrip(p: Probe) -> None:
                 state.setdefault("files", {})[(setting, source)] = (r.body, table)
         export_native(p, "sql", {"what": "separator", "value": "comma"})
         p.row("read", "read:export:native-import-roundtrip", ok, "; ".join(legs))
-        p.skip("read", "read:export:native-import-roundtrip:off-product", "pending ticket 04 (T87-T89): the Off variable product with its _bulkcat_availability_off record joins this round trip once ticket 04's record lands")
+        o = state["off"]
+        off_ok = (o["status"] == "draft" and o["record"] is not None and o["record"].get("status") == "publish" and o["variations"] == ["publish", "publish"]
+                  and len(o["legs"]) == 4 and all(leg.split(": ", 1)[1].startswith("draft -> draft, record kept True, variations ['publish', 'publish']") for leg in o["legs"]))
+        p.row("read", "read:export:native-import-roundtrip:off-product", ok and off_ok,
+              f"variable product {off} switched Off through the manager ({o['switched']}): status {o['status']}, its own Off record saving {(o['record'] or {}).get('status')}, "
+              f"variations left {o['variations']}; through each import: {'; '.join(o['legs'])}; nothing published")
+        back = offon.switch(p, [off], "publish")  # back On, so other rows' pages keep their make-up
+        if back["report"].get("status") != "complete":
+            raise AssertionError(f"switching the Off product back On: {back['report']}")
 
     def product_post_parent() -> None:
         ids = state["fx"]["ids"]

@@ -514,7 +514,8 @@ describe( 'history states', () => {
 			false
 		);
 		expect( one.getByText( 'Mia Fourie' ) ).toBeTruthy();
-		expect( one.getByText( '120 products' ) ).toBeTruthy();
+		// The row's count holds products and variations together (ticket 11).
+		expect( one.getByText( '120 items' ) ).toBeTruthy();
 
 		// Partially reversible with its conflict count.
 		const two = within( card( 2 ) );

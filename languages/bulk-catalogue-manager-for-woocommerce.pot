@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-09-29T11:46:53+00:00\n"
+"POT-Creation-Date: 2026-09-29T11:56:55+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -1690,11 +1690,13 @@ msgid "This page tried to send a change in a form the site no longer accepts, so
 msgstr ""
 
 #. translators: %s: a number of products, such as "24 products".
+#. translators: %s: a number of products, such as "24 products", or of products and variations, such as "1,200 products and 50 variations".
 #, js-format
 msgid "Apply to %s"
 msgstr ""
 
 #. translators: %s: a number of products, such as "1,284 products".
+#. translators: %s: a number of products, such as "1,284 products", or of products and variations, such as "1,200 products and 50 variations".
 #, js-format
 msgid "Yes, change %s"
 msgstr ""
@@ -1908,6 +1910,7 @@ msgid "The change was cancelled. Anything already applied is kept in History, wh
 msgstr ""
 
 #. translators: 1: products done, such as "1,280"; 2: products in all, such as "1,284 products".
+#. translators: 1: products done, such as "1,280"; 2: products in all, such as "1,284 products" or "1,284 items".
 #, js-format
 msgid "%1$s of %2$s updated. The rest are listed below."
 msgstr ""
@@ -3521,6 +3524,67 @@ msgstr ""
 
 msgid "History and undo"
 msgstr ""
+
+#. translators: %s: a number of products and variations, such as "1,200 products and 50 variations".
+#, js-format
+msgid "This will change %s. Apply it?"
+msgstr ""
+
+#. translators: %s: a number of products and variations together, such as "1,284".
+#, js-format
+msgid "%s item updated."
+msgid_plural "%s items updated."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of products and variations together, such as "1,284".
+#, js-format
+msgid "%s item"
+msgid_plural "%s items"
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: the number of variations on this page, such as "25".
+#, js-format
+msgid "The %s variation on this page is selected."
+msgid_plural "All %s on this page are selected."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: the number of products and variations on this page, such as "25".
+#, js-format
+msgid "The %s item on this page is selected."
+msgid_plural "All %s on this page are selected."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of variations, such as "1,284".
+#, js-format
+msgid "Select the %s variation matching these filters."
+msgid_plural "Select all %s variations matching these filters."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of variations, such as "1,284".
+#, js-format
+msgid "Select the %s variation in the catalogue."
+msgid_plural "Select all %s variations in the catalogue."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of products and variations together, such as "1,284".
+#, js-format
+msgid "Select the %s item matching these filters."
+msgid_plural "Select all %s items matching these filters."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of products and variations together, such as "1,284".
+#, js-format
+msgid "Select the %s item in the catalogue."
+msgid_plural "Select all %s items in the catalogue."
+msgstr[0] ""
+msgstr[1] ""
 
 msgid "The view could not be saved. Try again in a moment."
 msgstr ""

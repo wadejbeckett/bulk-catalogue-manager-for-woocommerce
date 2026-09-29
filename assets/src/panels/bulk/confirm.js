@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 
 import { actionById, fieldByKey } from './descriptors';
+import { countPhrase } from '../catalogue/selection/model';
 import { formatNumber, productsPhrase } from './words';
 
 /** The threshold when the settings carry none (Settings\Schema default). */
@@ -190,6 +191,7 @@ export function useConfirmApply( { count, threshold, reasons = [], onApply } ) {
  *
  * @param {Object}        props                Props.
  * @param {number}        props.count          Rows it applies to.
+ * @param {Object|null}   props.byType         `{ products, variations }` of that count, from the preview, or null (ticket 11).
  * @param {number}        props.threshold      The *confirm above this many rows* setting.
  * @param {Array<string>} props.reasons        Always-confirm sentences.
  * @param {Function}      props.onApply        Runs the apply.
@@ -203,6 +205,7 @@ export function useConfirmApply( { count, threshold, reasons = [], onApply } ) {
  */
 export function ConfirmApply( {
 	count,
+	byType = null,
 	threshold,
 	reasons = [],
 	onApply,
@@ -228,6 +231,11 @@ export function ConfirmApply( {
 	}, [ gate.armed ] );
 
 	const words = formatNumber( count );
+	// Products and variations apart when the change reaches variations (ticket 11).
+	const mixed = Number( byType?.variations ) > 0;
+	const phrase = mixed
+		? countPhrase( count, byType )
+		: productsPhrase( count );
 	// Escape on the second click dismisses it (and not the panel around it).
 	const onEscape = ( event ) => {
 		if ( event.key === 'Escape' ) {
@@ -239,16 +247,16 @@ export function ConfirmApply( {
 	const applyText =
 		label ||
 		sprintf(
-			/* translators: %s: a number of products, such as "24 products". */
+			/* translators: %s: a number of products, such as "24 products", or of products and variations, such as "1,200 products and 50 variations". */
 			__( 'Apply to %s', 'bulk-catalogue-manager-for-woocommerce' ),
-			productsPhrase( count )
+			phrase
 		);
 	const yesText =
 		confirmLabel ||
 		sprintf(
-			/* translators: %s: a number of products, such as "1,284 products". */
+			/* translators: %s: a number of products, such as "1,284 products", or of products and variations, such as "1,200 products and 50 variations". */
 			__( 'Yes, change %s', 'bulk-catalogue-manager-for-woocommerce' ),
-			productsPhrase( count )
+			phrase
 		);
 
 	return (
@@ -282,16 +290,25 @@ export function ConfirmApply( {
 						id="bulkcat-confirm-title"
 						className="bulkcat-confirm__title"
 					>
-						{ sprintf(
-							/* translators: %s: a number of products, such as "1,284". */
-							_n(
-								'This will change %s product. Apply it?',
-								'This will change %s products. Apply it?',
-								count,
-								'bulk-catalogue-manager-for-woocommerce'
-							),
-							words
-						) }
+						{ mixed
+							? sprintf(
+									/* translators: %s: a number of products and variations, such as "1,200 products and 50 variations". */
+									__(
+										'This will change %s. Apply it?',
+										'bulk-catalogue-manager-for-woocommerce'
+									),
+									phrase
+								)
+							: sprintf(
+									/* translators: %s: a number of products, such as "1,284". */
+									_n(
+										'This will change %s product. Apply it?',
+										'This will change %s products. Apply it?',
+										count,
+										'bulk-catalogue-manager-for-woocommerce'
+									),
+									words
+								) }
 					</p>
 					{ gate.reasons.length > 0 && (
 						<ul className="bulkcat-confirm__reasons">

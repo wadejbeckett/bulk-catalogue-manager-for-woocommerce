@@ -20,6 +20,7 @@ import {
 	unavailableReason,
 } from '../../assets/src/panels/bulk/descriptors';
 import { alwaysConfirmReasons } from '../../assets/src/panels/bulk/confirm';
+import { externalWarnings } from '../../assets/src/panels/bulk/preview';
 import {
 	descriptorsOf,
 	fieldsFromRegistry,
@@ -525,5 +526,28 @@ describe( 'the preview of an external change', () => {
 			screen.getByRole( 'button', { name: 'Yes, change 2 products' } )
 		).toBeVisible();
 		expect( screen.getByText( SALE ) ).toBeVisible(); // Restated by the confirmation; the warning reads "… — 2 products".
+	} );
+} );
+
+describe( 'counts of an external change', () => {
+	it( 'say products and variations apart when variations carry a warning (ticket 11)', () => {
+		const warning = {
+			code: 'x_sample_loud',
+			sentence: 'Some notes end with an exclamation mark.',
+			count: 3,
+			by_type: { product: 3, variation: 0 },
+		};
+		expect( externalWarnings( { warnings: [ warning ] } )[ 0 ].text ).toBe(
+			'Some notes end with an exclamation mark. — 3 products'
+		);
+		expect(
+			externalWarnings( {
+				warnings: [
+					{ ...warning, by_type: { product: 1, variation: 2 } },
+				],
+			} )[ 0 ].text
+		).toBe(
+			'Some notes end with an exclamation mark. — 1 product and 2 variations'
+		);
 	} );
 } );

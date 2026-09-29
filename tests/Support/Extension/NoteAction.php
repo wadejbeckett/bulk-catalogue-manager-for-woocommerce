@@ -78,6 +78,10 @@ final class NoteAction implements ExternalAction {
 			return Result::failed( NoteField::KEY, null, 'The sample note of this product could not be read.', 'x_sample_unreadable' );
 		}
 		$target = (string) ( $args['note'] ?? '' );
-		return $current === $target ? Result::already( NoteField::KEY, $current ) : Result::changed( NoteField::KEY, $current, $target );
+		if ( $current === $target ) {
+			return Result::already( NoteField::KEY, $current );
+		}
+		$result = Result::changed( NoteField::KEY, $current, $target );
+		return str_ends_with( $target, '!' ) ? $result->with_warning( 'x_sample_loud', 'Some notes end with an exclamation mark.' ) : $result;
 	}
 }

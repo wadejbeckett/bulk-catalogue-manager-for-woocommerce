@@ -242,6 +242,10 @@ final class ExternalPreviewTest extends TestCase {
 					'sentence' => 'Adding the Sale label asks for a second click before it is applied.',
 					'count'    => 2,
 					'confirm'  => true,
+					'by_type'  => [
+						'product'   => 2,
+						'variation' => 0,
+					],
 				],
 			],
 			$result['external']['warnings']
@@ -262,6 +266,63 @@ final class ExternalPreviewTest extends TestCase {
 		$this->assertTrue( $replace['external']['confirm'] );
 		$this->assertSame( [ 'This replaces every label on the chosen products.' ], $replace['external']['reasons'] );
 		$this->assertTrue( $replace['sample'][0]['replaces'] );
+	}
+
+	public function test_a_warning_counts_each_object_once_split_by_type(): void {
+		// Ticket 11: a count that can include variations says so. Two steps
+		// raising one code on the same object count it once.
+		update_option(
+			'sample_provider_choices',
+			[
+				'a' => 'A',
+				'b' => 'B',
+				'c' => 'C',
+				'd' => 'D',
+				'e' => 'E',
+			]
+		);
+		$many = $this->answer( [ self::add( [ 'a', 'b', 'c', 'd' ] ), self::add( [ 'e' ] ) ], Selection::of_ids( [ 101, 102 ] ) );
+		$this->assertSame(
+			[
+				[
+					'code'     => 'x_sample_many',
+					'sentence' => 'Some products will carry more than three labels.',
+					'count'    => 2,
+					'confirm'  => false,
+					'by_type'  => [
+						'product'   => 2,
+						'variation' => 0,
+					],
+				],
+			],
+			$many['external']['warnings']
+		);
+		$loud = $this->answer(
+			[
+				[
+					'action' => 'x_sample_set_note',
+					'args'   => [
+						'field'               => 'x_sample_note',
+						'note'                => 'Hello!',
+						'apply_to_variations' => true,
+					],
+				],
+			],
+			Selection::of_members(
+				[
+					'products'   => [ 101 ],
+					'variations' => [ 201 ],
+				]
+			)
+		);
+		$this->assertSame(
+			[
+				'product'   => 1,
+				'variation' => 1,
+			],
+			$loud['external']['warnings'][0]['by_type']
+		);
+		$this->assertSame( 2, $loud['external']['warnings'][0]['count'] );
 	}
 
 	public function test_an_unavailable_provider_refuses_the_preview(): void {

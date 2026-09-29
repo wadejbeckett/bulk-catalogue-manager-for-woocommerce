@@ -9,6 +9,7 @@ import { __, _n, sprintf } from '@wordpress/i18n';
 import { termOptions } from './controls';
 import { fieldByKey } from './descriptors';
 import { availabilityLines, outcomeLabel, statusName } from './availability';
+import { countPhrase } from '../catalogue/selection/model';
 import {
 	formatNumber,
 	listPhrase,
@@ -61,22 +62,32 @@ export function formatValue( field, value, terms ) {
 
 /**
  * An add-on's warnings (T106, docs/EXTENSIONS.md §10), aggregated by the
- * server by code: each its own sentence with the number of products, as
- * "<sentence> — 1,200 products".
+ * server by code, each object once: each its own sentence with its count,
+ * as "<sentence> — 1,200 products", or products and variations apart when
+ * variations carry it (ticket 11: a count that can include variations says so).
  *
  * @param {Object|null} external The preview's `external` block.
  * @return {Array<{kind: string, text: string}>} Warnings.
  */
 export function externalWarnings( external ) {
-	return ( external?.warnings || [] ).map( ( warning ) => ( {
-		kind: warning.code,
-		text: sprintf(
-			/* translators: 1: an add-on's warning, such as "Some products will carry more than three labels."; 2: how many products, such as "1,200 products". */
-			__( '%1$s — %2$s', 'bulk-catalogue-manager-for-woocommerce' ),
-			warning.sentence,
-			productsPhrase( Number( warning.count ) || 0 )
-		),
-	} ) );
+	return ( external?.warnings || [] ).map( ( warning ) => {
+		const count = Number( warning.count ) || 0;
+		const variations = Number( warning.by_type?.variation ) || 0;
+		return {
+			kind: warning.code,
+			text: sprintf(
+				/* translators: 1: an add-on's warning, such as "Some products will carry more than three labels."; 2: how many products, such as "1,200 products", or products and variations, such as "1,200 products and 50 variations". */
+				__( '%1$s — %2$s', 'bulk-catalogue-manager-for-woocommerce' ),
+				warning.sentence,
+				variations > 0
+					? countPhrase( count, {
+							products: Number( warning.by_type?.product ) || 0,
+							variations,
+						} )
+					: productsPhrase( count )
+			),
+		};
+	} );
 }
 
 /**

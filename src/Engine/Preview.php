@@ -121,7 +121,8 @@ defined( 'ABSPATH' ) || exit;
  * page first, and each sample row carries text (`current`, `new`, `change`,
  * `fieldLabel`, `notes`, `external: true`), never a raw value. The answer
  * then ends with `external`: the provider, its label and version, its
- * warnings aggregated by code with a count (scaled when estimated), whether
+ * warnings aggregated by code, each object counted once, with the count and
+ * its products and variations apart (`by_type`, scaled when estimated), whether
  * Apply always confirms, and the sentences it restates. The hash also binds
  * the provider's identity and state token (External\Binding) over the
  * change's available members.
@@ -319,6 +320,7 @@ final class Preview {
 						'sentence' => $warning['sentence'],
 						'count'    => self::scale( $warning['count'], $factor ),
 						'confirm'  => $warning['confirm'],
+						'by_type'  => array_map( static fn( int $n ): int => self::scale( $n, $factor ), $warning['by_type'] ),
 					],
 					array_values( $tally['external']['warnings'] )
 				),
@@ -604,6 +606,7 @@ final class Preview {
 			}
 			$states = [];
 			$failed = [];
+			$warned = [];
 			foreach ( $results as $result ) {
 				$state = $result->state();
 				++$tally['rows'][ $state ];
@@ -623,8 +626,17 @@ final class Preview {
 						'sentence' => $warning['sentence'],
 						'count'    => 0,
 						'confirm'  => false,
+						'by_type'  => [
+							'product'   => 0,
+							'variation' => 0,
+						],
 					];
-					++$tally['external']['warnings'][ $warning['code'] ]['count'];
+					// Each object once per code, products and variations apart (ticket 11).
+					if ( ! isset( $warned[ $warning['code'] ] ) ) {
+						$warned[ $warning['code'] ] = true;
+						++$tally['external']['warnings'][ $warning['code'] ]['count'];
+						++$tally['external']['warnings'][ $warning['code'] ]['by_type'][ 'variation' === $type ? 'variation' : 'product' ];
+					}
 					if ( $warning['confirm'] ) {
 						$tally['external']['warnings'][ $warning['code'] ]['confirm'] = true;
 						$tally['external']['confirm']                                 = true;

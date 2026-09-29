@@ -109,14 +109,38 @@ final class ExportRequestTest extends TestCase {
 	}
 
 	public function test_more_than_1000_ids_are_refused_and_1000_are_accepted(): void {
-		$refusal = $this->refused(
-			self::send(
+		// The schema caps the list (Main Build minor): core refuses it before the handler, carrying the plain refusal.
+		$this->assertSame( 1000, ( new RouteSchema( new Registry() ) )->export_args()['ids']['maxItems'] );
+		foreach ( [ implode( ',', range( 1, 1001 ) ), range( 1, 1001 ) ] as $ids ) {
+			$refusal = $this->refused(
+				self::send(
+					[
+						'columns' => 'name',
+						'ids'     => $ids,
+					]
+				),
+				'rest_invalid_param'
+			);
+			$this->assertSame(
 				[
-					'columns' => 'name',
-					'ids'     => implode( ',', range( 1, 1001 ) ),
-				]
-			),
-			'bulkcat_invalid_value'
+					'code'    => 'bulkcat_invalid_value',
+					'message' => 'More than 1,000 products, or two kinds of rows, were sent to export. Choose Selected or All matching the current filters instead.',
+					'data'    => [
+						'status' => 400,
+						'param'  => 'ids',
+						'limit'  => 1000,
+					],
+				],
+				$refusal->get_error_data()['details']['ids']
+			);
+		}
+		// The handler keeps its own check for a caller that skips core's validation.
+		$direct = new \WP_REST_Request( 'POST', '/bulkcat/v1/export-request' );
+		$direct->set_body_params(
+			[
+				'columns' => 'name',
+				'ids'     => range( 1, 1001 ),
+			]
 		);
 		$this->assertSame(
 			[
@@ -124,7 +148,7 @@ final class ExportRequestTest extends TestCase {
 				'param'  => 'ids',
 				'limit'  => 1000,
 			],
-			$refusal->get_error_data()
+			$this->refused( ExportRequest::from( $direct, new Registry() ), 'bulkcat_invalid_value' )->get_error_data()
 		);
 		$accepted = self::send(
 			[

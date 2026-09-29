@@ -26,6 +26,7 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Rest;
 
+use BulkCatalogueManager\Export\ExportRequest;
 use BulkCatalogueManager\Fields\Field;
 use BulkCatalogueManager\Fields\Registry;
 use BulkCatalogueManager\Query\Criteria;
@@ -673,17 +674,7 @@ final class RouteSchema {
 				],
 				'strval'
 			),
-			'ids'         => self::arg(
-				[
-					'description' => __( 'At most 1,000 products or variations, by id, instead of a selection or a filter.', 'bulk-catalogue-manager-for-woocommerce' ),
-					'type'        => 'array',
-					'items'       => [
-						'type'    => 'integer',
-						'minimum' => 1,
-					],
-				],
-				static fn( mixed $value ): array => array_map( 'intval', self::as_list( $value ) )
-			),
+			'ids'         => self::export_ids_arg(),
 			'confirm_all' => $switch( __( 'Confirms an export of the whole catalogue, needed when no search, filter or category is set.', 'bulk-catalogue-manager-for-woocommerce' ) ),
 			'summary'     => $switch( __( 'Whether to answer only the row counts and the file name, without exporting.', 'bulk-catalogue-manager-for-woocommerce' ) ),
 			'source'      => self::arg(
@@ -694,6 +685,37 @@ final class RouteSchema {
 				'strval'
 			),
 		];
+	}
+
+	/**
+	 * `POST /export`'s `ids`: at most ExportRequest::MAX_IDS positive ids, as
+	 * a list or one comma-separated field. The schema's maxItems caps the list
+	 * before the handler runs; past it the argument answers with the export's
+	 * own plain refusal, which core carries in its `rest_invalid_param` details.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private static function export_ids_arg(): array {
+		$arg                      = self::arg(
+			[
+				'description' => __( 'At most 1,000 products or variations, by id, instead of a selection or a filter.', 'bulk-catalogue-manager-for-woocommerce' ),
+				'type'        => 'array',
+				'items'       => [
+					'type'    => 'integer',
+					'minimum' => 1,
+				],
+				'maxItems'    => ExportRequest::MAX_IDS,
+			],
+			static fn( mixed $value ): array => array_map( 'intval', self::as_list( $value ) )
+		);
+		$schema                   = $arg['validate_callback'];
+		$arg['validate_callback'] = static function ( mixed $value, mixed $request = null, string $param = '' ) use ( $schema ): bool|\WP_Error {
+			if ( count( self::as_list( $value ) ) > ExportRequest::MAX_IDS ) {
+				return ExportRequest::rows_refusal( true );
+			}
+			return $schema( self::as_list( $value ), $request, $param );
+		};
+		return $arg;
 	}
 
 	/*

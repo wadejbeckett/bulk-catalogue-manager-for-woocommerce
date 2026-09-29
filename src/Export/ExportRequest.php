@@ -140,14 +140,7 @@ final class ExportRequest {
 		$token = self::token( $request );
 		$ids   = array_key_exists( 'ids', $params ) && null !== $params['ids'] ? RouteSchema::as_list( $params['ids'] ) : null;
 		if ( null !== $ids && ( null !== $token || count( $ids ) > self::MAX_IDS ) ) {
-			return Refusal::invalid(
-				'bulkcat_invalid_value',
-				__( 'More than 1,000 products, or two kinds of rows, were sent to export. Choose Selected or All matching the current filters instead.', 'bulk-catalogue-manager-for-woocommerce' ),
-				null === $token ? [
-					'param' => 'ids',
-					'limit' => self::MAX_IDS,
-				] : [ 'param' => 'ids' ]
-			);
+			return self::rows_refusal( null === $token );
 		}
 		if ( null !== $token ) {
 			return new self( self::FROM_SELECTION, $columns, $identifiers, $summary, $confirm_all, $token, [], null, [] );
@@ -182,6 +175,25 @@ final class ExportRequest {
 			);
 		}
 		return $request;
+	}
+
+	/**
+	 * The refusal for too many ids, or ids sent together with a token: a
+	 * plain sentence pointing to the dialog's two choices. The route's `ids`
+	 * schema returns it too for more than MAX_IDS ids (maxItems), so core's
+	 * own refusal carries it in its details.
+	 *
+	 * @param bool $limit Whether the limit applies (too many ids), so it is named in the data.
+	 */
+	public static function rows_refusal( bool $limit ): \WP_Error {
+		return Refusal::invalid(
+			'bulkcat_invalid_value',
+			__( 'More than 1,000 products, or two kinds of rows, were sent to export. Choose Selected or All matching the current filters instead.', 'bulk-catalogue-manager-for-woocommerce' ),
+			$limit ? [
+				'param' => 'ids',
+				'limit' => self::MAX_IDS,
+			] : [ 'param' => 'ids' ]
+		);
 	}
 
 	/**

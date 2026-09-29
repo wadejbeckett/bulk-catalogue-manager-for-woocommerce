@@ -42,19 +42,39 @@ final class Registry {
 	private array $fields = [];
 
 	/**
+	 * Internal fields by key (T88): resolved by get(), listed only by internal().
+	 *
+	 * @var array<string, Field>
+	 */
+	private array $internal = [];
+
+	/**
 	 * Build every field with its translated labels. Code outside tests passes
 	 * nothing; a test double passes its own list, such as every field plus a
-	 * synthetic one, to show what derives from the registry.
+	 * synthetic one, to show what derives from the registry. The internal
+	 * fields (the Off record) are always present, since the write path and
+	 * undo resolve them by key whatever the list.
 	 *
 	 * @param list<Field>|null $fields The fields, or null for the §5.2 fields and the read-only columns.
 	 * @throws \LogicException When two fields share a key.
 	 */
 	public function __construct( ?array $fields = null ) {
-		foreach ( $fields ?? [ ...self::editable_fields(), ...self::column_fields() ] as $field ) {
-			if ( isset( $this->fields[ $field->key() ] ) ) {
+		$given = $fields ?? [ ...self::editable_fields(), ...self::column_fields() ];
+		$keys  = array_map( static fn( Field $field ): string => $field->key(), $given );
+		foreach ( self::internal_fields() as $field ) {
+			if ( ! in_array( $field->key(), $keys, true ) ) {
+				$given[] = $field;
+			}
+		}
+		foreach ( $given as $field ) {
+			if ( isset( $this->fields[ $field->key() ] ) || isset( $this->internal[ $field->key() ] ) ) {
 				throw new \LogicException( esc_html( sprintf( 'Field "%s" is declared twice.', $field->key() ) ) );
 			}
-			$this->fields[ $field->key() ] = $field;
+			if ( $field->internal() ) {
+				$this->internal[ $field->key() ] = $field;
+			} else {
+				$this->fields[ $field->key() ] = $field;
+			}
 		}
 	}
 
@@ -69,7 +89,8 @@ final class Registry {
 	}
 
 	/**
-	 * Every field, keyed by field key, in registry order.
+	 * Every public field, keyed by field key, in registry order. Internal
+	 * fields are never listed here (internal()).
 	 *
 	 * @return array<string, Field>
 	 */
@@ -87,7 +108,8 @@ final class Registry {
 	}
 
 	/**
-	 * Whether a key is a field.
+	 * Whether a key is a public field: a column, filter or view may name it.
+	 * An internal field is not one.
 	 *
 	 * @param string $key Field key.
 	 */
@@ -96,12 +118,23 @@ final class Registry {
 	}
 
 	/**
-	 * One field, or null for an unknown key.
+	 * One field, public or internal, or null for an unknown key. The journal,
+	 * preview, writer and undo resolve fields through this.
 	 *
 	 * @param string $key Field key.
 	 */
 	public function get( string $key ): ?Field {
-		return $this->fields[ $key ] ?? null;
+		return $this->fields[ $key ] ?? $this->internal[ $key ] ?? null;
+	}
+
+	/**
+	 * The internal fields, keyed by field key (T88): today the Off record,
+	 * `availability_off`, journalled with the status (SPEC §5.5, §9.3).
+	 *
+	 * @return array<string, Field>
+	 */
+	public function internal(): array {
+		return $this->internal;
 	}
 
 	/**
@@ -507,6 +540,31 @@ final class Registry {
 				getter: 'get_reviews_allowed',
 				setter: 'set_reviews_allowed',
 				variation_note: $per_product( $reviews )
+			),
+		];
+	}
+
+	/**
+	 * The internal fields (T88): the Off record the Status switch writes
+	 * with the status (SPEC §5.5), journalled as **Status before Off**.
+	 *
+	 * @return Field[]
+	 */
+	private static function internal_fields(): array {
+		return [
+			new Field(
+				key: 'availability_off',
+				label: __( 'Status before Off', 'bulk-catalogue-manager-for-woocommerce' ),
+				type: Field::TEXT,
+				storage: Storage::meta( \BulkCatalogueManager\Availability\OffRecord::META_KEY ),
+				edit_kinds: [ Field::SET, Field::CLEAR ],
+				variation_rule: Field::PARENT_ONLY,
+				getter: 'get_meta',
+				setter: 'update_meta_data',
+				nullable: true,
+				variation_note: __( 'A variation is never switched Off on its own, so it has no saved status.', 'bulk-catalogue-manager-for-woocommerce' ),
+				adapter: Field::ADAPTER_OFF_RECORD,
+				internal: true
 			),
 		];
 	}

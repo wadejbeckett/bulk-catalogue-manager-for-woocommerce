@@ -4,7 +4,8 @@
  * Deactivation unschedules only the plugin's own recurring actions. Uninstall
  * deletes nothing unless "Remove all data when the plugin is deleted" is on;
  * then it removes every scheduled action in the plugin's group, every
- * registry table, transient, user meta, term meta and option.
+ * registry table, transient, user meta, term meta, post meta and option.
+ * It never changes a product's status: a product switched Off stays a draft.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -80,6 +81,10 @@ final class Cleanup {
 		}
 		foreach ( $this->registry->term_meta() as $key ) {
 			delete_metadata( 'term', 0, $key, '', true );
+		}
+		// The Off record goes from every product; statuses are left alone, so Off products stay drafts (SPEC §5.5).
+		foreach ( $this->registry->post_meta() as $key ) {
+			delete_metadata( 'post', 0, $key, '', true );
 		}
 		foreach ( $this->registry->options() as $name ) {
 			delete_option( $name );

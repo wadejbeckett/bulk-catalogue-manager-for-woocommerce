@@ -728,6 +728,18 @@ if ( ! defined( 'BULKCAT_TEST_NO_ACTION_SCHEDULER' ) && ! function_exists( 'as_s
 	}
 }
 
+if ( ! function_exists( 'wp_unslash' ) ) {
+	/**
+	 * T88: core's wp_unslash(), which add_metadata() applies to what it stores.
+	 */
+	function wp_unslash( mixed $value ): mixed {
+		if ( is_array( $value ) ) {
+			return array_map( 'wp_unslash', $value );
+		}
+		return is_string( $value ) ? stripslashes( $value ) : $value;
+	}
+}
+
 if ( ! function_exists( 'wp_slash' ) ) {
 	/**
 	 * T63: core's wp_slash(), adding slashes to a string or each string in an array.

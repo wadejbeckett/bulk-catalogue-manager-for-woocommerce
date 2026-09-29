@@ -21,6 +21,7 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Fields;
 
+use BulkCatalogueManager\Availability\OffRecord;
 use BulkCatalogueManager\Operations\Group;
 use BulkCatalogueManager\Rest\Refusal;
 
@@ -120,6 +121,13 @@ final class Field {
 	public const ADAPTER_SWITCH = 'switch';
 
 	/**
+	 * The Off record (SPEC §5.5; T88): read as Availability\OffRecord::raw(),
+	 * the canonical JSON of the product's own record or '', and written
+	 * through OffRecord::write() — '' removes it — never through a setter.
+	 */
+	public const ADAPTER_OFF_RECORD = 'off_record';
+
+	/**
 	 * The condition a conditional field needs: the object manages its stock.
 	 */
 	public const REQUIRES_MANAGED_STOCK = 'managed_stock';
@@ -186,6 +194,7 @@ final class Field {
 	 * @param string                                 $group                  The bulk action panel group it sits in (Operations\Group); '' for a read-only column.
 	 * @param int                                    $default_order          Its place among the grid's default columns after the product cell (T40, SPEC §4.1), from 1; 0 when it is not shown by default.
 	 * @param array<string, string>                  $hiding_choices         For an enum, the choices that take a product out of the shopper's sight when set, value => HIDES_OFF_SITE or HIDES_FROM_SHOP (SPEC §4.5, §5.3).
+	 * @param bool                                   $internal               Whether the field is internal (T88): resolved by key for the journal, preview, writer and undo, but never a column, filter, sort, bulk panel field, route argument or public action's field.
 	 * @throws \InvalidArgumentException When the description is inconsistent.
 	 */
 	public function __construct(
@@ -215,7 +224,8 @@ final class Field {
 		private readonly array $filter_operators = [],
 		private readonly string $group = '',
 		private readonly int $default_order = 0,
-		private readonly array $hiding_choices = []
+		private readonly array $hiding_choices = [],
+		private readonly bool $internal = false
 	) {
 		$problem = match ( true ) {
 			1 !== preg_match( '/^[a-z][a-z0-9_]{0,63}$/', $key ) => 'its key is not a lower-case field key',
@@ -234,6 +244,7 @@ final class Field {
 			0 < count( array_diff( $hiding_choices, self::HIDES ) ) => 'it hides a product in an unknown way',
 			is_array( $choices ) && [] !== array_diff( array_keys( $hiding_choices ), array_map( 'strval', array_keys( $choices ) ) ) => 'a choice that hides a product is not one of its choices',
 			self::PER_VARIATION !== $variation_rule && self::CONDITIONAL !== $variation_rule && [] !== $edit_kinds && '' === $variation_note => 'it needs a note saying why a variation cannot take it',
+			$internal && ( '' !== $group || 0 < $default_order || [] !== $filter_operators || $inline || $sortable ) => 'an internal field has no group, default column, filter, sort or inline edit',
 			default                                                => '',
 		};
 		if ( '' !== $problem ) {
@@ -344,6 +355,14 @@ final class Field {
 	 */
 	public function read_only(): bool {
 		return [] === $this->edit_kinds;
+	}
+
+	/**
+	 * Whether the field is internal (T88): resolved by key, listed nowhere a
+	 * client sees and accepted by no public action.
+	 */
+	public function internal(): bool {
+		return $this->internal;
 	}
 
 	/**
@@ -462,6 +481,10 @@ final class Field {
 	 * @param mixed $value Submitted value.
 	 */
 	public function sanitise( mixed $value ): mixed {
+		if ( self::ADAPTER_OFF_RECORD === $this->adapter ) {
+			$record = OffRecord::read( $value );
+			return null === $record ? '' : $record->to_json();
+		}
 		switch ( $this->type ) {
 			case self::TEXT:
 				$text = is_scalar( $value ) ? trim( (string) $value ) : '';
@@ -509,6 +532,9 @@ final class Field {
 		}
 		if ( $this->nullable && Values::is_empty( $value ) ) {
 			return true;
+		}
+		if ( self::ADAPTER_OFF_RECORD === $this->adapter ) {
+			return null !== OffRecord::read( $value ) ? true : self::error( 'bulkcat_invalid_value', self::off_record_rule() );
 		}
 		$ok = match ( $this->type ) {
 			self::TEXT    => $this->valid_text( $value ),
@@ -578,6 +604,8 @@ final class Field {
 			case self::ADAPTER_SWITCH:
 				$visibility = (string) self::call( $product, $this->getter, true );
 				return self::SWITCH_READ[ $visibility ] ?? 'partly';
+			case self::ADAPTER_OFF_RECORD:
+				return OffRecord::raw( $product );
 			default:
 				$value = self::call( $product, $this->getter, true );
 				return match ( $this->type ) {
@@ -630,7 +658,11 @@ final class Field {
 		if ( null !== $refusal ) {
 			return $refusal;
 		}
-		$clean  = $this->clean( $value );
+		$clean = $this->clean( $value );
+		if ( self::ADAPTER_OFF_RECORD === $this->adapter ) {
+			OffRecord::write( $product, (string) $clean );
+			return $clean;
+		}
 		$stored = self::ADAPTER_SWITCH === $this->adapter ? self::SWITCH_WRITE[ $clean ] : $clean;
 		$product->{$this->setter}( $stored );
 		return $clean;
@@ -818,6 +850,10 @@ final class Field {
 	 * @param mixed  $clean   Canonical value.
 	 */
 	private function object_refusal( object $product, mixed $clean ): ?string {
+		if ( self::ADAPTER_OFF_RECORD === $this->adapter ) {
+			$id = (int) self::call( $product, 'get_id', false );
+			return '' === $clean || null !== OffRecord::parse( $clean, $id ) ? null : self::off_record_rule();
+		}
 		$is_variation = self::is_type( $product, 'variation' );
 		if ( self::ENUM === $this->type ) {
 			$allowed = $is_variation ? ( $this->variation_choices ?? $this->writable_choices() ) : array_diff( $this->writable_choices(), $this->variation_only_choices );
@@ -837,6 +873,13 @@ final class Field {
 			}
 		}
 		return null;
+	}
+
+	/**
+	 * Why a value is not this product's saved status (SPEC §4.8).
+	 */
+	private static function off_record_rule(): string {
+		return __( 'The saved status before Off could not be read for this product, so it was not changed. Reload the list and try again.', 'bulk-catalogue-manager-for-woocommerce' );
 	}
 
 	/**

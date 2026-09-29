@@ -97,6 +97,7 @@ final class DependencyTest extends TestCase {
 				'init'                     => 3,
 				'plugins_loaded'           => 1,
 				'rest_api_init'            => 1,
+				'woocommerce_duplicate_product_exclude_meta' => 1,
 			],
 			$result['hooks']
 		);
@@ -152,6 +153,7 @@ final class DependencyTest extends TestCase {
 				'init'                     => 3,
 				'plugins_loaded'           => 1,
 				'rest_api_init'            => 1,
+				'woocommerce_duplicate_product_exclude_meta' => 1,
 			],
 			$result['hooks']
 		);

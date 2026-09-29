@@ -136,6 +136,41 @@ final class RegistryTest extends TestCase {
 		$this->assertSame( 'bulk-catalogue-manager-for-woocommerce', Registry::ACTION_GROUP, 'The full slug, so uninstall can never cancel another plugin\'s actions.' );
 	}
 
+	public function test_post_meta_is_registered_under_its_own_underscore_rule(): void {
+		// T88: the Off record is protected product meta, so its name starts `_bulkcat_`.
+		$this->assertSame( [ '_bulkcat_availability_off' ], Registry::plugin()->post_meta() );
+		$this->assertSame( [ '_bulkcat_x' ], ( new Registry( [], [], [], [], [], [], [ '_bulkcat_x', '_bulkcat_x' ] ) )->post_meta() );
+		$this->assertSame( [], ( new Registry( [], [], [], [], [], [] ) )->post_meta(), 'Post meta is optional.' );
+		foreach ( [ 'bulkcat_x', '_bulkcat_', '__bulkcat_x', '_bulkcat_X', '_other_x', '_bulkcat_x; DROP' ] as $name ) {
+			try {
+				new Registry( [], [], [], [], [], [], [ $name ] );
+				$this->fail( "\"$name\" was accepted as post meta." );
+			} catch ( \InvalidArgumentException $e ) {
+				$this->assertStringContainsString( '_bulkcat_', $e->getMessage() );
+			}
+		}
+		// The other kinds keep their bulkcat_ rule: an underscore name is refused there.
+		try {
+			new Registry( [], [ '_bulkcat_x' ], [], [], [], [] );
+			$this->fail( 'An underscore name was accepted as an option.' );
+		} catch ( \InvalidArgumentException $e ) {
+			$this->assertStringContainsString( 'must be bulkcat_', $e->getMessage() );
+		}
+	}
+
+	public function test_every_underscore_bulkcat_key_in_src_is_registered_post_meta(): void {
+		$root  = dirname( __DIR__, 3 );
+		$found = [];
+		foreach ( (array) glob( $root . '/src/{,*/,*/*/}*.php', GLOB_BRACE ) as $file ) {
+			preg_match_all( '/[\'"](_bulkcat_[A-Za-z0-9_\-]*)/', (string) file_get_contents( $file ), $matches ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- reading plugin source.
+			foreach ( $matches[1] as $literal ) {
+				$found[ $literal ] = true;
+			}
+		}
+		$this->assertSame( [ '_bulkcat_availability_off' ], array_keys( $found ) );
+		$this->assertSame( array_keys( $found ), Registry::plugin()->post_meta() );
+	}
+
 	public function test_names_outside_bulkcat_are_refused(): void {
 		$bad = [ 'woocommerce_x', 'bulkcat_', 'BULKCAT_X', 'bulkcat_x; DROP TABLE wp_users', 'bulkcat_x`', 'wp_bulkcat_x', 'bulkcat-x' ];
 		foreach ( $bad as $name ) {

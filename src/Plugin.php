@@ -100,7 +100,8 @@ final class Plugin {
 	 * routes register on rest_api_init. The admin screen registers on
 	 * admin_menu and loads its assets on admin_enqueue_scripts, for its own
 	 * screen id only; its Heartbeat ticks get a fresh REST nonce on
-	 * heartbeat_received.
+	 * heartbeat_received. WooCommerce's Duplicate is told to leave the Off
+	 * record out of the copy (SPEC §5.5).
 	 *
 	 * @return array<int, array{0: string, 1: callable, 2: int, 3: int}>
 	 */
@@ -125,6 +126,7 @@ final class Plugin {
 			[ Engine\Pruner::HOOK, [ Engine\Pruner::class, 'handle' ], 10, 0 ],
 			[ 'bulkcat_prune_selections', [ Requests\Cleanup::class, 'selections' ], 10, 0 ],
 			[ 'bulkcat_prune_requests', [ Requests\Cleanup::class, 'requests' ], 10, 0 ],
+			[ 'woocommerce_duplicate_product_exclude_meta', [ Availability\OffRecord::class, 'exclude_from_duplicate' ], 10, 1 ],
 		];
 	}
 

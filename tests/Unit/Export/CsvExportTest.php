@@ -154,6 +154,22 @@ final class CsvExportTest extends TestCase {
 		$this->assertSame( $columns, $export->columns() );
 	}
 
+	public function test_the_heading_row_of_every_column_and_no_internal_field(): void {
+		// Ticket 04 (T88): the Off record adds no column, so a whole-registry export keeps its headings.
+		$registry = new Registry();
+		$export   = new CsvExport( $this->source( 1 ), $registry, $registry->keys(), [], ',', 'f.csv' );
+		$this->assertSame(
+			[ 'Name', 'Status', 'Catalogue visibility', 'Visible on site', 'Featured', 'Categories', 'Tags', 'Regular price', 'Sale price', 'Stock status', 'Manage stock', 'Stock quantity', 'SKU', 'Weight', 'Length', 'Width', 'Height', 'Shipping class', 'Tax status', 'Tax class', 'Sold individually', 'Reviews', 'ID', 'Type', 'Image', 'Price', 'Date created', 'Last modified', 'Total sales', 'Variations' ],
+			$export->header()
+		);
+		try {
+			new CsvExport( $this->source( 1 ), $registry, [ 'id', 'availability_off' ], [], ',', 'f.csv' );
+			$this->fail( 'The internal Off record was accepted as a column.' );
+		} catch ( \InvalidArgumentException $e ) {
+			$this->assertStringContainsString( 'Unknown column', $e->getMessage() );
+		}
+	}
+
 	public function test_a_missing_value_is_an_empty_cell_and_zero_stays_zero(): void {
 		$export = new CsvExport( $this->source( 10 ), new Registry(), [ 'id', 'stock_quantity', 'weight' ], [], ',', 'f.csv' );
 		$csv    = self::bytes( $export );

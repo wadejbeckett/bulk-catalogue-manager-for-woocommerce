@@ -1181,6 +1181,29 @@ def set_remove_data(p: Probe, on: bool) -> None:
 LIFECYCLE_TABLES = 5
 LIFECYCLE_RECURRING = 3
 
+# --- ticket 04 (global Off/On): lifecycle:uninstall-off-record -------------
+# A draft product carrying its own Off record (SPEC §5.5), made with WooCommerce CRUD:
+# uninstall keeps the record with "Remove all data" off, removes it with it on, and
+# never changes the status (the product stays a draft).
+OFF_RECORD_SKU = "bulkcat-probe-off-record"
+OFF_RECORD_SETUP_PHP = r"""
+$id = wc_get_product_id_by_sku( '%s' );
+$p  = $id ? wc_get_product( $id ) : new WC_Product_Simple();
+$p->set_sku( '%s' );
+$p->set_name( 'Probe Off record' );
+$p->set_regular_price( '9.00' );
+$p->set_status( 'draft' );
+$id = $p->save();
+$p->update_meta_data( '_bulkcat_availability_off', wp_json_encode( array( 'id' => $id, 'status' => 'publish', 'at' => gmdate( 'Y-m-d\TH:i:s\Z' ), 'batch' => 1 ), JSON_UNESCAPED_SLASHES ) );
+$p->save();
+bulkcat_out( $id );
+""" % (OFF_RECORD_SKU, OFF_RECORD_SKU)
+
+
+def off_record_state(p: "Probe", pid: int) -> dict:
+    return p.wp_eval(f"clean_post_cache( {pid} ); bulkcat_out( array( 'record' => get_post_meta( {pid}, '_bulkcat_availability_off', true ), 'status' => get_post_status( {pid} ) ) );")
+# --- end ticket 04 ------------------------------------------------------------
+
 
 def check_lifecycle(p: Probe) -> None:
     def tables() -> None:
@@ -1213,11 +1236,16 @@ def check_lifecycle(p: Probe) -> None:
         p.row("lifecycle", "lifecycle:deactivate-activate-idempotent", ok,
               f"prune actions {before['actions']} -> {mid['actions']} -> {after['actions']}; rows kept {after['tables'] == before['tables']}")
 
+    off_record: dict = {}
+
     def uninstall(on: bool) -> None:
         set_remove_data(p, on)
+        if "id" not in off_record:
+            off_record["id"] = int(p.wp_eval(OFF_RECORD_SETUP_PHP))
         before = p.wp_eval(FOOTPRINT_PHP)
         p.wp("plugin", "uninstall", PLUGIN, "--deactivate", "--skip-delete")
         after = p.wp_eval(FOOTPRINT_PHP)
+        off_record["on" if on else "off"] = off_record_state(p, off_record["id"])
         if on:
             ok = not after["tables"] and not after["options"] and after["usermeta"] == 0 and after["termmeta"] == 0 and after["actions"] == 0
             surface, detail = "lifecycle:uninstall-remove-data-on", f"left {after}"
@@ -1231,8 +1259,16 @@ def check_lifecycle(p: Probe) -> None:
         p.row("lifecycle", surface + ":reinstalled", len(again["tables"]) == LIFECYCLE_TABLES and again["version"] is not None and again["actions"] == LIFECYCLE_RECURRING,
               f"tables {sorted(again['tables'])} version {again['version']} prune actions {again['actions']}")
 
+    def off_record_kept_then_removed() -> None:
+        off, on = off_record.get("off", {}), off_record.get("on", {})
+        ok = (str(off.get("record", "")).startswith('{"id":%d,' % off_record.get("id", 0)) and off.get("status") == "draft"
+              and on.get("record") == "" and on.get("status") == "draft")
+        p.row("lifecycle", "lifecycle:uninstall-off-record", ok, f"remove data off: {off}; on: {on}")
+        p.wp("post", "delete", str(off_record.get("id", 0)), "--force", check=False)
+
     for name, fn in [("tables-and-indexes", tables), ("woocommerce-compatibility", compat), ("version-bump", bump),
-                     ("reactivate", reactivate), ("uninstall-off", lambda: uninstall(False)), ("uninstall-on", lambda: uninstall(True))]:
+                     ("reactivate", reactivate), ("uninstall-off", lambda: uninstall(False)), ("uninstall-on", lambda: uninstall(True)),
+                     ("uninstall-off-record", off_record_kept_then_removed)]:
         p.guard("lifecycle", f"lifecycle:{name}", fn)
     p.guard("lifecycle", "lifecycle:remove-data-reset", lambda: set_remove_data(p, False))
 

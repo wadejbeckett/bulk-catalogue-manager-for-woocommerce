@@ -62,6 +62,14 @@ final class Registry {
 	];
 
 	/**
+	 * Post meta keys: the Off record on a product (SPEC §5.5, T88). Protected
+	 * meta, so the key starts with an underscore (`_bulkcat_`).
+	 */
+	private const POST_META = [
+		\BulkCatalogueManager\Availability\OffRecord::META_KEY,
+	];
+
+	/**
 	 * Transient name prefixes; every transient whose name starts with one is the plugin's.
 	 */
 	private const TRANSIENT_PREFIXES = [
@@ -96,6 +104,13 @@ final class Registry {
 	private array $names;
 
 	/**
+	 * Post meta keys, each `_bulkcat_` followed by lower-case letters, digits and underscores.
+	 *
+	 * @var string[]
+	 */
+	private array $post_meta;
+
+	/**
 	 * Build a registry. Every name must be `bulkcat_` followed by lower-case
 	 * letters, digits and underscores, so each is safe as an SQL identifier
 	 * and cannot match another plugin's data.
@@ -106,9 +121,10 @@ final class Registry {
 	 * @param string[]              $term_meta          Term meta keys.
 	 * @param string[]              $transient_prefixes Transient name prefixes.
 	 * @param string[]              $recurring_actions  Recurring action hooks.
-	 * @throws \InvalidArgumentException When a name is not a valid `bulkcat_` name.
+	 * @param string[]              $post_meta          Post meta keys, each `_bulkcat_` then lower-case letters, digits and underscores (protected meta).
+	 * @throws \InvalidArgumentException When a name is not a valid `bulkcat_` name, or a post meta key not a valid `_bulkcat_` one.
 	 */
-	public function __construct( array $tables, array $options, array $user_meta, array $term_meta, array $transient_prefixes, array $recurring_actions ) {
+	public function __construct( array $tables, array $options, array $user_meta, array $term_meta, array $transient_prefixes, array $recurring_actions, array $post_meta = [] ) {
 		$names = [
 			'options'            => $options,
 			'user_meta'          => $user_meta,
@@ -121,15 +137,21 @@ final class Registry {
 				throw new \InvalidArgumentException( esc_html( sprintf( 'Registry name "%s" must be bulkcat_ followed by lower-case letters, digits and underscores.', (string) $name ) ) );
 			}
 		}
-		$this->tables = $tables;
-		$this->names  = array_map( static fn( array $keys ): array => array_values( array_unique( $keys ) ), $names );
+		foreach ( $post_meta as $key ) {
+			if ( ! is_string( $key ) || 1 !== preg_match( '/^_bulkcat_[a-z0-9_]+$/', $key ) ) {
+				throw new \InvalidArgumentException( esc_html( sprintf( 'Post meta key "%s" must be _bulkcat_ followed by lower-case letters, digits and underscores.', (string) $key ) ) );
+			}
+		}
+		$this->tables    = $tables;
+		$this->names     = array_map( static fn( array $keys ): array => array_values( array_unique( $keys ) ), $names );
+		$this->post_meta = array_values( array_unique( $post_meta ) );
 	}
 
 	/**
 	 * The plugin's own registry.
 	 */
 	public static function plugin(): self {
-		return new self( self::TABLES, self::OPTIONS, self::USER_META, self::TERM_META, self::TRANSIENT_PREFIXES, self::RECURRING_ACTIONS );
+		return new self( self::TABLES, self::OPTIONS, self::USER_META, self::TERM_META, self::TRANSIENT_PREFIXES, self::RECURRING_ACTIONS, self::POST_META );
 	}
 
 	/**
@@ -191,6 +213,15 @@ final class Registry {
 	 */
 	public function term_meta(): array {
 		return $this->names['term_meta'];
+	}
+
+	/**
+	 * Post meta keys.
+	 *
+	 * @return string[]
+	 */
+	public function post_meta(): array {
+		return $this->post_meta;
 	}
 
 	/**

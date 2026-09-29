@@ -672,6 +672,88 @@ final class RegistryTest extends TestCase {
 		}
 	}
 
+	public function test_the_off_record_is_an_internal_field_no_public_list_holds(): void {
+		// T88: the journal, preview, writer and undo resolve it by key; nothing a client sees lists it.
+		$registry = new Registry();
+		$field    = $registry->get( 'availability_off' );
+		$this->assertTrue( null !== $field, 'get() resolves the internal field.' );
+		$this->assertSame( [ 'availability_off' ], array_keys( $registry->internal() ) );
+		$this->assertTrue( $field->internal() );
+		$this->assertSame( 'Status before Off', $field->label() );
+		$this->assertSame( [ Field::SET, Field::CLEAR ], $field->edit_kinds() );
+		$this->assertSame( Field::PARENT_ONLY, $field->variation_rule() );
+		$this->assertSame( '', $field->group() );
+		$this->assertFalse( $field->inline() );
+		$this->assertFalse( $field->filterable() );
+		$this->assertFalse( $field->sortable() );
+		foreach ( [
+			'all'        => $registry->all(),
+			'editable'   => $registry->editable(),
+			'columns'    => $registry->columns(),
+			'filterable' => $registry->filterable(),
+			'sortable'   => $registry->sortable(),
+		] as $list => $fields ) {
+			$this->assertArrayNotHasKey( 'availability_off', $fields, "$list() lists the internal field." );
+		}
+		$this->assertNotContains( 'availability_off', $registry->keys() );
+		$this->assertFalse( $registry->has( 'availability_off' ), 'has() answers for the public fields only.' );
+		$this->assertStringNotContainsString( 'availability_off', (string) wp_json_encode( $registry->to_client() ) );
+		$payload = (string) wp_json_encode( ( new FieldsController( $registry ) )->payload() );
+		$this->assertStringNotContainsString( 'availability_off', $payload );
+		$this->assertStringNotContainsString( 'Status before Off', $payload );
+		$this->assertSame( [], ( new Actions( $registry ) )->actions_for( 'availability_off', Field::SET ), 'No public action accepts it.' );
+		$this->assertSame( [], ( new Actions( $registry ) )->actions_for( 'availability_off', Field::CLEAR ) );
+		// A registry built from a test's own list still resolves it.
+		$this->assertTrue( null !== ( new Registry( [ $registry->get( 'sku' ) ] ) )->get( 'availability_off' ) );
+	}
+
+	public function test_the_off_record_field_reads_and_writes_the_product_bound_record(): void {
+		$field   = ( new Registry() )->get( 'availability_off' );
+		$json    = '{"id":41,"status":"private","at":"2026-09-28T14:03:11Z","batch":3}';
+		$product = new FakeProduct( 'simple', [ 'id' => 41 ] );
+		$this->assertSame( '', $field->read( $product ) );
+		$this->assertSame( $json, $field->write( $product, $json ) );
+		$this->assertSame( $json, $field->read( $product ) );
+		$this->assertSame( [ [ 'update', '_bulkcat_availability_off', $json ] ], $product->meta_calls );
+		$this->assertSame( '', $field->write( $product, '' ) );
+		$this->assertSame( '', $field->read( $product ) );
+		$this->assertSame( 'delete', $product->meta_calls[1][0] );
+		$this->assertSame( [], $product->sets, 'No CRUD setter runs, and nothing saves.' );
+
+		// Another product's record, an unreadable value, a variation: refused, nothing written.
+		$other = $field->write( $product, '{"id":42,"status":"private","at":"2026-09-28T14:03:11Z","batch":3}' );
+		$this->assertInstanceOf( \WP_Error::class, $other );
+		$this->assertInstanceOf( \WP_Error::class, $field->write( $product, '{"id":41,"status":"draft","at":"2026-09-28T14:03:11Z","batch":3}' ) );
+		$this->assertInstanceOf( \WP_Error::class, $field->write( new FakeProduct( 'variation', [ 'id' => 41 ] ), $json ) );
+		$this->assertCount( 2, $product->meta_calls );
+		$this->assertStringNotContainsString( 'bulkcat_', $other->get_error_message() );
+		$this->assertStringNotContainsString( '_bulkcat', $other->get_error_message() );
+	}
+
+	public function test_an_internal_field_has_no_group_default_place_filter_or_inline_edit(): void {
+		$base = [
+			'key'            => 'thing',
+			'label'          => 'Thing',
+			'type'           => Field::TEXT,
+			'storage'        => Storage::meta( '_thing' ),
+			'edit_kinds'     => [ Field::SET, Field::CLEAR ],
+			'variation_rule' => Field::PER_VARIATION,
+			'getter'         => 'get_thing',
+			'setter'         => 'set_thing',
+			'nullable'       => true,
+			'internal'       => true,
+		];
+		$this->assertTrue( ( new Field( ...$base ) )->internal() );
+		foreach ( [ [ 'group' => Group::STOCK ], [ 'default_order' => 3 ], [ 'filter_operators' => [ 'isAny' ] ], [ 'inline' => true ], [ 'sortable' => true ] ] as $change ) {
+			try {
+				new Field( ...array_merge( $base, $change ) );
+				$this->fail( 'Accepted ' . wp_json_encode( $change ) );
+			} catch ( \InvalidArgumentException $e ) {
+				$this->assertStringContainsString( 'is invalid', $e->getMessage() );
+			}
+		}
+	}
+
 	public function test_the_fields_payload_matches_the_snapshot(): void {
 		// The whole `GET /fields` payload: fields, actions (T24) and groups.
 		$json = (string) wp_json_encode( ( new FieldsController( new Registry() ) )->payload(), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) . "\n";

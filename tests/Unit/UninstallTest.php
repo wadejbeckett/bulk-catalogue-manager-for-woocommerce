@@ -113,6 +113,7 @@ final class UninstallTest extends TestCase {
 				'deleted'     => [
 					[ 'metadata', 'user', 0, 'bulkcat_views', '', true ],
 					[ 'metadata', 'term', 0, 'bulkcat_order', '', true ],
+					[ 'metadata', 'post', 0, '_bulkcat_availability_off', '', true ],
 					[ 'option', 'bulkcat_settings' ],
 					[ 'option', 'bulkcat_db_version' ],
 					[ 'option', 'bulkcat_request_epoch' ],
@@ -152,7 +153,8 @@ final class UninstallTest extends TestCase {
 			[ 'bulkcat_views' ],
 			[ 'bulkcat_order' ],
 			[ 'bulkcat_count_' ],
-			[ 'bulkcat_prune_history' ]
+			[ 'bulkcat_prune_history' ],
+			[ '_bulkcat_record' ]
 		);
 		$GLOBALS['wpdb']->tables      = [
 			'wp_bulkcat_alpha' => true,
@@ -188,15 +190,19 @@ final class UninstallTest extends TestCase {
 				[ 'site_transient', 'bulkcat_count_net' ],
 				[ 'metadata', 'user', 0, 'bulkcat_views', '', true ],
 				[ 'metadata', 'term', 0, 'bulkcat_order', '', true ],
+				[ 'metadata', 'post', 0, '_bulkcat_record', '', true ],
 				[ 'option', 'bulkcat_settings' ],
 				[ 'option', 'bulkcat_db_version' ],
 			],
 			$GLOBALS['bulkcat_test']['deleted']
 		);
+		// Off products stay drafts (SPEC §5.5): no status, post or product write, only the key goes.
+		$this->assertSame( [], array_filter( $GLOBALS['wpdb']->queries, static fn( string $sql ): bool => str_contains( $sql, 'post_status' ) || str_contains( $sql, 'wp_posts' ) ) );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['updated_posts'] ?? [] );
 	}
 
 	public function test_every_kind_in_the_registry_is_kept_with_the_setting_off(): void {
-		$registry                     = new Registry( [ 'bulkcat_alpha' => 'id INT' ], [ 'bulkcat_settings' ], [ 'bulkcat_views' ], [ 'bulkcat_order' ], [ 'bulkcat_count_' ], [ 'bulkcat_prune_history' ] );
+		$registry                     = new Registry( [ 'bulkcat_alpha' => 'id INT' ], [ 'bulkcat_settings' ], [ 'bulkcat_views' ], [ 'bulkcat_order' ], [ 'bulkcat_count_' ], [ 'bulkcat_prune_history' ], [ '_bulkcat_record' ] );
 		$GLOBALS['wpdb']->option_rows = [ '_transient_bulkcat_count_abc' => 1 ];
 
 		$this->assertFalse( ( new Cleanup( $registry ) )->uninstall( new Settings( [] ) ) );
@@ -231,7 +237,7 @@ final class UninstallTest extends TestCase {
 		$this->assertTrue( is_array( $result ), $text );
 		$this->assertFalse( $result['scheduler'] );
 		$this->assertSame( [], $result['unscheduled'] );
-		$this->assertSame( [ [ 'metadata', 'user', 0, 'bulkcat_views', '', true ], [ 'metadata', 'term', 0, 'bulkcat_order', '', true ], [ 'option', 'bulkcat_settings' ], [ 'option', 'bulkcat_db_version' ], [ 'option', 'bulkcat_request_epoch' ] ], $result['deleted'] );
+		$this->assertSame( [ [ 'metadata', 'user', 0, 'bulkcat_views', '', true ], [ 'metadata', 'term', 0, 'bulkcat_order', '', true ], [ 'metadata', 'post', 0, '_bulkcat_availability_off', '', true ], [ 'option', 'bulkcat_settings' ], [ 'option', 'bulkcat_db_version' ], [ 'option', 'bulkcat_request_epoch' ] ], $result['deleted'] );
 	}
 
 	public function test_tables_are_dropped_through_prepare_with_an_identifier_placeholder(): void {

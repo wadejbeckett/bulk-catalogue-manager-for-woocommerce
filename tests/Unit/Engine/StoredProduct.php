@@ -31,6 +31,37 @@ final class StoredProduct {
 
 	public function __construct( private string $type = 'simple', public array $props = [] ) {}
 
+	/**
+	 * Product meta by key (T88): get_meta(), update_meta_data() and
+	 * delete_meta_data() over this map, as WooCommerce's meta API does before save().
+	 *
+	 * @var array<string, mixed>
+	 */
+	public array $meta = [];
+
+	/**
+	 * Meta calls, in order: [ 'update' | 'delete', key, value ].
+	 *
+	 * @var array<int, array{0: string, 1: string, 2: mixed}>
+	 */
+	public array $meta_calls = [];
+
+	public function get_meta( string $key = '', bool $single = true, string $context = 'view' ): mixed {
+		unset( $single, $context );
+		return $this->meta[ $key ] ?? '';
+	}
+
+	public function update_meta_data( string $key, mixed $value, int $meta_id = 0 ): void {
+		unset( $meta_id );
+		$this->meta_calls[] = [ 'update', $key, $value ];
+		$this->meta[ $key ] = $value;
+	}
+
+	public function delete_meta_data( string $key ): void {
+		$this->meta_calls[] = [ 'delete', $key, null ];
+		unset( $this->meta[ $key ] );
+	}
+
 	public function is_type( string $type ): bool {
 		return $type === $this->type;
 	}
@@ -46,6 +77,13 @@ final class StoredProduct {
 			$prop  = substr( $method, 4 );
 			$value = $this->props[ $prop ];
 			$GLOBALS['bulkcat_test']['meta'][ $id ][ '_' . $prop ] = is_scalar( $value ) || null === $value ? (string) $value : $value;
+		}
+		foreach ( $this->meta_calls as [ $kind, $key ] ) {
+			if ( 'delete' === $kind || ! isset( $this->meta[ $key ] ) ) {
+				unset( $GLOBALS['bulkcat_test']['meta'][ $id ][ $key ] );
+			} else {
+				$GLOBALS['bulkcat_test']['meta'][ $id ][ $key ] = $this->meta[ $key ];
+			}
 		}
 		return $id;
 	}

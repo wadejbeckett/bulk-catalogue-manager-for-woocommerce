@@ -188,13 +188,13 @@ final class RunnerStore {
 		foreach ( array_slice( $wpdb->writes, $this->seen ) as [ $method, $table, $data, , $where ] ) {
 			++$this->seen;
 			$inserted = 'insert' === $method && ! in_array( 'insert', $wpdb->failing, true );
-			if ( 'update' === $method && 'wp_bulkcat_batches' === $table && ! in_array( 'update', $wpdb->failing, true ) ) {
+			if ( 'update' === $method && 'wp_bulkcat_batches' === $table && ! $wpdb->update_fails( $table, $data ) ) {
 				if ( $where['batch_id'] === $this->batch['batch_id'] && ( ! isset( $where['status'] ) || $where['status'] === $this->batch['status'] ) ) {
 					$this->batch = $data + $this->batch;
 				} elseif ( isset( $this->others[ $where['batch_id'] ] ) && ( ! isset( $where['status'] ) || $where['status'] === $this->others[ $where['batch_id'] ]['status'] ) ) {
 					$this->others[ $where['batch_id'] ] = $data + $this->others[ $where['batch_id'] ];
 				}
-			} elseif ( 'update' === $method && 'wp_bulkcat_changes' === $table && ! in_array( 'update', $wpdb->failing, true ) ) {
+			} elseif ( 'update' === $method && 'wp_bulkcat_changes' === $table && ! $wpdb->update_fails( $table, $data ) ) {
 				// An intent row settled (§12.3).
 				foreach ( $this->changes as $index => $row ) {
 					if ( [] === array_diff_assoc( $where, array_intersect_key( $row, $where ) ) ) {

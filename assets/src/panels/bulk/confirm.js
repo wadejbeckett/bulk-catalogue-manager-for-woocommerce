@@ -242,7 +242,6 @@ export function useConfirmApply( { count, threshold, reasons = [], onApply } ) {
  * @param {boolean}       props.disabled       Whether Apply is disabled.
  * @param {string}        props.disabledReason Its one-line reason.
  * @param {boolean}       props.busy           Whether an apply is running.
- * @param {string}        props.undoNote       In place of the undo promise, when the change is too large to undo here (T85).
  * @return {Element} Apply control.
  */
 export function ConfirmApply( {
@@ -256,7 +255,6 @@ export function ConfirmApply( {
 	disabled = false,
 	disabledReason = '',
 	busy = false,
-	undoNote = '',
 } ) {
 	const gate = useConfirmApply( { count, threshold, reasons, onApply } );
 	const applyRef = useRef( null );
@@ -360,11 +358,10 @@ export function ConfirmApply( {
 						</ul>
 					) }
 					<p className="bulkcat-bulk__hint">
-						{ undoNote ||
-							__(
-								'You can undo this afterwards from History.',
-								'bulk-catalogue-manager-for-woocommerce'
-							) }
+						{ __(
+							'You can undo this afterwards from History.',
+							'bulk-catalogue-manager-for-woocommerce'
+						) }
 					</p>
 					<div className="bulkcat-confirm__acts">
 						<button

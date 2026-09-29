@@ -19,6 +19,8 @@ use BulkCatalogueManager\Operations\Registry as Actions;
 use BulkCatalogueManager\Operations\Result;
 use BulkCatalogueManager\Settings\Settings;
 use BulkCatalogueManager\Undo\Original;
+use BulkCatalogueManager\Undo\Plan;
+use BulkCatalogueManager\Undo\Planner;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -74,6 +76,12 @@ defined( 'ABSPATH' ) || exit;
  *    place of the batch's: every item of an undo batch (T56; an undo item
  *    without one fails with a plain reason), and a variation "Also apply to
  *    variations" added to a bulk batch whose other steps do not reach it (T69);
+ *    an undo item is checked again just before it is written (T111):
+ *    its object is planned again from the undone batch's journal
+ *    (Undo\Planner::checker(), every field the batch changed, status and
+ *    its Off record included, the rows read once a chunk), and one changed
+ *    since the undo was previewed and confirmed is left alone, skipped with
+ *    a plain reason, unless the undo was Revert anyway;
  * 7. adapts the chunk size: a chunk that used more than 70 per cent of the
  *    PHP time limit halves it for the rest of the batch, never below 10, and
  *    records why in the batch's note; one that used under 30 per cent grows
@@ -406,6 +414,7 @@ final class ChunkRunner {
 		$operations = $batch['operations'];
 		$undo       = 'undo' === $batch['source'];
 		$own        = $this->batches->item_operations( $batch['batch_id'], array_values( array_map( static fn( array $item ): int => $item['item_id'], $items ) ) );
+		$check      = $undo ? $this->undo_check( $batch, $items ) : null;
 		$marks      = [];
 		$changed    = 0;
 		$error      = null;
@@ -418,7 +427,7 @@ final class ChunkRunner {
 		wp_defer_term_counting( true );
 		try {
 			$writer->run(
-				static function ( Writer $writer ) use ( $items, $operations, $undo, $own, $batches, $batch_id, $token, $lease, $deadline, &$marks, &$changed, &$error, &$stopped ): void {
+				static function ( Writer $writer ) use ( $items, $operations, $undo, $own, $check, $batches, $batch_id, $token, $lease, $deadline, &$marks, &$changed, &$error, &$stopped ): void {
 					foreach ( $items as $item ) {
 						if ( $lease() > $deadline ) {
 							$stopped = true;
@@ -433,6 +442,12 @@ final class ChunkRunner {
 						}
 						if ( $undo && ! isset( $own[ $item['item_id'] ] ) ) {
 							$marks[ $item['item_id'] ] = [ 'failed', self::no_operations_reason() ];
+							continue;
+						}
+						// T111: checked again now, just before it is written; one changed since the undo started is left alone.
+						$left = null === $check ? '' : $check( $item['object_id'], $item['object_type'] );
+						if ( '' !== $left ) {
+							$marks[ $item['item_id'] ] = [ 'skipped', $left ];
 							continue;
 						}
 						try {
@@ -455,6 +470,51 @@ final class ChunkRunner {
 			wp_defer_term_counting( false );
 		}
 		return [ $marks, $changed, $error, $stopped ];
+	}
+
+	/**
+	 * The check an undo chunk's items get just before each is written
+	 * (T111, SPEC §9.4): the undone batch's journal rows for the chunk's
+	 * objects are read once, and each object is planned again as it stands
+	 * then (Undo\Planner::checker()). The closure answers the plain reason
+	 * to leave an object alone — changed since the undo was previewed and
+	 * confirmed, or no longer checkable against the batch undone — or '' to
+	 * write it. Revert anyway checks nothing: it puts values back regardless.
+	 *
+	 * @param array                                                                     $batch The undo batch.
+	 * @param array<int, array{item_id: int, object_id: int, object_type: string, attempts: int}> $items The chunk's items.
+	 * @return \Closure( int, string ): string|null Null when nothing is checked.
+	 */
+	private function undo_check( array $batch, array $items ): ?\Closure {
+		$undo_of = (int) ( $batch['undo_of'] ?? 0 );
+		if ( $undo_of < 1 || true === ( $batch['selection']['force'] ?? false ) ) {
+			return null;
+		}
+		$ids = [];
+		foreach ( $items as $item ) {
+			if ( 'term' !== $item['object_type'] ) {
+				$ids[] = $item['object_id'];
+			}
+		}
+		if ( [] === $ids ) {
+			return null;
+		}
+		$now = ( new Planner( $this->batches, $this->changes, $this->actions, $this->settings() ) )->checker( $undo_of, $ids, (int) $batch['user_id'] );
+		return static function ( int $object_id, string $type ) use ( $now ): string {
+			$item      = $now( $object_id );
+			$variation = 'variation' === $type;
+			if ( null === $item ) {
+				return $variation
+					? __( 'This variation could not be checked against the change being undone, so it was left alone.', 'bulk-catalogue-manager-for-woocommerce' )
+					: __( 'This product could not be checked against the change being undone, so it was left alone.', 'bulk-catalogue-manager-for-woocommerce' );
+			}
+			if ( Plan::CONFLICTED !== $item['state'] ) {
+				return '';
+			}
+			return $variation
+				? __( 'This variation was changed again after the undo was started, so it was left alone.', 'bulk-catalogue-manager-for-woocommerce' )
+				: __( 'This product was changed again after the undo was started, so it was left alone.', 'bulk-catalogue-manager-for-woocommerce' );
+		};
 	}
 
 	/**

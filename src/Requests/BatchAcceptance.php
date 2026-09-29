@@ -44,7 +44,10 @@ defined( 'ABSPATH' ) || exit;
  * Undo: the batch undone is locked first, before this transaction reads
  * anything, then planned afresh and must still have the intent's plan hash; the undo batch is recorded and the batch undone moved
  * to undoing in the same transaction, so two undos of one batch serialise
- * and the loser records nothing.
+ * and the loser records nothing. The plan is walked, not held (T111): the
+ * undo batch's items are recorded a chunk at a time as the walk hands them
+ * over (Engine\UndoRecorder), and a hash that no longer matches, known at
+ * the walk's end, refuses and rolls them back.
  */
 final class BatchAcceptance {
 	/**
@@ -143,11 +146,15 @@ final class BatchAcceptance {
 		} else {
 			$summary['ids'] = $selection->ids;
 		}
-		return $factory->record_scope( $claims, $operations, $scope['objects'], $summary, null, $scope['missing'] );
+		return $factory->record_scope( $claims, $operations, $scope['objects'], $summary, $scope['missing'] );
 	}
 
 	/**
-	 * Accept an undo.
+	 * Accept an undo, recording it while its plan is walked (T111): the undo
+	 * batch's header and items are written a chunk at a time as the planner
+	 * hands over each item, never holding the whole plan, and the plan's
+	 * hash — known only at the end of the walk — must still be the intent's,
+	 * or the refusal rolls everything back.
 	 *
 	 * @param array<string,mixed> $claims  Verified grant claims.
 	 * @param array<string,mixed> $intent  Canonical undo intent.
@@ -156,19 +163,23 @@ final class BatchAcceptance {
 	 * @return array<string,mixed>|\WP_Error
 	 */
 	private static function undo( array $claims, array $intent, BatchRepository $batches, BatchFactory $factory ): array|\WP_Error {
-		$plan = ( new Planner( $batches ) )->plan( $intent['batch_id'], $claims['owner'] );
-		if ( is_wp_error( $plan ) ) {
-			return $plan;
+		$recorder = $factory->undo_recorder( $claims['uuid'], $claims['owner'], $intent['batch_id'], $intent['force'] );
+		if ( is_wp_error( $recorder ) ) {
+			return $recorder;
 		}
-		if ( ! hash_equals( $plan->hash(), $intent['plan_hash'] ) ) {
+		$summary = ( new Planner( $batches ) )->walk( $intent['batch_id'], $claims['owner'], [ $recorder, 'add' ] );
+		if ( is_wp_error( $summary ) ) {
+			return $summary;
+		}
+		if ( ! hash_equals( $summary->hash(), $intent['plan_hash'] ) ) {
 			return Refusal::create( BatchFactory::STALE_PREVIEW, __( 'This undo no longer matches its preview: the products or the settings have changed since. Preview the undo again, then confirm it.', 'bulk-catalogue-manager-for-woocommerce' ), 409 );
 		}
-		$scope = $factory->undo_scope( $plan, $intent['force'] );
-		if ( is_wp_error( $scope ) ) {
-			return $scope;
+		$result = $recorder->finish( $summary->counts(), $summary->hash() );
+		if ( is_wp_error( $result ) ) {
+			return $result;
 		}
-		[ $original, $previous, $objects, $outline, $snapshot ] = $scope;
-		$result = $factory->record_scope( $claims, array_values( $outline ), $objects, $snapshot, $original );
+		$original = $intent['batch_id'];
+		$previous = $recorder->previous();
 		if ( ! $batches->transition( $original, $previous, 'undoing' ) ) {
 			return Refusal::create( Planner::NOT_REVERSIBLE, Planner::undoing_sentence(), 409, [ 'reason' => Planner::UNDO_IN_PROGRESS ] );
 		}

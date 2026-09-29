@@ -53,24 +53,6 @@ const FOCUSABLE =
 	'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /**
- * The sentence in place of the undo promise for a change larger than this
- * host can undo from the screen (T85; Undo\Capacity).
- *
- * @param {number} limit The most products and variations an undo here can cover.
- * @return {string} Sentence.
- */
-export function undoTooLarge( limit ) {
-	return sprintf(
-		/* translators: %s: the most products and variations a change may cover and still be undone from this screen, such as "27,304". */
-		__(
-			'Every change is saved with the old values, but undoing a change to more than %s products and variations is not yet supported from this screen.',
-			'bulk-catalogue-manager-for-woocommerce'
-		),
-		formatNumber( limit )
-	);
-}
-
-/**
  * How many products and variations a selection holds.
  *
  * @param {Object} selection Panel selection.
@@ -262,10 +244,6 @@ export default function BulkChangePanel( {
 	const applier = useApply();
 
 	const values = settingsValues( settings );
-	// T85: an undo plans every item in one web request, so the screen
-	// promises undo only up to the size this host can plan (Undo\Capacity).
-	const undoLimit =
-		typeof settings?.undoLimit === 'number' ? settings.undoLimit : Infinity;
 	const terms = useMemo(
 		() => ( {
 			categories,
@@ -311,9 +289,6 @@ export default function BulkChangePanel( {
 				variations: Number( types.variation?.matched ) || 0,
 			}
 		: null;
-	const reach =
-		Number( batch?.total_items ?? response?.totals?.matched ?? count ) || 0;
-	const undoNote = reach > undoLimit ? undoTooLarge( undoLimit ) : '';
 	const state = panelState( {
 		batchId: batch?.batch_id,
 		applying: applier.status === 'applying',
@@ -615,11 +590,10 @@ export default function BulkChangePanel( {
 							) }
 						</h3>
 						<p className="bulkcat-bulk__hint">
-							{ undoNote ||
-								__(
-									'Every change is saved with the old values. One click in History puts them back.',
-									'bulk-catalogue-manager-for-woocommerce'
-								) }
+							{ __(
+								'Every change is saved with the old values. One click in History puts them back.',
+								'bulk-catalogue-manager-for-woocommerce'
+							) }
 						</p>
 					</section>
 				</div>
@@ -629,7 +603,6 @@ export default function BulkChangePanel( {
 							batchId={ batch.batch_id }
 							count={ batch.total_items ?? changes }
 							byType={ reachTypes }
-							undoLimit={ undoLimit }
 							interval={ pollInterval }
 							onUndo={ onUndo }
 							onViewHistory={ onViewHistory }
@@ -928,7 +901,6 @@ export default function BulkChangePanel( {
 						changed={ [ 'changed', 'legacy', 'renew' ].includes(
 							applier.status
 						) }
-						undoNote={ undoNote }
 					/>
 				) }
 				<button type="button" className="button" onClick={ onClose }>
@@ -943,23 +915,14 @@ export default function BulkChangePanel( {
 							) }
 				</button>
 				<span className="bulkcat-bulk__footnote">
-					{ undoNote
-						? sprintf(
-								/* translators: %d: the current step, 1 to 3. */
-								__(
-									'Step %d of 3 · Too large to undo from this screen',
-									'bulk-catalogue-manager-for-woocommerce'
-								),
-								step
-							)
-						: sprintf(
-								/* translators: %d: the current step, 1 to 3. */
-								__(
-									'Step %d of 3 · You can undo this afterwards',
-									'bulk-catalogue-manager-for-woocommerce'
-								),
-								step
-							) }
+					{ sprintf(
+						/* translators: %d: the current step, 1 to 3. */
+						__(
+							'Step %d of 3 · You can undo this afterwards',
+							'bulk-catalogue-manager-for-woocommerce'
+						),
+						step
+					) }
 				</span>
 			</footer>
 		</div>
@@ -981,7 +944,6 @@ export default function BulkChangePanel( {
  * @param {Array<string>} props.reasons   Always-confirm sentences.
  * @param {boolean}       props.busy      Whether an apply is running.
  * @param {boolean}       props.changed   Whether the last Apply was refused in a way only a new preview or a reload can fix.
- * @param {string}        props.undoNote  In place of the undo promise, when the change is too large to undo here (T85).
  * @return {Element} Control.
  */
 function FooterAction( {
@@ -995,7 +957,6 @@ function FooterAction( {
 	reasons,
 	busy,
 	changed,
-	undoNote = '',
 } ) {
 	if ( state === 'ready' || state === 'empty' || state === 'applying' ) {
 		return (
@@ -1006,7 +967,6 @@ function FooterAction( {
 				reasons={ reasons }
 				onApply={ apply }
 				busy={ busy }
-				undoNote={ undoNote }
 				disabled={ state === 'empty' || changed }
 				disabledReason={
 					state === 'empty'

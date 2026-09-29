@@ -164,6 +164,18 @@ if ( ! empty( $_SERVER['HTTP_X_BULKCAT_PERF_LOG'] ) ) {
 		$bulkcat_perf_log( $row );
 	} );
 }
+// perf.py's undo_scale group: run Action Scheduler's queue inside a plain web request, as its
+// WP-Cron and async runners do, when asked with the key perf.py stores for the run in the
+// bulkcat_perf_queue_key option. The runner raises the limit to WP_MAX_MEMORY_LIMIT; the stack
+// sets that to 128M for the group, and the answer reports the limit the run had.
+add_action( 'wp_loaded', function () {
+	$key = isset( $_SERVER['HTTP_X_BULKCAT_PERF_QUEUE'] ) ? (string) $_SERVER['HTTP_X_BULKCAT_PERF_QUEUE'] : '';
+	if ( '' === $key || ! hash_equals( (string) get_option( 'bulkcat_perf_queue_key', '' ), $key ) ) {
+		return;
+	}
+	$ran = ActionScheduler_QueueRunner::instance()->run( 'bulkcat perf web runner' );
+	wp_send_json( array( 'ran' => $ran, 'memory_limit' => ini_get( 'memory_limit' ), 'peak_mb' => round( memory_get_peak_usage() / 1048576, 2 ) ) );
+} );
 foreach ( array( 'bulkcat_run_chunk', 'bulkcat_prune_history' ) as $hook ) {
 	add_action( $hook, function () {
 		gc_collect_cycles();

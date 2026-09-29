@@ -174,31 +174,6 @@ final class PluginTest extends TestCase {
 		$this->assertFalse( $renewed( static fn() => do_action( 'edited_term', 5, 5, 'category' ) ) );
 	}
 
-	public function test_the_plugin_file_notes_the_memory_limit_before_wordpress_raises_it_for_administrators(): void {
-		// Ticket 11 item 7: the plugin loads before wp-admin/admin.php calls
-		// wp_raise_memory_limit( 'admin' ), so the value it notes is the one a
-		// plain web request (the REST request that plans an undo) runs under.
-		$script = sys_get_temp_dir() . '/bulkcat-observe-' . bin2hex( random_bytes( 6 ) ) . '.php';
-		file_put_contents(
-			$script,
-			"<?php\ndefine( 'ABSPATH', '/' );\n"
-			. self::php_require( self::root() . '/tests/Support/wp-stubs.php' )
-			. "ini_set( 'memory_limit', '100M' );\n"
-			. self::php_require( self::root() . '/' . self::PLUGIN_FILE )
-			. "do_action( 'plugins_loaded' );\n"
-			. "ini_set( 'memory_limit', '300M' );\n"
-			. 'echo json_encode( [ BulkCatalogueManager\Undo\Capacity::observed(), BulkCatalogueManager\Undo\Capacity::web_limit() ] );'
-		);
-		try {
-			$output = [];
-			exec( escapeshellarg( PHP_BINARY ) . ' -d memory_limit=512M ' . escapeshellarg( $script ) . ' 2>&1', $output, $exit ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.system_calls_exec -- runs PHP in a clean process.
-			$this->assertSame( 0, $exit, implode( "\n", $output ) );
-			$this->assertSame( [ '100M', '100M' ], json_decode( implode( "\n", $output ), true ), 'The value at load, not the raised 300M nor php.ini\'s 512M.' );
-		} finally {
-			unlink( $script );
-		}
-	}
-
 	public function test_plugin_file_loads_without_composer_and_plugin_still_resolves(): void {
 		// A copy of the shipped files with no vendor/ beside them, loaded in a
 		// fresh PHP process so this suite's Composer autoloader cannot help.

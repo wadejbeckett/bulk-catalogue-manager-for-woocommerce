@@ -22,7 +22,6 @@ namespace BulkCatalogueManager\Admin;
 use BulkCatalogueManager\Rest\Access;
 use BulkCatalogueManager\Rest\Routes;
 use BulkCatalogueManager\Settings\Settings;
-use BulkCatalogueManager\Undo\Capacity;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -215,8 +214,6 @@ final class Screen {
 			],
 			'wpMajor'        => self::host_major(),
 			'dataviews'      => self::DATAVIEWS_VERSION,
-			// T85: the largest change the screen promises to undo on this host (null: no limit).
-			'undoLimit'      => Capacity::items(),
 		];
 	}
 

@@ -689,33 +689,30 @@ describe( 'bulk panel: preview, apply and done', () => {
 		).toBeVisible();
 	} );
 
-	it( 'does not promise an undo the screen cannot yet make for a change this large (T85)', async () => {
+	it( 'promises and offers undo for a change of 100,000 products and variations (T111: the undo is streamed)', async () => {
 		routeApi( apiFetch, {
 			'POST preview': previewResponse(),
 			'POST requests': grantFor,
 			'POST batches': {
 				batch_id: 8,
 				status: 'queued',
-				total_items: 24,
+				total_items: 100000,
 				replayed: false,
 			},
 			'GET batches/8': {
 				batch_id: 8,
 				status: 'complete',
-				total_items: 24,
-				done_items: 24,
+				total_items: 100000,
+				done_items: 100000,
+				changed_items: 100000,
 				failed_items: 0,
 				pending_items: 0,
 				summary: [],
 			},
 		} );
 		const onUndo = jest.fn();
-		renderPanel( {
-			settings: { ...SETTINGS, undoLimit: 10 },
-			onUndo,
-		} );
-		const sentence =
-			'Every change is saved with the old values, but undoing a change to more than 10 products and variations is not yet supported from this screen.';
+		// A page served before this update may still carry the old limit: it no longer limits anything.
+		renderPanel( { settings: { ...SETTINGS, undoLimit: 10 }, onUndo } );
 		chooseIncrease();
 		fireEvent.click(
 			screen.getByRole( 'button', { name: 'Check the change' } )
@@ -724,39 +721,20 @@ describe( 'bulk panel: preview, apply and done', () => {
 			name: 'Apply to 20 products',
 		} );
 		expect( panel().textContent ).toContain(
-			'Step 2 of 3 · Too large to undo from this screen'
-		);
-		expect( panel().textContent ).not.toContain(
-			'You can undo this afterwards'
-		);
-		expect( panel().textContent ).toContain( sentence );
-		fireEvent.click( apply );
-		await screen.findByText( '24 products updated.' );
-		expect( panel().textContent ).toContain( sentence );
-		expect(
-			screen.queryByText(
-				'The old values are saved, so you can put this back at any time.'
-			)
-		).toBeNull();
-		expect(
-			screen.queryByRole( 'button', { name: 'Undo this change' } )
-		).toBeNull();
-	} );
-
-	it( 'still promises undo within the size this host can undo (T85)', async () => {
-		routeApi( apiFetch, { 'POST preview': previewResponse() } );
-		renderPanel( { settings: { ...SETTINGS, undoLimit: 1000 } } );
-		chooseIncrease();
-		fireEvent.click(
-			screen.getByRole( 'button', { name: 'Check the change' } )
-		);
-		await screen.findByRole( 'button', { name: 'Apply to 20 products' } );
-		expect( panel().textContent ).toContain(
-			'You can undo this afterwards'
+			'Step 2 of 3 · You can undo this afterwards'
 		);
 		expect( panel().textContent ).toContain(
 			'Every change is saved with the old values. One click in History puts them back.'
 		);
+		expect( panel().textContent ).not.toContain( 'not yet supported' );
+		fireEvent.click( apply );
+		await screen.findByText(
+			'The old values are saved, so you can put this back at any time.'
+		);
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Undo this change' } )
+		);
+		expect( onUndo ).toHaveBeenCalledWith( 8 );
 	} );
 
 	it( 'applies through a grant: POST /requests, then the durable body, then progress and the result', async () => {

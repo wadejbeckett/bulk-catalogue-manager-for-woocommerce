@@ -440,7 +440,7 @@ final class BatchFactoryTest extends TestCase {
 			'uuid'  => self::UUID,
 			'owner' => self::USER,
 		];
-		$result = $this->factory()->record_scope( $claims, self::operations(), [ [ 101, 'product' ], [ 108, 'product' ], [ 203, 'variation' ] ], [ 'kind' => 'ids' ], null, [ [ 108, 'product' ], [ 203, 'variation' ] ] );
+		$result = $this->factory()->record_scope( $claims, self::operations(), [ [ 101, 'product' ], [ 108, 'product' ], [ 203, 'variation' ] ], [ 'kind' => 'ids' ], [ [ 108, 'product' ], [ 203, 'variation' ] ] );
 		$this->assertSame( 3, $result['total_items'] );
 		$this->assertSame( [ 'batch:1', 'items:1:3', 'failed:1:1', 'failed:1:1' ], $this->store->log, 'The header, every item, then the unavailable ones marked failed, per kind.' );
 		$states = array_column( $this->store->items, 'state', 'object_id' );

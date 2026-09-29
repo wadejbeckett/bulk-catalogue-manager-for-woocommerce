@@ -411,14 +411,15 @@ final class BatchFactory {
 	 * request already created: source `undo`, `undo_of` the planned batch,
 	 * one pending item per revertible object — and per conflicted object
 	 * when `$force` (**Revert anyway**) — each carrying its own operations,
-	 * written before any work is queued. The batch undone moves from its
-	 * status to `undoing` once the items are written; if another undo moved
-	 * it first, this batch is removed and the request refused 409
-	 * `bulkcat_not_reversible` (`undo_in_progress`). The selection column keeps
-	 * what the report needs: the batch undone, its status before, the plan's
-	 * counts and hash, whether it was forced, how many objects were left
-	 * alone because they changed since, and the grouped reasons of those
-	 * that could not be put back.
+	 * written before any work is queued, through the same UndoRecorder a
+	 * durable undo records with while its plan is walked (T111). The batch
+	 * undone moves from its status to `undoing` once the items are written;
+	 * if another undo moved it first, this batch is removed and the request
+	 * refused 409 `bulkcat_not_reversible` (`undo_in_progress`). The
+	 * selection column keeps what the report needs: the batch undone, its
+	 * status before, the plan's counts and hash, whether it was forced, how
+	 * many objects were left alone because they changed since, and the
+	 * grouped reasons of those that could not be put back.
 	 *
 	 * @param string $uuid    Client request id (a UUID).
 	 * @param int    $user_id Initiating user.
@@ -435,106 +436,61 @@ final class BatchFactory {
 		if ( null !== $earlier ) {
 			return $earlier;
 		}
-		$prepared = $this->undo_scope( $plan, $force );
-		if ( is_wp_error( $prepared ) ) {
-			return $prepared; }
-		[ $undo_of, $previous, $objects, $outline, $snapshot ] = $prepared;
+		$recorder = $this->undo_recorder( $uuid, $user_id, $plan->batch_id(), $force );
+		if ( is_wp_error( $recorder ) ) {
+			return $recorder;
+		}
 
 		try {
-			$batch_id = $this->batches->create( $uuid, $user_id, 'undo', array_values( $outline ), $snapshot, count( $objects ), $undo_of );
-			try {
-				$this->batches->materialise_items( $batch_id, $objects );
-			} catch ( \RuntimeException $e ) {
-				$this->batches->discard( $batch_id );
-				throw $e;
+			foreach ( $plan->items() as $item ) {
+				$recorder->add( $item );
 			}
+			$result = $recorder->finish( $plan->counts(), $plan->hash() );
+			if ( is_wp_error( $result ) ) {
+				$recorder->discard();
+				return $result;
+			}
+			$undo_of  = $plan->batch_id();
+			$previous = $recorder->previous();
 			if ( ! $this->batches->transition( $undo_of, $previous, 'undoing' ) ) {
 				// Another undo of the same batch started first; it wins.
-				$this->batches->discard( $batch_id );
+				$recorder->discard();
 				return Refusal::create( Planner::NOT_REVERSIBLE, Planner::undoing_sentence(), 409, [ 'reason' => Planner::UNDO_IN_PROGRESS ] );
 			}
 		} catch ( \RuntimeException $e ) {
+			$recorder->discard();
 			return Refusal::unexpected( self::NOT_RECORDED, __( 'The change could not be saved, so nothing was changed. Try again in a moment.', 'bulk-catalogue-manager-for-woocommerce' ), 500, $e );
 		}
 
 		/** This action is documented in create(). */
-		do_action( 'bulkcat_batch_created', $batch_id );
+		do_action( 'bulkcat_batch_created', $result['batch_id'] );
 		return [
-			'batch_id'        => $batch_id,
+			'batch_id'        => $result['batch_id'],
 			'status'          => 'queued',
-			'total_items'     => count( $objects ),
+			'total_items'     => $result['total_items'],
 			'previewed_items' => null,
 			'replayed'        => false,
 		];
 	}
 
 	/**
-	 * Prepare an undo once; reusable by legacy and durable acceptance.
+	 * The recorder of an undo batch of a batch (T111): items as its plan is
+	 * walked, the header completed at the end. Refuses 404 `bulkcat_not_found`
+	 * when the batch is gone; otherwise notes its status now, the one it
+	 * returns to if the undo fails or is cancelled.
 	 *
-	 * @param Plan $plan Fresh plan.
-	 * @param bool $force Include conflicts.
-	 * @return array|\WP_Error
+	 * @param string $uuid    The undo request's id (a UUID).
+	 * @param int    $user_id The person undoing.
+	 * @param int    $undo_of The batch to undo.
+	 * @param bool   $force   Whether conflicted objects are put back too.
 	 */
-	public function undo_scope( Plan $plan, bool $force ): array|\WP_Error {
-		$undo_of  = $plan->batch_id();
+	public function undo_recorder( string $uuid, int $user_id, int $undo_of, bool $force ): UndoRecorder|\WP_Error {
 		$original = $this->batches->find( $undo_of );
 		if ( null === $original ) {
 			return Refusal::create( Writer::NOT_FOUND, __( 'That batch could not be found. It may have been removed. Reload the history and try again.', 'bulk-catalogue-manager-for-woocommerce' ), 404 );
 		}
 		$previous = $original['status'];
-
-		$objects = [];
-		$outline = [];
-		$reasons = [];
-		foreach ( $plan->items() as $item ) {
-			$take = Plan::REVERTIBLE === $item['state'] || ( $force && Plan::CONFLICTED === $item['state'] );
-			if ( Plan::SKIPPED === $item['state'] && Planner::NOT_APPLIED !== $item['code'] ) {
-				$reasons[ $item['reason'] ] = ( $reasons[ $item['reason'] ] ?? 0 ) + 1;
-			}
-			if ( ! $take || [] === $item['operations'] ) {
-				continue;
-			}
-			$objects[] = [ $item['object_id'], $item['object_type'], $item['operations'] ];
-			foreach ( $item['operations'] as $operation ) {
-				$outline[ $operation['action'] . '|' . $operation['args']['field'] ] ??= [
-					'action' => $operation['action'],
-					'args'   => [ 'field' => $operation['args']['field'] ],
-				];
-			}
-		}
-		$counts = $plan->counts();
-		if ( [] === $objects ) {
-			return Refusal::create(
-				self::NOTHING_TO_UNDO,
-				$counts[ Plan::CONFLICTED ] > 0 && ! $force
-					? __( 'Everything this batch changed has been changed again since, so nothing was undone. Choose Revert anyway to put the old values back regardless.', 'bulk-catalogue-manager-for-woocommerce' )
-					: __( 'Nothing this batch changed can be put back now, so nothing was undone. The preview lists why for each product.', 'bulk-catalogue-manager-for-woocommerce' ),
-				409,
-				[ 'counts' => $counts ]
-			);
-		}
-		arsort( $reasons );
-		$grouped = [];
-		foreach ( array_slice( $reasons, 0, self::MAX_UNDO_REASONS, true ) as $message => $count ) {
-			$grouped[] = [
-				'message' => (string) $message,
-				'count'   => $count,
-			];
-		}
-		$snapshot = [
-			'kind'            => 'undo',
-			'undo_of'         => $undo_of,
-			'previous_status' => $previous,
-			'force'           => $force,
-			'plan_hash'       => $plan->hash(),
-			'counts'          => $counts,
-			'left_alone'      => $force ? 0 : $counts[ Plan::CONFLICTED ],
-			'not_undone'      => array_sum( $reasons ),
-			'reasons'         => $grouped,
-			'materialised'    => count( $objects ),
-		];
-
-		return [ $undo_of, $previous, $objects, $outline, $snapshot ];
+		return new UndoRecorder( $this->batches, $uuid, $user_id, $undo_of, $previous, $force );
 	}
 
 	/**
@@ -549,13 +505,12 @@ final class BatchFactory {
 	 * @param array<mixed>                   $operations  The normalised operation list.
 	 * @param list<array>                    $objects     The scope's items, unavailable members included.
 	 * @param array<string,mixed>            $snapshot    The selection summary the header keeps.
-	 * @param int|null                       $undo_of     The batch an undo undoes.
 	 * @param list<array{0: int, 1: string}> $unavailable Unavailable members, as [ object_id, object_type ].
 	 * @return array{batch_id: int, status: string, total_items: int, replayed: bool}
 	 * @throws \RuntimeException When the items are not all recorded.
 	 */
-	public function record_scope( array $claims, array $operations, array $objects, array $snapshot, ?int $undo_of = null, array $unavailable = [] ): array {
-		$id    = $this->batches->create( $claims['uuid'], $claims['owner'], null === $undo_of ? 'bulk' : 'undo', $operations, $snapshot, count( $objects ), $undo_of );
+	public function record_scope( array $claims, array $operations, array $objects, array $snapshot, array $unavailable = [] ): array {
+		$id    = $this->batches->create( $claims['uuid'], $claims['owner'], 'bulk', $operations, $snapshot, count( $objects ) );
 		$plain = [];
 		$own   = [];
 		foreach ( $objects as $entry ) {

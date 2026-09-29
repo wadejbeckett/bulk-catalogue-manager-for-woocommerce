@@ -31,9 +31,6 @@ if ( file_exists( __DIR__ . '/vendor/autoload.php' ) ) {
 	\BulkCatalogueManager\Autoloader::register( __DIR__ . '/src' );
 }
 
-// The memory limit a plain web request runs under, noted before wp-admin raises it for administrators (ticket 11).
-\BulkCatalogueManager\Undo\Capacity::observe();
-
 // Registered whatever WooCommerce's state, since WordPress fires them before plugins_loaded.
 register_activation_hook( __FILE__, [ \BulkCatalogueManager\Data\Migrator::class, 'activate' ] );
 register_activation_hook( __FILE__, [ \BulkCatalogueManager\Engine\Pruner::class, 'schedule' ] );

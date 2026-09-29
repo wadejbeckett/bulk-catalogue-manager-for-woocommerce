@@ -163,7 +163,27 @@ if ( ! class_exists( WpdbStub::class ) ) {
 
 		public function update( string $table, array $data, array $where, array|string|null $format = null, array|string|null $where_format = null ): int|false {
 			$this->writes[] = [ 'update', $table, $data, $format, $where, $where_format ];
-			return in_array( 'update', $this->failing, true ) ? false : 1;
+			return $this->update_fails( $table, $data ) ? false : 1;
+		}
+
+		/**
+		 * Whether an update() fails: every update with 'update' in $failing,
+		 * or one writing a column named in 'update:<table>:<column>' (T111: a
+		 * lost race to move a batch's status, while its other updates land).
+		 *
+		 * @param string               $table Table.
+		 * @param array<string, mixed> $data  Columns written.
+		 */
+		public function update_fails( string $table, array $data ): bool {
+			if ( in_array( 'update', $this->failing, true ) ) {
+				return true;
+			}
+			foreach ( array_keys( $data ) as $column ) {
+				if ( in_array( 'update:' . $table . ':' . $column, $this->failing, true ) ) {
+					return true;
+				}
+			}
+			return false;
 		}
 
 		public function get_var( string $query, int $x = 0, int $y = 0 ): ?string {

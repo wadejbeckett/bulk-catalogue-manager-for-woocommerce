@@ -28,6 +28,25 @@ final class ChangeRepository {
 	public const MAX_PAGE = 500;
 
 	/**
+	 * Most rows objects_newest_first() returns in one read (T111): three
+	 * numbers a row, so a large page keeps a whole-catalogue batch to a few
+	 * dozen reads.
+	 */
+	public const OBJECTS_PAGE = 5000;
+
+	/**
+	 * Most objects for_objects() reads at once.
+	 */
+	public const MAX_OBJECTS = 500;
+
+	/**
+	 * Most journal rows one object can have in one batch, bounding
+	 * for_objects(): a change has at most twenty steps, each naming one field
+	 * and at most one follow-on row, so a batch journals at most forty.
+	 */
+	public const MAX_ROWS_PER_OBJECT = 100;
+
+	/**
 	 * Length of the message column.
 	 */
 	public const MESSAGE_LENGTH = 255;
@@ -502,5 +521,78 @@ final class ChangeRepository {
 		global $wpdb;
 		$rows = $wpdb->get_results( $wpdb->prepare( 'SELECT change_id, batch_id, object_id, object_type, prop, old_value, new_value, modified_gmt, applied_gmt, result, message FROM %i WHERE batch_id = %d AND change_id < %d ORDER BY change_id DESC LIMIT %d', $this->registry->table( Schema::CHANGES ), $batch_id, $before > 0 ? $before : PHP_INT_MAX, max( 1, min( self::MAX_PAGE, $limit ) ) ), ARRAY_A );
 		return array_map( [ self::class, 'row' ], is_array( $rows ) ? $rows : [] );
+	}
+
+	/**
+	 * Which objects a batch journalled, a page of rows at a time from the
+	 * newest down, with no values (T111): the undo planner's order of
+	 * objects, read without holding the journal. Pass the last change_id
+	 * seen as $before to continue, 0 for the start.
+	 *
+	 * @param int $batch_id Batch.
+	 * @param int $before   Return only rows with a smaller change_id; 0 for none.
+	 * @param int $limit    Most rows, 1 to OBJECTS_PAGE.
+	 * @return list<array{change_id: int, object_id: int, object_type: string}>
+	 */
+	public function objects_newest_first( int $batch_id, int $before, int $limit ): array {
+		global $wpdb;
+		$rows = $wpdb->get_results( $wpdb->prepare( 'SELECT change_id, object_id, object_type FROM %i WHERE batch_id = %d AND change_id < %d ORDER BY change_id DESC LIMIT %d', $this->registry->table( Schema::CHANGES ), $batch_id, $before > 0 ? $before : PHP_INT_MAX, max( 1, min( self::OBJECTS_PAGE, $limit ) ) ), ARRAY_A );
+		$out  = [];
+		foreach ( is_array( $rows ) ? $rows : [] as $row ) {
+			$out[] = [
+				'change_id'   => (int) $row['change_id'],
+				'object_id'   => (int) $row['object_id'],
+				'object_type' => (string) $row['object_type'],
+			];
+		}
+		return $out;
+	}
+
+	/**
+	 * Every journal row of a batch for some of its objects, newest first
+	 * (T111): what the undo planner plans a page of objects from. The rows
+	 * are found by object (the `object_prop` index), not by walking the
+	 * batch's rows, and ordered here.
+	 *
+	 * @param int       $batch_id   Batch.
+	 * @param list<int> $object_ids Objects, 1 to MAX_OBJECTS positive ids.
+	 * @return list<array{change_id: int, object_id: int, object_type: string, prop: string, old_value: mixed, new_value: mixed, result: string}>
+	 * @throws \InvalidArgumentException On an invalid or excessive list of ids.
+	 * @throws \RuntimeException When the rows exceed what any batch journals, rather than answer part of them.
+	 */
+	public function for_objects( int $batch_id, array $object_ids ): array {
+		global $wpdb;
+		if ( [] === $object_ids ) {
+			return [];
+		}
+		if ( count( $object_ids ) > self::MAX_OBJECTS ) {
+			throw new \InvalidArgumentException( 'Too many objects for one journal read.' );
+		}
+		foreach ( $object_ids as $id ) {
+			if ( ! is_int( $id ) || $id < 1 ) {
+				throw new \InvalidArgumentException( 'Invalid object id.' );
+			}
+		}
+		$limit = count( $object_ids ) * self::MAX_ROWS_PER_OBJECT;
+		$in    = implode( ', ', array_fill( 0, count( $object_ids ), '%d' ) );
+		$rows  = $wpdb->get_results( $wpdb->prepare( "SELECT change_id, object_id, object_type, prop, old_value, new_value, result FROM %i WHERE batch_id = %d AND object_id IN ({$in}) LIMIT %d", array_merge( [ $this->registry->table( Schema::CHANGES ), $batch_id ], array_values( $object_ids ), [ $limit ] ) ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in is only %d placeholders.
+		$rows  = is_array( $rows ) ? $rows : [];
+		if ( count( $rows ) >= $limit ) {
+			throw new \RuntimeException( 'More journal rows than a batch writes for these objects.' );
+		}
+		$out = [];
+		foreach ( $rows as $row ) {
+			$out[] = [
+				'change_id'   => (int) $row['change_id'],
+				'object_id'   => (int) $row['object_id'],
+				'object_type' => (string) $row['object_type'],
+				'prop'        => (string) $row['prop'],
+				'old_value'   => ValueCodec::decode( (string) $row['old_value'] ),
+				'new_value'   => ValueCodec::decode( (string) $row['new_value'] ),
+				'result'      => (string) $row['result'],
+			];
+		}
+		usort( $out, static fn( array $a, array $b ): int => $b['change_id'] <=> $a['change_id'] );
+		return $out;
 	}
 }

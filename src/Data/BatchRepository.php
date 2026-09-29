@@ -161,6 +161,46 @@ final class BatchRepository {
 	}
 
 	/**
+	 * Complete the header of a batch recorded before all its items were
+	 * known (T111: an undo batch is recorded while its plan is walked, so
+	 * the plan is never held whole): its operation list, the `actions`
+	 * derived from it as create() derives them, its selection summary and
+	 * its item count. Only a batch still queued; the request that created it
+	 * completes it, in the same transaction.
+	 *
+	 * @param int   $batch_id    Batch.
+	 * @param array $operations  Operation list, stored as JSON.
+	 * @param array $selection   Selection summary, stored as JSON.
+	 * @param int   $total_items Items recorded.
+	 * @throws \InvalidArgumentException On an invalid id or count.
+	 * @throws \RuntimeException When the header is not updated.
+	 */
+	public function complete_header( int $batch_id, array $operations, array $selection, int $total_items ): void {
+		global $wpdb;
+		self::assert_ids( [ $batch_id ], 'batch id' );
+		self::assert_ids( [ $total_items ], 'item count', true );
+		// update() prepares the statement from the formats.
+		$updated = $wpdb->update(
+			$this->registry->table( Schema::BATCHES ),
+			[
+				'operations'  => self::json( $operations ),
+				'selection'   => self::json( $selection ),
+				'total_items' => $total_items,
+				'actions'     => self::actions( $operations ),
+			],
+			[
+				'batch_id' => $batch_id,
+				'status'   => 'queued',
+			],
+			[ '%s', '%s', '%d', '%s' ],
+			[ '%d', '%s' ]
+		);
+		if ( 1 !== $updated ) {
+			throw new \RuntimeException( 'The batch could not be completed.' );
+		}
+	}
+
+	/**
 	 * Read a batch back, typed, with operations and selection decoded.
 	 *
 	 * @param int $batch_id Batch.

@@ -953,14 +953,35 @@ final class PlannerTest extends TestCase {
 	}
 
 	/**
+	 * The plan hash worked out as a stream, an item at a time, as the walk
+	 * adds each item it plans (T85, T111), with no whole-plan helper.
+	 *
+	 * @param Planner                    $planner  The planner.
+	 * @param int                        $batch_id Batch.
+	 * @param list<array<string, mixed>> $items    Items.
+	 */
+	private static function streamed_hash( Planner $planner, int $batch_id, array $items ): string {
+		$start   = new \ReflectionMethod( Planner::class, 'hash_start' );
+		$add     = new \ReflectionMethod( Planner::class, 'hash_item' );
+		$end     = new \ReflectionMethod( Planner::class, 'hash_end' );
+		$context = $start->invoke( $planner, $batch_id );
+		$first   = true;
+		foreach ( $items as $item ) {
+			$add->invoke( null, $context, $item, $first );
+			$first = false;
+		}
+		return $end->invoke( $planner, $context );
+	}
+
+	/**
 	 * T85: the plan hash of a whole-catalogue batch is worked out without a
 	 * second, sorted copy of every item and one encoding of them all (the
 	 * undo of 20,013 products peaked at 101 MB in a web request), and it is
-	 * the hash the whole-payload form gave.
+	 * the hash the whole-payload form gave. T111: the walk feeds it an item
+	 * at a time.
 	 */
 	public function test_the_plan_hash_is_the_whole_payload_hash_worked_out_as_a_stream(): void {
 		$planner   = $this->planner( [ 'variations_price' => true ] );
-		$hash      = new \ReflectionMethod( Planner::class, 'hash' );
 		$settings  = new \ReflectionProperty( Planner::class, 'settings' );
 		$reference = static function ( int $batch_id, array $items ) use ( $planner, $settings ): string {
 			$sorted = static function ( mixed $value ) use ( &$sorted ): mixed {
@@ -1019,13 +1040,12 @@ final class PlannerTest extends TestCase {
 				),
 			],
 		] as $case => $items ) {
-			$this->assertSame( $reference( self::BATCH, $items ), $hash->invoke( $planner, self::BATCH, $items ), $case );
+			$this->assertSame( $reference( self::BATCH, $items ), self::streamed_hash( $planner, self::BATCH, $items ), $case );
 		}
 	}
 
 	public function test_the_plan_hash_of_a_large_plan_adds_almost_no_memory(): void {
 		$planner = $this->planner();
-		$hash    = new \ReflectionMethod( Planner::class, 'hash' );
 		$items   = [];
 		for ( $id = 1; $id <= 20000; $id++ ) {
 			$items[] = [
@@ -1050,7 +1070,7 @@ final class PlannerTest extends TestCase {
 		gc_collect_cycles();
 		memory_reset_peak_usage();
 		$start = memory_get_usage();
-		$hash->invoke( $planner, self::BATCH, $items );
+		self::streamed_hash( $planner, self::BATCH, $items );
 		$added = memory_get_peak_usage() - $start;
 		$this->assertLessThan( 2 * 1048576, $added, 'Hashing a 20,000-item plan added ' . round( $added / 1048576, 1 ) . ' MB.' );
 	}

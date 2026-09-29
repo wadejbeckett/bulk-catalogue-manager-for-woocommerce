@@ -322,6 +322,8 @@ final class ChunkRunner {
 	 * @throws \Throwable An exception out of a write, after the chunk's bookkeeping.
 	 */
 	public function run( int $batch_id ): string {
+		// What WordPress counts before this chunk: its per-object hook names are forgotten at the end (ticket 11).
+		$mark  = Memory::mark();
 		$batch = $this->batches->find( $batch_id );
 		if ( null === $batch || ! in_array( $batch['status'], self::ACTIVE, true ) ) {
 			return null === $batch ? 'missing' : 'stopped';
@@ -376,8 +378,8 @@ final class ChunkRunner {
 		}
 		$this->adapt( $batch_id, $size, $configured, ( $this->clock )() - $start, count( $items ), $kind );
 		self::unschedule_retry( $batch_id );
-		// What the chunk loaded is not needed again; a long runner would keep it all (T76).
-		Memory::release();
+		// What the chunk loaded, and the hook names it made WordPress count, are not needed again; a long runner would keep them all (T76, ticket 11).
+		Memory::release( $mark );
 
 		if ( null !== $error ) {
 			self::schedule_retry( (int) ( $this->clock )() + self::RETRY_DELAY, $batch_id );

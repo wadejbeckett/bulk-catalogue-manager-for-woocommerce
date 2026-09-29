@@ -253,6 +253,56 @@ final class ChunkRunnerTest extends TestCase {
 		$this->assertSame( 2, $released(), 'A run that writes nothing releases nothing.' );
 	}
 
+	public function test_each_chunk_forgets_the_per_object_hook_names_its_writes_made_wordpress_count(): void {
+		// Ticket 11 item 2: WooCommerce clears transients named after each product it saves, and
+		// WordPress counts every hook name for the life of the process; one WP-CLI queue run kept them all.
+		$saved                 = [ $GLOBALS['wp_actions'] ?? null, $GLOBALS['wp_filters'] ?? null ];
+		$GLOBALS['wp_actions'] = [
+			'init'                  => 1,
+			'delete_transient_wc_7' => 1,
+		];
+		$GLOBALS['wp_filters'] = [ 'the_title' => 1 ];
+		try {
+			$ids = self::products( 60 );
+			foreach ( $ids as $id ) {
+				self::hooked(
+					$id,
+					static function () use ( $id ): void {
+						$GLOBALS['wp_actions'][ 'delete_transient_wc_var_prices_' . $id ] = 1;
+						$GLOBALS['wp_filters'][ 'pre_transient_wc_related_' . $id ]       = 1;
+						$GLOBALS['wp_actions']['woocommerce_update_product']              = ( $GLOBALS['wp_actions']['woocommerce_update_product'] ?? 0 ) + 1;
+					}
+				);
+			}
+			$store = new RunnerStore( self::BATCH, $ids, $this->increase(), self::USER );
+
+			$this->runner()->run( self::BATCH );
+			$this->assertSame(
+				[
+					'init'                       => 1,
+					'delete_transient_wc_7'      => 1,
+					'woocommerce_update_product' => 50,
+				],
+				$GLOBALS['wp_actions'],
+				'The chunk\'s 50 per-product names are forgotten; the rest keep their counts.'
+			);
+			$this->assertSame( [ 'the_title' => 1 ], $GLOBALS['wp_filters'] );
+			$this->runner()->run( self::BATCH );
+			$this->assertSame(
+				[
+					'init'                       => 1,
+					'delete_transient_wc_7'      => 1,
+					'woocommerce_update_product' => 60,
+				],
+				$GLOBALS['wp_actions'],
+				'Flat across chunks.'
+			);
+			$this->assertSame( 'complete', $store->batch()['status'] );
+		} finally {
+			[ $GLOBALS['wp_actions'], $GLOBALS['wp_filters'] ] = $saved;
+		}
+	}
+
 	public function test_the_chunk_size_follows_the_setting_and_the_filter_within_floor_and_ceiling(): void {
 		foreach ( [ [ [ 'batch_size' => 20 ], null, 20 ], [ [], 3, 10 ], [ [], 500, 100 ], [ [ 'batch_size' => 10 ], 30, 30 ] ] as [ $settings, $filtered, $expected ] ) {
 			bulkcat_test_reset();

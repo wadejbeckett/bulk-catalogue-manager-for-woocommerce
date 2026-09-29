@@ -26,6 +26,38 @@ Server time is PHP's start to the end of the REST dispatch; WordPress and
 WooCommerce's own bootstrap (about 60 queries and 110 to 140 ms on this host,
 10 ms of it the plugin's) is included. Queries are those inside the dispatch.
 
+## Ticket 04: Off and On at scale (E9)
+
+`perf.py --only offon --runs 20` on 29 September 2026, branch
+`codex/global-off-on`: the ticket's throwaway docker stack
+(`wordpress:php8.3-apache`, PHP 8.3.33, MariaDB 11.8.9, WordPress 7.1.2,
+WooCommerce 11.1.0, no persistent object cache, `DISABLE_WP_CRON` and the
+measurement mu-plugin for the run only) with `seed.sh 20000` (20,078
+products and 70,084 variations, including the probe fixtures), on a
+12-core workstation shared with other builds. 20 metrics: 16 passed,
+0 failed, 4 recorded; 15 min 25 s. Every batch went through the durable
+routes: a captured selection of the 5,000 simple products in the scale
+category with stock 1 to 19, an exact preview, a `/requests` grant, then
+`wp action-scheduler run` at the default chunk (50).
+
+| Metric | Measured | Budget | Result |
+| --- | --- | --- | --- |
+| Off (Status set to Draft), 5,000 products | 1,179 a minute (255 s wall, 100 chunks, 5,000 changed, 0 failed); preview counted `off` 5,000 | ≥ 300 a minute | PASS |
+| Same, peak memory per chunk | 17.8 MB (16.4 MB request + 1.5 MB the chunk adds) | < 96 MB | PASS |
+| Undo of that Off | 1,553 a minute; 17.9 MB a chunk | as the apply | PASS |
+| Off again | 1,587 a minute; 17.8 MB a chunk | as the apply | PASS |
+| On (Status set to Published), 5,000 products | 1,320 a minute; 17.8 MB a chunk; preview counted `on` 5,000 | as the apply | PASS |
+| Memory kept across 100 chunks in one `wp action-scheduler run` | +3.3 MB in each of the four runs | flat (< 8 MB) | PASS |
+| Grid, 25 rows, the default columns (Status among them) with the Off filter, 5,000 Off: p95 of 20 warm requests | 127 ms (median 118); 25 of 25 rows read Off | < 400 ms | PASS |
+| Same, queries in the dispatch | 12 | ≤ 20 | PASS |
+| Off filter cold (count transients cleared; page + count) | 198 ms, 20 queries | < 500 ms | PASS |
+| Off records left in the scale category after On | 0 | 0 | PASS |
+| Queue each batch (`POST /batches`) | 375 ms first, 228 ms after; 58 queries | none | INFO |
+
+A chunk of Off or On runs about 3,600 to 3,700 queries (median) for 50
+products: each product's status save, its record written in the same
+save, the journal rows and the stored status read back (SPEC §5.5, §9.3).
+
 ## §12.5 budgets
 
 | Metric | Measured | Budget | Result |

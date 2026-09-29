@@ -459,15 +459,14 @@ function createSelectionServer( { objects = OBJECTS } = {} ) {
 			} catch ( error ) {
 				outcome = { error };
 			}
-			return new Promise( ( resolve, reject ) =>
-				held
-					.get( key )
-					.push( () =>
-						outcome.error
-							? reject( outcome.error )
-							: resolve( outcome.value )
-					)
-			);
+			return new Promise( ( resolve, reject ) => {
+				const deliver = () =>
+					outcome.error
+						? reject( outcome.error )
+						: resolve( outcome.value );
+				deliver.data = data;
+				held.get( key ).push( deliver );
+			} );
 		}
 		return run();
 	};
@@ -540,6 +539,33 @@ function createSelectionServer( { objects = OBJECTS } = {} ) {
 			const queue = held.get( key ) || [];
 			held.delete( key );
 			queue.forEach( ( deliver ) => deliver() );
+		},
+		/**
+		 * Deliver one held answer of a route, out of order if need be, and
+		 * keep holding the rest.
+		 *
+		 * @param {string}   key   "METHOD path".
+		 * @param {Function} which ( data ) => whether this is the answer; the oldest by default.
+		 * @return {boolean} Whether an answer was delivered.
+		 */
+		deliver( key, which = () => true ) {
+			const queue = held.get( key ) || [];
+			const at = queue.findIndex( ( each ) => which( each.data || {} ) );
+			if ( at < 0 ) {
+				return false;
+			}
+			const [ answer ] = queue.splice( at, 1 );
+			answer();
+			return true;
+		},
+		/**
+		 * The requests of a route whose answers are held, oldest first.
+		 *
+		 * @param {string} key "METHOD path".
+		 * @return {Array<Object>} Their data.
+		 */
+		waiting( key ) {
+			return ( held.get( key ) || [] ).map( ( each ) => each.data || {} );
 		},
 		/**
 		 * Move the clock.

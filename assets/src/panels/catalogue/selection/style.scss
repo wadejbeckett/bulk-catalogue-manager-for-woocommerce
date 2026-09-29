@@ -105,3 +105,25 @@
 	gap: 10px;
 	margin: 8px 0 16px;
 }
+
+// T110: while another page loads, the rows listed stay but cannot be removed.
+.bulkcat-review__list.is-loading {
+	opacity: 0.6;
+}
+
+// The pager waits with aria-disabled, so a pressed button keeps the focus.
+.bulkcat-review__pages .button[aria-disabled="true"] {
+	color: #646970;
+	background: #f6f7f7;
+	border-color: #dcdcde;
+	cursor: default;
+}
+
+.bulkcat-review__loading {
+	margin: 0 0 8px;
+	color: #50575e;
+
+	&:empty {
+		margin: 0;
+	}
+}

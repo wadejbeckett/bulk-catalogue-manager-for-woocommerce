@@ -624,6 +624,209 @@ describe( 'selection in the catalogue', () => {
 		expect( pages.map( ( call ) => call.data.page ) ).toEqual( [ 1, 2 ] );
 	} );
 
+	describe( 'the review drawer shows one page at a time (T110)', () => {
+		const INSPECT = 'POST selection/inspect';
+		// The drawer's own page reads; the grid's row checks carry probe_ids.
+		const drawerRead = ( data ) => data.per_page === 25 && ! data.probe_ids;
+
+		async function openLongReview() {
+			const ids = Array.from( { length: 60 }, ( _, i ) => 500 + i );
+			server = createSelectionServer( {
+				objects: [
+					...ids.map( ( id ) => ( {
+						id,
+						name: `Item ${ id }`,
+						sku: `I-${ id }`,
+						type: 'product',
+					} ) ),
+					{
+						id: 11,
+						name: 'Classic Cotton T-Shirt',
+						sku: 'T',
+						type: 'product',
+					},
+					{
+						id: 12,
+						name: 'Ladies Golf Shirt',
+						sku: 'G',
+						type: 'product',
+					},
+				],
+			} );
+			server.setMatches( () => ids );
+			route( apiFetch, {
+				fields: () => REGISTRY,
+				products,
+				categories: () => CATEGORIES,
+				...server.routes(),
+			} );
+			await renderLoaded();
+			fireEvent.click( header() );
+			await counted( '2 products selected' );
+			fireEvent.click(
+				within( bar() ).getByRole( 'button', { name: /^Select all/ } )
+			);
+			await counted( '62 products selected' );
+			await settled();
+			fireEvent.click(
+				within( bar() ).getByRole( 'button', {
+					name: 'Review selected products',
+				} )
+			);
+			const drawer = await screen.findByRole( 'dialog', {
+				name: 'Selected products',
+			} );
+			await within( drawer ).findByText( 'Classic Cotton T-Shirt' );
+			expect( drawer.textContent ).toContain( 'Page 1 of 3' );
+			return drawer;
+		}
+
+		const removeButtons = ( drawer ) =>
+			within( drawer ).getAllByRole( 'button', { name: /^Remove / } );
+		const next = ( drawer ) =>
+			within( drawer ).getByRole( 'button', { name: 'Next' } );
+		const composes = () => server.calls( 'POST selection/compose' ).length;
+
+		it( 'keeps the pager and every Remove on the page it lists while the next page loads', async () => {
+			const drawer = await openLongReview();
+			server.hold( INSPECT );
+			next( drawer ).focus();
+			fireEvent.click( next( drawer ) );
+			await waitFor( () =>
+				expect(
+					server.waiting( INSPECT ).filter( drawerRead )
+				).toHaveLength( 1 )
+			);
+
+			// Page 1 is still listed: the pager says so, and nothing on it can be removed.
+			expect(
+				within( drawer ).getByText( 'Classic Cotton T-Shirt' )
+			).toBeTruthy();
+			expect( drawer.textContent ).toContain( 'Page 1 of 3' );
+			expect( drawer.textContent ).not.toContain( 'Page 2 of 3' );
+			expect( drawer.textContent ).toContain( 'Loading page 2…' );
+			removeButtons( drawer ).forEach( ( button ) =>
+				expect( button.disabled ).toBe( true )
+			);
+			const before = composes();
+			fireEvent.click( removeButtons( drawer )[ 0 ] );
+			// The pager waits for the page too: a second Next asks for nothing.
+			expect( next( drawer ).getAttribute( 'aria-disabled' ) ).toBe(
+				'true'
+			);
+			fireEvent.click( next( drawer ) );
+			expect(
+				server.waiting( INSPECT ).filter( drawerRead )
+			).toHaveLength( 1 );
+			expect(
+				server
+					.calls( INSPECT )
+					.filter( ( call ) => drawerRead( call.data ) )
+					.map( ( call ) => call.data.page )
+			).toEqual( [ 1, 2 ] );
+
+			server.release( INSPECT );
+			await within( drawer ).findByText( 'Item 523' );
+			expect( drawer.textContent ).toContain( 'Page 2 of 3' );
+			expect( drawer.textContent ).not.toContain( 'Loading page' );
+			expect(
+				within( drawer ).queryByText( 'Classic Cotton T-Shirt' )
+			).toBeNull();
+			// Focus stayed on Next, which works again.
+			expect( document.activeElement ).toBe( next( drawer ) );
+			expect( next( drawer ).getAttribute( 'aria-disabled' ) ).not.toBe(
+				'true'
+			);
+			expect( composes() ).toBe( before );
+
+			// Remove acts on the row listed: page 2's first, never page 1's.
+			const first = removeButtons( drawer )[ 0 ];
+			expect( first.getAttribute( 'aria-label' ) ).toBe(
+				'Remove Item 523 from the selection'
+			);
+			expect( first.disabled ).toBe( false );
+			fireEvent.click( first );
+			await counted( '61 products selected' );
+			const members = server.members(
+				getSelectionSession().getState().current.token
+			);
+			expect( members ).not.toContain( 523 );
+			expect( members ).toContain( 11 );
+		} );
+
+		it( 'discards an answer for a page or a selection it no longer lists', async () => {
+			const drawer = await openLongReview();
+			server.hold( INSPECT );
+			fireEvent.click( next( drawer ) );
+			await waitFor( () =>
+				expect(
+					server.waiting( INSPECT ).filter( drawerRead )
+				).toHaveLength( 1 )
+			);
+			const stale = server.waiting( INSPECT ).find( drawerRead ).token;
+
+			// The selection changes while page 2 is on its way: page 2 is read again, of the new selection.
+			await act( () => getSelectionSession().remove( [ 530 ] ) );
+			await waitFor( () =>
+				expect(
+					server
+						.waiting( INSPECT )
+						.filter(
+							( data ) =>
+								drawerRead( data ) && data.token !== stale
+						)
+				).toHaveLength( 1 )
+			);
+			// The newer answer comes first, then the stale one.
+			await act( async () => {
+				server.deliver(
+					INSPECT,
+					( data ) => drawerRead( data ) && data.token !== stale
+				);
+			} );
+			await within( drawer ).findByText( 'Item 523' );
+			expect( within( drawer ).queryByText( 'Item 530' ) ).toBeNull();
+			expect( within( drawer ).getByText( 'Item 548' ) ).toBeTruthy();
+			await act( async () => {
+				server.deliver( INSPECT, ( data ) => data.token === stale );
+			} );
+			server.release( INSPECT );
+			// The stale page (Item 530 still in it, 548 not) never replaces what is listed.
+			await waitFor( () =>
+				expect( drawer.textContent ).toContain( 'Page 2 of 3' )
+			);
+			expect( within( drawer ).queryByText( 'Item 530' ) ).toBeNull();
+			expect( within( drawer ).getByText( 'Item 548' ) ).toBeTruthy();
+			removeButtons( drawer ).forEach( ( button ) =>
+				expect( button.disabled ).toBe( false )
+			);
+		} );
+
+		it( 'keeps focus on the pager at the last page', async () => {
+			const drawer = await openLongReview();
+			next( drawer ).focus();
+			fireEvent.click( next( drawer ) );
+			await within( drawer ).findByText( 'Item 523' );
+			fireEvent.click( next( drawer ) );
+			await within( drawer ).findByText( 'Item 548' );
+			expect( drawer.textContent ).toContain( 'Page 3 of 3' );
+			// At the end Next says it cannot go on, and keeps the focus.
+			expect( next( drawer ).getAttribute( 'aria-disabled' ) ).toBe(
+				'true'
+			);
+			expect( document.activeElement ).toBe( next( drawer ) );
+			const reads = server
+				.calls( INSPECT )
+				.filter( ( call ) => drawerRead( call.data ) ).length;
+			fireEvent.click( next( drawer ) );
+			expect(
+				server
+					.calls( INSPECT )
+					.filter( ( call ) => drawerRead( call.data ) )
+			).toHaveLength( reads );
+		} );
+	} );
+
 	it( 'recovers the selection after a reload, saying so', async () => {
 		const first = await renderLoaded();
 		tick( 'Classic Cotton T-Shirt' );

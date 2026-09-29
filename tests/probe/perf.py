@@ -45,6 +45,15 @@ Metrics (``--only`` takes these group names, comma separated, default all):
              (INFO; the query count must not grow with the page size).
   export     GET /export of 20,000 rows: first byte < 2 s, complete < 60 s,
              memory flat (peak at 20,000 rows within 8 MB of the peak at 2,000).
+  export_post  POST /export as the export dialog posts it, identifier switch
+             on (ticket 10): 20,000 rows by filter and 20,000 selected
+             members by token, each with first byte < 2 s (token resolution
+             included), complete < 60 s, every row, and memory flat (peak
+             within 8 MB of the same source's 2,000-row export).
+  export_scale A 100,000-member selection exported by token with the switch
+             on: completes under the web request's 128 MB memory limit
+             (first byte and total time recorded). Needs the scale category
+             at 100,000 products and variations: seed.sh 22223.
   prune      The history prune over 50,000 journal rows in batches past the
              retention limit, run to the end through Action Scheduler (INFO).
 
@@ -73,9 +82,9 @@ import uuid
 from typing import Any
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from probe import NS, SIXTY, SIXTY_SEED_PHP, Probe, filter_params  # noqa: E402
+from probe import NS, SIXTY, SIXTY_SEED_PHP, Probe, export_fixture, filter_params  # noqa: E402
 
-GROUPS = ["grid", "categories", "selection", "preview", "write", "history", "export", "prune"]
+GROUPS = ["grid", "categories", "selection", "preview", "write", "history", "export", "export_post", "export_scale", "prune"]
 ADJUST = [{"action": "adjust", "args": {"field": "regular_price", "direction": "increase", "by": "percent", "amount": "10"}}]
 PERF_SIXTY_SKU = "bulkcat-perf-sixty"
 LIST_BATCHES = 200
@@ -395,6 +404,83 @@ class Perf:
         grew = peaks[20000] - peaks[2000]
         self.metric("export", "20,000 rows: peak memory", peaks[20000], "MB", "flat (+<8 MB)", grew < EXPORT_FLAT_MB,
                     f"{grew:+.2f} MB over the 2,000-row export")
+
+    # ---- ticket 10: POST /export ------------------------------------------------------
+
+    def post_export(self, fields: list[tuple[str, str]], log: str) -> dict[str, Any]:
+        """POST /export as the dialog's form posts it (the nonce in the body), timed at first byte and in full."""
+        opener, nonce = self.p.session("manager")
+        data = urllib.parse.urlencode(list(fields) + [("_wpnonce", nonce)]).encode()
+        headers = {"Content-Type": "application/x-www-form-urlencoded", "X-BULKCAT-Perf-Log": log}
+        request = urllib.request.Request(self.p.base + NS + "/export", data=data, method="POST", headers=headers)
+        start = time.perf_counter()
+        try:
+            reply = opener.open(request, timeout=600)
+        except urllib.error.HTTPError as error:
+            reply = error
+        first = time.perf_counter()
+        payload = reply.read()
+        end = time.perf_counter()
+        status = reply.status if hasattr(reply, "status") else reply.code
+        logged = next((r for r in self.perf_log() if r.get("id") == log), {})
+        return {"status": status, "ttfb_ms": (first - start) * 1000, "total_ms": (end - start) * 1000, "body": payload,
+                "lines": payload.count(b"\n") - 1, "peak_mb": logged.get("peak_mb", 0.0), "server_ms": logged.get("total_ms"), "queries": logged.get("queries")}
+
+    def capture_token(self, query: dict) -> tuple[str, int, float]:
+        """A v2 selection of a query, captured under a grant: its token, its count and the capture's seconds."""
+        start = time.perf_counter()
+        sel = self.p.capture("manager", {"query": query})
+        return sel.get("token", ""), int(sel.get("count") or 0), time.perf_counter() - start
+
+    def export_post(self) -> None:
+        export_fixture(self.p)  # refuses unless WP_CMD reaches the declared local fixture (BULKCAT_FIXTURE_URL)
+        columns = [("columns", "name,sku,regular_price,stock_quantity,stock_status"), ("identifiers", "1")]
+        scale = {"category_ids": {"operator": "isAny", "value": [self.scale_cat]}}
+        small = {**scale, "type": {"operator": "isAny", "value": ["simple"]}, "stock_quantity": {"operator": "between", "value": [1, 8]}}
+        as_form = lambda query: [(f"{k}[{sub}]" + ("[]" if isinstance(v, list) else ""), str(item))  # noqa: E731
+                                 for k, spec in query.items() for sub, v in spec.items() for item in (v if isinstance(v, list) else [v])]
+        for source in ("filter", "selection"):
+            peaks = {}
+            for rows, query in ((2000, small), (20000, scale)):
+                if source == "filter":
+                    fields, want, capture = columns + as_form(query), None, 0.0
+                else:
+                    token, want, capture = self.capture_token(query)
+                    fields = columns + [("selection", token)]
+                reply = self.post_export(fields, f"export-post-{source}-{rows}-{uuid.uuid4().hex[:8]}")
+                peaks[rows] = reply["peak_mb"]
+                name = f"export-{source}-20000-identifiers"
+                if rows == 20000:
+                    every = reply["lines"] == (want if want is not None else 20000)
+                    self.metric("export_post", f"{name}: first byte", reply["ttfb_ms"], "ms", "< 2 s", reply["status"] == 200 and reply["ttfb_ms"] < BUDGET["export_ttfb_ms"],
+                                f"{len(reply['body']) / 1048576:.1f} MB" + (f"; the capture before it took {capture:.1f} s" if source == "selection" else ""))
+                    self.metric("export_post", f"{name}: complete", reply["total_ms"], "ms", "< 60 s, every row", every and reply["total_ms"] < BUDGET["export_total_ms"],
+                                f"{reply['lines']} data rows; server {reply['server_ms']} ms, {reply['queries']} queries")
+                else:
+                    self.metric("export_post", f"{name}: 2,000-row peak memory", peaks[rows], "MB", "", None, f"{reply['lines']} data rows in {reply['total_ms']:.0f} ms")
+            grew = peaks[20000] - peaks[2000]
+            self.metric("export_post", f"export-{source}-20000-identifiers: peak memory", peaks[20000], "MB", "flat (+<8 MB)", grew < EXPORT_FLAT_MB,
+                        f"{grew:+.2f} MB over the 2,000-row export")
+
+    def export_scale(self) -> None:
+        export_fixture(self.p)
+        token, count, capture = self.capture_token({"category_ids": {"operator": "isAny", "value": [self.scale_cat]}, "mode": "products_and_variations"})
+        if count != 100000:
+            raise RuntimeError(f"the scale category holds {count} products and variations (want 100,000: seed.sh 22223)")
+        reply = self.post_export([("columns", "name,sku,regular_price,stock_status"), ("identifiers", "1"), ("selection", token)],
+                                 f"export-scale-100000-{uuid.uuid4().hex[:8]}")
+        self.metric("export_scale", "export-selection-100000: complete under 128 MB", reply["peak_mb"], "MB", "< 128 MB",
+                    reply["status"] == 200 and reply["lines"] == 100000 and 0 < reply["peak_mb"] < 128,
+                    f"{reply['lines']} data rows; first byte {reply['ttfb_ms']:.0f} ms, total {reply['total_ms'] / 1000:.1f} s, server {reply['server_ms']} ms, "
+                    f"{reply['queries']} queries; capture {capture:.1f} s; the web request's memory_limit is 128M (read:export:time-limit)")
+        # The dialog's summary with the switch on: presence and the guarded counts, measured rather than assumed.
+        scale = {"category_ids": {"operator": "isAny", "value": [self.scale_cat]}}
+        for label, body in (("100,000 selected members", {"selection": token}), ("the scale category by filter", {**scale})):
+            answer = self.call("POST", "/export", body={"columns": ["name", "sku"], "identifiers": True, "summary": True, **body})
+            data = self.json_of(answer) or {}
+            self.metric("export_scale", f"summary with identifiers: {label}", answer["perf"].get("server_ms", 0.0), "ms", "", None,
+                        f"rows {data.get('rows')}, left out {data.get('left_out')}, guarded {data.get('guarded_identifiers')}/{data.get('guarded_names')}; "
+                        f"{answer['perf'].get('dispatch_queries')} queries in the dispatch, peak {answer['perf'].get('peak_mb')} MB")
 
     def prune(self) -> None:
         made = self.p.wp_eval(

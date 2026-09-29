@@ -112,6 +112,78 @@ final class SetValueTest extends TestCase {
 		}
 	}
 
+	public function test_status_on_a_product_goes_through_the_switch_and_on_a_variation_does_not(): void {
+		// T89 (SPEC §5.5): Draft on a published product switches it Off and saves its status.
+		$operation = self::operation();
+		$args      = $this->args( $operation, 'status', 'draft' );
+		$product   = new FakeProduct(
+			'simple',
+			[
+				'id'     => 40,
+				'status' => 'publish',
+			]
+		);
+		$result    = $operation->compute( $product, $args );
+		$this->assertSame( [ Result::CHANGED, 'publish', 'draft', 'off' ], [ $result->state(), $result->old(), $result->new(), $result->note() ] );
+		$follow = $operation->follow( $product, $result, $args );
+		$this->assertCount( 1, $follow );
+		$this->assertSame( 'availability_off', $follow[0]->field() );
+		$this->assertStringStartsWith( '{"id":40,"status":"publish","at":"', (string) $follow[0]->new() );
+		$this->assertSame( [], $product->sets, 'compute() and follow() write nothing.' );
+		$this->assertSame( [], $product->meta_calls );
+
+		$variation = new FakeProduct(
+			'variation',
+			[
+				'id'     => 41,
+				'status' => 'publish',
+			]
+		);
+		$private   = $operation->compute( $variation, $this->args( $operation, 'status', 'private' ) );
+		$this->assertSame( [ Result::CHANGED, '' ], [ $private->state(), $private->note() ] );
+		$this->assertSame( [], $operation->follow( $variation, $private, $this->args( $operation, 'status', 'private' ) ) );
+
+		// Every other field follows with nothing.
+		$price = $this->args( $operation, 'regular_price', '12' );
+		$this->assertSame( [], $operation->follow( new FakeProduct( 'simple', [ 'regular_price' => '10' ] ), Result::changed( 'regular_price', '10', '12.00' ), $price ) );
+	}
+
+	public function test_keep_changed_status_is_kept_only_for_status(): void {
+		$operation = self::operation();
+		$status    = $operation->validate(
+			[
+				'field'               => 'status',
+				'value'               => 'publish',
+				'keep_changed_status' => true,
+			]
+		);
+		$this->assertTrue( $status->ok() );
+		$this->assertTrue( $status->args()['keep_changed_status'] );
+		$this->assertFalse( $this->args( $operation, 'status', 'publish' )['keep_changed_status'], 'Off by default.' );
+
+		// Asked for on another field it is refused; off, it is dropped.
+		$refused = $operation->validate(
+			[
+				'field'               => 'regular_price',
+				'value'               => '12',
+				'keep_changed_status' => true,
+			]
+		);
+		$this->assertFalse( $refused->ok() );
+		$this->assertSame( 'bulkcat_invalid_operation', $refused->error()->get_error_code() );
+		$this->assertStringContainsString( 'Status', $refused->error()->get_error_message() );
+		$dropped = $operation->validate(
+			[
+				'field'               => 'regular_price',
+				'value'               => '12',
+				'keep_changed_status' => false,
+			]
+		);
+		$this->assertTrue( $dropped->ok() );
+		$this->assertArrayNotHasKey( 'keep_changed_status', $dropped->args() );
+		$this->assertArrayNotHasKey( 'keep_changed_status', $this->args( $operation, 'sku', 'A-1' ) );
+	}
+
 	public function test_setting_the_value_already_held_is_already(): void {
 		$operation = self::operation();
 		$cases     = [

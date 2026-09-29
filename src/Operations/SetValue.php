@@ -17,6 +17,12 @@
  * through BaseOperation::value_outcome(). The row validator (T28,
  * Validator) adds the cross-field, uniqueness and permission checks.
  *
+ * On a product's Status (T89, SPEC §5.5) the value goes through
+ * Availability\StatusSwitch: Draft switches the product Off and saves the
+ * status it had, Published switches it On and restores exactly that status,
+ * and follow() returns the Off record's Result to write with it.
+ * `keep_changed_status` (Keep current status) is taken only for Status.
+ *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
  */
@@ -25,6 +31,7 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Operations;
 
+use BulkCatalogueManager\Availability\StatusSwitch;
 use BulkCatalogueManager\Fields\Field;
 
 defined( 'ABSPATH' ) || exit;
@@ -86,16 +93,22 @@ final class SetValue extends BaseOperation {
 	 */
 	protected function arguments(): array {
 		return [
-			'value'              => [
+			'value'               => [
 				'type'     => 'value',
 				'label'    => __( 'New value', 'bulk-catalogue-manager-for-woocommerce' ),
 				'rule'     => __( 'Enter the new value, then try again.', 'bulk-catalogue-manager-for-woocommerce' ),
 				'required' => true,
 			],
-			'clear_invalid_sale' => [
+			'clear_invalid_sale'  => [
 				'type'    => 'boolean',
 				'label'   => __( 'Clear the sale price where it is not below the regular price', 'bulk-catalogue-manager-for-woocommerce' ),
 				'rule'    => __( 'Clear the sale price where it is not below the regular price has to be on or off.', 'bulk-catalogue-manager-for-woocommerce' ),
+				'default' => false,
+			],
+			'keep_changed_status' => [
+				'type'    => 'boolean',
+				'label'   => __( 'For products changed by someone else while Off: keep their current status and clear the Off record', 'bulk-catalogue-manager-for-woocommerce' ),
+				'rule'    => __( 'Keep current status for products changed by someone else while Off has to be on or off.', 'bulk-catalogue-manager-for-woocommerce' ),
 				'default' => false,
 			],
 		];
@@ -118,6 +131,12 @@ final class SetValue extends BaseOperation {
 		if ( Field::MONEY !== $field->type() ) {
 			unset( $args['clear_invalid_sale'] );
 		}
+		if ( ! StatusSwitch::governs( $field ) ) {
+			if ( true === ( $args['keep_changed_status'] ?? false ) ) {
+				return __( 'Keep current status only applies when changing Status. Turn it off and try again.', 'bulk-catalogue-manager-for-woocommerce' );
+			}
+			unset( $args['keep_changed_status'] );
+		}
 		return $args;
 	}
 
@@ -128,6 +147,32 @@ final class SetValue extends BaseOperation {
 	 * @param array<string, mixed> $args    Normalised arguments.
 	 */
 	public function compute( object $subject, array $args ): Result {
-		return self::value_outcome( $this->field( $args ), $subject, $args['value'] ?? null );
+		$field = $this->field( $args );
+		$plain = self::value_outcome( $field, $subject, $args['value'] ?? null );
+		if ( ! StatusSwitch::applies( $field, $subject ) ) {
+			return $plain;
+		}
+		$keep = (bool) ( $args['keep_changed_status'] ?? false );
+		return StatusSwitch::decide( $subject, $plain, $keep )['status'];
+	}
+
+	/**
+	 * The Off record's Result for a Status step on a product (T89), decided
+	 * as compute() decided the status; nothing for any other step, or for a
+	 * step the row validator did not leave changed or already.
+	 *
+	 * @param object               $subject The product or variation, as compute() saw it.
+	 * @param Result               $checked The checked Result.
+	 * @param array<string, mixed> $args    Normalised arguments.
+	 * @return list<Result>
+	 */
+	public function follow( object $subject, Result $checked, array $args ): array {
+		$field = $this->field( $args );
+		if ( ! StatusSwitch::applies( $field, $subject ) || ! in_array( $checked->state(), [ Result::CHANGED, Result::ALREADY ], true ) ) {
+			return [];
+		}
+		$keep   = (bool) ( $args['keep_changed_status'] ?? false );
+		$record = StatusSwitch::decide( $subject, self::value_outcome( $field, $subject, $args['value'] ?? null ), $keep )['record'];
+		return null === $record ? [] : [ $record ];
 	}
 }

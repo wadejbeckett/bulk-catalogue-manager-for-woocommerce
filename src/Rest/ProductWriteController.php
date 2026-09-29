@@ -48,11 +48,16 @@ defined( 'ABSPATH' ) || exit;
  * answers `{ item }`; an id that is not a listed product or variation is
  * 404 `bulkcat_not_found`.
  *
+ * `keep_changed_status` (T89, SPEC §5.5) is Keep current status for a
+ * product changed elsewhere while Off, accepted only with `status`.
+ *
  * The PATCH answer is `{ item, batch_id, status, results }`: `item` is the object
  * re-read through Query\Catalogue after its caches are cleared, in the same
  * shape as a `/products` item, so the grid can replace the row; `status` is
  * the batch's final status (complete, partial or failed); `results` holds
- * one outcome per step (field, old, new, state, reason, code).
+ * one outcome per step (field, old, new, state, reason, code, and the Status
+ * switch's note and context). The internal Off record a Status step writes
+ * with it is journalled but never part of the answer.
  */
 final class ProductWriteController implements ReadController {
 	/**
@@ -150,7 +155,16 @@ final class ProductWriteController implements ReadController {
 				],
 				'strval'
 			),
-		] + $this->schema->fields_arg();
+		] + $this->schema->fields_arg() + [
+			'keep_changed_status' => self::arg(
+				[
+					'description' => __( 'For a product changed by someone else while Off: keep its current status and clear its Off record. Only with a Status change.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'type'        => 'boolean',
+					'default'     => false,
+				],
+				static fn( mixed $value ): bool => true === \BulkCatalogueManager\Fields\Values::boolean( $value )
+			),
+		];
 		foreach ( $this->registry->editable() as $key => $field ) {
 			$args[ $key ] = $field->rest_arg();
 		}
@@ -212,7 +226,7 @@ final class ProductWriteController implements ReadController {
 		$values = array_intersect_key( $params, $this->registry->editable() );
 		$source = (string) ( $request->get_param( 'source' ) ?? InlineWrite::SOURCES[0] );
 
-		$written = $this->writes->write( $id, $values, $source, get_current_user_id() );
+		$written = $this->writes->write( $id, $values, $source, get_current_user_id(), true === $request->get_param( 'keep_changed_status' ) );
 		if ( $written instanceof \WP_Error ) {
 			return $written;
 		}
@@ -224,7 +238,12 @@ final class ProductWriteController implements ReadController {
 				'item'     => $this->catalogue->row( $id, is_array( $fields ) ? array_values( array_filter( $fields, 'is_string' ) ) : [] ),
 				'batch_id' => $written['batch_id'],
 				'status'   => $written['status'],
-				'results'  => array_map( static fn( Result $result ): array => $result->to_array(), $written['outcome']->results() ),
+				'results'  => array_values(
+					array_map(
+						static fn( Result $result ): array => $result->to_array(),
+						array_filter( $written['outcome']->results(), fn( Result $result ): bool => ! ( $this->registry->get( $result->field() )?->internal() ?? false ) )
+					)
+				),
 			],
 			200
 		);
@@ -273,6 +292,8 @@ final class ProductWriteController implements ReadController {
 							'reason'   => [ 'type' => 'string' ],
 							'code'     => [ 'type' => 'string' ],
 							'replaces' => [ 'type' => 'boolean' ],
+							'note'     => [ 'type' => 'string' ],
+							'context'  => [ 'type' => 'object' ],
 						],
 					],
 				] + $read_only,

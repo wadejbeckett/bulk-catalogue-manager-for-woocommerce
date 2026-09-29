@@ -76,6 +76,7 @@ final class RegistryTest extends TestCase {
 		'bulkcat_view_exists'              => 'REST refusal code for a saved view name the same user already has',
 		'bulkcat_too_many_views'           => 'REST refusal code for saving a 51st view',
 		'bulkcat_view_not_found'           => 'REST refusal code for a view id not in the current user\'s bulkcat_views',
+		'bulkcat_availability_conflict'    => 'result and refusal code for Published on a product whose status was changed elsewhere while Off (SPEC §5.5); nothing is stored under it',
 	];
 
 	/**

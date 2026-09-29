@@ -58,9 +58,66 @@ final class ResultTest extends TestCase {
 				'reason'   => '',
 				'code'     => '',
 				'replaces' => true,
+				'note'     => '',
+				'context'  => [],
 			],
 			$replace->to_array()
 		);
+	}
+
+	public function test_a_note_and_its_context_ride_on_any_state_and_leave_the_original_alone(): void {
+		// T89: the Status switch's outcome code and what it names (SPEC §5.5).
+		$plain = Result::changed( 'status', 'draft', 'private' );
+		$noted = $plain->with_note(
+			'on_restores',
+			[
+				'restores' => 'private',
+				'saved'    => 'private',
+			]
+		);
+		$this->assertSame( '', $plain->note(), 'with_note() builds a new Result.' );
+		$this->assertSame( [], $plain->context() );
+		$this->assertSame( 'on_restores', $noted->note() );
+		$this->assertSame(
+			[
+				'saved'    => 'private',
+				'restores' => 'private',
+			],
+			$noted->context(),
+			'Context keys come back in one fixed order.'
+		);
+		$this->assertSame( [ 'status', 'draft', 'private', Result::CHANGED ], [ $noted->field(), $noted->old(), $noted->new(), $noted->state() ] );
+		$this->assertSame( 'on_restores', $noted->to_array()['note'] );
+		$this->assertSame( 'private', $noted->to_array()['context']['restores'] );
+
+		$skipped = Result::skipped( 'status', 'private', 'Left alone.', 'bulkcat_availability_conflict' )->with_note(
+			'conflict',
+			[
+				'current' => 'private',
+				'saved'   => 'publish',
+			]
+		);
+		$this->assertSame( [ 'conflict', 'bulkcat_availability_conflict', 'Left alone.' ], [ $skipped->note(), $skipped->code(), $skipped->reason() ] );
+		$this->assertSame( 'already_off', Result::already( 'status', 'draft' )->with_note( 'already_off', [ 'saved' => 'publish' ] )->note() );
+		$this->assertSame(
+			'publishes_not_off',
+			Result::changed( 'status', 'future', 'publish' )->with_note(
+				'publishes_not_off',
+				[
+					'scheduled_gmt' => '2026-10-02 08:00:00',
+					'current'       => 'future',
+				]
+			)->note()
+		);
+
+		foreach ( [ [ 'Bad', [] ], [ str_repeat( 'a', 41 ), [] ], [ 'on', [ 'other' => 'x' ] ], [ 'on', [ 'saved' => [ 'publish' ] ] ], [ 'on', [ 'saved' => null ] ] ] as [ $note, $context ] ) {
+			try {
+				$plain->with_note( $note, $context );
+				$this->fail( 'Accepted ' . wp_json_encode( [ $note, $context ] ) );
+			} catch ( \InvalidArgumentException $e ) {
+				$this->assertStringContainsString( 'Result is invalid', $e->getMessage() );
+			}
+		}
 	}
 
 	public function test_empty_and_zero_are_different_values(): void {
@@ -97,7 +154,8 @@ final class ResultTest extends TestCase {
 			$this->assertTrue( $property->isReadOnly(), $property->getName() . ' is readonly.' );
 		}
 		foreach ( $class->getMethods( \ReflectionMethod::IS_PUBLIC ) as $method ) {
-			$this->assertFalse( str_starts_with( $method->getName(), 'set' ) || str_starts_with( $method->getName(), 'with' ), $method->getName() . ' would alter a Result.' );
+			// with_note() (T89) builds a new Result; it is the one "with" allowed, and returns a copy.
+			$this->assertFalse( str_starts_with( $method->getName(), 'set' ) || ( str_starts_with( $method->getName(), 'with' ) && 'with_note' !== $method->getName() ), $method->getName() . ' would alter a Result.' );
 		}
 
 		$result = Result::changed( 'regular_price', '10.00', '11.20' );

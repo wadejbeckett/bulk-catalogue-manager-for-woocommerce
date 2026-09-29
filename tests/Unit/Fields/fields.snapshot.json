@@ -1740,6 +1740,12 @@
                         "type": "boolean",
                         "default": false
                     },
+                    "keep_changed_status": {
+                        "title": "For products changed by someone else while Off: keep their current status and clear the Off record",
+                        "description": "Keep current status for products changed by someone else while Off has to be on or off.",
+                        "type": "boolean",
+                        "default": false
+                    },
                     "apply_to_variations": {
                         "title": "Also apply to variations",
                         "description": "Also apply to variations has to be on or off.",

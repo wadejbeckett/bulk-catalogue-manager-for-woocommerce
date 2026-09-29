@@ -314,6 +314,7 @@ final class RegistryTest extends TestCase {
 			[
 				'field'               => 'status',
 				'value'               => 'draft',
+				'keep_changed_status' => false,
 				'skip_already'        => true,
 				'apply_to_variations' => true,
 			],

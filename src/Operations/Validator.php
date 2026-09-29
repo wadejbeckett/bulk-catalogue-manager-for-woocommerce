@@ -172,6 +172,26 @@ final class Validator {
 	}
 
 	/**
+	 * The Results that follow a checked step on the same object (T89): what
+	 * the operation's follow() returns, but only for a Result this check left
+	 * changed or already. A step refused here — permission among the reasons —
+	 * never changes anything else, so a skipped Status step never touches the
+	 * Off record.
+	 *
+	 * @param Operation            $operation The step's operation.
+	 * @param object               $subject   The object, before anything is applied.
+	 * @param Result               $checked   The first Result check() returned.
+	 * @param array<string, mixed> $args      The step's normalised arguments.
+	 * @return list<Result>
+	 */
+	public function follow( Operation $operation, object $subject, Result $checked, array $args ): array {
+		if ( ! in_array( $checked->state(), [ Result::CHANGED, Result::ALREADY ], true ) ) {
+			return [];
+		}
+		return $operation->follow( $subject, $checked, $args );
+	}
+
+	/**
 	 * The Result for a refusal of the registry's validator: skipped for
 	 * stock quantity where stock is not managed and for a value below zero,
 	 * failed otherwise; the sentence and code as the field gave them.

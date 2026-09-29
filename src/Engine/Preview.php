@@ -11,6 +11,7 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Engine;
 
+use BulkCatalogueManager\Availability\Stamp;
 use BulkCatalogueManager\Fields\Field;
 use BulkCatalogueManager\Fields\Registry as Fields;
 use BulkCatalogueManager\Fields\Values;
@@ -203,9 +204,10 @@ final class Preview {
 
 		$matched  = count( $objects );
 		$computed = array_slice( $objects, 0, max( 1, $this->cap ) );
-		$tally    = $this->compute( $computed, $operations, max( 1, min( self::SAMPLE_ALL, $sample_size ) ), $scope['unavailable'] ?? [] );
-		$factor   = [] === $computed ? 1.0 : $matched / count( $computed );
-		$by_type  = [];
+		// A preview's Off records are stamped batch 0 and never stored (T89).
+		$tally   = Stamp::within( 0, null, fn(): array => $this->compute( $computed, $operations, max( 1, min( self::SAMPLE_ALL, $sample_size ) ), $scope['unavailable'] ?? [] ) );
+		$factor  = [] === $computed ? 1.0 : $matched / count( $computed );
+		$by_type = [];
 		foreach ( [ 'product', 'variation' ] as $type ) {
 			$by_type[ $type ] = [
 				'matched'      => count( array_filter( $objects, static fn( array $entry ): bool => $type === $entry[1] ) ),
@@ -326,21 +328,45 @@ final class Preview {
 				$label   = null === $name ? '' : (string) $name->read( $subject );
 				$results = [];
 			}
+			// The Off record a Status step writes with it (T89) is set on the copy but never shown
+			// as a row: an object whose only change is its record still counts, under its step's field.
+			$hidden = [];
 			foreach ( $steps as [ $operation, $args ] ) {
 				$computed = $operation->compute( $subject, $args );
 				$this->warn( $tally['warnings'], $subject, $computed );
 				$checked = $validator->check( $subject, $computed, $args );
-				$field   = $fields->get( $computed->field() );
+				// What follows the step (the Off record, T89), decided before anything is set, as the writer does.
+				$follow = $validator->follow( $operation, $subject, $checked[0], $args );
+				$field  = $fields->get( $computed->field() );
 				if ( $computed->is_changed() && null !== $field && $field->unique() && Result::FAILED === $checked[0]->state() ) {
 					++$tally['warnings']['sku_duplicate'];
 				}
-				foreach ( $checked as $result ) {
-					$results[] = $this->set( $fields, $result, $subject );
+				foreach ( $checked as $index => $result ) {
+					$set       = $this->set( $fields, $result, $subject );
+					$results[] = $set;
+					if ( 0 === $index && $result->is_changed() && ! $set->is_changed() ) {
+						$follow = [];
+					}
+				}
+				foreach ( $follow as $result ) {
+					$set = $this->set( $fields, $result, $subject );
+					if ( $set->is_changed() ) {
+						$hidden[ $computed->field() ] = true;
+					}
 				}
 			}
 
 			$states = [];
 			$failed = [];
+			if ( [] !== $hidden ) {
+				$states[ Result::CHANGED ] = true;
+				foreach ( array_keys( $hidden ) as $key ) {
+					if ( ! isset( $tally['fields'][ $key ] ) ) {
+						$field                   = $fields->get( $key );
+						$tally['fields'][ $key ] = null === $field ? $key : $field->label();
+					}
+				}
+			}
 			foreach ( $results as $result ) {
 				$state = $result->state();
 				++$tally['rows'][ $state ];
@@ -364,6 +390,8 @@ final class Preview {
 						'reason'      => $result->reason(),
 						'code'        => $result->code(),
 						'replaces'    => $result->replaces(),
+						'note'        => $result->note(),
+						'context'     => $result->context(),
 					];
 				}
 			}

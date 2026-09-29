@@ -553,7 +553,7 @@ final class Registry {
 	private static function internal_fields(): array {
 		return [
 			new Field(
-				key: 'availability_off',
+				key: \BulkCatalogueManager\Availability\OffRecord::FIELD,
 				label: __( 'Status before Off', 'bulk-catalogue-manager-for-woocommerce' ),
 				type: Field::TEXT,
 				storage: Storage::meta( \BulkCatalogueManager\Availability\OffRecord::META_KEY ),

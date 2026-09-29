@@ -50,6 +50,13 @@ final class Result {
 	public const STATES = [ self::CHANGED, self::ALREADY, self::SKIPPED, self::FAILED ];
 
 	/**
+	 * The keys a note's context may carry, in the order it keeps them (T89):
+	 * the status an Off record saves or saved, the status an On restores, the
+	 * product's status now, and a scheduled time (GMT, `Y-m-d H:i:s`).
+	 */
+	public const CONTEXT_KEYS = [ 'saved', 'restores', 'current', 'scheduled_gmt' ];
+
+	/**
 	 * Build through changed(), already(), skipped() or failed().
 	 *
 	 * @param string $field     Field key.
@@ -59,6 +66,8 @@ final class Result {
 	 * @param string $reason    Plain-English sentence (SPEC §4.8) for skipped and failed; '' otherwise.
 	 * @param string $code      `bulkcat_` code for the technical details line, or ''.
 	 * @param bool   $replaces  Whether the change replaces a whole list, which the preview states in bold (SPEC §6).
+	 * @param string $note      An outcome code the step carries (the Status switch's, T89), or ''.
+	 * @param array<string, string|int|float|bool> $context What the note names, keyed by CONTEXT_KEYS.
 	 * @throws \InvalidArgumentException When the parts are inconsistent.
 	 */
 	private function __construct(
@@ -68,9 +77,14 @@ final class Result {
 		private readonly string $state,
 		private readonly string $reason,
 		private readonly string $code,
-		private readonly bool $replaces
+		private readonly bool $replaces,
+		private readonly string $note = '',
+		private readonly array $context = []
 	) {
 		$needs_reason = self::SKIPPED === $state || self::FAILED === $state;
+		$plain        = [] === array_filter( $context, static fn( mixed $value ): bool => ! is_scalar( $value ) );
+		$short_note   = (bool) preg_match( '/^[a-z_]{0,40}$/', $note );
+		$known_keys   = [] === array_diff( array_keys( $context ), self::CONTEXT_KEYS );
 		$problem      = match ( true ) {
 			1 !== preg_match( '/^[a-z][a-z0-9_]{0,63}$/', $field )  => 'the field key is invalid',
 			! in_array( $state, self::STATES, true )                => 'the state is unknown',
@@ -80,6 +94,9 @@ final class Result {
 			str_contains( $reason, 'bulkcat_' )                         => 'the reason is shown to people, so its code belongs in the code field',
 			self::CHANGED === $state && $old === $new_value               => 'a change must change the value; use already()',
 			$replaces && self::CHANGED !== $state                   => 'only a change can replace a list',
+			! $short_note                                           => 'a note is a short lower-case code',
+			! $known_keys                                           => 'its context names an unknown key',
+			! $plain                                                => 'its context holds only plain values',
 			default                                                 => '',
 		};
 		if ( '' !== $problem ) {
@@ -131,6 +148,39 @@ final class Result {
 	 */
 	public static function failed( string $field, mixed $old, string $reason, string $code = '' ): self {
 		return new self( $field, $old, $old, self::FAILED, $reason, $code, false );
+	}
+
+	/**
+	 * The same Result carrying an outcome code and what it names (T89): a new
+	 * Result, this one left as it is. Context keys come back in CONTEXT_KEYS order.
+	 *
+	 * @param string                               $note    A short lower-case code, or ''.
+	 * @param array<string, string|int|float|bool> $context Keyed by CONTEXT_KEYS.
+	 */
+	public function with_note( string $note, array $context = [] ): self {
+		$ordered = [];
+		foreach ( self::CONTEXT_KEYS as $key ) {
+			if ( array_key_exists( $key, $context ) ) {
+				$ordered[ $key ] = $context[ $key ];
+			}
+		}
+		return new self( $this->field, $this->old, $this->new_value, $this->state, $this->reason, $this->code, $this->replaces, $note, $ordered + $context );
+	}
+
+	/**
+	 * The outcome code this Result carries, or ''.
+	 */
+	public function note(): string {
+		return $this->note;
+	}
+
+	/**
+	 * What the note names, keyed by CONTEXT_KEYS.
+	 *
+	 * @return array<string, string|int|float|bool>
+	 */
+	public function context(): array {
+		return $this->context;
 	}
 
 	/**
@@ -192,7 +242,7 @@ final class Result {
 	/**
 	 * The result as a preview row or journal entry carries it.
 	 *
-	 * @return array{field: string, old: mixed, new: mixed, state: string, reason: string, code: string, replaces: bool}
+	 * @return array{field: string, old: mixed, new: mixed, state: string, reason: string, code: string, replaces: bool, note: string, context: array<string, mixed>}
 	 */
 	public function to_array(): array {
 		return [
@@ -203,6 +253,8 @@ final class Result {
 			'reason'   => $this->reason,
 			'code'     => $this->code,
 			'replaces' => $this->replaces,
+			'note'     => $this->note,
+			'context'  => $this->context,
 		];
 	}
 }

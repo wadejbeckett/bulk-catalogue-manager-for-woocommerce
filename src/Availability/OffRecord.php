@@ -42,6 +42,11 @@ final class OffRecord {
 	public const META_KEY = '_bulkcat_availability_off';
 
 	/**
+	 * The internal field the record is journalled as ("Status before Off").
+	 */
+	public const FIELD = 'availability_off';
+
+	/**
 	 * The statuses a record may save: the listable ones other than draft.
 	 */
 	public const STATUSES = [ 'publish', 'future', 'pending', 'private' ];

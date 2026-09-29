@@ -682,6 +682,28 @@ if ( ! function_exists( 'wp_generate_uuid4' ) ) {
 	}
 }
 
+if ( ! function_exists( 'get_post_field' ) ) {
+	/**
+	 * T89: a post field as the database holds it. post_status answers
+	 * $GLOBALS['bulkcat_test']['stored_status'][ $id ] when a test sets it
+	 * (WordPress stored something other than what was set, as it does for a
+	 * publish whose date is ahead), else the status of the product a test
+	 * registered, else ''.
+	 */
+	function get_post_field( string $field, int|object $post, string $context = 'display' ): mixed {
+		unset( $context );
+		$id = is_object( $post ) ? (int) $post->ID : $post;
+		if ( 'post_status' === $field && isset( $GLOBALS['bulkcat_test']['stored_status'][ $id ] ) ) {
+			return $GLOBALS['bulkcat_test']['stored_status'][ $id ];
+		}
+		$product = $GLOBALS['bulkcat_test']['products'][ $id ] ?? null;
+		if ( 'post_status' === $field && is_object( $product ) && isset( $product->props['status'] ) ) {
+			return $product->props['status'];
+		}
+		return '';
+	}
+}
+
 if ( ! function_exists( 'clean_post_cache' ) ) {
 	/**
 	 * T37: forgets a post's primed post and meta caches and moves the posts'

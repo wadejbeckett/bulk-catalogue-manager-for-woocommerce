@@ -285,6 +285,19 @@ abstract class BaseOperation implements Operation {
 	}
 
 	/**
+	 * Nothing follows a step by default (T89); the Status switch overrides it.
+	 *
+	 * @param object               $subject The object.
+	 * @param Result               $checked The checked Result.
+	 * @param array<string, mixed> $args    Normalised arguments.
+	 * @return list<Result>
+	 */
+	public function follow( object $subject, Result $checked, array $args ): array {
+		unset( $subject, $checked, $args );
+		return [];
+	}
+
+	/**
 	 * Set a computed change through the field's setter; nothing for any
 	 * other state. Never saves.
 	 *

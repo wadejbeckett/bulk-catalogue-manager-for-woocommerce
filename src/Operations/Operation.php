@@ -49,6 +49,21 @@ interface Operation {
 	public function compute( object $subject, array $args ): Result;
 
 	/**
+	 * What follows a checked Result on the same object (T89): further Results
+	 * the step writes with it, applied after it in the same save and
+	 * journalled per field. The Status switch's Off record is the one today;
+	 * every other action follows with nothing. Called only for a Result the
+	 * row validator left changed or already, before anything is applied, so it
+	 * sees the object as compute() did.
+	 *
+	 * @param object               $subject A WooCommerce product or variation, as compute() saw it.
+	 * @param Result               $checked What compute() returned, as the row validator checked it.
+	 * @param array<string, mixed> $args    Arguments validate() normalised.
+	 * @return list<Result>
+	 */
+	public function follow( object $subject, Result $checked, array $args ): array;
+
+	/**
 	 * Set a computed change on the object through the field's setter. Does
 	 * nothing for a result that is not a change, and never saves: the writer
 	 * saves once after every operation on the object.

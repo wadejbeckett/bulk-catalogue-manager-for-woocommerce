@@ -95,7 +95,10 @@ final class ProductWriteRouteTest extends TestCase {
 		$this->assertSame( 'PATCH', $route[0]['methods'] );
 
 		$registry = Registry::instance();
-		$this->assertSame( array_merge( [ 'id', 'source', 'fields' ], array_keys( $registry->editable() ) ), array_keys( $route[0]['args'] ) );
+		$this->assertSame( array_merge( [ 'id', 'source', 'fields', 'keep_changed_status' ], array_keys( $registry->editable() ) ), array_keys( $route[0]['args'] ) );
+		$this->assertSame( 'boolean', $route[0]['args']['keep_changed_status']['type'] );
+		$this->assertFalse( $route[0]['args']['keep_changed_status']['default'] );
+		$this->assertArrayNotHasKey( 'availability_off', $route[0]['args'], 'The internal Off record is never an argument.' );
 		foreach ( $registry->editable() as $key => $field ) {
 			$expected = $field->rest_arg();
 			$this->assertSame( $expected['type'], $route[0]['args'][ $key ]['type'], $key );
@@ -133,6 +136,42 @@ final class ProductWriteRouteTest extends TestCase {
 		$this->assertSame( [ 'inline', 'complete', 12 ], [ $batch['source'], $batch['status'], $batch['user_id'] ] );
 		$this->assertSame( [ [ 101, 'regular_price', '20', '25.00', 'applied' ] ], $this->store->journal() );
 		$this->assertSame( [], $GLOBALS['bulkcat_test']['scheduled'], 'No as_enqueue_async_action call, nor any other scheduling.' );
+	}
+
+	public function test_status_off_and_keep_current_status_through_the_route(): void {
+		// T89: Draft switches the product Off; the answer never carries the internal record row.
+		$GLOBALS['bulkcat_test']['products'][106] = new StoredProduct(
+			'simple',
+			[
+				'id'     => 106,
+				'status' => 'publish',
+			]
+		);
+		$response                                 = self::patch( 106, [ 'status' => 'draft' ] );
+		$this->assertInstanceOf( \WP_REST_Response::class, $response, $response instanceof \WP_Error ? $response->get_error_message() : '' );
+		$this->assertSame( [ 'status' ], array_column( $response->get_data()['results'], 'field' ) );
+		$this->assertSame( 'off', $response->get_data()['results'][0]['note'] );
+		$this->assertSame( [ 'status', 'availability_off' ], array_column( $this->store->journal(), 1 ), 'Both rows are journalled.' );
+
+		// Changed elsewhere while Off: Published is refused as a conflict; Keep current status clears the record.
+		$GLOBALS['bulkcat_test']['products'][106]->props['status'] = 'private';
+		$conflict = self::patch( 106, [ 'status' => 'publish' ] );
+		$this->assertInstanceOf( \WP_Error::class, $conflict );
+		$this->assertSame( 'bulkcat_availability_conflict', $conflict->get_error_code() );
+		$this->assertSame( 400, $conflict->get_error_data()['status'] );
+		$this->assertSame( 'status', $conflict->get_error_data()['field'] );
+
+		$kept = self::patch(
+			106,
+			[
+				'status'              => 'publish',
+				'keep_changed_status' => true,
+			]
+		);
+		$this->assertInstanceOf( \WP_REST_Response::class, $kept, $kept instanceof \WP_Error ? $kept->get_error_message() : '' );
+		$this->assertSame( [ [ 'status', 'already', 'conflict_kept' ] ], array_map( static fn( array $r ): array => [ $r['field'], $r['state'], $r['note'] ], $kept->get_data()['results'] ) );
+		$this->assertSame( 'private', $GLOBALS['bulkcat_test']['products'][106]->props['status'] );
+		$this->assertArrayNotHasKey( '_bulkcat_availability_off', $GLOBALS['bulkcat_test']['products'][106]->meta );
 	}
 
 	public function test_fields_chooses_the_columns_and_source_can_say_bulk(): void {

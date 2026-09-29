@@ -465,6 +465,41 @@ final class ValidatorTest extends TestCase {
 		$this->assertSame( 'bulkcat_cannot_edit', $validator->authorise( new FakeProduct( 'simple', [ 'id' => 81 ] ) )->get_error_code() );
 	}
 
+	public function test_a_permission_refusal_produces_no_record_result(): void {
+		// T89: a skipped or failed Status step never changes the Off record.
+		$GLOBALS['bulkcat_test']['caps']['edit_post:91'] = false;
+		$validator                                       = self::validator();
+		$set     = ( new Registry( new Fields() ) )->get( 'set_value' );
+		$args    = $set->validate(
+			[
+				'field' => 'status',
+				'value' => 'draft',
+			]
+		)->args();
+		$allowed = new FakeProduct(
+			'simple',
+			[
+				'id'     => 90,
+				'status' => 'publish',
+			]
+		);
+		$denied  = new FakeProduct(
+			'simple',
+			[
+				'id'     => 91,
+				'status' => 'publish',
+			]
+		);
+
+		$checked = $validator->check( $allowed, $set->compute( $allowed, $args ), $args );
+		$this->assertSame( Result::CHANGED, $checked[0]->state() );
+		$this->assertSame( [ 'availability_off' ], array_map( static fn( Result $r ): string => $r->field(), $validator->follow( $set, $allowed, $checked[0], $args ) ) );
+
+		$checked = $validator->check( $denied, $set->compute( $denied, $args ), $args );
+		$this->assertSame( [ Result::SKIPPED, 'bulkcat_cannot_edit' ], [ $checked[0]->state(), $checked[0]->code() ] );
+		$this->assertSame( [], $validator->follow( $set, $denied, $checked[0], $args ) );
+	}
+
 	public function test_background_work_is_authorised_against_the_recorded_user(): void {
 		$GLOBALS['bulkcat_test']['caps']      = [];
 		$GLOBALS['bulkcat_test']['user_caps'] = [

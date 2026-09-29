@@ -49,6 +49,11 @@ Chapters (``--chapters``, comma separated, default all, run in this order):
              and the prices and lookup row compared with the snapshot; the
              variations list, preview and batches refuse anonymous 401 and a
              subscriber 403.
+  offon      Ticket 04 (tests/probe/offon.py): Status as the global Off/On
+             switch through the manager's own routes on fixtures the chapter
+             upserts (SKUs bulkcat-offon-*): the capture and restore table
+             (D1-D10, E10), the status WordPress stores read back into the
+             journal, and the later slices' rows.
   lifecycle  Activation created the three tables with every documented
              index; WooCommerce lists the plugin compatible with HPOS and the
              Cart and Checkout Blocks; a bulkcat_db_version bump re-runs dbDelta on
@@ -99,6 +104,8 @@ import urllib.request
 import uuid
 from dataclasses import dataclass
 from typing import Any, Callable
+
+import offon  # ticket 04: the offon chapter lives in tests/probe/offon.py
 
 TIMEOUT_SECONDS = 60
 NS = "/wp-json/bulkcat/v1"
@@ -1456,9 +1463,10 @@ CHAPTERS: dict[str, list[Callable[[Probe], None]]] = {
     "write": [check_write_engine, check_write_stale, check_write_inline, check_write_categories, check_write_history],
     "access": [check_access, check_settings],
     "variations": [check_variations],
+    "offon": offon.CHECKS,  # ticket 04
     "lifecycle": [check_lifecycle],
 }
-NEEDS_WP = {"write", "access", "variations", "lifecycle"}
+NEEDS_WP = {"write", "access", "variations", "offon", "lifecycle"}
 
 
 def main() -> int:

@@ -241,8 +241,11 @@ final class PreviewTest extends TestCase {
 				'reason'      => '',
 				'code'        => '',
 				'replaces'    => false,
+				'note'        => '',
+				'context'     => [],
 			],
-			$first
+			$first,
+			'T89: every sample row carries the Status switch\'s note and context, empty for any other step.'
 		);
 		$this->assertSame( 'variation', $result['sample'][4]['object_type'] );
 		$this->assertSame( self::VARIABLE_PRICE, $result['sample'][2]['reason'] );

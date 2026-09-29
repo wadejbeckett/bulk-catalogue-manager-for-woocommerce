@@ -13,6 +13,8 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Engine;
 
+use BulkCatalogueManager\Availability\Stamp;
+use BulkCatalogueManager\Availability\StatusSwitch;
 use BulkCatalogueManager\Fields\Field;
 use BulkCatalogueManager\Operations\Operation;
 use BulkCatalogueManager\Operations\Registry;
@@ -89,6 +91,19 @@ defined( 'ABSPATH' ) || exit;
  * follows the switch and the shop's *Record unchanged rows* setting (see
  * Journal). Inline edits, detail-panel saves and term writes use the same
  * writer for their one-item batch, so they journal identically.
+ *
+ * Off/On (T89, SPEC §5.5). A step's checked Result is followed by what its
+ * operation's follow() returns — the Status switch's Off record — asked
+ * through Validator::follow() before anything is applied, so both see the
+ * object as it was; the record is applied through its field like the
+ * sale-price clear, saved in the same save() and journalled as its own row.
+ * If the step itself is refused at write time, nothing follows it. Every
+ * object is written inside Availability\Stamp::within( the batch ), so a
+ * record an Off writes names the batch writing it. After a save that set the
+ * status, the writer reads back the status WordPress stored
+ * (StatusSwitch::read_back()), since WooCommerce never does: a publish
+ * WordPress kept or made scheduled is then `future` on the object, in the
+ * journal and in the outcome, in write() and in replay() alike.
  *
  * An exception from save() does not stop the caller: the object's changes
  * are reported failed with a plain reason (code SAVE_FAILED), nothing is
@@ -191,8 +206,10 @@ final class Writer {
 	 * @throws \LogicException When the list was not validated.
 	 */
 	public function write( int $id, array $operations, ?string $type = null ): WriteOutcome {
+		// A record an Off writes names the batch writing it (T89).
+		$write = fn(): WriteOutcome => Stamp::within( $this->batch_id, null, fn(): WriteOutcome => $this->write_one( $id, $operations, $type ) );
 		// Background work acts for the batch's user: their unfiltered_html decides, as in their own edit.
-		return null === $this->user_id ? $this->write_one( $id, $operations, $type ) : Field::acting_as( $this->user_id, fn(): WriteOutcome => $this->write_one( $id, $operations, $type ) );
+		return null === $this->user_id ? $write() : Field::acting_as( $this->user_id, $write );
 	}
 
 	/**
@@ -230,10 +247,24 @@ final class Writer {
 		foreach ( $steps as [ $operation, $args ] ) {
 			$skip_already = (bool) ( $args['skip_already'] ?? true );
 			$checked      = $validator->check( $product, $operation->compute( $product, $args ), $args );
+			// What follows the step (the Off record, T89) is decided before anything is applied.
+			$follow = $validator->follow( $operation, $product, $checked[0], $args );
 			foreach ( $checked as $index => $result ) {
-				$entries[] = [ 0 === $index ? self::apply( $operation, $result, $product ) : $this->apply_field( $result, $product ), $skip_already ];
+				$applied   = 0 === $index ? self::apply( $operation, $result, $product ) : $this->apply_field( $result, $product );
+				$entries[] = [ $applied, $skip_already ];
+				if ( 0 === $index && $result->is_changed() && ! $applied->is_changed() ) {
+					// The step itself was refused at write time: nothing follows it.
+					$follow = [];
+				}
 				if ( $result->is_changed() && ! array_key_exists( $result->field(), $before ) ) {
 					// A field no step names (the sale-price clear): its value before this first change.
+					$before[ $result->field() ] = $result->old();
+				}
+			}
+			foreach ( $follow as $result ) {
+				$entries[] = [ $this->apply_field( $result, $product ), $skip_already ];
+				if ( $result->is_changed() && ! array_key_exists( $result->field(), $before ) ) {
+					// A field no step names (the Off record): its value before this first change.
 					$before[ $result->field() ] = $result->old();
 				}
 			}
@@ -260,12 +291,59 @@ final class Writer {
 			return new WriteOutcome( $id, array_column( $entries, 0 ), false );
 		}
 
+		$status = $this->status_field( $touched );
+		if ( null !== $status ) {
+			// WooCommerce does not read post_status back; the journal and the outcome report what WordPress stored.
+			StatusSwitch::read_back( $status, $product );
+			$results = $this->stored( $results, $product );
+		}
 		$parent_id = self::variable_parent( $product );
 		if ( $parent_id > 0 ) {
 			$this->sync( $parent_id );
 		}
 		$this->settle( $id, $entries, $before, $product, $intended );
 		return new WriteOutcome( $id, $results, true, $parent_id, $changed_before );
+	}
+
+	/**
+	 * The Status field when a save's changes include it, else null.
+	 *
+	 * @param list<string> $touched The fields a change touched.
+	 */
+	private function status_field( array $touched ): ?Field {
+		foreach ( $touched as $key ) {
+			$field = $this->operations->fields()->get( $key );
+			if ( null !== $field && StatusSwitch::governs( $field ) ) {
+				return $field;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * The Results with each saved status change reporting the status the
+	 * object now holds, as WordPress stored it.
+	 *
+	 * @param list<Result> $results The Results.
+	 * @param object       $saved   The saved object, read back.
+	 * @return list<Result>
+	 */
+	private function stored( array $results, object $saved ): array {
+		$fields = $this->operations->fields();
+		return array_map(
+			static function ( Result $result ) use ( $fields, $saved ): Result {
+				$field = $fields->get( $result->field() );
+				if ( ! $result->is_changed() || null === $field || ! StatusSwitch::governs( $field ) ) {
+					return $result;
+				}
+				$now = $field->read( $saved );
+				if ( $now === $result->new() || $now === $result->old() ) {
+					return $result;
+				}
+				return Result::changed( $result->field(), $result->old(), $now, $result->replaces() )->with_note( $result->note(), $result->context() );
+			},
+			$results
+		);
 	}
 
 	/**
@@ -311,6 +389,10 @@ final class Writer {
 		if ( $written ) {
 			try {
 				$product->save();
+				$status = $this->status_field( array_keys( $results ) );
+				if ( null !== $status ) {
+					StatusSwitch::read_back( $status, $product );
+				}
 			} catch ( \Exception $e ) {
 				$entries = self::save_failed( array_map( static fn( Result $r ): array => [ $r, true ], array_values( $results ) ) );
 				$results = array_combine( array_keys( $results ), array_column( $entries, 0 ) );
@@ -335,7 +417,11 @@ final class Writer {
 				$before[ $key ] = $result->old();
 			}
 		}
-		return new WriteOutcome( $id, array_values( $results ), $saved, $parent_id, $before );
+		$outcome = array_values( $results );
+		if ( $saved && null !== $product && null !== $this->status_field( array_keys( $results ) ) ) {
+			$outcome = $this->stored( $outcome, $product );
+		}
+		return new WriteOutcome( $id, $outcome, $saved, $parent_id, $before );
 	}
 
 	/**

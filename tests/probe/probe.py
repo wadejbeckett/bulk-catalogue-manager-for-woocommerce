@@ -31,7 +31,13 @@ Chapters (``--chapters``, comma separated, default all, run in this order):
              captured and composed selection token, the filter), its
              refusals before any CSV byte, the identifier block against
              WooCommerce's own exporter, nothing written, fixed queries per
-             page. Its PHP runs through export-probe.php and only when
+             page; T102: the switch-on file through WooCommerce's own
+             importer (Update existing products, the mapping as the import
+             screen builds it, as the shop manager) changes nothing and
+             creates nothing, for both separators and both row sources;
+             an edited file changes only its edits; guarded values, parents
+             and a custom variation title recorded; the host's time limits.
+             Its PHP runs through export-probe.php and only when
              BULKCAT_FIXTURE_URL equals --base-url, names a local host and
              is the site WP_CMD reaches.
   write      The engine live: a captured selection (grant -> /selection)
@@ -1683,11 +1689,208 @@ def check_read_export_post(p: Probe) -> None:
         p.guard("read", f"read:export:{name}", fn)
 
 
+# The version 1 headings with the switch on, as the importer must map them (T102).
+IMPORTER_MAPPED = {
+    "ID": "id", "SKU": "sku", "Parent": "parent_id", "Type": "type", "Name": "name", "Featured": "featured",
+    "Regular price": "regular_price", "Sale price": "sale_price", "Tax status": "tax_status", "Tax class": "tax_class",
+    "Weight": "weight", "Length": "length", "Width": "width", "Height": "height",
+}
+
+
+def check_read_export_roundtrip(p: Probe) -> None:
+    """T102: the switch-on file through WooCommerce's own importer changes nothing, creates nothing."""
+    if p.wp_cmd is None:
+        p.skip("read", "read:export:roundtrip:*", "documented: --no-wp given, the importer round trip runs through WP-CLI")
+        return
+    state: dict[str, Any] = {}
+
+    def columns(image: bool = False) -> list[str]:
+        keys = [f["key"] for f in (p.http("manager", "GET", "/fields").json() or {}).get("fields", [])]
+        return [k for k in keys if image or k != "thumbnail"]
+
+    def export(category: int, source: str, sep: str = ",") -> tuple[Response, list[list[str]]]:
+        cat = filter_params("category_ids", "isAny", [category])
+        head = [("columns", ",".join(columns())), ("identifiers", "1")]
+        if source == "filter":
+            r = export_form(p, "manager", head + [("mode", "products_and_variations")] + cat)
+        else:
+            token = p.capture("manager", {"query": {"category_ids": {"operator": "isAny", "value": [category]}, "mode": "products_and_variations"}}).get("token", "")
+            r = export_form(p, "manager", head + [("selection", token)])
+        return r, csv_table(r, sep)
+
+    def import_file(body: bytes, sep: str) -> dict:
+        return export_native(p, "import", {"csv": base64.b64encode(body).decode(), "delimiter": sep}, user="manager")
+
+    def diff(before: dict, after: dict) -> list[str]:
+        out = []
+        for i, row in before["rows"].items():
+            other = after["rows"].get(i) or {}
+            out += [f"{i}.{k}: {row[k]!r} -> {other.get(k)!r}" for k in row if row[k] != other.get(k)]
+        for key in ("max_id", "importing", "terms"):
+            if before[key] != after[key]:
+                out.append(f"{key}: {before[key]} -> {after[key]}")
+        return out
+
+    def fixtures() -> None:
+        state["fx"] = export_native(p, "fixtures")
+        p.row("read", "read:export:roundtrip-fixtures", True, f"round trip category {state['fx']['categories']['roundtrip']}, recorded {state['fx']['categories']['recorded']}")
+
+    def mapping() -> None:
+        # The headings as WooCommerce's own reader takes them from the file (byte-order mark and quotes included).
+        r = export_form(p, "manager", [("columns", ",".join(columns(image=True))), ("identifiers", "1"), ("search", "RT ")])
+        header = csv_table(r)[0]
+        want = [IMPORTER_MAPPED.get(h, "") for h in header]
+        found = {}
+        for locale in ("", "de_DE"):
+            got = export_native(p, "mapping", {"csv": base64.b64encode(r.body).decode(), "delimiter": ",", "locale": locale}, user="manager")
+            found[got["locale"]] = got["mapping"]
+        wrong = {loc: [f"{h} -> {m!r}" for h, m, w in zip(header, got_map, want) if m != w] for loc, got_map in found.items()}
+        mapped = [f"{h}->{m}" for h, m in zip(header, want) if m]
+        p.row("read", "read:export:importer-mapping", set(found) == {"en_US", "de_DE"} and not any(wrong.values()),
+              f"{len(header)} headings; mapped {mapped}; everything else Do not import, including {[h for h in header if '(for reference)' in h]}, Status and the listing control; "
+              f"importing user locales {sorted(found)} (de_DE without language packs: WooCommerce's English fallback path); differing {wrong}")
+
+    def roundtrip() -> None:
+        category = state["fx"]["categories"]["roundtrip"]
+        legs = []
+        ok = True
+        for setting, sep in (("comma", ","), ("semicolon", ";")):
+            export_native(p, "sql", {"what": "separator", "value": setting})
+            for source in ("filter", "selection"):
+                r, table = export(category, source, sep)
+                ids = [int(row[0]) for row in table[1:]]
+                before = export_native(p, "snapshot", {"ids": ids})
+                result = import_file(r.body, sep)
+                after = export_native(p, "snapshot", {"ids": ids})
+                changed = diff(before, after)
+                good = (r.status == 200 and len(ids) >= 16 and result.get("updated") == len(ids) and result.get("imported") == 0
+                        and not result.get("failed") and not result.get("skipped") and result.get("new_posts") == 0
+                        and result.get("importing") == 0 and not changed)
+                ok = ok and good
+                legs.append(f"{setting}/{source}: {len(ids)} rows, updated {result.get('updated')}, failed {len(result.get('failed') or [])}, "
+                            f"skipped {len(result.get('skipped') or [])}, new posts {result.get('new_posts')}, placeholders {result.get('importing')}, "
+                            f"changed {changed[:6] or 'nothing'}")
+                state.setdefault("files", {})[(setting, source)] = (r.body, table)
+        export_native(p, "sql", {"what": "separator", "value": "comma"})
+        p.row("read", "read:export:native-import-roundtrip", ok, "; ".join(legs))
+        p.skip("read", "read:export:native-import-roundtrip:off-product", "pending ticket 04 (T87-T89): the Off variable product with its _bulkcat_availability_off record joins this round trip once ticket 04's record lands")
+
+    def product_post_parent() -> None:
+        ids = state["fx"]["ids"]
+        body, table = state["files"][("comma", "filter")]
+        row = next(r for r in table[1:] if int(r[0]) == ids["rt-child"])
+        after = export_native(p, "snapshot", {"ids": [ids["rt-child"]]})["rows"][str(ids["rt-child"])]
+        p.row("read", "read:export:product-post-parent", row[2] == "bulkcat-rt-grouped" and after["post_parent"] == ids["rt-grouped"],
+              f"simple product {ids['rt-child']} exported Parent {row[2]!r}; post_parent after the round trip {after['post_parent']} (want {ids['rt-grouped']})")
+
+    def edited() -> None:
+        ids = state["fx"]["ids"]
+        simple, variation = ids["rt-simple-plain"], ids["rt-var-s"]
+        body, table = state["files"][("comma", "filter")]
+        header = table[0]
+        reg, sale = header.index("Regular price"), header.index("Sale price")
+        edits = {simple: ("12.34", "11.11"), variation: ("25.00", "24.00")}
+        for row in table[1:]:
+            if int(row[0]) in edits:
+                row[reg], row[sale] = edits[int(row[0])]
+        # Saved as a spreadsheet saves CSV UTF-8: a byte-order mark and minimal quoting.
+        buffer = io.StringIO()
+        csv.writer(buffer, quoting=csv.QUOTE_MINIMAL, lineterminator="\r\n").writerows(table)
+        ids_all = [int(row[0]) for row in table[1:]]
+        before = export_native(p, "snapshot", {"ids": ids_all})
+        result = import_file(b"\xef\xbb\xbf" + buffer.getvalue().encode("utf-8"), ",")
+        after = export_native(p, "snapshot", {"ids": ids_all})
+        changed = diff(before, after)
+        # WooCommerce derives the rendered price of the edited items, of the variable product whose variation
+        # was edited, and of the grouped product holding the edited simple product.
+        allowed = {f"{i}.{k}" for i in (simple, variation) for k in ("regular_price", "sale_price", "price_html")} \
+            | {f"{ids['rt-var']}.price_html", f"{ids['rt-grouped']}.price_html"}
+        keys = {c.split(":")[0] for c in changed}
+        values_ok = (after["rows"][str(simple)]["regular_price"], after["rows"][str(simple)]["sale_price"]) == edits[simple] \
+            and (after["rows"][str(variation)]["regular_price"], after["rows"][str(variation)]["sale_price"]) == edits[variation]
+        edited_four = {f"{i}.{k}" for i in (simple, variation) for k in ("regular_price", "sale_price")}
+        p.row("read", "read:export:native-import-edited",
+              values_ok and edited_four <= keys and keys <= allowed and not result.get("failed") and not result.get("skipped") and result.get("new_posts") == 0,
+              f"changed {sorted(keys)} (the four edited values, and the rendered prices WooCommerce derives from them); updated {result.get('updated')}, skipped {len(result.get('skipped') or [])}")
+        export_native(p, "fixtures")  # put the prices back
+
+    def recorded() -> None:
+        ids = state["fx"]["ids"]
+        category = state["fx"]["categories"]["recorded"]
+        titled = ids["rec-titled-one"]
+        export_native(p, "sql", {"what": "title", "id": titled, "title": "A custom variation title"})
+        stored = export_native(p, "sql", {"what": "read_title", "id": titled})["title"]
+        r, table = export(category, "filter")
+        header = table[0]
+        sku_i, name_i = header.index("SKU"), header.index("Name")
+        by_id = {int(row[0]): row for row in table[1:]}
+        summary = export_summary(p, "manager", {"columns": columns(), "identifiers": True, "mode": "products_and_variations",
+                                                "category_ids": {"operator": "isAny", "value": [category]}}).json() or {}
+        guarded_skus = sum(1 for row in table[1:] if row[sku_i].startswith("'"))
+        guarded_names = sum(1 for row in table[1:] if row[name_i].startswith("'"))
+        # The snapshot reads through CRUD, which would regenerate the custom title: it is left out, and read in SQL.
+        ids_all = [i for i in by_id if i != titled]
+        before = export_native(p, "snapshot", {"ids": ids_all})
+        result = import_file(r.body, ",")
+        after = export_native(p, "snapshot", {"ids": ids_all})
+        imported_title = export_native(p, "sql", {"what": "read_title", "id": titled})["title"]
+        state["recorded"] = (by_id, before, after, result)
+        sku_after = after["rows"][str(ids["rec-guarded-sku"])]["sku"]
+        v1_after = after["rows"][str(ids["rec-v1"])]["sku"]
+        p.row("read", "read:export:guarded-sku", summary.get("guarded_identifiers") == guarded_skus == 2,
+              f"guarded_identifiers {summary.get('guarded_identifiers')}, SKU cells with an apostrophe {guarded_skus}; "
+              f"recorded: WooCommerce imported '-P1 as {sku_after!r} and '=V1 as {v1_after!r} (the apostrophe is kept in a SKU)")
+        name_after = after["rows"][str(ids["rec-at-home"])]["name"]
+        p.row("read", "read:export:guarded-name", summary.get("guarded_names") == guarded_names == 1,
+              f"guarded_names {summary.get('guarded_names')}, Name cells with an apostrophe {guarded_names}; recorded: '@home imported as {name_after!r}")
+        v1_child = ids["rec-v1-one"]
+        cell = by_id[v1_child][2]
+        kept = after["rows"][str(v1_child)]["post_parent"] == ids["rec-v1"]
+        p.row("read", "read:export:guarded-parent", cell == f"id:{ids['rec-v1']}" and kept and result.get("new_posts") == 0 and result.get("importing") == 0,
+              f"=V1 variation's Parent {cell!r}; post_parent kept {kept}; new posts {result.get('new_posts')}, placeholders {result.get('importing')}")
+        zero, idsku = ids["rec-zero-one"], ids["rec-id-sku-one"]
+        cells = (by_id[zero][2], by_id[idsku][2])
+        kept = (after["rows"][str(zero)]["post_parent"], after["rows"][str(idsku)]["post_parent"]) == (ids["rec-zero"], ids["rec-id-sku"])
+        p.row("read", "read:export:parent-zero-and-id-sku", cells == (f"id:{ids['rec-zero']}", f"id:{ids['rec-id-sku']}") and kept and result.get("new_posts") == 0,
+              f"Parent cells {cells}; parents kept {kept}; no placeholder ({result.get('importing')})")
+        p.row("read", "read:export:variation-title", stored == "A custom variation title" and by_id[titled][name_i] == stored,
+              f"recorded: stored {stored!r}, exported {by_id[titled][name_i]!r}, after the import {imported_title!r} "
+              f"({'WooCommerce regenerated the generated title' if imported_title != stored else 'the custom title was kept'}); "
+              f"import updated {result.get('updated')}, skipped {len(result.get('skipped') or [])}")
+        export_native(p, "fixtures")  # put the recorded products back
+
+    def time_limit() -> None:
+        export_native(p, "time_limit", {"step": "install"})
+        opener, nonce = p.session("manager")
+        fields = urllib.parse.urlencode([("columns", "name"), ("confirm_all", "1"), ("_wpnonce", nonce)]).encode()
+        r = p._raw(opener, "POST", NS + "/export", fields, {"Content-Type": "application/x-www-form-urlencoded", "X-Bulkcat-Time-Limit": "1"})
+        found = export_native(p, "time_limit", {"step": "read"})
+        records = {rec.get("when"): rec for rec in found.get("records", []) if isinstance(rec, dict)}
+        before, after = records.get("before", {}), records.get("after", {})
+        raised = str(after.get("max_execution_time")) == "0"
+        p.row("read", "read:export:time-limit", r.status == 200 and raised and found.get("removed"),
+              f"recorded: web PHP ({before.get('sapi')}) max_execution_time {before.get('max_execution_time')} before the export streams, "
+              f"{after.get('max_execution_time')} after (wc_set_time_limit( 0 ) {'took effect' if raised else 'did not take effect'}); memory_limit {before.get('memory_limit')}; "
+              f"disable_functions {before.get('disable_functions')!r}; Apache Timeout {before.get('apache_timeout')} s; no PHP-FPM (mod_php) and no proxy in front; "
+              f"the probe's must-use plugin removed {found.get('removed')}")
+
+    steps = [("roundtrip-fixtures", fixtures), ("importer-mapping", mapping), ("native-import-roundtrip", roundtrip),
+             ("product-post-parent", product_post_parent), ("native-import-edited", edited), ("recorded", recorded), ("time-limit", time_limit)]
+    for name, fn in steps:
+        if name != "roundtrip-fixtures" and "fx" not in state:
+            p.row("read", f"read:export:{name}", False, "no fixtures from the fixtures step")
+            continue
+        if name in ("product-post-parent", "native-import-edited") and "files" not in state:
+            p.row("read", f"read:export:{name}", False, "no file from the round trip step")
+            continue
+        p.guard("read", f"read:export:{name}", fn)
+
+
 # ---------------------------------------------------------------------------
 
 CHAPTERS: dict[str, list[Callable[[Probe], None]]] = {
     "screen": [check_screen],
-    "read": [check_read_matrix, check_read_queries, check_saved_views, check_read_export_post],
+    "read": [check_read_matrix, check_read_queries, check_saved_views, check_read_export_post, check_read_export_roundtrip],
     "write": [check_write_engine, check_write_stale, check_write_inline, check_write_categories, check_write_history],
     "access": [check_access, check_settings],
     "variations": [check_variations],

@@ -64,13 +64,13 @@ if ( ! function_exists( 'bulkcat_export_probe' ) ) {
 		$out  = match ( $action ) {
 			'fixtures'     => bulkcat_export_probe_fixtures(),
 			'snapshot'     => bulkcat_export_probe_snapshot( array_map( 'intval', (array) ( $args['ids'] ?? [] ) ) ),
-			'mapping'      => bulkcat_export_probe_mapping( (array) ( $args['headers'] ?? [] ), (string) ( $args['locale'] ?? '' ) ),
+			'mapping'      => bulkcat_export_probe_mapping( bulkcat_export_probe_headers( (string) ( $args['csv'] ?? '' ), (string) ( $args['delimiter'] ?? ',' ) ), (string) ( $args['locale'] ?? '' ) ),
 			'import'       => bulkcat_export_probe_import( (string) ( $args['csv'] ?? '' ), (string) ( $args['delimiter'] ?? ',' ) ),
 			'exporter'     => bulkcat_export_probe_exporter( array_map( 'intval', (array) ( $args['ids'] ?? [] ) ) ),
 			'query_counts' => bulkcat_export_probe_query_counts( (int) ( $args['user'] ?? 0 ) ),
 			'footprint'    => bulkcat_export_probe_footprint(),
 			'sql'          => bulkcat_export_probe_sql( (string) ( $args['what'] ?? '' ), $args ),
-			'time_limit'   => bulkcat_export_probe_time_limit(),
+			'time_limit'   => bulkcat_export_probe_time_limit( (string) ( $args['step'] ?? 'install' ) ),
 			default        => [ 'error' => 'unknown action' ],
 		};
 		echo "\nBULKCAT_OUT " . wp_json_encode( $out ) . "\n";
@@ -320,9 +320,8 @@ if ( ! function_exists( 'bulkcat_export_probe' ) ) {
 				'category_ids'  => [ $recorded ],
 			]
 		);
-		// A variation whose stored title is not the generated one (amendment 9): set in the table, as no CRUD save keeps it.
-		$wpdb->update( $wpdb->posts, [ 'post_title' => 'A custom variation title' ], [ 'ID' => $ids['rec-titled-one'] ] );
-		clean_post_cache( $ids['rec-titled-one'] );
+		// The custom-titled variation (amendment 9) gets its title from the probe just before its export
+		// (sql "title"): any CRUD read of the variation regenerates the title.
 
 		// Token fixtures (T101 token-exact): A, B and E match "CSV Token"; C and D do not, yet.
 		foreach ( [
@@ -425,18 +424,55 @@ if ( ! function_exists( 'bulkcat_export_probe' ) ) {
 	}
 
 	/**
+	 * A file's header row exactly as WooCommerce's importer reads it (its
+	 * reader, the escape disabled and the byte-order mark stripped), so the
+	 * mapping is asked about what the import screen shows, not a parse of
+	 * the probe's own.
+	 *
+	 * @param string $csv       The file's bytes, base64.
+	 * @param string $delimiter "," or ";".
+	 * @return list<string>
+	 */
+	function bulkcat_export_probe_headers( string $csv, string $delimiter ): array {
+		bulkcat_export_probe_controller();
+		$file = trailingslashit( get_temp_dir() ) . 'bulkcat-export-probe-' . wp_generate_password( 8, false ) . '.csv';
+		file_put_contents( $file, (string) base64_decode( $csv, true ) );
+		try {
+			return array_values(
+				WC_Product_CSV_Importer_Controller::get_importer(
+					$file,
+					[
+						'lines'     => 1,
+						'delimiter' => $delimiter,
+					]
+				)->get_raw_keys()
+			);
+		} finally {
+			wp_delete_file( $file );
+		}
+	}
+
+	/**
 	 * The header row mapped as the import screen maps it (amendment 8):
 	 * auto_map_columns(), then each result kept only if it is an option the
 	 * mapping screen's select offers for it (get_mapping_options(), option
 	 * groups flattened, as views/html-csv-import-mapping.php does), else ''
-	 * ("Do not import"). Under a locale, for a non-English importing user.
+	 * ("Do not import"). With $locale, as an importing user whose own
+	 * locale is that one (WooCommerce adds its English fallback headings
+	 * whenever get_user_locale() is not en_US); the user's locale is put
+	 * back afterwards.
 	 *
 	 * @param list<string> $headers Header row.
-	 * @param string       $locale  Locale to map under ('' for the current one).
+	 * @param string       $locale  The importing user's locale ('' to leave it).
 	 * @return array<int, string> Column index => field, or ''.
 	 */
 	function bulkcat_export_probe_mapping( array $headers, string $locale = '' ): array {
-		$switched = '' !== $locale && switch_to_locale( $locale );
+		$user     = get_current_user_id();
+		$previous = get_user_meta( $user, 'locale', true );
+		if ( '' !== $locale && $user > 0 ) {
+			update_user_meta( $user, 'locale', $locale );
+			clean_user_cache( $user );
+		}
 		try {
 			$controller = bulkcat_export_probe_controller();
 			$auto       = new ReflectionMethod( $controller, 'auto_map_columns' );
@@ -457,10 +493,14 @@ if ( ! function_exists( 'bulkcat_export_probe' ) ) {
 				}
 				$mapped[ $index ] = in_array( (string) $field, $offered, true ) ? (string) $field : '';
 			}
-			return $mapped;
+			return [
+				'locale'  => get_user_locale(),
+				'mapping' => $mapped,
+			];
 		} finally {
-			if ( $switched ) {
-				restore_previous_locale();
+			if ( '' !== $locale && $user > 0 ) {
+				update_user_meta( $user, 'locale', $previous );
+				clean_user_cache( $user );
 			}
 		}
 	}
@@ -489,7 +529,7 @@ if ( ! function_exists( 'bulkcat_export_probe' ) ) {
 				]
 			);
 			$headers    = $reader->get_raw_keys();
-			$mapped     = bulkcat_export_probe_mapping( $headers );
+			$mapped     = bulkcat_export_probe_mapping( $headers )['mapping'];
 			if ( count( $mapped ) !== count( $headers ) ) {
 				return [ 'refused' => 'the mapping does not cover every column' ];
 			}
@@ -661,6 +701,14 @@ if ( ! function_exists( 'bulkcat_export_probe' ) ) {
 				$settings['csv_separator'] = 'semicolon' === $args['value'] ? 'semicolon' : 'comma';
 				$done                      = update_option( 'bulkcat_settings', $settings );
 				break;
+			case 'title':
+				// Stored as it is, with no CRUD read: WooCommerce's variation data store regenerates a
+				// variation's title whenever it reads or saves the variation.
+				$done = $wpdb->update( $wpdb->posts, [ 'post_title' => (string) $args['title'] ], [ 'ID' => (int) $args['id'] ] );
+				wp_cache_delete( (int) $args['id'], 'posts' );
+				break;
+			case 'read_title':
+				return [ 'title' => (string) $wpdb->get_var( $wpdb->prepare( "SELECT post_title FROM {$wpdb->posts} WHERE ID = %d", (int) $args['id'] ) ) ];
 			case 'sku':
 				$product = wc_get_product( (int) $args['id'] );
 				$product->set_sku( (string) $args['sku'] );
@@ -673,15 +721,41 @@ if ( ! function_exists( 'bulkcat_export_probe' ) ) {
 	}
 
 	/**
-	 * The web server's PHP limits, as an export request sees them.
+	 * The web server's PHP limits, as an export request sees them. `install`
+	 * writes a throwaway must-use plugin that, for a request carrying
+	 * `X-Bulkcat-Time-Limit`, records PHP's limits just before the export
+	 * streams (rest_pre_serve_request, before the export's own serve()) and
+	 * at shutdown, with the web server's Timeout; `read` answers the record
+	 * and removes the plugin and its log.
 	 *
+	 * @param string $step install or read.
 	 * @return array<string, mixed>
 	 */
-	function bulkcat_export_probe_time_limit(): array {
+	function bulkcat_export_probe_time_limit( string $step = 'install' ): array {
+		$plugin = WPMU_PLUGIN_DIR . '/bulkcat-export-time-limit.php';
+		$log    = WP_CONTENT_DIR . '/bulkcat-export-time-limit.log';
+		if ( 'install' === $step ) {
+			wp_mkdir_p( WPMU_PLUGIN_DIR );
+			file_put_contents(
+				$plugin,
+				'<?php' . "\n" . '/* Plugin Name: BULKCAT export time-limit probe (throwaway, removed by the probe) */' . "\n"
+				. 'if ( ! empty( $_SERVER["HTTP_X_BULKCAT_TIME_LIMIT"] ) ) {' . "\n"
+				. '  $bulkcat_tl = function ( $when ) { $conf = @file_get_contents( "/etc/apache2/apache2.conf" ); preg_match( "/^Timeout\\s+(\\d+)/m", (string) $conf, $m );'
+				. ' file_put_contents( WP_CONTENT_DIR . "/bulkcat-export-time-limit.log", wp_json_encode( array( "when" => $when, "max_execution_time" => ini_get( "max_execution_time" ), "memory_limit" => ini_get( "memory_limit" ), "sapi" => PHP_SAPI, "disable_functions" => ini_get( "disable_functions" ), "apache_timeout" => $m[1] ?? null ) ) . "\n", FILE_APPEND ); };' . "\n"
+				. '  add_filter( "rest_pre_serve_request", function ( $served ) use ( $bulkcat_tl ) { $bulkcat_tl( "before" ); return $served; }, 9 );' . "\n"
+				. '  register_shutdown_function( function () use ( $bulkcat_tl ) { $bulkcat_tl( "after" ); } );' . "\n"
+				. '}' . "\n"
+			);
+			wp_delete_file( $log );
+			return [ 'installed' => file_exists( $plugin ) ];
+		}
+		$lines = file_exists( $log ) ? file( $log, FILE_IGNORE_NEW_LINES ) : [];
+		wp_delete_file( $plugin );
+		wp_delete_file( $log );
 		return [
+			'records'                => array_map( static fn( string $line ): mixed => json_decode( $line, true ), (array) $lines ),
+			'removed'                => ! file_exists( $plugin ),
 			'cli_max_execution_time' => ini_get( 'max_execution_time' ),
-			'set_time_limit_enabled' => ! in_array( 'set_time_limit', array_map( 'trim', explode( ',', (string) ini_get( 'disable_functions' ) ) ), true ),
-			'sapi'                   => PHP_SAPI,
 		];
 	}
 }

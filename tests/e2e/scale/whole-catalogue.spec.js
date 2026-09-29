@@ -10,7 +10,7 @@
  *   BULKCAT_E2E_SCALE_APPLY=1    also apply Hide from site to every product, run
  *                                the queue and undo it (about an hour);
  *   BULKCAT_E2E_SCALE_100K=1     the 100,000-member selection, preview and Apply
- *                                (needs seed.sh 22206: 100,002 objects);
+ *                                (needs seed.sh 22206 on the 20,000 fixture: 100,003 objects);
  *   BULKCAT_E2E_SCALE_UNDO=<id>  undo that finished batch from History and run it;
  *   BULKCAT_E2E_METRICS=<file>   where the numbers are written as JSON.
  *
@@ -482,7 +482,7 @@ function priceChecksum() {
 	)[ 0 ];
 }
 
-test( '100,000 members: composed exactly through the screen, 100,002 refused, previewed, accepted; a sample of the queue, cancelled and undone', async ( {
+test( '100,000 members: composed exactly through the screen, every option too (100,003) refused, previewed, accepted; a sample of the queue, cancelled and undone', async ( {
 	page,
 } ) => {
 	test.skip(
@@ -498,7 +498,7 @@ test( '100,000 members: composed exactly through the screen, 100,002 refused, pr
 	const { bar } = screenParts( page );
 	const products = await selectEverything( page );
 
-	// Every option too would be 100,002: refused, the selection kept.
+	// Every option too would be over 100,000: refused, the selection kept.
 	await page
 		.getByRole( 'button', { name: 'Variations', exact: true } )
 		.click();

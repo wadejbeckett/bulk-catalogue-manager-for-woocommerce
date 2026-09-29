@@ -329,7 +329,7 @@ final class ExportPostRouteTest extends TestCase {
 		$this->assertSame( 'attachment; filename="catalogue-selected-with-ids-2026-09-23-1000.csv"', $headers['Content-Disposition'] );
 		$this->assertSame(
 			[
-				'"ID","SKU","Parent","Type","Name","Categories (for reference)","Regular price"',
+				'ID,"SKU","Parent","Type","Name","Categories (for reference)","Regular price"',
 				'"101","SHIRT-BLUE","","simple","Blue Shirt","11","20"',
 				'"202","JACKET-DG","JACKET","variation","Rain Jacket - Dark Green","","80"',
 			],
@@ -544,7 +544,7 @@ final class ExportPostRouteTest extends TestCase {
 				]
 			)
 		);
-		$this->assertSame( [ '"ID";"SKU";"Parent";"Type";"Name"', '"101";"SHIRT-BLUE";"";"simple";"Blue Shirt"', '"103";"JACKET";"";"variable";"Rain Jacket"' ], self::lines( $csv ) );
+		$this->assertSame( [ 'ID;"SKU";"Parent";"Type";"Name"', '"101";"SHIRT-BLUE";"";"simple";"Blue Shirt"', '"103";"JACKET";"";"variable";"Rain Jacket"' ], self::lines( $csv ) );
 	}
 
 	public function test_serve_raises_the_time_limit_before_streaming(): void {

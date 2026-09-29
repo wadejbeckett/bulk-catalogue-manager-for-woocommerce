@@ -383,7 +383,8 @@ final class ExportController implements ReadController {
 				$read,
 				Settings::load()->csv_separator(),
 				$filename,
-				$plan->labels()
+				$plan->labels(),
+				$plan->identifiers()
 			),
 			200
 		);

@@ -495,7 +495,7 @@ test( '100,000 members: composed exactly through the screen, 100,002 refused, pr
 		process.env.BULKCAT_E2E_SCALE_SAMPLE_CHUNKS || 60
 	);
 	await openScreen( page );
-	const { bar, search } = screenParts( page );
+	const { bar } = screenParts( page );
 	const products = await selectEverything( page );
 
 	// Every option too would be 100,002: refused, the selection kept.
@@ -516,18 +516,12 @@ test( '100,000 members: composed exactly through the screen, 100,002 refused, pr
 	await shot( page, 'scale-100k-refused.png' );
 
 	// Exactly 100,000: the scale options, the sixty, and one more option.
-	await search.fill( 'Scale Product' );
-	await expect(
-		page.locator( '.dataviews-view-table tbody tr' ).first()
-	).toBeVisible();
+	await searchSettled( page, 'Scale Product' );
 	await expect( bar.getByText( /Saving/ ) ).toHaveCount( 0, {
 		timeout: 120_000,
 	} );
 	const scaleOptions = await selectOffer( page );
-	await search.fill( 'Probe Sixty' );
-	await expect(
-		page.locator( '.dataviews-view-table tbody tr' ).first()
-	).toBeVisible();
+	await searchSettled( page, 'Probe Sixty' );
 	const sixty = await selectOffer( page );
 	// Then options of Probe Variable, one at a time, up to exactly 100,000.
 	const selectedCount = async () =>
@@ -542,7 +536,7 @@ test( '100,000 members: composed exactly through the screen, 100,002 refused, pr
 				/([\d,]+) variations? selected/
 			) || [ '', '0' ] )[ 1 ].replace( /,/g, '' )
 		);
-	await search.fill( 'Probe Variable' );
+	await searchSettled( page, 'Probe Variable' );
 	const options = page
 		.locator( '.dataviews-view-table tbody tr' )
 		.getByRole( 'checkbox' );
@@ -757,3 +751,23 @@ test( 'undo a finished whole-catalogue change from History and run it (BULKCAT_E
 	} );
 	expect( run.status ).toBe( 'complete' );
 } );
+
+/**
+ * Search, and wait until the view has caught up: the Select all offer names
+ * the new search's count, not the last one's.
+ *
+ * @param {import('@playwright/test').Page} page Page.
+ * @param {string}                          text Search.
+ */
+async function searchSettled( page, text ) {
+	const { bar, search } = screenParts( page );
+	const offer = bar.getByRole( 'button', { name: /^Select all [\d,]+ / } );
+	const before = ( await offer.count() ) ? await offer.innerText() : '';
+	await search.fill( text );
+	await expect(
+		page.locator( '.dataviews-view-table tbody tr' ).first()
+	).toContainText( text );
+	if ( before ) {
+		await expect( offer ).not.toHaveText( before, { timeout: 120_000 } );
+	}
+}

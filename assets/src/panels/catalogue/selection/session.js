@@ -52,11 +52,12 @@ export const MIN_RENEW_MS = 15000;
 /** How often the session reads a running change it applied (T85). */
 export const WATCH_MS = 5000;
 
-/** The first wait after a failed read; each failure doubles it, to WATCH_MAX_MS. */
+/**
+ * The first wait after a failed read; each failure doubles it. With
+ * WATCH_TRIES the waits are 10, 20, 40, 80 and 160 seconds: about five
+ * minutes in all (310 s) before the sixth failed read stops the watch.
+ */
 export const WATCH_BACKOFF_MS = 10000;
-
-/** The longest wait between two reads after failures. */
-export const WATCH_MAX_MS = 5 * 60 * 1000;
 
 /** Failed reads in a row after which the session stops and says so. */
 export const WATCH_TRIES = 6;
@@ -481,10 +482,12 @@ class SelectionSession {
 	 * progress is on screen (T85): after a reload or a visit to History the
 	 * catalogue's banner is gone, and without this a change that finished in
 	 * full would leave its products selected. finish() acts once per change.
-	 * Reads that fail are tried again after 10, 20, 40 … seconds (at most
-	 * five minutes apart); after WATCH_TRIES in a row the session stops and
-	 * says so (`unwatched`), until checkAgain() (T85: never an endless poll,
-	 * and never re-armed without that bound after a reload).
+	 * Reads that fail are tried again after 10, 20, 40, 80 and 160 seconds
+	 * (about five minutes in all); the sixth failed read in a row
+	 * (WATCH_TRIES) stops the watch and the session says so (`unwatched`),
+	 * until checkAgain() (T85: never an endless poll, and never re-armed
+	 * without that bound after a reload). One watch runs at a time: a new
+	 * one ends any earlier loop (ticket 11).
 	 */
 	watch() {
 		const id = this.submitted?.batchId || 0;
@@ -497,9 +500,12 @@ class SelectionSession {
 		}
 		this.watching = id;
 		this.unwatched = null;
+		// This loop's own number: a later watch() ends it (ticket 11).
+		const loop = ( this.watchLoop = ( this.watchLoop || 0 ) + 1 );
 		let failures = 0;
 		const following = () =>
 			! this.disposed &&
+			this.watchLoop === loop &&
 			this.watching === id &&
 			this.submitted?.batchId === id;
 		const poll = async () => {
@@ -536,10 +542,7 @@ class SelectionSession {
 			}
 			this.cancelWatch = this.schedule(
 				poll,
-				Math.min(
-					WATCH_MAX_MS,
-					WATCH_BACKOFF_MS * 2 ** ( failures - 1 )
-				)
+				WATCH_BACKOFF_MS * 2 ** ( failures - 1 )
 			);
 		};
 		poll();
@@ -547,8 +550,13 @@ class SelectionSession {
 
 	/**
 	 * Read the change the session stopped following again, and follow it.
+	 * Only while stopped: a second click before the first has been answered
+	 * starts nothing more (ticket 11).
 	 */
 	checkAgain() {
+		if ( ! this.unwatched ) {
+			return;
+		}
 		this.unwatched = null;
 		this.watching = 0;
 		this.changed();

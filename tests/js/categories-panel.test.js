@@ -389,13 +389,24 @@ describe( 'category panel', () => {
 			'All products'
 		);
 
+		// The test keeps the type-ahead clock itself (ticket 11), so a slow
+		// run cannot turn two quick keys into two separate searches.
+		let clock = Date.now();
+		const now = jest.spyOn( Date, 'now' ).mockImplementation( () => clock );
 		press( 'd' );
 		expect( document.activeElement ).toBe( item( 'Drinkware' ) );
+		// A slow run: the machine pauses between two keys typed together.
+		const until = performance.now() + 600;
+		while ( performance.now() < until ) {
+			// Busy: as a loaded test runner would be.
+		}
+		clock += 100;
 		press( 'b' );
-		// "db" matches nothing; a fresh letter after the pause would. Wait it out.
-		jest.spyOn( Date, 'now' ).mockReturnValue( Date.now() + 10000 );
+		// "db" matches nothing, so focus stays; a fresh letter after the pause would.
+		expect( document.activeElement ).toBe( item( 'Drinkware' ) );
+		clock += 10000;
 		press( 'b' );
-		Date.now.mockRestore();
+		now.mockRestore();
 		expect( document.activeElement ).toBe( item( 'Bags' ) );
 
 		press( 'Enter' );

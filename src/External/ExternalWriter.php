@@ -314,27 +314,13 @@ final class ExternalWriter {
 	}
 
 	/**
-	 * A journalled envelope's value in the field's current format: as it is,
-	 * converted by upgrade() when older, or a refusal when newer or unreadable.
+	 * A journalled envelope's value in the field's current format, or a WP_Error.
 	 *
 	 * @param string $key      Field key.
 	 * @param mixed  $envelope The journalled envelope.
 	 */
 	public function current_format( string $key, mixed $envelope ): mixed {
-		$meta = $this->provider->field_meta( $key );
-		if ( ! Envelope::is( $envelope ) || null === $meta || $envelope['format'] > $meta['format'] ) {
-			return Refusals::unavailable( $this->provider->label );
-		}
-		if ( $envelope['format'] === $meta['format'] ) {
-			return $envelope['value'];
-		}
-		$field = $this->provider->field( $key );
-		try {
-			$value = Guard::run( $this->provider->id, 'upgrade', static fn(): mixed => $field?->upgrade( $envelope['value'], $envelope['format'] ) );
-		} catch ( ProviderFailure $e ) {
-			return Refusals::unavailable( $this->provider->label );
-		}
-		return $value instanceof \WP_Error || ! Envelope::plain( $value ) ? Refusals::unavailable( $this->provider->label ) : $value;
+		return Envelope::current( $this->provider, $key, $envelope );
 	}
 
 	/**

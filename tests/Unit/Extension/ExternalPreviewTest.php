@@ -37,7 +37,7 @@ require_once dirname( __DIR__ ) . '/Query/SeededCatalogue.php';
 final class ExternalPreviewTest extends TestCase {
 	private const USER = 7;
 
-	private const PARENT_ONLY = 'Sample labels belongs to the product, not to each variation.';
+	private const PARENT_ONLY = '“Sample labels” is kept on the product, not on each variation.';
 
 	private MemoryStore $store;
 

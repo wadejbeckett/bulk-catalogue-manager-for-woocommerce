@@ -81,6 +81,9 @@ final class MemoryStore implements SampleStore {
 		}
 		$this->writes[] = [ 'delete', $id, $key ];
 		unset( $this->data[ $id ][ $key ] );
+		if ( [] === ( $this->data[ $id ] ?? null ) ) {
+			unset( $this->data[ $id ] ); // As post meta: nothing left, no row.
+		}
 	}
 
 	/**

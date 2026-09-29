@@ -122,13 +122,18 @@ final class AdvertisingTest extends TestCase {
 		$this->assertNull( $labels['dataviews'], 'No DataViews definition: the grid, filters and drawer skip it.' );
 		$this->assertSame( [ 'add', 'remove', 'set', 'clear' ], $labels['editKinds'] );
 		$this->assertSame( 'parent_only', $labels['variations'] );
-		$this->assertSame( 'Sample labels belongs to the product, not to each variation.', $labels['variationNote'] );
+		$this->assertSame( '“Sample labels” is kept on the product, not on each variation.', $labels['variationNote'] );
 		$this->assertSame( 'x_sample_labels', $labels['group'] );
 		$this->assertSame( '{}', wp_json_encode( $labels['schema'] ) );
 		$note = $this->entry( self::payload()['fields'], 'key', 'x_sample_note' );
 		$this->assertSame( 'per_variation', $note['variations'] );
 		$this->assertSame( '', $note['variationNote'] );
 		$this->assertSame( 'organisation', $note['group'], 'A field takes the group of the first action that changes it.' );
+	}
+
+	public function test_the_parent_only_note_reads_right_for_a_plural_label(): void {
+		$this->assertSame( '“Gift tags” is kept on the product, not on each variation.', \BulkCatalogueManager\External\Advertiser::parent_only( 'Gift tags' ) );
+		$this->assertSame( '“Colour” is kept on the product, not on each variation.', \BulkCatalogueManager\External\Advertiser::parent_only( 'Colour' ) );
 	}
 
 	public function test_an_external_action_carries_its_descriptor_and_argument_schema(): void {

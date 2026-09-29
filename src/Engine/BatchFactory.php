@@ -438,10 +438,10 @@ final class BatchFactory {
 		$prepared = $this->undo_scope( $plan, $force );
 		if ( is_wp_error( $prepared ) ) {
 			return $prepared; }
-		[ $undo_of, $previous, $objects, $outline, $snapshot ] = $prepared;
+		[ $undo_of, $previous, $objects, $outline, $snapshot, $manifest ] = $prepared;
 
 		try {
-			$batch_id = $this->batches->create( $uuid, $user_id, 'undo', array_values( $outline ), $snapshot, count( $objects ), $undo_of );
+			$batch_id = $this->batches->create( $uuid, $user_id, 'undo', array_values( $outline ), $snapshot, count( $objects ), $undo_of, null, $manifest );
 			try {
 				$this->batches->materialise_items( $batch_id, $objects );
 			} catch ( \RuntimeException $e ) {
@@ -534,7 +534,9 @@ final class BatchFactory {
 			'materialised'    => count( $objects ),
 		];
 
-		return [ $undo_of, $previous, $objects, $outline, $snapshot ];
+		// T108: an undo batch copies its source's provider manifest, with each provider's version now.
+		$manifest = is_array( $original['extensions'] ?? null ) ? \BulkCatalogueManager\External\Manifest::refreshed( $original['extensions'], $this->actions->providers() ) : null;
+		return [ $undo_of, $previous, $objects, $outline, $snapshot, $manifest ];
 	}
 
 	/**

@@ -89,15 +89,16 @@ final class Manifest {
 	 *
 	 * @param array<string, mixed> $manifest  A batch's manifest.
 	 * @param Providers            $providers The providers now.
+	 * @param bool                 $formats   Whether a format it cannot read blocks it too (a chunk); an undo skips such objects one by one instead.
 	 */
-	public static function blocked( array $manifest, Providers $providers ): ?string {
+	public static function blocked( array $manifest, Providers $providers, bool $formats = true ): ?string {
 		foreach ( $manifest as $id => $entry ) {
 			$label    = self::label( $manifest, (string) $id );
 			$provider = $providers->get( (string) $id );
 			if ( null === $provider || ! $provider->available() || ! in_array( (int) ( $entry['contract'] ?? 0 ), Contract::SUPPORTED, true ) ) {
 				return $label;
 			}
-			foreach ( (array) ( $entry['fields'] ?? [] ) as $key => $field ) {
+			foreach ( $formats ? (array) ( $entry['fields'] ?? [] ) : [] as $key => $field ) {
 				$meta = $provider->field_meta( (string) $key );
 				if ( null === $meta || (int) ( $field['format'] ?? 0 ) > $meta['format'] ) {
 					return $label;
@@ -105,6 +106,35 @@ final class Manifest {
 			}
 		}
 		return null;
+	}
+
+	/**
+	 * What a batch report tells the screen about its add-ons (T108): each
+	 * provider's id and label, and the labels of the actions and fields its
+	 * steps used, so History reads them after the add-on has gone.
+	 *
+	 * @param array<string, mixed> $manifest A batch's manifest.
+	 * @return array{providers: list<array{id: string, label: string}>, actions: array<string, string>, fields: array<string, string>}
+	 */
+	public static function client( array $manifest ): array {
+		$client = [
+			'providers' => [],
+			'actions'   => [],
+			'fields'    => [],
+		];
+		foreach ( $manifest as $id => $entry ) {
+			$client['providers'][] = [
+				'id'    => (string) $id,
+				'label' => self::label( $manifest, (string) $id ),
+			];
+			foreach ( (array) ( $entry['actions'] ?? [] ) as $action => $label ) {
+				$client['actions'][ (string) $action ] = Text::plain( $label, Text::LABEL );
+			}
+			foreach ( (array) ( $entry['fields'] ?? [] ) as $key => $field ) {
+				$client['fields'][ (string) $key ] = Text::plain( $field['label'] ?? '', Text::LABEL );
+			}
+		}
+		return $client;
 	}
 
 	/**

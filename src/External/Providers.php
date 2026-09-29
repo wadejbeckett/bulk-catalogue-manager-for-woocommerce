@@ -109,6 +109,20 @@ final class Providers {
 	}
 
 	/**
+	 * Every registered provider's field keys, provider by provider (T108: the audit log's field filter).
+	 *
+	 * @param Providers $providers The providers.
+	 * @return list<string>
+	 */
+	public static function field_keys( self $providers ): array {
+		$keys = [];
+		foreach ( $providers->all() as $provider ) {
+			$keys = [ ...$keys, ...array_keys( $provider->fields() ) ];
+		}
+		return $keys;
+	}
+
+	/**
 	 * Whether an id is external: a field key, action id or group id starting `x_`.
 	 *
 	 * @param string $identifier The id.

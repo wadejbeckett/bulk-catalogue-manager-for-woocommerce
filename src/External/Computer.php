@@ -54,8 +54,7 @@ final class Computer {
 	public function run( ProductSubject $subject, array $steps ): Computation {
 		$user = $this->context->user_id();
 		foreach ( $steps as $step ) {
-			$described = $this->provider->described( (string) $step['action'] );
-			if ( null !== $described && ! user_can( $user, $described['capability'] ) ) {
+			if ( ! $this->may( $user, $step ) ) {
 				return new Computation( self::all( $steps, static fn( string $key ): Result => Result::skipped( $key, null, Refusals::no_permission(), Refusal::FORBIDDEN ) ), [], [] );
 			}
 		}
@@ -98,6 +97,27 @@ final class Computer {
 	}
 
 	/**
+	 * Whether a user may make a step: its action's capability, or, for
+	 * `restore_external`, the capability of every action of the provider
+	 * that changes its field (T108).
+	 *
+	 * @param int                                               $user The user.
+	 * @param array{action: string, args: array<string, mixed>} $step The step.
+	 */
+	public function may( int $user, array $step ): bool {
+		if ( RestoreExternal::ID !== $step['action'] ) {
+			$described = $this->provider->described( (string) $step['action'] );
+			return null === $described || user_can( $user, $described['capability'] );
+		}
+		foreach ( $this->provider->all_described() as $described ) {
+			if ( ( $step['args']['field'] ?? '' ) === $described['field'] && ! user_can( $user, $described['capability'] ) ) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
 	 * The provider's answer for the object, or the Result every step takes when it refuses.
 	 *
 	 * @param ProductSubject $subject The object.
@@ -126,8 +146,21 @@ final class Computer {
 	 * @param mixed                                             $current The field's value so far.
 	 */
 	private function step( ProductSubject $subject, array $step, string $key, mixed $current ): Result {
+		$field = $this->provider->field( $key );
+		if ( RestoreExternal::ID === $step['action'] ) {
+			// T108: the core computes an undo step itself: the value now against the value to put back.
+			$target = $step['args']['value'] ?? null;
+			if ( null === $field ) {
+				return Result::failed( $key, $current, Refusals::error_sentence(), Refusals::ERROR );
+			}
+			try {
+				$same = true === Guard::run( $this->provider->id, 'same', static fn(): mixed => $field->same( $current, $target ) );
+			} catch ( ProviderFailure $e ) {
+				return Result::failed( $key, $current, Refusals::error_sentence(), Refusals::ERROR );
+			}
+			return $same || $current === $target ? Result::already( $key, $current ) : Result::changed( $key, $current, $target );
+		}
 		$action = $this->provider->action( (string) $step['action'] );
-		$field  = $this->provider->field( $key );
 		if ( null === $action || null === $field ) {
 			return Result::failed( $key, $current, Refusals::error_sentence(), Refusals::ERROR );
 		}

@@ -144,14 +144,16 @@ final class Advertiser {
 	}
 
 	/**
-	 * The note on a parent-only field, in the core's own words.
+	 * The note on an add-on's parent-only field, and the reason a variation
+	 * is skipped for it: the label is quoted, so the sentence reads right
+	 * whether the label is singular or plural ("Gift tags" as well as "Colour").
 	 *
 	 * @param string $label The field's label.
 	 */
 	public static function parent_only( string $label ): string {
 		return sprintf(
-			/* translators: %s: a field's name, such as "Featured". */
-			__( '%s belongs to the product, not to each variation.', 'bulk-catalogue-manager-for-woocommerce' ),
+			/* translators: %s: the name of an add-on's value, such as "Colour" or "Labels"; it is shown in quotation marks. */
+			__( '“%s” is kept on the product, not on each variation.', 'bulk-catalogue-manager-for-woocommerce' ),
 			$label
 		);
 	}

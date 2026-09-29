@@ -1,6 +1,6 @@
 # Extending Bulk Catalogue Manager: writing a provider
 
-A short guide for writing a separately installed plugin (a **provider**) that adds actions for values it owns to the manager's bulk panel. The normative contract, with every rule, limit and error code, is [EXTENSIONS.md](EXTENSIONS.md); section numbers below point into it. Contract version: **1**. Status on branch `codex/external-action-contract`: the interfaces and registration are live from T104; advertising, preview, Apply, the background write path, History and undo land in T105–T109 on the same branch, exactly as described here.
+A short guide for writing a separately installed plugin (a **provider**) that adds actions for values it owns to the manager's bulk panel. The normative contract, with every rule, limit and error code, is [EXTENSIONS.md](EXTENSIONS.md); section numbers below point into it. Contract version: **1**. Status on branch `codex/external-action-contract`: the interfaces and registration are live from T104, advertising from T105, validation, preview and Apply binding from T106, the background write path and journal from T107, and History, undo and redo from T108; T109 adds the end-to-end proof.
 
 What you get: your actions appear in the same bulk panel, act on the owner's exact selection, and go through the same preview, Apply, background job, History and undo as the built-in actions. You write no screen, no REST route and no script. What you must do: compute changes without writing, and give one exact, repeatable, compare-and-set write per value.
 
@@ -147,6 +147,16 @@ Choices are read when descriptors are read (once per request). A choice that dis
 - Every string you give is shown as plain text: tags are stripped and long strings trimmed (labels 80, descriptions 300, reasons 255, notes 3 × 200, described values 1,000).
 - Bump `format()` when your value's shape changes, and convert older values in `upgrade()`; the core refuses to undo a value newer than your running format.
 - `state_token()` must be deterministic and cheap: at most 1.5 seconds for 20,000 products (§14). After `prime()`, `read()` and `compute()` must not query per object.
+
+## 5a. What the core guarantees you
+
+- `prime()` is called before any `read()` or `compute()` of the objects it names: once per page of a preview (available members only) and once per chunk of a job.
+- `flush()` is called once per run that wrote (a chunk, or an undo chunk), with the ids of the objects your `write()` answered `true` for, in `finally`, so even when the run threw; never in a preview.
+- `Subject::value()` returns what an earlier step of the same change computed for that field, else the value your `read()` gave (read once per object), else the `Unknown` it gave; `compute()` is never called for a field whose value is an `Unknown`.
+- A selected variation meets a `parent_only` field before `compute()`: the core skips it with “<label>” is kept on the product, not on each variation. (after the capability check and `authorise()`), so `compute()` only sees products for such a field.
+- `validate()` receives arguments the core has already checked against your spec and normalised: unknown names refused, defaults filled in, `multichoice` values distinct and in the order your choices are offered, `apply_to_variations` present only for a `per_variation` field, `skip_already` present. What you return in `Validation::passed()` is not used; return the arguments you were given.
+- `Result::with_notes()`, `Result::with_warning()` and `x_<provider id>_` result codes are in the core from T106, as §2 describes; notes are shown under the preview row (at most three, 200 characters each), warnings aggregate by code with a product count, and `confirm: true` makes Apply need its second click.
+- `write( $subject, $target, $expected, $context )` gets as `$expected` the value the core read for this object in the same run (for an undo, the value read just before, so Revert anyway works), and the core reads the field back after it.
 
 ## 6. Refusals and results
 

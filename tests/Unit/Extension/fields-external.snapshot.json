@@ -1597,7 +1597,7 @@
                 "clear"
             ],
             "variations": "parent_only",
-            "variationNote": "Sample labels belongs to the product, not to each variation.",
+            "variationNote": "“Sample labels” is kept on the product, not on each variation.",
             "group": "x_sample_labels",
             "defaultColumn": false,
             "defaultOrder": null,

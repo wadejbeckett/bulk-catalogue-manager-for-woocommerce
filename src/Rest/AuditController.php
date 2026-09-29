@@ -116,7 +116,8 @@ final class AuditController implements ReadController {
 				[
 					'description' => __( 'Only changes to this field.', 'bulk-catalogue-manager-for-woocommerce' ),
 					'type'        => 'string',
-					'enum'        => $this->fields->keys(),
+					// T108: the external fields of the providers registered now can be filtered by too.
+					'enum'        => [ ...$this->fields->keys(), ...\BulkCatalogueManager\External\Providers::field_keys( \BulkCatalogueManager\Operations\Registry::instance()->providers() ) ],
 				],
 				'strval'
 			),
@@ -171,6 +172,7 @@ final class AuditController implements ReadController {
 	public function rows( array $filters, int $page, int $size, bool $count = true ): array {
 		$rows = $this->changes->audit( $filters, $page, $size );
 		BatchChangesController::prime_names( $rows );
+		$this->rows->prime_manifests( $rows );
 		$names = BatchesController::user_names( array_column( $rows, 'user_id' ) );
 		$items = [];
 		foreach ( $rows as $row ) {

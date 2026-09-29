@@ -246,7 +246,7 @@ final class Writer {
 	public function prime_external( array $operations, array $ids ): void {
 		$kinds = $this->operations->kinds( $operations );
 		if ( 1 === count( $kinds ) && '' !== $kinds[0] ) {
-			$this->external_writer( $kinds[0] )?->prime( $ids );
+			$this->external_writer( $kinds[0], self::external_mode( $operations ) )?->prime( $ids );
 		}
 	}
 
@@ -255,15 +255,30 @@ final class Writer {
 	 *
 	 * @param string $provider_id Provider id.
 	 */
-	private function external_writer( string $provider_id ): ?ExternalWriter {
-		if ( ! isset( $this->externals[ $provider_id ] ) ) {
+	private function external_writer( string $provider_id, string $mode = RunContext::APPLY ): ?ExternalWriter {
+		$slot = $provider_id . ':' . $mode;
+		if ( ! isset( $this->externals[ $slot ] ) ) {
 			$provider = $this->operations->providers()->get( $provider_id );
 			if ( null === $provider ) {
 				return null;
 			}
-			$this->externals[ $provider_id ] = new ExternalWriter( $provider, RunContext::apply( $this->user_id ?? get_current_user_id(), $this->batch_id ), $this->journal, $this->batch_id );
+			$this->externals[ $slot ] = new ExternalWriter( $provider, new RunContext( $mode, $this->user_id ?? get_current_user_id(), $this->batch_id ), $this->journal, $this->batch_id );
 		}
-		return $this->externals[ $provider_id ];
+		return $this->externals[ $slot ];
+	}
+
+	/**
+	 * The run an external list writes in: undo for restore steps (T108), else apply.
+	 *
+	 * @param array<mixed> $operations The list.
+	 */
+	private static function external_mode( array $operations ): string {
+		foreach ( $operations as $step ) {
+			if ( \BulkCatalogueManager\External\RestoreExternal::ID !== ( $step['action'] ?? '' ) ) {
+				return RunContext::APPLY;
+			}
+		}
+		return RunContext::UNDO;
 	}
 
 	/**
@@ -284,7 +299,7 @@ final class Writer {
 	 * @param list<string>                                            $kinds      The list's kinds of change.
 	 */
 	private function write_external( int $id, array $operations, ?string $type, array $kinds ): WriteOutcome {
-		$external = 1 === count( $kinds ) ? $this->external_writer( $kinds[0] ) : null;
+		$external = 1 === count( $kinds ) ? $this->external_writer( $kinds[0], self::external_mode( $operations ) ) : null;
 		if ( null === $external ) {
 			$reason  = 1 === count( $kinds ) ? Refusals::missing()->get_error_message() : Refusals::mixed_sentence();
 			$code    = 1 === count( $kinds ) ? Refusals::UNAVAILABLE : Refusals::MIXED;

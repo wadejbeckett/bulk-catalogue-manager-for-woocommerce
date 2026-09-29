@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-09-29T19:27:15+00:00\n"
+"POT-Creation-Date: 2026-09-29T19:44:06+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -424,9 +424,9 @@ msgstr ""
 msgid "Yes, with errors"
 msgstr ""
 
-#. translators: %s: a field's name, such as "Featured".
+#. translators: %s: the name of an add-on's value, such as "Colour" or "Labels"; it is shown in quotation marks.
 #, php-format
-msgid "%s belongs to the product, not to each variation."
+msgid "“%s” is kept on the product, not on each variation."
 msgstr ""
 
 #. translators: %s: an action's name, such as "Round prices".
@@ -684,6 +684,15 @@ msgstr ""
 msgid "The add-on could not work out this change, so it was not made. Try again, or ask the add-on's author."
 msgstr ""
 
+msgid "Put an add-on value back"
+msgstr ""
+
+msgid "Puts back the value an add-on field had before a change, as its undo."
+msgstr ""
+
+msgid "This undo step could not be read, so nothing was put back. Preview the undo again."
+msgstr ""
+
 #. translators: %s: the SKU that is already in use.
 #, php-format
 msgid "A product with the SKU %s already exists, so this SKU was not applied."
@@ -759,6 +768,11 @@ msgid "The saved status before Off could not be read for this product, so it was
 msgstr ""
 
 msgid "The sale price has to be below the regular price, so this product was skipped. Lower the sale price, or choose to clear it where it is not below the regular price."
+msgstr ""
+
+#. translators: %s: a field's name, such as "Featured".
+#, php-format
+msgid "%s belongs to the product, not to each variation."
 msgstr ""
 
 msgid "A variable product takes its price from its variations. Change the variations instead."
@@ -1391,6 +1405,9 @@ msgstr ""
 msgid "%1$s %2$d, field %3$s, result %4$s; last modified %5$s GMT before this change."
 msgstr ""
 
+msgid "A value from an add-on that is not active"
+msgstr ""
+
 #. translators: %d: the id of a product, variation or category that no longer has a name.
 #, php-format
 msgid "Category %d"
@@ -1402,6 +1419,12 @@ msgid "Product %d"
 msgstr ""
 
 msgid "Pass \"count\" to count the products changed again since, which works out the whole undo; without it the count is not given."
+msgstr ""
+
+msgid "The name of the add-on that must be active to undo this change; only with the reason provider_unavailable."
+msgstr ""
+
+msgid "For a change an add-on made: the add-on and the labels of its actions and fields, as recorded with the change. Absent for other changes."
 msgstr ""
 
 msgid "Whether the change also reached variations the selection did not name (\"Also apply to variations\"). List rows only."
@@ -1963,6 +1986,14 @@ msgid "This variation was changed since this batch ran, so it is left alone unle
 msgstr ""
 
 msgid "This product was changed since this batch ran, so it is left alone unless you choose Revert anyway."
+msgstr ""
+
+msgid "A value this batch changed was saved in a shape the add-on can no longer read, so this product was left alone."
+msgstr ""
+
+#. translators: %s: the name of an add-on, such as "Example add-on".
+#, php-format
+msgid "This change was made with %s, which is not active now. Turn it on again to undo this change."
 msgstr ""
 
 msgid "This batch has already been undone. To put its changes back, undo the undo instead."
@@ -2903,6 +2934,14 @@ msgid "Running"
 msgstr ""
 
 msgid "Done with errors"
+msgstr ""
+
+#. translators: %s: the name of an add-on, such as "Example add-on".
+#, js-format
+msgid "Needs %s to be active to undo."
+msgstr ""
+
+msgid "Needs the add-on that made this change to be active to undo."
 msgstr ""
 
 msgid "The saved values for this change were removed when old history was cleared, so it cannot be undone."

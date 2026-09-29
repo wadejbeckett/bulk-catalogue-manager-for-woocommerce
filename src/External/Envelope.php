@@ -87,6 +87,33 @@ final class Envelope {
 	}
 
 	/**
+	 * A journalled envelope's value in its field's current format: as it is,
+	 * converted by the field's upgrade() when older, or a WP_Error when newer,
+	 * unreadable or not convertible (T107, T108; docs/EXTENSIONS.md §8.4, §12).
+	 *
+	 * @param Registered $provider The field's provider.
+	 * @param string     $key      Field key.
+	 * @param mixed      $stored   The journalled envelope.
+	 * @return mixed The value, or a WP_Error.
+	 */
+	public static function current( Registered $provider, string $key, mixed $stored ): mixed {
+		$meta  = $provider->field_meta( $key );
+		$field = $provider->field( $key );
+		if ( ! self::is( $stored ) || null === $meta || null === $field || $stored['format'] > $meta['format'] ) {
+			return Refusals::unavailable( $provider->label );
+		}
+		if ( $stored['format'] === $meta['format'] ) {
+			return $stored['value'];
+		}
+		try {
+			$value = Guard::run( $provider->id, 'upgrade', static fn(): mixed => $field->upgrade( $stored['value'], $stored['format'] ) );
+		} catch ( ProviderFailure $e ) {
+			return Refusals::unavailable( $provider->label );
+		}
+		return $value instanceof \WP_Error || ! self::plain( $value ) ? Refusals::unavailable( $provider->label ) : $value;
+	}
+
+	/**
 	 * The text of a journalled external value, or '' when it is not an envelope.
 	 *
 	 * @param mixed $stored A journal value.

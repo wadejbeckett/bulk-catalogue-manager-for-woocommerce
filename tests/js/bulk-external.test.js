@@ -356,7 +356,7 @@ describe( 'the preview of an external change', () => {
 				would_change: 2,
 				already: 0,
 				would_fail: {
-					'Sample labels belongs to the product, not to each variation.': 1,
+					'“Sample labels” is kept on the product, not on each variation.': 1,
 				},
 				rows: { changed: 2, already: 0, skipped: 1, failed: 0 },
 				by_type: {
@@ -413,7 +413,7 @@ describe( 'the preview of an external change', () => {
 					change: '',
 					notes: [],
 					state: 'skipped',
-					reason: 'Sample labels belongs to the product, not to each variation.',
+					reason: '“Sample labels” is kept on the product, not on each variation.',
 					code: 'bulkcat_not_available',
 					replaces: false,
 					note: '',
@@ -494,7 +494,7 @@ describe( 'the preview of an external change', () => {
 			name: 'Rain Jacket - Blue, Large',
 		} ).parentElement;
 		expect( skipped ).toHaveTextContent(
-			'Will be skipped: Sample labels belongs to the product, not to each variation.'
+			'Will be skipped: “Sample labels” is kept on the product, not on each variation.'
 		);
 		const block = document.querySelector( '[data-block="warnings"]' );
 		expect( block ).toHaveTextContent( SALE + ' — 2 products' );

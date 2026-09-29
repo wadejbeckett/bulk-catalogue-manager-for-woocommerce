@@ -196,8 +196,8 @@ final class BatchAcceptance {
 		if ( is_wp_error( $scope ) ) {
 			return $scope;
 		}
-		[ $original, $previous, $objects, $outline, $snapshot ] = $scope;
-		$result = $factory->record_scope( $claims, array_values( $outline ), $objects, $snapshot, $original );
+		[ $original, $previous, $objects, $outline, $snapshot, $manifest ] = $scope;
+		$result = $factory->record_scope( $claims, array_values( $outline ), $objects, $snapshot, $original, [], $manifest );
 		if ( ! $batches->transition( $original, $previous, 'undoing' ) ) {
 			return Refusal::create( Planner::NOT_REVERSIBLE, Planner::undoing_sentence(), 409, [ 'reason' => Planner::UNDO_IN_PROGRESS ] );
 		}

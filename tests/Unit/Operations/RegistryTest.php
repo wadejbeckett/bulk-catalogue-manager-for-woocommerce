@@ -376,7 +376,7 @@ final class RegistryTest extends TestCase {
 		$registry = self::registry();
 		$this->assertTrue( $registry->has( 'restore_status' ), 'get() resolves it, so the writer runs stored undo items.' );
 		$this->assertInstanceOf( \BulkCatalogueManager\Operations\RestoreStatus::class, $registry->get( 'restore_status' ) );
-		$this->assertSame( [ 'restore_status' ], $registry->internal_ids() );
+		$this->assertSame( [ 'restore_status', 'restore_external' ], $registry->internal_ids(), 'T108 adds the external restore step beside it.' );
 		$this->assertNotContains( 'restore_status', $registry->ids() );
 		$this->assertArrayNotHasKey( 'restore_status', $registry->descriptors() );
 		$this->assertNotContains( 'restore_status', array_column( $registry->to_client(), 'id' ) );

@@ -30,6 +30,7 @@ use BulkCatalogueManager\External\ExternalOperation;
 use BulkCatalogueManager\External\Providers;
 use BulkCatalogueManager\External\Refusals;
 use BulkCatalogueManager\External\Registered;
+use BulkCatalogueManager\External\RestoreExternal;
 use BulkCatalogueManager\Fields\Registry as Fields;
 use BulkCatalogueManager\Rest\Refusal;
 
@@ -77,7 +78,7 @@ final class Registry {
 	/**
 	 * Actions only the engine itself may list (T90).
 	 */
-	public const INTERNAL = [ RestoreStatus::ID ];
+	public const INTERNAL = [ RestoreStatus::ID, RestoreExternal::ID ];
 
 	/**
 	 * The instance runtime code shares.
@@ -125,7 +126,8 @@ final class Registry {
 	 */
 	public function __construct( private readonly Fields $fields, ?array $operations = null, ?Providers $providers = null ) {
 		$this->providers = $providers ?? Providers::none();
-		foreach ( $operations ?? self::defaults( $fields ) as $operation ) {
+		$list            = $operations ?? [ ...self::defaults( $fields ), new RestoreExternal( $this->providers ) ];
+		foreach ( $list as $operation ) {
 			$id = $operation->describe()->id();
 			if ( isset( $this->operations[ $id ] ) ) {
 				throw new \LogicException( esc_html( sprintf( 'Action "%s" is registered twice.', $id ) ) );
@@ -351,7 +353,7 @@ final class Registry {
 			}
 			$args  = $entry['args'] ?? [];
 			$field = $args['field'] ?? null;
-			if ( $operation instanceof ExternalOperation ) {
+			if ( $operation instanceof ExternalOperation || $operation instanceof RestoreExternal ) {
 				$validation = $operation->validate( $args );
 				$error      = $validation->error();
 				if ( null !== $error ) {

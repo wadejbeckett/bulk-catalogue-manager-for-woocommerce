@@ -1221,4 +1221,56 @@ def buyer_rows(p: Any, setup: dict, logins: dict, password: str) -> None:
         f"Off {off['report'].get('status')}, On {on['report'].get('status')}; {sum(a != b for a, b in same.values())} of {len(same)} surfaces differ from before Off; a new cart checks out: {said}")
 
 
-CHECKS = [check_engine, check_undo, check_preview, check_grid, check_listing, check_buyer]
+# ---------------------------------------------------------------------------
+# Should-fix 2: a record written from outside the manager (WooCommerce REST v3 meta_data)
+# ---------------------------------------------------------------------------
+
+def wc_rest(p: Any, method: str, route: str, body: Any = None) -> Any:
+    """WooCommerce's own REST v3 as the probe's shop manager (cookie and nonce stay in memory)."""
+    opener, nonce = p.session("manager")
+    headers = {"Accept": "application/json", "X-WP-Nonce": nonce}
+    data = None
+    if body is not None:
+        data = json.dumps(body).encode()
+        headers["Content-Type"] = "application/json"
+    return p._raw(opener, method, "/wp-json/wc/v3" + route, data, headers)
+
+
+def check_outside(p: Any) -> None:
+    def written_from_outside() -> None:
+        fx = upsert(p, [simple("rest-foreign", "draft"), simple("rest-tampered", "draft"), simple("rest-own", "draft")])
+        foreign, tampered, own = (fx[k]["id"] for k in ("rest-foreign", "rest-tampered", "rest-own"))
+        values = {
+            foreign: OFF_JSON % (foreign + 1, "private"),
+            tampered: OFF_JSON % (tampered, "trash"),
+            own: OFF_JSON % (own, "private"),
+        }
+        wrote = {pid: wc_rest(p, "PUT", f"/products/{pid}", {"meta_data": [{"key": META, "value": value}]}).status for pid, value in values.items()}
+        stored = {pid: record(p, pid) == value for pid, value in values.items()}
+        shown = wc_rest(p, "GET", f"/products/{own}").json() or {}
+        exposed = META in [m.get("key") for m in shown.get("meta_data", [])]
+        narrow = {"search": SKU + "rest-"}
+        rows = {i["id"]: i.get("off_state") for i in listed(p, ["off", "changed_outside", "draft"], extra=narrow)["items"]}
+        found_off = set(listed(p, ["off"], extra=narrow)["ids"])
+        pre = preview(p, [foreign, tampered, own], status_step("publish"))
+        codes = notes(pre)
+        on = switch(p, [foreign, tampered, own], "publish")
+        end = statuses(p, [foreign, tampered, own])
+        ok = (set(wrote.values()) == {200} and all(stored.values()) and exposed
+              and rows.get(foreign) is None and rows.get(tampered) is None and (rows.get(own) or {}).get("state") == "off"
+              and foreign not in found_off and own in found_off
+              and codes == {foreign: "publishes_not_off", tampered: "publishes_not_off", own: "on_restores"}
+              and on["report"].get("status") == "complete" and end == {str(foreign): "publish", str(tampered): "publish", str(own): "private"})
+        row(p, "record-written-from-outside", ok,
+            f"WooCommerce REST v3 accepted meta_data writes {sorted(set(wrote.values()))} and returns the key in meta_data: {exposed}; "
+            f"another product's id and a status outside the four read as no record (off_state {rows.get(foreign)}, {rows.get(tampered)}; Published {codes.get(foreign)}, {codes.get(tampered)}); "
+            f"a well-formed record for the product's own id reads as Off and On restores its status ({codes.get(own)} -> {end.get(str(own))}); "
+            f"the Off filter's SQL prefix match lists the tampered value with its own id: {tampered in found_off} (the documented, accepted case; the row, the switch and undo read it as no record)")
+
+    guard(p, "record-written-from-outside", written_from_outside)
+
+
+OFF_JSON = '{"id":%d,"status":"%s","at":"2026-09-01T08:00:00Z","batch":1}'
+
+
+CHECKS = [check_engine, check_undo, check_preview, check_grid, check_listing, check_outside, check_buyer]

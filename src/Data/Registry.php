@@ -63,7 +63,9 @@ final class Registry {
 
 	/**
 	 * Post meta keys: the Off record on a product (SPEC §5.5, T88). Protected
-	 * meta, so the key starts with an underscore (`_bulkcat_`).
+	 * meta, so the key starts with an underscore (`_bulkcat_`); that hides it
+	 * from the Custom Fields box and core's REST, not from WooCommerce's REST
+	 * API or CSV exporter (OffRecord::META_KEY).
 	 */
 	private const POST_META = [
 		\BulkCatalogueManager\Availability\OffRecord::META_KEY,

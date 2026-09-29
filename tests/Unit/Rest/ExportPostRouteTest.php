@@ -37,6 +37,7 @@ use BulkCatalogueManager\Tests\Unit\Query\SeededCatalogue;
 use PHPUnit\Framework\TestCase;
 
 require_once __DIR__ . '/CountingStream.php';
+require_once dirname( __DIR__ ) . '/Export/BaselineRows.php';
 
 final class ExportPostRouteTest extends TestCase {
 	/**
@@ -273,6 +274,28 @@ final class ExportPostRouteTest extends TestCase {
 		$this->assertSame( 'attachment; filename="catalogue-filtered-2026-09-23-1000.csv"', $post_headers['Content-Disposition'], 'Only the file name differs.' );
 		$this->assertSame( $get_params, $this->calls[0][0], 'The same read arguments reach the /products reader.' );
 		$this->assertCount( 251, self::lines( $post ) );
+	}
+
+	public function test_a_filter_post_with_the_switch_off_streams_the_recorded_bytes(): void {
+		// T96's golden files, written by the export before the slice: the switch-off POST streams the same bytes.
+		foreach ( [ 'comma', 'semicolon' ] as $separator ) {
+			$GLOBALS['bulkcat_test']['options']['bulkcat_settings'] = [ 'csv_separator' => $separator ];
+			foreach ( \BulkCatalogueManager\Tests\Unit\Export\BaselineRows::views() as $view => $columns ) {
+				$this->controller = new ExportController( new Registry(), \BulkCatalogueManager\Tests\Unit\Export\BaselineRows::source() );
+				( new Routes( [ $this->controller ] ) )->register();
+				[ $csv, $headers ] = $this->serve(
+					self::send(
+						'POST',
+						[
+							'columns' => implode( ',', $columns ),
+							'search'  => 'Mug',
+						]
+					)
+				);
+				$this->assertSame( (string) file_get_contents( \BulkCatalogueManager\Tests\Unit\Export\BaselineRows::golden( $view, $separator ) ), $csv, "$view, $separator" );
+				$this->assertSame( 'attachment; filename="catalogue-filtered-2026-09-23-1000.csv"', $headers['Content-Disposition'], 'Only the file name differs from the GET.' );
+			}
+		}
 	}
 
 	public function test_an_empty_filter_without_confirm_all_is_refused_and_no_csv_byte_is_written(): void {

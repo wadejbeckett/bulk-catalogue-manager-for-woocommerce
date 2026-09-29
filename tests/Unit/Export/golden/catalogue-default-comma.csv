@@ -1,0 +1,5 @@
+﻿"Name","SKU","Categories","Regular price","Stock status","Status"
+"'  =SUM(A1) Mug","'	TAB-1","12, 15","10.50","instock","publish"
+"He said ""hi"", then; left
+line two","'CR-2","12","","outofstock","draft"
+"Crème brûlée – Large","Bad ? byte","","12.00","onbackorder","private"

@@ -443,7 +443,9 @@ export function reasonSentence( reason ) {
 }
 
 /**
- * How many rows, as a chip: "1,248 products".
+ * How many rows, as a chip: "1,248 items". The batch's count holds products
+ * and variations together, and the list does not say how many of each, so
+ * it never calls them all products (ticket 11).
  *
  * @param {number} count Items.
  * @return {string} Text.
@@ -451,10 +453,10 @@ export function reasonSentence( reason ) {
 export function rowsLabel( count ) {
 	const n = Number( count ) || 0;
 	return sprintf(
-		/* translators: %s: number of products and variations, such as "1,248". */
+		/* translators: %s: a number of products and variations together, such as "1,284". */
 		_n(
-			'%s product',
-			'%s products',
+			'%s item',
+			'%s items',
 			n,
 			'bulk-catalogue-manager-for-woocommerce'
 		),

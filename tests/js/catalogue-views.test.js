@@ -33,6 +33,12 @@ import {
 	defaultView,
 	fieldsFromRegistry,
 } from '../../assets/src/panels/catalogue/fields';
+import {
+	coreJson,
+	expectNoRawText,
+	expectPlain,
+	html500,
+} from './error-fixtures';
 
 jest.mock( '@wordpress/api-fetch', () => {
 	const apiFetch = jest.fn();
@@ -426,6 +432,50 @@ describe( 'saved views row', () => {
 			'views/aaaaaaaaaaaa',
 			undefined,
 		] );
+	} );
+
+	it( 'says a server’s HTML error page in plain words, never its text (ticket 11)', async () => {
+		apiFetch.mockImplementation( () => Promise.reject( html500() ) );
+		render(
+			<SavedViewsBar
+				registry={ REGISTRY }
+				view={ BASE }
+				onApply={ jest.fn() }
+			/>
+		);
+		const sentence =
+			'Your saved views could not be loaded or changed. Check your connection and try again.';
+		const box = (
+			await screen.findByText( sentence, { selector: 'p' } )
+		).closest( '.components-notice' );
+		expectPlain( box, sentence );
+		fireEvent.click( within( box ).getByText( 'Show details' ) );
+		expect(
+			within( box ).getByText( /internal_server_error/ )
+		).toBeTruthy();
+		expectNoRawText();
+	} );
+
+	it( 'says a JSON error that is not the plugin’s own refusal in plain words inside the dialog (ticket 11)', async () => {
+		await renderBar( { applyDefault: false } );
+		apiFetch.mockImplementation( ( { method = 'GET' } ) =>
+			method === 'GET'
+				? Promise.resolve( answer )
+				: Promise.reject( coreJson() )
+		);
+		fireEvent.click(
+			screen.getByRole( 'button', { name: '+ Save this view' } )
+		);
+		fireEvent.change( screen.getByLabelText( 'Name' ), {
+			target: { value: 'Shirts' },
+		} );
+		fireEvent.click( screen.getByRole( 'button', { name: 'Save view' } ) );
+		expectPlain(
+			await screen.findByRole( 'alert' ),
+			'The view could not be saved. Try again in a moment.'
+		);
+		expect( screen.getByRole( 'dialog' ) ).toBeTruthy();
+		expectNoRawText();
 	} );
 
 	it( 'reports a failed load in plain words', async () => {

@@ -54,6 +54,12 @@ After a variation is saved, WooCommerce's own data store resynchronises the pare
 
 History is kept for 90 days by default (7 to 730 days, or indefinitely). A daily task removes the detail of older batches. The batch stays listed in History, marked as no longer reversible. Batches that are still running are never pruned.
 
+### How large a change the screen offers to undo
+
+An undo is prepared in one web request that holds every product and variation of the change, about 2.7 KB each. Until that is done a part at a time, the screen offers undo only for a change that fits, with room to spare, in the memory a web request may use on your site: (memory limit − 32 MB) × 0.75 ÷ 2,765 bytes, which is 27,304 products and variations at 128 MB. Above that it says plainly that undoing a change of that size is not yet supported from the screen; the old values are still recorded.
+
+The memory limit used is the one an ordinary web request runs under, worked out conservatively: the value in force as the plugin loads, before WordPress raises it for administrators on admin pages; never more than the server's configured value (php.ini and the PHP-FPM pool) raised to `WP_MEMORY_LIMIT` the way WordPress raises it; a `.user.ini` file may lower it but never raise it; and no limit at all (`-1`) counts as 128 MB. This was tested on PHP-FPM behind nginx with php.ini, pool `php_value` and `php_admin_value`, `.user.ini`, `WP_MEMORY_LIMIT`, `WP_MAX_MEMORY_LIMIT`, multisite and WordPress in its own directory. Not tested: `php_value` lines in Apache's `.htaccess` (mod_php) and LiteSpeed's own PHP settings; on those servers the value in force as the plugin loads still caps the figure.
+
 ### What is not recorded
 
 Only changes made through this screen are recorded. Edits made elsewhere, such as on the product edit page, through an import or by another plugin, are not recorded and cannot be undone here. The History tab says so. The undo check above still protects them: if a field was changed elsewhere after a batch, undo leaves it alone unless you choose **Revert anyway**.

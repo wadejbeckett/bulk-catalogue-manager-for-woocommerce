@@ -70,6 +70,26 @@ export function variationsPhrase( count ) {
 }
 
 /**
+ * "1 item" or "1,284 items": a count of products and variations together,
+ * where the server does not say how many of each (ticket 11).
+ *
+ * @param {number} count Count.
+ * @return {string} Phrase.
+ */
+export function itemsPhrase( count ) {
+	return sprintf(
+		/* translators: %s: a number of products and variations together, such as "1,284". */
+		_n(
+			'%s item',
+			'%s items',
+			count,
+			'bulk-catalogue-manager-for-woocommerce'
+		),
+		formatNumber( count )
+	);
+}
+
+/**
  * Several names as one list, "Regular price and Sale price", in the
  * reader's language where the browser knows how.
  *

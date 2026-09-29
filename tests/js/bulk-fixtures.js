@@ -117,6 +117,11 @@ function previewResponse( overrides = {} ) {
 			already: 2,
 			would_fail: { [ REASON ]: 2 },
 			rows: { changed: 20, already: 2, skipped: 2, failed: 0 },
+			// As the route answers (Engine\Preview): products and variations apart.
+			by_type: {
+				product: { matched: 24, would_change: 20 },
+				variation: { matched: 0, would_change: 0 },
+			},
 		},
 		sample: [
 			{

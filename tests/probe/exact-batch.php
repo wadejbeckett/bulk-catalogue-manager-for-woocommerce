@@ -241,7 +241,8 @@ try {
 	$replay = $accepted( $service->apply( $submit ), 'A retry after the selection and the grant expired still resolves.' );
 	$check( $batch_id === $replay['batch_id'] && 'complete' === $replay['status'] && true === $replay['replayed'], 'The late retry answers the finished batch without running it again.' );
 	$check( 110.0 === $price( $ids[0] ), 'The late retry applied nothing again.' );
-	$service->prune_selections();
+	// Drained, not called once: a backlog of older payloads must not hide this one (ticket 11).
+	bulkcat_probe_drain( [ $service, 'prune_selections' ] );
 	$replay = $accepted( $service->apply( $submit ), 'A retry after the selection payload was pruned still resolves.' );
 	$check( $batch_id === $replay['batch_id'] && true === $replay['replayed'] && null === ( new BulkCatalogueManager\Selection\SnapshotRepository() )->read( substr( $capture['token'], 3, 32 ), 1 ), 'The receipt answers before any selection check, with the payload gone.' );
 	$now = time();

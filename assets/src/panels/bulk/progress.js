@@ -8,17 +8,21 @@ import { useEffect, useRef } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 
 import { FINISHED, useBatchProgress } from './hooks';
-import { formatNumber, productsPhrase } from './words';
+import { formatNumber, itemsPhrase, productsPhrase } from './words';
 import { useProgressAnnouncer } from './announce';
 
 /**
- * The finished batch's headline.
+ * The finished batch's headline. Its counts are of products and variations
+ * together, so they are items unless the change is known to hold products
+ * only (ticket 11).
  *
- * @param {Object} report Batch report.
+ * @param {Object}      report Batch report.
+ * @param {Object|null} byType `{ products, variations }` the change reached, from the preview, or null.
  * @return {string} Sentence.
  */
-export function doneSentence( report ) {
+export function doneSentence( report, byType = null ) {
 	const total = Number( report?.total_items ) || 0;
+	const products = !! byType && ! ( Number( byType.variations ) > 0 );
 	switch ( report?.status ) {
 		case 'failed':
 			return __(
@@ -32,25 +36,36 @@ export function doneSentence( report ) {
 			);
 		case 'partial':
 			return sprintf(
-				/* translators: 1: products done, such as "1,280"; 2: products in all, such as "1,284 products". */
+				/* translators: 1: products done, such as "1,280"; 2: products in all, such as "1,284 products" or "1,284 items". */
 				__(
 					'%1$s of %2$s updated. The rest are listed below.',
 					'bulk-catalogue-manager-for-woocommerce'
 				),
 				formatNumber( report.changed_items ?? report.done_items ),
-				productsPhrase( total )
+				products ? productsPhrase( total ) : itemsPhrase( total )
 			);
 		default:
-			return sprintf(
-				/* translators: %s: a number, such as "1,284". */
-				_n(
-					'%s product updated.',
-					'%s products updated.',
-					total,
-					'bulk-catalogue-manager-for-woocommerce'
-				),
-				formatNumber( total )
-			);
+			return products
+				? sprintf(
+						/* translators: %s: a number, such as "1,284". */
+						_n(
+							'%s product updated.',
+							'%s products updated.',
+							total,
+							'bulk-catalogue-manager-for-woocommerce'
+						),
+						formatNumber( total )
+					)
+				: sprintf(
+						/* translators: %s: a number of products and variations together, such as "1,284". */
+						_n(
+							'%s item updated.',
+							'%s items updated.',
+							total,
+							'bulk-catalogue-manager-for-woocommerce'
+						),
+						formatNumber( total )
+					);
 	}
 }
 
@@ -60,6 +75,7 @@ export function doneSentence( report ) {
  * @param {Object}   props               Props.
  * @param {number}   props.batchId       The batch.
  * @param {number}   props.count         Products the preview said would change.
+ * @param {Object}   props.byType        `{ products, variations }` the change reached, from the preview, or null (ticket 11).
  * @param {number}   props.interval      Milliseconds between progress reads.
  * @param {Function} props.onUndo        Receives the batch id, or null.
  * @param {Function} props.onViewHistory Receives the batch id, or null.
@@ -73,6 +89,7 @@ export function doneSentence( report ) {
 export function DoneStep( {
 	batchId,
 	count,
+	byType = null,
 	undoLimit = Infinity,
 	interval,
 	onUndo,
@@ -198,7 +215,7 @@ export function DoneStep( {
 				}
 				role="status"
 			>
-				<strong>{ doneSentence( report ) }</strong>
+				<strong>{ doneSentence( report, byType ) }</strong>
 				{ receipt && <p>{ receipt }</p> }
 				{ report.selection_difference && (
 					<p>{ report.selection_difference }</p>

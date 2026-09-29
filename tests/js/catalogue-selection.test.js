@@ -416,6 +416,16 @@ describe( 'selection in the catalogue', () => {
 		expect( box( 'Classic Cotton T-Shirt' ).checked ).toBe( true );
 	} );
 
+	it( 'offers Select all in the words of the grid’s mode (ticket 11)', async () => {
+		await renderLoaded( { ...FILTERED, mode: 'variations' } );
+		fireEvent.click( header() );
+		await waitFor( () =>
+			expect( bar().textContent ).toContain(
+				'All 2 on this page are selected. Select all 1,284 variations matching these filters.'
+			)
+		);
+	} );
+
 	it( 'clears the search and the selection with Clear search, and only the selection with Clear selection', async () => {
 		await renderLoaded();
 		await search( 'Cap' );

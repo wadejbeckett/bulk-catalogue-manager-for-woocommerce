@@ -1,23 +1,24 @@
 /**
- * An error in the §4.8 style: the route's plain sentence in the main text
- * and the technical line (the error code and any details) behind a
+ * An error in the §4.8 style: the plugin's own refusal in its words, or the
+ * panel's plain sentence (never a server's own text: ../../errors.js), and
+ * the technical line (the error code and any details) behind a
  * **Show details** toggle.
  */
 import { Button, Notice } from '@wordpress/components';
 import { useState } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 
+import { plainMessage } from '../../errors';
+
 /**
  * The plain sentence of a failed request.
  *
  * @param {*}      error    The rejection from apiFetch.
- * @param {string} fallback Sentence when the error carries none.
+ * @param {string} fallback The panel's sentence for anything but the plugin's own refusal.
  * @return {string} Sentence.
  */
 export function errorMessage( error, fallback ) {
-	return error?.message && typeof error.message === 'string'
-		? error.message
-		: fallback;
+	return plainMessage( error, fallback );
 }
 
 /**
@@ -52,11 +53,12 @@ export function errorDetails( error ) {
  *
  * @param {Object}   props          Props.
  * @param {*}        props.error    The rejection.
- * @param {string}   props.fallback Sentence when the error carries none.
+ * @param {string}   props.fallback The panel's sentence for anything but the plugin's own refusal.
+ * @param {string}   props.message  The screen's own sentence, shown whatever the error (optional).
  * @param {Function} props.onRemove Dismiss, when dismissible.
  * @return {Element} Notice.
  */
-export default function ErrorNotice( { error, fallback, onRemove } ) {
+export default function ErrorNotice( { error, fallback, message, onRemove } ) {
 	const [ open, setOpen ] = useState( false );
 	const details = errorDetails( error );
 	return (
@@ -66,7 +68,7 @@ export default function ErrorNotice( { error, fallback, onRemove } ) {
 			onRemove={ onRemove }
 			className="bulkcat-error"
 		>
-			<p>{ errorMessage( error, fallback ) }</p>
+			<p>{ message || errorMessage( error, fallback ) }</p>
 			{ details && (
 				<>
 					<Button

@@ -149,11 +149,9 @@ describe( 'catalogue states', () => {
 		// The rows loaded before stay mounted behind the notice.
 		expect( screen.getByText( 'Classic Cotton T-Shirt' ) ).toBeTruthy();
 		expect( screen.getByText( 'Show details' ) ).toBeTruthy();
-		expect(
-			screen.getByText(
-				'invalid_json: The response is not a valid JSON response.'
-			)
-		).toBeTruthy();
+		// The code only: never the server's own text (ticket 11).
+		expect( screen.getByText( 'invalid_json' ) ).toBeTruthy();
+		expect( screen.queryByText( /not a valid JSON response/ ) ).toBeNull();
 
 		fail = false;
 		const before = calls( apiFetch, 'products' ).length;

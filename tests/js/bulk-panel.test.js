@@ -602,6 +602,30 @@ describe( 'bulk panel: preview, apply and done', () => {
 		).toBeEnabled();
 	} );
 
+	it( 'counts products and variations apart on Apply (ticket 11)', async () => {
+		routeApi( apiFetch, {
+			'POST preview': previewResponse( {
+				totals: {
+					...previewResponse().totals,
+					by_type: {
+						product: { matched: 18, would_change: 16 },
+						variation: { matched: 6, would_change: 4 },
+					},
+				},
+			} ),
+		} );
+		renderPanel();
+		chooseIncrease();
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Check the change' } )
+		);
+		expect(
+			await screen.findByRole( 'button', {
+				name: 'Apply to 16 products and 4 variations',
+			} )
+		).toBeEnabled();
+	} );
+
 	it( 'disables Apply when the preview is empty', async () => {
 		routeApi( apiFetch, {
 			'POST preview': previewResponse( {

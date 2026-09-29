@@ -352,7 +352,8 @@ try {
 	$check( 'gone' === $tomb['state'] && gmdate( 'Y-m-d H:i:s', $case['grant']['accept_until'] - DAY_IN_SECONDS + 8 * DAY_IN_SECONDS ) === $tomb['retain_until'], 'Its tombstone lasts eight days from issue.' );
 	$refused( $service->apply( $case['submit'] ), 'bulkcat_request_gone', 'Gone again, never re-executed.' );
 	$now += 9 * DAY_IN_SECONDS;
-	$service->prune_requests();
+	// Drained, not called once: a backlog of older receipts must not hide this one (ticket 11).
+	bulkcat_probe_drain( [ $service, 'prune_requests' ] );
 	$check( null === $receipt( $uuid ), 'The tombstone is pruned after its deadline.' );
 	$refused( $service->apply( $case['submit'] ), 'bulkcat_request_expired', 'After pruning the signed deadline still refuses.' );
 	$now -= 9 * DAY_IN_SECONDS;

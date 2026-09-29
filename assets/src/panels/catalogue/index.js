@@ -585,6 +585,7 @@ export function CatalogueGrid( {
 					pageCount={ catalogue.items.length }
 					total={ catalogue.pagination.totalItems }
 					filtered={ filtered }
+					mode={ modeOf( view ) }
 					onMakeChange={ () => openBulk() }
 					onReview={ () => setReviewing( true ) }
 					onShow={ showStep ? () => openBulk( [ showStep ] ) : null }

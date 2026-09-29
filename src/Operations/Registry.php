@@ -12,6 +12,12 @@
  * naming the step — and otherwise returns the list with every entry's
  * arguments normalised, as preview, batches and the journal store it.
  *
+ * Internal actions (T90): `restore_status`, undo's step for a status and its
+ * Off record, is resolved by get() so the writer runs stored undo items, but
+ * ids(), descriptors(), to_client() and actions_for() leave it out, and
+ * validate_list() refuses it as an unknown action for every caller except
+ * the undo planner, which asks with `$internal` true.
+ *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
  */
@@ -48,6 +54,11 @@ final class Registry {
 	 * Refusal code for an action id no operation has.
 	 */
 	public const UNKNOWN_ACTION = 'bulkcat_unknown_action';
+
+	/**
+	 * Actions only the engine itself may list (T90).
+	 */
+	public const INTERNAL = [ RestoreStatus::ID ];
 
 	/**
 	 * The instance runtime code shares.
@@ -99,12 +110,21 @@ final class Registry {
 	}
 
 	/**
-	 * Every action id, in panel order.
+	 * Every public action id, in panel order.
 	 *
 	 * @return string[]
 	 */
 	public function ids(): array {
-		return array_keys( $this->operations );
+		return array_values( array_diff( array_keys( $this->operations ), self::INTERNAL ) );
+	}
+
+	/**
+	 * The internal action ids registered here.
+	 *
+	 * @return string[]
+	 */
+	public function internal_ids(): array {
+		return array_values( array_intersect( array_keys( $this->operations ), self::INTERNAL ) );
 	}
 
 	/**
@@ -137,12 +157,12 @@ final class Registry {
 	}
 
 	/**
-	 * Every action's descriptor, by id, in panel order.
+	 * Every public action's descriptor, by id, in panel order.
 	 *
 	 * @return array<string, Descriptor>
 	 */
 	public function descriptors(): array {
-		return array_map( static fn( Operation $operation ): Descriptor => $operation->describe(), $this->operations );
+		return array_map( static fn( Operation $operation ): Descriptor => $operation->describe(), array_diff_key( $this->operations, array_flip( self::INTERNAL ) ) );
 	}
 
 	/**
@@ -176,9 +196,10 @@ final class Registry {
 	 * Validate an ordered operation list before any object is read.
 	 *
 	 * @param mixed $operations The list as submitted: `[ { action, args }, ... ]`.
+	 * @param bool  $internal   Whether the internal actions are accepted: the undo planner only (T90).
 	 * @return list<array{action: string, args: array<string, mixed>}>|\WP_Error The normalised list, or the refusal.
 	 */
-	public function validate_list( mixed $operations ): array|\WP_Error {
+	public function validate_list( mixed $operations, bool $internal = false ): array|\WP_Error {
 		if ( ! is_array( $operations ) || ! array_is_list( $operations ) ) {
 			return self::refusal( BaseOperation::INVALID, __( 'The list of changes could not be read. Choose the changes again and try again.', 'bulk-catalogue-manager-for-woocommerce' ) );
 		}
@@ -214,7 +235,7 @@ final class Registry {
 			) ) {
 				return self::step_refusal( $step, $count, BaseOperation::INVALID, __( 'This step could not be read. Choose the action again and try again.', 'bulk-catalogue-manager-for-woocommerce' ) );
 			}
-			$operation = $this->get( $entry['action'] );
+			$operation = $internal || ! in_array( $entry['action'], self::INTERNAL, true ) ? $this->get( $entry['action'] ) : null;
 			if ( null === $operation ) {
 				return self::step_refusal( $step, $count, self::UNKNOWN_ACTION, __( 'This step asks for an action that is not available. Choose an action from the list and try again.', 'bulk-catalogue-manager-for-woocommerce' ), [ 'action' => $entry['action'] ] );
 			}
@@ -257,6 +278,7 @@ final class Registry {
 			new Terms( $fields, Terms::ADD ),
 			new Terms( $fields, Terms::REMOVE ),
 			new Terms( $fields, Terms::REPLACE ),
+			new RestoreStatus( $fields ),
 		];
 	}
 

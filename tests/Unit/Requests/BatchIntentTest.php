@@ -42,6 +42,46 @@ final class BatchIntentTest extends TestCase {
 		$this->assertNotSame( CaptureIntent::fingerprint( $intent ), CaptureIntent::fingerprint( $other ) );
 	}
 
+	public function test_an_apply_intent_carrying_the_internal_undo_step_is_refused(): void {
+		// T90: restore_status runs only as an undo item the planner made; a client's Apply cannot name it.
+		bulkcat_test_reset();
+		$refused = BatchIntent::normalize(
+			'batch.apply',
+			[
+				'ids'        => [ 5 ],
+				'operations' => [
+					[
+						'action' => 'restore_status',
+						'args'   => [
+							'field' => 'status',
+							'value' => 'publish',
+						],
+					],
+				],
+				'scope_hash' => str_repeat( 'a', 64 ),
+			],
+			1
+		);
+		$this->assertInstanceOf( \WP_Error::class, $refused );
+		$this->assertSame( 'bulkcat_unknown_action', $refused->get_error_code() );
+		$this->assertInstanceOf(
+			\WP_Error::class,
+			BatchIntent::current_operations(
+				[
+					'operations' => [
+						[
+							'action' => 'restore_status',
+							'args'   => [
+								'field' => 'status',
+								'value' => 'publish',
+							],
+						],
+					],
+				]
+			)
+		);
+	}
+
 	public function test_undo_intent_binds_force_original_and_plan(): void {
 		bulkcat_test_reset();
 		$intent = BatchIntent::normalize(

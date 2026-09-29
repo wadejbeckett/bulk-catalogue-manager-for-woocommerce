@@ -232,3 +232,28 @@ overlapping WP-CLI processes run (`$phase="prepare_apply"; require …`, then
 `undo`). They print their checks as JSON and exit 1 on the first failure,
 cleaning up the products they made. `probe.py`'s write and variations
 chapters take selections and changes through `POST /requests` grants.
+
+## Global Off/On (ticket 04, T89–T94)
+
+`probe.py --chapters offon` proves Status as the global Off/On switch
+(SPEC §5.5) through the manager's own routes. Its checks live in
+`tests/probe/offon.py`; its fixtures are products it upserts through WP-CLI
+(SKUs `bulkcat-offon-*`, category "Bulkcat Offon"), so it runs on the stack
+above after `seed.sh`, before the destructive lifecycle chapter. One row waits
+75 seconds for a scheduled product's time to pass.
+
+`tests/probe/offon-upgrade.sh` proves an upgrade from the 1.0.0 archive to
+this branch and a downgrade back on a throwaway stack of its own (default
+port 8911, every docker name suffixed `-offon`), whose plugin directory is
+part of the WordPress volume rather than a read-only bind mount so that
+`wp plugin install <zip> --force` can replace the plugin as an update does.
+It checks the 1.0.0 archive's full sha256 first and builds the branch archive
+with `bin/build-zip.sh` (from HEAD, so commit first):
+
+```sh
+ZIP10=/path/to/bulk-catalogue-manager-for-woocommerce-1.0.0.zip bash tests/probe/offon-upgrade.sh all
+```
+
+`all` runs `up`, `upgrade`, `downgrade` and `down` (the teardown runs even
+after a failure); set `WORK` to a directory to run the phases one by one. The
+script's header lists every row.

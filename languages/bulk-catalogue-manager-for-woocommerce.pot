@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-09-29T10:32:04+00:00\n"
+"POT-Creation-Date: 2026-09-29T10:32:11+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -42,6 +42,11 @@ msgid "This copy of Bulk Catalogue Manager was built for WordPress %1$s, but thi
 msgstr ""
 
 msgid "This copy of Bulk Catalogue Manager is missing its screen files. Reinstall the plugin."
+msgstr ""
+
+#. translators: 1: a status, such as "Published", 2: when it was saved, such as "28 Sep 2026 14:03".
+#, php-format
+msgid "%1$s, saved %2$s"
 msgstr ""
 
 msgid "This product was changed by someone else while it was Off, so it was left alone. Choose Keep current status to keep its status and clear its Off record."
@@ -910,6 +915,27 @@ msgstr ""
 msgid "Step %1$d of %2$d: %3$s"
 msgstr ""
 
+msgid "Put the status back"
+msgstr ""
+
+msgid "Puts back the status, and the status saved before Off, that an undone change replaced."
+msgstr ""
+
+msgid "Status to put back"
+msgstr ""
+
+msgid "The status to put back could not be read, so this product was left alone."
+msgstr ""
+
+msgid "Status before Off to put back"
+msgstr ""
+
+msgid "The saved status before Off could not be read, so this product was left alone."
+msgstr ""
+
+msgid "There is no status to put back, so this product was left alone."
+msgstr ""
+
 msgid "Round prices"
 msgstr ""
 
@@ -1688,6 +1714,9 @@ msgid "You can no longer edit this product, so it was left alone. Ask an adminis
 msgstr ""
 
 msgid "One of the values this batch changed can no longer be changed here, so this product was left alone."
+msgstr ""
+
+msgid "The saved status before Off this batch changed could not be read for this product, so it was left alone."
 msgstr ""
 
 msgid "This variation was changed since this batch ran, so it is left alone unless you choose Revert anyway."

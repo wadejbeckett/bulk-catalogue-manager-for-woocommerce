@@ -603,6 +603,31 @@ final class HistoryAuditRouteTest extends TestCase {
 		$this->refused( self::dispatch( '/audit', [ 'per_page' => 0 ] ), 'rest_invalid_param', 400 );
 	}
 
+	public function test_the_off_record_row_is_labelled_and_shown_as_a_saved_status_never_as_json(): void {
+		// T90 (SPEC §9.4): History, the audit log and their CSV show "Status before Off" readably.
+		$record = \BulkCatalogueManager\Availability\OffRecord::create( 1001, 'private', '2026-09-28T14:03:11Z', 2 )->to_json();
+		$this->change( 2, 1001, 'status', 'private', 'draft', 'applied', '2026-09-23 08:00:10' );
+		$this->change( 2, 1001, 'availability_off', '', $record, 'applied', '2026-09-23 08:00:10' );
+		$items = $this->ok(
+			self::dispatch(
+				'/audit',
+				[
+					'product'  => 1001,
+					'per_page' => 2,
+				]
+			)
+		)['items'];
+		$this->assertSame( [ 'availability_off', 'status' ], array_column( $items, 'field' ) );
+		$this->assertSame( 'Status before Off', $items[0]['field_label'] );
+		$this->assertSame( '—', $items[0]['old_value'] );
+		$this->assertSame( 'Private, saved 28 Sep 2026 14:03', $items[0]['new_value'] );
+		$this->assertStringNotContainsString( '{\\"id\\"', (string) wp_json_encode( $items[0] ), 'No record JSON reaches the screen.' );
+		$this->assertSame( [ 'Status', 'private', 'draft' ], [ $items[1]['field_label'], $items[1]['old_value'], $items[1]['new_value'] ], 'The status row is as it was.' );
+
+		// The audit's field filter still names the public fields only.
+		$this->refused( self::dispatch( '/audit', [ 'field' => 'availability_off' ] ), 'rest_invalid_param', 400 );
+	}
+
 	public function test_per_page_is_capped_at_100(): void {
 		for ( $i = 0; $i < 110; $i++ ) {
 			$this->change( 1, 2000 + $i, 'stock_quantity', 1, 2, 'applied', '2026-09-20 11:00:00' );

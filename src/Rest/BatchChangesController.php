@@ -20,6 +20,7 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Rest;
 
+use BulkCatalogueManager\Availability\OffRecord;
 use BulkCatalogueManager\Data\BatchRepository;
 use BulkCatalogueManager\Data\ChangeRepository;
 use BulkCatalogueManager\Data\Schema;
@@ -168,6 +169,11 @@ final class BatchChangesController implements ReadController {
 	 */
 	public function change( array $row ): array {
 		$field = $this->fields->get( $row['prop'] );
+		if ( OffRecord::FIELD === $row['prop'] ) {
+			// The Off record reads as the status it saved and when (SPEC §9.4); the journal keeps the JSON.
+			$row['old_value'] = OffRecord::describe( $row['old_value'] );
+			$row['new_value'] = OffRecord::describe( $row['new_value'] );
+		}
 		return [
 			'change_id'   => $row['change_id'],
 			'object_id'   => $row['object_id'],

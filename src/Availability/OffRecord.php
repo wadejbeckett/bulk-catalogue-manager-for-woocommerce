@@ -190,6 +190,26 @@ final class OffRecord {
 	}
 
 	/**
+	 * A stored or journalled record as people read it (SPEC §9.4): the saved
+	 * status and when it was saved, such as "Published, saved 28 Sep 2026
+	 * 14:03" in the site's time zone, or "—" for none. Never the JSON.
+	 *
+	 * @param mixed $raw A record's canonical JSON, or ''.
+	 */
+	public static function describe( mixed $raw ): string {
+		$record = self::read( $raw );
+		if ( null === $record ) {
+			return '—';
+		}
+		return sprintf(
+			/* translators: 1: a status, such as "Published", 2: when it was saved, such as "28 Sep 2026 14:03". */
+			__( '%1$s, saved %2$s', 'bulk-catalogue-manager-for-woocommerce' ),
+			Outcome::status_label( $record->status ),
+			(string) wp_date( 'j M Y H:i', $record->timestamp() )
+		);
+	}
+
+	/**
 	 * The canonical JSON.
 	 */
 	public function to_json(): string {

@@ -568,6 +568,46 @@ final class UndoRouteTest extends TestCase {
 		$this->assertSame( 'undone', $this->store->batch()['status'], 'The first batch stays as it was.' );
 	}
 
+	public function test_an_off_undoes_exactly_through_the_runner_and_redoes_back(): void {
+		// T90 (E2): an Off batch undone puts the status back and removes the record; its redo gives both back.
+		$record               = \BulkCatalogueManager\Availability\OffRecord::create( 1001, 'private', '2026-09-23T08:01:00Z', self::BATCH )->to_json();
+		$this->store->changes = [];
+		$this->change( 1001, 'status', 'private', 'draft' );
+		$this->change( 1001, 'availability_off', '', $record );
+		$product                                    = self::product( 1001, [ 'status' => 'draft' ] );
+		$product->meta['_bulkcat_availability_off'] = $record;
+		$this->store->sync();
+
+		$preview = $this->preview();
+		$this->assertSame( 1, $preview['counts']['revertible'] );
+		$undo_id = $this->undo()['batch_id'];
+		$this->assertSame( 'complete', $this->run_batch( $undo_id ) );
+		$this->assertSame( 'private', self::prop( 1001, 'status' ) );
+		$this->assertArrayNotHasKey( '_bulkcat_availability_off', $product->meta );
+		$rows = array_values( array_filter( $this->store->changes, static fn( array $row ): bool => $undo_id === $row['batch_id'] ) );
+		$this->assertSame( [ [ 'status', 'draft', 'private' ], [ 'availability_off', $record, '' ] ], array_map( static fn( array $r ): array => [ $r['prop'], $r['old_value'], $r['new_value'] ], $rows ) );
+		$feed = $this->ok( self::dispatch( 'GET', "/batches/$undo_id/changes", [ 'per_page' => 100 ] ) )['items'];
+		$this->assertSame(
+			[ [ 'Status', 'draft', 'private' ], [ 'Status before Off', 'Private, saved 23 Sep 2026 08:01', '—' ] ],
+			array_map( static fn( array $r ): array => [ $r['field_label'], $r['old_value'], $r['new_value'] ], $feed ),
+			'History reads the record as a saved status; the journal keeps the JSON.'
+		);
+
+		$redo = $this->undo( $undo_id, false, self::UUID_2 );
+		$this->assertSame( 'complete', $this->run_batch( $redo['batch_id'] ) );
+		$this->assertSame( 'draft', self::prop( 1001, 'status' ) );
+		$this->assertSame( $record, $product->meta['_bulkcat_availability_off'], 'The redo gives the original record back, byte for byte.' );
+
+		// A conflicted record reads as a saved status in the undo preview, never as JSON.
+		$product->meta['_bulkcat_availability_off'] = \BulkCatalogueManager\Availability\OffRecord::create( 1001, 'pending', '2026-09-24T09:30:00Z', 90 )->to_json();
+		$again                                      = $this->preview( $redo['batch_id'] );
+		$item                                       = $again['items'][0];
+		$this->assertSame( 'conflicted', $item['state'] );
+		$this->assertSame( 'Status before Off', $item['conflicts'][0]['field_label'] );
+		$this->assertSame( 'Pending review, saved 24 Sep 2026 09:30', $item['conflicts'][0]['current'] );
+		$this->assertSame( 'Private, saved 23 Sep 2026 08:01', $item['conflicts'][0]['expected'] );
+	}
+
 	public function test_a_batch_the_planner_refuses_answers_409_with_its_reason(): void {
 		$this->run_batch( $this->undo()['batch_id'] );
 		$refusal = $this->refused( self::dispatch( 'POST', '/batches/12/undo', [ 'preview' => true ] ), 'bulkcat_not_reversible', 409 );

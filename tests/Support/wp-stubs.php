@@ -682,6 +682,16 @@ if ( ! function_exists( 'wp_generate_uuid4' ) ) {
 	}
 }
 
+if ( ! function_exists( 'wp_date' ) ) {
+	/**
+	 * T90: a time formatted in the site's time zone; the test site's zone is UTC.
+	 */
+	function wp_date( string $format, ?int $timestamp = null, mixed $timezone = null ): string|false {
+		unset( $timezone );
+		return gmdate( $format, $timestamp ?? time() );
+	}
+}
+
 if ( ! function_exists( 'get_post_field' ) ) {
 	/**
 	 * T89: a post field as the database holds it. post_status answers

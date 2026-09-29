@@ -11,6 +11,8 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Undo;
 
+use BulkCatalogueManager\Availability\OffRecord;
+use BulkCatalogueManager\Availability\StatusSwitch;
 use BulkCatalogueManager\Data\BatchRepository;
 use BulkCatalogueManager\Data\ChangeRepository;
 use BulkCatalogueManager\Data\Schema;
@@ -20,6 +22,7 @@ use BulkCatalogueManager\Engine\Writer;
 use BulkCatalogueManager\Fields\Field;
 use BulkCatalogueManager\Fields\Values;
 use BulkCatalogueManager\Operations\Registry as Actions;
+use BulkCatalogueManager\Operations\RestoreStatus;
 use BulkCatalogueManager\Operations\Terms;
 use BulkCatalogueManager\Rest\Access;
 use BulkCatalogueManager\Rest\Refusal;
@@ -63,6 +66,18 @@ defined( 'ABSPATH' ) || exit;
  * Objects are read a page at a time (Engine\Memory), so a plan over
  * thousands of objects — the single batch read counts conflicts with one —
  * runs in bounded memory.
+ * Status and its Off record (T90, SPEC §9.4) fold into one internal step,
+ * `restore_status`, carrying the journal's old status (`value`) and old
+ * record (`record`), each only when the batch applied that prop; it is
+ * validated through validate_list()'s internal mode. Conflicts stay per prop
+ * (a record conflict lists as the field "Status before Off"), and a product
+ * carrying its own record written by a later batch than the one undone is
+ * conflicted too, "changed since", with that record as its current value:
+ * batch ids only grow, and a record the undone batch wrote carries its own
+ * id, so it never trips. A journalled record that does not name its object
+ * is skipped, never written. The step's status comes from the journal
+ * alone, never from the record.
+ *
  * Values compare in the field type's canonical form, never loosely: a price
  * through wc_format_decimal() at the shop's precision (10 and 10.00 are the
  * same price, '' and 0.00 are not), a whole number with null distinct from
@@ -209,7 +224,7 @@ final class Planner {
 				Memory::next_page( array_slice( $ids, $index, Preview::PAGE ), 0 < $index );
 			}
 			++$index;
-			$items[] = $this->item( $object_id, $journal, $user_id );
+			$items[] = $this->item( $object_id, $journal, $user_id, $batch_id );
 		}
 		return new Plan( $batch_id, $items, $this->hash( $batch_id, $items ) );
 	}
@@ -381,9 +396,10 @@ final class Planner {
 	 * @param int                                                                                   $object_id Object.
 	 * @param array{type: string, fields: array<string, array{expected: mixed, target: mixed}>} $journal   Its journal.
 	 * @param int                                                                                   $user_id   The person undoing.
+	 * @param int                                                                                   $batch_id  The batch undone.
 	 * @return array{object_id: int, object_type: string, operations: list<array{action: string, args: array<string, mixed>}>, state: string, code: string, reason: string, conflicts: list<array{field: string, expected: mixed, current: mixed}>}
 	 */
-	private function item( int $object_id, array $journal, int $user_id ): array {
+	private function item( int $object_id, array $journal, int $user_id, int $batch_id = 0 ): array {
 		$type      = $journal['type'];
 		$variation = 'variation' === $type;
 		if ( [] === $journal['fields'] ) {
@@ -418,6 +434,7 @@ final class Planner {
 		$fields     = $this->actions->fields();
 		$operations = [];
 		$conflicts  = [];
+		$restore    = null;
 		foreach ( $journal['fields'] as $key => $values ) {
 			$field = $fields->get( $key );
 			if ( null === $field || $field->read_only() ) {
@@ -431,13 +448,33 @@ final class Planner {
 					'current'  => $current,
 				];
 			}
+			$status = StatusSwitch::governs( $field );
+			if ( $status || OffRecord::FIELD === $key ) {
+				// Status and its Off record go back together, as one internal step, where the first of them was.
+				if ( ! $status && '' !== (string) $values['target'] && null === OffRecord::parse( $values['target'], $object_id ) ) {
+					return self::skipped( $object_id, $type, self::CANNOT_RESTORE, __( 'The saved status before Off this batch changed could not be read for this product, so it was left alone.', 'bulk-catalogue-manager-for-woocommerce' ) );
+				}
+				if ( null === $restore ) {
+					$restore      = count( $operations );
+					$operations[] = [];
+				}
+				$operations[ $restore ][ $status ? 'value' : 'record' ] = $values['target'] ?? '';
+				continue;
+			}
 			$operation = self::operation( $field, $values['target'], $values['expected'] );
 			if ( null !== $operation ) {
 				$operations[] = $operation;
 			}
 		}
+		if ( null !== $restore ) {
+			$operations[ $restore ] = self::restore_step( $fields, $operations[ $restore ] );
+			$newer                  = $this->newer_record( $subject, $batch_id, $conflicts );
+			if ( null !== $newer ) {
+				$conflicts[] = $newer;
+			}
+		}
 
-		$normalised = [] === $operations ? [] : $this->actions->validate_list( $operations );
+		$normalised = [] === $operations ? [] : $this->actions->validate_list( $operations, null !== $restore );
 		if ( $normalised instanceof \WP_Error ) {
 			return self::skipped( $object_id, $type, self::CANNOT_RESTORE, $normalised->get_error_message() );
 		}
@@ -462,6 +499,49 @@ final class Planner {
 			'code'        => '',
 			'reason'      => '',
 			'conflicts'   => [],
+		];
+	}
+
+	/**
+	 * The internal step putting a status and its Off record back (T90).
+	 *
+	 * @param \BulkCatalogueManager\Fields\Registry $fields The field registry.
+	 * @param array<string, mixed>                   $parts  `value` and/or `record` from the journal.
+	 * @return array{action: string, args: array<string, mixed>}
+	 */
+	private static function restore_step( \BulkCatalogueManager\Fields\Registry $fields, array $parts ): array {
+		$key = '';
+		foreach ( $fields->editable() as $field ) {
+			if ( StatusSwitch::governs( $field ) ) {
+				$key = $field->key();
+				break;
+			}
+		}
+		return [
+			'action' => RestoreStatus::ID,
+			'args'   => [ 'field' => $key ] + $parts + [ 'apply_to_variations' => false ],
+		];
+	}
+
+	/**
+	 * The newer-record guard (T90): the conflict for a product carrying its
+	 * own Off record written by a batch later than the one undone, unless the
+	 * record is already listed as a conflict; null otherwise.
+	 *
+	 * @param object                                                      $subject   The object.
+	 * @param int                                                         $batch_id  The batch undone.
+	 * @param list<array{field: string, expected: mixed, current: mixed}> $conflicts Conflicts found so far.
+	 * @return array{field: string, expected: mixed, current: mixed}|null
+	 */
+	private function newer_record( object $subject, int $batch_id, array $conflicts ): ?array {
+		$record = OffRecord::for_product( $subject );
+		if ( null === $record || $record->batch <= $batch_id || in_array( OffRecord::FIELD, array_column( $conflicts, 'field' ), true ) ) {
+			return null;
+		}
+		return [
+			'field'    => OffRecord::FIELD,
+			'expected' => '',
+			'current'  => $record->to_json(),
 		];
 	}
 

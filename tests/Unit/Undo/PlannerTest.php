@@ -161,6 +161,215 @@ final class PlannerTest extends TestCase {
 		return $refusal;
 	}
 
+	/**
+	 * An Off record as the switch stores it (T90).
+	 */
+	private static function off( int $id, string $status, int $batch = self::BATCH ): string {
+		return \BulkCatalogueManager\Availability\OffRecord::create( $id, $status, '2026-09-23T08:01:00Z', $batch )->to_json();
+	}
+
+	/**
+	 * The internal undo step, normalised as the planner makes it.
+	 *
+	 * @param array<string, mixed> $args value and/or record.
+	 */
+	private static function restore( array $args ): array {
+		$list = ( new Registry( new Fields() ) )->validate_list(
+			[
+				[
+					'action' => 'restore_status',
+					'args'   => [ 'field' => 'status' ] + $args + [ 'apply_to_variations' => false ],
+				],
+			],
+			true
+		);
+		self::assertTrue( is_array( $list ), $list instanceof \WP_Error ? $list->get_error_message() : '' );
+		return $list;
+	}
+
+	public function test_undoing_an_off_gives_back_its_status_and_no_record(): void {
+		// T90 (SPEC §9.4): status and record fold into one internal step, taken from the journal.
+		foreach ( [
+			3001 => 'publish',
+			3002 => 'private',
+			3003 => 'pending',
+			3004 => 'future',
+		] as $id => $status ) {
+			$this->change( $id, 'status', $status, 'draft' );
+			$this->change( $id, 'availability_off', '', self::off( $id, $status ) );
+			$product                                    = self::product( $id, [ 'status' => 'draft' ] );
+			$product->meta['_bulkcat_availability_off'] = self::off( $id, $status );
+		}
+		$plan = $this->plan();
+		foreach ( [
+			3001 => 'publish',
+			3002 => 'private',
+			3003 => 'pending',
+			3004 => 'future',
+		] as $id => $status ) {
+			$item = self::item( $plan, $id );
+			$this->assertSame( Plan::REVERTIBLE, $item['state'], $status );
+			$this->assertSame(
+				self::restore(
+					[
+						'value'  => $status,
+						'record' => '',
+					]
+				),
+				$item['operations'],
+				$status
+			);
+		}
+	}
+
+	public function test_undoing_an_on_gives_back_draft_and_the_original_record(): void {
+		$original = self::off( 3010, 'private', 7 );
+		$this->change( 3010, 'status', 'draft', 'private' );
+		$this->change( 3010, 'availability_off', $original, '' );
+		self::product( 3010, [ 'status' => 'private' ] );
+		$item = self::item( $this->plan(), 3010 );
+		$this->assertSame( Plan::REVERTIBLE, $item['state'] );
+		$this->assertSame(
+			self::restore(
+				[
+					'value'  => 'draft',
+					'record' => $original,
+				]
+			),
+			$item['operations'],
+			'The original record, byte for byte: its id, status, time and batch.'
+		);
+	}
+
+	public function test_a_record_only_batch_puts_the_record_back_and_leaves_the_status(): void {
+		// Keep current status journalled the record alone.
+		$original = self::off( 3020, 'publish', 7 );
+		$this->change( 3020, 'availability_off', $original, '' );
+		self::product( 3020, [ 'status' => 'pending' ] );
+		$item = self::item( $this->plan(), 3020 );
+		$this->assertSame( Plan::REVERTIBLE, $item['state'] );
+		$this->assertSame( self::restore( [ 'record' => $original ] ), $item['operations'] );
+	}
+
+	public function test_status_and_record_conflicts_list_each_prop_and_keep_the_step_for_revert_anyway(): void {
+		// Changed to Private elsewhere after the Off.
+		$this->change( 3030, 'status', 'publish', 'draft' );
+		$this->change( 3030, 'availability_off', '', self::off( 3030, 'publish' ) );
+		$changed                                    = self::product( 3030, [ 'status' => 'private' ] );
+		$changed->meta['_bulkcat_availability_off'] = self::off( 3030, 'publish' );
+		// Switched Off again by a later batch, saving another status: the record differs.
+		$this->change( 3031, 'status', 'publish', 'draft' );
+		$this->change( 3031, 'availability_off', '', self::off( 3031, 'publish' ) );
+		$again                                    = self::product( 3031, [ 'status' => 'draft' ] );
+		$again->meta['_bulkcat_availability_off'] = self::off( 3031, 'pending', 20 );
+
+		$plan = $this->plan();
+		$item = self::item( $plan, 3030 );
+		$this->assertSame( [ Plan::CONFLICTED, Planner::CHANGED_SINCE ], [ $item['state'], $item['code'] ] );
+		$this->assertSame(
+			[
+				[
+					'field'    => 'status',
+					'expected' => 'draft',
+					'current'  => 'private',
+				],
+			],
+			$item['conflicts']
+		);
+		$this->assertSame( 'restore_status', $item['operations'][0]['action'], 'Revert anyway still has the step.' );
+
+		$item = self::item( $plan, 3031 );
+		$this->assertSame( Plan::CONFLICTED, $item['state'] );
+		$this->assertSame(
+			[
+				[
+					'field'    => 'availability_off',
+					'expected' => self::off( 3031, 'publish' ),
+					'current'  => self::off( 3031, 'pending', 20 ),
+				],
+			],
+			$item['conflicts'],
+			'The record conflict is listed once, though the newer record also trips the guard.'
+		);
+	}
+
+	public function test_a_status_only_batch_never_reads_the_record_for_the_status_it_writes(): void {
+		// A 1.0 batch drafted a product; much later the product was switched Off from Private.
+		$this->change( 3040, 'status', 'publish', 'draft' );
+		$newer                                    = self::product( 3040, [ 'status' => 'draft' ] );
+		$newer->meta['_bulkcat_availability_off'] = self::off( 3040, 'private', 20 );
+		// Another whose record is older than the batch: no guard, and the step names only the status.
+		$this->change( 3041, 'status', 'private', 'draft' );
+		$older                                    = self::product( 3041, [ 'status' => 'draft' ] );
+		$older->meta['_bulkcat_availability_off'] = self::off( 3041, 'pending', 5 );
+		// And one whose record the undone batch wrote itself (the same batch id): never the guard.
+		$this->change( 3042, 'status', 'publish', 'draft' );
+		$own                                    = self::product( 3042, [ 'status' => 'draft' ] );
+		$own->meta['_bulkcat_availability_off'] = self::off( 3042, 'publish' );
+
+		$plan = $this->plan();
+		$item = self::item( $plan, 3040 );
+		$this->assertSame( [ Plan::CONFLICTED, Planner::CHANGED_SINCE ], [ $item['state'], $item['code'] ], 'The newer-record guard.' );
+		$this->assertSame(
+			[
+				[
+					'field'    => 'availability_off',
+					'expected' => '',
+					'current'  => self::off( 3040, 'private', 20 ),
+				],
+			],
+			$item['conflicts']
+		);
+		$this->assertSame( self::restore( [ 'value' => 'publish' ] ), $item['operations'], 'The status comes from the journal only; the record is not named.' );
+
+		$this->assertSame( Plan::REVERTIBLE, self::item( $plan, 3041 )['state'] );
+		$this->assertSame( self::restore( [ 'value' => 'private' ] ), self::item( $plan, 3041 )['operations'] );
+		$this->assertSame( Plan::REVERTIBLE, self::item( $plan, 3042 )['state'] );
+	}
+
+	public function test_undoing_an_on_of_a_scheduled_product_journalled_as_future_is_revertible(): void {
+		// Amendment (a): the writer journals the status WordPress stored.
+		$original = self::off( 3050, 'future', 7 );
+		$this->change( 3050, 'status', 'draft', 'future' );
+		$this->change( 3050, 'availability_off', $original, '' );
+		self::product( 3050, [ 'status' => 'future' ] );
+		$item = self::item( $this->plan(), 3050 );
+		$this->assertSame( [ Plan::REVERTIBLE, [] ], [ $item['state'], $item['conflicts'] ] );
+		$this->assertSame(
+			self::restore(
+				[
+					'value'  => 'draft',
+					'record' => $original,
+				]
+			),
+			$item['operations']
+		);
+	}
+
+	public function test_a_journalled_record_naming_another_product_is_skipped_with_a_reason(): void {
+		$this->change( 3060, 'availability_off', self::off( 3099, 'publish', 7 ), '' );
+		self::product( 3060, [ 'status' => 'private' ] );
+		$item = self::item( $this->plan(), 3060 );
+		$this->assertSame( [ Plan::SKIPPED, Planner::CANNOT_RESTORE ], [ $item['state'], $item['code'] ] );
+		$this->assertStringNotContainsString( 'bulkcat_', $item['reason'] );
+	}
+
+	public function test_a_variation_status_undoes_through_the_same_step(): void {
+		$this->change( 3071, 'status', 'private', 'publish', 'applied', 'variation' );
+		self::product(
+			3071,
+			[
+				'status'    => 'publish',
+				'parent_id' => 3070,
+			],
+			'variation'
+		);
+		self::product( 3070, [], 'variable' );
+		$item = self::item( $this->plan(), 3071 );
+		$this->assertSame( [ Plan::REVERTIBLE, 'variation' ], [ $item['state'], $item['object_type'] ] );
+		$this->assertSame( self::restore( [ 'value' => 'private' ] ), $item['operations'] );
+	}
+
 	public function test_a_multi_operation_batch_reverts_in_reverse_order_to_the_old_values(): void {
 		$this->change( 1001, 'regular_price', '10.00', '11.00' );
 		$this->change( 1001, 'sale_price', '', '9.00' );

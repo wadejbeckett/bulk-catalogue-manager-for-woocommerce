@@ -474,4 +474,110 @@ def check_engine(p: Any) -> None:
     p.offon_state = state
 
 
-CHECKS = [check_engine]
+# ---------------------------------------------------------------------------
+# T90: undo and History exactness (E2, the status-only rule, the guard)
+# ---------------------------------------------------------------------------
+
+
+def undo(p: Any, batch_id: int, force: bool = False) -> dict:
+    """Preview the undo of a batch, apply it under a grant and run it: {preview, status, batch, report}."""
+    route = f"/batches/{batch_id}/undo"
+    pre = p.http("manager", "POST", route, body={"preview": True}).json() or {}
+    reply = p.http("manager", "POST", route, body=p.undo_body("manager", batch_id, pre.get("plan_hash"), force))
+    made = reply.json() or {}
+    report = p.run_queue(made["batch_id"]) if reply.status == 201 and made.get("batch_id") else {}
+    return {"preview": pre, "status": reply.status, "code": reply.code(), "batch": made.get("batch_id"), "report": report}
+
+
+def check_undo(p: Any) -> None:
+    def undo_off() -> None:
+        fx = upsert(p, [simple("undo-off", "private")])
+        pid = fx["undo-off"]["id"]
+        before = snap(p, [pid])
+        off = switch(p, [pid], "draft")
+        rows = journal(p, off["batch"])
+        back = undo(p, off["batch"])
+        after = snap(p, [pid])
+        feed = p.http("manager", "GET", f"/batches/{off['batch']}/changes", [("per_page", "100")]).json() or {}
+        labels = [(r.get("field_label"), r.get("old_value")) for r in feed.get("items", [])]
+        ok = ([r[1] for r in rows] == ["status", "availability_off"] and (back["preview"].get("counts") or {}).get("revertible") == 1
+              and back["report"].get("status") == "complete" and after == before and ("Status before Off", "—") in labels)
+        row(p, "e2-undo-off", ok, f"journal {[r[1] for r in rows]}; undo {back['report'].get('status')}; snapshot identical {after == before}; History {labels}")
+
+    def undo_on() -> None:
+        fx = upsert(p, [simple("undo-on", "pending")])
+        pid = fx["undo-on"]["id"]
+        switch(p, [pid], "draft")
+        saved = snap(p, [pid])
+        on = switch(p, [pid], "publish")
+        back = undo(p, on["batch"])
+        after = snap(p, [pid])
+        ok = back["report"].get("status") == "complete" and after == saved and own_record(after[str(pid)]["record"], pid) is not None
+        row(p, "e2-undo-on", ok, f"undo {back['report'].get('status')}; draft with the original record byte for byte: {after == saved} ({after[str(pid)]['record']})")
+
+    def undo_conflict() -> None:
+        fx = upsert(p, [simple("undo-conflict")])
+        pid = fx["undo-conflict"]["id"]
+        before = snap(p, [pid])
+        off = switch(p, [pid], "draft")
+        set_status_outside(p, pid, "private")
+        plain = undo(p, off["batch"])
+        left = snap(p, [pid])[str(pid)]
+        forced = undo(p, off["batch"], force=True)
+        after = snap(p, [pid])
+        ok = ((plain["preview"].get("counts") or {}).get("conflicted") == 1 and plain["status"] == 409 and left["status"] == "private"
+              and forced["report"].get("status") == "complete" and after == before)
+        row(p, "e2-undo-conflict", ok, f"changed since: {(plain['preview'].get('counts') or {})} -> {plain['status']} {plain['code']}, left {left['status']}; forced {forced['report'].get('status')}, exact {after == before}")
+
+    def status_only() -> None:
+        # An ordinary status change (a status-only journal row), then the product switched Off from its new status.
+        fx = upsert(p, [simple("status-only")])
+        pid = fx["status-only"]["id"]
+        first = switch(p, [pid], "pending")
+        rows = journal(p, first["batch"])
+        switch(p, [pid], "draft")
+        saved = own_record(record(p, pid), pid) or {}
+        guarded = p.http("manager", "POST", f"/batches/{first['batch']}/undo", body={"preview": True}).json() or {}
+        item = (guarded.get("items") or [{}])[0]
+        forced = undo(p, first["batch"], force=True)
+        final = statuses(p, [pid])[str(pid)]
+        ok = (rows == [[pid, "status", "publish", "pending", "applied"]] and saved.get("status") == "pending" and item.get("state") == "conflicted"
+              and [c.get("field") for c in item.get("conflicts", [])] == ["status", "availability_off"]
+              and final == "publish" and record(p, pid) == "")
+        row(p, "undo-status-only", ok, f"journal {rows}; Off saved {saved.get('status')}; undo preview {item.get('state')} {[(c.get('field'), c.get('current')) for c in item.get('conflicts', [])]}; forced -> {final} (never the saved pending), record {record(p, pid)!r}")
+
+    def scheduled_exact() -> None:
+        d10 = getattr(p, "offon_state", {}).get("d10")
+        if not d10:
+            row(p, "d10-undo-exact", False, "no scheduled On from offon:d10-scheduled")
+            return
+        pid = d10["id"]
+        before = record(p, pid)
+        back = undo(p, d10["on"])
+        rec = own_record(record(p, pid), pid)
+        ok = ((back["preview"].get("counts") or {}).get("conflicted") == 0 and back["report"].get("status") == "complete"
+              and statuses(p, [pid])[str(pid)] == "draft" and rec is not None and rec.get("status") == "future" and event(p, pid) == 0 and before == "")
+        row(p, "d10-undo-exact", ok, f"undo of the scheduled On: conflicted {(back['preview'].get('counts') or {}).get('conflicted')}, {back['report'].get('status')}; now {statuses(p, [pid])[str(pid)]} with its record {rec}; event {event(p, pid)}")
+
+    def chain() -> None:
+        # E2: Off -> On -> undo -> undo returns every snapshot field byte for byte.
+        fx = upsert(p, [simple("chain", "private"), {"key": "chain-variable", "type": "variable", "status": "publish"}])
+        ids = [fx["chain"]["id"], fx["chain-variable"]["id"]]
+        s0 = snap(p, ids)
+        off = switch(p, ids, "draft")
+        s1 = snap(p, ids)
+        on = switch(p, ids, "publish")
+        s2 = snap(p, ids)
+        u1 = undo(p, on["batch"])
+        s3 = snap(p, ids)
+        u2 = undo(p, off["batch"])
+        s4 = snap(p, ids)
+        ok = s2 == s0 and s3 == s1 and s4 == s0 and u1["report"].get("status") == "complete" and u2["report"].get("status") == "complete"
+        row(p, "e2-chain", ok, f"after On == before {s2 == s0}; undo On == after Off {s3 == s1}; undo Off == before {s4 == s0}")
+
+    for name, fn in [("e2-undo-off", undo_off), ("e2-undo-on", undo_on), ("e2-undo-conflict", undo_conflict),
+                     ("undo-status-only", status_only), ("d10-undo-exact", scheduled_exact), ("e2-chain", chain)]:
+        guard(p, name, fn)
+
+
+CHECKS = [check_engine, check_undo]

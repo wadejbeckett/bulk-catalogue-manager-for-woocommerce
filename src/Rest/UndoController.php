@@ -13,6 +13,7 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Rest;
 
+use BulkCatalogueManager\Availability\OffRecord;
 use BulkCatalogueManager\Data\BatchRepository;
 use BulkCatalogueManager\Data\ChangeRepository;
 use BulkCatalogueManager\Engine\BatchFactory;
@@ -283,10 +284,18 @@ final class UndoController implements Controller {
 			'reason'      => $item['reason'],
 			'fields'      => array_map( fn( string $key ): array => $this->field( $key ), array_keys( $fields ) ),
 			'conflicts'   => array_map(
-				fn( array $conflict ): array => $this->field( $conflict['field'] ) + [
-					'expected' => $conflict['expected'],
-					'current'  => $conflict['current'],
-				],
+				fn( array $conflict ): array => $this->field( $conflict['field'] ) + (
+					OffRecord::FIELD === $conflict['field']
+						// The Off record reads as the status it saved, never as its JSON (SPEC §9.4).
+						? [
+							'expected' => OffRecord::describe( $conflict['expected'] ),
+							'current'  => OffRecord::describe( $conflict['current'] ),
+						]
+						: [
+							'expected' => $conflict['expected'],
+							'current'  => $conflict['current'],
+						]
+				),
 				$item['conflicts']
 			),
 		];

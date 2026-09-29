@@ -371,6 +371,67 @@ final class RegistryTest extends TestCase {
 		$this->assertSame( 'regex_replace', $refusal->get_error_data()['action'] );
 	}
 
+	public function test_restore_status_is_internal(): void {
+		// T90 (SPEC §9.4): undo's one step for a status and its Off record; no client may send it.
+		$registry = self::registry();
+		$this->assertTrue( $registry->has( 'restore_status' ), 'get() resolves it, so the writer runs stored undo items.' );
+		$this->assertInstanceOf( \BulkCatalogueManager\Operations\RestoreStatus::class, $registry->get( 'restore_status' ) );
+		$this->assertSame( [ 'restore_status' ], $registry->internal_ids() );
+		$this->assertNotContains( 'restore_status', $registry->ids() );
+		$this->assertArrayNotHasKey( 'restore_status', $registry->descriptors() );
+		$this->assertNotContains( 'restore_status', array_column( $registry->to_client(), 'id' ) );
+		$this->assertSame( [ 'set_value' ], $registry->actions_for( 'status', Field::SET ), 'Setting Status is set_value, never the internal step.' );
+
+		$step    = [
+			'action' => 'restore_status',
+			'args'   => [
+				'field'  => 'status',
+				'value'  => 'publish',
+				'record' => '',
+			],
+		];
+		$refusal = $this->refused( $registry->validate_list( [ $step ] ), 'bulkcat_unknown_action', 'the internal step from a client' );
+		$this->assertSame( 'restore_status', $refusal->get_error_data()['action'] );
+
+		$internal = $registry->validate_list( [ $step ], true );
+		$this->assertTrue( is_array( $internal ), $internal instanceof \WP_Error ? $internal->get_error_message() : '' );
+		$this->assertSame( 'restore_status', $internal[0]['action'] );
+		$this->assertSame( [ 'status', 'publish', '' ], [ $internal[0]['args']['field'], $internal[0]['args']['value'], $internal[0]['args']['record'] ] );
+
+		// Its own argument rules: a status it can put back, and a record that is '' or a record.
+		foreach ( [ [ 'value' => 'trash' ], [ 'record' => '{"id":1}' ], [] ] as $bad ) {
+			$this->refused(
+				$registry->validate_list(
+					[
+						[
+							'action' => 'restore_status',
+							'args'   => [ 'field' => 'status' ] + $bad,
+						],
+					],
+					true
+				),
+				'bulkcat_invalid_operation',
+				wp_json_encode( $bad )
+			);
+		}
+		$this->refused(
+			$registry->validate_list(
+				[
+					[
+						'action' => 'restore_status',
+						'args'   => [
+							'field' => 'regular_price',
+							'value' => 'publish',
+						],
+					],
+				],
+				true
+			),
+			'bulkcat_field_not_accepted',
+			'another field'
+		);
+	}
+
 	public function test_an_action_on_a_field_it_does_not_accept_is_refused(): void {
 		$cases = [
 			'round on status'             => [ 'round', 'status' ],

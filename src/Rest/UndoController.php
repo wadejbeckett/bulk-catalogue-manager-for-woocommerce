@@ -185,6 +185,7 @@ final class UndoController implements Controller {
 	 */
 	public function undo( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
 		$batch_id = (int) $request->get_param( 'id' );
+		self::lift_time_limit();
 		if ( true === $request->get_param( 'preview' ) ) {
 			return $this->preview( $batch_id, (int) ( $request->get_param( 'page' ) ?? 1 ), (int) ( $request->get_param( 'per_page' ) ?? 25 ) );
 		}
@@ -201,6 +202,20 @@ final class UndoController implements Controller {
 		}
 		$result = ( new RequestService( $this->clock ) )->undo( array_intersect_key( $request->get_params(), array_flip( [ 'uuid', 'request_proof', 'intent' ] ) ) );
 		return $result instanceof \WP_Error ? $result : $this->created( $result, $result['replayed'] ? 200 : 201 );
+	}
+
+	/**
+	 * Lift PHP's time limit, where the host allows it, for a request that
+	 * walks a whole undo plan (T111): memory stays bounded, but planning
+	 * reads every object the change touched, about two minutes of work for
+	 * 100,000 (measured on the scale fixture), past PHP's default 30
+	 * seconds. The preview, the accepted undo and the single batch read that
+	 * counts conflicts call it; as the CSV export does.
+	 */
+	public static function lift_time_limit(): void {
+		if ( function_exists( 'wc_set_time_limit' ) ) {
+			wc_set_time_limit( 0 );
+		}
 	}
 
 	/**

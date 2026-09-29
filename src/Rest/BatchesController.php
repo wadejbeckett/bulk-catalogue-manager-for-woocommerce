@@ -602,7 +602,12 @@ final class BatchesController implements ReadController {
 	 * @param \WP_REST_Request $request The validated, sanitised request.
 	 */
 	public function get_item( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
-		$report = $this->progress->report( (int) $request->get_param( 'id' ), 'count' === $request->get_param( 'reversibility' ) );
+		$count = 'count' === $request->get_param( 'reversibility' );
+		if ( $count ) {
+			// Counting conflicts walks the whole undo plan (T111).
+			UndoController::lift_time_limit();
+		}
+		$report = $this->progress->report( (int) $request->get_param( 'id' ), $count );
 		return null === $report ? self::not_found() : new \WP_REST_Response( $report, 200 );
 	}
 

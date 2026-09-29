@@ -330,6 +330,18 @@ final class UndoRouteTest extends TestCase {
 		$this->assertSame( $created['undo']['by_type'], $report['undo']['by_type'] );
 	}
 
+	public function test_every_request_that_walks_the_whole_plan_lifts_the_time_limit(): void {
+		// T111: the plan of a 100,000-object change takes about two minutes of work; at PHP's
+		// default 30 seconds the web request died (measured on the scale fixture), not its memory.
+		$GLOBALS['bulkcat_test']['time_limits'] = [];
+		$this->ok( self::dispatch( 'GET', '/batches/12' ) );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['time_limits'], 'The cheap read plans nothing and keeps the limit.' );
+		$this->preview();
+		$this->assertSame( [ [ 0, null ] ], $GLOBALS['bulkcat_test']['time_limits'], 'The undo preview.' );
+		$this->ok( self::dispatch( 'GET', '/batches/12', [ 'reversibility' => 'count' ] ) );
+		$this->assertCount( 2, $GLOBALS['bulkcat_test']['time_limits'], 'The single read that counts conflicts.' );
+	}
+
 	public function test_a_1_0_undo_never_plans_or_creates_an_undo(): void {
 		$hash                                       = $this->preview()['plan_hash'];
 		$GLOBALS['bulkcat_test']['products_loaded'] = [];

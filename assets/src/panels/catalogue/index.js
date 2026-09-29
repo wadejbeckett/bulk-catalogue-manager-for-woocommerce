@@ -507,6 +507,8 @@ export function CatalogueGrid( {
 			query={ catalogue.query }
 			view={ view }
 			registry={ registry }
+			selection={ selection.panel }
+			onRenewSelection={ () => session.renewAll() }
 		/>
 	);
 	const filtered = isFiltered( view ) || !! category;

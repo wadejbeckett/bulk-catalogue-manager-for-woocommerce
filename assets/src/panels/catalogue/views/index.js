@@ -7,7 +7,9 @@
  *   toolbar, `onApply( view, category )` setting both states (it applies the
  *   user's default view once the list arrives, so the screen opens with it);
  * - `<LayoutSwitch view onChangeView />` and `<ExportControl query view
- *   registry />` in the toolbar, `query` being useCatalogue().query;
+ *   registry selection onRenewSelection />` in the toolbar, `query` being
+ *   useCatalogue().query, `selection` the selection's panelSelection() and
+ *   `onRenewSelection` its session's renewAll() (the export dialog, T103);
  * - `<CatalogueLayout …CatalogueTable props… renderSwitch? />` in place of
  *   CatalogueTable, drawing the table or the cards by the view's layout.
  */

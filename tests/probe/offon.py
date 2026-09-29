@@ -578,8 +578,41 @@ def check_undo(p: Any) -> None:
         ok = s2 == s0 and s3 == s1 and s4 == s0 and u1["report"].get("status") == "complete" and u2["report"].get("status") == "complete"
         row(p, "e2-chain", ok, f"after On == before {s2 == s0}; undo On == after Off {s3 == s1}; undo Off == before {s4 == s0}")
 
+    def changed_after_apply() -> None:
+        # The planner's changed-since guard holds when the undo is applied; these changes land after
+        # that, before the queue runs its chunk, and the item is left alone when it is written.
+        fx = upsert(p, [simple("late-again"), simple("late-outside"), simple("late-cleared"), simple("late-control")])
+        again, outside, cleared, control = (fx[k]["id"] for k in ("late-again", "late-outside", "late-cleared", "late-control"))
+        off = switch(p, [again, outside, cleared, control], "draft")
+        route = f"/batches/{off['batch']}/undo"
+        pre = p.http("manager", "POST", route, body={"preview": True}).json() or {}
+        reply = p.http("manager", "POST", route, body=p.undo_body("manager", off["batch"], pre.get("plan_hash")))
+        made = reply.json() or {}
+        if reply.status != 201 or not made.get("batch_id"):
+            raise AssertionError(f"undo {reply.brief()} {made}")
+        on = patch(p, again, {"status": "publish"}, ["status"])
+        re_off = patch(p, again, {"status": "draft"}, ["status"])
+        newer = record(p, again)
+        set_status_outside(p, outside, "private")
+        p.wp_eval(f"$x = wc_get_product( {cleared} ); $x->delete_meta_data( '{META}' ); $x->save(); bulkcat_out( 1 );")
+        report = p.run_queue(made["batch_id"])
+        end = statuses(p, [again, outside, cleared, control])
+        items = p.wp_eval(
+            "global $wpdb; bulkcat_out( $wpdb->get_results( $wpdb->prepare( 'SELECT object_id, state, message FROM %i WHERE batch_id = %d ORDER BY object_id', "
+            f"$wpdb->prefix . 'bulkcat_batch_items', {int(made['batch_id'])} ), ARRAY_A ) );"
+        )
+        states = {int(i["object_id"]): i["state"] for i in items}
+        sentence = "This product was changed since this batch ran, so it is left alone unless you choose Revert anyway."
+        ok = (pre.get("counts", {}).get("revertible") == 4 and on["status"] == 200 and re_off["status"] == 200
+              and states == {again: "skipped", outside: "skipped", cleared: "skipped", control: "done"}
+              and all(i["message"] == sentence for i in items if int(i["object_id"]) != control)
+              and end == {str(again): "draft", str(outside): "private", str(cleared): "draft", str(control): "publish"}
+              and record(p, again) == newer and own_record(newer, again) is not None and record(p, cleared) == "" and not report.get("failed_items"))
+        row(p, "e2-undo-changed-after-apply", ok, f"undo applied with 4 revertible, then: switched On and Off again (newer record), changed outside, record removed; queue run {report.get('status')}, items {states}, statuses {end}; newer record kept {record(p, again) == newer}")
+
     for name, fn in [("e2-undo-off", undo_off), ("e2-undo-on", undo_on), ("e2-undo-conflict", undo_conflict),
-                     ("undo-status-only", status_only), ("d10-undo-exact", scheduled_exact), ("e2-chain", chain)]:
+                     ("undo-status-only", status_only), ("d10-undo-exact", scheduled_exact), ("e2-chain", chain),
+                     ("e2-undo-changed-after-apply", changed_after_apply)]:
         guard(p, name, fn)
 
 

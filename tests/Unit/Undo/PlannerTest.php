@@ -173,12 +173,18 @@ final class PlannerTest extends TestCase {
 	 *
 	 * @param array<string, mixed> $args value and/or record.
 	 */
-	private static function restore( array $args ): array {
-		$list = ( new Registry( new Fields() ) )->validate_list(
+	private static function restore( array $args, int $id ): array {
+		// Should-fix (1): the step expects the status and record the product had when the undo was planned.
+		$product = $GLOBALS['bulkcat_test']['products'][ $id ];
+		$expect  = [
+			'expected_status' => (string) $product->props['status'],
+			'expected_record' => \BulkCatalogueManager\Availability\OffRecord::raw( $product ),
+		];
+		$list    = ( new Registry( new Fields() ) )->validate_list(
 			[
 				[
 					'action' => 'restore_status',
-					'args'   => [ 'field' => 'status' ] + $args + [ 'apply_to_variations' => false ],
+					'args'   => [ 'field' => 'status' ] + $args + $expect + [ 'apply_to_variations' => false ],
 				],
 			],
 			true
@@ -214,7 +220,8 @@ final class PlannerTest extends TestCase {
 					[
 						'value'  => $status,
 						'record' => '',
-					]
+					],
+					$id
 				),
 				$item['operations'],
 				$status
@@ -234,7 +241,8 @@ final class PlannerTest extends TestCase {
 				[
 					'value'  => 'draft',
 					'record' => $original,
-				]
+				],
+				3010
 			),
 			$item['operations'],
 			'The original record, byte for byte: its id, status, time and batch.'
@@ -248,7 +256,7 @@ final class PlannerTest extends TestCase {
 		self::product( 3020, [ 'status' => 'pending' ] );
 		$item = self::item( $this->plan(), 3020 );
 		$this->assertSame( Plan::REVERTIBLE, $item['state'] );
-		$this->assertSame( self::restore( [ 'record' => $original ] ), $item['operations'] );
+		$this->assertSame( self::restore( [ 'record' => $original ], 3020 ), $item['operations'] );
 	}
 
 	public function test_status_and_record_conflicts_list_each_prop_and_keep_the_step_for_revert_anyway(): void {
@@ -277,6 +285,9 @@ final class PlannerTest extends TestCase {
 			$item['conflicts']
 		);
 		$this->assertSame( 'restore_status', $item['operations'][0]['action'], 'Revert anyway still has the step.' );
+		// Should-fix (1): what the step expects to find when it is written is the product as planned,
+		// so Revert anyway writes it, and only a change after the undo was applied leaves it alone.
+		$this->assertSame( [ 'private', self::off( 3030, 'publish' ) ], [ $item['operations'][0]['args']['expected_status'], $item['operations'][0]['args']['expected_record'] ] );
 
 		$item = self::item( $plan, 3031 );
 		$this->assertSame( Plan::CONFLICTED, $item['state'] );
@@ -291,6 +302,7 @@ final class PlannerTest extends TestCase {
 			$item['conflicts'],
 			'The record conflict is listed once, though the newer record also trips the guard.'
 		);
+		$this->assertSame( [ 'draft', self::off( 3031, 'pending', 20 ) ], [ $item['operations'][0]['args']['expected_status'], $item['operations'][0]['args']['expected_record'] ] );
 	}
 
 	public function test_a_status_only_batch_never_reads_the_record_for_the_status_it_writes(): void {
@@ -320,10 +332,10 @@ final class PlannerTest extends TestCase {
 			],
 			$item['conflicts']
 		);
-		$this->assertSame( self::restore( [ 'value' => 'publish' ] ), $item['operations'], 'The status comes from the journal only; the record is not named.' );
+		$this->assertSame( self::restore( [ 'value' => 'publish' ], 3040 ), $item['operations'], 'The status comes from the journal only; the record is not named.' );
 
 		$this->assertSame( Plan::REVERTIBLE, self::item( $plan, 3041 )['state'] );
-		$this->assertSame( self::restore( [ 'value' => 'private' ] ), self::item( $plan, 3041 )['operations'] );
+		$this->assertSame( self::restore( [ 'value' => 'private' ], 3041 ), self::item( $plan, 3041 )['operations'] );
 		$this->assertSame( Plan::REVERTIBLE, self::item( $plan, 3042 )['state'] );
 	}
 
@@ -340,7 +352,8 @@ final class PlannerTest extends TestCase {
 				[
 					'value'  => 'draft',
 					'record' => $original,
-				]
+				],
+				3050
 			),
 			$item['operations']
 		);
@@ -367,7 +380,7 @@ final class PlannerTest extends TestCase {
 		self::product( 3070, [], 'variable' );
 		$item = self::item( $this->plan(), 3071 );
 		$this->assertSame( [ Plan::REVERTIBLE, 'variation' ], [ $item['state'], $item['object_type'] ] );
-		$this->assertSame( self::restore( [ 'value' => 'private' ] ), $item['operations'] );
+		$this->assertSame( self::restore( [ 'value' => 'private' ], 3071 ), $item['operations'] );
 	}
 
 	public function test_a_multi_operation_batch_reverts_in_reverse_order_to_the_old_values(): void {

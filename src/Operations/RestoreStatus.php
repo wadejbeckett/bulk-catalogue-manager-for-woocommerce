@@ -40,6 +40,16 @@ defined( 'ABSPATH' ) || exit;
  * product that now carries its own record loses it when the status put back
  * is not draft, and keeps it (so it stays Off) when it is draft. A variation
  * never carries a record.
+ *
+ * The planner also gives it what it expects to find when it is written:
+ * `expected_status` and `expected_record`, the status and own record the
+ * object had when the undo was planned (at preview and again at Apply, so
+ * Revert anyway expects the state it chose to overwrite). A queued undo runs
+ * later, in the background: when the object no longer holds them — switched
+ * Off again by a newer batch, its status changed outside this screen, its
+ * record removed — compute() skips it as changed since, with the planner's
+ * sentence, and nothing is written. A step stored before these arguments
+ * existed has neither and is written as it was planned.
  */
 final class RestoreStatus extends BaseOperation {
 	/**
@@ -51,6 +61,11 @@ final class RestoreStatus extends BaseOperation {
 	 * The note on a scheduled status written back as publish.
 	 */
 	public const RESTORES_SCHEDULED = 'restores_scheduled';
+
+	/**
+	 * The code of an item left alone because it changed after the undo was planned.
+	 */
+	public const CHANGED_SINCE = 'bulkcat_changed_since';
 
 	/**
 	 * The statuses a journal may hold for the Status field.
@@ -110,16 +125,28 @@ final class RestoreStatus extends BaseOperation {
 	 */
 	protected function arguments(): array {
 		return [
-			'value'  => [
+			'value'           => [
 				'type'    => 'choice',
 				'label'   => __( 'Status to put back', 'bulk-catalogue-manager-for-woocommerce' ),
 				'rule'    => __( 'The status to put back could not be read, so this product was left alone.', 'bulk-catalogue-manager-for-woocommerce' ),
 				'choices' => array_combine( self::STATUSES, self::STATUSES ),
 			],
-			'record' => [
+			'record'          => [
 				'type'        => 'text',
 				'label'       => __( 'Status before Off to put back', 'bulk-catalogue-manager-for-woocommerce' ),
 				'rule'        => __( 'The saved status before Off could not be read, so this product was left alone.', 'bulk-catalogue-manager-for-woocommerce' ),
+				'allow_empty' => true,
+			],
+			'expected_status' => [
+				'type'        => 'text',
+				'label'       => __( 'Status when the undo was planned', 'bulk-catalogue-manager-for-woocommerce' ),
+				'rule'        => __( 'The status this product had when the undo was planned could not be read, so it was left alone.', 'bulk-catalogue-manager-for-woocommerce' ),
+				'allow_empty' => true,
+			],
+			'expected_record' => [
+				'type'        => 'text',
+				'label'       => __( 'Saved status before Off when the undo was planned', 'bulk-catalogue-manager-for-woocommerce' ),
+				'rule'        => __( 'The saved status before Off this product had when the undo was planned could not be read, so it was left alone.', 'bulk-catalogue-manager-for-woocommerce' ),
 				'allow_empty' => true,
 			],
 		];
@@ -137,10 +164,27 @@ final class RestoreStatus extends BaseOperation {
 		if ( ! array_key_exists( 'value', $args ) && ! array_key_exists( 'record', $args ) ) {
 			return __( 'There is no status to put back, so this product was left alone.', 'bulk-catalogue-manager-for-woocommerce' );
 		}
-		if ( array_key_exists( 'record', $args ) && '' !== $args['record'] && null === OffRecord::read( $args['record'] ) ) {
-			return __( 'The saved status before Off could not be read, so this product was left alone.', 'bulk-catalogue-manager-for-woocommerce' );
+		foreach ( [ 'record', 'expected_record' ] as $key ) {
+			if ( array_key_exists( $key, $args ) && '' !== $args[ $key ] && null === OffRecord::read( $args[ $key ] ) ) {
+				return __( 'The saved status before Off could not be read, so this product was left alone.', 'bulk-catalogue-manager-for-woocommerce' );
+			}
 		}
 		return $args;
+	}
+
+	/**
+	 * What a step planned now expects to find when it is written: the
+	 * object's status and its own Off record ('' for none).
+	 *
+	 * @param object $subject The product or variation, as the planner reads it.
+	 * @param Field  $status  The Status field.
+	 * @return array{expected_status: string, expected_record: string}
+	 */
+	public static function expecting( object $subject, Field $status ): array {
+		return [
+			'expected_status' => (string) $status->read( $subject ),
+			'expected_record' => OffRecord::raw( $subject ),
+		];
 	}
 
 	/**
@@ -152,6 +196,17 @@ final class RestoreStatus extends BaseOperation {
 	 */
 	public function compute( object $subject, array $args ): Result {
 		$field = $this->field( $args );
+		if ( self::changed_since( $field, $subject, $args ) ) {
+			$variation = method_exists( $subject, 'is_type' ) && true === $subject->is_type( 'variation' );
+			return Result::skipped(
+				$field->key(),
+				$field->read( $subject ),
+				$variation
+					? __( 'This variation was changed since this batch ran, so it is left alone unless you choose Revert anyway.', 'bulk-catalogue-manager-for-woocommerce' )
+					: __( 'This product was changed since this batch ran, so it is left alone unless you choose Revert anyway.', 'bulk-catalogue-manager-for-woocommerce' ),
+				self::CHANGED_SINCE
+			);
+		}
 		if ( ! array_key_exists( 'value', $args ) ) {
 			return Result::already( $field->key(), $field->read( $subject ) );
 		}
@@ -161,6 +216,23 @@ final class RestoreStatus extends BaseOperation {
 			return $result->with_note( self::RESTORES_SCHEDULED, [ 'restores' => 'future' ] );
 		}
 		return $result;
+	}
+
+	/**
+	 * Whether the object no longer holds the status or own record the step
+	 * was planned against. A step without those arguments expects nothing.
+	 *
+	 * @param Field                $field   The Status field.
+	 * @param object               $subject The object, as it is now.
+	 * @param array<string, mixed> $args    Normalised arguments.
+	 */
+	private static function changed_since( Field $field, object $subject, array $args ): bool {
+		$status = (string) $field->read( $subject );
+		$record = OffRecord::raw( $subject );
+		if ( array_key_exists( 'expected_status', $args ) && $status !== (string) $args['expected_status'] ) {
+			return true;
+		}
+		return array_key_exists( 'expected_record', $args ) && $record !== (string) $args['expected_record'];
 	}
 
 	/**

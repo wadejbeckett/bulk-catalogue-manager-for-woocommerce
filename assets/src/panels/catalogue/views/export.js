@@ -31,6 +31,7 @@ import { useEffect, useRef, useState } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 
 import { routeUrl } from '../../../api';
+import { plainMessage } from '../../../errors';
 import { readSettings } from '../../../settings';
 import { descriptorsOf, rolesOf } from '../fields';
 import { ErrorNotice } from '../states';
@@ -106,15 +107,22 @@ export function exportUrl( args, nonce ) {
 
 /**
  * The refusal a frame shows, when it shows one: core and the plugin answer
- * a refused export as JSON `{ code, message }`.
+ * a refused export as JSON `{ code, message }`; a page with markup (a
+ * server's HTML error page) is a failure whose text is never shown. A
+ * download leaves the frame empty, and a file shown in it is plain text.
  *
  * @param {HTMLIFrameElement} frame Frame.
  * @return {Object|null} An Error with `code`, or null.
  */
 export function refusalIn( frame ) {
 	let text = '';
+	let page = false;
 	try {
-		text = frame.contentDocument?.body?.textContent || '';
+		const body = frame.contentDocument?.body;
+		text = body?.textContent || '';
+		page =
+			typeof body?.querySelector === 'function' &&
+			null !== body.querySelector( ':scope > :not(pre)' );
 	} catch {
 		return null;
 	}
@@ -128,7 +136,9 @@ export function refusalIn( frame ) {
 	} catch {
 		// Not JSON: a page that is not a refusal.
 	}
-	return null;
+	return page
+		? Object.assign( new Error( '' ), { code: 'export_error_page' } )
+		: null;
 }
 
 /**
@@ -226,13 +236,13 @@ export default function ExportControl( {
 		);
 	};
 
-	const plain =
-		error?.code?.startsWith( 'bulkcat_' ) && error.message
-			? error.message
-			: __(
-					'The CSV file could not be made. Reload the page and try again.',
-					'bulk-catalogue-manager-for-woocommerce'
-				);
+	const plain = plainMessage(
+		error,
+		__(
+			'The CSV file could not be made. Reload the page and try again.',
+			'bulk-catalogue-manager-for-woocommerce'
+		)
+	);
 
 	return (
 		<div className="bulkcat-export">

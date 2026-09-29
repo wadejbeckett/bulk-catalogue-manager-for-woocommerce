@@ -350,6 +350,51 @@ final class ProductQuery {
 	}
 
 	/**
+	 * Most ids one presence statement names (present_members()).
+	 */
+	public const PRESENCE_CHUNK = 1000;
+
+	/**
+	 * Which of these ids a catalogue export can write (ticket 10, R12), as
+	 * `id => parent_id` (the row's post parent) in ascending id order: the
+	 * products and variations in a status the catalogue lists, where a
+	 * variation's product is itself a listed product. Anything else — gone,
+	 * in the bin or another unlisted status, not a product or variation, or
+	 * a variation whose product is gone or no longer listed — is left out,
+	 * and nothing more of it is read. The conditions are the grid's own for
+	 * products and variations, plus the ids, in statements of at most
+	 * PRESENCE_CHUNK ids; duplicates and non-positive ids are ignored.
+	 *
+	 * @param array<int, int> $ids Object ids, in any order.
+	 * @return array<int, int> Present id => its parent id (0 for none), ascending.
+	 * @throws \RuntimeException On a database error.
+	 */
+	public static function present_members( array $ids ): array {
+		global $wpdb;
+		$ids = array_values( array_unique( array_filter( array_map( 'intval', $ids ), static fn( int $id ): bool => $id > 0 ) ) );
+		sort( $ids );
+		$query      = new self( Criteria::from_array( [ 'mode' => Criteria::MODE_PRODUCTS_AND_VARIATIONS ] ) );
+		$conditions = $query->conditions_sql();
+		$present    = [];
+		foreach ( array_chunk( $ids, self::PRESENCE_CHUNK ) as $chunk ) {
+			$sql  = 'SELECT p.ID AS id, p.post_parent AS parent_id ' . $conditions['sql']
+				. ' AND p.ID IN (' . self::placeholders( $chunk, '%d' ) . ')'
+				. ' AND (p.post_type = %s OR EXISTS (SELECT 1 FROM %i AS pp WHERE pp.ID = p.post_parent AND pp.post_type = %s AND pp.post_status IN (' . self::placeholders( self::STATUSES, '%s' ) . ')))'
+				. ' ORDER BY p.ID ASC LIMIT %d';
+			$args = [ ...$conditions['args'], ...$chunk, 'product', self::table( 'posts' ), 'product', ...self::STATUSES, count( $chunk ) ];
+			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Allow-listed literals and placeholders; every value is an argument.
+			$rows = $wpdb->get_results( $wpdb->prepare( $sql, ...$args ), ARRAY_A );
+			if ( ! is_array( $rows ) || '' !== $wpdb->last_error ) {
+				throw new \RuntimeException( 'The selected products could not be read.' );
+			}
+			foreach ( $rows as $row ) {
+				$present[ (int) $row['id'] ] = (int) $row['parent_id'];
+			}
+		}
+		return $present;
+	}
+
+	/**
 	 * Run the count statement.
 	 */
 	public function total(): int {

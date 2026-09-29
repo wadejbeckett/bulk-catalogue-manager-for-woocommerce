@@ -124,7 +124,7 @@ Yes. Each site keeps its own history and settings, and deleting the plugin with 
 == Upgrade Notice ==
 
 = Unreleased =
-Needs WooCommerce 11.1 or later. On an older WooCommerce the plugin shows only a notice asking you to update WooCommerce; its history and settings are kept. Status becomes the Off/On switch: Draft saves a product's status and Published restores it. Before going back to 1.0.0, let every change in History finish and switch Off products On: 1.0.0's Published publishes an Off product whatever status it had.
+Needs WooCommerce 11.1 or later. Status becomes the Off/On switch: Draft saves a product's status, Published restores it. Before going back to 1.0.0, let every change finish and switch Off products On: 1.0.0's Published ignores the saved status.
 
 = 1.0.0 =
 First release.

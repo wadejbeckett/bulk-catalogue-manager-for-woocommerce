@@ -16,11 +16,20 @@ declare( strict_types = 1 );
 namespace BulkCatalogueManager\Rest;
 
 use BulkCatalogueManager\Export\CallableRowSource;
+use BulkCatalogueManager\Export\ColumnPlan;
 use BulkCatalogueManager\Export\CsvExport;
+use BulkCatalogueManager\Export\ExportName;
+use BulkCatalogueManager\Export\ExportRequest;
+use BulkCatalogueManager\Export\ExportRows;
+use BulkCatalogueManager\Export\GuardedValues;
 use BulkCatalogueManager\Export\HistoryColumns;
+use BulkCatalogueManager\Export\IdRows;
+use BulkCatalogueManager\Export\ReimportIdentifiers;
 use BulkCatalogueManager\Export\RowSource;
 use BulkCatalogueManager\Fields\Registry;
+use BulkCatalogueManager\Query\CountCache;
 use BulkCatalogueManager\Query\Criteria;
+use BulkCatalogueManager\Query\ProductQuery;
 use BulkCatalogueManager\Settings\Settings;
 
 defined( 'ABSPATH' ) || exit;
@@ -50,6 +59,18 @@ defined( 'ABSPATH' ) || exit;
  * is the catalogue's status filter for products and the batch outcome for
  * the history list; it is validated as whichever the `source` asks for.
  * `source` defaults to `products`, so a catalogue export is unchanged.
+ *
+ * `POST /export` (ticket 10, SPEC §10) is the catalogue export the export
+ * dialog uses: the same route, behind the same read permission, with
+ * RouteSchema::export_args(). Export\ExportRequest checks the request, then
+ * the rows are a selection token's or an ID list's present members
+ * (Export\ExportRows, Export\IdRows) or the filter's rows through the same
+ * `GET /products` reader; every refusal is JSON, sent before any CSV byte.
+ * With `summary` the route answers `{ rows, left_out, guarded_identifiers,
+ * guarded_names, whole_catalogue, filename }` and streams nothing. The
+ * columns and headings come from Export\ColumnPlan, and with the identifier
+ * switch on the rows pass through Export\ReimportIdentifiers. The export
+ * writes nothing but the grid's own count cache.
  */
 final class ExportController implements ReadController {
 	/**
@@ -130,6 +151,14 @@ final class ExportController implements ReadController {
 	private RowSource $source;
 
 	/**
+	 * Resolves a selection token for a POST export, ( token, owner ) =>
+	 * Selection|\WP_Error; the stored snapshot when null.
+	 *
+	 * @var \Closure|null
+	 */
+	private ?\Closure $selection;
+
+	/**
 	 * Build over a registry and, for tests or other reads, a row source.
 	 *
 	 * @param Registry                    $registry Field registry.
@@ -137,13 +166,15 @@ final class ExportController implements ReadController {
 	 * @param BatchesController|null      $history  The history list's rows; the plugin's when null.
 	 * @param AuditController|null        $audit    The audit log's rows; the plugin's when null.
 	 * @param BatchChangesController|null $changes  A batch's changes; the plugin's when null.
+	 * @param \Closure|null               $selection A POST export's selection resolver, ( token, owner ) => Selection|\WP_Error; the stored snapshot when null.
 	 */
-	public function __construct( private readonly Registry $registry, ?RowSource $source = null, ?BatchesController $history = null, ?AuditController $audit = null, ?BatchChangesController $changes = null ) {
-		$this->schema  = new RouteSchema( $registry );
-		$this->source  = $source ?? new CallableRowSource( self::products_reader( new ProductsController( $registry ) ) );
-		$this->history = $history;
-		$this->audit   = $audit;
-		$this->changes = $changes;
+	public function __construct( private readonly Registry $registry, ?RowSource $source = null, ?BatchesController $history = null, ?AuditController $audit = null, ?BatchChangesController $changes = null, ?\Closure $selection = null ) {
+		$this->schema    = new RouteSchema( $registry );
+		$this->source    = $source ?? new CallableRowSource( self::products_reader( new ProductsController( $registry ) ) );
+		$this->history   = $history;
+		$this->audit     = $audit;
+		$this->changes   = $changes;
+		$this->selection = $selection;
 	}
 
 	/**
@@ -160,6 +191,12 @@ final class ExportController implements ReadController {
 					'callback'            => [ $this, 'get_items' ],
 					'permission_callback' => [ Access::class, 'can_read' ],
 					'args'                => $this->args(),
+				],
+				[
+					'methods'             => 'POST',
+					'callback'            => [ $this, 'create_item' ],
+					'permission_callback' => [ Access::class, 'can_read' ],
+					'args'                => $this->schema->export_args(),
 				],
 				'schema' => [ $this, 'get_item_schema' ],
 			]
@@ -303,6 +340,89 @@ final class ExportController implements ReadController {
 	}
 
 	/**
+	 * `POST /export`: a catalogue export, or with `summary` its counts. The
+	 * request is checked and the rows resolved before any byte, so every
+	 * refusal is JSON; a streamed answer is a CsvExport, which serve() sends.
+	 *
+	 * @param \WP_REST_Request $request The validated, sanitised request.
+	 */
+	public function create_item( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
+		$export = ExportRequest::from( $request, $this->registry );
+		if ( $export instanceof \WP_Error ) {
+			return $export;
+		}
+		$plan = $export->plan( $this->registry );
+		try {
+			$rows = match ( $export->rows ) {
+				ExportRequest::FROM_SELECTION => ExportRows::token( $export->token, get_current_user_id(), $this->registry, $this->selection ),
+				ExportRequest::FROM_IDS       => ExportRows::ids( $export->ids, $this->registry ),
+				default                       => null,
+			};
+			if ( $rows instanceof \WP_Error ) {
+				return $rows;
+			}
+			$filename = ExportName::filename( $export->name(), $plan->identifiers(), current_datetime() );
+			if ( $export->summary ) {
+				return new \WP_REST_Response( $this->summary( $export, $rows, $plan, $filename ), 200 );
+			}
+		} catch ( \RuntimeException $error ) {
+			return Refusal::unexpected(
+				'bulkcat_export_unavailable',
+				__( 'The export could not be prepared. Export again; if this continues, ask an administrator to check the site\'s error log.', 'bulk-catalogue-manager-for-woocommerce' ),
+				503,
+				$error
+			);
+		}
+
+		$source = $rows ?? $this->source;
+		$read   = ( null === $rows ? $export->filter : [] ) + [ 'fields' => $plan->fields() ];
+		return new \WP_REST_Response(
+			new CsvExport(
+				$plan->identifiers() ? new ReimportIdentifiers( $source ) : $source,
+				$this->registry,
+				$plan->columns(),
+				$read,
+				Settings::load()->csv_separator(),
+				$filename,
+				$plan->labels(),
+				$plan->identifiers()
+			),
+			200
+		);
+	}
+
+	/**
+	 * The export dialog's counts: the rows the file will hold, the members
+	 * left out, and with the identifier switch on the guarded SKUs and names.
+	 *
+	 * @param ExportRequest $export   The checked request.
+	 * @param IdRows|null   $rows     The explicit rows; null for the filter.
+	 * @param ColumnPlan    $plan     The file's columns: the counts need the switch on, and names need the Name column.
+	 * @param string        $filename The file's name.
+	 * @return array{rows: int, left_out: int, guarded_identifiers: int, guarded_names: int, whole_catalogue: bool, filename: string}
+	 * @throws \RuntimeException On a database error.
+	 */
+	private function summary( ExportRequest $export, ?IdRows $rows, ColumnPlan $plan, string $filename ): array {
+		$query   = null === $rows && null !== $export->criteria ? new ProductQuery( $export->criteria ) : null;
+		$guarded = [
+			'identifiers' => 0,
+			'names'       => 0,
+		];
+		if ( $plan->identifiers() ) {
+			$counter = new GuardedValues( GuardedValues::PAGE, in_array( 'name', $plan->columns(), true ) );
+			$guarded = null === $rows ? $counter->of_query( $query ) : $counter->of_ids( $rows->ids() );
+		}
+		return [
+			'rows'                => null === $rows ? ( new CountCache() )->total( $query ) : $rows->rows(),
+			'left_out'            => null === $rows ? 0 : $rows->left_out(),
+			'guarded_identifiers' => $guarded['identifiers'],
+			'guarded_names'       => $guarded['names'],
+			'whole_catalogue'     => $export->whole_catalogue(),
+			'filename'            => $filename,
+		];
+	}
+
+	/**
 	 * A history export: the source's columns checked, a batch's existence
 	 * checked, then an export whose rows are read page by page through the
 	 * history route's own row method, the total counted on the first page only.
@@ -399,7 +519,9 @@ final class ExportController implements ReadController {
 
 	/**
 	 * `rest_pre_serve_request`: stream an export's CSV in place of JSON.
-	 * Anything else passes through untouched.
+	 * Anything else passes through untouched. A failure after streaming has
+	 * begun stops the file where it is and is written to the WooCommerce log
+	 * (Main Build L1): it never reaches the body.
 	 *
 	 * @param mixed $served  Whether the request has been served.
 	 * @param mixed $result  The response.
@@ -423,7 +545,23 @@ final class ExportController implements ReadController {
 			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Streams the response body; WP_Filesystem cannot write to php://output.
 			$stream = fopen( 'php://output', 'wb' );
 		}
-		$export->stream( $stream );
+		if ( function_exists( 'wc_set_time_limit' ) ) {
+			// A large export can outlast a host's 30-second limit (ticket 10, amendment 7); lifted where the host allows.
+			wc_set_time_limit( 0 );
+		}
+		try {
+			$export->stream( $stream );
+		} catch ( \Throwable $error ) {
+			// The headers and part of the file are already sent, so no refusal can follow. Stop writing,
+			// and keep the error out of the body: left to escape, it would bring WordPress's
+			// critical-error page into a cut-off CSV. The WooCommerce log says what happened.
+			if ( function_exists( 'wc_get_logger' ) ) {
+				wc_get_logger()->error(
+					sprintf( 'The export stopped after it had started: %s: %s (%s:%d)', get_class( $error ), $error->getMessage(), $error->getFile(), $error->getLine() ),
+					[ 'source' => Refusal::LOG_SOURCE ]
+				);
+			}
+		}
 		return true;
 	}
 

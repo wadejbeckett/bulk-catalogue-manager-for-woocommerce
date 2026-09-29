@@ -27,12 +27,38 @@ import {
 } from './model';
 
 /**
- * "All 25 on this page are selected."
+ * "All 25 on this page are selected."; one row is named by what the grid
+ * lists in its mode (ticket 11).
  *
  * @param {number} count Rows on the page.
+ * @param {string} mode  The grid's mode: products, variations or products_and_variations.
  * @return {string} Line.
  */
-export function pageWords( count ) {
+export function pageWords( count, mode = 'products' ) {
+	if ( mode === 'variations' ) {
+		return sprintf(
+			/* translators: %s: the number of variations on this page, such as "25". */
+			_n(
+				'The %s variation on this page is selected.',
+				'All %s on this page are selected.',
+				count,
+				'bulk-catalogue-manager-for-woocommerce'
+			),
+			formatNumber( count )
+		);
+	}
+	if ( mode === 'products_and_variations' ) {
+		return sprintf(
+			/* translators: %s: the number of products and variations on this page, such as "25". */
+			_n(
+				'The %s item on this page is selected.',
+				'All %s on this page are selected.',
+				count,
+				'bulk-catalogue-manager-for-woocommerce'
+			),
+			formatNumber( count )
+		);
+	}
 	return sprintf(
 		/* translators: %s: the number of products on this page, such as "25". */
 		_n(
@@ -46,13 +72,63 @@ export function pageWords( count ) {
 }
 
 /**
- * "Select all 1,284 products matching these filters."
+ * "Select all 1,284 products matching these filters.": the count is of what
+ * the grid lists in its mode, so it names variations in the Variations mode
+ * and items where products and variations are listed together (ticket 11).
  *
  * @param {number}  total    Rows matching the view.
  * @param {boolean} filtered Whether the view narrows the catalogue.
+ * @param {string}  mode     The grid's mode: products, variations or products_and_variations.
  * @return {string} Label.
  */
-export function selectAllWords( total, filtered ) {
+export function selectAllWords( total, filtered, mode = 'products' ) {
+	const words = formatNumber( total );
+	if ( mode === 'variations' ) {
+		return filtered
+			? sprintf(
+					/* translators: %s: a number of variations, such as "1,284". */
+					_n(
+						'Select the %s variation matching these filters.',
+						'Select all %s variations matching these filters.',
+						total,
+						'bulk-catalogue-manager-for-woocommerce'
+					),
+					words
+				)
+			: sprintf(
+					/* translators: %s: a number of variations, such as "1,284". */
+					_n(
+						'Select the %s variation in the catalogue.',
+						'Select all %s variations in the catalogue.',
+						total,
+						'bulk-catalogue-manager-for-woocommerce'
+					),
+					words
+				);
+	}
+	if ( mode === 'products_and_variations' ) {
+		return filtered
+			? sprintf(
+					/* translators: %s: a number of products and variations together, such as "1,284". */
+					_n(
+						'Select the %s item matching these filters.',
+						'Select all %s items matching these filters.',
+						total,
+						'bulk-catalogue-manager-for-woocommerce'
+					),
+					words
+				)
+			: sprintf(
+					/* translators: %s: a number of products and variations together, such as "1,284". */
+					_n(
+						'Select the %s item in the catalogue.',
+						'Select all %s items in the catalogue.',
+						total,
+						'bulk-catalogue-manager-for-woocommerce'
+					),
+					words
+				);
+	}
 	if ( filtered ) {
 		return sprintf(
 			/* translators: %s: a number of products, such as "1,284". */
@@ -62,7 +138,7 @@ export function selectAllWords( total, filtered ) {
 				total,
 				'bulk-catalogue-manager-for-woocommerce'
 			),
-			formatNumber( total )
+			words
 		);
 	}
 	return sprintf(
@@ -73,7 +149,7 @@ export function selectAllWords( total, filtered ) {
 			total,
 			'bulk-catalogue-manager-for-woocommerce'
 		),
-		formatNumber( total )
+		words
 	);
 }
 
@@ -97,6 +173,7 @@ function unwatchedText() {
  * @param {number}        props.pageCount     Rows on this page.
  * @param {number}        props.total         Rows matching the view.
  * @param {boolean}       props.filtered      Whether the view narrows the catalogue.
+ * @param {string}        props.mode          The grid's mode, which the count of rows is of (ticket 11).
  * @param {Function}      props.onMakeChange  Open the bulk change panel.
  * @param {Function}      props.onReview      Open the review of the selection.
  * @param {Function|null} props.onShow        Show in shop and search, or null when the registry offers none.
@@ -112,6 +189,7 @@ export default function SelectionBar( {
 	pageCount,
 	total,
 	filtered,
+	mode = 'products',
 	onMakeChange,
 	onReview = null,
 	onShow = null,
@@ -358,7 +436,7 @@ export default function SelectionBar( {
 					{ offerAll && (
 						<span className="bulkcat-selection__line">
 							{ selection.pageSelected && (
-								<span>{ pageWords( pageCount ) } </span>
+								<span>{ pageWords( pageCount, mode ) } </span>
 							) }
 							<Button
 								variant="link"
@@ -366,7 +444,7 @@ export default function SelectionBar( {
 								disabled={ status === 'uncertain' }
 								accessibleWhenDisabled
 							>
-								{ selectAllWords( total, filtered ) }
+								{ selectAllWords( total, filtered, mode ) }
 							</Button>
 						</span>
 					) }

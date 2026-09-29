@@ -49,6 +49,7 @@ final class CsvExport {
 	 * @param string                     $separator "," or ";".
 	 * @param string                     $filename  Download name.
 	 * @param array<string, string>|null $labels    Headers by column key for columns that are not fields (HistoryColumns::labels()); null for field columns.
+	 * @param bool                       $bare_first Whether the first heading is written unquoted when it is plain letters (CsvWriter::row_bare_first()): a file meant for WooCommerce's importer, whose first heading is `ID`.
 	 * @throws \InvalidArgumentException When there is no column, a column repeats or is not a field.
 	 */
 	public function __construct(
@@ -58,7 +59,8 @@ final class CsvExport {
 		private readonly array $params,
 		private readonly string $separator,
 		private readonly string $filename,
-		private readonly ?array $labels = null
+		private readonly ?array $labels = null,
+		private readonly bool $bare_first = false
 	) {
 		if ( [] === $columns || count( array_unique( $columns ) ) !== count( $columns ) ) {
 			throw new \InvalidArgumentException( 'An export needs one or more distinct columns.' );
@@ -127,7 +129,11 @@ final class CsvExport {
 	 */
 	public function stream( $stream ): int {
 		$writer = new CsvWriter( $stream, $this->separator );
-		$writer->row( $this->header() );
+		if ( $this->bare_first ) {
+			$writer->row_bare_first( $this->header() );
+		} else {
+			$writer->row( $this->header() );
+		}
 		$writer->flush();
 
 		$written = 0;

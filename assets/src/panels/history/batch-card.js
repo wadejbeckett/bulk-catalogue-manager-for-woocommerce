@@ -556,16 +556,14 @@ export default function BatchCard( {
 			{ error && (
 				<div className="bulkcat-batch__error">
 					<ErrorNotice
-						error={
+						error={ error }
+						message={
 							uncertain
-								? {
-										...error,
-										message: __(
-											'We could not confirm whether the undo started. Try again: the same request is sent again, so it can only happen once.',
-											'bulk-catalogue-manager-for-woocommerce'
-										),
-									}
-								: error
+								? __(
+										'We could not confirm whether the undo started. Try again: the same request is sent again, so it can only happen once.',
+										'bulk-catalogue-manager-for-woocommerce'
+									)
+								: ''
 						}
 						fallback={ __(
 							'The undo could not be started. Reload the page and try again.',

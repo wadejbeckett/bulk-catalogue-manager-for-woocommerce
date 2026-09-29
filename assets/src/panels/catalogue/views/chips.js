@@ -28,10 +28,30 @@ import {
 } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 
+import { plainMessage } from '../../../errors';
 import { ErrorNotice } from '../states';
 import { applyBuiltIn, builtInViews, showsBuiltIn } from './presets';
 import { fromSaved, showsSaved } from './serialize';
 import { moved, useSavedViews } from './use-saved-views';
+
+/**
+ * What the name dialog says when saving or renaming fails: the plugin's own
+ * refusal in its words (a name already used), anything else in plain words.
+ *
+ * @param {*} error The failure, or null.
+ * @return {string} Sentence, or '' for none.
+ */
+function dialogError( error ) {
+	return error
+		? plainMessage(
+				error,
+				__(
+					'The view could not be saved. Try again in a moment.',
+					'bulk-catalogue-manager-for-woocommerce'
+				)
+			)
+		: '';
+}
 
 /**
  * The name dialog for saving and renaming.
@@ -362,14 +382,13 @@ export default function SavedViewsBar( {
 		<div className="bulkcat-views">
 			{ saved.error && ! dialog && (
 				<ErrorNotice
-					message={
-						saved.error?.message && saved.error?.code
-							? saved.error.message
-							: __(
-									'Your saved views could not be loaded or changed. Check your connection and try again.',
-									'bulk-catalogue-manager-for-woocommerce'
-								)
-					}
+					message={ plainMessage(
+						saved.error,
+						__(
+							'Your saved views could not be loaded or changed. Check your connection and try again.',
+							'bulk-catalogue-manager-for-woocommerce'
+						)
+					) }
 					error={ saved.error }
 					onRetry={ saved.clearError }
 				/>
@@ -472,7 +491,7 @@ export default function SavedViewsBar( {
 						'bulk-catalogue-manager-for-woocommerce'
 					) }
 					busy={ saved.busy }
-					error={ saved.error?.message || '' }
+					error={ dialogError( saved.error ) }
 					onClose={ close }
 					onSubmit={ ( name ) =>
 						quietly(
@@ -493,7 +512,7 @@ export default function SavedViewsBar( {
 						'bulk-catalogue-manager-for-woocommerce'
 					) }
 					busy={ saved.busy }
-					error={ saved.error?.message || '' }
+					error={ dialogError( saved.error ) }
 					onClose={ close }
 					onSubmit={ ( name ) =>
 						quietly(

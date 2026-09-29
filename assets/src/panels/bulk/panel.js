@@ -45,6 +45,7 @@ import {
 	chooseAction,
 	emptyOperation,
 } from './operations';
+import { plainMessage } from '../../errors';
 import { PreviewResult } from './preview';
 import { DoneStep } from './progress';
 import { formatNumber } from './words';
@@ -318,6 +319,20 @@ export default function BulkChangePanel( {
 		( preview.status === 'ready' && ! current ) ||
 		applier.status === 'stale';
 	const changes = Number( response?.totals?.would_change ) || 0;
+	// What the preview says of products and variations apart (ticket 11), or null.
+	const types = response?.totals?.by_type;
+	const changeTypes = types
+		? {
+				products: Number( types.product?.would_change ) || 0,
+				variations: Number( types.variation?.would_change ) || 0,
+			}
+		: null;
+	const reachTypes = types
+		? {
+				products: Number( types.product?.matched ) || 0,
+				variations: Number( types.variation?.matched ) || 0,
+			}
+		: null;
 	const reach =
 		Number( batch?.total_items ?? response?.totals?.matched ?? count ) || 0;
 	const undoNote = reach > undoLimit ? undoTooLarge( undoLimit ) : '';
@@ -643,6 +658,7 @@ export default function BulkChangePanel( {
 						<DoneStep
 							batchId={ batch.batch_id }
 							count={ batch.total_items ?? changes }
+							byType={ reachTypes }
 							undoLimit={ undoLimit }
 							interval={ pollInterval }
 							onUndo={ onUndo }
@@ -936,6 +952,7 @@ export default function BulkChangePanel( {
 						check={ () => check() }
 						apply={ apply }
 						count={ changes }
+						byType={ changeTypes }
 						threshold={ threshold }
 						reasons={ reasons }
 						busy={ applier.status === 'applying' }
@@ -990,6 +1007,7 @@ export default function BulkChangePanel( {
  * @param {Function}      props.check     Runs the preview.
  * @param {Function}      props.apply     Runs the apply.
  * @param {number}        props.count     Products that would change.
+ * @param {Object|null}   props.byType    `{ products, variations }` of that count, or null.
  * @param {number}        props.threshold The confirm threshold.
  * @param {Array<string>} props.reasons   Always-confirm sentences.
  * @param {boolean}       props.busy      Whether an apply is running.
@@ -1003,6 +1021,7 @@ function FooterAction( {
 	check,
 	apply,
 	count,
+	byType = null,
 	threshold,
 	reasons,
 	busy,
@@ -1013,6 +1032,7 @@ function FooterAction( {
 		return (
 			<ConfirmApply
 				count={ count }
+				byType={ byType }
 				threshold={ threshold }
 				reasons={ reasons }
 				onApply={ apply }
@@ -1245,20 +1265,11 @@ function Details( { error, details, onDetails } ) {
 function ErrorNotice( { error, details, onDetails, onRenew = null } ) {
 	// Only the plugin's own refusals are sentences written for people
 	// (§4.8); anything else — a server's error page, a proxy's text — is
-	// the plain fallback, its code behind Show details (T85).
-	const own =
-		/^bulkcat_/.test( error?.code || '' ) &&
-		typeof error?.message === 'string' &&
-		error.message;
+	// the plain fallback, its code behind Show details (T85; the shared
+	// rule in ../../errors.js since ticket 11).
 	return (
 		<div className="bulkcat-bulk__notice is-error" role="alert">
-			<p>
-				{ own ||
-					__(
-						'Something went wrong. Try again in a moment.',
-						'bulk-catalogue-manager-for-woocommerce'
-					) }
-			</p>
+			<p>{ plainMessage( error ) }</p>
 			{ onRenew && (
 				<div className="bulkcat-bulk__acts">
 					<button

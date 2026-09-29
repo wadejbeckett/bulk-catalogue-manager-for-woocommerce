@@ -3,9 +3,14 @@
 # jobs here rather than weakening it; Plugin Check and the release job are T78.
 name: CI
 
+# Runs on the branches that are released from and on pull requests to main,
+# not on every working branch: the full suites run locally first (tests/probe/README.md).
 on:
   push:
+    branches: [ main, codex/integration ]
   pull_request:
+    branches: [ main ]
+  workflow_dispatch:
 
 permissions:
   contents: read

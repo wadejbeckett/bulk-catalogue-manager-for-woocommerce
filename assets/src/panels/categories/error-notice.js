@@ -1,28 +1,24 @@
 /**
- * A refusal in SPEC §4.8 wording: the server's plain sentence as the main
- * text, and the technical line (code, status, details) behind Show details.
+ * A refusal in SPEC §4.8 wording: the plugin's plain sentence as the main
+ * text (never a server's own text), and the technical line (code, status,
+ * details) behind Show details.
  */
 import { Button, Notice } from '@wordpress/components';
 import { useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 
+import { plainMessage } from '../../errors';
+
 /**
- * The plain sentence of a failed request.
+ * The plain sentence of a failed request: the plugin's own refusal in its
+ * words, anything else in the panel's (../../errors.js).
  *
  * @param {Object} error    apiFetch's rejection: { code, message, data }.
- * @param {string} fallback Sentence when the answer carried none.
+ * @param {string} fallback The panel's sentence for anything but the plugin's own refusal.
  * @return {string} Sentence.
  */
 export function errorMessage( error, fallback ) {
-	const message = error?.message;
-	if (
-		typeof message === 'string' &&
-		message &&
-		! /^bulkcat_/.test( message )
-	) {
-		return message;
-	}
-	return fallback;
+	return plainMessage( error, fallback );
 }
 
 /**

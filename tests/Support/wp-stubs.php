@@ -392,8 +392,55 @@ if ( ! function_exists( 'add_filter' ) ) {
 		return $response instanceof WP_REST_Response || $response instanceof WP_Error ? $response : new WP_REST_Response( $response );
 	}
 
+	function wp_unslash( mixed $value ): mixed {
+		return is_string( $value ) ? stripslashes( $value ) : $value;
+	}
+
 	function sanitize_text_field( string $text ): string {
 		return trim( (string) preg_replace( '/\s+/', ' ', strip_tags( $text ) ) );
+	}
+
+	/**
+	 * Core's `_sanitize_text_fields()` without new lines kept (WordPress
+	 * 7.1, wp-includes/formatting.php), for wc_clean(): invalid UTF-8 reads
+	 * as '', a lone `<` is escaped and tags (with script and style bodies)
+	 * stripped, line breaks, tabs and runs of spaces become one space, the
+	 * ends are trimmed and percent-encoded octets removed. The simpler
+	 * sanitize_text_field() stub above stays as other tests expect it.
+	 */
+	function bulkcat_test_sanitize_text_fields( string $text ): string {
+		$filtered = '' === $text || 1 !== preg_match( '//u', $text ) ? '' : $text;
+		if ( str_contains( $filtered, '<' ) ) {
+			$filtered = (string) preg_replace_callback( '%<[^>]*?((?=<)|>|$)%', static fn( array $m ): string => str_contains( $m[0], '>' ) ? $m[0] : esc_html( $m[0] ), $filtered );
+			$filtered = trim( strip_tags( (string) preg_replace( '@<(script|style)[^>]*?>.*?</\\1>@si', '', $filtered ) ) );
+			$filtered = str_replace( "<\n", "&lt;\n", $filtered );
+		}
+		$filtered = trim( (string) preg_replace( '/[\r\n\t ]+/', ' ', $filtered ) );
+		$found    = false;
+		while ( 1 === preg_match( '/%[a-f0-9]{2}/i', $filtered, $match ) ) {
+			$filtered = str_replace( $match[0], '', $filtered );
+			$found    = true;
+		}
+		return $found ? trim( (string) preg_replace( '/ +/', ' ', $filtered ) ) : $filtered;
+	}
+
+	/**
+	 * WooCommerce's `wc_set_time_limit()`: records each limit asked for, with
+	 * the bytes a spying stream had received by then (`time_limit_bytes`).
+	 */
+	function wc_set_time_limit( int $limit = 0 ): void {
+		$GLOBALS['bulkcat_test']['time_limits'][] = [ $limit, $GLOBALS['bulkcat_test']['time_limit_bytes'] ?? null ];
+	}
+
+	/**
+	 * WooCommerce's `wc_clean()` (includes/wc-formatting-functions.php), as
+	 * its importer cleans a SKU, over core's real cleaning.
+	 */
+	function wc_clean( mixed $value ): mixed {
+		if ( is_array( $value ) ) {
+			return array_map( 'wc_clean', $value );
+		}
+		return is_scalar( $value ) ? bulkcat_test_sanitize_text_fields( (string) $value ) : $value;
 	}
 
 	function wp_kses_post( string $text ): string {

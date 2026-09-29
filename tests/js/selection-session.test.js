@@ -698,11 +698,16 @@ describe( 'selection session: completion the screen did not see (T85)', () => {
 			fireWatch();
 			await flush();
 		}
+		// Ticket 11: what really happens — 10, 20, 40, 80 and 160 seconds,
+		// about five minutes in all, then the sixth failed read stops it.
+		expect( waits ).toEqual( [ 10000, 20000, 40000, 80000, 160000 ] );
 		expect( waits ).toEqual(
-			Array.from( { length: WATCH_TRIES - 1 }, ( _, n ) =>
-				Math.min( WATCH_BACKOFF_MS * 2 ** n, 5 * 60 * 1000 )
+			Array.from(
+				{ length: WATCH_TRIES - 1 },
+				( _, n ) => WATCH_BACKOFF_MS * 2 ** n
 			)
 		);
+		expect( waits.reduce( ( sum, ms ) => sum + ms, 0 ) ).toBe( 310000 );
 		expect( reads( 44 ) ).toBe( WATCH_TRIES );
 		expect( watchTimers() ).toEqual( [] );
 		expect( session.getState() ).toMatchObject( {
@@ -720,6 +725,36 @@ describe( 'selection session: completion the screen did not see (T85)', () => {
 			count: 0,
 			notice: { kind: 'done', batchId: 44 },
 		} );
+	} );
+
+	it( 'starts one watch however fast Check again is pressed (ticket 11)', async () => {
+		const session = makeSession();
+		await session.add( [ 11, 12 ] );
+		server.setBatch( 47, 'running', { total_items: 2 } );
+		server.fail(
+			'GET batches/47',
+			{ code: 'fetch_error', message: 'offline' },
+			{ times: 50 }
+		);
+		session.submit( 47 );
+		await flush();
+		for ( let i = 0; i < 20 && watchTimers().length; i++ ) {
+			fireWatch();
+			await flush();
+		}
+		expect( session.getState().unwatched ).toEqual( { batchId: 47 } );
+		server.clearFailures( 'GET batches/47' );
+		const before = reads( 47 );
+		// Two clicks before the first read has answered.
+		session.checkAgain();
+		session.checkAgain();
+		await flush();
+		expect( reads( 47 ) - before ).toBe( 1 );
+		expect( watchTimers() ).toHaveLength( 1 );
+		fireWatch();
+		await flush();
+		expect( reads( 47 ) - before ).toBe( 2 );
+		expect( watchTimers() ).toHaveLength( 1 );
 	} );
 
 	it( 'a reload re-arms a watch that is still bounded (T85)', async () => {

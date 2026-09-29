@@ -22,6 +22,13 @@ jest.mock( '@wordpress/api-fetch', () => {
 	return { __esModule: true, default: apiFetch };
 } );
 
+import {
+	coreJson,
+	expectNoRawText,
+	expectPlain,
+	html500,
+} from './error-fixtures';
+
 const apiFetch = require( '@wordpress/api-fetch' ).default;
 const { configureApi } = require( '../../assets/src/api' );
 const History = require( '../../assets/src/panels/history/index.js' ).default;
@@ -507,7 +514,8 @@ describe( 'history states', () => {
 			false
 		);
 		expect( one.getByText( 'Mia Fourie' ) ).toBeTruthy();
-		expect( one.getByText( '120 products' ) ).toBeTruthy();
+		// The row's count holds products and variations together (ticket 11).
+		expect( one.getByText( '120 items' ) ).toBeTruthy();
 
 		// Partially reversible with its conflict count.
 		const two = within( card( 2 ) );
@@ -1164,5 +1172,51 @@ describe( 'undo flow', () => {
 		expect( one.queryByText( /bulkcat_not_reversible/ ) ).toBeNull();
 		fireEvent.click( one.getByRole( 'button', { name: 'Show details' } ) );
 		expect( one.getByText( /bulkcat_not_reversible/ ) ).toBeTruthy();
+	} );
+} );
+
+describe( 'plain messages (ticket 11)', () => {
+	it( 'says a server’s HTML error page in plain words, never its text', async () => {
+		serve( {
+			...DEFAULT_ROUTES(),
+			'GET bulkcat/v1/batches': () => {
+				throw html500();
+			},
+		} );
+		render( <History settings={ SETTINGS } /> );
+		const sentence =
+			'The history could not be loaded. Try again in a moment.';
+		const box = (
+			await screen.findByText( sentence, { selector: 'p' } )
+		).closest( '.components-notice' );
+		expectPlain( box, sentence );
+		fireEvent.click(
+			within( box ).getByRole( 'button', { name: 'Show details' } )
+		);
+		expect(
+			within( box ).getByText( /internal_server_error/ )
+		).toBeTruthy();
+		expectNoRawText();
+	} );
+
+	it( 'says a JSON error that is not the plugin’s own refusal in plain words', async () => {
+		serve( {
+			...DEFAULT_ROUTES(),
+			'POST bulkcat/v1/batches/1/undo': () => {
+				throw coreJson();
+			},
+		} );
+		await renderHistory();
+		const one = within( card( 1 ) );
+		await act( async () =>
+			fireEvent.click( one.getByRole( 'button', { name: 'Undo' } ) )
+		);
+		expectPlain(
+			card( 1 ),
+			'The undo could not be started. Reload the page and try again.'
+		);
+		fireEvent.click( one.getByRole( 'button', { name: 'Show details' } ) );
+		expect( one.getByText( /rest_forbidden/ ) ).toBeTruthy();
+		expectNoRawText();
 	} );
 } );

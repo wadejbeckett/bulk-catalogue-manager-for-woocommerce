@@ -3,7 +3,7 @@
  * words, the PUT payload with the busy state and success notice, the
  * server's refusals shown against their settings, and read-only mode.
  */
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
 import Settings, {
 	changedValues,
@@ -16,6 +16,14 @@ jest.mock( '@wordpress/api-fetch', () => {
 	apiFetch.createNonceMiddleware = jest.fn();
 	return { __esModule: true, default: apiFetch };
 } );
+
+import {
+	coreJson,
+	expectNoRawText,
+	expectPlain,
+	html500,
+	htmlPage,
+} from './error-fixtures';
 
 const apiFetch = require( '@wordpress/api-fetch' ).default;
 
@@ -394,6 +402,71 @@ describe( 'Settings tab', () => {
 			document.querySelector( '.bulkcat-settings .components-notice' )
 				.textContent
 		).toContain( 'Only an administrator can change' );
+	} );
+
+	it.each( [
+		[ 'a server’s HTML error page', html500 ],
+		[ 'a proxy’s HTML page', htmlPage ],
+		[ 'a JSON error that is not the plugin’s own refusal', coreJson ],
+	] )(
+		'says %s in plain words, never its text (ticket 11)',
+		async ( label, failure ) => {
+			await renderTab();
+			fireEvent.change( screen.getByLabelText( 'CSV separator' ), {
+				target: { value: 'semicolon' },
+			} );
+			apiFetch.mockImplementationOnce( () =>
+				Promise.reject( failure() )
+			);
+			await act( async () => {
+				fireEvent.click( saveButton() );
+			} );
+			expect( apiFetch.mock.calls[ 1 ][ 0 ].data ).toEqual( {
+				values: { csv_separator: 'semicolon' },
+			} );
+			expectPlain(
+				document.querySelector(
+					'.bulkcat-settings .components-notice'
+				),
+				'The settings could not be saved. Try again in a moment.'
+			);
+			expectNoRawText();
+		}
+	);
+
+	it( 'keeps the code and status of a failed save behind Show details, as the other panels do (ticket 11)', async () => {
+		await renderTab();
+		fireEvent.change( screen.getByLabelText( 'CSV separator' ), {
+			target: { value: 'semicolon' },
+		} );
+		apiFetch.mockImplementationOnce( () => Promise.reject( html500() ) );
+		await act( async () => {
+			fireEvent.click( saveButton() );
+		} );
+		const notice = document.querySelector(
+			'.bulkcat-settings .components-notice'
+		);
+		expectPlain(
+			notice,
+			'The settings could not be saved. Try again in a moment.'
+		);
+		expect(
+			within( notice ).queryByText( /internal_server_error/ )
+		).toBeNull();
+		const toggle = within( notice ).getByRole( 'button', {
+			name: 'Show details',
+		} );
+		expect( toggle.getAttribute( 'aria-expanded' ) ).toBe( 'false' );
+		fireEvent.click( toggle );
+		expect(
+			within( notice ).getByText( 'internal_server_error · HTTP 500' )
+		).toBeTruthy();
+		expect(
+			within( notice )
+				.getByRole( 'button', { name: 'Hide details' } )
+				.getAttribute( 'aria-expanded' )
+		).toBe( 'true' );
+		expectNoRawText();
 	} );
 
 	it( 'renders read-only with an explanatory line for someone without manage_options', async () => {

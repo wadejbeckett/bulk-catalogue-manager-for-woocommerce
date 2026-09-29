@@ -238,6 +238,17 @@ overlapping WP-CLI processes run (`$phase="prepare_apply"; require …`, then
 cleaning up the products they made. `probe.py`'s write and variations
 chapters take selections and changes through `POST /requests` grants.
 
+The plugin's cleanup is bounded (at most 100 payloads or receipts a run,
+oldest first), so a probe that checks its own row is gone drains it
+(`bulkcat_probe_drain()`: runs until one takes less than a full run, at most
+100 runs) rather than calling it once; a backlog left by earlier runs, such
+as the e2e lifecycle specs, cannot hide its row. `stale-selections.php` makes
+such a backlog (`$stale = 500; require …/stale-selections.php`: selections
+captured with the clock nine days back, so their payloads and receipts all
+await cleanup); `exact-selection-cleanup.php` and
+`exact-selection-capacity.php` still call the cleanup once, since they check
+its bound.
+
 ## Global Off/On (ticket 04, T89–T94)
 
 `probe.py --chapters offon` proves Status as the global Off/On switch

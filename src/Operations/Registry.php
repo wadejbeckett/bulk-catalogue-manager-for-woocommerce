@@ -18,6 +18,13 @@
  * validate_list() refuses it as an unknown action for every caller except
  * the undo planner, which asks with `$internal` true.
  *
+ * External providers (T104, docs/EXTENSIONS.md §3.1): the shared registry
+ * fires `bulkcat_register_providers` once per request, the first time it is
+ * built on or after `init`, and keeps the providers that registered
+ * (External\Providers). Built before `init` it holds none and is rebuilt,
+ * with the action fired, the first time it is asked for after `init`. With
+ * no provider nothing else changes.
+ *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
  */
@@ -26,6 +33,7 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Operations;
 
+use BulkCatalogueManager\External\Providers;
 use BulkCatalogueManager\Fields\Registry as Fields;
 use BulkCatalogueManager\Rest\Refusal;
 
@@ -68,6 +76,13 @@ final class Registry {
 	private static ?self $instance = null;
 
 	/**
+	 * Whether the shared instance was built after `init`, with the providers it fired.
+	 *
+	 * @var bool
+	 */
+	private static bool $fired = false;
+
+	/**
 	 * Operations by id, in panel order.
 	 *
 	 * @var array<string, Operation>
@@ -75,14 +90,23 @@ final class Registry {
 	private array $operations = [];
 
 	/**
+	 * The external providers.
+	 *
+	 * @var Providers
+	 */
+	private readonly Providers $providers;
+
+	/**
 	 * Build every action over a field registry. Code outside tests passes no
 	 * list; a test double passes its own operations.
 	 *
 	 * @param Fields               $fields     Field registry the actions resolve their fields from.
 	 * @param list<Operation>|null $operations The operations, or null for every version 1 action.
+	 * @param Providers|null       $providers  The external providers; none by default.
 	 * @throws \LogicException When two operations share an id.
 	 */
-	public function __construct( private readonly Fields $fields, ?array $operations = null ) {
+	public function __construct( private readonly Fields $fields, ?array $operations = null, ?Providers $providers = null ) {
+		$this->providers = $providers ?? Providers::none();
 		foreach ( $operations ?? self::defaults( $fields ) as $operation ) {
 			$id = $operation->describe()->id();
 			if ( isset( $this->operations[ $id ] ) ) {
@@ -96,10 +120,18 @@ final class Registry {
 	 * The shared registry, over the shared field registry.
 	 */
 	public static function instance(): self {
-		if ( null === self::$instance ) {
-			self::$instance = new self( Fields::instance() );
+		if ( null === self::$instance || ( ! self::$fired && did_action( 'init' ) > 0 ) ) {
+			self::$fired    = did_action( 'init' ) > 0;
+			self::$instance = new self( Fields::instance(), null, self::$fired ? Providers::fire() : null );
 		}
 		return self::$instance;
+	}
+
+	/**
+	 * The external providers this registry holds (T104).
+	 */
+	public function providers(): Providers {
+		return $this->providers;
 	}
 
 	/**

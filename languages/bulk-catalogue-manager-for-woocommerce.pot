@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-09-29T13:00:56+00:00\n"
+"POT-Creation-Date: 2026-09-29T18:47:15+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -417,6 +417,193 @@ msgid "Not yet: still running"
 msgstr ""
 
 msgid "Yes, with errors"
+msgstr ""
+
+#. translators: 1: the name of an add-on, such as "Example add-on", or "An add-on"; 2: what is wrong with it.
+#, php-format
+msgid "%1$s could not be added to Bulk Catalogue Manager: %2$s Update the add-on, or ask its author. Everything else works as usual."
+msgstr ""
+
+#. translators: %s: the contract versions this plugin accepts, such as "1".
+#, php-format
+msgid "it was written for a version of the add-on contract this plugin does not support (this plugin supports version %s)."
+msgstr ""
+
+msgid "its id must be three to twenty lower-case letters and digits, starting with a letter."
+msgstr ""
+
+#. translators: %s: an add-on id, such as "example".
+#, php-format
+msgid "another add-on is already registered with the id \"%s\"."
+msgstr ""
+
+msgid "it has no name."
+msgstr ""
+
+msgid "one of its methods failed while it was being read. The WooCommerce log has the details."
+msgstr ""
+
+msgid "it declares no values of its own."
+msgstr ""
+
+msgid "values"
+msgstr ""
+
+msgid "one of its values is not an external field."
+msgstr ""
+
+msgid "value"
+msgstr ""
+
+#. translators: %s: a value's key, such as "x_example_labels".
+#, php-format
+msgid "its value \"%s\" must belong either to the product or to each variation."
+msgstr ""
+
+#. translators: %s: a value's key, such as "x_example_labels".
+#, php-format
+msgid "its value \"%s\" must give a format version of 1 or more."
+msgstr ""
+
+msgid "its chooser groups could not be read."
+msgstr ""
+
+msgid "chooser groups"
+msgstr ""
+
+msgid "chooser group"
+msgstr ""
+
+msgid "it offers no actions."
+msgstr ""
+
+msgid "actions"
+msgstr ""
+
+msgid "one of its actions is not an external action."
+msgstr ""
+
+msgid "one of its actions does not describe itself."
+msgstr ""
+
+msgid "action"
+msgstr ""
+
+#. translators: 1: an action id, such as "x_example_add"; 2: a value's key, such as "x_example_labels".
+#, php-format
+msgid "its action \"%1$s\" changes \"%2$s\", which is not one of its own values."
+msgstr ""
+
+#. translators: 1: an action id, such as "x_example_add"; 2: a chooser group id.
+#, php-format
+msgid "its action \"%1$s\" sits in the chooser group \"%2$s\", which does not exist."
+msgstr ""
+
+#. translators: 1: an action id, such as "x_example_add"; 2: an edit kind it named.
+#, php-format
+msgid "its action \"%1$s\" names the edit kind \"%2$s\", which does not exist."
+msgstr ""
+
+#. translators: %s: an action id, such as "x_example_add".
+#, php-format
+msgid "its action \"%s\" names no capability a user needs to use it."
+msgstr ""
+
+#. translators: 1: an action id, such as "x_example_add"; 2: an argument name; 3: what is wrong with it.
+#, php-format
+msgid "its action \"%1$s\" has an argument \"%2$s\" that %3$s"
+msgstr ""
+
+msgid "is not a lower-case name."
+msgstr ""
+
+msgid "uses a name the core adds itself."
+msgstr ""
+
+msgid "has a spec the core cannot read."
+msgstr ""
+
+msgid "is of a kind the core does not support."
+msgstr ""
+
+msgid "has no label or no rule sentence."
+msgstr ""
+
+msgid "has a switch that is not true or false."
+msgstr ""
+
+msgid "has a bound that is not a number."
+msgstr ""
+
+msgid "has a length or item count that is not a whole number."
+msgstr ""
+
+msgid "offers no choices."
+msgstr ""
+
+#. translators: %d: the most choices one argument may offer, 500.
+#, php-format
+msgid "offers more than %d choices."
+msgstr ""
+
+msgid "offers a choice whose value is empty, too long or not plain text."
+msgstr ""
+
+#. translators: %d: the most items one argument may choose, 100.
+#, php-format
+msgid "lets people choose more than %d items, or fewer than it requires."
+msgstr ""
+
+msgid "offers choices without being a choice."
+msgstr ""
+
+msgid "has a default its own rule refuses."
+msgstr ""
+
+#. translators: 1: what the identifier names, such as "action"; 2: the identifier; 3: the prefix it needs, such as "x_example_".
+#, php-format
+msgid "its %1$s \"%2$s\" must be named \"%3$s\" followed by lower-case letters, digits or underscores, at most 64 characters in all."
+msgstr ""
+
+#. translators: 1: what the identifier names, such as "action"; 2: the identifier.
+#, php-format
+msgid "its %1$s \"%2$s\" is declared twice."
+msgstr ""
+
+#. translators: %s: an identifier, such as "x_example_add".
+#, php-format
+msgid "\"%s\" has no name or no description."
+msgstr ""
+
+#. translators: 1: what is listed, such as "actions"; 2: the most allowed, such as 20.
+#, php-format
+msgid "it declares more %1$s than the %2$d allowed."
+msgstr ""
+
+msgid "An add-on"
+msgstr ""
+
+msgid "Add-ons can only be registered while bulkcat_register_providers runs, so this one was not added. Register it from that action."
+msgstr ""
+
+#. translators: %s: the name of an add-on, such as "Example add-on".
+#, php-format
+msgid "%s is not available right now, so its actions cannot be used. Check the add-on, then try again."
+msgstr ""
+
+msgid "This change uses an add-on that is not active now. Turn the add-on on again, or choose another change."
+msgstr ""
+
+msgid "This action can't be combined with other kinds of change. Make it a separate change."
+msgstr ""
+
+msgid "Values that belong to an add-on cannot be edited in the list. Use Make a change to these instead."
+msgstr ""
+
+msgid "You do not have permission to use this action."
+msgstr ""
+
+msgid "The add-on could not work out this change, so it was not made. Try again, or ask the add-on's author."
 msgstr ""
 
 #. translators: %s: the SKU that is already in use.

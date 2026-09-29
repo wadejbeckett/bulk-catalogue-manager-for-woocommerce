@@ -1,10 +1,10 @@
 # Bulk Catalogue Manager for WooCommerce — agent entry point
 
-Read in this order, then start work: `docs/SPEC.md` (the agreed shared understanding; change it there before changing code), `docs/TICKETS.md` (80 tickets in build order; each ends with tests green), `docs/prototype/index.html` (open in a browser; it is the design the code must match), `docs/SCOPE-2026-09-21.md` (the owner's scoping answers).
+Read in this order, then start work: `docs/SPEC.md` (the agreed shared understanding; change it there before changing code), `docs/TICKETS.md` (80 tickets in build order; each ends with tests green), `docs/EXTENSIONS.md` (the external action contract; `docs/EXTENDING.md` is its developer guide), `docs/prototype/index.html` (open in a browser; it is the design the code must match), `docs/SCOPE-2026-09-21.md` (the owner's scoping answers).
 
 ## Hard rules from the owner (Wade Beckett)
-- Standalone: works on a bare WordPress + WooCommerce site with nothing else installed and zero site-specific code. Edits native WooCommerce product data only, through WooCommerce CRUD classes.
-- No dependency on, module for, detection of, or mention of any third-party plugin in code, docs or UI. Per-customer or per-group product access is out of scope permanently. No client names or client fields anywhere.
+- Standalone: works on a bare WordPress + WooCommerce site with nothing else installed and zero site-specific code. The plugin's own actions edit native WooCommerce product data only, through WooCommerce CRUD classes. A value owned by another plugin changes only through that plugin's provider, registered on the documented external action contract (`docs/EXTENSIONS.md`).
+- No dependency on, module for, detection of, or mention of any third-party plugin in code, docs, fixtures or UI. The external action contract is generic and its test provider is neutral. Per-customer or per-group product access is never built into this plugin. No client names or client fields anywhere.
 - Always free, GPL-3.0-or-later, built to WordPress.org directory standards from the first commit (WPCS, translation-ready, no external calls, uninstall cleanup, Plugin Check clean).
 - "Beautiful" means simple and easy for a non-technical shop owner. Plain-English labels; never show a raw meta key.
 - Variations are first-class. Every bulk write is previewed first, journaled, and reversible.

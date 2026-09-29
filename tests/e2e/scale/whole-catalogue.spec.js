@@ -11,6 +11,7 @@
  *                                the queue and undo it (about an hour);
  *   BULKCAT_E2E_SCALE_100K=1     the 100,000-member selection, preview and Apply
  *                                (needs seed.sh 22206: 100,002 objects);
+ *   BULKCAT_E2E_SCALE_UNDO=<id>  undo that finished batch from History and run it;
  *   BULKCAT_E2E_METRICS=<file>   where the numbers are written as JSON.
  *
  * Every change it makes is undone before it ends.
@@ -106,38 +107,44 @@ async function timed( target, from, timeout = 300_000 ) {
 
 /**
  * Run the queue until a batch has finished, as `wp action-scheduler run`
- * does on a site without WP-Cron, and read what each chunk used from the
+ * does on a site without WP-Cron — one WP-CLI process working the chained
+ * chunks one after another, as T76 measured — or, for a sample, exactly
+ * `chunks` chunk actions; and read what each chunk used from the
  * measurement plugin's log.
  *
  * @param {number} batchId  Batch.
- * @param {number} maxMs    Stop after this long (a sample), 0 for never.
+ * @param {number} chunks   Chunk actions to run, 0 for the whole batch.
  * @param {number} basePeak A light REST request's peak memory, MB.
  * @return {Object} Numbers.
  */
-function runBatch( batchId, maxMs = 0, basePeak = 0 ) {
+function runBatch( batchId, chunks = 0, basePeak = 0 ) {
 	php(
 		`$f = WP_CONTENT_DIR . '/bulkcat-perf.log'; if ( file_exists( $f ) ) { unlink( $f ); } echo 'true';`
 	);
 	const started = Date.now();
 	let header = null;
-	for ( let round = 0; round < 10000; round++ ) {
+	for ( let round = 0; round < 20; round++ ) {
 		execSync(
-			`${ WP } action-scheduler run --hooks=bulkcat_run_chunk --batch-size=10`,
-			{ stdio: 'ignore', timeout: 900_000 }
+			`${ WP } action-scheduler run --hooks=bulkcat_run_chunk ${
+				chunks
+					? `--batch-size=1 --batches=${ chunks }`
+					: '--batch-size=10'
+			}`,
+			{ stdio: 'ignore', timeout: 4 * 3600 * 1000 }
 		);
 		header = rows(
 			'SELECT status, total_items, done_items, changed_items, failed_items FROM {p}bulkcat_batches WHERE batch_id = %d',
 			[ batchId ]
 		)[ 0 ];
-		if ( ! [ 'queued', 'running', 'undoing' ].includes( header.status ) ) {
-			break;
-		}
-		if ( maxMs && Date.now() - started > maxMs ) {
+		if (
+			chunks ||
+			! [ 'queued', 'running', 'undoing' ].includes( header.status )
+		) {
 			break;
 		}
 	}
 	const wall = ( Date.now() - started ) / 1000;
-	const chunks = php(
+	const logged = php(
 		`$f = WP_CONTENT_DIR . '/bulkcat-perf.log';
 		$out = array();
 		foreach ( file_exists( $f ) ? file( $f, FILE_IGNORE_NEW_LINES ) : array() as $line ) {
@@ -146,7 +153,7 @@ function runBatch( batchId, maxMs = 0, basePeak = 0 ) {
 		}
 		echo wp_json_encode( $out );`
 	);
-	const own = Math.max( 0, ...chunks.map( ( c ) => c.peak_mb - c.start_mb ) );
+	const own = Math.max( 0, ...logged.map( ( c ) => c.peak_mb - c.start_mb ) );
 	const done = Number( header.done_items );
 	return {
 		batch_id: batchId,
@@ -157,17 +164,17 @@ function runBatch( batchId, maxMs = 0, basePeak = 0 ) {
 		failed_items: Number( header.failed_items ),
 		wall_s: Math.round( wall ),
 		per_minute: Math.round( done / ( wall / 60 ) ),
-		chunks: chunks.length,
-		chunk_ms_median: median( chunks.map( ( c ) => c.ms ) ),
-		chunk_ms_max: Math.max( 0, ...chunks.map( ( c ) => c.ms ) ),
-		chunk_queries_median: median( chunks.map( ( c ) => c.queries ) ),
+		chunks: logged.length,
+		chunk_ms_median: median( logged.map( ( c ) => c.ms ) ),
+		chunk_ms_max: Math.max( 0, ...logged.map( ( c ) => c.ms ) ),
+		chunk_queries_median: median( logged.map( ( c ) => c.queries ) ),
 		chunk_own_mb_max: Number( own.toFixed( 2 ) ),
 		peak_per_chunk_mb: Number( ( basePeak + own ).toFixed( 2 ) ),
-		memory_kept_mb: chunks.length
+		memory_kept_mb: logged.length
 			? Number(
 					(
-						chunks[ chunks.length - 1 ].end_mb -
-						chunks[ 0 ].start_mb
+						logged[ logged.length - 1 ].end_mb -
+						logged[ 0 ].start_mb
 					).toFixed( 2 )
 				)
 			: 0,
@@ -481,8 +488,8 @@ test( '100,000 members: composed exactly through the screen, 100,002 refused, pr
 	);
 	test.setTimeout( 3 * 3600 * 1000 );
 	const writes = timeWrites( page );
-	const sampleMs = Number(
-		process.env.BULKCAT_E2E_SCALE_SAMPLE_MS || 600_000
+	const sampleChunks = Number(
+		process.env.BULKCAT_E2E_SCALE_SAMPLE_CHUNKS || 60
 	);
 	await openScreen( page );
 	const { bar, search } = screenParts( page );
@@ -629,7 +636,7 @@ test( '100,000 members: composed exactly through the screen, 100,002 refused, pr
 	} );
 
 	// A sample of the queue, then Cancel from the screen.
-	const sample = runBatch( batchId, sampleMs, base );
+	const sample = runBatch( batchId, sampleChunks, base );
 	record( 'hundred_thousand_queue_sample', sample );
 	await panel.getByRole( 'button', { name: 'Back to products' } ).click();
 	const banner = page.getByRole( 'group', { name: 'Change in progress' } );
@@ -692,3 +699,52 @@ async function selectOffer( page ) {
 	} );
 	return Date.now() - started;
 }
+
+test( 'undo a finished whole-catalogue change from History and run it (BULKCAT_E2E_SCALE_UNDO=<batch id>)', async ( {
+	page,
+} ) => {
+	const batchId = Number( process.env.BULKCAT_E2E_SCALE_UNDO || 0 );
+	test.skip( ! batchId, 'Names the finished batch to undo.' );
+	test.setTimeout( 4 * 3600 * 1000 );
+	const writes = timeWrites( page );
+	const hiddenBefore = hiddenCount();
+	await openScreen( page );
+	const base = await lightPeak( page );
+	await page.goto(
+		`/wp-admin/edit.php?post_type=product&page=bulk-catalogue-manager-for-woocommerce&panel=history&batch=${ batchId }&undo=1`
+	);
+	const confirm = page.getByRole( 'dialog', { name: 'Undo this change?' } );
+	const planned = Date.now();
+	await expect( confirm ).toBeVisible( { timeout: 900_000 } );
+	const planMs = Date.now() - planned;
+	const planRequest = writes
+		.filter( ( w ) => /\/undo$/.test( w.path ) )
+		.pop();
+	await shot( page, 'scale-undo-confirm.png' );
+	const clicked = Date.now();
+	await confirm.getByRole( 'button', { name: 'Undo', exact: true } ).click();
+	await expect( confirm ).toBeHidden( { timeout: 900_000 } );
+	const accepted = writes.filter( ( w ) => /\/undo$/.test( w.path ) ).pop();
+	const undoId = Number(
+		rows(
+			'SELECT batch_id FROM {p}bulkcat_batches WHERE undo_of = %d ORDER BY batch_id DESC LIMIT 1',
+			[ batchId ]
+		)[ 0 ].batch_id
+	);
+	record( `undo_${ batchId }_accept`, {
+		undo_batch_id: undoId,
+		open_to_confirm_ms: planMs,
+		plan_server_ms: planRequest?.perf?.server_ms,
+		plan_peak_mb: planRequest?.perf?.peak_mb,
+		click_to_accepted_ms: Date.now() - clicked,
+		accept_server_ms: accepted?.perf?.server_ms,
+		accept_peak_mb: accepted?.perf?.peak_mb,
+		hidden_before: hiddenBefore,
+	} );
+	const run = runBatch( undoId, 0, base );
+	record( `undo_${ batchId }_queue`, {
+		...run,
+		hidden_after: hiddenCount(),
+	} );
+	expect( run.status ).toBe( 'complete' );
+} );

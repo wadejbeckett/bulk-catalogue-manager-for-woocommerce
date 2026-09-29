@@ -693,7 +693,8 @@ def check_read_queries(p: Probe) -> None:
         hiding = {f["key"]: sorted(c["value"] for c in f.get("choices", []) if c.get("hidesProduct")) for f in fields}
         hiding = {k: v for k, v in hiding.items() if v}
         want_hiding = {"status": ["draft", "pending"], "catalog_visibility": ["hidden"], "visible_on_site": ["off"]}
-        ok = default == ["sku", "category_ids", "regular_price", "stock_status", "status", "visible_on_site"] and hiding == want_hiding
+        # T93: Shown in shop and search (visible_on_site) is a listing control an owner may add, not a default column.
+        ok = default == ["sku", "category_ids", "regular_price", "stock_status", "status"] and hiding == want_hiding
         p.row("read", "read:fields:flags", ok, f"default columns {default}; hiding choices {hiding}")
 
     for name, fn in [("hydration", hydration), ("filter-category", category), ("search", search), ("filter-price", price_range),

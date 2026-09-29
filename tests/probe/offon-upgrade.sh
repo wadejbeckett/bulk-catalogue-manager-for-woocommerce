@@ -90,10 +90,12 @@ need_zip10() {
 }
 
 branch_zip() {
-	local out
-	out=$("$ROOT/bin/build-zip.sh")
-	out=${out%%$'\n'*}
-	cp "$out" "$WORK/zips/$SLUG-branch.zip"
+	local out zip
+	# build-zip.sh prints npm's and webpack's output too; the archive is the line naming a .zip.
+	out=$("$ROOT/bin/build-zip.sh") || { echo "bin/build-zip.sh failed" >&2; return 1; }
+	zip=$(printf '%s\n' "$out" | grep -E '\.zip$' | tail -n 1)
+	[ -f "$zip" ] || { echo "bin/build-zip.sh named no archive" >&2; return 1; }
+	cp "$zip" "$WORK/zips/$SLUG-branch.zip"
 	echo "the branch archive: $(sha256sum "$WORK/zips/$SLUG-branch.zip" | cut -d' ' -f1) from $(git -C "$ROOT" rev-parse --short HEAD)"
 }
 
@@ -219,8 +221,9 @@ upgrade() {
 	need_zip10
 	wp_wrapper
 	checks before
-	branch_zip
-	"$WORK/wp.sh" plugin install "/zips/$SLUG-branch.zip" --force > /dev/null
+	# Called as `upgrade || status=1`, where set -e does not stop a failed step: stop explicitly.
+	branch_zip || return 1
+	"$WORK/wp.sh" plugin install "/zips/$SLUG-branch.zip" --force > /dev/null || return 1
 	echo "upgraded to the branch archive: $("$WORK/wp.sh" plugin get "$SLUG" --field=version), active: $("$WORK/wp.sh" plugin is-active "$SLUG" && echo yes || echo no)"
 	checks after
 }
@@ -228,7 +231,7 @@ upgrade() {
 downgrade() {
 	need_zip10
 	wp_wrapper
-	[ -f "$WORK/zips/$SLUG-branch.zip" ] || branch_zip
+	[ -f "$WORK/zips/$SLUG-branch.zip" ] || branch_zip || return 1
 	local status=0
 	checks down-before || status=1
 	"$WORK/wp.sh" plugin install "/zips/$SLUG-1.0.0.zip" --force > /dev/null

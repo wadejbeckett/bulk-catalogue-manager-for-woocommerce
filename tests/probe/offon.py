@@ -972,7 +972,7 @@ def surfaces(c: Buyer, product: dict) -> dict[str, tuple[str, bool]]:
         out["Store API variation"] = (str(code), code == 200)
     r = c.get(f"/wp-json/wp/v2/product/{product['id']}")
     out["WP REST product"] = (str(r.status), r.status == 200)
-    r = c.get("/wp-sitemap-posts-product-1.xml")
+    r = c.get(f"/wp-sitemap-posts-product-{product.get('sitemap_page', 1)}.xml")
     out["sitemap"] = ("listed" if link in c.text(r) else "absent", link in c.text(r))
     r = c.get(f"/product-category/{product['cat_slug']}/feed/")
     out["category feed"] = ("listed" if link in c.text(r) else "absent", link in c.text(r))
@@ -1116,6 +1116,12 @@ def buyer_rows(p: Any, setup: dict, logins: dict, password: str) -> None:
                     simple("control-simple", cat="control"), {"key": "control-variable", "type": "variable", "status": "publish", "cat": "control"}])
     products = product_rows(p, fx, "buy")
     control = product_rows(p, fx, "control")
+    for x in products:
+        # The sitemap page that lists it while On: core pages published products by ID, a fixed number a page.
+        x["sitemap_page"] = int(p.wp_eval(
+            "global $wpdb; $rank = (int) $wpdb->get_var( $wpdb->prepare( \"SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'product' AND post_status = 'publish' AND post_password = '' AND ID <= %d\", "
+            f"{x['id']} ) ); bulkcat_out( max( 1, (int) ceil( $rank / wp_sitemaps_get_max_urls( 'post' ) ) ) );"
+        ))
     ids = [x["id"] for x in products]
     visitors = {"anonymous": Buyer(p), "customer": Buyer(p).login("bulkcat_offon_browser", password)}
 

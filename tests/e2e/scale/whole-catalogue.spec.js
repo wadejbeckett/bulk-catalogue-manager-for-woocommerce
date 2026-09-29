@@ -35,6 +35,9 @@ test.skip(
 	'Scale runs only on a scale site, with BULKCAT_E2E_SCALE=1.'
 );
 
+// No click waits for ever on a run that is hours long.
+test.use( { actionTimeout: 120_000 } );
+
 const METRICS = process.env.BULKCAT_E2E_METRICS || '';
 const SHOTS = process.env.BULKCAT_E2E_SHOTS || '';
 
@@ -511,12 +514,6 @@ test( '100,000 members: composed exactly through the screen, 100,002 refused, pr
 	);
 	const refusedWords = ( await bar.innerText() ).split( '\n' )[ 0 ];
 	await shot( page, 'scale-100k-refused.png' );
-	await page
-		.locator( '.bulkcat-selection' )
-		.getByRole( 'button', { name: /Dismiss/ } )
-		.first()
-		.click()
-		.catch( () => {} );
 
 	// Exactly 100,000: the scale options, the sixty, and one more option.
 	await search.fill( 'Scale Product' );

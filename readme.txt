@@ -31,6 +31,8 @@ Up to 20 changes can run in order as one step, such as "increase the regular pri
 
 **See it first.** Nothing is saved until a preview has shown how many products will change, a sample of old and new values, and any warnings, such as a sale price above the regular price or a duplicate SKU.
 
+**Switch products Off and On.** Status is the one switch. Setting a product to Draft takes it off the site for every buyer and saves the status it had on the product; setting it back to Published restores exactly that status, so a product that was Private comes back Private, and the preview says so first. The table shows an Off product as "Off (was Published)", and the Status filter finds Off products.
+
 **Undo it.** Every change is recorded with the value it replaced. The History tab lists each change with who made it and when, and **Undo this change** puts the old values back. If a product was changed again since, it is left alone unless you choose otherwise.
 
 **Variations.** Variations are rows of their own. A variable product opens to show them, each editable on its own, and **Also apply to variations** carries a bulk change down to them.
@@ -56,7 +58,7 @@ Only the product fields you choose to change: name, status, catalogue visibility
 
 = What does it store? =
 
-Three database tables holding the history of changes made through the screen, with each field's old and new value so they can be undone; one settings option; each user's saved views; the order of categories on its own screen; and a few short-lived caches.
+Three database tables holding the history of changes made through the screen, with each field's old and new value so they can be undone; one settings option; each user's saved views; the order of categories on its own screen; a few short-lived caches; and, on each product switched Off, the status it had, in one product meta value (`_bulkcat_availability_off`).
 
 = How do I undo a change? =
 
@@ -65,6 +67,14 @@ Open the History tab, find the change and choose **Undo this change**. You will 
 = How long is history kept? =
 
 90 days by default. You can choose from 7 to 730 days, or keep it indefinitely, on the Settings tab. Older changes stay listed but can no longer be undone. To keep a copy, use **Export log (CSV)** on the History tab before they are removed.
+
+= What does switching a product Off do? =
+
+Setting a product's Status to Draft takes it off the site for every buyer: its page, the shop, search, feeds and the store's APIs no longer show it, it cannot be added to a cart, and carts that already hold it lose it before checkout. The status it had is saved on the product. Setting Status back to Published restores exactly that status, whether it was Published, Private, Pending review or scheduled (a scheduled product whose time has passed is published). Nothing else about the product changes. Orders already placed are not touched. Hiding a product with **Shown in shop and search** or Catalogue visibility only changes where it is listed; a hidden product can still be opened by link and bought.
+
+= What if a product's status is changed somewhere else while it is Off? =
+
+The manager never stops the product editor, an import or another tool from changing it. The product then reads "Changed outside this screen". Published leaves it alone and says why; choose **Keep current status** to keep the status it has now and forget the saved one, or Draft to switch it Off again, saving its new status.
 
 = Are changes made elsewhere recorded? =
 
@@ -84,7 +94,7 @@ Shop managers and administrators by default, or administrators only. Each produc
 
 = What happens when I deactivate or delete the plugin? =
 
-Deactivating stops the daily history clean-up and leaves everything else in place. Deleting the plugin keeps your history, settings and saved views by default, so they are there if you reinstall. To remove everything when the plugin is deleted, turn on **Remove all data when the plugin is deleted** on the Settings tab first. Your product data itself is never removed.
+Deactivating stops the daily history clean-up and leaves everything else in place. Deleting the plugin keeps your history, settings and saved views by default, so they are there if you reinstall. To remove everything when the plugin is deleted, turn on **Remove all data when the plugin is deleted** on the Settings tab first. Your product data itself is never removed. With that setting on, deleting the plugin also removes the saved status of every product switched Off: those products stay Draft, off the site, and Published would then publish them rather than restore what they were. Switch them On first.
 
 = Does it work on a multisite network? =
 
@@ -114,7 +124,7 @@ Yes. Each site keeps its own history and settings, and deleting the plugin with 
 == Upgrade Notice ==
 
 = Unreleased =
-Needs WooCommerce 11.1 or later. On an older WooCommerce the plugin shows only a notice asking you to update WooCommerce; its history and settings are kept.
+Needs WooCommerce 11.1 or later. On an older WooCommerce the plugin shows only a notice asking you to update WooCommerce; its history and settings are kept. Status becomes the Off/On switch: Draft saves a product's status and Published restores it. Before going back to 1.0.0, let every change in History finish and switch Off products On: 1.0.0's Published publishes an Off product whatever status it had.
 
 = 1.0.0 =
 First release.

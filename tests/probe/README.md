@@ -242,6 +242,25 @@ chapters take selections and changes through `POST /requests` grants.
 above after `seed.sh`, before the destructive lifecycle chapter. One row waits
 75 seconds for a scheduled product's time to pass.
 
+Its buyer rows (`offon:a*`, `offon:b*`, `offon:c*`) visit the storefront as an
+anonymous visitor and as a logged-in customer with cookie jars of their own:
+the product page, the id link, the category archive, search, the Store API,
+the WordPress REST product, the sitemap, the feed, oEmbed, add to cart, and
+carts filled while On (Store API and classic checkout, a cart read, a
+persistent cart after its session is deleted, Order again). For a
+billing-only checkout the chapter turns on Check payments, turns shipping
+off and makes a `[woocommerce_checkout]` page (`/bulkcat-offon-checkout/`);
+it records the three WooCommerce options it changes and puts them back at
+the end (`offon:shop-options-restored`), and removes the page if it made it.
+Its customers (`bulkcat_offon_*`, the seed's password) and the orders it
+places are the throwaway stack's. `offon:e7-*` checks that WooCommerce and
+this plugin are the only active plugins, with no must-use plugin.
+
+`perf.py --only offon` measures the switch at scale on the performance stack
+below: Off, the undo of that Off, Off again and On over about 5,000 simple
+products through the durable routes, each against the write budget, and the
+grid with the Status column and the Off filter while they are Off.
+
 `tests/probe/offon-upgrade.sh` proves an upgrade from the 1.0.0 archive to
 this branch and a downgrade back on a throwaway stack of its own (default
 port 8911, every docker name suffixed `-offon`), whose plugin directory is

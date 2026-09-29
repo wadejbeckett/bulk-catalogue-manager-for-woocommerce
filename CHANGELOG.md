@@ -8,11 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 <!-- global-off-on (branch codex/global-off-on): ticket 04 entries -->
-### Changed: Status is the global Off/On switch
+### Added: Status is the global Off/On switch
+
+- Setting a product's Status to Draft switches it Off: it leaves the site for every buyer, and the status it had is saved on the product (`_bulkcat_availability_off`, one post meta value holding the product id, the status, when and the batch). Published switches it On and restores exactly that status: Private and Pending review come back as they were, a scheduled product is scheduled again, or published when its time has passed. Draft on a genuine draft saves nothing; Pending review and Private stay ordinary statuses (on a product that was Off they clear the saved status, and the preview says so). Variations are never switched on their own.
+- The preview carries an `availability` block counting every outcome (switched Off, back On, restores to another status, publications of products never switched Off, conflicts first), and the bulk panel, the grid's Status cell and the detail panel confirm the same cases in the same words. Status is edited in the table, with the confirm in the cell.
+- A product whose status was changed elsewhere while Off reads "Changed outside this screen"; Published leaves it alone and says why (`bulkcat_availability_conflict`), **Keep current status** (`keep_changed_status`) clears its saved status instead, and Draft saves its new status.
+- The table shows an Off product as "Off (was Published)"; the Status filter offers **Off** and **Changed outside this screen**; product rows carry `off_state` when Status is read.
+- Undo in History restores the status and the saved status together (an internal `restore_status` step no client can send), leaves a product alone when it was switched Off again since, and shows the saved status as "Published, saved <date>".
+- Uninstall with **Remove all data** on deletes the saved statuses and leaves every product's status as it is (Off products stay drafts). The native Duplicate does not copy a saved status, and a saved status copied onto another product by any other means is ignored.
+
+### Fixed
+
+- The history now records the status WordPress actually stored after a status change: a Published on a product whose date is ahead is recorded as scheduled (`future`), as WordPress keeps it, instead of `publish`.
+- An edit in the grid's cell or the detail panel writes only the product it names: its steps carry **Also apply to variations** off, so switching a variable product Off in place is no longer refused for its variations (before, a Status change on a variable product in the detail panel could be refused because the settings' default carried it down to the variations it never writes).
+
+### Changed: listing controls and minimum WooCommerce
 
 - The **Visible on site** switch is now **Shown in shop and search** (choices Shown, Hidden, Partly), and it is no longer a default column; its key `visible_on_site`, saved views, journal rows and CSV column id are unchanged. It changes listing only: a hidden product can still be opened by link and bought. The selection bar's quick actions read **Show in shop and search** and **Hide from shop and search**.
 - CSV export: the one heading change is "Visible on site" → "Shown in shop and search". An export of the default view no longer contains that column at all, because it is not a default column any more; a view that shows it exports it under the new heading. The Status column's heading and values are unchanged (an Off product exports its post status, `draft`).
 - A saved view filtering Status is Draft now lists genuine drafts only, not products switched Off; the Status filter also offers **Off** and **Changed outside this screen**.
+- Requires WooCommerce 11.1 or later (was 10.0); on an older WooCommerce the plugin shows only a notice.
+- A change queued before this update and run after it treats a `set_value` status step as the switch: a Draft now also saves the product's status (harmless: the draft is the same, and the saved status only lets Published restore it later).
+- Going back to 1.0.0: let every change finish first (no batch queued, running or undoing), and switch Off products On, or note their saved statuses. 1.0.0 leaves Off products as drafts and ignores their saved status, refuses to undo their Off in History, and its Published publishes them whatever status they had.
 <!-- /global-off-on -->
 
 ### Changed

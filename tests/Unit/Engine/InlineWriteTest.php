@@ -182,6 +182,26 @@ final class InlineWriteTest extends TestCase {
 		return $product;
 	}
 
+	public function test_an_inline_write_never_reaches_the_variations_so_its_steps_say_so(): void {
+		// T94: the write takes the one object (BatchFactory::open()), so its steps, and the dry run
+		// that checks them, carry Also apply to variations off, whatever the settings default: an
+		// inline Off of a variable product is not refused for its variations, which it never touches.
+		$settings = new Settings(
+			[
+				\BulkCatalogueManager\Settings\Schema::VARIATIONS_STATUS => true,
+				\BulkCatalogueManager\Settings\Schema::VARIATIONS_PRICE  => true,
+				\BulkCatalogueManager\Settings\Schema::VARIATIONS_STOCK  => true,
+			]
+		);
+		$writes   = new InlineWrite( $this->actions, null, null, $settings );
+		foreach ( [ [ 'status' => 'draft' ], [ 'status' => 'publish' ], [ 'regular_price' => '12' ], [ 'stock_status' => 'outofstock' ] ] as $values ) {
+			$steps = $writes->operations( $values );
+			$this->assertTrue( is_array( $steps ), wp_json_encode( $values ) );
+			$this->assertFalse( $steps[0]['args']['apply_to_variations'] ?? false, wp_json_encode( $values ) );
+		}
+		$this->assertArrayNotHasKey( 'apply_to_variations', $writes->operations( [ 'catalog_visibility' => 'hidden' ] )[0]['args'], 'A product-only field has no such argument.' );
+	}
+
 	public function test_a_conflict_is_refused_400_naming_status_with_nothing_written(): void {
 		// T89: a product changed to Private elsewhere while Off; Published leaves it alone.
 		self::off_product( 102, 'private', 'publish' );

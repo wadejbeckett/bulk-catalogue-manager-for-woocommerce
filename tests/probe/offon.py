@@ -17,8 +17,11 @@ Standard library only, like probe.py.
 from __future__ import annotations
 
 import base64
+import http.cookiejar
 import json
+import re
 import time
+import urllib.parse
 from typing import Any
 
 SKU = "bulkcat-offon-"
@@ -742,7 +745,23 @@ def check_grid(p: Any) -> None:
         ok = (made["status"] == 200 and back["status"] == 200 and isinstance(before, int) and before == again and after == before + 1 and final == before and two)
         row(p, "count-cache", ok, f"Off filter count {before} (cached read {again}), right after an inline Off {after}, after On {final}")
 
-    for name, fn in [("e3-paths-identical", paths), ("e4-filter", filter_and_display), ("e6-listed-editable", listed_editable), ("count-cache", count_cache)]:
+    def inline_variable() -> None:
+        # The grid's cell and drawer write the one product: an inline Off of a variable product is
+        # not refused for its variations (Also apply to variations defaults on for Status) and leaves them alone.
+        fx = upsert(p, [{"key": "e3-variable", "type": "variable", "status": "publish"}])
+        v = fx["e3-variable"]
+        before = snap(p, [v["id"]])[str(v["id"])]
+        off = patch(p, v["id"], {"status": "draft"}, ["status"])
+        mid = snap(p, [v["id"]])[str(v["id"])]
+        on = patch(p, v["id"], {"status": "publish"}, ["status"])
+        after = snap(p, [v["id"]])[str(v["id"])]
+        rows = journal(p, off["json"].get("batch_id", 0)) if off["status"] == 200 else []
+        ok = (off["status"] == 200 and off["json"].get("status") == "complete" and mid["status"] == "draft" and mid["variations"] == before["variations"]
+              and on["status"] == 200 and after["status"] == "publish" and after["variations"] == before["variations"] and after["record"] == ""
+              and sorted({r[0] for r in rows}) == [v["id"]])
+        row(p, "e3-inline-variable", ok, f"inline Off {off['status']} {off['json'].get('status') or off['json'].get('code')}, On {on['status']} {on['json'].get('status') or on['json'].get('code')}; variations unchanged {mid['variations'] == before['variations'] and after['variations'] == before['variations']}; journal objects {sorted({r[0] for r in rows})}")
+
+    for name, fn in [("e3-paths-identical", paths), ("e3-inline-variable", inline_variable), ("e4-filter", filter_and_display), ("e6-listed-editable", listed_editable), ("count-cache", count_cache)]:
         guard(p, name, fn)
 
 
@@ -780,4 +799,387 @@ def check_listing(p: Any) -> None:
     guard(p, "e5-independent", independent)
 
 
-CHECKS = [check_engine, check_undo, check_preview, check_grid, check_listing]
+# ---------------------------------------------------------------------------
+# T94: what a buyer sees (A1-A12, B1-B5, C1-C2) and the site's plugins (E7)
+# ---------------------------------------------------------------------------
+
+BILLING = {
+    "first_name": "Probe", "last_name": "Buyer", "company": "", "address_1": "1 Test Street", "address_2": "",
+    "city": "Los Angeles", "state": "CA", "postcode": "90210", "country": "US",
+    "email": "buyer@example.test", "phone": "5555555555",
+}
+CLASSIC = "bulkcat-offon-checkout"  # the chapter's [woocommerce_checkout] page
+# WooCommerce options the chapter sets for checkout, restored at its end.
+SHOP_OPTIONS = {
+    "woocommerce_ship_to_countries": "disabled",
+    "woocommerce_cheque_settings": {"enabled": "yes", "title": "Check payments", "description": "Pay by cheque.", "instructions": ""},
+    "woocommerce_enable_guest_checkout": "yes",
+}
+
+SHOP_SETUP_PHP = r"""
+$set  = json_decode( base64_decode( '%s' ), true );
+$was  = array();
+foreach ( $set as $name => $value ) {
+	$old          = get_option( $name, null );
+	$was[ $name ] = array( 'exists' => null !== $old, 'value' => $old );
+	update_option( $name, $value );
+}
+$page    = get_page_by_path( '%s' );
+$created = 0;
+if ( ! $page ) {
+	$created = (int) wp_insert_post( array( 'post_type' => 'page', 'post_status' => 'publish', 'post_title' => 'Bulkcat Offon Checkout', 'post_name' => '%s', 'post_content' => '[woocommerce_checkout]' ) );
+}
+$users = array();
+foreach ( %s as $login ) {
+	$id = username_exists( $login );
+	if ( ! $id ) {
+		$id = wp_insert_user( array( 'user_login' => $login, 'user_email' => $login . '@example.test', 'user_pass' => '%s', 'role' => 'customer' ) );
+	}
+	delete_user_meta( (int) $id, '_woocommerce_persistent_cart_' . get_current_blog_id() );
+	$users[ $login ] = (int) $id;
+}
+bulkcat_out( array( 'was' => $was, 'page' => $created, 'users' => $users ) );
+"""
+
+SHOP_RESTORE_PHP = r"""
+$was  = json_decode( base64_decode( '%s' ), true );
+foreach ( $was as $name => $row ) {
+	if ( $row['exists'] ) { update_option( $name, $row['value'] ); } else { delete_option( $name ); }
+}
+if ( %d > 0 ) { wp_delete_post( %d, true ); }
+bulkcat_out( 1 );
+"""
+
+
+def header(reply: Any, name: str) -> str:
+    return next((v for k, v in reply.headers.items() if k.lower() == name.lower()), "")
+
+
+def strip(html: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html)).strip()
+
+
+class Buyer:
+    """A storefront visitor with its own cookie jar: anonymous, or a customer once logged in."""
+
+    def __init__(self, p: Any) -> None:
+        self.p = p
+        self.jar = http.cookiejar.CookieJar()
+        self.opener = p._opener(self.jar)
+        self.nonce = ""
+
+    def path(self, url: str) -> str:
+        return url[len(self.p.base):] if url.startswith(self.p.base) else url
+
+    def request(self, method: str, url: str, data: bytes | None = None, headers: dict | None = None, follow: bool = False) -> Any:
+        path = self.path(url)
+        for _ in range(6):
+            reply = self.p._raw(self.opener, method, path, data, headers)
+            where = header(reply, "Location")
+            if not (follow and 300 <= reply.status < 400 and where):
+                return reply
+            path, method, data = self.path(urllib.parse.urljoin(self.p.base + path, where)), "GET", None
+        return reply
+
+    def get(self, url: str, follow: bool = False) -> Any:
+        return self.request("GET", url, follow=follow)
+
+    def text(self, reply: Any) -> str:
+        return reply.body.decode("utf-8", "replace")
+
+    def form(self, url: str, fields: dict) -> Any:
+        return self.request("POST", url, urllib.parse.urlencode(fields).encode(), {"Content-Type": "application/x-www-form-urlencoded"})
+
+    def login(self, login: str, password: str) -> "Buyer":
+        self.get("/wp-login.php")
+        self.form("/wp-login.php", {"log": login, "pwd": password, "wp-submit": "Log In", "testcookie": "1"})
+        if not any(c.name.startswith("wordpress_logged_in_") for c in self.jar):
+            raise AssertionError(f"could not log in as {login}")
+        return self
+
+    def store(self, method: str, path: str, body: Any = None) -> tuple[int, Any]:
+        """A Store API call carrying the cart's nonce, as the blocks send it."""
+        if not self.nonce and method != "GET":
+            self.store("GET", "/cart")
+        headers = {"Accept": "application/json"}
+        data = None
+        if self.nonce:
+            headers["Nonce"] = self.nonce
+        if body is not None:
+            data = json.dumps(body).encode()
+            headers["Content-Type"] = "application/json"
+        reply = self.request(method, "/wp-json/wc/store/v1" + path, data, headers)
+        self.nonce = header(reply, "Nonce") or self.nonce
+        return reply.status, reply.json()
+
+    def cart(self) -> tuple[list[int], list[str]]:
+        _, data = self.store("GET", "/cart")
+        data = data if isinstance(data, dict) else {}
+        return sorted(i["id"] for i in data.get("items", [])), [strip(str(e.get("message", ""))) for e in data.get("errors", [])]
+
+    def empty(self) -> None:
+        self.store("DELETE", "/cart/items")
+
+
+def add_path(product: dict) -> str:
+    if product["kind"] == "simple":
+        return f"/?add-to-cart={product['id']}&quantity=1"
+    return f"/?add-to-cart={product['id']}&variation_id={product['small']}&attribute_size=Small&quantity=1"
+
+
+def target(product: dict) -> int:
+    return product["id"] if product["kind"] == "simple" else product["small"]
+
+
+# A number, its row name and the surfaces it covers.
+A_ROWS = [
+    ("a1", "permalink-404", ["permalink"]),
+    ("a2", "id-link-404", ["id link"]),
+    ("a3", "category-omits", ["category archive"]),
+    ("a4", "search-omits", ["product search"]),
+    ("a5", "store-api-list-omits", ["Store API listing"]),
+    ("a6", "store-api-product-404", ["Store API product", "Store API variation"]),
+    ("a7", "wp-rest-401", ["WP REST product"]),
+    ("a8", "sitemap-omits", ["sitemap"]),
+    ("a9", "feed-omits", ["category feed"]),
+    ("a10", "oembed-404", ["oEmbed"]),
+    ("a11", "add-to-cart-refused", ["add to cart (form handler)"]),
+    ("a12", "store-api-add-refused", ["add to cart (Store API)"]),
+]
+
+
+def surfaces(c: Buyer, product: dict) -> dict[str, tuple[str, bool]]:
+    """Every A surface for one product through one visitor: surface -> (what it answered, exposed)."""
+    out: dict[str, tuple[str, bool]] = {}
+    link = product["permalink"]
+    r = c.get(link)
+    out["permalink"] = (str(r.status), r.status == 200)
+    r = c.get(f"/?post_type=product&p={product['id']}")
+    where = header(r, "Location")
+    out["id link"] = (f"{r.status}{' -> ' + where if where else ''}", r.status == 200 or (300 <= r.status < 400 and "/product/" in where))
+    r = c.get(f"/product-category/{product['cat_slug']}/")
+    out["category archive"] = (f"{r.status} {'listed' if link in c.text(r) else 'absent'}", link in c.text(r))
+    r = c.get(f"/?s={urllib.parse.quote_plus(product['name'])}&post_type=product", follow=True)
+    hit = link in c.text(r)
+    out["product search"] = ("listed" if hit else "absent", hit)
+    code, data = c.store("GET", f"/products?category={product['cat']}&per_page=100")
+    ids = [d["id"] for d in data] if isinstance(data, list) else []
+    out["Store API listing"] = (f"{code} {'listed' if product['id'] in ids else 'absent'}", product["id"] in ids)
+    code, _ = c.store("GET", f"/products/{product['id']}")
+    out["Store API product"] = (str(code), code == 200)
+    if product["kind"] == "variable":
+        code, _ = c.store("GET", f"/products/{product['small']}")
+        out["Store API variation"] = (str(code), code == 200)
+    r = c.get(f"/wp-json/wp/v2/product/{product['id']}")
+    out["WP REST product"] = (str(r.status), r.status == 200)
+    r = c.get("/wp-sitemap-posts-product-1.xml")
+    out["sitemap"] = ("listed" if link in c.text(r) else "absent", link in c.text(r))
+    r = c.get(f"/product-category/{product['cat_slug']}/feed/")
+    out["category feed"] = ("listed" if link in c.text(r) else "absent", link in c.text(r))
+    r = c.get("/wp-json/oembed/1.0/embed?url=" + urllib.parse.quote(link, safe=""))
+    out["oEmbed"] = (str(r.status), r.status == 200)
+    c.empty()
+    c.get(add_path(product))
+    ids, _ = c.cart()
+    out["add to cart (form handler)"] = ("added" if target(product) in ids else "refused", target(product) in ids)
+    c.empty()
+    code, data = c.store("POST", "/cart/add-item", {"id": target(product), "quantity": 1})
+    added = code in (200, 201)
+    out["add to cart (Store API)"] = (f"{code} {'' if added else (data or {}).get('code', '')}".strip(), added)
+    c.empty()
+    if product["kind"] == "variable":
+        code, data = c.store("POST", "/cart/add-item", {"id": product["large"], "quantity": 1})
+        out["disabled variation (Store API)"] = (f"{code} {'' if code in (200, 201) else (data or {}).get('code', '')}".strip(), code in (200, 201))
+        c.empty()
+    return out
+
+
+def classic_nonce(c: Buyer) -> str:
+    m = re.search(r'name="woocommerce-process-checkout-nonce" value="([^"]+)"', c.text(c.get(f"/{CLASSIC}/")))
+    return m.group(1) if m else ""
+
+
+def classic_checkout(c: Buyer, nonce: str) -> tuple[str, bool]:
+    fields = {f"billing_{k}": v for k, v in BILLING.items()}
+    fields.update({"payment_method": "cheque", "woocommerce-process-checkout-nonce": nonce, "_wp_http_referer": f"/{CLASSIC}/"})
+    reply = c.form("/?wc-ajax=checkout", fields)
+    data = reply.json() or {}
+    if data.get("result") == "success":
+        m = re.search(r"order-received/(\d+)", data.get("redirect", ""))
+        return f"order {m.group(1) if m else '?'} created", True
+    return "refused: " + strip(str(data.get("messages", "")))[:150], False
+
+
+def store_checkout(c: Buyer) -> tuple[str, bool]:
+    code, data = c.store("POST", "/checkout", {"billing_address": BILLING, "shipping_address": {k: v for k, v in BILLING.items() if k != "email"}, "payment_method": "cheque"})
+    data = data if isinstance(data, dict) else {}
+    if code == 200 and data.get("order_id"):
+        return f"order {data['order_id']} created ({data.get('status')})", True
+    return f"{code} refused: {data.get('code', '')}", False
+
+
+def orders(p: Any) -> int:
+    return int(p.wp_eval("bulkcat_out( count( wc_get_orders( array( 'limit' => -1, 'return' => 'ids', 'status' => array_keys( wc_get_order_statuses() ) ) ) ) );"))
+
+
+def carts(p: Any, products: list[dict], logins: dict[str, str], password: str) -> dict[tuple[str, str], tuple[Buyer, dict]]:
+    """Carts filled while On: anonymous and a customer for each path (a persistent cart only for the customer)."""
+    out = {}
+    for audience in ("anonymous", "customer"):
+        for path in ("store_checkout", "classic_checkout", "cart_view", "persistent_cart"):
+            if audience == "anonymous" and path == "persistent_cart":
+                continue
+            c = Buyer(p)
+            if audience == "customer":
+                c.login(logins[path], password)
+                c.empty()
+            for product in products:
+                c.get(add_path(product))
+            ids, _ = c.cart()
+            state: dict[str, Any] = {"before": ids}
+            if path == "classic_checkout":
+                state["nonce"] = classic_nonce(c)
+            out[(audience, path)] = (c, state)
+    return out
+
+
+def settle(p: Any, products: list[dict], held: dict, logins: dict[str, str], users: dict[str, int], password: str) -> dict[str, dict]:
+    """What each cart does now: checkout, a cart read, a persistent cart after its session expired."""
+    targets = [target(x) for x in products]
+    out = {}
+    for (audience, path), (c, state) in held.items():
+        row: dict[str, Any] = {"before": state["before"]}
+        count = orders(p)
+        if path == "store_checkout":
+            row["said"], row["placed"] = store_checkout(c)
+        elif path == "classic_checkout":
+            row["said"], row["placed"] = classic_checkout(c, state.get("nonce", "")) if state.get("nonce") else ("no checkout form while On", None)
+        elif path == "cart_view":
+            ids, notices = c.cart()
+            row["after"], row["kept"], row["notices"] = ids, [i for i in ids if i in targets], notices
+        else:
+            uid = users[logins[path]]
+            p.wp_eval(f"global $wpdb; $wpdb->delete( $wpdb->prefix . 'woocommerce_sessions', array( 'session_key' => '{uid}' ) ); bulkcat_out( 1 );")
+            ids, notices = Buyer(p).login(logins[path], password).cart()
+            row["after"], row["kept"], row["notices"] = ids, [i for i in ids if i in targets], notices
+        row["orders_made"] = orders(p) - count
+        out[f"{audience}/{path}"] = row
+    return out
+
+
+def active_plugins(p: Any) -> dict:
+    return p.wp_eval("bulkcat_out( array( 'active' => array_values( (array) get_option( 'active_plugins', array() ) ), 'network' => array_keys( (array) get_site_option( 'active_sitewide_plugins', array() ) ), 'mu' => array_keys( get_mu_plugins() ), 'dropins' => array_keys( get_dropins() ) ) );")
+
+
+def check_buyer(p: Any) -> None:
+    state: dict[str, Any] = {}
+
+    def e7() -> None:
+        found = active_plugins(p)
+        active = sorted(x.split("/")[0] for x in found["active"])
+        ok = active == ["bulk-catalogue-manager-for-woocommerce", "woocommerce"] and not found["network"] and not found["mu"]
+        row(p, "e7-only-woocommerce-and-this-plugin", ok, f"active {active}; network {found['network']}; must-use {found['mu']}; drop-ins {found['dropins']}")
+
+    def buyers() -> None:
+        password = p.seed["password"]
+        paths = ("store_checkout", "classic_checkout", "cart_view", "persistent_cart")
+        logins = {phase: {path: f"bulkcat_offon_{phase}_{n}" for n, path in enumerate(paths, 1)} for phase in ("buy", "control")}
+        every = [*logins["buy"].values(), *logins["control"].values(), "bulkcat_offon_browser", "bulkcat_offon_again"]
+        setup = p.wp_eval(SHOP_SETUP_PHP % (base64.b64encode(json.dumps(SHOP_OPTIONS).encode()).decode(), CLASSIC, CLASSIC, "array( " + ", ".join(f"'{x}'" for x in every) + " )", password))
+        state["setup"] = setup
+        try:
+            buyer_rows(p, setup, logins, password)
+        finally:
+            p.wp_eval(SHOP_RESTORE_PHP % (base64.b64encode(json.dumps(setup["was"]).encode()).decode(), int(setup["page"]), int(setup["page"])))
+            after = p.wp_eval("bulkcat_out( array( get_option( 'woocommerce_ship_to_countries', null ), get_option( 'woocommerce_cheque_settings', null ) ) );")
+            before = [setup["was"]["woocommerce_ship_to_countries"]["value"], setup["was"]["woocommerce_cheque_settings"]["value"]]
+            row(p, "shop-options-restored", after == before, f"the chapter's WooCommerce options are back as they were: {after == before}; its checkout page {'removed' if setup['page'] else 'was already there'}")
+
+    for name, fn in [("e7-only-woocommerce-and-this-plugin", e7), ("buyer", buyers)]:
+        guard(p, name, fn)
+
+
+def product_rows(p: Any, fx: dict, prefix: str) -> list[dict]:
+    simple_, variable = fx[f"{prefix}-simple"], fx[f"{prefix}-variable"]
+    cat_slug = "bulkcat-offon-" + prefix
+    base = p.base
+    return [
+        {"kind": "simple", "id": simple_["id"], "name": f"Bulkcat Offon {prefix}-simple", "permalink": f"{base}/product/{simple_['slug']}/", "cat": simple_["cat"], "cat_slug": cat_slug},
+        {"kind": "variable", "id": variable["id"], "name": f"Bulkcat Offon {prefix}-variable", "permalink": f"{base}/product/{variable['slug']}/", "cat": variable["cat"], "cat_slug": cat_slug,
+         "small": variable["small"], "large": variable["large"]},
+    ]
+
+
+def buyer_rows(p: Any, setup: dict, logins: dict, password: str) -> None:
+    users = setup["users"]
+    fx = upsert(p, [simple("buy-simple", cat="buy"), {"key": "buy-variable", "type": "variable", "status": "publish", "cat": "buy"},
+                    simple("control-simple", cat="control"), {"key": "control-variable", "type": "variable", "status": "publish", "cat": "control"}])
+    products = product_rows(p, fx, "buy")
+    control = product_rows(p, fx, "control")
+    ids = [x["id"] for x in products]
+    visitors = {"anonymous": Buyer(p), "customer": Buyer(p).login("bulkcat_offon_browser", password)}
+
+    # C1: the same cart paths place orders while nothing is Off.
+    placed = settle(p, control, carts(p, control, logins["control"], password), logins["control"], users, password)
+    c1 = all((r.get("placed") and r["orders_made"] == 1) if "placed" in r else (r["kept"] == sorted(target(x) for x in control) and r["orders_made"] == 0) for r in placed.values())
+    row(p, "c1-control-orders-while-on", c1, "; ".join(f"{k}: {v.get('said') or ('kept ' + str(v.get('kept')))}" for k, v in placed.items()))
+
+    on_before = {aud: {x["kind"]: surfaces(c, x) for x in products} for aud, c in visitors.items()}
+    held = carts(p, products, logins["buy"], password)
+    again = p.wp_eval(
+        f"$o = wc_create_order( array( 'customer_id' => {int(users['bulkcat_offon_again'])} ) ); $o->add_product( wc_get_product( {products[0]['id']} ), 1 ); "
+        f"$o->add_product( wc_get_product( {products[1]['small']} ), 1 ); $o->set_billing_email( 'buyer@example.test' ); $o->set_payment_method( 'cheque' ); "
+        "$o->calculate_totals(); $o->set_status( 'completed' ); $o->save(); bulkcat_out( $o->get_id() );"
+    )
+
+    off = switch(p, ids, "draft")
+    visitors["anonymous"] = Buyer(p)
+    off_now = {aud: {x["kind"]: surfaces(c, x) for x in products} for aud, c in visitors.items()}
+    for num, name, keys in A_ROWS:
+        seen = [(aud, kind, key, off_now[aud][kind][key], on_before[aud][kind][key]) for aud in off_now for kind in off_now[aud] for key in keys if key in off_now[aud][kind]]
+        ok = bool(seen) and all(not now[1] and was[1] for *_, now, was in seen)
+        if num == "a12":
+            ok = ok and all("woocommerce_rest_product_not_purchasable" in now[0] for *_, now, _ in seen)
+        if num == "a7":
+            ok = ok and all(now[0] == "401" for *_, now, _ in seen)
+        row(p, f"{num}-{name}", ok, f"Off: {sorted({f'{a}/{k}: {n[0]}' for a, k, _, n, _ in seen})}; while On: {sorted({w[0] for *_, w in seen})}")
+    disabled = [off_now[aud]["variable"]["disabled variation (Store API)"] for aud in off_now]
+    row(p, "a12-disabled-variation-refused", all(not d[1] for d in disabled), f"the disabled variation, Off: {[d[0] for d in disabled]}; while On: {[on_before[a]['variable']['disabled variation (Store API)'][0] for a in on_before]}")
+
+    held_now = settle(p, products, held, logins["buy"], users, password)
+    targets = sorted(target(x) for x in products)
+    views = {k: v for k, v in held_now.items() if k.endswith("cart_view")}
+    row(p, "b1-cart-drops-off-items", all(v["before"] == targets and v["kept"] == [] and any("removed from your cart" in n for n in v["notices"]) for v in views.values()),
+        "; ".join(f"{k}: before {v['before']} after {v['after']} notices {len(v['notices'])}" for k, v in views.items()))
+    stores = {k: v for k, v in held_now.items() if k.endswith("store_checkout")}
+    row(p, "b2-store-checkout-refused", all(not v["placed"] and "woocommerce_rest_cart_empty" in v["said"] and v["orders_made"] == 0 for v in stores.values()),
+        "; ".join(f"{k}: {v['said']} (orders made {v['orders_made']})" for k, v in stores.items()))
+    classics = {k: v for k, v in held_now.items() if k.endswith("classic_checkout")}
+    row(p, "b3-classic-checkout-refused", all(v["placed"] is False and v["orders_made"] == 0 for v in classics.values()),
+        "; ".join(f"{k}: {v['said'][:110]} (orders made {v['orders_made']})" for k, v in classics.items()))
+    kept = held_now["customer/persistent_cart"]
+    row(p, "b4-persistent-cart-drops", kept["before"] == targets and kept["kept"] == [], f"before {kept['before']}; after the session expired and a fresh login {kept['after']}")
+
+    buyer = Buyer(p).login("bulkcat_offon_again", password)
+    buyer.empty()
+    page = buyer.text(buyer.get(f"/my-account/view-order/{int(again)}/", follow=True))
+    link = re.search(r'href="([^"]*order_again=[^"]+)"', page)
+    if link:
+        buyer.get(link.group(1).replace("&amp;", "&"), follow=True)
+    cart_after, _ = buyer.cart()
+    row(p, "b5-order-again-adds-nothing", [i for i in cart_after if i in targets] == [], f"Order again link shown {bool(link)}; cart after following it {cart_after}")
+
+    on = switch(p, ids, "publish")
+    visitors["anonymous"] = Buyer(p)
+    on_after = {aud: {x["kind"]: surfaces(c, x) for x in products} for aud, c in visitors.items()}
+    same = {f"{aud}/{kind}/{key}": (on_before[aud][kind][key][1], on_after[aud][kind][key][1]) for aud in on_after for kind in on_after[aud] for key in on_after[aud][kind]}
+    after_cart = Buyer(p)
+    for x in products:
+        after_cart.get(add_path(x))
+    said, placed_now = store_checkout(after_cart)
+    statuses_now = statuses(p, ids)
+    row(p, "c2-everything-back-after-on", all(a == b for a, b in same.values()) and placed_now and set(statuses_now.values()) == {"publish"} and all(record(p, i) == "" for i in ids),
+        f"Off {off['report'].get('status')}, On {on['report'].get('status')}; {sum(a != b for a, b in same.values())} of {len(same)} surfaces differ from before Off; a new cart checks out: {said}")
+
+
+CHECKS = [check_engine, check_undo, check_preview, check_grid, check_listing, check_buyer]

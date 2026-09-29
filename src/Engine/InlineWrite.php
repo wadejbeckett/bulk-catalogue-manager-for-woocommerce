@@ -20,6 +20,7 @@ use BulkCatalogueManager\Data\ChangeRepository;
 use BulkCatalogueManager\Fields\Field;
 use BulkCatalogueManager\Fields\Values;
 use BulkCatalogueManager\Operations\Registry as Actions;
+use BulkCatalogueManager\Operations\BaseOperation;
 use BulkCatalogueManager\Operations\Result;
 use BulkCatalogueManager\Rest\Access;
 use BulkCatalogueManager\Rest\Refusal;
@@ -211,9 +212,26 @@ final class InlineWrite {
 				$code    = $list instanceof \WP_Error ? (string) $list->get_error_code() : self::INVALID;
 				return Refusal::invalid( $code, $message, [ 'field' => $key ] );
 			}
-			$operations[] = $list[0];
+			$operations[] = self::this_object_only( $list[0] );
 		}
 		return $operations;
+	}
+
+	/**
+	 * A step as the write runs it: on the one object only. BatchFactory::open()
+	 * takes the object alone, so Also apply to variations is off whatever the
+	 * settings' default, and the dry run (which previews through expand())
+	 * checks what is written: an inline Off of a variable product is not
+	 * refused for variations it never touches (T94).
+	 *
+	 * @param array{action: string, args: array<string, mixed>} $step A normalised step.
+	 * @return array{action: string, args: array<string, mixed>}
+	 */
+	private static function this_object_only( array $step ): array {
+		if ( array_key_exists( BaseOperation::APPLY_TO_VARIATIONS, $step['args'] ) ) {
+			$step['args'][ BaseOperation::APPLY_TO_VARIATIONS ] = false;
+		}
+		return $step;
 	}
 
 	/**

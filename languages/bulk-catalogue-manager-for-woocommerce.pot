@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-09-29T12:32:39+00:00\n"
+"POT-Creation-Date: 2026-09-29T13:00:56+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -2297,9 +2297,9 @@ msgstr ""
 msgid "This switches %s Off: they leave the site for every buyer, and each one's status is saved for switching On."
 msgstr ""
 
-#. translators: 1: a field, such as "Visible on site"; 2: its new value, such as "Hidden"; 3: a number of products, such as "24 products".
+#. translators: 1: a field, such as "Shown in shop and search"; 2: its new value, such as "Hidden"; 3: a number of products, such as "24 products".
 #, js-format
-msgid "This sets %1$s to %2$s on %3$s, hiding them from the shop and from search."
+msgid "This sets %1$s to %2$s on %3$s: they leave the shop and search results, but can still be opened by link and bought. To take them off sale, set Status to Draft."
 msgstr ""
 
 #. translators: 1: a field, "Status"; 2: its new value, such as "Draft"; 3: a number of products, such as "24 products".
@@ -2916,16 +2916,15 @@ msgid_plural "Opened %d products with options."
 msgstr[0] ""
 msgstr[1] ""
 
-#. translators: 1: the switch's name, "Visible on site", 2: a product name.
-#. translators: 1: a field's name, such as "SKU", 2: a product name.
 #. translators: 1: the switch's name, "Shown in shop and search", 2: a product name.
+#. translators: 1: a field's name, such as "SKU", 2: a product name.
 #, js-format
 msgid "%1$s, %2$s"
 msgstr ""
 
 #. translators: 1: a product name, 2: what happened or what to do, as a sentence.
 #, js-format
-msgid "We could not change whether %1$s is visible on site, so it is as it was. %2$s"
+msgid "We could not change whether %1$s is shown in the shop and search, so it is as it was. %2$s"
 msgstr ""
 
 msgid "Try again in a moment."
@@ -2933,16 +2932,13 @@ msgstr ""
 
 #. translators: %s: the exact catalogue visibility, such as "Shop only".
 #, js-format
-msgid "Partly visible: %s. Choose on or off to change it."
+msgid "Partly shown: %s. Choose on or off to change it."
 msgstr ""
 
 msgid "in the shop or in search results, not both"
 msgstr ""
 
 msgid "When published"
-msgstr ""
-
-msgid "On site"
 msgstr ""
 
 #. translators: %s: a status such as "Draft".
@@ -3585,10 +3581,10 @@ msgstr ""
 msgid "Saving…"
 msgstr ""
 
-msgid "Show on site"
+msgid "Show in shop and search"
 msgstr ""
 
-msgid "Hide from site"
+msgid "Hide from shop and search"
 msgstr ""
 
 msgid "Make a change to these"
@@ -3821,25 +3817,4 @@ msgid "Bulk Catalogue Manager sections"
 msgstr ""
 
 msgid "History and undo"
-msgstr ""
-
-#. translators: 1: a field, such as "Shown in shop and search"; 2: its new value, such as "Hidden"; 3: a number of products, such as "24 products".
-#, js-format
-msgid "This sets %1$s to %2$s on %3$s: they leave the shop and search results, but can still be opened by link and bought. To take them off sale, set Status to Draft."
-msgstr ""
-
-#. translators: 1: a product name, 2: what happened or what to do, as a sentence.
-#, js-format
-msgid "We could not change whether %1$s is shown in the shop and search, so it is as it was. %2$s"
-msgstr ""
-
-#. translators: %s: the exact catalogue visibility, such as "Shop only".
-#, js-format
-msgid "Partly shown: %s. Choose on or off to change it."
-msgstr ""
-
-msgid "Show in shop and search"
-msgstr ""
-
-msgid "Hide from shop and search"
 msgstr ""

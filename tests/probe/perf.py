@@ -47,6 +47,14 @@ Metrics (``--only`` takes these group names, comma separated, default all):
              memory flat (peak at 20,000 rows within 8 MB of the peak at 2,000).
   prune      The history prune over 50,000 journal rows in batches past the
              retention limit, run to the end through Action Scheduler (INFO).
+  offon      Ticket 04 (SPEC §5.5), through the durable routes (a captured
+             selection, an exact preview, a /requests grant): Status set to
+             Draft (Off) on 5,000 simple products, the undo of that Off, Off
+             again, then Published (On): each >= 300 products a minute at the
+             default chunk, every chunk's peak < 96 MB; while 5,000 are Off,
+             the grid's default columns (Status among them) with the Off
+             filter, 25 rows: p95 < 400 ms and <= 20 queries, and its cold
+             count < 500 ms.
 
 Usage (after the stack, seed and mu-plugin of tests/probe/README.md):
     WP_CMD="..." python3 tests/probe/perf.py --base-url http://localhost:8896 \
@@ -75,7 +83,7 @@ from typing import Any
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from probe import NS, SIXTY, SIXTY_SEED_PHP, Probe, filter_params  # noqa: E402
 
-GROUPS = ["grid", "categories", "selection", "preview", "write", "history", "export", "prune"]
+GROUPS = ["grid", "categories", "selection", "preview", "write", "history", "export", "prune", "offon"]
 ADJUST = [{"action": "adjust", "args": {"field": "regular_price", "direction": "increase", "by": "percent", "amount": "10"}}]
 PERF_SIXTY_SKU = "bulkcat-perf-sixty"
 LIST_BATCHES = 200
@@ -327,7 +335,7 @@ class Perf:
         assert reply["status"] == 201, f"undo {reply['status']} {undo}"
         self.batch_budget("undo", undo["batch_id"])
 
-    def batch_budget(self, label: str, batch_id: int) -> None:
+    def batch_budget(self, label: str, batch_id: int, group: str = "write") -> None:
         # A web runner starts each request from WordPress's own footprint; under WP-CLI
         # WooCommerce's commands alone hold about 110 MB, so a chunk's peak is read as
         # what the chunk adds to the memory it started with, on top of a light REST
@@ -340,16 +348,75 @@ class Perf:
         rate = done / (wall / 60) if wall else 0.0
         in_chunks = sum(c["ms"] for c in chunks) / 1000
         ok_status = report.get("status") in ("complete", "partial") and not report.get("failed_items")
-        self.metric("write", f"{label}: products a minute", rate, "/min", ">= 300", ok_status and rate >= BUDGET["write_per_minute"],
+        self.metric(group, f"{label}: products a minute", rate, "/min", ">= 300", ok_status and rate >= BUDGET["write_per_minute"],
                     f"{done} items ({report.get('changed_items')} changed, {report.get('failed_items')} failed) in {wall:.0f} s wall, "
                     f"{in_chunks:.0f} s in {len(chunks)} chunks, status {report.get('status')}")
         own = max((c["peak_mb"] - c["start_mb"] for c in chunks), default=0.0)
         peak = base + own
-        self.metric("write", f"{label}: peak memory per chunk", peak, "MB", "< 96 MB", bool(chunks) and peak < BUDGET["chunk_peak_mb"],
+        self.metric(group, f"{label}: peak memory per chunk", peak, "MB", "< 96 MB", bool(chunks) and peak < BUDGET["chunk_peak_mb"],
                     f"a request's {base} MB + at most {own:.2f} MB a chunk adds; queries a chunk median {median([c['queries'] for c in chunks]) if chunks else 0}")
         drift = (chunks[-1]["end_mb"] - chunks[0]["start_mb"]) if chunks else 0.0
-        self.metric("write", f"{label}: memory kept across chunks", drift, "MB", "flat (+<8 MB)", drift < EXPORT_FLAT_MB,
+        self.metric(group, f"{label}: memory kept across chunks", drift, "MB", "flat (+<8 MB)", drift < EXPORT_FLAT_MB,
                     f"one WP-CLI process: {chunks[0]['start_mb'] if chunks else 0} MB before the first chunk, {chunks[-1]['end_mb'] if chunks else 0} MB after the last")
+
+    # ---- ticket 04: Status as the global Off/On switch (branch codex/global-off-on) ----
+
+    OFFON_FIELDS = ["name", "status", "category_ids", "regular_price", "sale_price", "stock_status", "manage_stock",
+                    "stock_quantity", "sku", "id", "type", "thumbnail", "price_html", "variation_count"]
+
+    def offon_switch(self, label: str, token: str, value: str) -> int:
+        """Preview and Apply Status set to a value over the captured selection, through a grant; run and measure it."""
+        operations = [{"action": "set_value", "args": {"field": "status", "value": value, "apply_to_variations": False}}]
+        pre = self.json_of(self.call("POST", "/preview", body={"token": token, "operations": operations})) or {}
+        reply = self.call("POST", "/batches", body=self.p.apply_body("manager", pre, {"token": token}))
+        created = self.json_of(reply) or {}
+        assert reply["status"] == 201, f"POST /batches {reply['status']} {created}"
+        counts = (pre.get("availability") or {}).get("counts")
+        self.metric("offon", f"{label}: queue", reply["perf"]["server_ms"], "ms", "", None, f"preview counts {counts}; {reply['perf']['dispatch_queries']} queries")
+        self.batch_budget(label, created["batch_id"], "offon")
+        return int(created["batch_id"])
+
+    def offon_undo(self, label: str, batch_id: int) -> None:
+        route = f"/batches/{batch_id}/undo"
+        plan = self.json_of(self.call("POST", route, body={"preview": True})) or {}
+        reply = self.call("POST", route, body=self.p.undo_body("manager", batch_id, plan.get("plan_hash")))
+        undo = self.json_of(reply) or {}
+        assert reply["status"] == 201, f"undo {reply['status']} {undo}"
+        self.batch_budget(label, undo["batch_id"], "offon")
+
+    def offon_grid(self) -> None:
+        params = [("per_page", "25"), ("status[operator]", "isAny"), ("status[value][]", "off")] + [("fields[]", f) for f in self.OFFON_FIELDS]
+        self.clear_transients("bulkcat_count_")
+        cold = self.call("GET", "/products", params)
+        assert cold["status"] == 200, f"GET /products {cold['status']} {cold['body'][:200]!r}"
+        data = self.json_of(cold) or {}
+        total = (data.get("pagination") or {}).get("total")
+        shown = sum(1 for item in data.get("items", []) if (item.get("off_state") or {}).get("state") == "off")
+        self.metric("offon", "Off filter cold (page + count)", cold["perf"]["server_ms"], "ms", "< 500 ms", cold["perf"]["server_ms"] < BUDGET["count_cold_ms"],
+                    f"{total} Off products, {cold['perf']['dispatch_queries']} queries")
+        warm = [self.call("GET", "/products", params) for _ in range(self.runs)]
+        server = [w["perf"]["server_ms"] for w in warm]
+        self.metric("offon", "grid with Status and the Off filter, 25 rows, warm p95", p95(server), "ms", "< 400 ms", p95(server) < BUDGET["grid_p95_ms"],
+                    f"median {median(server):.0f} ms; {shown} of 25 rows read Off")
+        q = max(w["perf"]["dispatch_queries"] for w in warm)
+        self.metric("offon", "grid with Status and the Off filter, queries", q, "queries", "<= 20", q <= BUDGET["grid_queries"], f"request total {warm[-1]['perf']['queries']}")
+
+    def offon(self) -> None:
+        body = self.simple_filter({"stock_quantity": {"operator": "between", "value": [1, 19]}})
+        sel = self.p.capture("manager", {"query": body})
+        assert sel.get("token"), f"capture {sel}"
+        self.metric("offon", "selection", sel.get("count", 0), "products", "", None, "simple products in the scale category with stock 1 to 19")
+        off = self.offon_switch("Off", sel["token"], "draft")
+        self.offon_grid()
+        self.offon_undo("undo of the Off", off)
+        self.offon_switch("Off again", sel["token"], "draft")
+        self.offon_switch("On", sel["token"], "publish")
+        left = self.p.wp_eval(
+            "global $wpdb; bulkcat_out( (int) $wpdb->get_var( $wpdb->prepare( \"SELECT COUNT(*) FROM {$wpdb->postmeta} AS m"
+            " INNER JOIN {$wpdb->term_relationships} AS tr ON tr.object_id = m.post_id INNER JOIN {$wpdb->term_taxonomy} AS tt ON tt.term_taxonomy_id = tr.term_taxonomy_id"
+            " WHERE m.meta_key = %%s AND tt.term_id = %%d\", '_bulkcat_availability_off', %d ) ) );" % self.scale_cat
+        )
+        self.metric("offon", "Off records left after On", left, "records", "0", left == 0, "in the scale category")
 
     def history(self) -> None:
         have = self.p.wp_eval(

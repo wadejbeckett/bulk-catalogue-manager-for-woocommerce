@@ -91,7 +91,8 @@ need_zip10() {
 
 branch_zip() {
 	local out
-	out=$("$ROOT/bin/build-zip.sh" | head -n1)
+	out=$("$ROOT/bin/build-zip.sh")
+	out=${out%%$'\n'*}
 	cp "$out" "$WORK/zips/$SLUG-branch.zip"
 	echo "the branch archive: $(sha256sum "$WORK/zips/$SLUG-branch.zip" | cut -d' ' -f1) from $(git -C "$ROOT" rev-parse --short HEAD)"
 }
@@ -134,6 +135,11 @@ def save():
     json.dump(state, open(state_file, "w"))
 
 
+def branch_code():
+    """Whether the code running is this branch's (the 1.0.0 archive has no Off record class)."""
+    return p.wp_eval("bulkcat_out( class_exists( '\\\\BulkCatalogueManager\\\\Availability\\\\OffRecord' ) );") is True
+
+
 def patch(pid, status):
     reply = p.http("manager", "PATCH", f"/products/{pid}", body={"status": status})
     data = reply.json() or {}
@@ -151,15 +157,16 @@ elif phase == "after":
     a, c = state["a"], state["c"]
     p._raw(p.session("admin")[0], "GET", "/wp-admin/")  # an update does not reactivate: the migrator runs on admin_init
     schema = p.wp("option", "get", "bulkcat_db_version").strip()
+    upgraded = branch_code()
     offon.switch(p, [a], "private")
     off = offon.switch(p, [a], "draft")
     saved = offon.own_record(offon.record(p, a), a) or {}
     pre = p.http("manager", "POST", f"/batches/{state['b1']}/undo", body={"preview": True}).json() or {}
     item = next((i for i in pre.get("items", []) if i.get("object_id") == a), {})
     fields = [c.get("field") for c in item.get("conflicts", [])]
-    offon.row(p, "upgrade:guard-changed-since", schema == "7" and item.get("state") == "conflicted" and item.get("code") == "changed_since"
+    offon.row(p, "upgrade:guard-changed-since", upgraded and schema == "7" and item.get("state") == "conflicted" and item.get("code") == "changed_since"
               and "availability_off" in fields and saved.get("status") == "private" and saved.get("batch") == off["batch"],
-              f"schema {schema}; undo preview of 1.0 batch #{state['b1']}: {item.get('state')} {item.get('code')} {[(c.get('field'), c.get('current')) for c in item.get('conflicts', [])]}; saved {saved}")
+              f"branch code {upgraded}, schema {schema}; undo preview of 1.0 batch #{state['b1']}: {item.get('state')} {item.get('code')} {[(c.get('field'), c.get('current')) for c in item.get('conflicts', [])]}; saved {saved}")
     forced = offon.undo(p, state["b1"], force=True)
     final = offon.statuses(p, [a])[str(a)]
     offon.row(p, "upgrade:guard-revert-anyway", forced["report"].get("status") == "complete" and final == "publish" and offon.record(p, a) == "",
@@ -181,10 +188,10 @@ elif phase == "down-before":
               f"step 0: {queued}; Off batch #{off['batch']} saved {offon.own_record(state['record_d'], d)}")
 elif phase == "down-after":
     d, e = state["d"], state["e"]
-    version = p.wp("plugin", "get", "bulk-catalogue-manager-for-woocommerce", "--field=version").strip()
+    old = not branch_code()
     snap = offon.statuses(p, [d, e])
-    offon.row(p, "downgrade:off-survives", version == "1.0.0" and snap == {str(d): "draft", str(e): "draft"} and offon.record(p, d) == state["record_d"],
-              f"1.0.0 installed ({version}): statuses {snap}; record intact {offon.record(p, d) == state['record_d']}")
+    offon.row(p, "downgrade:off-survives", old and snap == {str(d): "draft", str(e): "draft"} and offon.record(p, d) == state["record_d"],
+              f"1.0.0 running again: {old}; statuses {snap}; record intact {offon.record(p, d) == state['record_d']}")
     pre = p.http("manager", "POST", f"/batches/{state['off']}/undo", body={"preview": True})
     data = pre.json() or {}
     codes = sorted({i.get("code") for i in data.get("items", [])})

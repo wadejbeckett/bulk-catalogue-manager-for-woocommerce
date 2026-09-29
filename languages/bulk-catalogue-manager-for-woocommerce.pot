@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-09-29T12:41:41+00:00\n"
+"POT-Creation-Date: 2026-09-29T12:54:04+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -1798,6 +1798,150 @@ msgstr ""
 msgid "This page tried to send a change in a form the site no longer accepts, so nothing was sent. Reload the page, then try again."
 msgstr ""
 
+#. translators: %s: the status saved, such as "Published".
+#, js-format
+msgid "Switched Off (was %s)"
+msgstr ""
+
+#. translators: %s: the status saved again, such as "Private".
+#, js-format
+msgid "Changed by someone else while Off: switched Off again, saving %s"
+msgstr ""
+
+msgid "Already Off"
+msgstr ""
+
+msgid "Already Draft: nothing to save"
+msgstr ""
+
+msgid "Switched back On"
+msgstr ""
+
+#. translators: 1: the status it had before Off, and comes back with, such as "Private".
+#, js-format
+msgid "Was %1$s before Off: comes back %1$s"
+msgstr ""
+
+#. translators: %s: when it is scheduled, such as "4 Oct 2026, 09:30".
+#, js-format
+msgid "Was scheduled before Off: comes back scheduled for %s"
+msgstr ""
+
+msgid "Its scheduled time has passed: this publishes it now"
+msgstr ""
+
+#. translators: %s: when it is scheduled, such as "4 Oct 2026, 09:30".
+#, js-format
+msgid "Not switched Off: stays scheduled for %s"
+msgstr ""
+
+msgid "Not switched Off: this publishes it"
+msgstr ""
+
+msgid "Changed by someone else while Off: left alone"
+msgstr ""
+
+#. translators: %s: the status it keeps, such as "Published".
+#, js-format
+msgid "Changed by someone else while Off: keeps %s, Off record cleared"
+msgstr ""
+
+#. translators: %s: the status saved before Off, such as "Published".
+#, js-format
+msgid "Its saved status (%s) will not be restored"
+msgstr ""
+
+#. translators: %s: a number of products, such as "3".
+#, js-format
+msgid "%s product will be switched Off. Its status is saved, so Published brings it back."
+msgid_plural "%s products will be switched Off. Each one's status is saved, so Published brings it back."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of products, such as "3".
+#, js-format
+msgid "%s product was changed by someone else while Off and will be switched Off again."
+msgid_plural "%s products were changed by someone else while Off and will be switched Off again."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of products, such as "3".
+#, js-format
+msgid "%s product is already Off."
+msgid_plural "%s products are already Off."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of products, such as "3".
+#, js-format
+msgid "%s product is already Draft. Nothing is saved for it."
+msgid_plural "%s products are already Draft. Nothing is saved for them."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of products, such as "3".
+#, js-format
+msgid "%s product will be switched back On."
+msgid_plural "%s products will be switched back On."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: 1: a number of products, such as "3"; 2: the statuses they get back, such as "2 Private, 1 Pending review".
+#, js-format
+msgid "%1$s product comes back with the status it had before Off, not Published: %2$s."
+msgid_plural "%1$s products come back with the status they had before Off, not Published: %2$s."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of products, such as "3".
+#, js-format
+msgid "%s product comes back scheduled."
+msgid_plural "%s products come back scheduled."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of products, such as "3".
+#, js-format
+msgid "%s product was scheduled and its time has passed: this publishes it now."
+msgid_plural "%s products were scheduled and their time has passed: this publishes them now."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of products, such as "3".
+#, js-format
+msgid "%s product was not switched Off: this publishes it."
+msgid_plural "%s products were not switched Off: this publishes them."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of products, such as "3".
+#, js-format
+msgid "%s product was changed by someone else while Off and will be left alone. Choose Keep current status to clear its Off record instead."
+msgid_plural "%s products were changed by someone else while Off and will be left alone. Choose Keep current status to clear their Off record instead."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of products, such as "3".
+#, js-format
+msgid "%s product was changed by someone else while Off and will keep its current status."
+msgid_plural "%s products were changed by someone else while Off and will keep their current status."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of products, such as "3".
+#, js-format
+msgid "%s product is Off; its saved status will not be restored."
+msgid_plural "%s products are Off; their saved status will not be restored."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of variations, such as "6".
+#, js-format
+msgid "%s variation is left as it is: switching On restores only what switching Off saved."
+msgid_plural "%s variations are left as they are: switching On restores only what switching Off saved."
+msgstr[0] ""
+msgstr[1] ""
+
 #. translators: %s: a number of products, such as "24 products".
 #, js-format
 msgid "Apply to %s"
@@ -1904,6 +2048,17 @@ msgid "Will be skipped: %s"
 msgstr ""
 
 msgid "Replaces the whole list with"
+msgstr ""
+
+msgid "Off and On"
+msgstr ""
+
+msgid "Changed by someone else while Off"
+msgstr ""
+
+#. translators: 1: a product's name; 2: its status now, such as "Private"; 3: the status saved before Off, such as "Published".
+#, js-format
+msgid "%1$s: now %2$s, saved as %3$s"
 msgstr ""
 
 #. translators: %s: a number, such as "3".
@@ -2178,9 +2333,14 @@ msgstr ""
 msgid "This empties %1$s on %2$s."
 msgstr ""
 
-#. translators: 1: a field, such as "Visible on site"; 2: its new value, such as "Hidden"; 3: a number of products, such as "24 products".
+#. translators: %s: a number of products, such as "3 products".
 #, js-format
-msgid "This sets %1$s to %2$s on %3$s, hiding them from the shop and from search."
+msgid "This switches %s Off: they leave the site for every buyer, and each one's status is saved for switching On."
+msgstr ""
+
+#. translators: 1: a field, such as "Shown in shop and search"; 2: its new value, such as "Hidden"; 3: a number of products, such as "24 products".
+#, js-format
+msgid "This sets %1$s to %2$s on %3$s: they leave the shop and search results, but can still be opened by link and bought. To take them off sale, set Status to Draft."
 msgstr ""
 
 #. translators: 1: a field, "Status"; 2: its new value, such as "Draft"; 3: a number of products, such as "24 products".
@@ -2560,6 +2720,71 @@ msgstr ""
 msgid "This change can no longer be undone."
 msgstr ""
 
+#. translators: %s: the status saved when the product was switched Off, such as "Published".
+#, js-format
+msgid "Off (was %s)"
+msgstr ""
+
+msgid "This product"
+msgstr ""
+
+#. translators: 1: a product name, 2: its status now, such as "Published".
+#, js-format
+msgid "Switch %1$s Off? It leaves the site for every buyer. Its status, %2$s, is saved, so choosing Published later brings it back."
+msgstr ""
+
+#. translators: 1: a product name, 2: its status now, such as "Private".
+#, js-format
+msgid "%1$s was changed by someone else while Off. Switch it Off again? Its status now, %2$s, is saved in place of the one saved before."
+msgstr ""
+
+#. translators: 1: a product name, 2: the status it had before Off, such as "Private".
+#, js-format
+msgid "%1$s was %2$s before it was switched Off, so it comes back %2$s, not Published."
+msgstr ""
+
+#. translators: 1: a product name, 2: when it is scheduled, such as "4 Oct 2026, 09:30".
+#, js-format
+msgid "%1$s was scheduled before it was switched Off, so it comes back scheduled for %2$s."
+msgstr ""
+
+#. translators: %s: a product name.
+#, js-format
+msgid "%s was scheduled before it was switched Off and its time has passed, so this publishes it now."
+msgstr ""
+
+#. translators: %s: a product name.
+#, js-format
+msgid "%s is scheduled and was not switched Off. Published keeps it scheduled until its time, or publishes it now if that has passed."
+msgstr ""
+
+#. translators: 1: a product name, 2: its status now, such as "Draft".
+#, js-format
+msgid "%1$s is %2$s and was not switched Off, so this publishes it: buyers will see it."
+msgstr ""
+
+#. translators: 1: a product name, 2: the status saved before Off, such as "Published", 3: the status chosen, such as "Private".
+#, js-format
+msgid "%1$s has a status saved from before it was switched Off (%2$s). Changing Status to %3$s clears it, so switching On will not bring it back."
+msgstr ""
+
+#. translators: 1: a product name, 2: its status now, such as "Private".
+#, js-format
+msgid "%1$s was changed by someone else while Off, so it was left alone. Choose Keep current status to keep it %2$s and clear its Off record."
+msgstr ""
+
+msgid "Switch Off"
+msgstr ""
+
+msgid "Switch On"
+msgstr ""
+
+msgid "Keep current status"
+msgstr ""
+
+msgid "Change status"
+msgstr ""
+
 #. translators: %d: how many terms (categories, tags or classes) the product has.
 #, js-format
 msgid "%d assigned"
@@ -2732,16 +2957,15 @@ msgid_plural "Opened %d products with options."
 msgstr[0] ""
 msgstr[1] ""
 
-#. translators: 1: the switch's name, "Visible on site", 2: a product name.
-#. translators: 1: a field's name, such as "SKU", 2: a product name.
 #. translators: 1: the switch's name, "Shown in shop and search", 2: a product name.
+#. translators: 1: a field's name, such as "SKU", 2: a product name.
 #, js-format
 msgid "%1$s, %2$s"
 msgstr ""
 
 #. translators: 1: a product name, 2: what happened or what to do, as a sentence.
 #, js-format
-msgid "We could not change whether %1$s is visible on site, so it is as it was. %2$s"
+msgid "We could not change whether %1$s is shown in the shop and search, so it is as it was. %2$s"
 msgstr ""
 
 msgid "Try again in a moment."
@@ -2749,7 +2973,7 @@ msgstr ""
 
 #. translators: %s: the exact catalogue visibility, such as "Shop only".
 #, js-format
-msgid "Partly visible: %s. Choose on or off to change it."
+msgid "Partly shown: %s. Choose on or off to change it."
 msgstr ""
 
 msgid "in the shop or in search results, not both"
@@ -2758,12 +2982,24 @@ msgstr ""
 msgid "When published"
 msgstr ""
 
-msgid "On site"
-msgstr ""
-
 #. translators: %s: a status such as "Draft".
 #, js-format
 msgid "%s: not on the site until it is published."
+msgstr ""
+
+#. translators: 1: the fields saved, separated by commas, 2: what the Status change did, such as "Switched Off (was Published)".
+#, js-format
+msgid "Saved: %1$s. %2$s."
+msgstr ""
+
+#. translators: %s: the fields saved, separated by commas.
+#, js-format
+msgid "Saved: %s."
+msgstr ""
+
+#. translators: 1: a product name, 2: what happened or what to do, as a sentence.
+#, js-format
+msgid "We could not save the changes to %1$s. %2$s"
 msgstr ""
 
 msgid "No changes recorded yet."
@@ -2792,16 +3028,6 @@ msgstr ""
 msgid "Loading the product…"
 msgstr ""
 
-#. translators: %s: the fields saved, separated by commas.
-#, js-format
-msgid "Saved: %s."
-msgstr ""
-
-#. translators: 1: a product name, 2: what happened or what to do, as a sentence.
-#, js-format
-msgid "We could not save the changes to %1$s. %2$s"
-msgstr ""
-
 msgid "Save"
 msgstr ""
 
@@ -2812,6 +3038,11 @@ msgid "Recent changes"
 msgstr ""
 
 msgid "See history"
+msgstr ""
+
+#. translators: 1: a field's name, 2: a product name, 3: what the change did, such as "Switched Off (was Published)".
+#, js-format
+msgid "%1$s saved for %2$s: %3$s."
 msgstr ""
 
 #. translators: 1: a field's name, 2: a product name.
@@ -3391,10 +3622,10 @@ msgstr ""
 msgid "Saving…"
 msgstr ""
 
-msgid "Show on site"
+msgid "Show in shop and search"
 msgstr ""
 
-msgid "Hide from site"
+msgid "Hide from shop and search"
 msgstr ""
 
 msgid "Make a change to these"
@@ -3627,260 +3858,4 @@ msgid "Bulk Catalogue Manager sections"
 msgstr ""
 
 msgid "History and undo"
-msgstr ""
-
-#. translators: %s: the status saved, such as "Published".
-#, js-format
-msgid "Switched Off (was %s)"
-msgstr ""
-
-#. translators: %s: the status saved again, such as "Private".
-#, js-format
-msgid "Changed by someone else while Off: switched Off again, saving %s"
-msgstr ""
-
-msgid "Already Off"
-msgstr ""
-
-msgid "Already Draft: nothing to save"
-msgstr ""
-
-msgid "Switched back On"
-msgstr ""
-
-#. translators: 1: the status it had before Off, and comes back with, such as "Private".
-#, js-format
-msgid "Was %1$s before Off: comes back %1$s"
-msgstr ""
-
-#. translators: %s: when it is scheduled, such as "4 Oct 2026, 09:30".
-#, js-format
-msgid "Was scheduled before Off: comes back scheduled for %s"
-msgstr ""
-
-msgid "Its scheduled time has passed: this publishes it now"
-msgstr ""
-
-#. translators: %s: when it is scheduled, such as "4 Oct 2026, 09:30".
-#, js-format
-msgid "Not switched Off: stays scheduled for %s"
-msgstr ""
-
-msgid "Not switched Off: this publishes it"
-msgstr ""
-
-msgid "Changed by someone else while Off: left alone"
-msgstr ""
-
-#. translators: %s: the status it keeps, such as "Published".
-#, js-format
-msgid "Changed by someone else while Off: keeps %s, Off record cleared"
-msgstr ""
-
-#. translators: %s: the status saved before Off, such as "Published".
-#, js-format
-msgid "Its saved status (%s) will not be restored"
-msgstr ""
-
-#. translators: %s: a number of products, such as "3".
-#, js-format
-msgid "%s product will be switched Off. Its status is saved, so Published brings it back."
-msgid_plural "%s products will be switched Off. Each one's status is saved, so Published brings it back."
-msgstr[0] ""
-msgstr[1] ""
-
-#. translators: %s: a number of products, such as "3".
-#, js-format
-msgid "%s product was changed by someone else while Off and will be switched Off again."
-msgid_plural "%s products were changed by someone else while Off and will be switched Off again."
-msgstr[0] ""
-msgstr[1] ""
-
-#. translators: %s: a number of products, such as "3".
-#, js-format
-msgid "%s product is already Off."
-msgid_plural "%s products are already Off."
-msgstr[0] ""
-msgstr[1] ""
-
-#. translators: %s: a number of products, such as "3".
-#, js-format
-msgid "%s product is already Draft. Nothing is saved for it."
-msgid_plural "%s products are already Draft. Nothing is saved for them."
-msgstr[0] ""
-msgstr[1] ""
-
-#. translators: %s: a number of products, such as "3".
-#, js-format
-msgid "%s product will be switched back On."
-msgid_plural "%s products will be switched back On."
-msgstr[0] ""
-msgstr[1] ""
-
-#. translators: 1: a number of products, such as "3"; 2: the statuses they get back, such as "2 Private, 1 Pending review".
-#, js-format
-msgid "%1$s product comes back with the status it had before Off, not Published: %2$s."
-msgid_plural "%1$s products come back with the status they had before Off, not Published: %2$s."
-msgstr[0] ""
-msgstr[1] ""
-
-#. translators: %s: a number of products, such as "3".
-#, js-format
-msgid "%s product comes back scheduled."
-msgid_plural "%s products come back scheduled."
-msgstr[0] ""
-msgstr[1] ""
-
-#. translators: %s: a number of products, such as "3".
-#, js-format
-msgid "%s product was scheduled and its time has passed: this publishes it now."
-msgid_plural "%s products were scheduled and their time has passed: this publishes them now."
-msgstr[0] ""
-msgstr[1] ""
-
-#. translators: %s: a number of products, such as "3".
-#, js-format
-msgid "%s product was not switched Off: this publishes it."
-msgid_plural "%s products were not switched Off: this publishes them."
-msgstr[0] ""
-msgstr[1] ""
-
-#. translators: %s: a number of products, such as "3".
-#, js-format
-msgid "%s product was changed by someone else while Off and will be left alone. Choose Keep current status to clear its Off record instead."
-msgid_plural "%s products were changed by someone else while Off and will be left alone. Choose Keep current status to clear their Off record instead."
-msgstr[0] ""
-msgstr[1] ""
-
-#. translators: %s: a number of products, such as "3".
-#, js-format
-msgid "%s product was changed by someone else while Off and will keep its current status."
-msgid_plural "%s products were changed by someone else while Off and will keep their current status."
-msgstr[0] ""
-msgstr[1] ""
-
-#. translators: %s: a number of products, such as "3".
-#, js-format
-msgid "%s product is Off; its saved status will not be restored."
-msgid_plural "%s products are Off; their saved status will not be restored."
-msgstr[0] ""
-msgstr[1] ""
-
-#. translators: %s: a number of variations, such as "6".
-#, js-format
-msgid "%s variation is left as it is: switching On restores only what switching Off saved."
-msgid_plural "%s variations are left as they are: switching On restores only what switching Off saved."
-msgstr[0] ""
-msgstr[1] ""
-
-#. translators: %s: a number of products, such as "3 products".
-#, js-format
-msgid "This switches %s Off: they leave the site for every buyer, and each one's status is saved for switching On."
-msgstr ""
-
-#. translators: 1: a field, such as "Shown in shop and search"; 2: its new value, such as "Hidden"; 3: a number of products, such as "24 products".
-#, js-format
-msgid "This sets %1$s to %2$s on %3$s: they leave the shop and search results, but can still be opened by link and bought. To take them off sale, set Status to Draft."
-msgstr ""
-
-msgid "Off and On"
-msgstr ""
-
-msgid "Changed by someone else while Off"
-msgstr ""
-
-#. translators: 1: a product's name; 2: its status now, such as "Private"; 3: the status saved before Off, such as "Published".
-#, js-format
-msgid "%1$s: now %2$s, saved as %3$s"
-msgstr ""
-
-#. translators: 1: a field's name, 2: a product name, 3: what the change did, such as "Switched Off (was Published)".
-#, js-format
-msgid "%1$s saved for %2$s: %3$s."
-msgstr ""
-
-#. translators: 1: the fields saved, separated by commas, 2: what the Status change did, such as "Switched Off (was Published)".
-#, js-format
-msgid "Saved: %1$s. %2$s."
-msgstr ""
-
-#. translators: %s: the status saved when the product was switched Off, such as "Published".
-#, js-format
-msgid "Off (was %s)"
-msgstr ""
-
-msgid "This product"
-msgstr ""
-
-#. translators: 1: a product name, 2: its status now, such as "Published".
-#, js-format
-msgid "Switch %1$s Off? It leaves the site for every buyer. Its status, %2$s, is saved, so choosing Published later brings it back."
-msgstr ""
-
-#. translators: 1: a product name, 2: its status now, such as "Private".
-#, js-format
-msgid "%1$s was changed by someone else while Off. Switch it Off again? Its status now, %2$s, is saved in place of the one saved before."
-msgstr ""
-
-#. translators: 1: a product name, 2: the status it had before Off, such as "Private".
-#, js-format
-msgid "%1$s was %2$s before it was switched Off, so it comes back %2$s, not Published."
-msgstr ""
-
-#. translators: 1: a product name, 2: when it is scheduled, such as "4 Oct 2026, 09:30".
-#, js-format
-msgid "%1$s was scheduled before it was switched Off, so it comes back scheduled for %2$s."
-msgstr ""
-
-#. translators: %s: a product name.
-#, js-format
-msgid "%s was scheduled before it was switched Off and its time has passed, so this publishes it now."
-msgstr ""
-
-#. translators: %s: a product name.
-#, js-format
-msgid "%s is scheduled and was not switched Off. Published keeps it scheduled until its time, or publishes it now if that has passed."
-msgstr ""
-
-#. translators: 1: a product name, 2: its status now, such as "Draft".
-#, js-format
-msgid "%1$s is %2$s and was not switched Off, so this publishes it: buyers will see it."
-msgstr ""
-
-#. translators: 1: a product name, 2: the status saved before Off, such as "Published", 3: the status chosen, such as "Private".
-#, js-format
-msgid "%1$s has a status saved from before it was switched Off (%2$s). Changing Status to %3$s clears it, so switching On will not bring it back."
-msgstr ""
-
-#. translators: 1: a product name, 2: its status now, such as "Private".
-#, js-format
-msgid "%1$s was changed by someone else while Off, so it was left alone. Choose Keep current status to keep it %2$s and clear its Off record."
-msgstr ""
-
-msgid "Switch Off"
-msgstr ""
-
-msgid "Switch On"
-msgstr ""
-
-msgid "Keep current status"
-msgstr ""
-
-msgid "Change status"
-msgstr ""
-
-#. translators: 1: a product name, 2: what happened or what to do, as a sentence.
-#, js-format
-msgid "We could not change whether %1$s is shown in the shop and search, so it is as it was. %2$s"
-msgstr ""
-
-#. translators: %s: the exact catalogue visibility, such as "Shop only".
-#, js-format
-msgid "Partly shown: %s. Choose on or off to change it."
-msgstr ""
-
-msgid "Show in shop and search"
-msgstr ""
-
-msgid "Hide from shop and search"
 msgstr ""

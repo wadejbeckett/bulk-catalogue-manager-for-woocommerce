@@ -35,17 +35,41 @@ defined( 'ABSPATH' ) || exit;
  *
  * WordPress also counts every hook name it fires, for the life of the
  * process (`$wp_actions` for did_action(), `$wp_filters` for did_filter()),
- * and WooCommerce's product save clears transients named after the product
- * (`delete_transient_wc_var_prices_{id}` and four more, plus the
- * `delete_option_…` and `pre_transient_…` names of those that exist), so
- * one queue run kept about 250 to 375 new names a chunk of 50: +34 MB over
- * 401 Hide chunks (T85; ticket 11). A chunk marks the counters when it
- * starts (mark()) and release( $mark ) forgets the names first counted
- * since that end in a number — per-object names, never asked about again —
- * and nothing else: every name counted before the chunk, and every other
- * new name, keeps its count.
+ * and WooCommerce's product save reads, sets and clears the five transients
+ * named after the product (wc_delete_product_transients():
+ * `wc_product_children_{id}`, `wc_var_prices_{id}`, `wc_related_{id}`,
+ * `wc_child_has_weight_{id}`, `wc_child_has_dimensions_{id}`), each through
+ * hooks named after the transient, so one queue run kept about 250 to 375
+ * new names a chunk of 50: +34 MB over 400 Hide chunks (T85; ticket 11).
+ * A chunk marks the counters when it starts (mark()) and release( $mark )
+ * forgets, of the names first counted since, only those per_product()
+ * recognises: one of the hook families measured on the scale fixture
+ * (Hide, Show, a price change with variations; TRANSIENT_HOOKS,
+ * OPTION_HOOKS), over one of those five transients, then the product id.
+ * Every other name — another plugin's `my_sync_77` too — keeps its count;
+ * callbacks ($wp_filter) and the hook stack ($wp_current_filter) are
+ * never touched. ChunkRunner calls it at the end of every chunk, whichever
+ * runner runs the chunk: WP-CLI, WP-Cron, Action Scheduler's async request
+ * runner or the Scheduled Actions screen's Run link.
  */
 final class Memory {
+	/**
+	 * The transient API's hooks named after a transient, as measured.
+	 */
+	private const TRANSIENT_HOOKS = [ 'delete_transient_', 'pre_transient_', 'transient_', 'pre_set_transient_', 'expiration_of_transient_', 'set_transient_' ];
+
+	/**
+	 * The options API's hooks named after an option, as measured for a
+	 * transient's `_transient_…` and `_transient_timeout_…` options.
+	 */
+	private const OPTION_HOOKS = [ 'pre_option_', 'default_option_', 'sanitize_option_', 'add_option_', 'delete_option_' ];
+
+	/**
+	 * The transients WooCommerce names after a product
+	 * (wc_delete_product_transients()); the product id follows.
+	 */
+	private const PRODUCT_TRANSIENTS = [ 'wc_product_children_', 'wc_var_prices_', 'wc_related_', 'wc_child_has_weight_', 'wc_child_has_dimensions_' ];
+
 	/**
 	 * Start the next page of objects.
 	 *
@@ -99,9 +123,26 @@ final class Memory {
 	}
 
 	/**
-	 * Forget the names a hook counter gained after its first $from, where
-	 * they end in a number: an array keeps its keys in the order they were
-	 * added, so those are the names first counted since the mark.
+	 * Whether a hook name is one of the measured per-product transient
+	 * hooks: a TRANSIENT_HOOKS family over a PRODUCT_TRANSIENTS name, or an
+	 * OPTION_HOOKS family over its `_transient_` or `_transient_timeout_`
+	 * option, then the product id and nothing else.
+	 *
+	 * @param string $name Hook name.
+	 */
+	public static function per_product( string $name ): bool {
+		static $pattern = null;
+		if ( null === $pattern ) {
+			$quote   = static fn( array $items ): string => implode( '|', array_map( static fn( string $item ): string => preg_quote( $item, '/' ), $items ) );
+			$pattern = '/^(?:(?:' . $quote( self::TRANSIENT_HOOKS ) . ')|(?:' . $quote( self::OPTION_HOOKS ) . ')_transient_(?:timeout_)?)(?:' . $quote( self::PRODUCT_TRANSIENTS ) . ')[0-9]+$/D';
+		}
+		return 1 === preg_match( $pattern, $name );
+	}
+
+	/**
+	 * Forget the per-product names a hook counter gained after its first
+	 * $from: an array keeps its keys in the order they were added, so those
+	 * are the names first counted since the mark.
 	 *
 	 * @param string $counter `wp_actions` or `wp_filters`.
 	 * @param int    $from    How many names it held at the mark.
@@ -111,8 +152,8 @@ final class Memory {
 			return;
 		}
 		foreach ( array_keys( array_slice( $GLOBALS[ $counter ], $from, null, true ) ) as $name ) {
-			if ( 1 === preg_match( '/\d$/', (string) $name ) ) {
-				// Only a name first counted during the chunk, never asked about again; WordPress's own counter.
+			if ( self::per_product( (string) $name ) ) {
+				// A per-product transient's hook first counted during the chunk; only WordPress's counter, never its callbacks.
 				unset( $GLOBALS[ $counter ][ $name ] );
 			}
 		}

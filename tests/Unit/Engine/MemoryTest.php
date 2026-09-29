@@ -6,7 +6,10 @@
  * transients named after the product (delete_transient_wc_var_prices_{id},
  * …), so a single `wp action-scheduler run` kept about 250 new names per
  * chunk of 50 products, for ever. Memory::release( $mark ) forgets the
- * per-object names first counted since the mark, and nothing else.
+ * per-product transient hook names first counted since the mark, and
+ * nothing else: only the families measured (Main Build's review), never
+ * another plugin's name that happens to end in a number, never a callback,
+ * never the hook stack.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -29,7 +32,7 @@ final class MemoryTest extends TestCase {
 
 	protected function setUp(): void {
 		bulkcat_test_reset();
-		foreach ( [ 'wp_actions', 'wp_filters' ] as $name ) {
+		foreach ( [ 'wp_actions', 'wp_filters', 'wp_filter', 'wp_current_filter' ] as $name ) {
 			$this->saved[ $name ] = $GLOBALS[ $name ] ?? null;
 		}
 	}
@@ -94,6 +97,72 @@ final class MemoryTest extends TestCase {
 			$GLOBALS['wp_filters']
 		);
 		$this->assertSame( 1, self::flushes(), 'The runtime cache is released too.' );
+	}
+
+	public function test_another_plugins_names_ending_in_a_number_keep_their_counts(): void {
+		$GLOBALS['wp_actions'] = [ 'init' => 1 ];
+		$GLOBALS['wp_filters'] = [];
+		$mark                  = Memory::mark();
+		$kept                  = [
+			'my_sync_77'                               => 1, // Another plugin's own did_action( 'my_sync_77' ).
+			'delete_transient_my_cache_77'             => 2, // Another plugin's transient.
+			'delete_transient_wc_admin_report_12'      => 1, // A WooCommerce transient that is not per product.
+			'delete_transient_wc_var_prices_12x'       => 1, // Not a product id.
+			'delete_transient_wc_var_prices_'          => 1, // No id at all.
+			'woocommerce_order_status_changed_5'       => 1,
+			'xdelete_transient_wc_var_prices_12'       => 1, // Not the family's own prefix.
+			'update_option__transient_wc_var_prices_9' => 1, // A family that was not measured.
+		];
+		foreach ( $kept as $name => $count ) {
+			$GLOBALS['wp_actions'][ $name ] = $count;
+		}
+		$GLOBALS['wp_filters']['my_filter_2024']                      = 3;
+		$GLOBALS['wp_actions']['delete_transient_wc_var_prices_12']   = 1;
+		$GLOBALS['wp_filters']['pre_option__transient_wc_related_12'] = 1;
+
+		Memory::release( $mark );
+
+		$this->assertSame( [ 'init' => 1 ] + $kept, $GLOBALS['wp_actions'], 'Only the per-product transient name goes.' );
+		$this->assertSame( [ 'my_filter_2024' => 3 ], $GLOBALS['wp_filters'] );
+	}
+
+	public function test_callbacks_and_the_hook_stack_are_untouched(): void {
+		$GLOBALS['wp_actions']        = [];
+		$GLOBALS['wp_filters']        = [];
+		$GLOBALS['wp_filter']         = [
+			'delete_transient_wc_var_prices_101' => 'callbacks for the per-product hook',
+			'my_sync_77'                         => 'callbacks for another plugin',
+		];
+		$GLOBALS['wp_current_filter'] = [ 'action_scheduler_run_queue', 'bulkcat_run_chunk' ];
+		$callbacks                    = $GLOBALS['wp_filter'];
+		$stack                        = $GLOBALS['wp_current_filter'];
+		add_action( 'delete_transient_wc_var_prices_101', 'strlen' );
+		$registered = $GLOBALS['bulkcat_test']['filters'];
+		$mark       = Memory::mark();
+		$GLOBALS['wp_actions']['delete_transient_wc_var_prices_101'] = 1;
+		$GLOBALS['wp_actions']['my_sync_77']                         = 1;
+
+		Memory::release( $mark );
+
+		$this->assertSame( [ 'my_sync_77' => 1 ], $GLOBALS['wp_actions'] );
+		$this->assertSame( $callbacks, $GLOBALS['wp_filter'], 'Callbacks stay registered, the per-product hook\'s too.' );
+		$this->assertSame( $registered, $GLOBALS['bulkcat_test']['filters'] );
+		$this->assertSame( $stack, $GLOBALS['wp_current_filter'], 'The hook stack is untouched.' );
+	}
+
+	public function test_the_measured_families_are_listed(): void {
+		// Measured on the scale fixture (ticket 11): Hide, Show and a price change with variations.
+		foreach ( [ 'wc_product_children_', 'wc_var_prices_', 'wc_related_', 'wc_child_has_weight_', 'wc_child_has_dimensions_' ] as $transient ) {
+			foreach ( [ 'delete_transient_', 'pre_transient_', 'transient_', 'pre_set_transient_', 'expiration_of_transient_', 'set_transient_' ] as $family ) {
+				$this->assertTrue( Memory::per_product( $family . $transient . '4711' ), $family . $transient );
+			}
+			foreach ( [ 'pre_option_', 'default_option_', 'sanitize_option_', 'add_option_', 'delete_option_' ] as $family ) {
+				$this->assertTrue( Memory::per_product( $family . '_transient_' . $transient . '4711' ), $family . '_transient_' . $transient );
+				$this->assertTrue( Memory::per_product( $family . '_transient_timeout_' . $transient . '4711' ), $family . '_transient_timeout_' . $transient );
+			}
+		}
+		$this->assertFalse( Memory::per_product( 'my_sync_77' ) );
+		$this->assertFalse( Memory::per_product( 'delete_transient_wc_var_prices_' ) );
 	}
 
 	public function test_a_chunk_after_chunk_keeps_the_counters_flat(): void {

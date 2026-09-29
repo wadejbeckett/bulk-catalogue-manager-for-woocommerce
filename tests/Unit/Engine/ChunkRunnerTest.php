@@ -271,31 +271,42 @@ final class ChunkRunnerTest extends TestCase {
 						$GLOBALS['wp_actions'][ 'delete_transient_wc_var_prices_' . $id ] = 1;
 						$GLOBALS['wp_filters'][ 'pre_transient_wc_related_' . $id ]       = 1;
 						$GLOBALS['wp_actions']['woocommerce_update_product']              = ( $GLOBALS['wp_actions']['woocommerce_update_product'] ?? 0 ) + 1;
+						// Another plugin hooked to the save counts a name of its own: it keeps its count (Main Build's review).
+						$GLOBALS['wp_actions'][ 'my_sync_' . $id ] = 1;
 					}
 				);
 			}
 			$store = new RunnerStore( self::BATCH, $ids, $this->increase(), self::USER );
 
+			$sync   = static fn( int $count ): array => array_fill_keys( array_map( static fn( int $id ): string => 'my_sync_' . $id, array_slice( $ids, 0, $count ) ), 1 );
+			$sorted = static function ( array $names ): array {
+				ksort( $names );
+				return $names;
+			};
 			$this->runner()->run( self::BATCH );
 			$this->assertSame(
-				[
-					'init'                       => 1,
-					'delete_transient_wc_7'      => 1,
-					'woocommerce_update_product' => 50,
-				],
-				$GLOBALS['wp_actions'],
-				'The chunk\'s 50 per-product names are forgotten; the rest keep their counts.'
+				$sorted(
+					[
+						'init'                       => 1,
+						'delete_transient_wc_7'      => 1,
+						'woocommerce_update_product' => 50,
+					] + $sync( 50 )
+				),
+				$sorted( $GLOBALS['wp_actions'] ),
+				'The chunk\'s 50 per-product transient names are forgotten; every other name keeps its count.'
 			);
 			$this->assertSame( [ 'the_title' => 1 ], $GLOBALS['wp_filters'] );
 			$this->runner()->run( self::BATCH );
 			$this->assertSame(
-				[
-					'init'                       => 1,
-					'delete_transient_wc_7'      => 1,
-					'woocommerce_update_product' => 60,
-				],
-				$GLOBALS['wp_actions'],
-				'Flat across chunks.'
+				$sorted(
+					[
+						'init'                       => 1,
+						'delete_transient_wc_7'      => 1,
+						'woocommerce_update_product' => 60,
+					] + $sync( 60 )
+				),
+				$sorted( $GLOBALS['wp_actions'] ),
+				'Flat across chunks, but for the other plugin\'s own names.'
 			);
 			$this->assertSame( 'complete', $store->batch()['status'] );
 		} finally {

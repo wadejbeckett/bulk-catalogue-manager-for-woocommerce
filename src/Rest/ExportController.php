@@ -517,7 +517,9 @@ final class ExportController implements ReadController {
 
 	/**
 	 * `rest_pre_serve_request`: stream an export's CSV in place of JSON.
-	 * Anything else passes through untouched.
+	 * Anything else passes through untouched. A failure after streaming has
+	 * begun stops the file where it is and is written to the WooCommerce log
+	 * (Main Build L1): it never reaches the body.
 	 *
 	 * @param mixed $served  Whether the request has been served.
 	 * @param mixed $result  The response.
@@ -545,7 +547,19 @@ final class ExportController implements ReadController {
 			// A large export can outlast a host's 30-second limit (ticket 10, amendment 7); lifted where the host allows.
 			wc_set_time_limit( 0 );
 		}
-		$export->stream( $stream );
+		try {
+			$export->stream( $stream );
+		} catch ( \Throwable $error ) {
+			// The headers and part of the file are already sent, so no refusal can follow. Stop writing,
+			// and keep the error out of the body: left to escape, it would bring WordPress's
+			// critical-error page into a cut-off CSV. The WooCommerce log says what happened.
+			if ( function_exists( 'wc_get_logger' ) ) {
+				wc_get_logger()->error(
+					sprintf( 'The export stopped after it had started: %s: %s (%s:%d)', get_class( $error ), $error->getMessage(), $error->getFile(), $error->getLine() ),
+					[ 'source' => Refusal::LOG_SOURCE ]
+				);
+			}
+		}
 		return true;
 	}
 

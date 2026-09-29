@@ -69,6 +69,7 @@ export const TONES = {
 	instock: 'good',
 	onbackorder: 'warn',
 	outofstock: 'bad',
+	changed_outside: 'warn', // Status: switched Off, then changed elsewhere (T92).
 };
 
 /** Properties every row carries besides its fields (RouteSchema::row_extras()). */

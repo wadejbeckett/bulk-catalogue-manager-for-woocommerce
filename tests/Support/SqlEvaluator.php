@@ -10,7 +10,7 @@
  * COUNT(*) and COUNT(DISTINCT x); FROM one table with INNER and LEFT JOINs;
  * WHERE with AND, OR, NOT, =, <>, !=, <, <=, >, >=, [NOT] IN, [NOT] LIKE
  * (backslash escapes), IS [NOT] NULL, EXISTS and scalar sub-queries
- * (correlated), CASE WHEN; GROUP BY; ORDER BY with ASC/DESC; LIMIT and
+ * (correlated), CASE WHEN, CONCAT (NULL when any part is); GROUP BY; ORDER BY with ASC/DESC; LIMIT and
  * OFFSET; an optimiser hint comment (opening slash, star, plus) is read
  * past. It follows MySQL where the answer depends on it: three-valued logic
  * with NULL, NULL sorting first ascending, numbers compared as numbers, text
@@ -42,7 +42,7 @@ if ( ! class_exists( SqlEvaluator::class ) ) {
 		 */
 		public const PAGE = '/^SELECT (\/\*\+ [^*]*\*\/ )?p\.ID AS id, p\.post_parent AS parent_id/';
 
-		private const KEYWORDS = [ 'SELECT', 'FROM', 'AS', 'LEFT', 'INNER', 'JOIN', 'ON', 'WHERE', 'AND', 'OR', 'NOT', 'IN', 'IS', 'NULL', 'LIKE', 'EXISTS', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'ORDER', 'BY', 'ASC', 'DESC', 'LIMIT', 'OFFSET', 'GROUP', 'COUNT', 'DISTINCT' ];
+		private const KEYWORDS = [ 'SELECT', 'FROM', 'AS', 'LEFT', 'INNER', 'JOIN', 'ON', 'WHERE', 'AND', 'OR', 'NOT', 'IN', 'IS', 'NULL', 'LIKE', 'EXISTS', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'ORDER', 'BY', 'ASC', 'DESC', 'LIMIT', 'OFFSET', 'GROUP', 'COUNT', 'DISTINCT', 'CONCAT' ];
 
 		/**
 		 * Tokens of the statement being parsed: [ kind, value ].
@@ -312,6 +312,16 @@ if ( ! class_exists( SqlEvaluator::class ) ) {
 				$this->expect( 'op', ')' );
 				return [ 'count', $expr ];
 			}
+			if ( $this->accept( 'keyword', 'CONCAT' ) ) {
+				// T92: the Off filter's own-record prefix, CONCAT( text, p.ID, text ).
+				$this->expect( 'op', '(' );
+				$parts = [];
+				do {
+					$parts[] = $this->operand();
+				} while ( $this->accept( 'op', ',' ) );
+				$this->expect( 'op', ')' );
+				return [ 'concat', $parts ];
+			}
 			if ( $this->accept( 'keyword', 'CASE' ) ) {
 				$cases = [];
 				while ( $this->accept( 'keyword', 'WHEN' ) ) {
@@ -529,6 +539,16 @@ if ( ! class_exists( SqlEvaluator::class ) ) {
 					}
 					$matches = 1 === preg_match( self::like( (string) $pattern ), (string) $value );
 					return $expr[3] ? ! $matches : $matches;
+				case 'concat':
+					$text = '';
+					foreach ( $expr[1] as $part ) {
+						$value = $this->evaluate( $part, $context );
+						if ( null === $value ) {
+							return null;
+						}
+						$text .= (string) $value;
+					}
+					return $text;
 				case 'exists':
 					return [] !== $this->run( $expr[1], $context );
 				case 'scalar':

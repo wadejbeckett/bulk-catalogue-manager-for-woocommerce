@@ -94,6 +94,19 @@ const TABLE = [
 		{ operator: 'isNone', value: [ 'draft', 'pending' ] },
 		'Status is not Draft or Pending review',
 	],
+	// T92 (SPEC §4.1, §5.5): Off and Changed outside this screen are values of the one Status filter.
+	[
+		'status',
+		{ operator: 'isAny', value: [ 'off' ] },
+		{ operator: 'isAny', value: [ 'off' ] },
+		'Status is Off',
+	],
+	[
+		'status',
+		{ operator: 'isAny', value: [ 'draft', 'changed_outside' ] },
+		{ operator: 'isAny', value: [ 'draft', 'changed_outside' ] },
+		'Status is Draft or Changed outside this screen',
+	],
 	[
 		'catalog_visibility',
 		{ operator: 'isAny', value: [ 'hidden' ] },
@@ -313,6 +326,20 @@ describe( 'filters offered through DataViews', () => {
 			'isNone',
 		] );
 		expect( field( 'stock_status' ).elements ).toHaveLength( 3 );
+		// T92: the Status filter offers Off and Changed outside this screen, never a choice to write.
+		expect( field( 'status' ).elements ).toEqual( [
+			{ value: 'publish', label: 'Published' },
+			{ value: 'draft', label: 'Draft' },
+			{ value: 'pending', label: 'Pending review' },
+			{ value: 'private', label: 'Private' },
+			{ value: 'off', label: 'Off' },
+			{ value: 'changed_outside', label: 'Changed outside this screen' },
+		] );
+		expect(
+			descriptors
+				.find( ( each ) => each.switchesOffOn )
+				.choices.map( ( choice ) => choice.value )
+		).not.toContain( 'off' );
 		expect( field( 'featured' ).elements.map( ( e ) => e.value ) ).toEqual(
 			[ true, false ]
 		);

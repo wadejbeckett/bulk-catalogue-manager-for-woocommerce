@@ -146,6 +146,16 @@ final class OffRecord {
 	}
 
 	/**
+	 * A product's own record read from the post meta cache (the grid's
+	 * Hydrator primes it for the page), or null.
+	 *
+	 * @param int $id Product id.
+	 */
+	public static function of_post( int $id ): ?self {
+		return self::parse( get_post_meta( $id, self::META_KEY, true ), $id );
+	}
+
+	/**
 	 * Whatever the product's meta holds under the key, readable or not.
 	 *
 	 * @param object $product A WooCommerce product.

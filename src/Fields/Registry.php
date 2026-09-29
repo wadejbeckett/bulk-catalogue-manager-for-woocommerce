@@ -269,11 +269,16 @@ final class Registry {
 				],
 				variation_choices: [ 'publish', 'private' ],
 				variation_note: __( 'A variation can only be published or private.', 'bulk-catalogue-manager-for-woocommerce' ),
+				inline: true,
 				filter_operators: [ 'isAny', 'isNone' ],
 				default_order: 5,
 				hiding_choices: [
 					'draft'   => Field::HIDES_OFF_SITE,
 					'pending' => Field::HIDES_OFF_SITE,
+				],
+				filter_choices: [
+					'off'             => __( 'Off', 'bulk-catalogue-manager-for-woocommerce' ),
+					'changed_outside' => __( 'Changed outside this screen', 'bulk-catalogue-manager-for-woocommerce' ),
 				]
 			),
 			new Field(

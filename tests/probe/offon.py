@@ -649,4 +649,101 @@ def check_preview(p: Any) -> None:
         guard(p, name, fn)
 
 
-CHECKS = [check_engine, check_undo, check_preview]
+# ---------------------------------------------------------------------------
+# T92: the grid - Status is the control (E3, E4 display and filter, E6)
+# ---------------------------------------------------------------------------
+
+def patch(p: Any, pid: int, body: dict, fields: list[str] | None = None) -> dict:
+    """PATCH /products/{id} as the grid's cell or drawer sends it: {status, json}."""
+    params = [("fields[]", f) for f in (fields or [])]
+    reply = p.http("manager", "PATCH", f"/products/{pid}", params=params or None, body=body)
+    return {"status": reply.status, "json": reply.json() or {}}
+
+
+def listed(p: Any, value: list[str], operator: str = "isAny", extra: dict | None = None) -> dict:
+    """GET /products filtered on Status: {ids, total, items}."""
+    params: list[tuple[str, str]] = [("search", SKU), ("per_page", "100"), ("status[operator]", operator), ("fields[]", "name"), ("fields[]", "status")]
+    params += [("status[value][]", v) for v in value]
+    params += list((extra or {}).items())
+    reply = p.http("manager", "GET", "/products", params=params)
+    data = reply.json() or {}
+    items = data.get("items") or []
+    return {"ids": [i.get("id") for i in items], "total": (data.get("pagination") or {}).get("total"), "items": items, "status": reply.status}
+
+
+def generic(rows: list[list], pid: int) -> list[list]:
+    """Journal rows with the product id, and the record's time and batch, made generic."""
+    def value(v: Any) -> Any:
+        rec = own_record(v, pid) if isinstance(v, str) and v.startswith("{") else None
+        return {**rec, "id": "ID", "at": "AT", "batch": "B"} if rec else v
+    return [[r[1], value(r[2]), value(r[3]), r[4]] for r in rows if r[0] == pid]
+
+
+# The fields the drawer asks the answer to carry: every field of the row.
+DRAWER_FIELDS = ["name", "sku", "status", "catalog_visibility", "regular_price", "sale_price", "stock_status", "category_ids"]
+
+
+def check_grid(p: Any) -> None:
+    def paths() -> None:
+        fx = upsert(p, [simple("e3-inline"), simple("e3-drawer"), simple("e3-bulk")])
+        a, b, c = fx["e3-inline"]["id"], fx["e3-drawer"]["id"], fx["e3-bulk"]["id"]
+        out: dict[str, list] = {}
+        for step in ("draft", "publish"):
+            inline = patch(p, a, {"status": step}, ["name", "status"])
+            drawer = patch(p, b, {"status": step}, DRAWER_FIELDS)
+            bulk = switch(p, [c], step)
+            if inline["status"] != 200 or drawer["status"] != 200:
+                raise AssertionError(f"PATCH {inline['status']}/{drawer['status']}: {inline['json']} {drawer['json']}")
+            out[step] = [generic(journal(p, inline["json"]["batch_id"]), a), generic(journal(p, drawer["json"]["batch_id"]), b), generic(journal(p, bulk["batch"]), c)]
+        same = all(rows[0] == rows[1] == rows[2] and len(rows[0]) == 2 for rows in out.values())
+        fields = [r[0] for r in out["draft"][0]]
+        end = statuses(p, [a, b, c])
+        ok = same and fields == ["status", "availability_off"] and set(end.values()) == {"publish"} and all(record(p, x) == "" for x in (a, b, c))
+        row(p, "e3-paths-identical", ok, f"inline PATCH, drawer PATCH and bulk batch: Off rows identical {out['draft'][0] == out['draft'][1] == out['draft'][2]}, On rows identical {out['publish'][0] == out['publish'][1] == out['publish'][2]} (fields {fields}); all back to {sorted(set(end.values()))} with no record")
+
+    def filter_and_display() -> None:
+        fx = upsert(p, [simple("e4-off"), simple("e4-outside"), simple("e4-draft", "draft"), simple("e4-plain")])
+        off, outside, draft, plain = (fx[k]["id"] for k in ("e4-off", "e4-outside", "e4-draft", "e4-plain"))
+        switch(p, [off, outside], "draft")
+        set_status_outside(p, outside, "private")
+        found = {v: set(listed(p, [v])["ids"]) for v in ("off", "changed_outside", "draft", "publish", "private")}
+        none_off = set(listed(p, ["off"], "isNone")["ids"])
+        mine = {off, outside, draft, plain}
+        rows = {i["id"]: i for i in listed(p, ["off", "changed_outside", "draft", "publish"])["items"]}
+        state = {k: (rows.get(v, {}).get("off_state") or {}) for k, v in (("off", off), ("outside", outside))}
+        ok = (found["off"] & mine == {off} and found["changed_outside"] & mine == {outside} and found["draft"] & mine == {draft}
+              and found["private"] & mine == {outside} and found["publish"] & mine == {plain} and off not in none_off and {outside, draft, plain} <= none_off
+              and state["off"].get("state") == "off" and state["off"].get("saved_label") == "Published"
+              and state["outside"].get("state") == "changed_outside" and rows.get(plain, {}).get("off_state") is None)
+        row(p, "e4-filter", ok, f"Off finds {sorted(found['off'] & mine) == [off]}, Changed outside finds {sorted(found['changed_outside'] & mine) == [outside]}, Draft finds only the genuine draft {sorted(found['draft'] & mine) == [draft]}, none of Off excludes it {off not in none_off}; off_state {state['off'].get('state')}/{state['off'].get('saved_label')} and {state['outside'].get('state')}")
+
+    def listed_editable() -> None:
+        fx = upsert(p, [simple("e6-off")])
+        pid = fx["e6-off"]["id"]
+        switch(p, [pid], "draft")
+        raw = record(p, pid)
+        default = p.http("manager", "GET", "/products", params=[("search", SKU + "e6-off"), ("fields[]", "status")]).json() or {}
+        shown = [i for i in (default.get("items") or []) if i.get("id") == pid]
+        edit = patch(p, pid, {"regular_price": "12"}, ["regular_price", "status"])
+        after = snap(p, [pid])[str(pid)]
+        ok = (len(shown) == 1 and shown[0].get("status") == "draft" and edit["status"] == 200 and edit["json"].get("status") == "complete"
+              and float(after["regular_price"]) == 12.0 and after["status"] == "draft" and record(p, pid) == raw)
+        row(p, "e6-listed-editable", ok, f"an Off product is listed ({len(shown)} row, status {shown[0].get('status') if shown else None}) and editable: price PATCH {edit['status']} {edit['json'].get('status')}, price {after['regular_price']}, still {after['status']}, record kept {record(p, pid) == raw}")
+
+    def count_cache() -> None:
+        fx = upsert(p, [simple("cc-one"), simple("cc-two")])
+        one, two = fx["cc-one"]["id"], fx["cc-two"]["id"]
+        before = listed(p, ["off"])["total"]
+        again = listed(p, ["off"])["total"]
+        made = patch(p, one, {"status": "draft"}, ["status"])
+        after = listed(p, ["off"])["total"]
+        back = patch(p, one, {"status": "publish"}, ["status"])
+        final = listed(p, ["off"])["total"]
+        ok = (made["status"] == 200 and back["status"] == 200 and isinstance(before, int) and before == again and after == before + 1 and final == before and two)
+        row(p, "count-cache", ok, f"Off filter count {before} (cached read {again}), right after an inline Off {after}, after On {final}")
+
+    for name, fn in [("e3-paths-identical", paths), ("e4-filter", filter_and_display), ("e6-listed-editable", listed_editable), ("count-cache", count_cache)]:
+        guard(p, name, fn)
+
+
+CHECKS = [check_engine, check_undo, check_preview, check_grid]

@@ -112,7 +112,7 @@ final class Criteria {
 	 * Filterable fields (SPEC §4.1): field key => [ value kind, operators, choices or slug pattern ].
 	 */
 	public const FILTERS = [
-		'status'             => [ self::CHOICES, self::LIST, [ 'publish', 'draft', 'pending', 'private' ] ],
+		'status'             => [ self::CHOICES, self::LIST, [ 'publish', 'draft', 'pending', 'private', 'off', 'changed_outside' ] ],
 		'catalog_visibility' => [ self::CHOICES, self::LIST, [ 'visible', 'catalog', 'search', 'hidden' ] ],
 		'featured'           => [ self::BOOL, [ 'is' ], null ],
 		'category_ids'       => [ self::TERM_IDS, [ 'isAny', 'isNone', 'isAll' ], null ],

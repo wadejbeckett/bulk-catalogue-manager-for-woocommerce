@@ -195,6 +195,7 @@ final class Field {
 	 * @param int                                    $default_order          Its place among the grid's default columns after the product cell (T40, SPEC §4.1), from 1; 0 when it is not shown by default.
 	 * @param array<string, string>                  $hiding_choices         For an enum, the choices that take a product out of the shopper's sight when set, value => HIDES_OFF_SITE or HIDES_FROM_SHOP (SPEC §4.5, §5.3).
 	 * @param bool                                   $internal               Whether the field is internal (T88): resolved by key for the journal, preview, writer and undo, but never a column, filter, sort, bulk panel field, route argument or public action's field.
+	 * @param array<string, string>                  $filter_choices         For a filterable enum, values its filter also takes that are never written, value => label (T92: Status's Off and Changed outside this screen); never in choices(), writable_choices() or the REST enum.
 	 * @throws \InvalidArgumentException When the description is inconsistent.
 	 */
 	public function __construct(
@@ -225,7 +226,8 @@ final class Field {
 		private readonly string $group = '',
 		private readonly int $default_order = 0,
 		private readonly array $hiding_choices = [],
-		private readonly bool $internal = false
+		private readonly bool $internal = false,
+		private readonly array $filter_choices = []
 	) {
 		$problem = match ( true ) {
 			1 !== preg_match( '/^[a-z][a-z0-9_]{0,63}$/', $key ) => 'its key is not a lower-case field key',
@@ -245,6 +247,7 @@ final class Field {
 			is_array( $choices ) && [] !== array_diff( array_keys( $hiding_choices ), array_map( 'strval', array_keys( $choices ) ) ) => 'a choice that hides a product is not one of its choices',
 			self::PER_VARIATION !== $variation_rule && self::CONDITIONAL !== $variation_rule && [] !== $edit_kinds && '' === $variation_note => 'it needs a note saying why a variation cannot take it',
 			$internal && ( '' !== $group || 0 < $default_order || [] !== $filter_operators || $inline || $sortable ) => 'an internal field has no group, default column, filter, sort or inline edit',
+			[] !== $filter_choices && ( self::ENUM !== $type || [] === $filter_operators ) => 'only a filterable field of choices takes filter-only choices',
 			default                                                => '',
 		};
 		if ( '' !== $problem ) {
@@ -432,6 +435,16 @@ final class Field {
 			}
 		}
 		return $this->resolved_choices;
+	}
+
+	/**
+	 * Values the field's filter takes besides its choices, value => label
+	 * (T92): never a choice, never written.
+	 *
+	 * @return array<string, string>
+	 */
+	public function filter_choices(): array {
+		return $this->filter_choices;
 	}
 
 	/**
@@ -754,7 +767,7 @@ final class Field {
 			'filterBy'      => [] === $this->filter_operators ? false : [ 'operators' => $this->filter_operators ],
 		];
 		if ( self::ENUM === $this->type ) {
-			$definition['elements'] = self::elements( $this->choices() );
+			$definition['elements'] = self::elements( $this->choices() + $this->filter_choices );
 		}
 		return $definition;
 	}

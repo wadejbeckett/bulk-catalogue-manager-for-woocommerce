@@ -130,18 +130,21 @@ export function useEditScope( {
 	 * Write values to a row: pending until the answer, whose item replaces
 	 * the row. Rejects with the refusal, leaving the row as it was.
 	 *
-	 * @param {Object}        item   Row.
-	 * @param {Object}        values Field key => value.
-	 * @param {Array<string>} extra  Further fields the answer should carry.
+	 * @param {Object}        item         Row.
+	 * @param {Object}        values       Field key => value.
+	 * @param {Array<string>} extra        Further fields the answer should carry.
+	 * @param {Object}        options      Options.
+	 * @param {boolean}       options.keep Keep current status (T92, SPEC §5.5).
 	 * @return {Promise<Object>} The answer.
 	 */
 	const commit = useCallback(
-		( item, values, extra = [] ) => {
+		( item, values, extra = [], options = {} ) => {
 			mark( item.id, true );
 			return patchProduct(
 				item.id,
 				values,
-				rowFields( item, descriptors, extra )
+				rowFields( item, descriptors, extra ),
+				options
 			)
 				.then( ( answer ) => {
 					replace( answer?.item );

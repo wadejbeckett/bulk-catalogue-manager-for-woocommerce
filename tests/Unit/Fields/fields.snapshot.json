@@ -45,7 +45,7 @@
             "type": "enum",
             "readOnly": false,
             "nullable": false,
-            "inline": false,
+            "inline": true,
             "editKinds": [
                 "set"
             ],
@@ -99,6 +99,14 @@
                     {
                         "value": "private",
                         "label": "Private"
+                    },
+                    {
+                        "value": "off",
+                        "label": "Off"
+                    },
+                    {
+                        "value": "changed_outside",
+                        "label": "Changed outside this screen"
                     }
                 ]
             },

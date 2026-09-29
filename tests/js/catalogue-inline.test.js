@@ -44,6 +44,52 @@ const ITEMS = [
 		type: 'variable',
 		regular_price: '',
 	},
+	// T92: products switched Off through Status, one changed elsewhere since.
+	{
+		...ROWS[ 0 ],
+		id: 14,
+		name: 'Wool Beanie',
+		sku: 'BNE-140',
+		type: 'simple',
+		status: 'draft',
+		off_state: {
+			state: 'off',
+			saved: 'private',
+			saved_label: 'Private',
+			switched_off_gmt: '2026-09-28 14:03:11',
+			batch_id: 418,
+		},
+	},
+	{
+		...ROWS[ 0 ],
+		id: 15,
+		name: 'Rain Jacket',
+		sku: 'JKT-150',
+		type: 'simple',
+		status: 'private',
+		off_state: {
+			state: 'changed_outside',
+			saved: 'publish',
+			saved_label: 'Published',
+			switched_off_gmt: '2026-09-28 14:03:11',
+			batch_id: 418,
+		},
+	},
+	{
+		...ROWS[ 0 ],
+		id: 16,
+		name: 'Sun Hat',
+		sku: 'HAT-160',
+		type: 'simple',
+		status: 'draft',
+		off_state: {
+			state: 'off',
+			saved: 'publish',
+			saved_label: 'Published',
+			switched_off_gmt: '2026-09-28 14:03:11',
+			batch_id: 418,
+		},
+	},
 ];
 
 let patch;
@@ -240,5 +286,241 @@ describe( 'inline cell editing', () => {
 			screen.queryByRole( 'textbox', { name: 'Regular price, Hoodie' } )
 		).toBeNull();
 		expect( patches() ).toHaveLength( 0 );
+	} );
+} );
+
+describe( 'Status as the Off/On switch in the cell (T92)', () => {
+	const select = ( name ) =>
+		screen.getByRole( 'combobox', { name: `Status, ${ name }` } );
+	const choose = ( name, value ) => {
+		fireEvent.click( trigger( 'Status', name ) );
+		fireEvent.change( select( name ), { target: { value } } );
+		fireEvent.keyDown( select( name ), { key: 'Enter' } );
+	};
+	const confirmBox = () =>
+		document.querySelector( '.bulkcat-status-confirm' );
+	const answer = ( id, changes, note = '', context = {} ) => ( {
+		item: { ...ITEMS.find( ( row ) => row.id === id ), ...changes },
+		batch_id: 31,
+		status: 'complete',
+		results: [
+			{
+				field: 'status',
+				state: 'changed',
+				old: '',
+				new: changes.status,
+				note,
+				context,
+			},
+		],
+	} );
+
+	it( 'reads Off (was …) and Changed outside this screen in the badge', async () => {
+		await renderLoaded();
+		expect( screen.getByText( 'Off (was Private)' ) ).toBeTruthy();
+		expect( screen.getByText( 'Off (was Published)' ) ).toBeTruthy();
+		expect(
+			screen.getByText( 'Changed outside this screen' )
+		).toBeTruthy();
+	} );
+
+	it( 'confirms an Off in the cell before the PATCH; Enter confirms and the cell reads Off', async () => {
+		patch.mockResolvedValue(
+			answer(
+				11,
+				{
+					status: 'draft',
+					off_state: {
+						state: 'off',
+						saved: 'publish',
+						saved_label: 'Published',
+					},
+				},
+				'off',
+				{ saved: 'publish' }
+			)
+		);
+		await renderLoaded();
+		choose( TEE, 'draft' );
+		const box = confirmBox();
+		expect( box ).not.toBeNull();
+		expect( box.getAttribute( 'data-bulkcat-outcome' ) ).toBe( 'off' );
+		expect( box.textContent ).toContain(
+			`Switch ${ TEE } Off? It leaves the site for every buyer. Its status, Published, is saved`
+		);
+		expect( patches() ).toHaveLength( 0 );
+		const confirm = screen.getByRole( 'button', { name: 'Switch Off' } );
+		expect( document.activeElement ).toBe( confirm );
+		fireEvent.keyDown( confirm, { key: 'Enter' } );
+		await waitFor( () => expect( patches() ).toHaveLength( 1 ) );
+		expect( patch.mock.calls[ 0 ][ 1 ] ).toEqual( { status: 'draft' } );
+		expect(
+			await screen.findAllByText( 'Off (was Published)' )
+		).toHaveLength( 2 );
+		expect( confirmBox() ).toBeNull();
+	} );
+
+	it( 'goes back to the select on Escape, writing nothing', async () => {
+		await renderLoaded();
+		choose( TEE, 'draft' );
+		expect( confirmBox() ).not.toBeNull();
+		fireEvent.keyDown(
+			screen.getByRole( 'button', { name: 'Switch Off' } ),
+			{
+				key: 'Escape',
+			}
+		);
+		expect( confirmBox() ).toBeNull();
+		expect( document.activeElement ).toBe( select( TEE ) );
+		expect( patches() ).toHaveLength( 0 );
+		// Cancel does the same.
+		fireEvent.keyDown( select( TEE ), { key: 'Enter' } );
+		fireEvent.click( screen.getByRole( 'button', { name: 'Cancel' } ) );
+		expect( confirmBox() ).toBeNull();
+		expect( patches() ).toHaveLength( 0 );
+	} );
+
+	it( 'switches On with no confirm when it restores Published', async () => {
+		patch.mockResolvedValue(
+			answer( 16, { status: 'publish', off_state: null }, 'on', {
+				saved: 'publish',
+				restores: 'publish',
+			} )
+		);
+		await renderLoaded();
+		choose( 'Sun Hat', 'publish' );
+		expect( confirmBox() ).toBeNull();
+		await waitFor( () => expect( patches() ).toHaveLength( 1 ) );
+		expect( patch.mock.calls[ 0 ][ 1 ] ).toEqual( { status: 'publish' } );
+		expect( screen.queryByText( 'Off (was Published)' ) ).toBeNull();
+	} );
+
+	it( 'says a product comes back with the status it had before Off', async () => {
+		patch.mockResolvedValue(
+			answer( 14, { status: 'private', off_state: null }, 'on_restores', {
+				saved: 'private',
+				restores: 'private',
+			} )
+		);
+		await renderLoaded();
+		choose( 'Wool Beanie', 'publish' );
+		expect( confirmBox().textContent ).toContain(
+			'Wool Beanie was Private before it was switched Off, so it comes back Private, not Published.'
+		);
+		fireEvent.click( screen.getByRole( 'button', { name: 'Switch On' } ) );
+		await waitFor( () => expect( patches() ).toHaveLength( 1 ) );
+		expect( patch.mock.calls[ 0 ][ 1 ] ).toEqual( { status: 'publish' } );
+	} );
+
+	it( 'confirms a publication of a product never switched Off, and a status that drops the record', async () => {
+		await renderLoaded();
+		choose( 'Ladies Golf Shirt', 'publish' );
+		expect( confirmBox().getAttribute( 'data-bulkcat-outcome' ) ).toBe(
+			'publishes_not_off'
+		);
+		fireEvent.click( screen.getByRole( 'button', { name: 'Cancel' } ) );
+		fireEvent.keyDown( select( 'Ladies Golf Shirt' ), { key: 'Escape' } );
+		choose( 'Sun Hat', 'pending' );
+		expect( confirmBox().getAttribute( 'data-bulkcat-outcome' ) ).toBe(
+			'record_dropped'
+		);
+		expect(
+			screen.getByRole( 'button', { name: 'Change status' } )
+		).toBeTruthy();
+		expect( patches() ).toHaveLength( 0 );
+	} );
+
+	it( 'writes an ordinary change with no confirm', async () => {
+		patch.mockResolvedValue(
+			answer( 11, { status: 'private', off_state: null } )
+		);
+		await renderLoaded();
+		choose( TEE, 'private' );
+		expect( confirmBox() ).toBeNull();
+		await waitFor( () => expect( patches() ).toHaveLength( 1 ) );
+		expect( patch.mock.calls[ 0 ][ 1 ] ).toEqual( { status: 'private' } );
+	} );
+
+	it( 'offers Keep current status for a product changed elsewhere while Off', async () => {
+		patch.mockResolvedValue(
+			answer(
+				15,
+				{ status: 'private', off_state: null },
+				'conflict_kept',
+				{
+					saved: 'publish',
+					current: 'private',
+				}
+			)
+		);
+		await renderLoaded();
+		choose( 'Rain Jacket', 'publish' );
+		expect( confirmBox().getAttribute( 'data-bulkcat-outcome' ) ).toBe(
+			'conflict'
+		);
+		expect( patches() ).toHaveLength( 0 );
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Keep current status' } )
+		);
+		await waitFor( () => expect( patches() ).toHaveLength( 1 ) );
+		expect( patch.mock.calls[ 0 ][ 1 ] ).toEqual( {
+			status: 'publish',
+			keep_changed_status: true,
+		} );
+		expect(
+			await screen.findByRole( 'button', {
+				name: 'Edit Status, Rain Jacket',
+			} )
+		).toBeTruthy();
+		expect(
+			screen.queryByText( 'Changed outside this screen' )
+		).toBeNull();
+	} );
+
+	it( 'shows the server refusal of a conflict with Keep current status, which is its confirmation', async () => {
+		const sentence =
+			'This product was changed by someone else while it was Off, so it was left alone. Choose Keep current status to keep its status and clear its Off record.';
+		patch
+			.mockRejectedValueOnce( {
+				code: 'bulkcat_availability_conflict',
+				message: sentence,
+				data: {
+					status: 400,
+					field: 'status',
+					outcome: 'conflict',
+					context: { saved: 'publish', current: 'private' },
+				},
+			} )
+			.mockResolvedValueOnce(
+				answer(
+					14,
+					{ status: 'draft', off_state: null },
+					'conflict_kept'
+				)
+			);
+		await renderLoaded();
+		// The row says Off (was Private); the server knows better: it was changed since.
+		choose( 'Wool Beanie', 'publish' );
+		fireEvent.click( screen.getByRole( 'button', { name: 'Switch On' } ) );
+		await waitFor( () => expect( patches() ).toHaveLength( 1 ) );
+		await waitFor( () =>
+			expect( confirmBox()?.textContent ).toContain( sentence )
+		);
+		expect( confirmBox().getAttribute( 'data-bulkcat-outcome' ) ).toBe(
+			'conflict'
+		);
+		// Announced too, assertively: nothing was written.
+		expect(
+			document.querySelector( '[data-bulkcat-announcer]' ).textContent
+		).toBe( sentence );
+		fireEvent.keyDown(
+			screen.getByRole( 'button', { name: 'Keep current status' } ),
+			{ key: 'Enter' }
+		);
+		await waitFor( () => expect( patches() ).toHaveLength( 2 ) );
+		expect( patch.mock.calls[ 1 ][ 1 ] ).toEqual( {
+			status: 'publish',
+			keep_changed_status: true,
+		} );
 	} );
 } );

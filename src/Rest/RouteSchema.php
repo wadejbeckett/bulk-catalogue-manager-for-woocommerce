@@ -185,6 +185,21 @@ final class RouteSchema {
 				'description' => __( 'On a variation, its attribute values, such as "Blue / Large".', 'bulk-catalogue-manager-for-woocommerce' ),
 				'type'        => 'string',
 			] + $read_only,
+			Hydrator::OFF_STATE         => [
+				'description' => __( 'On a product with its own saved status before Off: whether it is Off or was changed outside this screen, the status saved and when; null otherwise.', 'bulk-catalogue-manager-for-woocommerce' ),
+				'type'        => [ 'object', 'null' ],
+				'properties'  => [
+					'state'            => [
+						'type' => 'string',
+						'enum' => [ 'off', 'changed_outside' ],
+					],
+					'saved'            => [ 'type' => 'string' ],
+					'saved_label'      => [ 'type' => 'string' ],
+					'switched_off_gmt' => [ 'type' => 'string' ],
+					'batch_id'         => [ 'type' => 'integer' ],
+					'scheduled_gmt'    => [ 'type' => 'string' ],
+				],
+			] + $read_only,
 			Hydrator::ATTRIBUTES        => [
 				'type'  => 'array',
 				'items' => [
@@ -573,7 +588,7 @@ final class RouteSchema {
 				'type'     => 'array',
 				'items'    => [
 					'type' => 'string',
-					'enum' => array_map( 'strval', array_keys( $field->choices() ) ),
+					'enum' => array_map( 'strval', array_keys( $field->choices() + $field->filter_choices() ) ),
 				],
 				'maxItems' => Criteria::MAX_VALUES,
 			],

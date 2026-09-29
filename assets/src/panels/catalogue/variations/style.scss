@@ -21,6 +21,20 @@
 		overflow: visible;
 	}
 
+	// ...without widening it (T92): out of the table's layout, the footer
+	// leaves the columns to the rows, so the expanded table still fits beside
+	// the category panel and no Status control sits under the sticky actions
+	// column.
+	.dataviews-view-table__row:has(.bulkcat-vfoot) td:has(.bulkcat-vfoot) {
+		position: relative;
+	}
+
+	.bulkcat-vfoot {
+		position: absolute;
+		top: 50%;
+		transform: translateY(-50%);
+	}
+
 	// T75: the footer row is not a product; its disabled checkbox and empty
 	// thumbnail are not drawn.
 	.dataviews-view-table__row:has(.bulkcat-vfoot) {

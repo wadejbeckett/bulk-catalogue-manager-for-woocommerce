@@ -6,6 +6,12 @@
  * sentence in place and leaves the cell open with the typed value intact.
  * A commit is one PATCH; the row is pending until it returns and the answer
  * replaces the row. A field that does not apply to the row says why.
+ *
+ * Status on a product is the Off/On switch (T92, SPEC §5.5): a change whose
+ * outcome confirms (status.js, the same outcomes the bulk panel confirms)
+ * shows the confirm in the cell before the PATCH; a Published the server
+ * refuses because the product was changed elsewhere while Off shows its
+ * sentence with Keep current status, which is that write's confirmation.
  */
 import {
 	useContext,
@@ -28,6 +34,13 @@ import {
 	validate,
 } from './rules';
 import { EditContext } from './scope';
+import {
+	CONFLICT_CODE,
+	StatusConfirm,
+	savedOutcome,
+	statusOutcome,
+	switchesOffOn,
+} from './status';
 import { productName } from './switch';
 
 /** How long the Saved tick stays, in milliseconds. */
@@ -83,11 +96,13 @@ export default function InlineCell( { item, descriptor, display } ) {
 	const [ saving, setSaving ] = useState( false );
 	const [ saved, setSaved ] = useState( false );
 	const [ why, setWhy ] = useState( false );
+	const [ asking, setAsking ] = useState( null );
 	const trigger = useRef( null );
 	const input = useRef( null );
 	const closing = useRef( false );
 	const refocus = useRef( false );
 	const live = useRef( true );
+	const askingNow = useRef( null );
 	const errorId = useId();
 
 	const name = productName( item, scope?.descriptors || [] );
@@ -118,6 +133,9 @@ export default function InlineCell( { item, descriptor, display } ) {
 	}, [] );
 
 	useEffect( () => {
+		if ( editing && asking ) {
+			return;
+		}
 		if ( editing ) {
 			input.current?.focus();
 			if ( input.current?.select ) {
@@ -127,7 +145,7 @@ export default function InlineCell( { item, descriptor, display } ) {
 			refocus.current = false;
 			trigger.current?.focus();
 		}
-	}, [ editing ] );
+	}, [ editing, asking ] );
 
 	useEffect( () => {
 		if ( ! saved ) {
@@ -140,6 +158,17 @@ export default function InlineCell( { item, descriptor, display } ) {
 		return () => clearTimeout( timer );
 	}, [ saved ] );
 
+	/**
+	 * Show the Off/On confirm for an outcome, or back to the control (null).
+	 * The ref answers a blur that fires before the next render.
+	 *
+	 * @param {Object|null} outcome The outcome and the value chosen.
+	 */
+	const ask = ( outcome ) => {
+		askingNow.current = outcome;
+		setAsking( outcome );
+	};
+
 	const open = () => {
 		if ( reason ) {
 			setWhy( true );
@@ -151,6 +180,7 @@ export default function InlineCell( { item, descriptor, display } ) {
 		closing.current = false;
 		setText( initialText( descriptor, item[ descriptor.key ] ) );
 		setError( '' );
+		ask( null );
 		setEditing( true );
 	};
 
@@ -158,11 +188,12 @@ export default function InlineCell( { item, descriptor, display } ) {
 		closing.current = true;
 		refocus.current = focusTrigger;
 		setError( '' );
+		ask( null );
 		setEditing( false );
 	};
 
 	const commit = ( focusTrigger ) => {
-		if ( saving || closing.current ) {
+		if ( saving || closing.current || askingNow.current ) {
 			return;
 		}
 		const value = typedValue( descriptor, text );
@@ -178,16 +209,40 @@ export default function InlineCell( { item, descriptor, display } ) {
 			setError( refused );
 			return;
 		}
+		if ( switchesOffOn( descriptor, item ) ) {
+			const outcome = statusOutcome( item, value, { descriptor, name } );
+			if ( outcome.confirm ) {
+				setError( '' );
+				ask( { ...outcome, value } );
+				return;
+			}
+		}
+		write( value, focusTrigger, false );
+	};
+
+	/**
+	 * One PATCH for the value; keep is Keep current status (SPEC §5.5).
+	 *
+	 * @param {*}       value        The value.
+	 * @param {boolean} focusTrigger Focus the cell afterwards.
+	 * @param {boolean} keep         Keep current status.
+	 */
+	const write = ( value, focusTrigger, keep ) => {
 		setSaving( true );
 		setError( '' );
 		if ( focusTrigger ) {
 			focusAfterSave = cellKey;
 		}
 		scope
-			.commit( item, {
-				[ descriptor.key ]: toRequestValue( descriptor, value ),
-			} )
-			.then( () => {
+			.commit(
+				item,
+				{
+					[ descriptor.key ]: toRequestValue( descriptor, value ),
+				},
+				[],
+				keep ? { keep: true } : {}
+			)
+			.then( ( answer ) => {
 				// The row may be read again and redrawn after this answer;
 				// the redrawn cell keeps the focus for a moment (T75).
 				setTimeout( () => {
@@ -201,16 +256,28 @@ export default function InlineCell( { item, descriptor, display } ) {
 				setSaving( false );
 				setSaved( true );
 				close( focusTrigger );
+				const outcome = savedOutcome( descriptor, answer );
 				announce(
-					sprintf(
-						/* translators: 1: a field's name, 2: a product name. */
-						__(
-							'%1$s saved for %2$s.',
-							'bulk-catalogue-manager-for-woocommerce'
-						),
-						descriptor.label,
-						name
-					)
+					outcome
+						? sprintf(
+								/* translators: 1: a field's name, 2: a product name, 3: what the change did, such as "Switched Off (was Published)". */
+								__(
+									'%1$s saved for %2$s: %3$s.',
+									'bulk-catalogue-manager-for-woocommerce'
+								),
+								descriptor.label,
+								name,
+								outcome
+							)
+						: sprintf(
+								/* translators: 1: a field's name, 2: a product name. */
+								__(
+									'%1$s saved for %2$s.',
+									'bulk-catalogue-manager-for-woocommerce'
+								),
+								descriptor.label,
+								name
+							)
 				);
 			} )
 			.catch( ( failure ) => {
@@ -221,6 +288,20 @@ export default function InlineCell( { item, descriptor, display } ) {
 					return;
 				}
 				setSaving( false );
+				if ( failure?.code === CONFLICT_CODE && ! keep ) {
+					// The server's sentence, with Keep current status as the confirm.
+					ask( {
+						code: 'conflict',
+						context: failure?.data?.context || {},
+						sentence:
+							typeof failure?.message === 'string'
+								? failure.message
+								: '',
+						value,
+					} );
+					return;
+				}
+				ask( null );
 				const sentence =
 					fieldError( failure, descriptor.key ) ||
 					sprintf(
@@ -254,6 +335,27 @@ export default function InlineCell( { item, descriptor, display } ) {
 			close( true );
 		}
 	};
+
+	if ( editing && asking ) {
+		return (
+			<span
+				className="bulkcat-inline is-editing is-confirming"
+				data-bulkcat-row={ item.id }
+			>
+				<StatusConfirm
+					outcome={ asking }
+					busy={ saving }
+					onConfirm={ () =>
+						write( asking.value, true, asking.code === 'conflict' )
+					}
+					onCancel={ () => {
+						ask( null );
+						closing.current = false;
+					} }
+				/>
+			</span>
+		);
+	}
 
 	if ( editing ) {
 		const shared = {

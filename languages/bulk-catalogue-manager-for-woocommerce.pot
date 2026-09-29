@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-09-29T10:50:12+00:00\n"
+"POT-Creation-Date: 2026-09-29T12:17:18+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -529,6 +529,12 @@ msgid "Status"
 msgstr ""
 
 msgid "A variation can only be published or private."
+msgstr ""
+
+msgid "Off"
+msgstr ""
+
+msgid "Changed outside this screen"
 msgstr ""
 
 msgid "Shop and search results"
@@ -1400,6 +1406,9 @@ msgstr ""
 msgid "On a variation, its attribute values, such as \"Blue / Large\"."
 msgstr ""
 
+msgid "On a product with its own saved status before Off: whether it is Off or was changed outside this screen, the status saved and when; null otherwise."
+msgstr ""
+
 msgid "Text to find in the name or SKU."
 msgstr ""
 
@@ -1748,6 +1757,59 @@ msgstr ""
 msgid "This page tried to send a change in a form the site no longer accepts, so nothing was sent. Reload the page, then try again."
 msgstr ""
 
+#. translators: %s: the status saved, such as "Published".
+#, js-format
+msgid "Switched Off (was %s)"
+msgstr ""
+
+#. translators: %s: the status saved again, such as "Private".
+#, js-format
+msgid "Changed by someone else while Off: switched Off again, saving %s"
+msgstr ""
+
+msgid "Already Off"
+msgstr ""
+
+msgid "Already Draft: nothing to save"
+msgstr ""
+
+msgid "Switched back On"
+msgstr ""
+
+#. translators: 1: the status it had before Off, and comes back with, such as "Private".
+#, js-format
+msgid "Was %1$s before Off: comes back %1$s"
+msgstr ""
+
+#. translators: %s: when it is scheduled, such as "4 Oct 2026, 09:30".
+#, js-format
+msgid "Was scheduled before Off: comes back scheduled for %s"
+msgstr ""
+
+msgid "Its scheduled time has passed: this publishes it now"
+msgstr ""
+
+#. translators: %s: when it is scheduled, such as "4 Oct 2026, 09:30".
+#, js-format
+msgid "Not switched Off: stays scheduled for %s"
+msgstr ""
+
+msgid "Not switched Off: this publishes it"
+msgstr ""
+
+msgid "Changed by someone else while Off: left alone"
+msgstr ""
+
+#. translators: %s: the status it keeps, such as "Published".
+#, js-format
+msgid "Changed by someone else while Off: keeps %s, Off record cleared"
+msgstr ""
+
+#. translators: %s: the status saved before Off, such as "Published".
+#, js-format
+msgid "Its saved status (%s) will not be restored"
+msgstr ""
+
 #. translators: %s: a number of products, such as "3".
 #, js-format
 msgid "%s product will be switched Off. Its status is saved, so Published brings it back."
@@ -1875,9 +1937,6 @@ msgstr ""
 msgid "On"
 msgstr ""
 
-msgid "Off"
-msgstr ""
-
 msgid "Switched on: the variations inside these products change too."
 msgstr ""
 
@@ -1937,59 +1996,6 @@ msgstr ""
 #. translators: 1: fields, such as "Regular price"; 2: products, such as "1,284 products".
 #, js-format
 msgid "This will change %1$s on %2$s."
-msgstr ""
-
-#. translators: %s: the status saved, such as "Published".
-#, js-format
-msgid "Switched Off (was %s)"
-msgstr ""
-
-#. translators: %s: the status saved again, such as "Private".
-#, js-format
-msgid "Changed by someone else while Off: switched Off again, saving %s"
-msgstr ""
-
-msgid "Already Off"
-msgstr ""
-
-msgid "Already Draft: nothing to save"
-msgstr ""
-
-msgid "Switched back On"
-msgstr ""
-
-#. translators: 1: the status it had before Off, and comes back with, such as "Private".
-#, js-format
-msgid "Was %1$s before Off: comes back %1$s"
-msgstr ""
-
-#. translators: %s: when it is scheduled, such as "4 Oct 2026, 09:30".
-#, js-format
-msgid "Was scheduled before Off: comes back scheduled for %s"
-msgstr ""
-
-msgid "Its scheduled time has passed: this publishes it now"
-msgstr ""
-
-#. translators: %s: when it is scheduled, such as "4 Oct 2026, 09:30".
-#, js-format
-msgid "Not switched Off: stays scheduled for %s"
-msgstr ""
-
-msgid "Not switched Off: this publishes it"
-msgstr ""
-
-msgid "Changed by someone else while Off: left alone"
-msgstr ""
-
-#. translators: %s: the status it keeps, such as "Published".
-#, js-format
-msgid "Changed by someone else while Off: keeps %s, Off record cleared"
-msgstr ""
-
-#. translators: %s: the status saved before Off, such as "Published".
-#, js-format
-msgid "Its saved status (%s) will not be restored"
 msgstr ""
 
 msgid "Already correct, left alone"
@@ -2673,6 +2679,71 @@ msgstr ""
 msgid "This change can no longer be undone."
 msgstr ""
 
+#. translators: %s: the status saved when the product was switched Off, such as "Published".
+#, js-format
+msgid "Off (was %s)"
+msgstr ""
+
+msgid "This product"
+msgstr ""
+
+#. translators: 1: a product name, 2: its status now, such as "Published".
+#, js-format
+msgid "Switch %1$s Off? It leaves the site for every buyer. Its status, %2$s, is saved, so choosing Published later brings it back."
+msgstr ""
+
+#. translators: 1: a product name, 2: its status now, such as "Private".
+#, js-format
+msgid "%1$s was changed by someone else while Off. Switch it Off again? Its status now, %2$s, is saved in place of the one saved before."
+msgstr ""
+
+#. translators: 1: a product name, 2: the status it had before Off, such as "Private".
+#, js-format
+msgid "%1$s was %2$s before it was switched Off, so it comes back %2$s, not Published."
+msgstr ""
+
+#. translators: 1: a product name, 2: when it is scheduled, such as "4 Oct 2026, 09:30".
+#, js-format
+msgid "%1$s was scheduled before it was switched Off, so it comes back scheduled for %2$s."
+msgstr ""
+
+#. translators: %s: a product name.
+#, js-format
+msgid "%s was scheduled before it was switched Off and its time has passed, so this publishes it now."
+msgstr ""
+
+#. translators: %s: a product name.
+#, js-format
+msgid "%s is scheduled and was not switched Off. Published keeps it scheduled until its time, or publishes it now if that has passed."
+msgstr ""
+
+#. translators: 1: a product name, 2: its status now, such as "Draft".
+#, js-format
+msgid "%1$s is %2$s and was not switched Off, so this publishes it: buyers will see it."
+msgstr ""
+
+#. translators: 1: a product name, 2: the status saved before Off, such as "Published", 3: the status chosen, such as "Private".
+#, js-format
+msgid "%1$s has a status saved from before it was switched Off (%2$s). Changing Status to %3$s clears it, so switching On will not bring it back."
+msgstr ""
+
+#. translators: 1: a product name, 2: its status now, such as "Private".
+#, js-format
+msgid "%1$s was changed by someone else while Off, so it was left alone. Choose Keep current status to keep it %2$s and clear its Off record."
+msgstr ""
+
+msgid "Switch Off"
+msgstr ""
+
+msgid "Switch On"
+msgstr ""
+
+msgid "Keep current status"
+msgstr ""
+
+msgid "Change status"
+msgstr ""
+
 #. translators: %d: how many terms (categories, tags or classes) the product has.
 #, js-format
 msgid "%d assigned"
@@ -2878,6 +2949,21 @@ msgstr ""
 msgid "%s: not on the site until it is published."
 msgstr ""
 
+#. translators: 1: the fields saved, separated by commas, 2: what the Status change did, such as "Switched Off (was Published)".
+#, js-format
+msgid "Saved: %1$s. %2$s."
+msgstr ""
+
+#. translators: %s: the fields saved, separated by commas.
+#, js-format
+msgid "Saved: %s."
+msgstr ""
+
+#. translators: 1: a product name, 2: what happened or what to do, as a sentence.
+#, js-format
+msgid "We could not save the changes to %1$s. %2$s"
+msgstr ""
+
 msgid "No changes recorded yet."
 msgstr ""
 
@@ -2904,16 +2990,6 @@ msgstr ""
 msgid "Loading the product…"
 msgstr ""
 
-#. translators: %s: the fields saved, separated by commas.
-#, js-format
-msgid "Saved: %s."
-msgstr ""
-
-#. translators: 1: a product name, 2: what happened or what to do, as a sentence.
-#, js-format
-msgid "We could not save the changes to %1$s. %2$s"
-msgstr ""
-
 msgid "Save"
 msgstr ""
 
@@ -2924,6 +3000,11 @@ msgid "Recent changes"
 msgstr ""
 
 msgid "See history"
+msgstr ""
+
+#. translators: 1: a field's name, 2: a product name, 3: what the change did, such as "Switched Off (was Published)".
+#, js-format
+msgid "%1$s saved for %2$s: %3$s."
 msgstr ""
 
 #. translators: 1: a field's name, 2: a product name.

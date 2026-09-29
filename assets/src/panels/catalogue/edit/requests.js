@@ -22,15 +22,21 @@ const REFUSED = [ 'skipped', 'failed' ];
  * as the error (its reason as the message, its field in `data.field`) and
  * the answer in `data.answer`, so a caller treats it like a refusal.
  *
- * @param {number}        id     Product or variation id.
- * @param {Object}        values Field key => value.
- * @param {Array<string>} fields Fields the returned row should carry; all when empty.
+ * `options.keep` sends Keep current status (`keep_changed_status`, T92):
+ * for a product changed elsewhere while Off, a Published keeps its status
+ * and clears its Off record instead of being refused.
+ *
+ * @param {number}        id           Product or variation id.
+ * @param {Object}        values       Field key => value.
+ * @param {Array<string>} fields       Fields the returned row should carry; all when empty.
+ * @param {Object}        options      Options.
+ * @param {boolean}       options.keep Keep current status.
  * @return {Promise<Object>} The answer.
  */
-export function patchProduct( id, values, fields = [] ) {
+export function patchProduct( id, values, fields = [], options = {} ) {
 	return request( `products/${ Number( id ) }`, {
 		method: 'PATCH',
-		data: values,
+		data: options.keep ? { ...values, keep_changed_status: true } : values,
 		query: fields.length ? { fields } : {},
 	} ).then( ( answer ) => {
 		if ( answer?.status && answer.status !== COMPLETE ) {

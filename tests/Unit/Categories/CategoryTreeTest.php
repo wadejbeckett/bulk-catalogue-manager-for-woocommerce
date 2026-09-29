@@ -84,7 +84,7 @@ final class CategoryTreeTest extends TestCase {
 			$statement
 		);
 		$this->assertStringNotContainsString( 'GROUP_CONCAT', $statement );
-		$this->assertStringContainsString( "p.post_status IN ('draft')", $statement );
+		$this->assertStringContainsString( "(p.post_status = 'draft' AND NOT EXISTS", $statement );
 		$this->assertStringContainsString( "p.post_type IN ('product', 'product_variation')", $statement );
 		$this->assertStringContainsString( "p.post_title LIKE '%" . addslashes( $GLOBALS['wpdb']->esc_like( "50% off_'s" ) ) . "%'", $statement, 'The search reaches SQL escaped, through ProductQuery.' );
 		$this->assertSame( 1, substr_count( $statement, 'LIMIT' ), 'Only the outer statement carries a LIMIT; the inner one is dropped.' );

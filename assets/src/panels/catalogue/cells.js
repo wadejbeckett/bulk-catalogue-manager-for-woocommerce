@@ -7,6 +7,7 @@ import { createContext, useContext } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 
 import { ROW, TONES } from './defaults';
+import { OFF_STATE, offStateText, statusLabel } from './edit/status';
 
 /**
  * What cells read from the table around them: term names per source and the
@@ -170,6 +171,15 @@ function Value( { item, descriptor, companion, role } ) {
 		case 'enum': {
 			if ( isEmpty( value ) ) {
 				return null;
+			}
+			if ( descriptor.switchesOffOn === true ) {
+				// T92 (SPEC §5.5): the status badge carries Off/On.
+				const off = offStateText( item );
+				return (
+					<Badge value={ off ? item[ OFF_STATE ].state : value }>
+						{ off || statusLabel( descriptor, value ) }
+					</Badge>
+				);
 			}
 			const extra = companion ? item[ companion.key ] : undefined;
 			return (

@@ -87,6 +87,16 @@ final class SqlEvaluatorTest extends TestCase {
 		);
 	}
 
+	public function test_concat_joins_text_and_a_column_and_null_makes_it_null(): void {
+		// T92: the Off filter matches a meta value by the prefix CONCAT( '{"id":', p.ID, ',%' ).
+		$this->assertSame( [ 1 ], self::ids( "CONCAT('Blue', '_', 'Shirt') = a.name" ) );
+		// As a LIKE pattern the joined text keeps its wildcards: '_' is any one character.
+		$this->assertSame( [ 1, 2 ], self::ids( "a.name LIKE CONCAT('Blue', '_', 'Shirt')" ) );
+		$this->assertSame( [ 3 ], self::ids( "'id10' = CONCAT('id', a.n)" ) );
+		$this->assertSame( [], self::ids( "CONCAT('x', a.n) IS NULL AND a.id = 1" ) );
+		$this->assertSame( [ 2 ], self::ids( "CONCAT('x', a.n) IS NULL" ) );
+	}
+
 	public function test_an_optimiser_hint_changes_nothing(): void {
 		$plain = 'SELECT COUNT(*) FROM `wp_a` AS a LEFT JOIN `wp_b` AS b ON b.a_id = a.id WHERE b.tag IS NULL OR b.tag = \'x\' LIMIT 1';
 		$this->assertSame( self::db()->value( $plain ), self::db()->value( str_replace( 'SELECT ', 'SELECT /*+ JOIN_PREFIX(a) */ ', $plain ) ) );

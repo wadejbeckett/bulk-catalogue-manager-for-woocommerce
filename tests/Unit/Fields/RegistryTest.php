@@ -36,7 +36,7 @@ final class RegistryTest extends TestCase {
 	 */
 	private const TABLE = [
 		'name'               => [ 'text', 'post', 'post_title', [ 'set', 'find_replace' ], 'derived', false ],
-		'status'             => [ 'enum', 'post', 'post_status', [ 'set' ], 'conditional', false ],
+		'status'             => [ 'enum', 'post', 'post_status', [ 'set' ], 'conditional', true ], // T92: set inline, with the Off/On confirm.
 		'catalog_visibility' => [ 'enum', 'taxonomy', 'product_visibility', [ 'set' ], 'parent_only', false ],
 		'visible_on_site'    => [ 'enum', 'taxonomy', 'product_visibility', [ 'set' ], 'parent_only', true ],
 		'featured'           => [ 'boolean', 'taxonomy', 'product_visibility', [ 'set' ], 'parent_only', true ],
@@ -745,6 +745,58 @@ final class RegistryTest extends TestCase {
 		];
 		$this->assertTrue( ( new Field( ...$base ) )->internal() );
 		foreach ( [ [ 'group' => Group::STOCK ], [ 'default_order' => 3 ], [ 'filter_operators' => [ 'isAny' ] ], [ 'inline' => true ], [ 'sortable' => true ] ] as $change ) {
+			try {
+				new Field( ...array_merge( $base, $change ) );
+				$this->fail( 'Accepted ' . wp_json_encode( $change ) );
+			} catch ( \InvalidArgumentException $e ) {
+				$this->assertStringContainsString( 'is invalid', $e->getMessage() );
+			}
+		}
+	}
+
+	public function test_status_filters_by_off_and_changed_outside_but_never_writes_them(): void {
+		// T92 (SPEC §4.1, §5.5): filter-only choices are filter elements and filter values, never choices.
+		$status = self::field( 'status' );
+		$this->assertTrue( $status->inline(), 'Status is set in the cell, with the Off/On confirm.' );
+		$this->assertSame(
+			[
+				'off'             => 'Off',
+				'changed_outside' => 'Changed outside this screen',
+			],
+			$status->filter_choices()
+		);
+		$this->assertArrayNotHasKey( 'off', $status->choices() );
+		$this->assertNotContains( 'off', $status->writable_choices() );
+		$this->assertNotContains( 'changed_outside', $status->writable_choices() );
+		$elements = array_column( $status->dataviews()['elements'], 'label', 'value' );
+		$this->assertSame( [ 'publish', 'draft', 'pending', 'private', 'off', 'changed_outside' ], array_keys( $elements ) );
+		foreach ( ( new Registry() )->all() as $key => $field ) {
+			if ( 'status' !== $key ) {
+				$this->assertSame( [], $field->filter_choices(), "$key has no filter-only choices." );
+			}
+		}
+		// Only a filterable field of choices takes them.
+		$base = [
+			'key'              => 'thing',
+			'label'            => 'Thing',
+			'type'             => Field::ENUM,
+			'storage'          => Storage::meta( '_thing' ),
+			'edit_kinds'       => [ Field::SET ],
+			'variation_rule'   => Field::PER_VARIATION,
+			'getter'           => 'get_thing',
+			'setter'           => 'set_thing',
+			'choices'          => [ 'a' => 'A' ],
+			'filter_operators' => [ 'isAny' ],
+			'filter_choices'   => [ 'z' => 'Z' ],
+		];
+		$this->assertSame( [ 'z' => 'Z' ], ( new Field( ...$base ) )->filter_choices() );
+		foreach ( [
+			[ 'filter_operators' => [] ],
+			[
+				'type'    => Field::TEXT,
+				'choices' => [],
+			],
+		] as $change ) {
 			try {
 				new Field( ...array_merge( $base, $change ) );
 				$this->fail( 'Accepted ' . wp_json_encode( $change ) );

@@ -13,6 +13,8 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Query;
 
+use BulkCatalogueManager\Availability\OffRecord;
+
 defined( 'ABSPATH' ) || exit;
 
 // phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- SPEC §12.2: the catalogue read is deliberately one direct, prepared statement; the caller (T16, T19) caches results in an object-cache group keyed on the products' last-changed value.
@@ -85,6 +87,7 @@ final class ProductQuery {
 		'relationships' => 'term_relationships',
 		'taxonomy'      => 'term_taxonomy',
 		'terms'         => 'terms',
+		'postmeta'      => 'postmeta',
 	];
 
 	/**
@@ -468,7 +471,7 @@ final class ProductQuery {
 
 		switch ( $filter->field ) {
 			case 'status':
-				$this->add( 'p.post_status ' . ( $negate ? 'NOT IN' : 'IN' ) . ' (' . self::placeholders( $value, '%s' ) . ')', $value );
+				$this->status( $value, $negate );
 				return;
 
 			case 'stock_status':
@@ -514,6 +517,49 @@ final class ProductQuery {
 				$this->type( $filter );
 				return;
 		}
+	}
+
+	/**
+	 * The Status filter (T92, SPEC §4.1, §5.5). Real statuses match by
+	 * status; `draft` means a genuine draft, one without its own Off record;
+	 * `off` is a product that is a draft with its own record; and
+	 * `changed_outside` a product with its own record and any other status.
+	 * "Its own record" is the record meta whose value starts with its own id
+	 * (`{"id":<ID>,`), as the record binds it (Availability\OffRecord); a
+	 * variation never matches Off or Changed outside. The parts are joined
+	 * with OR, and isNone negates the whole. A list of real statuses alone
+	 * keeps the plain `IN` it always had.
+	 *
+	 * @param list<string> $value    The statuses and special values chosen.
+	 * @param bool         $negate   Whether the filter is isNone.
+	 */
+	private function status( array $value, bool $negate ): void {
+		$real = array_values( array_diff( $value, [ 'draft', 'off', 'changed_outside' ] ) );
+		if ( $value === $real ) {
+			$this->add( 'p.post_status ' . ( $negate ? 'NOT IN' : 'IN' ) . ' (' . self::placeholders( $value, '%s' ) . ')', $value );
+			return;
+		}
+		$parts = [];
+		$args  = [];
+		if ( [] !== $real ) {
+			$parts[] = 'p.post_status IN (' . self::placeholders( $real, '%s' ) . ')';
+			$args    = [ ...$args, ...$real ];
+		}
+		$own      = 'EXISTS (SELECT 1 FROM %i AS m WHERE m.post_id = p.ID AND m.meta_key = %s AND m.meta_value LIKE CONCAT(%s, p.ID, %s))';
+		$own_args = [ self::table( 'postmeta' ), OffRecord::META_KEY, '{"id":', ',%' ];
+		if ( in_array( 'draft', $value, true ) ) {
+			$parts[] = '(p.post_status = %s AND NOT ' . $own . ')';
+			$args    = [ ...$args, 'draft', ...$own_args ];
+		}
+		if ( in_array( 'off', $value, true ) ) {
+			$parts[] = '(p.post_type = %s AND p.post_status = %s AND ' . $own . ')';
+			$args    = [ ...$args, 'product', 'draft', ...$own_args ];
+		}
+		if ( in_array( 'changed_outside', $value, true ) ) {
+			$parts[] = '(p.post_type = %s AND p.post_status <> %s AND ' . $own . ')';
+			$args    = [ ...$args, 'product', 'draft', ...$own_args ];
+		}
+		$this->add( ( $negate ? 'NOT ' : '' ) . '(' . implode( ' OR ', $parts ) . ')', $args );
 	}
 
 	/**

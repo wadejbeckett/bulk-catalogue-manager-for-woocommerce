@@ -294,3 +294,139 @@ describe( 'detail panel', () => {
 		expect( document.activeElement ).toBe( menu );
 	} );
 } );
+
+describe( 'Status as the Off/On switch in the detail panel (T92)', () => {
+	const status = ( dialog ) =>
+		within( dialog ).getByRole( 'combobox', { name: 'Status' } );
+	const confirmBox = ( dialog ) =>
+		dialog.querySelector( '.bulkcat-status-confirm' );
+
+	it( 'confirms above Save, then writes the same PATCH as the cell', async () => {
+		patch.mockResolvedValue( {
+			item: {
+				...FULL,
+				status: 'draft',
+				off_state: {
+					state: 'off',
+					saved: 'publish',
+					saved_label: 'Published',
+				},
+			},
+			batch_id: 41,
+			status: 'complete',
+			results: [
+				{
+					field: 'status',
+					state: 'changed',
+					old: 'publish',
+					new: 'draft',
+					note: 'off',
+					context: { saved: 'publish' },
+				},
+			],
+		} );
+		const { dialog } = await openDrawer();
+		fireEvent.change( status( dialog ), { target: { value: 'draft' } } );
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Save' } )
+		);
+		const box = confirmBox( dialog );
+		expect( box ).not.toBeNull();
+		expect( box.getAttribute( 'data-bulkcat-outcome' ) ).toBe( 'off' );
+		expect( box.textContent ).toContain(
+			'Switch Classic Cotton T-Shirt Off? It leaves the site for every buyer.'
+		);
+		// Above the Save button: the next thing in the form is the actions row.
+		expect( box.nextElementSibling.className ).toBe(
+			'bulkcat-drawer__actions'
+		);
+		expect(
+			within( box.nextElementSibling ).getByRole( 'button', {
+				name: 'Save',
+			} )
+		).toBeTruthy();
+		expect( patches() ).toHaveLength( 0 );
+
+		// Escape goes back to the form, not out of the drawer.
+		fireEvent.keyDown(
+			within( dialog ).getByRole( 'button', { name: 'Switch Off' } ),
+			{ key: 'Escape' }
+		);
+		expect( confirmBox( dialog ) ).toBeNull();
+		expect(
+			screen.getByRole( 'dialog', { name: 'Details' } )
+		).toBeTruthy();
+		expect( patches() ).toHaveLength( 0 );
+
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Save' } )
+		);
+		fireEvent.keyDown(
+			within( dialog ).getByRole( 'button', { name: 'Switch Off' } ),
+			{ key: 'Enter' }
+		);
+		await waitFor( () => expect( patches() ).toHaveLength( 1 ) );
+		expect( patch.mock.calls[ 0 ][ 0 ] ).toBe( 'products/11' );
+		expect( patch.mock.calls[ 0 ][ 1 ] ).toEqual( { status: 'draft' } );
+		expect(
+			await within( dialog ).findByText(
+				'Saved: Status. Switched Off (was Published).'
+			)
+		).toBeTruthy();
+		// The confirm had focus; Save has it now, so Escape still reaches the drawer.
+		expect( document.activeElement ).toBe(
+			within( dialog ).getByRole( 'button', { name: 'Save' } )
+		);
+		// The drawer and the grid both read the Off state now.
+		expect(
+			within( dialog ).getAllByText( 'Off (was Published)' ).length
+		).toBeGreaterThan( 0 );
+		expect( confirmBox( dialog ) ).toBeNull();
+	} );
+
+	it( 'offers Keep current status when the server refuses a conflict', async () => {
+		const sentence =
+			'This product was changed by someone else while it was Off, so it was left alone. Choose Keep current status to keep its status and clear its Off record.';
+		patch
+			.mockRejectedValueOnce( {
+				code: 'bulkcat_availability_conflict',
+				message: sentence,
+				data: {
+					status: 400,
+					field: 'status',
+					outcome: 'conflict',
+					context: { saved: 'private', current: 'publish' },
+				},
+			} )
+			.mockResolvedValueOnce( {
+				item: { ...FULL, status: 'publish', off_state: null },
+				batch_id: 42,
+				status: 'complete',
+				results: [],
+			} );
+		const { dialog } = await openDrawer();
+		// Never Off as far as the row knows: Published on a Draft would
+		// confirm, so start from Pending review, an ordinary change.
+		fireEvent.change( status( dialog ), { target: { value: 'pending' } } );
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Save' } )
+		);
+		await waitFor( () => expect( patches() ).toHaveLength( 1 ) );
+		await waitFor( () =>
+			expect( confirmBox( dialog )?.textContent ).toContain( sentence )
+		);
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', {
+				name: 'Keep current status',
+			} )
+		);
+		await waitFor( () => expect( patches() ).toHaveLength( 2 ) );
+		expect( patch.mock.calls[ 1 ][ 1 ] ).toEqual( {
+			status: 'pending',
+			keep_changed_status: true,
+		} );
+		expect(
+			await within( dialog ).findByText( 'Saved: Status.' )
+		).toBeTruthy();
+	} );
+} );

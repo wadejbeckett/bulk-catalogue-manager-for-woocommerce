@@ -298,6 +298,38 @@ final class UndoRouteTest extends TestCase {
 		}
 	}
 
+	public function test_the_preview_and_the_undo_say_how_many_products_and_variations_they_hold(): void {
+		// T114: the undo dialog and its result count products and variations apart, not all as products.
+		$GLOBALS['bulkcat_test']['products'][1002]->props['regular_price'] = '21.00';
+		$preview = $this->preview();
+		$this->assertSame(
+			[
+				'product'   => [
+					'revertible' => 1,
+					'conflicted' => 1,
+					'skipped'    => 0,
+				],
+				'variation' => [
+					'revertible' => 1,
+					'conflicted' => 0,
+					'skipped'    => 0,
+				],
+			],
+			$preview['by_type']
+		);
+		$created = $this->undo();
+		$this->assertSame(
+			[
+				'products'   => 1,
+				'variations' => 1,
+			],
+			$created['undo']['by_type'],
+			'The undo batch holds 1001 and 2001; 1002 was left alone.'
+		);
+		$report = $this->ok( self::dispatch( 'GET', '/batches/' . $created['batch_id'] ) );
+		$this->assertSame( $created['undo']['by_type'], $report['undo']['by_type'] );
+	}
+
 	public function test_a_1_0_undo_never_plans_or_creates_an_undo(): void {
 		$hash                                       = $this->preview()['plan_hash'];
 		$GLOBALS['bulkcat_test']['products_loaded'] = [];

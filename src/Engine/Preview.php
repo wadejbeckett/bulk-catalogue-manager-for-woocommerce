@@ -221,20 +221,25 @@ final class Preview {
 		// A preview's Off records are stamped batch 0 and never stored (T89).
 		$tally   = Stamp::within( 0, null, fn(): array => $this->compute( $computed, $operations, max( 1, min( self::SAMPLE_ALL, $sample_size ) ), $scope['unavailable'] ?? [] ) );
 		$factor  = [] === $computed ? 1.0 : $matched / count( $computed );
+		$changes = self::scale( $tally['would_change'], $factor );
+		// T114: parts are apportioned from the total they split, so they add up to it when estimated.
+		$changed = self::apportion( $tally['by_type'], $factor, $changes );
 		$by_type = [];
 		foreach ( [ 'product', 'variation' ] as $type ) {
 			$by_type[ $type ] = [
 				'matched'      => count( array_filter( $objects, static fn( array $entry ): bool => $type === $entry[1] ) ),
-				'would_change' => self::scale( $tally['by_type'][ $type ], $factor ),
+				'would_change' => $changed[ $type ],
 			];
 		}
 
 		$settings ??= Settings::load();
 		$missing    = array_values( array_unique( array_merge( $unreadable, $tally['unreadable'] ) ) );
+		$outcomes   = self::apportion( $tally['availability']['counts'], $factor );
 		$off_on     = $this->sets_status( $operations )
 			? [
-				'counts'          => array_map( static fn( int $n ): int => self::scale( $n, $factor ), $tally['availability']['counts'] ),
-				'restores'        => array_map( static fn( int $n ): int => self::scale( $n, $factor ), $tally['availability']['restores'] ),
+				'counts'          => $outcomes,
+				// Every restore counted is to Private or Pending review, so the two add up to it.
+				'restores'        => self::apportion( $tally['availability']['restores'], $factor, array_sum( $tally['availability']['restores'] ) === ( $tally['availability']['counts'][ Outcome::ON_RESTORES ] ?? -1 ) ? $outcomes[ Outcome::ON_RESTORES ] : null ),
 				'variations_kept' => (int) ( $expanded['kept'] ?? 0 ),
 				'conflicts'       => $tally['availability']['conflicts'],
 			]
@@ -244,10 +249,10 @@ final class Preview {
 				'matched'      => $matched,
 				'computed'     => count( $computed ) - count( $tally['unreadable'] ),
 				'estimated'    => $matched > count( $computed ),
-				'would_change' => self::scale( $tally['would_change'], $factor ),
+				'would_change' => $changes,
 				'already'      => self::scale( $tally['already'], $factor ),
 				'would_fail'   => array_map( static fn( int $n ): int => self::scale( $n, $factor ), $tally['would_fail'] ),
-				'rows'         => array_map( static fn( int $n ): int => self::scale( $n, $factor ), $tally['rows'] ),
+				'rows'         => self::apportion( $tally['rows'], $factor ),
 				'by_type'      => $by_type,
 			],
 			'summary'           => self::summary( $tally['fields'], $by_type['product']['would_change'], $by_type['variation']['would_change'] ),
@@ -678,6 +683,43 @@ final class Preview {
 	 */
 	private static function scale( int $count, float $factor ): int {
 		return (int) round( $count * $factor );
+	}
+
+	/**
+	 * Parts of one count scaled together (T114): each part is scaled, and
+	 * what rounding each alone would gain or lose is settled by largest
+	 * remainder, so the parts add up to the total they split — the scaled
+	 * sum, or the scaled total shown when it is given. Keys and their order
+	 * are kept; with no estimate (a factor of 1) the parts are unchanged.
+	 *
+	 * @param array<string, int> $parts The parts counted, by key.
+	 * @param float              $factor The estimate's factor.
+	 * @param int|null           $total  The total they must add up to; the scaled sum of the parts by default.
+	 * @return array<string, int>
+	 */
+	private static function apportion( array $parts, float $factor, ?int $total = null ): array {
+		$total    ??= self::scale( (int) array_sum( $parts ), $factor );
+		$scaled     = [];
+		$remainders = [];
+		foreach ( $parts as $key => $count ) {
+			$exact              = $count * $factor;
+			$scaled[ $key ]     = (int) floor( $exact );
+			$remainders[ $key ] = $exact - $scaled[ $key ];
+		}
+		$left = $total - array_sum( $scaled );
+		// The largest remainders take what rounding leaves; ties go to the earlier key, as listed.
+		$order = array_keys( $remainders );
+		usort( $order, static fn( string|int $a, string|int $b ): int => [ $remainders[ $b ], array_search( $a, array_keys( $parts ), true ) ] <=> [ $remainders[ $a ], array_search( $b, array_keys( $parts ), true ) ] );
+		foreach ( $order as $key ) {
+			if ( $left <= 0 ) {
+				break;
+			}
+			if ( 0 < $parts[ $key ] ) {
+				++$scaled[ $key ];
+				--$left;
+			}
+		}
+		return $scaled;
 	}
 
 	/**

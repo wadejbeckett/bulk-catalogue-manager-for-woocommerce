@@ -43,7 +43,9 @@ const {
 } = require( '../../assets/src/panels/history/describe.js' );
 const {
 	confirmSentence,
+	putBackTypes,
 	undoKey,
+	undoneNotice,
 } = require( '../../assets/src/panels/history/undo.js' );
 
 const ROOT = 'https://example.test/wp-json/bulkcat/v1/';
@@ -492,6 +494,68 @@ describe( 'history words', () => {
 		);
 	} );
 
+	it( 'says what an undo puts back: products, variations or both (T114)', () => {
+		const plan = {
+			counts: { revertible: 120, conflicted: 5, skipped: 1 },
+			by_type: {
+				product: { revertible: 100, conflicted: 5, skipped: 1 },
+				variation: { revertible: 20, conflicted: 0, skipped: 0 },
+			},
+		};
+		expect( putBackTypes( plan, false ) ).toEqual( {
+			products: 100,
+			variations: 20,
+		} );
+		expect( putBackTypes( plan, true ) ).toEqual( {
+			products: 105,
+			variations: 20,
+		} );
+		expect( putBackTypes( { counts: plan.counts }, false ) ).toBeNull();
+		expect(
+			confirmSentence( 120, 'prices', putBackTypes( plan, false ) )
+		).toBe(
+			'This puts 100 products and 20 variations back to their old prices. Continue?'
+		);
+		expect(
+			confirmSentence( 1, 'stock', { products: 0, variations: 1 } )
+		).toBe( 'This puts 1 variation back to its old stock. Continue?' );
+
+		const report = ( byType ) => ( {
+			changed_items: 120,
+			undo: {
+				undo_of: 1,
+				label: 'Undo of #1',
+				sentence: '',
+				by_type: byType,
+			},
+		} );
+		expect(
+			undoneNotice(
+				'Increased the regular price by 8%',
+				report( { products: 100, variations: 20 } )
+			)
+		).toBe(
+			'Undone: Increased the regular price by 8%. 120 items were put back.'
+		);
+		expect(
+			undoneNotice(
+				'Set the stock',
+				report( { products: 0, variations: 120 } ),
+				true
+			)
+		).toBe( 'Redone. 120 variations were put back.' );
+		expect(
+			undoneNotice(
+				'Set the stock',
+				report( { products: 120, variations: 0 } )
+			)
+		).toBe( 'Undone: Set the stock. 120 products were put back.' );
+		// An undo recorded before the split was kept: it may hold either.
+		expect( undoneNotice( 'Set the stock', report( undefined ) ) ).toBe(
+			'Undone: Set the stock. 120 items were put back.'
+		);
+	} );
+
 	it( 'names one undo by its batch, plan and force, so a retry keeps its grant', () => {
 		const plan = { plan_hash: 'a'.repeat( 64 ) };
 		expect( undoKey( 1, plan, false ) ).toBe( undoKey( '1', plan, false ) );
@@ -798,7 +862,13 @@ describe( 'undo flow', () => {
 				undo_of: 1,
 				status: 'complete',
 				changed_items: 120,
-				undo: { undo_of: 1, label: 'Undo of #1', sentence: '' },
+				undo: {
+					undo_of: 1,
+					label: 'Undo of #1',
+					sentence: '',
+					// T114: the route says what the undo held.
+					by_type: { products: 120, variations: 0 },
+				},
 			} ),
 		} );
 		await renderHistory();
@@ -997,6 +1067,7 @@ describe( 'undo flow', () => {
 					label: 'Undo of #2',
 					sentence:
 						'3 of 120 were changed again after this batch and were left alone.',
+					by_type: { products: 117, variations: 0 },
 				},
 			} ),
 		} );
@@ -1010,7 +1081,7 @@ describe( 'undo flow', () => {
 		expect( screen.queryByRole( 'dialog' ) ).toBeNull();
 		expect(
 			two.getByRole( 'heading', {
-				name: '3 of these products have changed since',
+				name: '3 products have changed since',
 			} )
 		).toBeTruthy();
 		expect( two.getByText( plan.sentence ) ).toBeTruthy();
@@ -1128,7 +1199,13 @@ describe( 'undo flow', () => {
 				undo_of: 1,
 				status: 'complete',
 				changed_items: 120,
-				undo: { undo_of: 1, label: 'Undo of #1', sentence: '' },
+				undo: {
+					undo_of: 1,
+					label: 'Undo of #1',
+					sentence: '',
+					// T114: the route says what the undo held.
+					by_type: { products: 120, variations: 0 },
+				},
 			} ),
 		} );
 		await renderHistory();

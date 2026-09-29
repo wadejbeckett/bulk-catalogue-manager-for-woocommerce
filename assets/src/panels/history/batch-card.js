@@ -36,15 +36,38 @@ import {
 	confirmSentence,
 	previewUndo,
 	putBackCount,
+	putBackTypes,
 	readBatch,
 	undoHolder,
 	undoneNotice,
 	valueKind,
 } from './undo';
 import { isUncertain } from '../../requests';
+import { countPhrase } from '../catalogue/selection/model';
 
 /** How often a running batch is read again, in milliseconds. */
 export const POLL_MS = 3000;
+
+/**
+ * The objects an undo preview found changed since, in words: products,
+ * variations or both, from its `by_type` (T114).
+ *
+ * @param {Object} plan       The undo preview.
+ * @param {number} conflicted How many.
+ * @return {string} Phrase, such as "2 products and 1 variation".
+ */
+function conflictPhrase( plan, conflicted ) {
+	const byType = plan?.by_type;
+	return countPhrase(
+		conflicted,
+		byType
+			? {
+					products: Number( byType.product?.conflicted ) || 0,
+					variations: Number( byType.variation?.conflicted ) || 0,
+				}
+			: {}
+	);
+}
 
 /**
  * Follow a batch while it is being worked: read it every POLL_MS until
@@ -603,14 +626,14 @@ export default function BatchCard( {
 				>
 					<h4>
 						{ sprintf(
-							/* translators: %s: number of products changed again since, such as "3". */
+							/* translators: %s: what changed again since, such as "3 products" or "2 products and 1 variation". */
 							_n(
-								'%s of these products has changed since',
-								'%s of these products have changed since',
+								'%s has changed since',
+								'%s have changed since',
 								conflicted,
 								'bulk-catalogue-manager-for-woocommerce'
 							),
-							conflicted.toLocaleString()
+							conflictPhrase( plan, conflicted )
 						) }
 					</h4>
 					<p>
@@ -701,34 +724,35 @@ export default function BatchCard( {
 					<p>
 						{ confirmSentence(
 							putBackCount( plan, confirm.force ),
-							valueKind( batch, byKey )
+							valueKind( batch, byKey ),
+							putBackTypes( plan, confirm.force )
 						) }
 					</p>
 					{ confirm.force && conflicted > 0 && (
 						<p className="bulkcat-confirm__warning">
 							{ sprintf(
-								/* translators: %s: number of products changed again since, such as "3". */
+								/* translators: %s: what changed again since, such as "3 products" or "2 products and 1 variation". */
 								_n(
-									'This includes %s product someone edited after this change; that later edit will be overwritten.',
-									'This includes %s products someone edited after this change; those later edits will be overwritten.',
+									'This includes %s someone edited after this change; that later edit will be overwritten.',
+									'This includes %s someone edited after this change; those later edits will be overwritten.',
 									conflicted,
 									'bulk-catalogue-manager-for-woocommerce'
 								),
-								conflicted.toLocaleString()
+								conflictPhrase( plan, conflicted )
 							) }
 						</p>
 					) }
 					{ ! confirm.force && conflicted > 0 && (
 						<p>
 							{ sprintf(
-								/* translators: %s: number of products changed again since, such as "3". */
+								/* translators: %s: what changed again since, such as "3 products" or "2 products and 1 variation". */
 								_n(
-									'The %s product that changed since will be left alone.',
-									'The %s products that changed since will be left alone.',
+									'The %s that changed since will be left alone.',
+									'The %s that changed since will be left alone.',
 									conflicted,
 									'bulk-catalogue-manager-for-woocommerce'
 								),
-								conflicted.toLocaleString()
+								conflictPhrase( plan, conflicted )
 							) }
 						</p>
 					) }

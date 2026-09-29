@@ -877,6 +877,26 @@ final class PreviewTest extends TestCase {
 		$this->assertSame( 4, $estimated['availability']['counts']['off'], '2 computed, scaled to 4.' );
 	}
 
+	public function test_estimated_parts_add_up_to_the_totals_they_split(): void {
+		// T114 (ticket 11): each scaled part rounded on its own could exceed the scaled total
+		// (1 product and 1 variation of 2 computed, scaled 1.5 times: 2 + 2 of 3).
+		$split = $this->answer( Selection::of_ids( [ 106, 201, 202 ] ), self::set( 'regular_price', '25' ), 1000, self::preview( 2 ) );
+		$this->assertTrue( $split['totals']['estimated'] );
+		$this->assertSame( 3, $split['totals']['would_change'] );
+		$this->assertSame( 3, $split['totals']['by_type']['product']['would_change'] + $split['totals']['by_type']['variation']['would_change'], 'Products and variations add up to the total shown.' );
+		$this->assertSame( array_sum( $split['totals']['rows'] ), (int) round( 2 * 1.5 ), 'Rows scaled as one.' );
+
+		// Restores to Private and Pending review add up to the restores counted.
+		$this->off_state( 101, 'draft', 'private' );
+		$this->off_state( 102, 'draft', 'pending' );
+		$this->off_state( 104, 'draft', 'private' );
+		$on = $this->answer( Selection::of_ids( [ 101, 102, 104 ] ), self::set( 'status', 'publish' ), 1000, self::preview( 2 ) );
+		$this->assertTrue( $on['totals']['estimated'] );
+		$this->assertSame( 3, $on['availability']['counts']['on_restores'] );
+		$this->assertSame( 3, array_sum( $on['availability']['restores'] ), 'Private and Pending review add up to the restores.' );
+		$this->assertSame( 3, array_sum( $on['availability']['counts'] ), 'The outcomes add up to the products counted.' );
+	}
+
 	public function test_the_conflicts_list_holds_up_to_the_sample_size_in_object_order(): void {
 		foreach ( [ 101, 102, 104, 106 ] as $id ) {
 			$this->off_state( $id, 'private', 'publish' );

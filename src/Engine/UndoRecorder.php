@@ -29,7 +29,7 @@ defined( 'ABSPATH' ) || exit;
  * writes the rest and completes the header with what only the whole plan
  * knows — the operation outline (each action and field once, in plan
  * order), the counts, the hash, how many were left alone, the grouped
- * reasons — or refuses 409 `bulkcat_nothing_to_undo` when nothing would be
+ * reasons, how many products and variations it holds (T114) — or refuses 409 `bulkcat_nothing_to_undo` when nothing would be
  * put back, having written nothing. The items and the completed header are
  * the ones the whole plan held in memory gave (T56).
  *
@@ -75,6 +75,16 @@ final class UndoRecorder {
 	private array $reasons = [];
 
 	/**
+	 * Items the undo puts back by type (T114): products and variations.
+	 *
+	 * @var array{products: int, variations: int}
+	 */
+	private array $types = [
+		'products'   => 0,
+		'variations' => 0,
+	];
+
+	/**
 	 * Build a recorder.
 	 *
 	 * @param BatchRepository $batches  Batches and items.
@@ -102,6 +112,7 @@ final class UndoRecorder {
 		}
 		$this->pending[] = [ $item['object_id'], $item['object_type'], $item['operations'] ];
 		++$this->taken;
+		++$this->types[ 'variation' === $item['object_type'] ? 'variations' : 'products' ];
 		foreach ( $item['operations'] as $operation ) {
 			$this->outline[ $operation['action'] . '|' . $operation['args']['field'] ] ??= [
 				'action' => $operation['action'],
@@ -157,6 +168,7 @@ final class UndoRecorder {
 				'not_undone'      => array_sum( $this->reasons ),
 				'reasons'         => $grouped,
 				'materialised'    => $this->taken,
+				'by_type'         => $this->types,
 			],
 			$this->taken
 		);

@@ -266,6 +266,57 @@ describe( 'inline cell editing', () => {
 		expect( row.querySelector( '.bulkcat-cell.is-pending' ) ).toBeNull();
 	} );
 
+	it( 'says a failure that is not the plugin’s own refusal in plain words, never its text (T114)', async () => {
+		const { expectPlain } = require( './error-fixtures' );
+		// A 4xx HTML page from something in front of WordPress, in the message (T114, ticket 11 item 3).
+		patch.mockRejectedValue(
+			Object.assign(
+				new Error(
+					'<p>There has been a critical error on this website.</p><p><a href="https://wordpress.org/">Learn more about troubleshooting WordPress.</a></p>'
+				),
+				{
+					code: 'forbidden',
+					message:
+						'<p>There has been a critical error on this website.</p><p><a href="https://wordpress.org/">Learn more about troubleshooting WordPress.</a></p>',
+					data: { status: 403 },
+				}
+			)
+		);
+		await renderLoaded();
+		fireEvent.click( trigger( 'SKU' ) );
+		fireEvent.change( editor( 'SKU' ), { target: { value: 'TSH-300' } } );
+		fireEvent.keyDown( editor( 'SKU' ), { key: 'Enter' } );
+		const sentence = await screen.findByText(
+			`We could not save SKU for ${ TEE }. Try again in a moment.`
+		);
+		expectPlain( sentence, 'Try again in a moment.' );
+		expect( document.body.textContent ).not.toContain( 'critical error' );
+
+		// Core's own JSON refusal is not shown in its words either; a plugin refusal is.
+		patch.mockRejectedValue( {
+			code: 'rest_forbidden',
+			message: 'Sorry, you are not allowed to do that.',
+			data: { status: 403 },
+		} );
+		fireEvent.keyDown( editor( 'SKU' ), { key: 'Enter' } );
+		await waitFor( () => expect( patches() ).toHaveLength( 2 ) );
+		expect( document.body.textContent ).not.toContain(
+			'not allowed to do that'
+		);
+		patch.mockRejectedValue( {
+			code: 'bulkcat_cannot_edit',
+			message:
+				'You do not have permission to change this product. Ask an administrator for access to it.',
+			data: { status: 403 },
+		} );
+		fireEvent.keyDown( editor( 'SKU' ), { key: 'Enter' } );
+		expect(
+			await screen.findByText(
+				`We could not save SKU for ${ TEE }. You do not have permission to change this product. Ask an administrator for access to it.`
+			)
+		).toBeTruthy();
+	} );
+
 	it( 'says why a field does not apply instead of opening', async () => {
 		await renderLoaded();
 		// T67 decides first: a variable product's price is its locked,

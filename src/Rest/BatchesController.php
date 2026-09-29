@@ -350,6 +350,14 @@ final class BatchesController implements ReadController {
 							'type'  => 'array',
 							'items' => [ 'type' => 'object' ],
 						],
+						'by_type'    => [
+							'description' => __( 'How many products and how many variations the undo puts back; null for an undo recorded before this was kept.', 'bulk-catalogue-manager-for-woocommerce' ),
+							'type'        => [ 'object', 'null' ],
+							'properties'  => [
+								'products'   => $integer,
+								'variations' => $integer,
+							],
+						],
 					],
 				],
 				'variations_included'  => [

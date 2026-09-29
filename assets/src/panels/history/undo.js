@@ -11,6 +11,8 @@ import { __, _n, sprintf } from '@wordpress/i18n';
 
 import { request } from '../../api';
 import { envelope, sendWithGrant } from '../../requests';
+import { itemsPhrase, productsPhrase, variationsPhrase } from '../bulk/words';
+import { countPhrase } from '../catalogue/selection/model';
 
 /**
  * Plan an undo and show it, changing nothing.
@@ -124,6 +126,25 @@ export function putBackCount( plan, force ) {
 }
 
 /**
+ * How many products and how many variations an undo will put back, from the
+ * preview's `by_type` (T114), or null when the preview did not split them.
+ *
+ * @param {Object}  plan  The preview answer.
+ * @param {boolean} force Revert anyway.
+ * @return {{products: number, variations: number}|null} Counts.
+ */
+export function putBackTypes( plan, force ) {
+	const byType = plan?.by_type;
+	if ( ! byType ) {
+		return null;
+	}
+	const of = ( type ) =>
+		( Number( byType[ type ]?.revertible ) || 0 ) +
+		( force ? Number( byType[ type ]?.conflicted ) || 0 : 0 );
+	return { products: of( 'product' ), variations: of( 'variation' ) };
+}
+
+/**
  * What kind of values the batch changed, for the confirmation sentence.
  *
  * @param {Object} batch The batch row.
@@ -153,60 +174,82 @@ export function valueKind( batch, byKey ) {
 
 /**
  * The confirmation sentence: "This puts 120 products back to their old
- * prices. Continue?"
+ * prices. Continue?", naming variations where the undo puts any back
+ * ("100 products and 20 variations", T114).
  *
- * @param {number} count How many are put back.
- * @param {string} kind  valueKind().
+ * @param {number}      count How many are put back.
+ * @param {string}      kind  valueKind().
+ * @param {Object|null} types putBackTypes(), or null for products.
  * @return {string} Sentence.
  */
-export function confirmSentence( count, kind ) {
-	const n = count.toLocaleString();
+export function confirmSentence( count, kind, types = null ) {
+	const what = countPhrase( count, types || {} );
 	switch ( kind ) {
 		case 'prices':
 			return sprintf(
-				/* translators: %s: number of products, such as "120". */
+				/* translators: %s: what is put back, such as "120 products" or "100 products and 20 variations". */
 				_n(
-					'This puts %s product back to its old price. Continue?',
-					'This puts %s products back to their old prices. Continue?',
+					'This puts %s back to its old price. Continue?',
+					'This puts %s back to their old prices. Continue?',
 					count,
 					'bulk-catalogue-manager-for-woocommerce'
 				),
-				n
+				what
 			);
 		case 'stock':
 			return sprintf(
-				/* translators: %s: number of products, such as "120". */
+				/* translators: %s: what is put back, such as "120 products" or "100 products and 20 variations". */
 				_n(
-					'This puts %s product back to its old stock. Continue?',
-					'This puts %s products back to their old stock. Continue?',
+					'This puts %s back to its old stock. Continue?',
+					'This puts %s back to their old stock. Continue?',
 					count,
 					'bulk-catalogue-manager-for-woocommerce'
 				),
-				n
+				what
 			);
 		case 'visibility':
 			return sprintf(
-				/* translators: %s: number of products, such as "120". */
+				/* translators: %s: what is put back, such as "120 products" or "100 products and 20 variations". */
 				_n(
-					'This puts %s product back to how it showed on the site. Continue?',
-					'This puts %s products back to how they showed on the site. Continue?',
+					'This puts %s back to how it showed on the site. Continue?',
+					'This puts %s back to how they showed on the site. Continue?',
 					count,
 					'bulk-catalogue-manager-for-woocommerce'
 				),
-				n
+				what
 			);
 		default:
 			return sprintf(
-				/* translators: %s: number of products, such as "120". */
+				/* translators: %s: what is put back, such as "120 products" or "100 products and 20 variations". */
 				_n(
-					'This puts %s product back to its old values. Continue?',
-					'This puts %s products back to their old values. Continue?',
+					'This puts %s back to its old values. Continue?',
+					'This puts %s back to their old values. Continue?',
 					count,
 					'bulk-catalogue-manager-for-woocommerce'
 				),
-				n
+				what
 			);
 	}
+}
+
+/**
+ * What an undo put back, in words: products, variations, or items when it
+ * held both or when an older undo did not record which (T114).
+ *
+ * @param {number}      count  How many.
+ * @param {Object|null} byType The undo summary's `by_type`, or null.
+ * @return {string} Phrase.
+ */
+function putBackPhrase( count, byType ) {
+	const products = Number( byType?.products ) || 0;
+	const variations = Number( byType?.variations ) || 0;
+	if ( byType && products > 0 && 0 === variations ) {
+		return productsPhrase( count );
+	}
+	if ( byType && variations > 0 && 0 === products ) {
+		return variationsPhrase( count );
+	}
+	return itemsPhrase( count );
 }
 
 /**
@@ -223,18 +266,18 @@ export function undoneNotice( what, report, redo = false ) {
 	const count =
 		Number( report?.changed_items ) || Number( report?.done_items ) || 0;
 	const putBack = sprintf(
-		/* translators: %s: number of products, such as "1,248". */
+		/* translators: %s: what was put back, such as "1,248 products", "20 variations" or "1,268 items". */
 		_n(
-			'%s product was put back.',
-			'%s products were put back.',
+			'%s was put back.',
+			'%s were put back.',
 			count,
 			'bulk-catalogue-manager-for-woocommerce'
 		),
-		count.toLocaleString()
+		putBackPhrase( count, report?.undo?.by_type || null )
 	);
 	const text = redo
 		? sprintf(
-				/* translators: %s: how many were put back, such as "12 products were put back.". */
+				/* translators: %s: what was put back, such as "12 products were put back.". */
 				__( 'Redone. %s', 'bulk-catalogue-manager-for-woocommerce' ),
 				putBack
 			)

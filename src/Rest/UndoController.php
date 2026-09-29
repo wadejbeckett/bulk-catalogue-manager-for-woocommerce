@@ -29,8 +29,9 @@ defined( 'ABSPATH' ) || exit;
  * The undo route.
  *
  * With `preview: true` it plans the undo through Undo\Planner and writes
- * nothing: `{ batch_id, preview, counts, total, items, pagination,
- * plan_hash, sentence }`, the items a page of the plan with the conflicted
+ * nothing: `{ batch_id, preview, counts, by_type, total, items,
+ * pagination, plan_hash, sentence }` (`by_type` the counts of products and
+ * of variations apart, T114), the items a page of the plan with the conflicted
  * ones first (each with its name, state, plain reason, the fields it puts
  * back and, when conflicted, each changed field with the value the batch
  * left and the value found now), bound to the plan's hash like any preview.
@@ -242,11 +243,14 @@ final class UndoController implements Controller {
 		$this->planner ??= new Planner( $this->batches, $this->changes, null, null, $this->clock );
 		$user_id         = get_current_user_id();
 		$ids             = array_fill_keys( [ Plan::CONFLICTED, Plan::REVERTIBLE, Plan::SKIPPED ], [] );
-		$summary         = $this->planner->walk(
+		// T114: what the counts hold, products and variations apart, for the dialog's words.
+		$by_type = array_fill_keys( [ 'product', 'variation' ], array_fill_keys( Plan::STATES, 0 ) );
+		$summary = $this->planner->walk(
 			$batch_id,
 			$user_id,
-			static function ( array $item ) use ( &$ids ): void {
+			static function ( array $item ) use ( &$ids, &$by_type ): void {
 				$ids[ $item['state'] ][] = $item['object_id'];
+				++$by_type[ 'variation' === $item['object_type'] ? 'variation' : 'product' ][ $item['state'] ];
 			}
 		);
 		if ( $summary instanceof \WP_Error ) {
@@ -282,6 +286,7 @@ final class UndoController implements Controller {
 				'batch_id'   => $batch_id,
 				'preview'    => true,
 				'counts'     => $counts,
+				'by_type'    => $by_type,
 				'total'      => $total,
 				'items'      => array_map( [ $this, 'item' ], $items ),
 				'pagination' => [

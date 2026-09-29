@@ -94,10 +94,9 @@ test( 'Undo from History reports a product changed since the change and leaves i
 		const conflict = page.getByRole( 'region', {
 			name: 'Products changed since',
 		} );
-		await expect( conflict ).toContainText(
-			'1 of these products has changed since',
-			{ timeout: 30_000 }
-		);
+		await expect( conflict ).toContainText( '1 product has changed since', {
+			timeout: 30_000,
+		} );
 		await conflict
 			.getByRole( 'button', { name: 'See the 1 that changed' } )
 			.click();

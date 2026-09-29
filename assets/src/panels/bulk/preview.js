@@ -61,11 +61,15 @@ export function formatValue( field, value, terms ) {
 
 /**
  * The warning sentences, in the block's order (Engine\Preview::WARNINGS).
+ * Negative stock is counted in the words of what the change reaches
+ * (ticket 11's counting rule, T114): products, variations, or items when it
+ * reaches both, from the preview's `totals.by_type`.
  *
- * @param {Object} warnings Counts by kind.
+ * @param {Object}      warnings Counts by kind.
+ * @param {Object|null} byType   The preview's `totals.by_type`, or null.
  * @return {Array<{kind: string, text: string}>} Sentences for the kinds counted.
  */
-export function warningSentences( warnings ) {
+export function warningSentences( warnings, byType = null ) {
 	const count = ( kind ) => Number( warnings?.[ kind ] ) || 0;
 	const out = [];
 	const add = ( kind, text ) => {
@@ -99,19 +103,7 @@ export function warningSentences( warnings ) {
 			formatNumber( count( 'price_not_positive' ) )
 		)
 	);
-	add(
-		'stock_negative',
-		sprintf(
-			/* translators: %s: a number, such as "3". */
-			_n(
-				'Stock would go below zero on %s product.',
-				'Stock would go below zero on %s products.',
-				count( 'stock_negative' ),
-				'bulk-catalogue-manager-for-woocommerce'
-			),
-			formatNumber( count( 'stock_negative' ) )
-		)
-	);
+	add( 'stock_negative', negativeStock( count( 'stock_negative' ), byType ) );
 	add(
 		'sku_duplicate',
 		sprintf(
@@ -126,6 +118,53 @@ export function warningSentences( warnings ) {
 		)
 	);
 	return out;
+}
+
+/**
+ * "Stock would go below zero on 3 products." — or variations, or items when
+ * the change reaches both.
+ *
+ * @param {number}      count  How many.
+ * @param {Object|null} byType The preview's `totals.by_type`, or null.
+ * @return {string} Sentence.
+ */
+function negativeStock( count, byType ) {
+	const products = Number( byType?.product?.matched ) || 0;
+	const variations = Number( byType?.variation?.matched ) || 0;
+	if ( products > 0 && variations > 0 ) {
+		return sprintf(
+			/* translators: %s: a number of products and variations together, such as "3". */
+			_n(
+				'Stock would go below zero on %s item.',
+				'Stock would go below zero on %s items.',
+				count,
+				'bulk-catalogue-manager-for-woocommerce'
+			),
+			formatNumber( count )
+		);
+	}
+	if ( variations > 0 ) {
+		return sprintf(
+			/* translators: %s: a number of variations, such as "3". */
+			_n(
+				'Stock would go below zero on %s variation.',
+				'Stock would go below zero on %s variations.',
+				count,
+				'bulk-catalogue-manager-for-woocommerce'
+			),
+			formatNumber( count )
+		);
+	}
+	return sprintf(
+		/* translators: %s: a number, such as "3". */
+		_n(
+			'Stock would go below zero on %s product.',
+			'Stock would go below zero on %s products.',
+			count,
+			'bulk-catalogue-manager-for-woocommerce'
+		),
+		formatNumber( count )
+	);
 }
 
 /**
@@ -332,7 +371,7 @@ export function PreviewResult( {
 		? sample.filter( ( row ) => row.state === 'changed' )
 		: sample;
 	const failures = Object.entries( totals.would_fail || {} );
-	const warnings = warningSentences( response?.warnings );
+	const warnings = warningSentences( response?.warnings, byType );
 	const unreadable = Array.isArray( response?.unreadable )
 		? response.unreadable
 		: [];

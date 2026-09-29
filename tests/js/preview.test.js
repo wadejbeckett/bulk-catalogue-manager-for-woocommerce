@@ -223,6 +223,37 @@ describe( 'preview', () => {
 		expect( items[ 0 ].textContent ).toBe( sentence );
 	} );
 
+	it.each( [
+		[ 'products and variations', 20, 4, 'items' ],
+		[ 'variations only', 0, 4, 'variations' ],
+		[ 'products only', 20, 0, 'products' ],
+	] )(
+		'counts negative stock in the words of what the change reaches: %s (T114)',
+		( label, products, variations, noun ) => {
+			const { container } = renderPreview( {
+				response: previewResponse( {
+					totals: {
+						...previewResponse().totals,
+						by_type: {
+							product: { matched: products, would_change: 0 },
+							variation: { matched: variations, would_change: 0 },
+						},
+					},
+					warnings: {
+						sale_above_regular: 0,
+						price_not_positive: 0,
+						stock_negative: 3,
+						sku_duplicate: 0,
+					},
+				} ),
+			} );
+			expect(
+				container.querySelector( '[data-warning="stock_negative"]' )
+					.textContent
+			).toBe( `Stock would go below zero on 3 ${ noun }.` );
+		}
+	);
+
 	it( 'has no warning block when nothing warns', () => {
 		const { container } = renderPreview( {
 			response: previewResponse( {

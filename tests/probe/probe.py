@@ -26,7 +26,14 @@ Chapters (``--chapters``, comma separated, default all, run in this order):
              T52/T53: a saved view created, marked default and read back
              unchanged (page aside), unreachable to another user (404), the
              schema refusals, deleted; the export with the nonce as a
-             ``_wpnonce`` query argument instead of the header.
+             ``_wpnonce`` query argument instead of the header. Ticket 10:
+             POST /export as the screen's form posts it (explicit ids, a
+             captured and composed selection token, the filter), its
+             refusals before any CSV byte, the identifier block against
+             WooCommerce's own exporter, nothing written, fixed queries per
+             page. Its PHP runs through export-probe.php and only when
+             BULKCAT_FIXTURE_URL equals --base-url, names a local host and
+             is the site WP_CMD reaches.
   write      The engine live: a captured selection (grant -> /selection)
              -> exact preview (nothing saved) -> durable batch under a
              /requests grant (apply, replay; a 1.0 body refused) -> Action
@@ -88,6 +95,7 @@ Standard library only, on purpose: it has to run anywhere with Python 3.
 from __future__ import annotations
 
 import argparse
+import base64
 import csv
 import http.cookiejar
 import io
@@ -1456,10 +1464,278 @@ def check_variations(p: Probe) -> None:
         p.guard("variations", f"variations:{name}", fn)
 
 # ---------------------------------------------------------------------------
+# read: the catalogue export by POST (ticket 10: T101 rows; T102 round trip)
+# ---------------------------------------------------------------------------
+
+EXPORT_PROBE = f"wp-content/plugins/{PLUGIN}/tests/probe/export-probe.php"
+LOCAL_HOST = re.compile(r"^(localhost|127\.0\.0\.1|::1|[a-z0-9.-]+\.localhost|[a-z0-9.-]+\.test)$", re.I)
+RESELECT = "This selection has expired or can no longer be used. Choose the products again and try again."
+
+
+class FixtureRefused(WpCliError):
+    """WP_CMD does not reach the declared local fixture."""
+
+
+def export_fixture(p: Probe) -> str:
+    """The fixture's URL, once proven: BULKCAT_FIXTURE_URL is set, equals --base-url, names a local
+    development host, and is the siteurl WP_CMD reaches. Every PHP or SQL statement the export rows
+    send through WP_CMD comes after this check; export-probe.php checks the siteurl again inside
+    WordPress before it does anything."""
+    known = getattr(p, "export_fixture_url", "")
+    if known:
+        return known
+    want = os.environ.get("BULKCAT_FIXTURE_URL", "").rstrip("/")
+    host = urllib.parse.urlsplit(want).hostname or ""
+    if not want or want != p.base or not LOCAL_HOST.match(host):
+        raise FixtureRefused(f"refused: BULKCAT_FIXTURE_URL ({want or 'unset'}) must equal --base-url ({p.base}) on a local development host")
+    site = p.wp("option", "get", "siteurl").strip().rstrip("/")
+    if site != want:
+        raise FixtureRefused(f"refused: WP_CMD reaches {site}, not the fixture {want}")
+    p.export_fixture_url = want  # type: ignore[attr-defined]
+    return want
+
+
+def export_native(p: Probe, action: str, args: dict | None = None, user: str | None = None) -> Any:
+    """One export-probe.php action on the proven fixture, optionally as a probe user (wp eval --user)."""
+    url = export_fixture(p)
+    encoded = base64.b64encode(json.dumps(args or {}).encode()).decode()
+    code = f'require "{EXPORT_PROBE}"; bulkcat_export_probe( "{url}", "{action}", "{encoded}" );'
+    extra = [f"--user={p.seed['users'][user]['login']}"] if user else []
+    out = p.wp("eval", code, *extra)
+    for line in out.splitlines():
+        if line.startswith("BULKCAT_OUT "):
+            return json.loads(line[len("BULKCAT_OUT "):])
+    raise WpCliError(f"no BULKCAT_OUT from {action}: {out.strip()[-300:]}")
+
+
+def export_eval(p: Probe, php: str) -> Any:
+    """p.wp_eval() behind the fixture check."""
+    export_fixture(p)
+    return p.wp_eval(php)
+
+
+def export_form(p: Probe, user: str | None, fields: list[tuple[str, str]], query: dict | None = None, nonce: str = "body") -> Response:
+    """POST /export as the screen's form does: application/x-www-form-urlencoded with `_wpnonce` in the
+    body (nonce "body", or "stale-body"), lists as one comma-separated field, switches as 1/0."""
+    path = NS + "/export" + ("?" + urllib.parse.urlencode(query, doseq=True) if query else "")
+    headers = {"Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded"}
+    fields = list(fields)
+    if user is None:
+        opener = p._opener(None)
+    else:
+        opener, valid = p.session(user)
+        if nonce == "body":
+            fields.append(("_wpnonce", valid))
+        elif nonce == "stale-body":
+            fields.append(("_wpnonce", STALE_NONCE))
+        elif nonce == "header":
+            headers["X-WP-Nonce"] = valid
+    reply = p._raw(opener, "POST", path, urllib.parse.urlencode(fields).encode(), headers)
+    if p.verbose:
+        print(f"  {user or 'anonymous'} POST(form) {path} -> {reply.brief()}", file=sys.stderr)
+    return reply
+
+
+def export_summary(p: Probe, user: str, body: dict) -> Response:
+    """The dialog's summary: a JSON POST, as apiFetch sends it."""
+    return p.http(user, "POST", "/export", body={**body, "summary": True})
+
+
+def csv_table(r: Response, sep: str = ",") -> list[list[str]]:
+    if "text/csv" not in r.headers.get("Content-Type", ""):
+        return []
+    return list(csv.reader(io.StringIO(r.body.decode("utf-8-sig"), newline=""), delimiter=sep))
+
+
+def attachment(r: Response) -> str:
+    match = re.search(r'filename="([^"]+)"', r.headers.get("Content-Disposition", ""))
+    return match.group(1) if match else ""
+
+
+def compose(p: Probe, user: str, token: str, mutation: dict) -> dict:
+    """A composed successor under a selection.compose grant: `mutation` is one of add_ids, remove_ids."""
+    grant = p.http(user, "POST", "/requests", body={"operation": "selection.compose", "intent": {"token": token, **mutation}}).json() or {}
+    body = {key: grant.get(key) for key in ("uuid", "request_proof", "intent")}
+    return p.http(user, "POST", "/selection/compose", body={**body, "token": token}).json() or {}
+
+
+def check_read_export_post(p: Probe) -> None:
+    """T101: POST /export's row sources, refusals and footprint, on the live fixture."""
+    if p.wp_cmd is None:
+        p.skip("read", "read:export:post:*", "documented: --no-wp given, the export rows need fixtures and ground truth through WP-CLI")
+        return
+    state: dict[str, Any] = {}
+    root = p.seed["categories"]["root"]
+    cat = filter_params("category_ids", "isAny", [root])
+    s1, s2 = p.simple(1)["id"], p.simple(2)["id"]
+    variation = p.seed["variable"]["variations"][0]["id"]
+
+    def fixtures() -> None:
+        state["fx"] = export_native(p, "fixtures")
+        ids = state["fx"]["ids"]
+        p.row("read", "read:export:fixtures", len(ids) >= 30, f"{len(ids)} fixtures upserted through CRUD on {export_fixture(p)}")
+
+    def post_auth() -> None:
+        token = p.capture("manager", {"ids": [s1, s2]}).get("token", "")
+        bodies = {
+            "filter": [("columns", "id,name")] + cat,
+            "ids": [("columns", "id,name"), ("ids", f"{s1},{s2}")],
+            "token": [("columns", "id,name"), ("selection", token)],
+        }
+        seen = []
+        ok = bool(token)
+        for name, body in bodies.items():
+            anon = export_form(p, None, body)
+            sub = export_form(p, "subscriber", body)
+            man = export_form(p, "manager", body)
+            good = anon.status == 401 and sub.status == 403 and man.status == 200 and "text/csv" in man.headers.get("Content-Type", "")
+            ok = ok and good
+            seen.append(f"{name} {anon.status}/{sub.status}/{man.status}")
+        stale = export_form(p, "manager", bodies["filter"], nonce="stale-body")
+        ok = ok and stale.status == 403 and stale.code() == "rest_cookie_invalid_nonce"
+        p.row("read", "read:export:post-auth", ok, f"anonymous/subscriber/manager {'; '.join(seen)}; stale body nonce {stale.brief()}; the nonce only in the body answered the manager")
+
+    def ids_exact() -> None:
+        missing = state["fx"]["max_id"] + 100000
+        page = state["fx"]["ids"]["page"]
+        body = [("columns", "id,name"), ("ids", f"{variation},{s1},{missing},{page}")]
+        r = export_form(p, "manager", body)
+        got = [int(row[0]) for row in csv_table(r)[1:]]
+        summary = export_summary(p, "manager", {"columns": ["id", "name"], "ids": [variation, s1, missing, page]}).json() or {}
+        ok = got == sorted([s1, variation]) and summary.get("rows") == 2 and summary.get("left_out") == 2 and attachment(r).startswith("catalogue-selected-")
+        p.row("read", "read:export:ids-exact", ok, f"rows {got} (want {sorted([s1, variation])}); summary rows {summary.get('rows')} left_out {summary.get('left_out')}; {attachment(r)}")
+
+    def token_exact() -> None:
+        ids = state["fx"]["ids"]
+        a, b, c, d, e = (ids[k] for k in ("tok-a", "tok-b", "tok-c", "tok-d", "tok-e"))
+        base = p.capture("manager", {"query": {"search": "CSV Token", "mode": "products"}})
+        added = compose(p, "manager", base.get("token", ""), {"add_ids": [c]})
+        removed = compose(p, "manager", added.get("token", ""), {"remove_ids": [b]})
+        export_native(p, "sql", {"what": "trash", "id": e})
+        export_native(p, "sql", {"what": "rename", "id": d, "name": "CSV Token D"})
+        token = removed.get("token", "")
+        state["token"] = token
+        r = export_form(p, "manager", [("columns", "id,name"), ("selection", token)])
+        got = [int(row[0]) for row in csv_table(r)[1:]]
+        summary = export_summary(p, "manager", {"columns": ["id"], "selection": token}).json() or {}
+        ok = base.get("count") == 3 and got == [a, c] and summary.get("left_out") == 1 and summary.get("rows") == 2 and d not in got
+        p.row("read", "read:export:token-exact", ok,
+              f"captured {base.get('count')} (A, B, E), +C, -B, E binned, D renamed to match: rows {got} (want {[a, c]}), left_out {summary.get('left_out')}")
+
+    def token_not_in_url() -> None:
+        r = export_form(p, "manager", [("columns", "name"), ("search", "Probe")], query={"selection": state.get("token", "v2.x")})
+        both = export_form(p, "manager", [("columns", "name"), ("selection", state.get("token", ""))], query={"selection": state.get("token", "v2.x")})
+        ok = r.status == 400 and r.code() == "bulkcat_invalid_value" and both.status == 400 and "text/csv" not in r.headers.get("Content-Type", "")
+        p.row("read", "read:export:token-not-in-url", ok, f"query only {r.brief()}; query and body {both.brief()}")
+
+    def token_refusals() -> None:
+        mine = p.capture("manager", {"ids": [s1]}).get("token", "")
+        other = export_form(p, "admin", [("columns", "name"), ("selection", mine)])
+        legacy = export_form(p, "manager", [("columns", "name"), ("selection", "abc123.0123456789")])
+        lapsed_token = p.capture("manager", {"ids": [s2]}).get("token", "")
+        export_native(p, "sql", {"what": "lapse", "snapshot": lapsed_token.split(".")[1]})
+        lapsed = export_form(p, "manager", [("columns", "name"), ("selection", lapsed_token)])
+        renewed = p.http("manager", "POST", "/selection/renew", body={"token": lapsed_token}).json() or {}
+        after = export_form(p, "manager", [("columns", "name"), ("selection", renewed.get("token", ""))])
+        gone_token = p.capture("manager", {"ids": [s1]}).get("token", "")
+        export_native(p, "sql", {"what": "expire", "snapshot": gone_token.split(".")[1]})
+        gone = export_form(p, "manager", [("columns", "name"), ("selection", gone_token)])
+        legacy_message = (legacy.json() or {}).get("message", "")
+        ok = (other.status == 403 and other.code() == "bulkcat_invalid_selection"
+              and legacy.status == 403 and legacy_message == RESELECT
+              and lapsed.status == 409 and lapsed.code() == "bulkcat_selection_renew_required"
+              and renewed.get("requires_preview") is True and after.status == 200 and len(csv_table(after)) == 2
+              and gone.status == 410 and gone.code() == "bulkcat_selection_expired")
+        p.row("read", "read:export:token-refusals", ok,
+              f"another user's {other.brief()}; 1.0 {legacy.brief()} \"{legacy_message}\"; lapsed {lapsed.brief()} then renewed {after.brief()}; expired {gone.brief()}")
+
+    def whole_catalogue() -> None:
+        refused = export_form(p, "manager", [("columns", "name")])
+        p.row("read", "read:export:whole-catalogue-refused",
+              refused.status == 400 and refused.code() == "bulkcat_export_confirm_all" and "text/csv" not in refused.headers.get("Content-Type", ""),
+              refused.brief())
+        confirmed = export_form(p, "manager", [("columns", "id"), ("confirm_all", "1")])
+        rows = csv_table(confirmed)[1:]
+        want = export_eval(p, "bulkcat_out( count( wc_get_products( array( 'limit' => -1, 'return' => 'ids', 'type' => array_keys( wc_get_product_types() ), 'status' => array( 'publish', 'future', 'draft', 'pending', 'private' ) ) ) ) );")
+        p.row("read", "read:export:whole-catalogue-confirmed", confirmed.status == 200 and len(rows) == want and attachment(confirmed).startswith("catalogue-all-"),
+              f"{len(rows)} rows, WooCommerce {want}; {attachment(confirmed)}")
+
+    def identifiers_header() -> None:
+        r = export_form(p, "manager", [("columns", "name,sku,regular_price,type,id,stock_status"), ("identifiers", "1")] + cat)
+        header = csv_table(r)[0] if csv_table(r) else []
+        want = ["ID", "SKU", "Parent", "Type", "Name", "Regular price", "Stock status"]
+        p.row("read", "read:export:identifiers-header", header == want and attachment(r).startswith("catalogue-filtered-with-ids-"), f"en_US: {header}")
+        p.skip("read", "read:export:identifiers-header:de_DE", "de_DE language packs are not installed on the fixture (a download this run is not authorised to make); ColumnPlanTest covers the headings under a translation")
+
+    def roundtrip_cells() -> dict[int, list[str]]:
+        cat_rt = filter_params("category_ids", "isAny", [state["fx"]["categories"]["roundtrip"]])
+        r = export_form(p, "manager", [("columns", "name"), ("identifiers", "1"), ("mode", "products_and_variations")] + cat_rt)
+        table = csv_table(r)
+        return {int(row[0]): row for row in table[1:]}
+
+    def type_and_parent() -> None:
+        cells = roundtrip_cells()
+        native = export_native(p, "exporter", {"ids": list(cells)})
+        types = {i: (cells[i][3], (native.get(str(i)) or {}).get("type")) for i in cells}
+        parents = {i: (cells[i][2], (native.get(str(i)) or {}).get("parent")) for i in cells}
+        bad_types = {i: v for i, v in types.items() if v[0] != v[1]}
+        bad_parents = {i: v for i, v in parents.items() if v[0] != v[1]}
+        flags = sorted({v[0] for v in types.values()})
+        p.row("read", "read:export:type-flags", bool(cells) and not bad_types, f"{len(cells)} rows; forms {flags}; differing {bad_types}")
+        with_parent = sum(1 for v in parents.values() if v[0])
+        p.row("read", "read:export:parent-id-fallback", bool(cells) and not bad_parents and any(v[0].startswith("id:") for v in parents.values()),
+              f"{with_parent} rows with a Parent, {sum(1 for v in parents.values() if v[0].startswith('id:'))} as id:N; differing {bad_parents}")
+
+    def switch_off_identical() -> None:
+        p.skip("read", "read:export:switch-off-identical", "pending T96: waits for ticket 04's T93 relabel (parallel start); POST and GET bytes are compared in ExportPostRouteTest meanwhile")
+
+    def writes_nothing() -> None:
+        tokens = [p.capture("manager", {"ids": [s1, s2, variation]}).get("token", ""),
+                  p.capture("manager", {"query": {"category_ids": {"operator": "isAny", "value": [root]}}}).get("token", "")]
+        before = export_native(p, "footprint")
+        calls = 0
+        for identifiers in ("0", "1"):
+            for body in ([("columns", "name,sku")] + cat, [("columns", "name,sku"), ("ids", f"{s1},{variation}")],
+                         [("columns", "name,sku"), ("selection", tokens[0])], [("columns", "name,sku"), ("selection", tokens[1])]):
+                calls += int(export_form(p, "manager", body + [("identifiers", identifiers)]).status == 200)
+                form = {k: v for k, v in body if k in ("columns", "ids", "selection")}
+                summary = {"columns": form["columns"].split(","), "identifiers": identifiers == "1"}
+                if "ids" in form:
+                    summary["ids"] = [int(i) for i in form["ids"].split(",")]
+                if "selection" in form:
+                    summary["selection"] = form["selection"]
+                if "ids" not in form and "selection" not in form:
+                    summary["category_ids"] = {"operator": "isAny", "value": [root]}
+                calls += int(export_summary(p, "manager", summary).status == 200)
+        after = export_native(p, "footprint")
+        changed = sorted(k for k in before if before[k] != after[k])
+        options = sorted(k for k in set(before["options"]) | set(after["options"]) if before["options"].get(k) != after["options"].get(k))
+        p.row("read", "read:export:writes-nothing", calls == 16 and not changed,
+              f"{calls}/16 exports and summaries answered; changed {changed or 'nothing'}{'; options ' + str(options) if options else ''}")
+
+    def query_count() -> None:
+        found = export_native(p, "query_counts", {"user": p.seed["users"]["manager"]["id"]})
+        spread = {f"{mode}/{source}": sorted({v["queries"] for v in sizes.values()}) for mode, sources in found.items() for source, sizes in sources.items()}
+        rows = {f"{mode}/{source}": [v["rows"] for v in sizes.values()] for mode, sources in found.items() for source, sizes in sources.items()}
+        p.row("read", "read:export:fixed-query-count-identifiers", all(len(q) == 1 for q in spread.values()),
+              f"queries per page at 25/50/100 rows, switch on, cold cache: {spread}; rows {rows}")
+
+    steps = [("fixtures", fixtures), ("post-auth", post_auth), ("ids-exact", ids_exact), ("token-exact", token_exact),
+             ("token-not-in-url", token_not_in_url), ("token-refusals", token_refusals), ("whole-catalogue", whole_catalogue),
+             ("identifiers-header", identifiers_header), ("type-flags", type_and_parent), ("switch-off-identical", switch_off_identical),
+             ("writes-nothing", writes_nothing), ("fixed-query-count-identifiers", query_count)]
+    for name, fn in steps:
+        if name != "fixtures" and "fx" not in state:
+            p.row("read", f"read:export:{name}", False, "no fixtures from the fixtures step")
+            continue
+        p.guard("read", f"read:export:{name}", fn)
+
+
+# ---------------------------------------------------------------------------
 
 CHAPTERS: dict[str, list[Callable[[Probe], None]]] = {
     "screen": [check_screen],
-    "read": [check_read_matrix, check_read_queries, check_saved_views],
+    "read": [check_read_matrix, check_read_queries, check_saved_views, check_read_export_post],
     "write": [check_write_engine, check_write_stale, check_write_inline, check_write_categories, check_write_history],
     "access": [check_access, check_settings],
     "variations": [check_variations],

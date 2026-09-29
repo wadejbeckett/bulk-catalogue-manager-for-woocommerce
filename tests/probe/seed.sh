@@ -203,7 +203,9 @@ for ( $n = $from; $n <= $to; $n++ ) {
 	$skus[ $n ] = sprintf( 'bulkcat-scale-%05d', $n );
 }
 $have = array_flip( $wpdb->get_col( "SELECT sku FROM {$wpdb->wc_product_meta_lookup} WHERE sku IN ('" . implode( "','", array_map( 'esc_sql', $skus ) ) . "')" ) );
-$todo = array_diff_key( $skus, array_flip( array_map( fn( $s ) => (int) substr( $s, 10 ), array_keys( $have ) ) ) );
+// The number after 'bulkcat-scale-' (14 characters; T85 found this read at 10, so a rerun
+// found none of the existing products and inserted the whole scale catalogue again).
+$todo = array_diff_key( $skus, array_flip( array_map( fn( $s ) => (int) substr( $s, strlen( 'bulkcat-scale-' ) ), array_keys( $have ) ) ) );
 if ( ! $todo ) {
 	echo "BULKCAT_SCALE_MADE 0\n";
 	return;

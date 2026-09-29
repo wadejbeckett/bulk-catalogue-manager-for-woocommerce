@@ -131,6 +131,27 @@ final class GuardedValuesTest extends TestCase {
 		$this->assertSame( 3, $counts['names'] );
 	}
 
+	public function test_names_are_not_counted_when_the_name_is_not_exported(): void {
+		// Main Build minor: a file without the Name column has no guarded name to warn about.
+		$this->catalogue();
+		$ids = [ 1, 2, 3, 4, 5, 6, 7, 8, 10, 11 ];
+		$this->assertSame(
+			[
+				'identifiers' => 6,
+				'names'       => 0,
+			],
+			( new GuardedValues( GuardedValues::PAGE, false ) )->of_ids( $ids )
+		);
+		$this->assertSame(
+			[
+				'identifiers' => 5,
+				'names'       => 0,
+			],
+			( new GuardedValues( GuardedValues::PAGE, false ) )->of_query( new ProductQuery( Criteria::from_array( [ 'mode' => Criteria::MODE_PRODUCTS ] ) ) )
+		);
+		$this->assertSame( 3, ( new GuardedValues() )->of_ids( $ids )['names'], 'Counted by default.' );
+	}
+
 	public function test_counts_only_the_rows_the_export_writes(): void {
 		$this->catalogue();
 		// A filter: products only, listed statuses (the binned one and the page never list), searched.

@@ -871,6 +871,81 @@ describe( 'undo flow', () => {
 		expect( noticeText() ).toBeNull();
 	} );
 
+	it( 'offers and runs the undo of a 100,000-object change (T112: no size limit, the undo is streamed)', async () => {
+		const large = base( 1, {
+			variations_included: true,
+			total_items: 100000,
+			done_items: 100000,
+			changed_items: 100000,
+		} );
+		serve( {
+			...DEFAULT_ROUTES(),
+			'GET bulkcat/v1/batches': {
+				items: [ large ],
+				pagination: { page: 1, perPage: 25, total: 1, totalPages: 1 },
+			},
+			'POST bulkcat/v1/batches/1/undo': ( query, data ) =>
+				data.preview
+					? {
+							...PLAN,
+							counts: {
+								revertible: 100000,
+								conflicted: 0,
+								skipped: 0,
+							},
+							total: 100000,
+						}
+					: {
+							batch_id: 99,
+							status: 'queued',
+							total_items: 100000,
+							replayed: false,
+							undo: { undo_of: 1, label: 'Undo of #1' },
+						},
+			'GET bulkcat/v1/batches/99': base( 99, {
+				source: 'undo',
+				undo_of: 1,
+				status: 'queued',
+				total_items: 100000,
+				done_items: 0,
+				changed_items: 0,
+				undo: { undo_of: 1, label: 'Undo of #1', sentence: '' },
+			} ),
+		} );
+		await renderHistory();
+		const undo = within( card( 1 ) ).getByRole( 'button', {
+			name: 'Undo',
+		} );
+		expect( undo.disabled ).toBe( false );
+		expect( card( 1 ).textContent ).not.toContain( 'not yet supported' );
+		await act( async () => fireEvent.click( undo ) );
+		const dialog = await screen.findByRole( 'dialog', {
+			name: 'Undo this change?',
+		} );
+		await act( async () =>
+			fireEvent.click(
+				within( dialog ).getByRole( 'button', { name: 'Undo' } )
+			)
+		);
+		const applied = calls.filter(
+			( c ) =>
+				c.method === 'POST' && c.route === 'bulkcat/v1/batches/1/undo'
+		);
+		expect( applied ).toHaveLength( 2 );
+		expect( applied[ 1 ].data.intent ).toEqual( {
+			version: 1,
+			source: 'undo',
+			batch_id: 1,
+			plan_hash: PLAN.plan_hash,
+			force: false,
+		} );
+		await waitFor( () =>
+			expect(
+				calls.some( ( c ) => c.route === 'bulkcat/v1/batches/99' )
+			).toBe( true )
+		);
+	} );
+
 	it( 'lists conflicts first and offers the three-way choice, Revert anyway off by default', async () => {
 		const plan = {
 			...PLAN,

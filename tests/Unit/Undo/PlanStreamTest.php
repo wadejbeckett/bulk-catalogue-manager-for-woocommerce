@@ -299,6 +299,77 @@ final class PlanStreamTest extends TestCase {
 		$this->assertLessThan( 6 * 1048576, $large, sprintf( 'The walk of 15,000 objects held %.1f MB.', $large / 1048576 ) );
 	}
 
+	public function test_the_undo_of_a_100000_object_change_is_recorded_whole_while_it_is_walked(): void {
+		// T112 (ticket 11 item 8): no size limit remains, so the engine must take an undo of the
+		// largest change a selection can hold, recording every item as the plan is walked.
+		$count = 100000;
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['user_caps'] = [ self::USER => [ 'edit_post' => true ] ];
+		$GLOBALS['bulkcat_test']['user_id']   = self::USER;
+		$this->store                          = new RunnerStore( self::BATCH, [], [], self::USER );
+		$this->store->batch['status']         = 'complete';
+		$this->store->batch['done_items']     = $count;
+		$this->store->batch['total_items']    = $count;
+		// One product stands in for all: each id loads it, as it holds the price the batch left.
+		$shared = new SavedProduct( 'simple', [ 'regular_price' => '11.00' ] );
+		$rows   = [];
+		for ( $i = 0; $i < $count; $i++ ) {
+			$rows[] = [ $i + 1, 200000 + $i ];
+			$GLOBALS['bulkcat_test']['products'][ 200000 + $i ] = $shared;
+		}
+		$this->serve_fast( $rows );
+		unset( $rows );
+		$recorded = 0;
+		$inserts  = 0;
+		global $wpdb;
+		$wpdb->responses = [
+			'/^INSERT INTO `wp_bulkcat_batch_items` /' => static function ( string $sql ) use ( &$recorded, &$inserts ): int {
+				++$inserts;
+				$rows      = substr_count( $sql, "'pending', 0, '" );
+				$recorded += $rows;
+				return $rows;
+			},
+		] + $wpdb->responses;
+		$clear           = static function (): void {
+			$GLOBALS['bulkcat_test']['calls']           = [];
+			$GLOBALS['bulkcat_test']['gettext']         = [];
+			$GLOBALS['bulkcat_test']['products_loaded'] = [];
+			$GLOBALS['wpdb']->queries                   = [];
+			$GLOBALS['wpdb']->prepared                  = [];
+		};
+		$clear();
+		gc_collect_cycles();
+		$before   = memory_get_usage();
+		$peak     = 0;
+		$seen     = 0;
+		$recorder = ( new \BulkCatalogueManager\Engine\BatchFactory( null, new \BulkCatalogueManager\Data\BatchRepository() ) )->undo_recorder( '0b8f4d2e-3c1a-4e5b-9a7d-6f2e1c3b4a50', self::USER, self::BATCH, false );
+		$this->assertInstanceOf( \BulkCatalogueManager\Engine\UndoRecorder::class, $recorder );
+		$summary = $this->planner()->walk(
+			self::BATCH,
+			self::USER,
+			static function ( array $item ) use ( $recorder, $clear, &$seen, &$peak ): void {
+				$recorder->add( $item );
+				++$seen;
+				if ( 0 === $seen % 500 ) {
+					$clear();
+					$peak = max( $peak, memory_get_usage() );
+				}
+			}
+		);
+		$this->assertInstanceOf( PlanSummary::class, $summary );
+		$result = $recorder->finish( $summary->counts(), $summary->hash() );
+		$this->assertTrue( is_array( $result ), $result instanceof \WP_Error ? $result->get_error_message() : '' );
+		$this->assertSame( $count, $result['total_items'] );
+		$this->assertSame( $count, $recorded, 'Every object is an item of the undo batch.' );
+		$this->assertSame( $count / 500, $inserts, '500 items a statement, as the plan was walked.' );
+		$header = $this->store->other( $result['batch_id'] );
+		$this->assertSame( $count, (int) $header['total_items'], 'The header completed with the item count.' );
+		$this->assertSame( $count, json_decode( (string) $header['selection'], true )['materialised'] );
+		$this->assertSame( ',set_value,', $header['actions'] );
+		$held = $peak - $before;
+		$this->assertLessThan( 32 * 1048576, $held, sprintf( 'Recording 100,000 items held %.1f MB.', $held / 1048576 ) );
+	}
+
 	/**
 	 * Walk a batch of $count objects, each with one applied price row, and
 	 * answer the most memory the walk held above where it started. The

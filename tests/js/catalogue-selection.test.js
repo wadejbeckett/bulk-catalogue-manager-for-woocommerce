@@ -265,6 +265,40 @@ describe( 'the selection bar’s notices', () => {
 	} );
 } );
 
+describe( 'the selection bar after a change to 100,000 products and variations (T112)', () => {
+	it( 'offers Undo this change: there is no size above which undo is withheld', () => {
+		const onUndo = jest.fn();
+		render(
+			<SelectionBar
+				pageCount={ 25 }
+				total={ 100000 }
+				filtered={ false }
+				onMakeChange={ jest.fn() }
+				onUndo={ onUndo }
+				onViewHistory={ jest.fn() }
+				selection={ {
+					count: 0,
+					byType: { products: 0, variations: 0 },
+					status: 'idle',
+					hasSelection: false,
+					notice: { kind: 'done', batchId: 31, kept: 0 },
+					offerAll: false,
+					dismiss: jest.fn(),
+					clear: jest.fn(),
+					retry: jest.fn(),
+				} }
+			/>
+		);
+		expect(
+			document.querySelector( '.bulkcat-selection' ).textContent
+		).not.toContain( 'not yet supported' );
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Undo this change' } )
+		);
+		expect( onUndo ).toHaveBeenCalledWith( 31 );
+	} );
+} );
+
 describe( 'the selection bar when a change could not be followed (T85)', () => {
 	it( 'says so plainly and offers Check again and History', () => {
 		const checkAgain = jest.fn();

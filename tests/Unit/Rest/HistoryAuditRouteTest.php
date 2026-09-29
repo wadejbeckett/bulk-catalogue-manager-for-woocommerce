@@ -475,6 +475,18 @@ final class HistoryAuditRouteTest extends TestCase {
 				'user_id' => 5,
 			]
 		);
+		// Batch 16 was undone by 17, a partial undo (an item left alone): it is undone, and says by whom.
+		$this->batch( 16, 'undone', [ 'set_value' ] );
+		$this->batch(
+			17,
+			'partial',
+			[ 'set_value' ],
+			[
+				'source'  => 'undo',
+				'undo_of' => 16,
+				'user_id' => 4,
+			]
+		);
 		$before = count( $GLOBALS['wpdb']->queries );
 		$items  = array_column( $this->ok( self::dispatch( '/batches', [ 'per_page' => 100 ] ) )['items'], null, 'batch_id' );
 		$this->assertSame( [ 'Sam Shop', 'Rosa Admin', 'User 5' ], [ $items[1]['user_name'], $items[2]['user_name'], $items[15]['user_name'] ], 'A removed account reads as "User 5".' );
@@ -487,7 +499,10 @@ final class HistoryAuditRouteTest extends TestCase {
 			],
 			$items[13]['undone_by']
 		);
-		$this->assertSame( [ 13 ], array_keys( array_filter( array_column( $items, 'undone_by', 'batch_id' ) ) ), 'Only an undone row says who put it back.' );
+		$put_back = array_keys( array_filter( array_column( $items, 'undone_by', 'batch_id' ) ) );
+		sort( $put_back );
+		$this->assertSame( [ 13, 16 ], $put_back, 'Only an undone row says who put it back.' );
+		$this->assertSame( 17, $items[16]['undone_by']['batch_id'], 'A partial undo undoes its batch (Undo\\Original::UNDONE_BY), so it names it too.' );
 		$this->assertCount( 1, $GLOBALS['bulkcat_test']['get_users_calls'], 'Every name on the page from one get_users() call.' );
 		$this->assertSame( [ 3, 4, 5 ], $GLOBALS['bulkcat_test']['get_users_calls'][0]['include'] );
 		$queries = array_slice( $GLOBALS['wpdb']->queries, $before );

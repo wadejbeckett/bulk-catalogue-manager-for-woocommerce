@@ -1798,6 +1798,19 @@ def check_read_export_roundtrip(p: Probe) -> None:
               f"{len(header)} headings; mapped {mapped}; everything else Do not import, including {[h for h in header if '(for reference)' in h]}, Status and the listing control; "
               f"importing user locales {sorted(found)} (de_DE without language packs: WooCommerce's English fallback path); differing {wrong}")
 
+    def mapping_guard() -> None:
+        # Main Build minor: the import helper refuses a mapping that is not the screen's (amendment 8).
+        r, table = export(state["fx"]["categories"]["roundtrip"], "filter")
+        ids = [int(row[0]) for row in table[1:]]
+        raw = export_native(p, "mapping", {"csv": base64.b64encode(r.body).decode(), "delimiter": ",", "raw": True}, user="manager")["mapping"]
+        before = export_native(p, "snapshot", {"ids": ids})
+        result = export_native(p, "import", {"csv": base64.b64encode(r.body).decode(), "delimiter": ",", "mapping": raw}, user="manager")
+        after = export_native(p, "snapshot", {"ids": ids})
+        unfiltered = [m for m in raw if m and m not in IMPORTER_MAPPED.values()]
+        p.row("read", "read:export:importer-mapping-guard",
+              bool(unfiltered) and bool(result.get("refused")) and "updated" not in result and not diff(before, after),
+              f"auto_map_columns() alone maps {unfiltered[:6]}; the import helper answered {result.get('refused') or result}; nothing changed: {not diff(before, after)}")
+
     def roundtrip() -> None:
         category = state["fx"]["categories"]["roundtrip"]
         legs = []
@@ -1930,7 +1943,7 @@ def check_read_export_roundtrip(p: Probe) -> None:
               f"disable_functions {before.get('disable_functions')!r}; Apache Timeout {before.get('apache_timeout')} s; no PHP-FPM (mod_php) and no proxy in front; "
               f"the probe's must-use plugin removed {found.get('removed')}")
 
-    steps = [("roundtrip-fixtures", fixtures), ("importer-mapping", mapping), ("native-import-roundtrip", roundtrip),
+    steps = [("roundtrip-fixtures", fixtures), ("importer-mapping", mapping), ("importer-mapping-guard", mapping_guard), ("native-import-roundtrip", roundtrip),
              ("product-post-parent", product_post_parent), ("native-import-edited", edited), ("recorded", recorded), ("time-limit", time_limit)]
     for name, fn in steps:
         if name != "roundtrip-fixtures" and "fx" not in state:

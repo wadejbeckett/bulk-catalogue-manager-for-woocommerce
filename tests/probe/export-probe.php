@@ -21,9 +21,13 @@
  *   snapshot           the round trip's snapshot of the given ids
  *   mapping            the header row mapped as WooCommerce's import screen maps it:
  *                      auto_map_columns() filtered through get_mapping_options()
+ *                      (with `raw`, auto_map_columns() alone, for the guard's check)
  *   import             import a CSV through WooCommerce's own importer, Update
- *                      existing products on, with that filtered mapping, as the
- *                      current user (wp eval --user)
+ *                      existing products on, as the current user (wp eval --user),
+ *                      with the screen's mapping; a given `mapping` is used only
+ *                      if every target is one the screen offers ('' or an option
+ *                      of get_mapping_options()), and refused otherwise, before
+ *                      anything is imported
  *   exporter           WooCommerce's own exporter's Type and Parent for the given ids
  *   query_counts       queries per page of the export's row sources at 25, 50 and 100 rows
  *   footprint          what an export must never change: request and selection rows,
@@ -64,8 +68,8 @@ if ( ! function_exists( 'bulkcat_export_probe' ) ) {
 		$out  = match ( $action ) {
 			'fixtures'     => bulkcat_export_probe_fixtures(),
 			'snapshot'     => bulkcat_export_probe_snapshot( array_map( 'intval', (array) ( $args['ids'] ?? [] ) ) ),
-			'mapping'      => bulkcat_export_probe_mapping( bulkcat_export_probe_headers( (string) ( $args['csv'] ?? '' ), (string) ( $args['delimiter'] ?? ',' ) ), (string) ( $args['locale'] ?? '' ) ),
-			'import'       => bulkcat_export_probe_import( (string) ( $args['csv'] ?? '' ), (string) ( $args['delimiter'] ?? ',' ) ),
+			'mapping'      => bulkcat_export_probe_mapping( bulkcat_export_probe_headers( (string) ( $args['csv'] ?? '' ), (string) ( $args['delimiter'] ?? ',' ) ), (string) ( $args['locale'] ?? '' ), ! empty( $args['raw'] ) ),
+			'import'       => bulkcat_export_probe_import( (string) ( $args['csv'] ?? '' ), (string) ( $args['delimiter'] ?? ',' ), isset( $args['mapping'] ) ? array_map( 'strval', (array) $args['mapping'] ) : null ),
 			'exporter'     => bulkcat_export_probe_exporter( array_map( 'intval', (array) ( $args['ids'] ?? [] ) ) ),
 			'query_counts' => bulkcat_export_probe_query_counts( (int) ( $args['user'] ?? 0 ) ),
 			'footprint'    => bulkcat_export_probe_footprint(),
@@ -487,9 +491,10 @@ if ( ! function_exists( 'bulkcat_export_probe' ) ) {
 	 *
 	 * @param list<string> $headers Header row.
 	 * @param string       $locale  The importing user's locale ('' to leave it).
-	 * @return array<int, string> Column index => field, or ''.
+	 * @param bool         $raw     Answer auto_map_columns() alone, unfiltered (only for the guard's check).
+	 * @return array{locale: string, mapping: array<int, string>} Column index => field, or ''.
 	 */
-	function bulkcat_export_probe_mapping( array $headers, string $locale = '' ): array {
+	function bulkcat_export_probe_mapping( array $headers, string $locale = '', bool $raw = false ): array {
 		$user     = get_current_user_id();
 		$previous = get_user_meta( $user, 'locale', true );
 		if ( '' !== $locale && $user > 0 ) {
@@ -502,19 +507,11 @@ if ( ! function_exists( 'bulkcat_export_probe' ) ) {
 			$options    = new ReflectionMethod( $controller, 'get_mapping_options' );
 			$auto->setAccessible( true );
 			$options->setAccessible( true );
-			$mapped = (array) $auto->invoke( $controller, $headers );
-			foreach ( $mapped as $index => $field ) {
-				$offered = [];
-				foreach ( (array) $options->invoke( $controller, $field ) as $key => $value ) {
-					if ( is_array( $value ) ) {
-						foreach ( array_keys( (array) ( $value['options'] ?? [] ) ) as $sub ) {
-							$offered[] = (string) $sub;
-						}
-					} else {
-						$offered[] = (string) $key;
-					}
+			$mapped = array_map( 'strval', (array) $auto->invoke( $controller, $headers ) );
+			if ( ! $raw ) {
+				foreach ( $mapped as $index => $field ) {
+					$mapped[ $index ] = bulkcat_export_probe_offered( $controller, $options, $field ) ? $field : '';
 				}
-				$mapped[ $index ] = in_array( (string) $field, $offered, true ) ? (string) $field : '';
 			}
 			return [
 				'locale'  => get_user_locale(),
@@ -529,15 +526,40 @@ if ( ! function_exists( 'bulkcat_export_probe' ) ) {
 	}
 
 	/**
-	 * Import a CSV through WooCommerce's importer as the current user, with
-	 * Update existing products and the screen-equivalent mapping. Refuses a
-	 * mapping that is not filtered (every target '' or an offered option).
+	 * Whether the import screen offers this target for a column: '' (Do not
+	 * import) always, else a key of get_mapping_options(), option groups
+	 * flattened, as views/html-csv-import-mapping.php lists them.
 	 *
-	 * @param string $csv       The file's bytes, base64.
-	 * @param string $delimiter "," or ";".
+	 * @param WC_Product_CSV_Importer_Controller $controller The screen's controller.
+	 * @param ReflectionMethod                   $options    Its get_mapping_options(), made accessible.
+	 * @param string                             $field      The target.
+	 */
+	function bulkcat_export_probe_offered( WC_Product_CSV_Importer_Controller $controller, ReflectionMethod $options, string $field ): bool {
+		if ( '' === $field ) {
+			return true;
+		}
+		foreach ( (array) $options->invoke( $controller, $field ) as $key => $value ) {
+			if ( is_array( $value ) ? array_key_exists( $field, (array) ( $value['options'] ?? [] ) ) : (string) $key === $field ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Import a CSV through WooCommerce's importer as the current user, with
+	 * Update existing products and the screen-equivalent mapping. A mapping
+	 * given in its place is used only when every target is one the screen
+	 * offers for it; otherwise nothing is imported (amendment 8: a heading
+	 * such as `status` that auto_map_columns() returns as its own text would
+	 * reach set_props()).
+	 *
+	 * @param string            $csv       The file's bytes, base64.
+	 * @param string            $delimiter "," or ";".
+	 * @param list<string>|null $mapping   Targets by column, instead of the screen's mapping.
 	 * @return array<string, mixed>
 	 */
-	function bulkcat_export_probe_import( string $csv, string $delimiter ): array {
+	function bulkcat_export_probe_import( string $csv, string $delimiter, ?array $mapping = null ): array {
 		global $wpdb;
 		$bytes = (string) base64_decode( $csv, true );
 		$file  = trailingslashit( get_temp_dir() ) . 'bulkcat-export-probe-' . wp_generate_password( 8, false ) . '.csv';
@@ -552,9 +574,15 @@ if ( ! function_exists( 'bulkcat_export_probe' ) ) {
 				]
 			);
 			$headers    = $reader->get_raw_keys();
-			$mapped     = bulkcat_export_probe_mapping( $headers )['mapping'];
+			$mapped     = null === $mapping ? bulkcat_export_probe_mapping( $headers )['mapping'] : array_values( $mapping );
 			if ( count( $mapped ) !== count( $headers ) ) {
 				return [ 'refused' => 'the mapping does not cover every column' ];
+			}
+			$options = new ReflectionMethod( $controller, 'get_mapping_options' );
+			$options->setAccessible( true );
+			$unoffered = array_values( array_filter( $mapped, static fn( string $field ): bool => ! bulkcat_export_probe_offered( $controller, $options, $field ) ) );
+			if ( [] !== $unoffered ) {
+				return [ 'refused' => 'the mapping is not the import screen\'s; it maps to ' . implode( ', ', $unoffered ) ];
 			}
 			$before_max = (int) $wpdb->get_var( "SELECT MAX(ID) FROM {$wpdb->posts}" );
 			$importer   = WC_Product_CSV_Importer_Controller::get_importer(

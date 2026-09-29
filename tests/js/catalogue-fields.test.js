@@ -105,8 +105,8 @@ describe( 'fields from the registry', () => {
 			'regular_price',
 			'stock_status',
 			'status',
-			'visible_on_site',
 		] );
+		// T93: Shown in shop and search is a listing control an owner may add, not a default column.
 		expect( view.perPage ).toBe( 50 );
 		expect( view.sort ).toBeUndefined();
 		expect( defaultView( REGISTRY, {} ).perPage ).toBe( 25 );

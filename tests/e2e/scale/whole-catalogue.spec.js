@@ -7,7 +7,7 @@
  * only when asked:
  *
  *   BULKCAT_E2E_SCALE=1          the products and products-and-variations previews;
- *   BULKCAT_E2E_SCALE_APPLY=1    also apply Hide from site to every product, run
+ *   BULKCAT_E2E_SCALE_APPLY=1    also apply Hide from shop and search to every product, run
  *                                the queue and undo it (about an hour);
  *   BULKCAT_E2E_SCALE_100K=1     the 100,000-member selection, preview and Apply
  *                                (needs seed.sh 22206 on the 20,000 fixture: 100,003 objects);
@@ -260,8 +260,8 @@ async function shot( page, name ) {
 }
 
 /**
- * Products hidden from the catalogue (the product_visibility term Hide from
- * site sets).
+ * Products hidden from the catalogue (the product_visibility terms Hide
+ * from shop and search sets).
  *
  * @return {number} Count.
  */
@@ -281,7 +281,7 @@ test.afterEach( () => {
 	undoLeftovers( mark );
 } );
 
-test( 'every product: Select all, Hide from site, an enabled Apply in a clear time; applied through the queue and undone', async ( {
+test( 'every product: Select all, Hide from shop and search, an enabled Apply in a clear time; applied through the queue and undone', async ( {
 	page,
 } ) => {
 	test.setTimeout( 4 * 3600 * 1000 );
@@ -300,9 +300,11 @@ test( 'every product: Select all, Hide from site, an enabled Apply in a clear ti
 		.filter( ( w ) => w.path === 'selection/compose' )
 		.pop();
 
-	// the client's case: Hide from site on the whole catalogue.
+	// The owner's case: Hide from shop and search on the whole catalogue.
 	const opened = Date.now();
-	await bar.getByRole( 'button', { name: 'Hide from site' } ).click();
+	await bar
+		.getByRole( 'button', { name: 'Hide from shop and search' } )
+		.click();
 	const panel = page.getByRole( 'dialog', { name: 'Bulk change' } );
 	const check = panel.getByRole( 'button', { name: 'Check the change' } );
 	await expect( check ).toBeEnabled();

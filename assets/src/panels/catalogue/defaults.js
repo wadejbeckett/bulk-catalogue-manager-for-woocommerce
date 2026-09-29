@@ -110,7 +110,7 @@ export function offSiteChoices( descriptors ) {
 
 /**
  * Choices that hide a product from the shop and from search (`hidesAs:
- * 'hidden'`): field key => values, the Visible on site switch first.
+ * 'hidden'`): field key => values, the Shown in shop and search switch first.
  *
  * @param {Array<Object>} descriptors Registry descriptors.
  * @return {Object} Field key => choice values.
@@ -131,8 +131,8 @@ export function hidingChoices( descriptors ) {
 export const TREE_TERM_SOURCES = [ 'categories' ];
 
 /**
- * The selection bar's Show on site and Hide from site (SPEC §4.1, §5.3): the
- * switch field and its two real values. Either opens the bulk change panel
+ * The selection bar's Show in shop and search and Hide from shop and search
+ * (SPEC §4.1, §5.3, T93): the switch field and its two real values. Either opens the bulk change panel
  * with this field set, so it is previewed like any change.
  */
 export const QUICK_VISIBILITY = {
@@ -142,7 +142,7 @@ export const QUICK_VISIBILITY = {
 };
 
 /**
- * The "Visible on site" switch (SPEC §5.3, T45): the switch field, the
+ * The "Shown in shop and search" switch (SPEC §5.3, T45, T93): the switch field, the
  * four-way catalogue visibility field it simplifies, the status field whose
  * off-site values earn the grey badge beside it, the status value that puts a
  * product on the site, and the catalogue visibility each real position

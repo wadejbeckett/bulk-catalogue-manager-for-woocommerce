@@ -87,7 +87,6 @@ describe( 'catalogue table', () => {
 			'Regular price',
 			'Stock status',
 			'Status',
-			'Visible on site',
 			'Actions',
 		] );
 	} );

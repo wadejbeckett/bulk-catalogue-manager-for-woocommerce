@@ -423,7 +423,7 @@ export function CatalogueGrid( {
 		},
 		[ byId ]
 	);
-	// T51: the cards' Visible on site slot draws the switch field's own cell.
+	// T51: the cards' Shown in shop and search slot draws the switch field's own cell.
 	const renderSwitch = useMemo( () => {
 		const slot = switchFieldId( filterFields );
 		const field = filterFields.find( ( each ) => each.id === slot );

@@ -6,7 +6,7 @@
  * - Below the *Confirm above this many rows* setting, Apply is one click.
  * - At or above it, Apply restates the count in words and needs a second
  *   click.
- * - A change that sets status to draft or pending, switches Visible on site
+ * - A change that sets status to draft or pending, switches Shown in shop and search
  *   off (or hides a product from the catalogue), or clears a field always
  *   confirms, whatever the count, naming what it will do.
  * - Status is the global Off/On switch (T91, SPEC §4.5, §5.5): a Draft step
@@ -144,9 +144,9 @@ export function alwaysConfirmReasons(
 		if ( hides === 'hidden' ) {
 			reasons.push(
 				sprintf(
-					/* translators: 1: a field, such as "Visible on site"; 2: its new value, such as "Hidden"; 3: a number of products, such as "24 products". */
+					/* translators: 1: a field, such as "Shown in shop and search"; 2: its new value, such as "Hidden"; 3: a number of products, such as "24 products". */
 					__(
-						'This sets %1$s to %2$s on %3$s, hiding them from the shop and from search.',
+						'This sets %1$s to %2$s on %3$s: they leave the shop and search results, but can still be opened by link and bought. To take them off sale, set Status to Draft.',
 						'bulk-catalogue-manager-for-woocommerce'
 					),
 					field.label,

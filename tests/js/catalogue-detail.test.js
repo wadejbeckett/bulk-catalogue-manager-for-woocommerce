@@ -138,7 +138,9 @@ describe( 'detail panel', () => {
 			).toBeGreaterThan( 0 );
 		}
 		// The switch is the row's; the panel states the exact four-way value.
-		expect( within( dialog ).queryByText( 'Visible on site' ) ).toBeNull();
+		expect(
+			within( dialog ).queryByText( 'Shown in shop and search' )
+		).toBeNull();
 		const visibility = within( dialog ).getByRole( 'combobox', {
 			name: 'Catalogue visibility',
 		} );

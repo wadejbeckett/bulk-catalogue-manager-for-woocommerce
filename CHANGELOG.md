@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+<!-- global-off-on (branch codex/global-off-on): ticket 04 entries -->
+### Changed: Status is the global Off/On switch
+
+- The **Visible on site** switch is now **Shown in shop and search** (choices Shown, Hidden, Partly), and it is no longer a default column; its key `visible_on_site`, saved views, journal rows and CSV column id are unchanged. It changes listing only: a hidden product can still be opened by link and bought. The selection bar's quick actions read **Show in shop and search** and **Hide from shop and search**.
+- CSV export: the one heading change is "Visible on site" → "Shown in shop and search". An export of the default view no longer contains that column at all, because it is not a default column any more; a view that shows it exports it under the new heading. The Status column's heading and values are unchanged (an Off product exports its post status, `draft`).
+- A saved view filtering Status is Draft now lists genuine drafts only, not products switched Off; the Status filter also offers **Off** and **Changed outside this screen**.
+<!-- /global-off-on -->
+
 ### Changed
 
 - Selections are exact and kept on the server: ticked rows and **Select all matching** add to one selection that survives searches, filters, pages and a reload, until **Clear selection**, **Clear search**, unticking, or a change that finished in full. **Review selected products** lists and removes members, including ones no longer available.

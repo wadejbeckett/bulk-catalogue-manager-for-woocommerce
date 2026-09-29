@@ -183,8 +183,8 @@ final class RegistryTest extends TestCase {
 		$client  = array_map( static fn( Field $field ): array => $field->to_client(), ( new Registry() )->all() );
 		$default = array_filter( $client, static fn( array $field ): bool => $field['defaultColumn'] );
 		uasort( $default, static fn( array $a, array $b ): int => $a['defaultOrder'] <=> $b['defaultOrder'] );
-		$this->assertSame( [ 'sku', 'category_ids', 'regular_price', 'stock_status', 'status', 'visible_on_site' ], array_keys( $default ), 'T40, T45, T75: the columns after the product cell, in the prototype\'s order; the sale price shows under the regular price.' );
-		$this->assertSame( [ 1, 2, 3, 4, 5, 6 ], array_column( $default, 'defaultOrder' ) );
+		$this->assertSame( [ 'sku', 'category_ids', 'regular_price', 'stock_status', 'status' ], array_keys( $default ), 'T40, T45, T75: the columns after the product cell, in the prototype\'s order; the sale price shows under the regular price. T93: Shown in shop and search is not a default column; the status badge carries Off/On.' );
+		$this->assertSame( [ 1, 2, 3, 4, 5 ], array_column( $default, 'defaultOrder' ) );
 		foreach ( array_diff_key( $client, $default ) as $key => $field ) {
 			$this->assertNull( $field['defaultOrder'], $key );
 		}
@@ -420,7 +420,7 @@ final class RegistryTest extends TestCase {
 		$this->assertSame( 'Stock quantity has to be a whole number. Enter a number like 12.', self::field( 'stock_quantity' )->validate( '1.5' )->get_error_message() );
 		$this->assertSame( 'Regular price has to be a price of 0 or more, like 12.50, or left empty.', self::field( 'regular_price' )->validate( '-1' )->get_error_message() );
 		$this->assertSame( 'Stock status has to be one of: In stock, Out of stock, On backorder.', self::field( 'stock_status' )->validate( 'x' )->get_error_message() );
-		$this->assertSame( 'Visible on site has to be one of: Visible, Hidden.', self::field( 'visible_on_site' )->validate( 'partly' )->get_error_message() );
+		$this->assertSame( 'Shown in shop and search has to be one of: Shown, Hidden.', self::field( 'visible_on_site' )->validate( 'partly' )->get_error_message() );
 	}
 
 	public function test_money_uses_the_shop_precision_and_decimal_separator(): void {
@@ -752,6 +752,25 @@ final class RegistryTest extends TestCase {
 				$this->assertStringContainsString( 'is invalid', $e->getMessage() );
 			}
 		}
+	}
+
+	public function test_the_listing_switch_is_named_for_what_it_does_and_is_not_a_default_column(): void {
+		// T93 (SPEC §5.3): a listing control, not availability; the key stays for saved views, journals and CSV ids.
+		$field = self::field( 'visible_on_site' );
+		$this->assertSame( 'Shown in shop and search', $field->label() );
+		$this->assertSame(
+			[
+				'on'     => 'Shown',
+				'off'    => 'Hidden',
+				'partly' => 'Partly',
+			],
+			$field->choices()
+		);
+		$client = $field->to_client();
+		$this->assertFalse( $client['defaultColumn'] );
+		$this->assertNull( $client['defaultOrder'] );
+		$this->assertTrue( $field->inline(), 'Still set in place for an owner who adds the column.' );
+		$this->assertSame( [ 'on', 'off' ], $field->writable_choices() );
 	}
 
 	public function test_status_filters_by_off_and_changed_outside_but_never_writes_them(): void {

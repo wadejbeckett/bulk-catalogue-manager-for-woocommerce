@@ -234,7 +234,9 @@ describe( 'no way around the gate', () => {
 		tick( 'Cap' );
 		await counted( '3 products selected' );
 		fireEvent.click(
-			within( bar() ).getByRole( 'button', { name: 'Hide from site' } )
+			within( bar() ).getByRole( 'button', {
+				name: 'Hide from shop and search',
+			} )
 		);
 		const dialog = await screen.findByRole( 'dialog', {
 			name: 'Bulk change',

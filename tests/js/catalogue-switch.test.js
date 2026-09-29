@@ -1,5 +1,7 @@
 /**
- * T45: the "Visible on site" switch column. Three positions from the
+ * T45: the "Shown in shop and search" switch column (named "Visible on site"
+ * before T93; not a default column since, so these tests show it as an owner
+ * who adds it would). Three positions from the
  * registry's switch field, a Partly tooltip naming the exact state, a Partly
  * click that offers the two real choices and writes nothing until one is
  * chosen, a grey status badge beside an operable switch, one PATCH of the
@@ -26,7 +28,23 @@ jest.mock( '@wordpress/api-fetch', () => {
 
 const apiFetch = require( '@wordpress/api-fetch' ).default;
 const { getQueryArgs } = require( '@wordpress/url' );
-const { REGISTRY, ROWS, CATEGORIES, page } = require( './catalogue-fixture' );
+const {
+	REGISTRY: FIELDS,
+	ROWS,
+	CATEGORIES,
+	page,
+} = require( './catalogue-fixture' );
+
+// T93: the switch is not a default column; show it where it was, as an
+// owner's view that adds it would.
+const REGISTRY = {
+	...FIELDS,
+	fields: FIELDS.fields.map( ( field ) =>
+		field.key === 'visible_on_site'
+			? { ...field, defaultColumn: true, defaultOrder: 6 }
+			: field
+	),
+};
 
 const SETTINGS = { settings: { rows_per_page: 25 } };
 
@@ -95,26 +113,26 @@ function deferred() {
 	return { promise, resolve, reject };
 }
 
-describe( 'Visible on site switch', () => {
+describe( 'Shown in shop and search switch', () => {
 	it( 'shows on, off and Partly, each named with the product', async () => {
 		await renderLoaded();
 		const on = screen.getByRole( 'switch', {
-			name: 'Visible on site, Classic Cotton T-Shirt',
+			name: 'Shown in shop and search, Classic Cotton T-Shirt',
 		} );
 		expect( on.getAttribute( 'aria-checked' ) ).toBe( 'true' );
-		expect( on.textContent ).toContain( 'On site' );
+		expect( on.textContent ).toContain( 'Shown' );
 		const off = screen.getByRole( 'switch', {
-			name: 'Visible on site, Ladies Golf Shirt',
+			name: 'Shown in shop and search, Ladies Golf Shirt',
 		} );
 		expect( off.getAttribute( 'aria-checked' ) ).toBe( 'false' );
 		expect( off.textContent ).toContain( 'Hidden' );
 		const partly = screen.getByRole( 'button', {
-			name: 'Visible on site, Canvas Tote Bag',
+			name: 'Shown in shop and search, Canvas Tote Bag',
 		} );
 		expect( partly.textContent ).toContain( 'Partly' );
 		expect(
 			screen.queryByRole( 'switch', {
-				name: 'Visible on site, Canvas Tote Bag',
+				name: 'Shown in shop and search, Canvas Tote Bag',
 			} )
 		).toBeNull();
 	} );
@@ -122,13 +140,13 @@ describe( 'Visible on site switch', () => {
 	it( 'names the exact middle state in the Partly tooltip', async () => {
 		await renderLoaded();
 		const partly = screen.getByRole( 'button', {
-			name: 'Visible on site, Canvas Tote Bag',
+			name: 'Shown in shop and search, Canvas Tote Bag',
 		} );
 		const described = document.getElementById(
 			partly.getAttribute( 'aria-describedby' )
 		);
 		expect( described.textContent ).toBe(
-			'Partly visible: Shop only. Choose on or off to change it.'
+			'Partly shown: Shop only. Choose on or off to change it.'
 		);
 	} );
 
@@ -146,11 +164,11 @@ describe( 'Visible on site switch', () => {
 		await renderLoaded();
 		fireEvent.click(
 			screen.getByRole( 'button', {
-				name: 'Visible on site, Canvas Tote Bag',
+				name: 'Shown in shop and search, Canvas Tote Bag',
 			} )
 		);
 		const menu = await screen.findByRole( 'group', {
-			name: 'Visible on site, Canvas Tote Bag',
+			name: 'Shown in shop and search, Canvas Tote Bag',
 		} );
 		expect(
 			within( menu ).getByRole( 'button', {
@@ -168,7 +186,7 @@ describe( 'Visible on site switch', () => {
 			expect.anything()
 		);
 		const off = await screen.findByRole( 'switch', {
-			name: 'Visible on site, Canvas Tote Bag',
+			name: 'Shown in shop and search, Canvas Tote Bag',
 		} );
 		expect( off.getAttribute( 'aria-checked' ) ).toBe( 'false' );
 	} );
@@ -186,7 +204,7 @@ describe( 'Visible on site switch', () => {
 		} );
 		await renderLoaded();
 		const off = screen.getByRole( 'switch', {
-			name: 'Visible on site, Ladies Golf Shirt',
+			name: 'Shown in shop and search, Ladies Golf Shirt',
 		} );
 		const cell = off.closest( '.bulkcat-switch' );
 		const badge = cell.querySelector( '.bulkcat-switch__status' );
@@ -198,14 +216,14 @@ describe( 'Visible on site switch', () => {
 			catalog_visibility: 'visible',
 		} );
 		const on = await screen.findByRole( 'switch', {
-			name: 'Visible on site, Ladies Golf Shirt',
+			name: 'Shown in shop and search, Ladies Golf Shirt',
 		} );
 		await waitFor( () =>
 			expect( on.getAttribute( 'aria-checked' ) ).toBe( 'true' )
 		);
 		// A draft is never called visible.
 		expect( on.textContent ).toContain( 'When published' );
-		expect( on.textContent ).not.toContain( 'On site' );
+		expect( on.textContent ).not.toContain( 'Shown' );
 	} );
 
 	it( 'issues one PATCH and keeps the row pending until it returns', async () => {
@@ -213,7 +231,7 @@ describe( 'Visible on site switch', () => {
 		patch.mockReturnValue( answer.promise );
 		await renderLoaded();
 		const on = screen.getByRole( 'switch', {
-			name: 'Visible on site, Classic Cotton T-Shirt',
+			name: 'Shown in shop and search, Classic Cotton T-Shirt',
 		} );
 		fireEvent.click( on );
 		await waitFor( () => expect( patches() ).toHaveLength( 1 ) );
@@ -228,7 +246,7 @@ describe( 'Visible on site switch', () => {
 			] )
 		);
 		const pending = screen.getByRole( 'switch', {
-			name: 'Visible on site, Classic Cotton T-Shirt',
+			name: 'Shown in shop and search, Classic Cotton T-Shirt',
 		} );
 		expect( pending.getAttribute( 'aria-busy' ) ).toBe( 'true' );
 		expect( pending.getAttribute( 'aria-checked' ) ).toBe( 'false' );
@@ -248,7 +266,7 @@ describe( 'Visible on site switch', () => {
 			} );
 		} );
 		const done = screen.getByRole( 'switch', {
-			name: 'Visible on site, Classic Cotton T-Shirt',
+			name: 'Shown in shop and search, Classic Cotton T-Shirt',
 		} );
 		expect( done.getAttribute( 'aria-busy' ) ).toBeNull();
 		expect( done.getAttribute( 'aria-checked' ) ).toBe( 'false' );
@@ -263,16 +281,16 @@ describe( 'Visible on site switch', () => {
 		await renderLoaded();
 		fireEvent.click(
 			screen.getByRole( 'switch', {
-				name: 'Visible on site, Classic Cotton T-Shirt',
+				name: 'Shown in shop and search, Classic Cotton T-Shirt',
 			} )
 		);
 		expect(
 			await screen.findByText(
-				'We could not change whether Classic Cotton T-Shirt is visible on site, so it is as it was. You are not allowed to edit this product.'
+				'We could not change whether Classic Cotton T-Shirt is shown in the shop and search, so it is as it was. You are not allowed to edit this product.'
 			)
 		).toBeTruthy();
 		const on = screen.getByRole( 'switch', {
-			name: 'Visible on site, Classic Cotton T-Shirt',
+			name: 'Shown in shop and search, Classic Cotton T-Shirt',
 		} );
 		expect( on.getAttribute( 'aria-checked' ) ).toBe( 'true' );
 		expect( on.getAttribute( 'aria-busy' ) ).toBeNull();

@@ -746,4 +746,38 @@ def check_grid(p: Any) -> None:
         guard(p, name, fn)
 
 
-CHECKS = [check_engine, check_undo, check_preview, check_grid]
+# ---------------------------------------------------------------------------
+# T93: listing controls stay listing controls (E5)
+# ---------------------------------------------------------------------------
+
+def check_listing(p: Any) -> None:
+    def independent() -> None:
+        fx = upsert(p, [simple("e5-listing"), simple("e5-status")])
+        a, b = fx["e5-listing"]["id"], fx["e5-status"]["id"]
+        switch(p, [a], "draft")
+        raw = record(p, a)
+        seen = []
+        # Listing controls on an Off product: the cell's switch, the drawer's catalogue visibility, a bulk step.
+        for body in ({"visible_on_site": "off"}, {"catalog_visibility": "search"}, {"visible_on_site": "on"}):
+            edit = patch(p, a, body, ["status", "visible_on_site", "catalog_visibility"])
+            s = snap(p, [a])[str(a)]
+            seen.append((edit["status"], s["status"], s["catalog_visibility"], record(p, a) == raw))
+        bulk = apply(p, [a], [{"action": "set_value", "args": {"field": "visible_on_site", "value": "off"}}])
+        s = snap(p, [a])[str(a)]
+        seen.append((bulk["report"].get("status"), s["status"], s["catalog_visibility"], record(p, a) == raw))
+        listing_ok = [x[0] for x in seen] == [200, 200, 200, "complete"] and all(x[1] == "draft" and x[3] for x in seen) and [x[2] for x in seen] == ["hidden", "search", "visible", "hidden"]
+        # And the reverse: Off and On leave the listing controls alone.
+        patch(p, b, {"catalog_visibility": "catalog"}, ["catalog_visibility"])
+        off = switch(p, [b], "draft")
+        mid = snap(p, [b])[str(b)]
+        on = switch(p, [b], "publish")
+        end = snap(p, [b])[str(b)]
+        reverse_ok = (off["report"].get("status") == "complete" and on["report"].get("status") == "complete" and mid["catalog_visibility"] == "catalog"
+                      and end["catalog_visibility"] == "catalog" and end["status"] == "publish" and end["record"] == ""
+                      and all(r[1] in ("status", "availability_off") for r in journal(p, off["batch"]) + journal(p, on["batch"])))
+        row(p, "e5-independent", listing_ok and reverse_ok, f"on an Off product, Shown in shop and search and Catalogue visibility (cell, drawer, bulk) {[x[2] for x in seen]} left Status {sorted({x[1] for x in seen})} and the record {all(x[3] for x in seen)}; Off and On kept the listing {mid['catalog_visibility']}/{end['catalog_visibility']} and journalled only status and the record")
+
+    guard(p, "e5-independent", independent)
+
+
+CHECKS = [check_engine, check_undo, check_preview, check_grid, check_listing]

@@ -1,8 +1,9 @@
 /**
  * The sticky selection bar (T42, T84; SPEC §4.1): the whole selection's count
  * in words, from the server, whatever the view shows; the offer to add every
- * product matching the view; Review selected products; the Show on site and
- * Hide from site quick actions; Make a change to these; and Clear selection.
+ * product matching the view; Review selected products; the Show in shop and
+ * search and Hide from shop and search quick actions (listing only, T93);
+ * Make a change to these; and Clear selection.
  * Above it, the selection's notices: restored after a reload, checked again
  * after an idle spell (drift), no longer kept (lost), a change that could
  * not be confirmed with Try again, and the result once a change finished.
@@ -98,8 +99,8 @@ function unwatchedText() {
  * @param {boolean}       props.filtered      Whether the view narrows the catalogue.
  * @param {Function}      props.onMakeChange  Open the bulk change panel.
  * @param {Function}      props.onReview      Open the review of the selection.
- * @param {Function|null} props.onShow        Show on site, or null when the registry offers none.
- * @param {Function|null} props.onHide        Hide from site, or null.
+ * @param {Function|null} props.onShow        Show in shop and search, or null when the registry offers none.
+ * @param {Function|null} props.onHide        Hide from shop and search, or null.
  * @param {Function|null} props.onUndo        Undo a finished change by id, or null.
  * @param {Function|null} props.onViewHistory Open a change in History by id, or null.
  * @param {Function|null} props.onRestore     Bring back the selection Clear search released, or null.
@@ -385,7 +386,7 @@ export default function SelectionBar( {
 								onClick={ onShow }
 							>
 								{ __(
-									'Show on site',
+									'Show in shop and search',
 									'bulk-catalogue-manager-for-woocommerce'
 								) }
 							</Button>
@@ -397,7 +398,7 @@ export default function SelectionBar( {
 								onClick={ onHide }
 							>
 								{ __(
-									'Hide from site',
+									'Hide from shop and search',
 									'bulk-catalogue-manager-for-woocommerce'
 								) }
 							</Button>

@@ -25,7 +25,7 @@ Every write goes through WooCommerce's product classes (`wc_get_product()`, the 
 | --- | --- | --- |
 | Name | `post_title` (the slug is never changed) | Not editable; WooCommerce builds it from the attributes |
 | Status | `post_status` | Published or private only |
-| Catalogue visibility, and the **Visible on site** switch | `product_visibility` terms `exclude-from-catalog` and `exclude-from-search` | Product only |
+| Catalogue visibility, and the **Shown in shop and search** switch (a listing control; Status is the Off/On control) | `product_visibility` terms `exclude-from-catalog` and `exclude-from-search` | Product only |
 | Featured | `product_visibility` term `featured` | Product only |
 | Categories, tags | `product_cat`, `product_tag` terms | Product only |
 | Regular price | `_regular_price` | Each variation; a variable product's price comes from its variations |

@@ -45,7 +45,7 @@ export function isVariation( item ) {
 }
 
 /**
- * Whether a field is the "Visible on site" switch.
+ * Whether a field is the "Shown in shop and search" switch.
  *
  * @param {Object} descriptor Registry descriptor.
  * @return {boolean} The switch.

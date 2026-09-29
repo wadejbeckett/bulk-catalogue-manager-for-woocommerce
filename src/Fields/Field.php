@@ -60,7 +60,7 @@ final class Field {
 
 	/**
 	 * A choice that hides the product from the shop and from search while it
-	 * stays published (catalogue visibility hidden, Visible on site off).
+	 * stays published (catalogue visibility hidden, Shown in shop and search off).
 	 */
 	public const HIDES_FROM_SHOP = 'hidden';
 

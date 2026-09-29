@@ -115,15 +115,16 @@ describe( 'confirmation policy', () => {
 			op( 'set_value', { field: 'status', value: 'pending' } ),
 			'This sets Status to Pending review on 1 product, which takes them off the site.',
 		],
+		// T93: a listing control hides a product from the shop and search; it stays on sale.
 		[
-			'Visible on site off',
+			'Shown in shop and search off',
 			op( 'set_value', { field: 'visible_on_site', value: 'off' } ),
-			'This sets Visible on site to Hidden on 1 product, hiding them from the shop and from search.',
+			'This sets Shown in shop and search to Hidden on 1 product: they leave the shop and search results, but can still be opened by link and bought. To take them off sale, set Status to Draft.',
 		],
 		[
 			'catalogue visibility hidden',
 			op( 'set_value', { field: 'catalog_visibility', value: 'hidden' } ),
-			'This sets Catalogue visibility to Hidden on 1 product, hiding them from the shop and from search.',
+			'This sets Catalogue visibility to Hidden on 1 product: they leave the shop and search results, but can still be opened by link and bought. To take them off sale, set Status to Draft.',
 		],
 		[
 			'clearing a field',

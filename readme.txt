@@ -18,7 +18,7 @@ Bulk Catalogue Manager adds one screen under Products for changing many products
 
 **Find the products.** See the whole catalogue in one table, 25, 50 or 100 rows at a time. Search by name or SKU, filter by category, tag, type, status, visibility, stock, price, tax class, shipping class or date modified, and save the result as a named view. Show products, products with their variations, or variations only.
 
-**Change them.** Edit a price, stock level, SKU or the Visible on site switch directly in the table, or select products (or every product matching your filters) and open the bulk change panel. You can:
+**Change them.** Edit a price, stock level, SKU or Status directly in the table, or select products (or every product matching your filters) and open the bulk change panel. You can:
 
 * set a value, or clear it;
 * increase or decrease prices, stock, weight or dimensions by an amount or a percentage, and round prices, for example to end in .95 or .99;

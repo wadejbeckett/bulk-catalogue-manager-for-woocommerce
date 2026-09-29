@@ -6,7 +6,7 @@
  * view's media field), the name (its title field) and the visible columns,
  * which by default include the price and the stock status.
  *
- * The Visible on site switch has a slot: pass `renderSwitch( item )` and the
+ * The Shown in shop and search switch has a slot: pass `renderSwitch( item )` and the
  * card shows it in place of that field's plain value, in the table's column
  * order or at the end when the column is hidden. Without it the field shows
  * its registry badge. (T45's switch fills the slot.)
@@ -94,7 +94,7 @@ export function gridOf( fields, view, renderSwitch ) {
  * @param {Set}           props.pending           Row ids with a change in flight.
  * @param {Array<string>} props.selection         Selected row ids, as strings.
  * @param {Function}      props.onChangeSelection Selection change.
- * @param {Function}      props.renderSwitch      The Visible on site switch for a row (T45), or undefined.
+ * @param {Function}      props.renderSwitch      The Shown in shop and search switch for a row (T45), or undefined.
  * @return {Element} Grid.
  */
 export function CatalogueCards( {
@@ -178,7 +178,7 @@ export function CatalogueCards( {
  * The table or the cards, by the view's layout.
  *
  * @param {Object}   props              CatalogueTable's props plus `renderSwitch`.
- * @param {Function} props.renderSwitch The Visible on site switch for a row, or undefined.
+ * @param {Function} props.renderSwitch The Shown in shop and search switch for a row, or undefined.
  * @return {Element} Layout.
  */
 export default function CatalogueLayout( { renderSwitch, ...props } ) {

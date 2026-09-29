@@ -159,7 +159,7 @@ final class CsvExportTest extends TestCase {
 		$registry = new Registry();
 		$export   = new CsvExport( $this->source( 1 ), $registry, $registry->keys(), [], ',', 'f.csv' );
 		$this->assertSame(
-			[ 'Name', 'Status', 'Catalogue visibility', 'Visible on site', 'Featured', 'Categories', 'Tags', 'Regular price', 'Sale price', 'Stock status', 'Manage stock', 'Stock quantity', 'SKU', 'Weight', 'Length', 'Width', 'Height', 'Shipping class', 'Tax status', 'Tax class', 'Sold individually', 'Reviews', 'ID', 'Type', 'Image', 'Price', 'Date created', 'Last modified', 'Total sales', 'Variations' ],
+			[ 'Name', 'Status', 'Catalogue visibility', 'Shown in shop and search', 'Featured', 'Categories', 'Tags', 'Regular price', 'Sale price', 'Stock status', 'Manage stock', 'Stock quantity', 'SKU', 'Weight', 'Length', 'Width', 'Height', 'Shipping class', 'Tax status', 'Tax class', 'Sold individually', 'Reviews', 'ID', 'Type', 'Image', 'Price', 'Date created', 'Last modified', 'Total sales', 'Variations' ],
 			$export->header()
 		);
 		try {

@@ -589,7 +589,7 @@ describe( 'layouts', () => {
 		).toBeGreaterThanOrEqual( 2 );
 	} );
 
-	it( 'fills the Visible on site slot and keeps it out of the saved columns', async () => {
+	it( 'fills the Shown in shop and search slot and keeps it out of the saved columns', async () => {
 		const renderSwitch = ( item ) => (
 			<span data-testid="switch">{ `switch ${ item.id }` }</span>
 		);
@@ -599,12 +599,17 @@ describe( 'layouts', () => {
 		).toEqual( [ 'switch 11', 'switch 12' ] );
 
 		const fields = fieldsFromRegistry( REGISTRY );
-		// T46 made the switch a default column; a view without it still
-		// gets the slot, and one with it keeps its own place.
+		// A view without the switch still gets the slot (T93: the default
+		// view has none), and one with it keeps its own place.
 		const without = {
 			...BASE,
 			fields: BASE.fields.filter( ( key ) => key !== 'visible_on_site' ),
 		};
+		const withSwitch = {
+			...BASE,
+			fields: [ ...without.fields, 'visible_on_site' ],
+		};
+		expect( without.fields ).toEqual( BASE.fields );
 		const { view, added } = gridOf( fields, without, renderSwitch );
 		expect( added ).toBe( 'visible_on_site' );
 		expect( view.fields ).toEqual( [
@@ -614,6 +619,8 @@ describe( 'layouts', () => {
 		expect( gridOf( fields, without ).view.fields ).toEqual(
 			without.fields
 		);
-		expect( gridOf( fields, BASE, renderSwitch ).added ).toBeUndefined();
+		expect(
+			gridOf( fields, withSwitch, renderSwitch ).added
+		).toBeUndefined();
 	} );
 } );

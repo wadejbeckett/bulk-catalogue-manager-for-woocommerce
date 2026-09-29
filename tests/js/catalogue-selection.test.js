@@ -180,7 +180,7 @@ describe( 'selection model', () => {
 		expect( waitingReason( { status: 'idle' } ) ).toBe( '' );
 	} );
 
-	it( 'prefills Show on site and Hide from site as a set step on the switch', () => {
+	it( 'prefills Show in shop and search and Hide from shop and search as a set step on the switch', () => {
 		const hide = visibilityOperation( REGISTRY, {}, false );
 		expect( hide ).toMatchObject( {
 			action: 'set_value',
@@ -886,13 +886,15 @@ describe( 'selection in the catalogue', () => {
 		await settled();
 		const token = getSelectionSession().getState().current.token;
 		fireEvent.click(
-			within( bar() ).getByRole( 'button', { name: 'Hide from site' } )
+			within( bar() ).getByRole( 'button', {
+				name: 'Hide from shop and search',
+			} )
 		);
 		const dialog = await screen.findByRole( 'dialog', {
 			name: 'Bulk change',
 		} );
 		expect( dialog.textContent ).toContain( '2 selected products' );
-		expect( dialog.textContent ).toContain( 'Visible on site' );
+		expect( dialog.textContent ).toContain( 'Shown in shop and search' );
 		fireEvent.click(
 			within( dialog ).getByRole( 'button', { name: /^Check/ } )
 		);
@@ -910,16 +912,18 @@ describe( 'selection in the catalogue', () => {
 		expect( preview.data.ids ).toBeUndefined();
 	} );
 
-	it( 'prefills the bulk panel from Show on site', async () => {
+	it( 'prefills the bulk panel from Show in shop and search', async () => {
 		await renderLoaded();
 		tick( 'Ladies Golf Shirt' );
 		await counted( '1 product selected' );
 		await settled();
 		fireEvent.click(
-			within( bar() ).getByRole( 'button', { name: 'Show on site' } )
+			within( bar() ).getByRole( 'button', {
+				name: 'Show in shop and search',
+			} )
 		);
 		const dialog = await screen.findByRole( 'dialog' );
 		expect( dialog.textContent ).toContain( '1 selected product' );
-		expect( dialog.textContent ).toContain( 'Visible on site' );
+		expect( dialog.textContent ).toContain( 'Shown in shop and search' );
 	} );
 } );

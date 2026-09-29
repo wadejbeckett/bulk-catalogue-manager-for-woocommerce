@@ -215,7 +215,7 @@ final class Registry {
 		$variable_price = __( 'A variable product takes its price from its variations. Change the variations instead.', 'bulk-catalogue-manager-for-woocommerce' );
 
 		$catalogue_visibility = __( 'Catalogue visibility', 'bulk-catalogue-manager-for-woocommerce' );
-		$visible_on_site      = __( 'Visible on site', 'bulk-catalogue-manager-for-woocommerce' );
+		$visible_on_site      = __( 'Shown in shop and search', 'bulk-catalogue-manager-for-woocommerce' );
 		$featured             = __( 'Featured', 'bulk-catalogue-manager-for-woocommerce' );
 		$sold_individually    = __( 'Sold individually', 'bulk-catalogue-manager-for-woocommerce' );
 		$reviews              = __( 'Reviews', 'bulk-catalogue-manager-for-woocommerce' );
@@ -312,16 +312,17 @@ final class Registry {
 				getter: 'get_catalog_visibility',
 				setter: 'set_catalog_visibility',
 				inline: true,
+				// T93 (SPEC §5.3): a listing control, named for what it does; the key stays
+				// for saved views, journals and CSV ids. Status is the Off/On control.
 				choices: [
-					'on'     => __( 'Visible', 'bulk-catalogue-manager-for-woocommerce' ),
+					'on'     => __( 'Shown', 'bulk-catalogue-manager-for-woocommerce' ),
 					'off'    => __( 'Hidden', 'bulk-catalogue-manager-for-woocommerce' ),
 					'partly' => __( 'Partly', 'bulk-catalogue-manager-for-woocommerce' ),
 				],
 				write_choices: [ 'on', 'off' ],
 				variation_note: $per_product( $visible_on_site ),
 				adapter: Field::ADAPTER_SWITCH,
-				hiding_choices: [ 'off' => Field::HIDES_FROM_SHOP ],
-				default_order: 6
+				hiding_choices: [ 'off' => Field::HIDES_FROM_SHOP ]
 			),
 			new Field(
 				key: 'featured',

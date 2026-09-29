@@ -256,7 +256,7 @@
         },
         {
             "key": "visible_on_site",
-            "label": "Visible on site",
+            "label": "Shown in shop and search",
             "type": "enum",
             "readOnly": false,
             "nullable": false,
@@ -265,13 +265,13 @@
                 "set"
             ],
             "variations": "parent_only",
-            "variationNote": "Visible on site belongs to the product, not to each variation.",
+            "variationNote": "Shown in shop and search belongs to the product, not to each variation.",
             "variableParentNote": "",
             "sortable": false,
-            "defaultColumn": true,
-            "defaultOrder": 6,
+            "defaultColumn": false,
+            "defaultOrder": null,
             "schema": {
-                "description": "Visible on site",
+                "description": "Shown in shop and search",
                 "type": "string",
                 "enum": [
                     "on",
@@ -286,7 +286,7 @@
             },
             "dataviews": {
                 "id": "visible_on_site",
-                "label": "Visible on site",
+                "label": "Shown in shop and search",
                 "type": "text",
                 "enableSorting": false,
                 "enableHiding": true,
@@ -295,7 +295,7 @@
                 "elements": [
                     {
                         "value": "on",
-                        "label": "Visible"
+                        "label": "Shown"
                     },
                     {
                         "value": "off",
@@ -310,7 +310,7 @@
             "choices": [
                 {
                     "value": "on",
-                    "label": "Visible",
+                    "label": "Shown",
                     "hidesProduct": false,
                     "hidesAs": null
                 },
@@ -1663,7 +1663,7 @@
                             },
                             {
                                 "value": "visible_on_site",
-                                "label": "Visible on site"
+                                "label": "Shown in shop and search"
                             },
                             {
                                 "value": "featured",

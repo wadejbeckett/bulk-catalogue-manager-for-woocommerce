@@ -1,5 +1,5 @@
 /**
- * Editing in the catalogue (T45–T47): the "Visible on site" switch
+ * Editing in the catalogue (T45–T47): the "Shown in shop and search" switch
  * (switch.js), inline cell editing (cell.js) and the detail panel
  * (drawer.js), held together by the editing scope around the table
  * (scope.js). fields.js renders every cell through renderEditable() and

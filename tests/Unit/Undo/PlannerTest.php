@@ -741,4 +741,107 @@ final class PlannerTest extends TestCase {
 		$this->store->batch['status'] = 'running';
 		$this->assertSame( 0, $this->planner()->conflicts( $this->store->batch ), 'A batch that cannot be planned counts none.' );
 	}
+
+	/**
+	 * T85: the plan hash of a whole-catalogue batch is worked out without a
+	 * second, sorted copy of every item and one encoding of them all (the
+	 * undo of 20,013 products peaked at 101 MB in a web request), and it is
+	 * the hash the whole-payload form gave.
+	 */
+	public function test_the_plan_hash_is_the_whole_payload_hash_worked_out_as_a_stream(): void {
+		$planner   = $this->planner( [ 'variations_price' => true ] );
+		$hash      = new \ReflectionMethod( Planner::class, 'hash' );
+		$settings  = new \ReflectionProperty( Planner::class, 'settings' );
+		$reference = static function ( int $batch_id, array $items ) use ( $planner, $settings ): string {
+			$sorted = static function ( mixed $value ) use ( &$sorted ): mixed {
+				if ( ! is_array( $value ) ) {
+					return $value;
+				}
+				if ( ! array_is_list( $value ) ) {
+					ksort( $value );
+				}
+				return array_map( $sorted, $value );
+			};
+			$bound  = array_intersect_key( $settings->getValue( $planner )->values(), array_flip( \BulkCatalogueManager\Engine\Preview::SETTINGS ) );
+			ksort( $bound );
+			$payload = [
+				'batch'    => $batch_id,
+				'items'    => $sorted( $items ),
+				'settings' => $bound,
+			];
+			return hash_hmac( 'sha256', 'bulk-catalogue-manager-for-woocommerce/undo/1/' . (string) wp_json_encode( $payload ), wp_salt( 'auth' ) );
+		};
+		$item      = [
+			'state'       => Plan::REVERTIBLE,
+			'object_type' => 'product',
+			'object_id'   => 7,
+			'operations'  => [
+				[
+					'args'   => [
+						'value'        => 'Café 12',
+						'field'        => 'regular_price',
+						'skip_already' => false,
+					],
+					'action' => 'set_value',
+				],
+			],
+			'code'        => '',
+			'reason'      => '',
+			'conflicts'   => [
+				[
+					'field'    => 'regular_price',
+					'expected' => '12.00',
+					'current'  => '13.50',
+				],
+			],
+		];
+		foreach ( [
+			'none'    => [],
+			'one'     => [ $item ],
+			'several' => [
+				$item,
+				array_merge(
+					$item,
+					[
+						'object_id' => 9,
+						'conflicts' => [],
+					]
+				),
+			],
+		] as $case => $items ) {
+			$this->assertSame( $reference( self::BATCH, $items ), $hash->invoke( $planner, self::BATCH, $items ), $case );
+		}
+	}
+
+	public function test_the_plan_hash_of_a_large_plan_adds_almost_no_memory(): void {
+		$planner = $this->planner();
+		$hash    = new \ReflectionMethod( Planner::class, 'hash' );
+		$items   = [];
+		for ( $id = 1; $id <= 20000; $id++ ) {
+			$items[] = [
+				'object_id'   => $id,
+				'object_type' => 'product',
+				'operations'  => [
+					[
+						'action' => 'set_value',
+						'args'   => [
+							'field'        => 'visible_on_site',
+							'value'        => 'on',
+							'skip_already' => false,
+						],
+					],
+				],
+				'state'       => Plan::REVERTIBLE,
+				'code'        => '',
+				'reason'      => '',
+				'conflicts'   => [],
+			];
+		}
+		gc_collect_cycles();
+		memory_reset_peak_usage();
+		$start = memory_get_usage();
+		$hash->invoke( $planner, self::BATCH, $items );
+		$added = memory_get_peak_usage() - $start;
+		$this->assertLessThan( 2 * 1048576, $added, 'Hashing a 20,000-item plan added ' . round( $added / 1048576, 1 ) . ' MB.' );
+	}
 }

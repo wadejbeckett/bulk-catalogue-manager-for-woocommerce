@@ -523,12 +523,20 @@ final class Planner {
 	private function hash( int $batch_id, array $items ): string {
 		$bound = array_intersect_key( $this->settings->values(), array_flip( Preview::SETTINGS ) );
 		ksort( $bound );
-		$payload = [
-			'batch'    => $batch_id,
-			'items'    => self::sorted( $items ),
-			'settings' => $bound,
-		];
-		return hash_hmac( 'sha256', self::CONTEXT . (string) wp_json_encode( $payload ), wp_salt( 'auth' ) );
+		// The HMAC of { batch, items, settings } in canonical JSON, fed a part
+		// at a time (T85): a sorted copy of every item and one encoding of
+		// them all cost about 1.7 KB an item, most of a web request's memory
+		// for a whole-catalogue undo. JSON encoding is compositional, so the
+		// hash is the one the whole-payload form gave.
+		$context = hash_init( 'sha256', HASH_HMAC, wp_salt( 'auth' ) );
+		hash_update( $context, self::CONTEXT . '{"batch":' . wp_json_encode( $batch_id ) . ',"items":[' );
+		$first = true;
+		foreach ( $items as $item ) {
+			hash_update( $context, ( $first ? '' : ',' ) . wp_json_encode( self::sorted( $item ) ) );
+			$first = false;
+		}
+		hash_update( $context, '],"settings":' . wp_json_encode( $bound ) . '}' );
+		return hash_final( $context );
 	}
 
 	/**

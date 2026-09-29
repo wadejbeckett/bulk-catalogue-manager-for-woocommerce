@@ -155,6 +155,20 @@ final class Refusals {
 	}
 
 	/**
+	 * The sentence for a value changed by someone else while it was written, when the provider gives none.
+	 */
+	public static function conflict_sentence(): string {
+		return __( 'This value was changed by someone else while the change ran, so it was not made.', 'bulk-catalogue-manager-for-woocommerce' );
+	}
+
+	/**
+	 * The sentence for a write that did not stick.
+	 */
+	public static function not_stored_sentence(): string {
+		return __( 'The change did not stick, so it was reported as not made.', 'bulk-catalogue-manager-for-woocommerce' );
+	}
+
+	/**
 	 * The sentence for a provider call that failed.
 	 */
 	public static function error_sentence(): string {

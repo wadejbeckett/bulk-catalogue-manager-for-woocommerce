@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-09-29T19:17:29+00:00\n"
+"POT-Creation-Date: 2026-09-29T19:27:15+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -475,6 +475,15 @@ msgstr ""
 msgid "%s belongs to the product, not to each variation, so it cannot be applied to variations. Turn off Also apply to variations and try again."
 msgstr ""
 
+msgid "You can no longer edit this product, so it was left alone."
+msgstr ""
+
+msgid "The value this product holds now is larger than an add-on value may be, so this change was not made."
+msgstr ""
+
+msgid "The add-on refused to write this value, so this change was not made."
+msgstr ""
+
 #. translators: %s: the contract versions this plugin accepts, such as "1".
 #, php-format
 msgid "it was written for a version of the add-on contract this plugin does not support (this plugin supports version %s)."
@@ -631,6 +640,18 @@ msgstr ""
 msgid "it declares more %1$s than the %2$d allowed."
 msgstr ""
 
+#. translators: %s: the name of an add-on, such as "Example add-on".
+#, php-format
+msgid "%s is not active now, so this was left alone. Turn it on again, then preview and apply the change again."
+msgstr ""
+
+#. translators: 1: the name of an add-on, such as "Example add-on"; 2: how many products were changed, such as "312".
+#, php-format
+msgid "Stopped because %1$s is not active. %2$s product was changed; the rest were left alone."
+msgid_plural "Stopped because %1$s is not active. %2$s products were changed; the rest were left alone."
+msgstr[0] ""
+msgstr[1] ""
+
 msgid "An add-on"
 msgstr ""
 
@@ -652,6 +673,12 @@ msgid "Values that belong to an add-on cannot be edited in the list. Use Make a 
 msgstr ""
 
 msgid "You do not have permission to use this action."
+msgstr ""
+
+msgid "This value was changed by someone else while the change ran, so it was not made."
+msgstr ""
+
+msgid "The change did not stick, so it was reported as not made."
 msgstr ""
 
 msgid "The add-on could not work out this change, so it was not made. Try again, or ask the add-on's author."

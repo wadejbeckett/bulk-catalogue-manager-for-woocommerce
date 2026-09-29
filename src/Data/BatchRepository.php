@@ -114,11 +114,12 @@ final class BatchRepository {
 	 * @param int      $total_items Number of items to materialise.
 	 * @param int|null $undo_of     The batch this one undoes, for source `undo`.
 	 * @param int|null $previewed   The count the preview of a filter selection showed (T38), or null.
+	 * @param array|null $extensions The provider manifest of a batch with external steps (T107), or null.
 	 * @return int The new batch_id.
 	 * @throws \InvalidArgumentException On an invalid argument.
 	 * @throws \RuntimeException When the row is not written.
 	 */
-	public function create( string $uuid, int $user_id, string $source, array $operations, array $selection, int $total_items, ?int $undo_of = null, ?int $previewed = null ): int {
+	public function create( string $uuid, int $user_id, string $source, array $operations, array $selection, int $total_items, ?int $undo_of = null, ?int $previewed = null, ?array $extensions = null ): int {
 		global $wpdb;
 		if ( 1 !== preg_match( '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $uuid ) ) {
 			throw new \InvalidArgumentException( 'The request id must be a UUID.' );
@@ -152,6 +153,10 @@ final class BatchRepository {
 			self::assert_ids( [ $previewed ], 'previewed count', true );
 			$data['previewed_items'] = $previewed;
 			$format[]                = '%d';
+		}
+		if ( null !== $extensions ) {
+			$data['extensions'] = self::json( $extensions );
+			$format[]           = '%s';
 		}
 		// insert() prepares the statement from $format.
 		if ( false === $wpdb->insert( $this->registry->table( Schema::BATCHES ), $data, $format ) ) {
@@ -610,6 +615,24 @@ final class BatchRepository {
 	}
 
 	/**
+	 * Mark skipped, with a plain reason, every item of a batch still pending
+	 * (T107: a chunk whose provider is not active stops, leaving them alone).
+	 *
+	 * @param int    $batch_id Batch.
+	 * @param string $message  The plain reason stored with each item.
+	 * @return int Items marked.
+	 * @throws \RuntimeException When the statement fails.
+	 */
+	public function skip_pending( int $batch_id, string $message ): int {
+		global $wpdb;
+		$result = $wpdb->query( $wpdb->prepare( "UPDATE %i SET state = 'skipped', message = %s WHERE batch_id = %d AND state = 'pending'", $this->registry->table( Schema::ITEMS ), self::cut( $message ), $batch_id ) );
+		if ( false === $result ) {
+			throw new \RuntimeException( 'The batch items could not be updated.' );
+		}
+		return (int) $result;
+	}
+
+	/**
 	 * Mark failed, with a plain reason, every item of a batch still pending,
 	 * claimed or not (T38: an inline batch whose request died mid-write).
 	 *
@@ -1043,7 +1066,53 @@ final class BatchRepository {
 			'note'            => (string) ( $row['note'] ?? '' ),
 			'actions'         => array_values( array_filter( explode( ',', (string) ( $row['actions'] ?? '' ) ), static fn( string $id ): bool => '' !== $id ) ),
 			'pruned_gmt'      => null === ( $row['pruned_gmt'] ?? null ) ? null : (string) $row['pruned_gmt'],
+			'extensions'      => self::manifest( $row['extensions'] ?? null ),
 		];
+	}
+
+	/**
+	 * A stored provider manifest decoded, or null for none or an unreadable one (T107).
+	 *
+	 * @param mixed $stored The column's value.
+	 * @return array<string, mixed>|null
+	 */
+	private static function manifest( mixed $stored ): ?array {
+		if ( ! is_string( $stored ) || '' === $stored ) {
+			return null;
+		}
+		try {
+			$manifest = ValueCodec::decode( $stored );
+		} catch ( \UnexpectedValueException $e ) {
+			return null;
+		}
+		return is_array( $manifest ) && [] !== $manifest ? $manifest : null;
+	}
+
+	/**
+	 * The provider manifests of some batches, by batch id, for those that have
+	 * one (T108: history and audit rows render external values from them).
+	 *
+	 * @param list<int> $batch_ids Batches.
+	 * @return array<int, array<string, mixed>>
+	 */
+	public function manifests( array $batch_ids ): array {
+		global $wpdb;
+		$batch_ids = array_values( array_unique( array_filter( array_map( 'intval', $batch_ids ), static fn( int $id ): bool => $id > 0 ) ) );
+		if ( [] === $batch_ids ) {
+			return [];
+		}
+		$in   = implode( ', ', array_fill( 0, count( $batch_ids ), '%d' ) );
+		$args = array_merge( [ $this->registry->table( Schema::BATCHES ) ], $batch_ids );
+		// $in holds only %d placeholders, one per id; every id is a prepared argument.
+		$rows      = $wpdb->get_results( $wpdb->prepare( "SELECT batch_id, extensions FROM %i WHERE batch_id IN ({$in}) AND extensions IS NOT NULL", $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in is only %d placeholders; every id is an argument.
+		$manifests = [];
+		foreach ( is_array( $rows ) ? $rows : [] as $row ) {
+			$manifest = self::manifest( $row['extensions'] ?? null );
+			if ( null !== $manifest ) {
+				$manifests[ (int) $row['batch_id'] ] = $manifest;
+			}
+		}
+		return $manifests;
 	}
 
 	/**

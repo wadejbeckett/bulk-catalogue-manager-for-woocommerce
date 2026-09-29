@@ -551,11 +551,12 @@ final class BatchFactory {
 	 * @param array<string,mixed>            $snapshot    The selection summary the header keeps.
 	 * @param int|null                       $undo_of     The batch an undo undoes.
 	 * @param list<array{0: int, 1: string}> $unavailable Unavailable members, as [ object_id, object_type ].
+	 * @param array|null                     $extensions  The provider manifest of an external change (T107), or null.
 	 * @return array{batch_id: int, status: string, total_items: int, replayed: bool}
 	 * @throws \RuntimeException When the items are not all recorded.
 	 */
-	public function record_scope( array $claims, array $operations, array $objects, array $snapshot, ?int $undo_of = null, array $unavailable = [] ): array {
-		$id    = $this->batches->create( $claims['uuid'], $claims['owner'], null === $undo_of ? 'bulk' : 'undo', $operations, $snapshot, count( $objects ), $undo_of );
+	public function record_scope( array $claims, array $operations, array $objects, array $snapshot, ?int $undo_of = null, array $unavailable = [], ?array $extensions = null ): array {
+		$id    = $this->batches->create( $claims['uuid'], $claims['owner'], null === $undo_of ? 'bulk' : 'undo', $operations, $snapshot, count( $objects ), $undo_of, null, $extensions );
 		$plain = [];
 		$own   = [];
 		foreach ( $objects as $entry ) {

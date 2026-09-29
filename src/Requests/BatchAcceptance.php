@@ -15,6 +15,7 @@ use BulkCatalogueManager\Engine\BatchFactory;
 use BulkCatalogueManager\Engine\ExactScope;
 use BulkCatalogueManager\Engine\Preview;
 use BulkCatalogueManager\External\Binding;
+use BulkCatalogueManager\External\Manifest;
 use BulkCatalogueManager\External\ProviderFailure;
 use BulkCatalogueManager\External\Refusals;
 use BulkCatalogueManager\External\RunContext;
@@ -170,7 +171,8 @@ final class BatchAcceptance {
 		} else {
 			$summary['ids'] = $selection->ids;
 		}
-		return $factory->record_scope( $claims, $operations, $scope['objects'], $summary, null, $scope['missing'] );
+		// T107: the provider manifest commits with the header, the items and the receipt.
+		return $factory->record_scope( $claims, $operations, $scope['objects'], $summary, null, $scope['missing'], null === $provider ? null : Manifest::build( $provider, $operations ) );
 	}
 
 	/**

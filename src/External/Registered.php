@@ -165,6 +165,35 @@ final class Registered {
 	}
 
 	/**
+	 * A value of one of its fields as it describes it, plain text; '' when the
+	 * field is unknown or describe() fails (the failure is logged).
+	 *
+	 * @param \BulkCatalogueManager\Extension\Subject $subject The object.
+	 * @param string                                  $key     Field key.
+	 * @param mixed                                   $value   The value.
+	 */
+	public function describe( \BulkCatalogueManager\Extension\Subject $subject, string $key, mixed $value ): string {
+		$field = $this->field( $key );
+		try {
+			return null === $field ? '' : Text::plain( Guard::run( $this->id, 'describe', static fn(): mixed => $field->describe( $value, $subject ) ), Text::VALUE );
+		} catch ( ProviderFailure $e ) {
+			return '';
+		}
+	}
+
+	/**
+	 * A value wrapped for the journal with its format and its description.
+	 *
+	 * @param \BulkCatalogueManager\Extension\Subject $subject The object.
+	 * @param string                                  $key     Field key.
+	 * @param mixed                                   $value   The value.
+	 * @return array{external: int, format: int, value: mixed, text: string}
+	 */
+	public function envelope( \BulkCatalogueManager\Extension\Subject $subject, string $key, mixed $value ): array {
+		return Envelope::wrap( $value, (int) ( $this->field_meta( $key )['format'] ?? 1 ), $this->describe( $subject, $key, $value ) );
+	}
+
+	/**
 	 * Whether it works now.
 	 */
 	public function available(): bool {

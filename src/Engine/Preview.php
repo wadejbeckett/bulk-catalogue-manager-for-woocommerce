@@ -640,8 +640,8 @@ final class Preview {
 						'object_type' => $type,
 						'name'        => $label,
 						'field'       => $result->field(),
-						'current'     => $shown ? self::describe( $provider, $object, $result->field(), $result->old() ) : '',
-						'new'         => $shown ? self::describe( $provider, $object, $result->field(), $result->new() ) : '',
+						'current'     => $shown ? $provider->describe( $object, $result->field(), $result->old() ) : '',
+						'new'         => $shown ? $provider->describe( $object, $result->field(), $result->new() ) : '',
 						'state'       => $state,
 						'reason'      => $result->reason(),
 						'code'        => $result->code(),
@@ -666,23 +666,6 @@ final class Preview {
 			}
 		}
 		return $tally;
-	}
-
-	/**
-	 * A value as its provider describes it, plain; '' when the provider fails.
-	 *
-	 * @param Registered     $provider The provider.
-	 * @param ProductSubject $item     The object.
-	 * @param string         $key      Field key.
-	 * @param mixed          $value    The value.
-	 */
-	public static function describe( Registered $provider, ProductSubject $item, string $key, mixed $value ): string {
-		$field = $provider->field( $key );
-		try {
-			return null === $field ? '' : Text::plain( Guard::run( $provider->id, 'describe', static fn(): mixed => $field->describe( $value, $item ) ), Text::VALUE );
-		} catch ( ProviderFailure $e ) {
-			return '';
-		}
 	}
 
 	/**

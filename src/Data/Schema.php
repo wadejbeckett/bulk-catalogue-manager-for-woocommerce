@@ -46,6 +46,10 @@ defined( 'ABSPATH' ) || exit;
  * item's own operation list as JSON, for a batch whose objects each take
  * their own operations (an undo batch puts each object's own old values
  * back); NULL for every other item, which takes the batch's list.
+ * Schema version 7 (T81) adds the selection and request tables.
+ * Schema version 8 (T107, docs/EXTENSIONS.md §8.2) adds a nullable
+ * `extensions` on batches: the provider manifest of a batch with external
+ * steps (External\Manifest), NULL for every other batch.
  * Bump Migrator::SCHEMA_VERSION whenever a body here changes.
  */
 final class Schema {
@@ -126,6 +130,7 @@ chunk_size smallint(5) unsigned NOT NULL DEFAULT 0,
 note varchar(255) NOT NULL DEFAULT \'\',
 actions varchar(255) NOT NULL DEFAULT \'\',
 pruned_gmt datetime NULL,
+extensions longtext NULL,
 PRIMARY KEY  (batch_id),
 KEY created_gmt (created_gmt),
 KEY status (status),

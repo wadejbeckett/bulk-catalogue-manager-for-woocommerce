@@ -166,7 +166,7 @@ elif phase == "after":
     pre = p.http("manager", "POST", f"/batches/{state['b1']}/undo", body={"preview": True}).json() or {}
     item = next((i for i in pre.get("items", []) if i.get("object_id") == a), {})
     fields = [c.get("field") for c in item.get("conflicts", [])]
-    offon.row(p, "upgrade:guard-changed-since", upgraded and schema == "7" and item.get("state") == "conflicted" and item.get("code") == "changed_since"
+    offon.row(p, "upgrade:guard-changed-since", upgraded and schema == "8" and item.get("state") == "conflicted" and item.get("code") == "changed_since"
               and "availability_off" in fields and saved.get("status") == "private" and saved.get("batch") == off["batch"],
               f"branch code {upgraded}, schema {schema}; undo preview of 1.0 batch #{state['b1']}: {item.get('state')} {item.get('code')} {[(c.get('field'), c.get('current')) for c in item.get('conflicts', [])]}; saved {saved}")
     forced = offon.undo(p, state["b1"], force=True)

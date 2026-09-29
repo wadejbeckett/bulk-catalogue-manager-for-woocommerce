@@ -30,6 +30,14 @@ final class MemoryStore implements SampleStore {
 	public array $writes = [];
 
 	/**
+	 * Called before each write with [ verb, id, key ], so a test can see what
+	 * was recorded when the provider wrote.
+	 *
+	 * @var callable|null
+	 */
+	public $on_write = null;
+
+	/**
 	 * Primed id lists, in order.
 	 *
 	 * @var list<list<int>>
@@ -54,6 +62,9 @@ final class MemoryStore implements SampleStore {
 	 * @param string $value Raw text.
 	 */
 	public function set( int $id, string $key, string $value ): void {
+		if ( null !== $this->on_write ) {
+			( $this->on_write )( 'set', $id, $key );
+		}
 		$this->writes[]            = [ 'set', $id, $key ];
 		$this->data[ $id ][ $key ] = $value;
 	}
@@ -65,6 +76,9 @@ final class MemoryStore implements SampleStore {
 	 * @param string $key Key.
 	 */
 	public function delete( int $id, string $key ): void {
+		if ( null !== $this->on_write ) {
+			( $this->on_write )( 'delete', $id, $key );
+		}
 		$this->writes[] = [ 'delete', $id, $key ];
 		unset( $this->data[ $id ][ $key ] );
 	}

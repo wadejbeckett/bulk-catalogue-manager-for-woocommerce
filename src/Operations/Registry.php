@@ -201,6 +201,22 @@ final class Registry {
 	}
 
 	/**
+	 * The kinds of change a list's steps make, each once (T107): '' for
+	 * native steps, else a provider id. A list the writer is given holds one
+	 * kind; more than one means it mixes kinds.
+	 *
+	 * @param array<mixed> $operations An operation list.
+	 * @return list<string>
+	 */
+	public function kinds( array $operations ): array {
+		$kinds = [];
+		foreach ( $operations as $step ) {
+			$kinds[ is_array( $step ) ? self::kind( $step ) : '' ] = true;
+		}
+		return array_map( 'strval', array_keys( $kinds ) );
+	}
+
+	/**
 	 * The provider of a change with external steps, or null for a native one
 	 * (a normalised list holds one provider's steps at most). An internal
 	 * external step names its provider through its field.

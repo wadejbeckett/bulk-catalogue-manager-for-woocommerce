@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-09-29T20:18:58+00:00\n"
+"POT-Creation-Date: 2026-09-29T20:56:36+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -471,6 +471,40 @@ msgstr ""
 msgid "Skip rows where the value is already correct has to be on or off."
 msgstr ""
 
+#. translators: %s: the name of an add-on, such as "Example add-on".
+#, php-format
+msgid "%s is not active now, so this was left alone. Turn it on again, then preview and apply the change again."
+msgstr ""
+
+#. translators: 1: the name of an add-on, such as "Example add-on"; 2: the add-on's own sentence saying why it cannot run.
+#, php-format
+msgid "%1$s cannot run now, so this was left alone. %2$s"
+msgstr ""
+
+#. translators: 1: the name of an add-on, such as "Example add-on"; 2: how many products were changed, such as "312".
+#, php-format
+msgid "Stopped because %1$s is not active. %2$s product was changed; the rest were left alone."
+msgid_plural "Stopped because %1$s is not active. %2$s products were changed; the rest were left alone."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: 1: the name of an add-on, such as "Example add-on"; 2: how many products were changed, such as "312"; 3: the add-on's own sentence saying why it cannot run.
+#, php-format
+msgid "Stopped because %1$s cannot run. %2$s product was changed; the rest were left alone. %3$s"
+msgid_plural "Stopped because %1$s cannot run. %2$s products were changed; the rest were left alone. %3$s"
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: the name of an add-on, such as "Example add-on".
+#, php-format
+msgid "This change was made with %s, which is not active now. Turn it on again to undo this change."
+msgstr ""
+
+#. translators: 1: the name of an add-on, such as "Example add-on"; 2: the add-on's own sentence saying why it cannot run.
+#, php-format
+msgid "This change was made with %1$s, which cannot run now, so it cannot be undone yet. %2$s"
+msgstr ""
+
 #. translators: 1: the name of an add-on, such as "Example add-on", or "An add-on"; 2: what is wrong with it.
 #, php-format
 msgid "%1$s could not be added to Bulk Catalogue Manager: %2$s Update the add-on, or ask its author. Everything else works as usual."
@@ -667,15 +701,8 @@ msgstr ""
 
 #. translators: %s: the name of an add-on, such as "Example add-on".
 #, php-format
-msgid "%s is not active now, so this was left alone. Turn it on again, then preview and apply the change again."
+msgid "This change was made with another version of %s, which the one active now cannot read."
 msgstr ""
-
-#. translators: 1: the name of an add-on, such as "Example add-on"; 2: how many products were changed, such as "312".
-#, php-format
-msgid "Stopped because %1$s is not active. %2$s product was changed; the rest were left alone."
-msgid_plural "Stopped because %1$s is not active. %2$s products were changed; the rest were left alone."
-msgstr[0] ""
-msgstr[1] ""
 
 msgid "An add-on"
 msgstr ""
@@ -1446,7 +1473,10 @@ msgstr ""
 msgid "Pass \"count\" to count the products changed again since, which works out the whole undo; without it the count is not given."
 msgstr ""
 
-msgid "The name of the add-on that must be active to undo this change; only with the reason provider_unavailable."
+msgid "The name of the add-on that must be able to run to undo this change; only with the reason provider_missing or provider_unavailable."
+msgstr ""
+
+msgid "The add-on's own sentence saying why it cannot run now; only with the reason provider_unavailable."
 msgstr ""
 
 msgid "For a change an add-on made: the add-on and the labels of its actions and fields, as recorded with the change. Absent for other changes."
@@ -2029,11 +2059,6 @@ msgid "This product was changed since this batch ran, so it is left alone unless
 msgstr ""
 
 msgid "A value this batch changed was saved in a shape the add-on can no longer read, so this product was left alone."
-msgstr ""
-
-#. translators: %s: the name of an add-on, such as "Example add-on".
-#, php-format
-msgid "This change was made with %s, which is not active now. Turn it on again to undo this change."
 msgstr ""
 
 msgid "This batch has already been undone. To put its changes back, undo the undo instead."
@@ -2993,6 +3018,14 @@ msgid "Running"
 msgstr ""
 
 msgid "Done with errors"
+msgstr ""
+
+#. translators: %s: the name of an add-on, such as "Example add-on".
+#, js-format
+msgid "%s cannot run now, so this change cannot be undone yet."
+msgstr ""
+
+msgid "The add-on that made this change"
 msgstr ""
 
 #. translators: %s: the name of an add-on, such as "Example add-on".

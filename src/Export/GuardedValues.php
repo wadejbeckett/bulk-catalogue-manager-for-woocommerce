@@ -60,10 +60,11 @@ final class GuardedValues {
 		$counts     = self::zero();
 		$conditions = $query->conditions_sql();
 		$after      = 0;
+		$sql        = self::COLUMNS . $conditions['sql'] . ' AND p.ID > %d ORDER BY p.ID ASC LIMIT %d';
 		do {
 			$args = [ ...self::column_args(), ...$conditions['args'], $after, $this->page ];
-			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- Allow-listed literals and placeholders from ProductQuery; every value is an argument, spread.
-			$rows  = self::checked( $wpdb->get_results( $wpdb->prepare( self::COLUMNS . $conditions['sql'] . ' AND p.ID > %d ORDER BY p.ID ASC LIMIT %d', ...$args ), ARRAY_A ) );
+			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- ProductQuery's own FROM and WHERE (literal fragments and placeholders); every value is an argument, spread.
+			$rows  = self::checked( $wpdb->get_results( $wpdb->prepare( $sql, ...$args ), ARRAY_A ) );
 			$after = self::add( $rows, $counts ) ?? $after;
 			$full  = count( $rows ) === $this->page;
 		} while ( $full );
@@ -83,8 +84,8 @@ final class GuardedValues {
 		foreach ( array_chunk( $ids, $this->page ) as $chunk ) {
 			$in   = implode( ', ', array_fill( 0, count( $chunk ), '%d' ) );
 			$args = [ ...self::column_args(), $wpdb->prefix . ProductQuery::TABLES['posts'], ...array_map( 'intval', $chunk ), count( $chunk ) ];
-			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in is only %d placeholders; every value is an argument, spread.
-			$rows = $wpdb->get_results( $wpdb->prepare( self::COLUMNS . "FROM %i AS p WHERE p.ID IN ({$in}) ORDER BY p.ID ASC LIMIT %d", ...$args ), ARRAY_A );
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in is only %d placeholders; every value is an argument, spread.
+			$rows = $wpdb->get_results( $wpdb->prepare( "SELECT p.ID AS id, p.post_title AS name, (SELECT m.meta_value FROM %i AS m WHERE m.post_id = p.ID AND m.meta_key = %s LIMIT %d) AS sku FROM %i AS p WHERE p.ID IN ({$in}) ORDER BY p.ID ASC LIMIT %d", ...$args ), ARRAY_A );
 			self::add( self::checked( $rows ), $counts );
 		}
 		return $counts;

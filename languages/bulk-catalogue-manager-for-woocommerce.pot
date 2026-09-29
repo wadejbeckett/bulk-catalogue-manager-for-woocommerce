@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-09-29T09:10:38+00:00\n"
+"POT-Creation-Date: 2026-09-29T09:32:29+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -286,6 +286,24 @@ msgid "Yes"
 msgstr ""
 
 msgid "No"
+msgstr ""
+
+msgid "The selected products must not be sent in the page address. Reload the catalogue and export again."
+msgstr ""
+
+msgid "These columns could not be exported. Choose the columns again and try again."
+msgstr ""
+
+msgid "More than 1,000 products, or two kinds of rows, were sent to export. Choose Selected or All matching the current filters instead."
+msgstr ""
+
+msgid "These products could not be exported. Choose the products again and try again."
+msgstr ""
+
+msgid "These filters or this sort could not be used. Clear them and try again."
+msgstr ""
+
+msgid "This would export the whole catalogue. Tick \"Yes, export the whole catalogue\", or add a search or filter, and try again."
 msgstr ""
 
 msgid "When (UTC)"
@@ -1257,12 +1275,6 @@ msgstr ""
 msgid "For the catalogue, the status filter; for the change history, only changes with this outcome."
 msgstr ""
 
-msgid "These columns could not be exported. Choose the columns again and try again."
-msgstr ""
-
-msgid "These filters or this sort could not be used. Clear them and try again."
-msgstr ""
-
 msgid "This export does not say which change to export. Open the change in the history and export it again."
 msgstr ""
 
@@ -1372,6 +1384,24 @@ msgstr ""
 #. translators: %s: a field's name, such as "Stock status".
 #, php-format
 msgid "The %s filter could not be used. Clear it and choose it again."
+msgstr ""
+
+msgid "Whether ID, SKU, Parent and Type come first, so the file can go back through WooCommerce's product importer."
+msgstr ""
+
+msgid "The selected products, as the selection routes issue them. Sent in the request body, never in the address."
+msgstr ""
+
+msgid "At most 1,000 products or variations, by id, instead of a selection or a filter."
+msgstr ""
+
+msgid "Confirms an export of the whole catalogue, needed when no search, filter or category is set."
+msgstr ""
+
+msgid "Whether to answer only the row counts and the file name, without exporting."
+msgstr ""
+
+msgid "What is exported: only the catalogue is posted."
 msgstr ""
 
 msgid "These products or filters could not be selected. Clear the filters, choose the products again and try again."

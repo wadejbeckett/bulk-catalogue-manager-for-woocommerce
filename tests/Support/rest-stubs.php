@@ -46,8 +46,21 @@ if ( ! class_exists( 'WP_Error' ) ) {
 		}
 	}
 
+	/**
+	 * Parameters set with set_param() win; then, as core orders them for a
+	 * POST, the JSON body (with a JSON content type), the form body and the
+	 * query string, each also readable on its own as core offers them.
+	 */
 	class WP_REST_Request {
 		private array $params = [];
+
+		private array $query = [];
+
+		private array $body_params = [];
+
+		private array $headers = [];
+
+		private string $body = '';
 
 		public function __construct( private string $method = 'GET', private string $route = '' ) {}
 
@@ -60,7 +73,7 @@ if ( ! class_exists( 'WP_Error' ) ) {
 		}
 
 		public function get_param( string $key ): mixed {
-			return $this->params[ $key ] ?? null;
+			return $this->get_params()[ $key ] ?? null;
 		}
 
 		public function set_param( string $key, mixed $value ): void {
@@ -68,7 +81,43 @@ if ( ! class_exists( 'WP_Error' ) ) {
 		}
 
 		public function get_params(): array {
-			return $this->params;
+			return $this->params + ( $this->get_json_params() ?? [] ) + $this->body_params + $this->query;
+		}
+
+		public function set_query_params( array $params ): void {
+			$this->query = $params;
+		}
+
+		public function get_query_params(): array {
+			return $this->query;
+		}
+
+		public function set_body_params( array $params ): void {
+			$this->body_params = $params;
+		}
+
+		public function get_body_params(): array {
+			return $this->body_params;
+		}
+
+		public function set_header( string $name, string $value ): void {
+			$this->headers[ strtolower( $name ) ] = $value;
+		}
+
+		public function get_header( string $name ): ?string {
+			return $this->headers[ strtolower( $name ) ] ?? null;
+		}
+
+		public function set_body( string $body ): void {
+			$this->body = $body;
+		}
+
+		public function get_json_params(): ?array {
+			if ( ! str_starts_with( (string) $this->get_header( 'content-type' ), 'application/json' ) ) {
+				return null;
+			}
+			$json = json_decode( $this->body, true );
+			return is_array( $json ) ? $json : null;
 		}
 	}
 

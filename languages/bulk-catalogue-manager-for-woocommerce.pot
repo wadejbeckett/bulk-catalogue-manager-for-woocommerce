@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-09-29T18:57:42+00:00\n"
+"POT-Creation-Date: 2026-09-29T19:17:29+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -183,6 +183,11 @@ msgid "That product could not be found. It may have been deleted; reload the lis
 msgstr ""
 
 msgid "This was already at the value asked for, so it was left alone."
+msgstr ""
+
+#. translators: %s: an action's name, such as "Replace labels".
+#, php-format
+msgid "%s always asks before it is applied."
 msgstr ""
 
 msgid "Nothing will change: every row already holds the value or cannot be changed."
@@ -444,6 +449,30 @@ msgstr ""
 #. translators: 1: the name of an add-on, such as "Example add-on", or "An add-on"; 2: what is wrong with it.
 #, php-format
 msgid "%1$s could not be added to Bulk Catalogue Manager: %2$s Update the add-on, or ask its author. Everything else works as usual."
+msgstr ""
+
+msgid "The add-on does not allow a change to this product, so it was left alone."
+msgstr ""
+
+msgid "The new value is larger than an add-on value may be, so this change was not made."
+msgstr ""
+
+msgid "The add-on refused these settings. Check them and try again."
+msgstr ""
+
+#. translators: 1: an action's name, such as "Round prices", 2: the name of a setting it was sent.
+#, php-format
+msgid "%1$s has no setting called \"%2$s\". Choose the action again and try again."
+msgstr ""
+
+#. translators: %s: an action's name, such as "Round prices".
+#, php-format
+msgid "%s was asked to change a field that does not exist. Choose one of the fields it offers and try again."
+msgstr ""
+
+#. translators: %s: a field's name, such as "Categories".
+#, php-format
+msgid "%s belongs to the product, not to each variation, so it cannot be applied to variations. Turn off Also apply to variations and try again."
 msgstr ""
 
 #. translators: %s: the contract versions this plugin accepts, such as "1".
@@ -941,21 +970,6 @@ msgstr ""
 #. translators: %s: a field's name, such as "SKU".
 #, php-format
 msgid "This product has no %s to add to, so it was skipped. Give it one first."
-msgstr ""
-
-#. translators: 1: an action's name, such as "Round prices", 2: the name of a setting it was sent.
-#, php-format
-msgid "%1$s has no setting called \"%2$s\". Choose the action again and try again."
-msgstr ""
-
-#. translators: %s: a field's name, such as "Categories".
-#, php-format
-msgid "%s belongs to the product, not to each variation, so it cannot be applied to variations. Turn off Also apply to variations and try again."
-msgstr ""
-
-#. translators: %s: an action's name, such as "Round prices".
-#, php-format
-msgid "%s was asked to change a field that does not exist. Choose one of the fields it offers and try again."
 msgstr ""
 
 #. translators: 1: an action's name, such as "Round prices", 2: a field's name, such as "Status".
@@ -2094,6 +2108,31 @@ msgstr[1] ""
 msgid "This action is not available right now."
 msgstr ""
 
+#. translators: 1: an action's name, such as "Replace labels"; 2: a number of products, such as "24 products".
+#, js-format
+msgid "%1$s always asks before it changes %2$s."
+msgstr ""
+
+#. translators: 1: a field, such as "Sale price"; 2: a number of products, such as "24 products".
+#, js-format
+msgid "This empties %1$s on %2$s."
+msgstr ""
+
+#. translators: %s: a number of products, such as "3 products".
+#, js-format
+msgid "This switches %s Off: they leave the site for every buyer, and each one's status is saved for switching On."
+msgstr ""
+
+#. translators: 1: a field, such as "Shown in shop and search"; 2: its new value, such as "Hidden"; 3: a number of products, such as "24 products".
+#, js-format
+msgid "This sets %1$s to %2$s on %3$s: they leave the shop and search results, but can still be opened by link and bought. To take them off sale, set Status to Draft."
+msgstr ""
+
+#. translators: 1: a field, "Status"; 2: its new value, such as "Draft"; 3: a number of products, such as "24 products".
+#, js-format
+msgid "This sets %1$s to %2$s on %3$s, which takes them off the site."
+msgstr ""
+
 #. translators: %s: a number of products, such as "24 products".
 #, js-format
 msgid "Apply to %s"
@@ -2145,6 +2184,7 @@ msgid "No change chosen yet"
 msgstr ""
 
 #. translators: 1: an action, such as "Round prices"; 2: a field, such as "Regular price".
+#. translators: 1: an add-on's warning, such as "Some products will carry more than three labels."; 2: how many products, such as "1,200 products".
 #, js-format
 msgid "%1$s — %2$s"
 msgstr ""
@@ -2181,6 +2221,34 @@ msgstr ""
 msgid "(none)"
 msgstr ""
 
+#. translators: %s: a number, such as "3".
+#, js-format
+msgid "%s sale price would not be below its regular price."
+msgid_plural "%s sale prices would not be below their regular price."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number, such as "3".
+#, js-format
+msgid "%s price would fall to zero or below."
+msgid_plural "%s prices would fall to zero or below."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number, such as "3".
+#, js-format
+msgid "Stock would go below zero on %s product."
+msgid_plural "Stock would go below zero on %s products."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number, such as "3".
+#, js-format
+msgid "%s SKU would duplicate another product’s, so it would not be applied."
+msgid_plural "%s SKUs would duplicate another product’s, so they would not be applied."
+msgstr[0] ""
+msgstr[1] ""
+
 #. translators: 1: fields, such as "Regular price"; 2: products, such as "1,284 products"; 3: variations, such as "3,915 variations".
 #, js-format
 msgid "This will change %1$s on %2$s and %3$s."
@@ -2212,34 +2280,6 @@ msgstr ""
 #, js-format
 msgid "%1$s: now %2$s, saved as %3$s"
 msgstr ""
-
-#. translators: %s: a number, such as "3".
-#, js-format
-msgid "%s sale price would not be below its regular price."
-msgid_plural "%s sale prices would not be below their regular price."
-msgstr[0] ""
-msgstr[1] ""
-
-#. translators: %s: a number, such as "3".
-#, js-format
-msgid "%s price would fall to zero or below."
-msgid_plural "%s prices would fall to zero or below."
-msgstr[0] ""
-msgstr[1] ""
-
-#. translators: %s: a number, such as "3".
-#, js-format
-msgid "Stock would go below zero on %s product."
-msgid_plural "Stock would go below zero on %s products."
-msgstr[0] ""
-msgstr[1] ""
-
-#. translators: %s: a number, such as "3".
-#, js-format
-msgid "%s SKU would duplicate another product’s, so it would not be applied."
-msgid_plural "%s SKUs would duplicate another product’s, so they would not be applied."
-msgstr[0] ""
-msgstr[1] ""
 
 #. translators: %s: a number of products, such as "10,000".
 #, js-format
@@ -2479,31 +2519,6 @@ msgid "Choose the change"
 msgstr ""
 
 msgid "Check it"
-msgstr ""
-
-#. translators: 1: an action's name, such as "Replace labels"; 2: a number of products, such as "24 products".
-#, js-format
-msgid "%1$s always asks before it changes %2$s."
-msgstr ""
-
-#. translators: 1: a field, such as "Sale price"; 2: a number of products, such as "24 products".
-#, js-format
-msgid "This empties %1$s on %2$s."
-msgstr ""
-
-#. translators: %s: a number of products, such as "3 products".
-#, js-format
-msgid "This switches %s Off: they leave the site for every buyer, and each one's status is saved for switching On."
-msgstr ""
-
-#. translators: 1: a field, such as "Shown in shop and search"; 2: its new value, such as "Hidden"; 3: a number of products, such as "24 products".
-#, js-format
-msgid "This sets %1$s to %2$s on %3$s: they leave the shop and search results, but can still be opened by link and bought. To take them off sale, set Status to Draft."
-msgstr ""
-
-#. translators: 1: a field, "Status"; 2: its new value, such as "Draft"; 3: a number of products, such as "24 products".
-#, js-format
-msgid "This sets %1$s to %2$s on %3$s, which takes them off the site."
 msgstr ""
 
 msgid "Bulk change"

@@ -69,7 +69,10 @@ final class LabelsAction implements ExternalAction {
 	 * @param Context              $context The run.
 	 */
 	public function validate( array $args, Context $context ): Validation {
-		unset( $context );
+		SampleProvider::$validated[] = [ $this->describe()->id(), $context->mode() ];
+		if ( SampleFaults::get( 'refuse_validate', false ) ) {
+			return Validation::refused( new \WP_Error( 'x_sample_refused', 'The sample add-on refuses this change on purpose.', [ 'status' => 400 ] ) );
+		}
 		$choices = SampleProvider::choices();
 		foreach ( (array) ( $args['labels'] ?? [] ) as $label ) {
 			if ( ! isset( $choices[ $label ] ) ) {
@@ -88,8 +91,8 @@ final class LabelsAction implements ExternalAction {
 	 * @throws \RuntimeException For the throw_compute fault.
 	 */
 	public function compute( Subject $subject, array $args, Context $context ): Result {
-		unset( $context );
-		$id = $subject->id();
+		$id                         = $subject->id();
+		SampleProvider::$computed[] = [ $this->describe()->id(), $id, $context->mode() ];
 		if ( SampleFaults::has( 'throw_compute', $id ) ) {
 			throw new \RuntimeException( 'The sample action failed on purpose.' );
 		}

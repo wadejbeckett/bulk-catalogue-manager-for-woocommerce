@@ -336,3 +336,175 @@ describe( 'the catalogue grid and external fields', () => {
 		).toBe( false );
 	} );
 } );
+
+describe( 'the preview of an external change', () => {
+	const { routeApi } = require( './bulk-fixtures' );
+	const SALE =
+		'Adding the Sale label asks for a second click before it is applied.';
+
+	/**
+	 * A /preview answer for Add labels, as the server sends it (T106).
+	 *
+	 * @return {Object} Answer.
+	 */
+	function externalPreview() {
+		return {
+			totals: {
+				matched: 3,
+				computed: 3,
+				estimated: false,
+				would_change: 2,
+				already: 0,
+				would_fail: {
+					'Sample labels belongs to the product, not to each variation.': 1,
+				},
+				rows: { changed: 2, already: 0, skipped: 1, failed: 0 },
+				by_type: {
+					product: { matched: 2, would_change: 2 },
+					variation: { matched: 1, would_change: 0 },
+				},
+			},
+			summary: 'Sample labels will change on 2 products.',
+			sample: [
+				{
+					object_id: 101,
+					object_type: 'product',
+					name: 'Blue Shirt',
+					field: 'x_sample_labels',
+					fieldLabel: 'Sample labels',
+					current: 'Blue',
+					new: 'Blue, Sale',
+					change: 'Adds Sale',
+					notes: [ 'Keeps 1 existing label.' ],
+					state: 'changed',
+					reason: '',
+					code: '',
+					replaces: false,
+					note: '',
+					context: [],
+					external: true,
+				},
+				{
+					object_id: 102,
+					object_type: 'product',
+					name: 'Formal Shirt',
+					field: 'x_sample_labels',
+					fieldLabel: 'Sample labels',
+					current: 'No labels',
+					new: 'Sale',
+					change: 'Adds Sale',
+					notes: [],
+					state: 'changed',
+					reason: '',
+					code: '',
+					replaces: false,
+					note: '',
+					context: [],
+					external: true,
+				},
+				{
+					object_id: 201,
+					object_type: 'variation',
+					name: 'Rain Jacket - Blue, Large',
+					field: 'x_sample_labels',
+					fieldLabel: 'Sample labels',
+					current: '',
+					new: '',
+					change: '',
+					notes: [],
+					state: 'skipped',
+					reason: 'Sample labels belongs to the product, not to each variation.',
+					code: 'bulkcat_not_available',
+					replaces: false,
+					note: '',
+					context: [],
+					external: true,
+				},
+			],
+			warnings: {
+				sale_above_regular: 0,
+				price_not_positive: 0,
+				stock_negative: 0,
+				sku_duplicate: 0,
+			},
+			unreadable: [],
+			selection: { kind: 'ids', count: 3 },
+			hash: 'a'.repeat( 64 ),
+			unavailable_count: 0,
+			scope_hash: 'c'.repeat( 64 ),
+			operations: [
+				{
+					action: 'x_sample_add',
+					args: {
+						field: 'x_sample_labels',
+						labels: [ 'sale' ],
+						skip_already: true,
+					},
+				},
+			],
+			availability: null,
+			external: {
+				provider: 'sample',
+				label: 'Sample labels',
+				version: '1.0.0',
+				warnings: [
+					{
+						code: 'x_sample_sale',
+						sentence: SALE,
+						count: 2,
+						confirm: true,
+					},
+				],
+				confirm: true,
+				reasons: [ SALE ],
+			},
+		};
+	}
+
+	beforeEach( () => {
+		apiFetch.mockReset();
+		routeApi( apiFetch, { 'POST preview': externalPreview() } );
+	} );
+
+	it( 'shows the provider’s text, what changes, notes and warnings, and always confirms', async () => {
+		renderPanel();
+		fireEvent.click( radio( 'Sample labels', 'Add labels' ) );
+		fireEvent.click(
+			within(
+				screen.getByRole( 'group', { name: 'Labels' } )
+			).getByLabelText( 'Sale' )
+		);
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Check the change' } )
+		);
+		await screen.findByText( 'Sample labels will change on 2 products.' );
+		const row = screen.getByRole( 'rowheader', {
+			name: 'Blue Shirt',
+		} ).parentElement;
+		expect( within( row ).getByText( 'Sample labels' ) ).toBeVisible();
+		expect( within( row ).getByText( 'Blue' ).tagName ).toBe( 'DEL' );
+		expect( within( row ).getByText( 'Blue, Sale' ).tagName ).toBe(
+			'STRONG'
+		);
+		expect( within( row ).getByText( 'Adds Sale' ) ).toBeVisible();
+		expect(
+			within( row ).getByText( 'Keeps 1 existing label.' )
+		).toBeVisible();
+		const skipped = screen.getByRole( 'rowheader', {
+			name: 'Rain Jacket - Blue, Large',
+		} ).parentElement;
+		expect( skipped ).toHaveTextContent(
+			'Will be skipped: Sample labels belongs to the product, not to each variation.'
+		);
+		const block = document.querySelector( '[data-block="warnings"]' );
+		expect( block ).toHaveTextContent( SALE + ' — 2 products' );
+
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Apply to 2 products' } )
+		);
+		expect(
+			screen.getByRole( 'button', { name: 'Yes, change 2 products' } )
+		).toBeVisible();
+		expect( screen.getByText( SALE ) ).toBeVisible(); // Restated by the confirmation; the warning reads "… — 2 products".
+	} );
+} );

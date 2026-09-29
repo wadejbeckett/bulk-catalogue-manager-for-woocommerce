@@ -650,3 +650,18 @@ $bulkcat-bad-line: #f3c3c4;
 		margin-top: 9px;
 	}
 }
+
+// An add-on's words under a preview row (T106): the change and its notes.
+.bulkcat-bulk__change {
+	display: block;
+	color: #50575e;
+	font-size: 12px;
+}
+
+.bulkcat-bulk__notes {
+	margin: 4px 0 0 16px;
+	padding: 0;
+	list-style: disc;
+	color: #50575e;
+	font-size: 12px;
+}

@@ -14,6 +14,15 @@ namespace BulkCatalogueManager\Engine;
 use BulkCatalogueManager\Availability\Outcome;
 use BulkCatalogueManager\Availability\Stamp;
 use BulkCatalogueManager\Availability\StatusSwitch;
+use BulkCatalogueManager\External\Binding;
+use BulkCatalogueManager\External\Computer;
+use BulkCatalogueManager\External\Guard;
+use BulkCatalogueManager\External\ProductSubject;
+use BulkCatalogueManager\External\ProviderFailure;
+use BulkCatalogueManager\External\Refusals;
+use BulkCatalogueManager\External\Registered;
+use BulkCatalogueManager\External\RunContext;
+use BulkCatalogueManager\External\Text;
 use BulkCatalogueManager\Fields\Field;
 use BulkCatalogueManager\Fields\Registry as Fields;
 use BulkCatalogueManager\Fields\Values;
@@ -104,6 +113,18 @@ defined( 'ABSPATH' ) || exit;
  * change what a batch does or who may run it; changing any of them gives a
  * different hash, and applying a filter selection requires it (T38,
  * BatchFactory::create()'s apply check).
+ *
+ * External changes (T106, docs/EXTENSIONS.md §7.2, §10). A change whose steps
+ * are one provider's is validated in preview mode, then computed object by
+ * object through External\Computer on the same loaded copies, after the
+ * same edit check: nothing is written or flushed, the provider primes each
+ * page first, and each sample row carries text (`current`, `new`, `change`,
+ * `fieldLabel`, `notes`, `external: true`), never a raw value. The answer
+ * then ends with `external`: the provider, its label and version, its
+ * warnings aggregated by code with a count (scaled when estimated), whether
+ * Apply always confirms, and the sentences it restates. The hash also binds
+ * the provider's identity and state token (External\Binding) over the
+ * change's available members.
  */
 final class Preview {
 	/**
@@ -192,10 +213,12 @@ final class Preview {
 	 * @return array<string, mixed>|\WP_Error
 	 */
 	public function run( Selection $selection, mixed $operations, int $sample_size = self::DEFAULT_SAMPLE, string $token = '', ?Settings $settings = null, bool $exact = false ): array|\WP_Error {
-		$operations = $this->actions->validate_list( $operations );
+		$context    = RunContext::preview( get_current_user_id() );
+		$operations = RunContext::within( $context, fn(): mixed => $this->actions->validate_list( $operations ) );
 		if ( $operations instanceof \WP_Error ) {
 			return $operations;
 		}
+		$provider = $this->actions->external_provider( $operations );
 		if ( $selection->too_large() ) {
 			return self::too_large( $selection->count );
 		}
@@ -218,8 +241,19 @@ final class Preview {
 
 		$matched  = count( $objects );
 		$computed = array_slice( $objects, 0, max( 1, $this->cap ) );
+		$binding  = [];
+		if ( null !== $provider ) {
+			$gone = array_flip( [ ...( $scope['unavailable'] ?? [] ), ...$unreadable ] );
+			try {
+				$binding = Binding::of( $provider, $operations, array_values( array_filter( array_column( $objects, 0 ), static fn( int $id ): bool => ! isset( $gone[ $id ] ) ) ), $context );
+			} catch ( ProviderFailure $e ) {
+				return \BulkCatalogueManager\Rest\Refusal::create( Refusals::ERROR, Refusals::error_sentence(), 409 );
+			}
+		}
 		// A preview's Off records are stamped batch 0 and never stored (T89).
-		$tally   = Stamp::within( 0, null, fn(): array => $this->compute( $computed, $operations, max( 1, min( self::SAMPLE_ALL, $sample_size ) ), $scope['unavailable'] ?? [] ) );
+		$tally   = null === $provider
+			? Stamp::within( 0, null, fn(): array => $this->compute( $computed, $operations, max( 1, min( self::SAMPLE_ALL, $sample_size ) ), $scope['unavailable'] ?? [] ) )
+			: $this->compute_external( $provider, $context, $computed, $operations, max( 1, min( self::SAMPLE_ALL, $sample_size ) ), $scope['unavailable'] ?? [] );
 		$factor  = [] === $computed ? 1.0 : $matched / count( $computed );
 		$by_type = [];
 		foreach ( [ 'product', 'variation' ] as $type ) {
@@ -239,7 +273,7 @@ final class Preview {
 				'conflicts'       => $tally['availability']['conflicts'],
 			]
 			: null;
-		return [
+		$answer     = [
 			'totals'            => [
 				'matched'      => $matched,
 				'computed'     => count( $computed ) - count( $tally['unreadable'] ),
@@ -268,12 +302,31 @@ final class Preview {
 					'parents_left_out' => $expanded['left_out'],
 					'variations_kept'  => (int) ( $expanded['kept'] ?? 0 ),
 				],
-			'hash'              => self::hash( '' !== $token ? $token : $selection->ids, $operations, $settings, $scope['scope_hash'] ?? '' ),
+			'hash'              => self::hash( '' !== $token ? $token : $selection->ids, $operations, $settings, $scope['scope_hash'] ?? '', $binding ),
 			'unavailable_count' => count( $missing ),
 			'scope_hash'        => $scope['scope_hash'] ?? null,
 			'operations'        => $operations,
 			'availability'      => $off_on,
 		];
+		if ( null !== $provider ) {
+			$answer['external'] = [
+				'provider' => $provider->id,
+				'label'    => $provider->label,
+				'version'  => $provider->version,
+				'warnings' => array_map(
+					static fn( array $warning ): array => [
+						'code'     => $warning['code'],
+						'sentence' => $warning['sentence'],
+						'count'    => self::scale( $warning['count'], $factor ),
+						'confirm'  => $warning['confirm'],
+					],
+					array_values( $tally['external']['warnings'] )
+				),
+				'confirm'  => $tally['external']['confirm'],
+				'reasons'  => $tally['external']['reasons'],
+			];
+		}
+		return $answer;
 	}
 
 	/**
@@ -301,7 +354,7 @@ final class Preview {
 	 * @param array<mixed>      $operations The normalised operation list.
 	 * @param Settings          $settings   The settings.
 	 */
-	public static function hash( string|array $selection, array $operations, Settings $settings, string $scope_hash = '' ): string {
+	public static function hash( string|array $selection, array $operations, Settings $settings, string $scope_hash = '', array $external = [] ): string {
 		$bound = array_intersect_key( $settings->values(), array_flip( self::SETTINGS ) );
 		ksort( $bound );
 		$payload = [
@@ -311,6 +364,10 @@ final class Preview {
 		];
 		if ( '' !== $scope_hash ) {
 			$payload['scope_hash'] = $scope_hash;
+		}
+		if ( [] !== $external ) {
+			// T106: the provider's id, version, contract, field formats and state token (External\Binding).
+			$payload['external'] = self::canonical( $external );
 		}
 		return hash_hmac( 'sha256', self::CONTEXT . (string) wp_json_encode( $payload ), wp_salt( 'auth' ) );
 	}
@@ -456,6 +513,192 @@ final class Preview {
 			}
 		}
 		return $tally;
+	}
+
+	/**
+	 * Compute an external change's objects (T106): the same totals, sample
+	 * and unreadable list as compute(), from External\Computer, plus the
+	 * provider's warnings by code and its confirmation sentences.
+	 *
+	 * @param Registered                                                                                   $provider    The change's provider.
+	 * @param RunContext                                                                                   $context     The preview's run.
+	 * @param list<array{0: int, 1: string, 2?: list<array{action: string, args: array<string, mixed>}>}> $objects     The objects to compute.
+	 * @param list<array{action: string, args: array<string, mixed>}>                                      $operations  The normalised list.
+	 * @param int                                                                                          $limit       Sample rows wanted.
+	 * @param list<int>                                                                                    $unavailable Chosen objects the exact scope found missing: never loaded.
+	 * @return array<string, mixed>
+	 */
+	private function compute_external( Registered $provider, RunContext $context, array $objects, array $operations, int $limit, array $unavailable ): array {
+		$fields    = $this->actions->fields();
+		$validator = Validator::for_request( $fields );
+		$name      = $fields->get( 'name' );
+		$computer  = new Computer( $provider, $context );
+		$reasons   = [];
+		$confirm   = false;
+		foreach ( $operations as $step ) {
+			$described = $provider->described( (string) $step['action'] );
+			if ( null !== $described && $described['always_confirm'] ) {
+				$confirm   = true;
+				$reasons[] = '' !== $described['confirm_reason'] ? $described['confirm_reason'] : sprintf(
+					/* translators: %s: an action's name, such as "Replace labels". */
+					__( '%s always asks before it is applied.', 'bulk-catalogue-manager-for-woocommerce' ),
+					$described['label']
+				);
+			}
+		}
+		$tally = [
+			'would_change' => 0,
+			'already'      => 0,
+			'would_fail'   => [],
+			'rows'         => array_fill_keys( Result::STATES, 0 ),
+			'sample'       => [],
+			'warnings'     => array_fill_keys( self::WARNINGS, 0 ),
+			'unreadable'   => [],
+			'by_type'      => [
+				'product'   => 0,
+				'variation' => 0,
+			],
+			'fields'       => [],
+			'availability' => [
+				'counts'    => array_fill_keys( Outcome::CODES, 0 ),
+				'restores'  => [
+					'private' => 0,
+					'pending' => 0,
+				],
+				'conflicts' => [],
+			],
+			'external'     => [
+				'warnings' => [],
+				'confirm'  => $confirm,
+				'reasons'  => array_values( array_unique( $reasons ) ),
+			],
+		];
+		$skip  = array_flip( $unavailable );
+		foreach ( $objects as $index => $entry ) {
+			if ( 0 === $index % self::PAGE ) {
+				$page = array_values( array_filter( array_column( array_slice( $objects, $index, self::PAGE ), 0 ), static fn( int $id ): bool => ! isset( $skip[ $id ] ) ) );
+				Memory::next_page( $page, 0 < $index );
+				try {
+					Guard::run( $provider->id, 'prime', static fn(): mixed => $provider->provider->prime( $page ) );
+				} catch ( ProviderFailure $e ) {
+					unset( $e ); // Logged by the guard; reads then load one by one.
+				}
+			}
+			[ $id, $type ] = $entry;
+			$steps         = $entry[2] ?? $operations;
+			$subject       = isset( $skip[ $id ] ) ? null : self::load( $id );
+			if ( null === $subject ) {
+				$tally['unreadable'][] = $id;
+				continue;
+			}
+			$denied = $validator->authorise( $subject );
+			$label  = '';
+			if ( null !== $denied ) {
+				// Nothing of an object the user may not edit is computed or shown, and the provider is never asked.
+				$results = array_map( static fn( array $step ): Result => Result::skipped( (string) $step['args']['field'], null, $denied->get_error_message(), (string) $denied->get_error_code() ), $steps );
+				$object  = null;
+			} else {
+				$label   = null === $name ? '' : (string) $name->read( $subject );
+				$object  = ProductSubject::of( $subject, $provider );
+				$results = $computer->run( $object, $steps )->results;
+			}
+			$states = [];
+			$failed = [];
+			foreach ( $results as $result ) {
+				$state = $result->state();
+				++$tally['rows'][ $state ];
+				$states[ $state ] = true;
+				$meta             = $provider->field_meta( $result->field() );
+				$field_label      = null === $meta ? '' : $meta['label'];
+				if ( Result::FAILED === $state || Result::SKIPPED === $state ) {
+					$failed[ $result->reason() ] = true;
+				}
+				if ( Result::CHANGED === $state && ! isset( $tally['fields'][ $result->field() ] ) ) {
+					$tally['fields'][ $result->field() ] = $field_label;
+				}
+				$warning = $result->warning();
+				if ( null !== $warning ) {
+					$tally['external']['warnings'][ $warning['code'] ] ??= [
+						'code'     => $warning['code'],
+						'sentence' => $warning['sentence'],
+						'count'    => 0,
+						'confirm'  => false,
+					];
+					++$tally['external']['warnings'][ $warning['code'] ]['count'];
+					if ( $warning['confirm'] ) {
+						$tally['external']['warnings'][ $warning['code'] ]['confirm'] = true;
+						$tally['external']['confirm']                                 = true;
+						if ( ! in_array( $warning['sentence'], $tally['external']['reasons'], true ) ) {
+							$tally['external']['reasons'][] = $warning['sentence'];
+						}
+					}
+				}
+				if ( count( $tally['sample'] ) < $limit ) {
+					$shown             = null !== $object && in_array( $state, [ Result::CHANGED, Result::ALREADY ], true );
+					$tally['sample'][] = [
+						'object_id'   => $id,
+						'object_type' => $type,
+						'name'        => $label,
+						'field'       => $result->field(),
+						'current'     => $shown ? self::describe( $provider, $object, $result->field(), $result->old() ) : '',
+						'new'         => $shown ? self::describe( $provider, $object, $result->field(), $result->new() ) : '',
+						'state'       => $state,
+						'reason'      => $result->reason(),
+						'code'        => $result->code(),
+						'replaces'    => $result->replaces(),
+						'note'        => '',
+						'context'     => [],
+						'fieldLabel'  => $field_label,
+						'change'      => null !== $object && $result->is_changed() ? self::describe_change( $provider, $object, $result ) : '',
+						'notes'       => $result->notes(),
+						'external'    => true,
+					];
+				}
+			}
+			if ( isset( $states[ Result::CHANGED ] ) ) {
+				++$tally['would_change'];
+				++$tally['by_type'][ 'variation' === $type ? 'variation' : 'product' ];
+			} elseif ( [ Result::ALREADY ] === array_keys( $states ) ) {
+				++$tally['already'];
+			}
+			foreach ( array_keys( $failed ) as $reason ) {
+				$tally['would_fail'][ $reason ] = ( $tally['would_fail'][ $reason ] ?? 0 ) + 1;
+			}
+		}
+		return $tally;
+	}
+
+	/**
+	 * A value as its provider describes it, plain; '' when the provider fails.
+	 *
+	 * @param Registered     $provider The provider.
+	 * @param ProductSubject $item     The object.
+	 * @param string         $key      Field key.
+	 * @param mixed          $value    The value.
+	 */
+	public static function describe( Registered $provider, ProductSubject $item, string $key, mixed $value ): string {
+		$field = $provider->field( $key );
+		try {
+			return null === $field ? '' : Text::plain( Guard::run( $provider->id, 'describe', static fn(): mixed => $field->describe( $value, $item ) ), Text::VALUE );
+		} catch ( ProviderFailure $e ) {
+			return '';
+		}
+	}
+
+	/**
+	 * What a change does, as its provider says it, plain; '' when it says nothing or fails.
+	 *
+	 * @param Registered     $provider The provider.
+	 * @param ProductSubject $item     The object.
+	 * @param Result         $result   The change.
+	 */
+	private static function describe_change( Registered $provider, ProductSubject $item, Result $result ): string {
+		$field = $provider->field( $result->field() );
+		try {
+			return null === $field ? '' : Text::plain( Guard::run( $provider->id, 'describe_change', static fn(): mixed => $field->describe_change( $result->old(), $result->new(), $item ) ), Text::VALUE );
+		} catch ( ProviderFailure $e ) {
+			return '';
+		}
 	}
 
 	/**

@@ -491,12 +491,20 @@ export default function BulkChangePanel( {
 	];
 	const threshold = values.confirm_threshold ?? DEFAULT_THRESHOLD;
 	const reasons = current
-		? alwaysConfirmReasons(
-				registry,
-				requestOperations,
-				changes,
-				response?.availability || null
-			)
+		? [
+				...new Set( [
+					...alwaysConfirmReasons(
+						registry,
+						requestOperations,
+						changes,
+						response?.availability || null
+					),
+					// An add-on's change that always confirms, or a warning asking for it (T106).
+					...( response?.external?.confirm
+						? response.external.reasons || []
+						: [] ),
+				] ),
+			]
 		: [];
 	const worthKnowing =
 		current &&

@@ -53,7 +53,10 @@ final class NoteAction implements ExternalAction {
 	 * @param Context              $context The run.
 	 */
 	public function validate( array $args, Context $context ): Validation {
-		unset( $context );
+		SampleProvider::$validated[] = [ 'x_sample_set_note', $context->mode() ];
+		if ( SampleFaults::get( 'refuse_validate', false ) ) {
+			return Validation::refused( new \WP_Error( 'x_sample_refused', 'The sample add-on refuses this change on purpose.', [ 'status' => 400 ] ) );
+		}
 		return Validation::passed( $args );
 	}
 
@@ -66,7 +69,7 @@ final class NoteAction implements ExternalAction {
 	 * @throws \RuntimeException For the throw_compute fault.
 	 */
 	public function compute( Subject $subject, array $args, Context $context ): Result {
-		unset( $context );
+		SampleProvider::$computed[] = [ 'x_sample_set_note', $subject->id(), $context->mode() ];
 		if ( SampleFaults::has( 'throw_compute', $subject->id() ) ) {
 			throw new \RuntimeException( 'The sample action failed on purpose.' );
 		}

@@ -223,6 +223,12 @@ final class ProductWriteController implements ReadController {
 	public function update_item( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
 		$id     = (int) $request->get_param( 'id' );
 		$params = $request->get_params();
+		foreach ( array_keys( $params ) as $name ) {
+			if ( \BulkCatalogueManager\External\Providers::is_external( (string) $name ) ) {
+				// T106: a value an add-on owns changes only through a previewed bulk change.
+				return \BulkCatalogueManager\External\Refusals::not_inline();
+			}
+		}
 		$values = array_intersect_key( $params, $this->registry->editable() );
 		$source = (string) ( $request->get_param( 'source' ) ?? InlineWrite::SOURCES[0] );
 

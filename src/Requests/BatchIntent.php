@@ -239,7 +239,8 @@ final class BatchIntent {
 		foreach ( $operations as $step ) {
 			$keys = is_array( $step ) ? array_keys( $step ) : [];
 			sort( $keys );
-			if ( [ 'action', 'args' ] !== $keys || ! is_string( $step['action'] ) || '' === $step['action'] || ! is_array( $step['args'] ) ) {
+			// An external step is checked for shape only (T106): its provider may since have gone.
+			if ( [ 'action', 'args' ] !== $keys || ! is_string( $step['action'] ) || 1 !== preg_match( '/^[a-z][a-z0-9_]{0,63}$/', $step['action'] ) || ! is_array( $step['args'] ) ) {
 				return false;
 			}
 		}

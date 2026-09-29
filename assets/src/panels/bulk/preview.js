@@ -60,6 +60,26 @@ export function formatValue( field, value, terms ) {
 }
 
 /**
+ * An add-on's warnings (T106, docs/EXTENSIONS.md §10), aggregated by the
+ * server by code: each its own sentence with the number of products, as
+ * "<sentence> — 1,200 products".
+ *
+ * @param {Object|null} external The preview's `external` block.
+ * @return {Array<{kind: string, text: string}>} Warnings.
+ */
+export function externalWarnings( external ) {
+	return ( external?.warnings || [] ).map( ( warning ) => ( {
+		kind: warning.code,
+		text: sprintf(
+			/* translators: 1: an add-on's warning, such as "Some products will carry more than three labels."; 2: how many products, such as "1,200 products". */
+			__( '%1$s — %2$s', 'bulk-catalogue-manager-for-woocommerce' ),
+			warning.sentence,
+			productsPhrase( Number( warning.count ) || 0 )
+		),
+	} ) );
+}
+
+/**
  * The warning sentences, in the block's order (Engine\Preview::WARNINGS).
  *
  * @param {Object} warnings Counts by kind.
@@ -170,6 +190,22 @@ export function summarySentence( response, fieldNames ) {
 }
 
 /**
+ * A sample row's current value as text: an add-on's own words (T106, never a
+ * raw value), or the stored value formatted by its field.
+ *
+ * @param {Object|null} field Field descriptor.
+ * @param {Object}      row   Sample row.
+ * @param {Object}      terms Term options by source.
+ * @return {string} Text.
+ */
+function nowText( field, row, terms ) {
+	if ( row.external ) {
+		return row.current || '—';
+	}
+	return formatValue( field, row.current, terms );
+}
+
+/**
  * One sample row's After cell.
  *
  * @param {Object} props          Props.
@@ -232,8 +268,20 @@ function AfterCell( { row, field, terms, registry } ) {
 				</strong>
 			) }
 			<strong className="bulkcat-bulk__to">
-				{ formatValue( field, row.new, terms ) }
+				{ row.external
+					? row.new
+					: formatValue( field, row.new, terms ) }
 			</strong>
+			{ row.external && row.change && (
+				<span className="bulkcat-bulk__change">{ row.change }</span>
+			) }
+			{ row.external && ( row.notes || [] ).length > 0 && (
+				<ul className="bulkcat-bulk__notes">
+					{ row.notes.map( ( note, index ) => (
+						<li key={ index }>{ note }</li>
+					) ) }
+				</ul>
+			) }
 		</>
 	);
 }
@@ -332,7 +380,10 @@ export function PreviewResult( {
 		? sample.filter( ( row ) => row.state === 'changed' )
 		: sample;
 	const failures = Object.entries( totals.would_fail || {} );
-	const warnings = warningSentences( response?.warnings );
+	const warnings = [
+		...warningSentences( response?.warnings ),
+		...externalWarnings( response?.external ),
+	];
 	const unreadable = Array.isArray( response?.unreadable )
 		? response.unreadable
 		: [];
@@ -601,22 +652,18 @@ export function PreviewResult( {
 									data-state={ row.state }
 								>
 									<th scope="row">{ row.name }</th>
-									<td>{ field?.label || row.field }</td>
+									<td>
+										{ row.fieldLabel ||
+											field?.label ||
+											row.field }
+									</td>
 									<td className="bulkcat-bulk__from">
 										{ row.state === 'changed' ? (
 											<del>
-												{ formatValue(
-													field,
-													row.current,
-													terms
-												) }
+												{ nowText( field, row, terms ) }
 											</del>
 										) : (
-											formatValue(
-												field,
-												row.current,
-												terms
-											)
+											nowText( field, row, terms )
 										) }
 									</td>
 									<td>

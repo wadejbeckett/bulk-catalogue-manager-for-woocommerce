@@ -43,6 +43,46 @@ final class SampleProvider extends AbstractProvider {
 	public static array $flushed = [];
 
 	/**
+	 * Every validate() call's action id and mode.
+	 *
+	 * @var list<array{0: string, 1: string}>
+	 */
+	public static array $validated = [];
+
+	/**
+	 * Every compute() call, as [ action id, object id, mode ].
+	 *
+	 * @var list<array{0: string, 1: int, 2: string}>
+	 */
+	public static array $computed = [];
+
+	/**
+	 * Every authorise() call's object id.
+	 *
+	 * @var list<int>
+	 */
+	public static array $authorised = [];
+
+	/**
+	 * Every prime() call's ids.
+	 *
+	 * @var list<list<int>>
+	 */
+	public static array $primed = [];
+
+	/**
+	 * Forget every recorded call.
+	 */
+	public static function reset(): void {
+		self::$flushed    = [];
+		self::$tokens     = [];
+		self::$validated  = [];
+		self::$computed   = [];
+		self::$authorised = [];
+		self::$primed     = [];
+	}
+
+	/**
 	 * Every state_token() call's scope, as [ count, ids ].
 	 *
 	 * @var list<array{0: int, 1: list<int>}>
@@ -135,6 +175,7 @@ final class SampleProvider extends AbstractProvider {
 	 */
 	public function authorise( int $user_id, Subject $subject ): bool|\WP_Error {
 		unset( $user_id );
+		self::$authorised[] = $subject->id();
 		return SampleFaults::has( 'refuse', $subject->id() )
 			? new \WP_Error( 'x_sample_refused', 'The sample add-on does not allow changes to this product.' )
 			: true;
@@ -163,6 +204,7 @@ final class SampleProvider extends AbstractProvider {
 	 * @param list<int> $object_ids Objects.
 	 */
 	public function prime( array $object_ids ): void {
+		self::$primed[] = $object_ids;
 		$this->store->prime( $object_ids );
 	}
 

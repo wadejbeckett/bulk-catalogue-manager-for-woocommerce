@@ -9,6 +9,7 @@
  * - `version` (string): the version it claims;
  * - `malformed` (bool): an action changes another provider's field;
  * - `throw_describe` (bool): an action's describe() throws;
+ * - `refuse_validate` (bool): every action's validate() refuses;
  * - `throw_compute`, `write_error`, `write_conflict`, `unknown`, `refuse`,
  *   `wrong_field`, `not_stored`, `huge` (lists of object ids): compute()
  *   throws, write() fails, write() reports a compare-and-set miss, read()

@@ -154,8 +154,36 @@ final class ResultTest extends TestCase {
 			$this->assertTrue( $property->isReadOnly(), $property->getName() . ' is readonly.' );
 		}
 		foreach ( $class->getMethods( \ReflectionMethod::IS_PUBLIC ) as $method ) {
-			// with_note() (T89) builds a new Result; it is the one "with" allowed, and returns a copy.
-			$this->assertFalse( str_starts_with( $method->getName(), 'set' ) || ( str_starts_with( $method->getName(), 'with' ) && 'with_note' !== $method->getName() ), $method->getName() . ' would alter a Result.' );
+			// with_note() (T89), with_notes() and with_warning() (T106) build a new Result; they are the "with"s allowed, and return a copy.
+			$this->assertFalse( str_starts_with( $method->getName(), 'set' ) || ( str_starts_with( $method->getName(), 'with' ) && ! in_array( $method->getName(), [ 'with_note', 'with_notes', 'with_warning' ], true ) ), $method->getName() . ' would alter a Result.' );
+		}
+		$result = Result::changed( 'x_example_labels', [ 'a' ], [ 'a', 'b' ] );
+		$noted  = $result->with_notes( [ 'Keeps 1 existing label.' ] );
+		$warned = $noted->with_warning( 'x_example_many', 'Many labels.', true );
+		$this->assertNotSame( $result, $noted );
+		$this->assertSame( [], $result->notes(), 'The Result noted is left as it was.' );
+		$this->assertSame( [ 'Keeps 1 existing label.' ], $warned->notes(), 'A warning keeps the notes.' );
+		$this->assertNull( $noted->warning() );
+		$this->assertSame(
+			[
+				'code'     => 'x_example_many',
+				'sentence' => 'Many labels.',
+				'confirm'  => true,
+			],
+			$warned->warning()
+		);
+		$this->assertSame( [ 'Keeps 1 existing label.' ], $warned->with_note( 'n', [] )->notes(), 'with_note() keeps notes and warning.' );
+		$this->assertArrayNotHasKey( 'notes', $result->to_array(), 'A plain Result gives the array it always gave.' );
+		$this->assertArrayNotHasKey( 'warning', $result->to_array() );
+		$this->assertSame( [ 'Keeps 1 existing label.' ], $warned->to_array()['notes'] );
+		$this->assertSame( 'x_example_labels', Result::failed( 'x_example_labels', null, 'Could not read.', 'x_example_unreadable' )->field(), 'An external code is accepted.' );
+		foreach ( [ static fn() => $result->with_notes( [ 'a', 'b', 'c', 'd' ] ), static fn() => $result->with_notes( [ '' ] ), static fn() => $result->with_warning( 'many', 'Many.' ), static fn() => $result->with_warning( 'x_example_many', ' ' ), static fn() => Result::failed( 'sku', 'A', 'Refused.', 'other_code' ) ] as $build ) {
+			try {
+				$build();
+				$this->fail( 'Accepted an invalid note, warning or code.' );
+			} catch ( \InvalidArgumentException $e ) {
+				$this->assertStringContainsString( 'Result is invalid', $e->getMessage() );
+			}
 		}
 
 		$result = Result::changed( 'regular_price', '10.00', '11.20' );

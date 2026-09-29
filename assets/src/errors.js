@@ -7,7 +7,7 @@
  * another program's message) is the panel's own plain sentence, with the
  * code behind Show details; its text is never shown.
  */
-import { __ } from '@wordpress/i18n';
+import { __, sprintf } from '@wordpress/i18n';
 
 /**
  * The sentence for a failure the panel has no better words for.
@@ -48,4 +48,28 @@ export function plainMessage( error, fallback ) {
 		return error.message;
 	}
 	return fallback || genericMessage();
+}
+
+/**
+ * The technical line behind Show details: the code and the HTTP status,
+ * such as "internal_server_error · HTTP 500"; never the server's own text.
+ *
+ * @param {*} error apiFetch's rejection.
+ * @return {string} Line, or '' when there is neither.
+ */
+export function technicalLine( error ) {
+	const parts = [];
+	if ( error?.code ) {
+		parts.push( String( error.code ) );
+	}
+	if ( error?.data?.status ) {
+		parts.push(
+			sprintf(
+				/* translators: %d: an HTTP status code such as 400. */
+				__( 'HTTP %d', 'bulk-catalogue-manager-for-woocommerce' ),
+				error.data.status
+			)
+		);
+	}
+	return parts.join( ' · ' );
 }

@@ -93,6 +93,7 @@ On the Catalogue tab, choose **Export CSV**. When products are selected, **Selec
 Limits:
 
 * A SKU or a name that starts with -, +, = or @ is written with an apostrophe in front, so a spreadsheet does not run it as a formula. WooCommerce's importer keeps that apostrophe. The importer also removes line breaks, repeated or edge spaces, tags and % codes from a SKU. The dialog counts such rows: correct them, or remove the apostrophe, before re-importing.
+* A product switched Off is in the file with its Status, Draft, but never with the status it saved: that stays on the product. Importing the file leaves the product Off with its saved status, so Published still restores it.
 * WooCommerce regenerates a variation's title from its product and attributes when it saves it, so a variation with a title of its own gets the generated title back on any import.
 * An import made with WooCommerce's importer is WooCommerce's: it is not recorded in History and cannot be undone here. Keep the unedited file if you may want to go back.
 

@@ -1904,6 +1904,28 @@ def check_read_export_roundtrip(p: Probe) -> None:
         p.row("read", "read:export:native-import-roundtrip:off-product", ok and off_ok,
               f"variable product {off} switched Off through the manager ({o['switched']}): status {o['status']}, its own Off record saving {(o['record'] or {}).get('status')}, "
               f"variations left {o['variations']}; through each import: {'; '.join(o['legs'])}; nothing published")
+        # T103 (ticket 04's review): the saved status never reaches the catalogue CSV, whatever columns are chosen.
+        keys = [f["key"] for f in (p.http("manager", "GET", "/fields").json() or {}).get("fields", [])]
+        raw = start[str(off)]["off_record"]
+        absent, notes = True, []
+        for identifiers in ("0", "1"):
+            for source, rows in (("ids", [("ids", ",".join(str(i) for i in [off, *off_vars]))]), ("selection", [("selection", p.capture("manager", {"ids": [off, *off_vars]}).get("token", ""))])):
+                r = export_form(p, "manager", [("columns", ",".join(keys)), ("identifiers", identifiers)] + rows)
+                table = csv_table(r)
+                head = table[0] if table else []
+                id_at = head.index("ID") if "ID" in head else -1
+                status_at = head.index("Status") if "Status" in head else -1
+                status = next((row[status_at] for row in table[1:] if min(id_at, status_at) >= 0 and row[id_at] == str(off)), None)
+                text = r.body.decode("utf-8-sig", "replace")
+                needles = ["_bulkcat_availability_off", "availability_off", "Status before Off", raw, raw.replace('"', '""'), (record or {}).get("at") or ""]
+                leaked = [n for n in needles if n and n in text]
+                good = r.status == 200 and len(table) == 4 and not leaked and status == "draft"
+                absent = absent and good
+                notes.append(f"{source}, identifiers {identifiers}: {r.status}, {len(table) - 1} rows, {len(head)} columns, Status {status}, leaked {leaked or 'nothing'}")
+        refused = export_form(p, "manager", [("columns", "availability_off"), ("ids", str(off))])
+        absent = absent and refused.status == 400 and refused.code() == "rest_invalid_param"
+        notes.append(f"columns=availability_off {refused.brief()}")
+        p.row("read", "read:export:off-record-absent", bool(raw) and absent, f"product {off} Off with its own record; every column ({len(keys)}): " + "; ".join(notes))
         back = offon.switch(p, [off], "publish")  # back On, so other rows' pages keep their make-up
         if back["report"].get("status") != "complete":
             raise AssertionError(f"switching the Off product back On: {back['report']}")

@@ -97,6 +97,8 @@ test( 'a selection composed across searches and pages, subtracted on and off the
 
 	// Untick one on this page: only that one goes.
 	const onPage = await rowNames( page );
+	// Membership shows once the page's rows are inspected: wait for it.
+	await expect( box( onPage[ 1 ] ) ).toBeChecked();
 	await box( onPage[ 1 ] ).uncheck();
 	await expect( bar ).toContainText( '100 products selected' );
 	const [ unticked ] = idsByName( [ onPage[ 1 ] ] );

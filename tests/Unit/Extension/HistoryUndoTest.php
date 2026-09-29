@@ -23,6 +23,7 @@ use BulkCatalogueManager\Data\ChangeRepository;
 use BulkCatalogueManager\Data\ValueCodec;
 use BulkCatalogueManager\Engine\BatchFactory;
 use BulkCatalogueManager\Engine\ChunkRunner;
+use BulkCatalogueManager\Engine\Progress;
 use BulkCatalogueManager\Engine\Reversibility;
 use BulkCatalogueManager\External\Manifest;
 use BulkCatalogueManager\External\Providers;
@@ -274,23 +275,60 @@ final class HistoryUndoTest extends TestCase {
 		$refusal = $this->planner( $this->actions( false ) )->plan( self::BATCH, self::USER );
 		$this->assertInstanceOf( \WP_Error::class, $refusal );
 		$this->assertSame( 'bulkcat_not_reversible', $refusal->get_error_code() );
-		$this->assertSame( 'provider_unavailable', $refusal->get_error_data()['reason'] );
+		$this->assertSame( 'provider_missing', $refusal->get_error_data()['reason'] );
 		$this->assertSame( 409, $refusal->get_error_data()['status'] );
 		$this->assertSame( 'This change was made with Sample labels, which is not active now. Turn it on again to undo this change.', $refusal->get_error_message() );
+
+		// D-1: registered but unavailable carries its own reason, under another data.reason.
 		update_option( 'sample_provider_faults', [ 'unavailable' => true ] );
-		$this->assertInstanceOf( \WP_Error::class, $this->planner()->plan( self::BATCH, self::USER ), 'Unavailable refuses too.' );
+		$unavailable = $this->planner()->plan( self::BATCH, self::USER );
+		$this->assertInstanceOf( \WP_Error::class, $unavailable );
+		$this->assertSame( 'bulkcat_not_reversible', $unavailable->get_error_code() );
+		$this->assertSame( 'provider_unavailable', $unavailable->get_error_data()['reason'] );
+		$this->assertSame( 'This change was made with Sample labels, which cannot run now, so it cannot be undone yet. Sample labels needs its settings saved before it can be used.', $unavailable->get_error_message() );
+		$batch = ( new BatchRepository() )->find( self::BATCH );
+		$held  = ( new Reversibility( null, null, new Settings( [] ), static fn(): int => self::NOW, null, $this->actions()->providers() ) )->of( $batch );
+		$this->assertSame( Reversibility::PROVIDER_UNAVAILABLE, $held['reason'] );
+		$this->assertSame( 'Sample labels', $held['provider'] );
+		$this->assertSame( 'Sample labels needs its settings saved before it can be used.', $held['provider_reason'] );
 		delete_option( 'sample_provider_faults' );
 
-		$batch = ( new BatchRepository() )->find( self::BATCH );
-		$gone  = ( new Reversibility( null, null, new Settings( [] ), static fn(): int => self::NOW, null, Providers::none() ) )->of( $batch );
+		$gone = ( new Reversibility( null, null, new Settings( [] ), static fn(): int => self::NOW, null, Providers::none() ) )->of( $batch );
 		$this->assertSame( Reversibility::NOT_REVERSIBLE, $gone['state'] );
-		$this->assertSame( Reversibility::PROVIDER_UNAVAILABLE, $gone['reason'] );
+		$this->assertSame( Reversibility::PROVIDER_MISSING, $gone['reason'] );
 		$this->assertSame( 'Sample labels', $gone['provider'] );
+		$this->assertArrayNotHasKey( 'provider_reason', $gone );
 		$back = ( new Reversibility( null, null, new Settings( [] ), static fn(): int => self::NOW, null, $this->actions()->providers() ) )->of( $batch );
 		$this->assertSame( Reversibility::REVERSIBLE, $back['state'], 'It clears when the provider returns.' );
 		$this->assertArrayNotHasKey( 'provider', $back );
+		$this->assertArrayNotHasKey( 'provider_reason', $back );
 		$this->assertInstanceOf( Plan::class, $this->planner()->plan( self::BATCH, self::USER ) );
 		unset( $runner );
+	}
+
+	public function test_a_batch_report_shows_an_external_steps_arguments_only_to_who_may_use_the_action(): void {
+		// Coordinator's point (b): the add-on's own argument values (which may
+		// name the site's data) reach only users holding the action's capability.
+		$this->forward();
+		$GLOBALS['bulkcat_test']['user_id'] = self::USER;
+		$batch                              = ( new BatchRepository() )->find( self::BATCH );
+		$report                             = static fn( Providers $providers ): array => ( new Progress( null, null, static fn(): int => self::NOW, new Reversibility( null, null, new Settings( [] ), static fn(): int => self::NOW, null, $providers ), $providers ) )->report_for( $batch, false );
+		$this->assertSame( [ 'red' ], $report( $this->actions()->providers() )['operations'][0]['args']['labels'], 'Shown to a user who may use the action.' );
+
+		$GLOBALS['bulkcat_test']['user_caps'][ self::USER ] = [ 'edit_post' => true ];
+		$this->assertSame(
+			[
+				'field'        => 'x_sample_labels',
+				'skip_already' => true,
+			],
+			$report( $this->actions()->providers() )['operations'][0]['args'],
+			'Withheld from one who may not: only the core\'s own keys remain.'
+		);
+
+		$GLOBALS['bulkcat_test']['user_caps'][ self::USER ] = [ 'edit_products' => true ];
+		$this->assertArrayNotHasKey( 'labels', $report( Providers::none() )['operations'][0]['args'], 'Withheld when the add-on is missing, since its capability is unknown.' );
+		$GLOBALS['bulkcat_test']['user_id'] = 0;
+		$this->assertArrayNotHasKey( 'labels', $report( $this->actions()->providers() )['operations'][0]['args'], 'Withheld without a user.' );
 	}
 
 	public function test_restore_external_is_internal(): void {

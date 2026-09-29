@@ -85,9 +85,11 @@ defined( 'ABSPATH' ) || exit;
  * 0, a switch as a boolean, a term list as a sorted id list, text exactly.
  *
  * External values (T108, docs/EXTENSIONS.md §8.4): a batch whose manifest
- * names a provider that is not registered, not available or of an
- * unsupported contract is refused 409 with `data.reason:
- * provider_unavailable`. Otherwise, for each external field of an object,
+ * names a provider that is not registered is refused 409 with `data.reason:
+ * provider_missing` ("… is not active now. Turn it on again …"), and one
+ * that is registered but not available or of an unsupported contract with
+ * `provider_unavailable` and the add-on's own reason after the core's
+ * words (External\Blocked). Otherwise, for each external field of an object,
  * after the core's own edit check: the capability of every action of the
  * provider that changes the field and the provider's authorise() (a refusal
  * skips the object, `cannot_edit`); the value read now (an Unknown skips,
@@ -114,9 +116,14 @@ final class Planner {
 	public const PRUNED           = 'pruned';
 
 	/**
-	 * Refusal reason for a batch whose provider cannot work on it now (T108).
+	 * Refusal reason: the add-on that made the change is registered but cannot run now (T108).
 	 */
-	public const PROVIDER_UNAVAILABLE = 'provider_unavailable';
+	public const PROVIDER_UNAVAILABLE = External\Blocked::UNAVAILABLE;
+
+	/**
+	 * Refusal reason: the add-on that made the change is not registered (not active).
+	 */
+	public const PROVIDER_MISSING = External\Blocked::MISSING;
 
 	/*
 	 * Item codes: why an item is conflicted or skipped.
@@ -356,7 +363,7 @@ final class Planner {
 		$manifest = $batch['extensions'] ?? null;
 		$blocked  = is_array( $manifest ) ? External\Manifest::blocked( $manifest, $this->actions->providers(), false ) : null;
 		if ( null !== $blocked ) {
-			return self::not_reversible( self::PROVIDER_UNAVAILABLE, self::provider_sentence( $blocked ) );
+			return self::not_reversible( $blocked->kind, $blocked->undo_sentence() );
 		}
 		$days    = $this->settings->history_days();
 		$created = strtotime( $batch['created_gmt'] . ' UTC' );
@@ -624,19 +631,6 @@ final class Planner {
 		}
 		$reason = $answer instanceof \WP_Error ? External\Text::plain( $answer->get_error_message(), External\Text::REASON ) : '';
 		return '' === $reason ? __( 'The add-on does not allow a change to this product, so it was left alone.', 'bulk-catalogue-manager-for-woocommerce' ) : $reason;
-	}
-
-	/**
-	 * The sentence for a batch whose provider is not active now (T108).
-	 *
-	 * @param string $label The provider's label.
-	 */
-	public static function provider_sentence( string $label ): string {
-		return sprintf(
-			/* translators: %s: the name of an add-on, such as "Example add-on". */
-			__( 'This change was made with %s, which is not active now. Turn it on again to undo this change.', 'bulk-catalogue-manager-for-woocommerce' ),
-			$label
-		);
 	}
 
 	/**

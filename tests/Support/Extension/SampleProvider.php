@@ -144,9 +144,11 @@ final class SampleProvider extends AbstractProvider {
 	}
 
 	public function availability(): bool|\WP_Error {
-		return SampleFaults::get( 'unavailable', false )
-			? new \WP_Error( 'x_sample_off', 'Sample labels needs its settings saved before it can be used.' )
-			: true;
+		$off = SampleFaults::get( 'unavailable', false );
+		if ( ! $off ) {
+			return true;
+		}
+		return new \WP_Error( 'x_sample_off', is_string( $off ) ? $off : 'Sample labels needs its settings saved before it can be used.' );
 	}
 
 	public function fields(): array {

@@ -4,7 +4,8 @@
  * the test-only option `sample_provider_faults`, so a probe or a unit test
  * can make the provider misbehave in each way the contract names:
  *
- * - `unavailable` (bool): availability() refuses;
+ * - `unavailable` (bool, or a string): availability() refuses, with that
+ *   string as its reason when one is given;
  * - `contract` (int): the contract version it claims;
  * - `version` (string): the version it claims;
  * - `malformed` (bool): an action changes another provider's field;

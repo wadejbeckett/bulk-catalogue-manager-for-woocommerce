@@ -32,7 +32,7 @@ const BATCH = {
 	reversibility: {
 		state: 'not_reversible',
 		conflicts: null,
-		reason: 'provider_unavailable',
+		reason: 'provider_missing',
 		provider: 'Sample labels',
 	},
 };
@@ -72,11 +72,28 @@ describe( 'history of an external change', () => {
 	} );
 
 	it( 'says which add-on must be active to undo it', () => {
+		expect( reasonSentence( 'provider_missing', 'Sample labels' ) ).toBe(
+			'Needs Sample labels to be active to undo.'
+		);
+		expect( reasonSentence( 'provider_missing' ) ).toBe(
+			'Needs the add-on that made this change to be active to undo.'
+		);
+	} );
+
+	it( 'says an add-on that is active but cannot run, with its own reason', () => {
+		expect(
+			reasonSentence(
+				'provider_unavailable',
+				'Sample labels',
+				'Sample labels needs its settings saved before it can be used.'
+			)
+		).toBe(
+			'Sample labels cannot run now, so this change cannot be undone yet. Sample labels needs its settings saved before it can be used.'
+		);
 		expect(
 			reasonSentence( 'provider_unavailable', 'Sample labels' )
-		).toBe( 'Needs Sample labels to be active to undo.' );
-		expect( reasonSentence( 'provider_unavailable' ) ).toBe(
-			'Needs the add-on that made this change to be active to undo.'
+		).toBe(
+			'Sample labels cannot run now, so this change cannot be undone yet.'
 		);
 		expect( reasonSentence( 'pruned' ) ).toContain( 'cannot be undone' );
 	} );

@@ -420,12 +420,29 @@ export function statusLabel( status ) {
  * Why a batch can no longer be undone, as one plain sentence (§4.8).
  *
  * @param {string|null} reason   Reversibility reason.
- * @param {string}      provider For `provider_unavailable` (T108), the add-on's name.
+ * @param {string}      provider For `provider_missing` and `provider_unavailable` (T108), the add-on's name.
+ * @param {string}      detail   For `provider_unavailable`, the add-on's own reason, plain text.
  * @return {string} Sentence.
  */
-export function reasonSentence( reason, provider = '' ) {
+export function reasonSentence( reason, provider = '', detail = '' ) {
 	switch ( reason ) {
-		case 'provider_unavailable':
+		case 'provider_unavailable': {
+			// Registered but cannot run: its own reason follows the core's words.
+			const lead = sprintf(
+				/* translators: %s: the name of an add-on, such as "Example add-on". */
+				__(
+					'%s cannot run now, so this change cannot be undone yet.',
+					'bulk-catalogue-manager-for-woocommerce'
+				),
+				provider ||
+					__(
+						'The add-on that made this change',
+						'bulk-catalogue-manager-for-woocommerce'
+					)
+			);
+			return detail ? lead + ' ' + detail : lead;
+		}
+		case 'provider_missing':
 			return provider
 				? sprintf(
 						/* translators: %s: the name of an add-on, such as "Example add-on". */

@@ -26,9 +26,16 @@
  *   Revert anyway, redo, the undo of a partial batch, an older format;
  * - E11: the provider missing, unavailable or incompatible at screen load,
  *   preview, Apply, mid-job, History and undo, and recovery when it returns;
+ *   a provider registered but unavailable between Apply and the chunk
+ *   (the coordinator's D-1) stops the job, leaves each item and refuses the
+ *   undo with its own reason and `provider_unavailable`, apart from a
+ *   missing one (`provider_missing`, "not active");
+ * - a member binned between preview and Apply refuses Apply as stale
+ *   (`scope_changed`), and one binned after Apply fails unwritten at the chunk;
  * - E12: anonymous and read-only users refused on every route, an object the
  *   user may not edit, authorise() narrowing, background work under the
- *   batch's recorded user, a right revoked before the job ran;
+ *   batch's recorded user, a right revoked before the job ran; a History
+ *   reader without the action's capability gets no add-on argument values;
  * - E16: migration 7 → 8 idempotent with history untouched.
  *
  * Run from the WordPress root with WP-CLI (`eval` with `require`, so the
@@ -749,11 +756,102 @@ try {
 	$note = ( new BatchRepository() )->find( $mid );
 	$check( 'Stopped because Sample labels is not active. 0 products were changed; the rest were left alone.' === $note['note'] && 4 === (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM %i WHERE batch_id = %d AND state = 'skipped'", $wpdb->prefix . 'bulkcat_batch_items', $mid ) ), 'E11: … saying what it changed, the rest skipped.' );
 	$undo_gone = $rest( 'POST', "/batches/$redo/undo", [ 'preview' => true ] );
-	$check( 409 === $undo_gone->get_status() && 'provider_unavailable' === ( $undo_gone->get_data()['data']['reason'] ?? '' ), 'E11: missing at undo: 409 not reversible, provider_unavailable.' );
+	$check( 409 === $undo_gone->get_status() && 'provider_missing' === ( $undo_gone->get_data()['data']['reason'] ?? '' ) && str_contains( (string) $undo_gone->get_data()['message'], 'which is not active now' ), 'E11: missing at undo: 409 not reversible, provider_missing, "not active".' );
 	$history = $rest( 'GET', "/batches/$redo" )->get_data();
-	$check( 'provider_unavailable' === $history['reversibility']['reason'] && 'Sample labels' === $history['reversibility']['provider'], 'E11: History says which add-on it needs.' );
+	$check( 'provider_missing' === $history['reversibility']['reason'] && 'Sample labels' === $history['reversibility']['provider'], 'E11: History says which add-on it needs.' );
 	$provider( true );
-	$check( 200 === $rest( 'POST', "/batches/$redo/undo", [ 'preview' => true ] )->get_status() && 'provider_unavailable' !== ( $rest( 'GET', "/batches/$redo" )->get_data()['reversibility']['reason'] ?? '' ), 'E11: with the provider back, undo works again.' );
+	$check( 200 === $rest( 'POST', "/batches/$redo/undo", [ 'preview' => true ] )->get_status() && null === ( $rest( 'GET', "/batches/$redo" )->get_data()['reversibility']['reason'] ?? null ), 'E11: with the provider back, undo works again.' );
+
+	// D-1: registered but unavailable between Apply and the chunk: its own reason, not "not active".
+	$d1_prev  = $accepted(
+		$service->preview(
+			[
+				'ids'        => [ $a[1], $a[2] ],
+				'operations' => [ $add( [ 'green' ] ) ],
+			]
+		),
+		'D-1: preview while available.'
+	);
+	$d1_grant = $service->issue(
+		'batch.apply',
+		[
+			'ids'        => [ $a[1], $a[2] ],
+			'operations' => $d1_prev['operations'],
+			'scope_hash' => $d1_prev['scope_hash'],
+		]
+	);
+	$d1       = (int) $accepted( $service->apply( $d1_grant + [ 'preview_hash' => $d1_prev['hash'] ] ), 'D-1: Apply accepted while available.' )['batch_id'];
+	$d1_meta  = $sample_meta( [ $a[1], $a[2] ] );
+	$faults( [ 'unavailable' => true ] );
+	$provider( true );
+	$check( 'partial' === $drain( $d1 ), 'D-1: unavailable mid-job: the job stops, never complete.' );
+	$d1_row = ( new BatchRepository() )->find( $d1 );
+	$check( 'Stopped because Sample labels cannot run. 0 products were changed; the rest were left alone. Sample labels needs its settings saved before it can be used.' === $d1_row['note'], 'D-1: the note says it cannot run, with the add-on\'s own reason.' );
+	$d1_items = $wpdb->get_col( $wpdb->prepare( "SELECT DISTINCT message FROM %i WHERE batch_id = %d AND state = 'skipped'", $wpdb->prefix . 'bulkcat_batch_items', $d1 ) );
+	$check( [ 'Sample labels cannot run now, so this was left alone. Sample labels needs its settings saved before it can be used.' ] === $d1_items, 'D-1: each item left alone says so, with the add-on\'s reason.' );
+	$check( $d1_meta === $sample_meta( [ $a[1], $a[2] ] ), 'D-1: nothing was written.' );
+	$d1_undo = $rest( 'POST', "/batches/$redo/undo", [ 'preview' => true ] );
+	$check( 409 === $d1_undo->get_status() && 'provider_unavailable' === ( $d1_undo->get_data()['data']['reason'] ?? '' ) && 'This change was made with Sample labels, which cannot run now, so it cannot be undone yet. Sample labels needs its settings saved before it can be used.' === $d1_undo->get_data()['message'], 'D-1: the undo refusal says it cannot run, with its reason, and provider_unavailable.' );
+	$d1_hist = $rest( 'GET', "/batches/$redo" )->get_data()['reversibility'];
+	$check( 'provider_unavailable' === $d1_hist['reason'] && 'Sample labels' === $d1_hist['provider'] && 'Sample labels needs its settings saved before it can be used.' === $d1_hist['provider_reason'], 'D-1: History reads the add-on and its reason.' );
+	$check( 200 === $rest( 'GET', "/batches/$d1/changes" )->get_status(), 'D-1: the stopped batch stays readable.' );
+	$faults( [] );
+	$provider( true );
+	$check( 200 === $rest( 'POST', "/batches/$redo/undo", [ 'preview' => true ] )->get_status(), 'D-1: once it can run again, undo works.' );
+
+	// Point (a): binned between preview and Apply refuses as stale; binned after Apply is never written.
+	$bin_prev  = $accepted(
+		$service->preview(
+			[
+				'ids'        => [ $a[3], $a[4] ],
+				'operations' => [ $add( [ 'sale' ] ) ],
+			]
+		),
+		'(a): preview.'
+	);
+	$bin_grant = $service->issue(
+		'batch.apply',
+		[
+			'ids'        => [ $a[3], $a[4] ],
+			'operations' => $bin_prev['operations'],
+			'scope_hash' => $bin_prev['scope_hash'],
+		]
+	);
+	wp_trash_post( $a[4] );
+	wp_cache_flush();
+	$bin_stale = $refused( $service->apply( $bin_grant + [ 'preview_hash' => $bin_prev['hash'] ] ), 'bulkcat_preview_stale', '(a): a member binned between preview and Apply (explicit ids) refuses Apply as stale.' );
+	$check( 'scope_changed' === ( $bin_stale->get_error_data()['reason'] ?? '' ), '(a): … scope_changed.' );
+	wp_untrash_post( $a[4] );
+	wp_publish_post( $a[4] );
+	wp_cache_flush();
+	$bin_prev  = $accepted(
+		$service->preview(
+			[
+				'ids'        => [ $a[3], $a[4] ],
+				'operations' => [ $add( [ 'sale' ] ) ],
+			]
+		),
+		'(a): preview again.'
+	);
+	$bin_grant = $service->issue(
+		'batch.apply',
+		[
+			'ids'        => [ $a[3], $a[4] ],
+			'operations' => $bin_prev['operations'],
+			'scope_hash' => $bin_prev['scope_hash'],
+		]
+	);
+	$bin       = (int) $accepted( $service->apply( $bin_grant + [ 'preview_hash' => $bin_prev['hash'] ] ), '(a): Apply accepted.' )['batch_id'];
+	$before4   = $sample_meta( [ $a[4] ] );
+	wp_trash_post( $a[4] );
+	wp_cache_flush();
+	$drain( $bin );
+	$bin_item = $wpdb->get_row( $wpdb->prepare( 'SELECT state, message FROM %i WHERE batch_id = %d AND object_id = %d', $wpdb->prefix . 'bulkcat_batch_items', $bin, $a[4] ), ARRAY_A );
+	$check( 'failed' === $bin_item['state'] && BulkCatalogueManager\Engine\BatchFactory::unavailable_reason() === $bin_item['message'] && $before4 === $sample_meta( [ $a[4] ] ), '(a): a member binned after Apply fails unwritten, as an unavailable member.' );
+	$check( in_array( 'sale', $labels( $a[3] ), true ), '(a): … and the rest of the batch is written.' );
+	wp_untrash_post( $a[4] );
+	wp_publish_post( $a[4] );
+	wp_cache_flush();
 	$again = $accepted(
 		$service->preview(
 			[
@@ -791,6 +889,31 @@ try {
 		]
 	);
 	( new WP_User( $users['limited'] ) )->set_role( 'bulkcat_ext_limited' );
+
+	// Point (b): a reader of History without the action's capability gets no add-on argument values.
+	add_role(
+		'bulkcat_ext_reader',
+		'Probe reader',
+		[
+			'read'               => true,
+			'manage_woocommerce' => true,
+		]
+	);
+	$users['reader'] = wp_insert_user(
+		[
+			'user_login' => 'bulkcat_ext_reader_' . wp_generate_password( 6, false, false ),
+			'user_pass'  => wp_generate_password( 24 ),
+			'user_email' => 'reader-' . wp_generate_password( 6, false, false ) . '@example.test',
+			'role'       => 'bulkcat_ext_reader',
+		]
+	);
+	$as_admin        = $rest( 'GET', "/batches/$batch" )->get_data()['operations'][0]['args'] ?? [];
+	$as_reader       = $rest( 'GET', "/batches/$batch", [], (int) $users['reader'] );
+	$check( 200 === $as_reader->get_status() && [ 'red' ] === ( $as_admin['labels'] ?? null ) && ! array_key_exists( 'labels', $as_reader->get_data()['operations'][0]['args'] ?? [ 'labels' => 1 ] ) && 'x_sample_labels' === ( $as_reader->get_data()['operations'][0]['args']['field'] ?? '' ), '(b): History shows an add-on\'s argument values only to a user holding the action\'s capability.' );
+	$listed = $rest( 'GET', '/batches', [ 'per_page' => 100 ], (int) $users['reader'] );
+	$mine   = array_values( array_filter( (array) ( $listed->get_data()['items'] ?? [] ), static fn( mixed $row ): bool => is_array( $row ) && $batch === (int) ( $row['batch_id'] ?? 0 ) ) );
+	$check( 200 === $listed->get_status() && 1 === count( $mine ) && ! array_key_exists( 'labels', $mine[0]['operations'][0]['args'] ?? [ 'labels' => 1 ] ), '(b): … in the list too.' );
+	wp_set_current_user( 1 );
 	foreach ( [
 		0                    => 401,
 		$users['subscriber'] => 403,
@@ -900,6 +1023,7 @@ try {
 		wp_delete_user( (int) $user );
 	}
 	remove_role( 'bulkcat_ext_limited' );
+	remove_role( 'bulkcat_ext_reader' );
 	$role = get_role( 'shop_manager' );
 	if ( $role ) {
 		$role->add_cap( 'edit_products' );

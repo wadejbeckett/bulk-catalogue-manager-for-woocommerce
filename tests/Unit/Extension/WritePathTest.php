@@ -21,6 +21,7 @@ namespace BulkCatalogueManager\Tests\Unit\Extension;
 
 use BulkCatalogueManager\Data\Schema;
 use BulkCatalogueManager\Data\ValueCodec;
+use BulkCatalogueManager\Engine\BatchFactory;
 use BulkCatalogueManager\Engine\ChunkRunner;
 use BulkCatalogueManager\External\Manifest;
 use BulkCatalogueManager\External\Providers;
@@ -306,9 +307,11 @@ final class WritePathTest extends TestCase {
 	 *
 	 * @param bool                 $registered Whether the provider is registered for the run.
 	 * @param array<string, mixed> $faults     Faults switched on after the batch was accepted.
+	 * @param string               $item       The reason each item is left with.
+	 * @param string               $note       The batch's note.
 	 * @param int                  $format     The format the manifest records, 1 unless newer.
 	 */
-	private function stops( bool $registered, array $faults, int $format = 1 ): void {
+	private function stops( bool $registered, array $faults, string $item, string $note, int $format = 1 ): void {
 		$runner = $this->batch( $this->steps( [ self::add( 'red' ) ] ) );
 		update_option( 'sample_provider_faults', $faults );
 		$manifest = ValueCodec::decode( $runner->batch['extensions'] );
@@ -323,23 +326,67 @@ final class WritePathTest extends TestCase {
 			],
 			$runner->states()
 		);
-		$this->assertSame( 'Sample labels is not active now, so this was left alone. Turn it on again, then preview and apply the change again.', $runner->item( 1001 )['message'] );
-		$this->assertSame( 'Stopped because Sample labels is not active. 0 products were changed; the rest were left alone.', $runner->batch()['note'] );
+		$this->assertSame( $item, $runner->item( 1001 )['message'] );
+		$this->assertSame( $note, $runner->batch()['note'] );
 		$this->assertSame( [], SampleProvider::$computed );
 		$this->assertSame( [], $runner->journal() );
 		$this->assertSame( 3, $runner->batch()['done_items'] );
 	}
 
-	public function test_a_chunk_stops_when_its_provider_is_unavailable(): void {
-		$this->stops( true, [ 'unavailable' => true ] );
+	public function test_a_chunk_stops_with_the_providers_own_reason_when_it_is_registered_but_unavailable(): void {
+		// Coordinator's D-1: registered but unavailable is not "not active"; its availability() sentence is carried.
+		$this->stops(
+			true,
+			[ 'unavailable' => true ],
+			'Sample labels cannot run now, so this was left alone. Sample labels needs its settings saved before it can be used.',
+			'Stopped because Sample labels cannot run. 0 products were changed; the rest were left alone. Sample labels needs its settings saved before it can be used.'
+		);
+	}
+
+	public function test_a_long_or_marked_up_unavailable_reason_is_plain_and_capped_after_the_cores_words(): void {
+		$runner = $this->batch( $this->steps( [ self::add( 'red' ) ] ) );
+		update_option( 'sample_provider_faults', [ 'unavailable' => '<b>Closed</b> for ' . str_repeat( 'maintenance ', 40 ) ] );
+		$this->run_chunk();
+		foreach ( [ $runner->item( 1001 )['message'], $runner->batch()['note'] ] as $sentence ) {
+			$this->assertStringNotContainsString( '<b>', $sentence );
+			$this->assertTrue( mb_strlen( $sentence ) <= 255, 'Capped at 255 characters.' );
+			$this->assertStringEndsWith( '…', $sentence );
+		}
+		$this->assertStringStartsWith( 'Sample labels cannot run now, so this was left alone. Closed for maintenance', $runner->item( 1001 )['message'] );
+		$this->assertStringStartsWith( 'Stopped because Sample labels cannot run. 0 products were changed; the rest were left alone. Closed for', $runner->batch()['note'] );
+	}
+
+	public function test_a_product_binned_after_apply_is_never_written(): void {
+		// Coordinator's point (a): Apply refuses a member binned since the
+		// preview (scope_changed, the journey's E6), and a member binned
+		// after Apply fails at the chunk, unwritten, as an unavailable member does.
+		$runner = $this->batch( $this->steps( [ self::add( 'red' ) ] ) );
+		$GLOBALS['bulkcat_test']['products'][1002]->props['status'] = 'trash';
+		$this->run_chunk();
+		$this->assertSame( 'failed', $runner->states()[1002] );
+		$this->assertSame( BatchFactory::unavailable_reason(), $runner->item( 1002 )['message'] );
+		$this->assertSame( [], $this->labels( 1002 ), 'Nothing written to the binned product.' );
+		$this->assertSame( [ 'blue', 'red' ], $this->labels( 1001 ), 'The others are written.' );
+		$this->assertNotContains( 1002, array_column( SampleProvider::$computed, 1 ), 'The provider is never asked about it.' );
 	}
 
 	public function test_a_chunk_stops_when_its_provider_is_missing(): void {
-		$this->stops( false, [] );
+		$this->stops(
+			false,
+			[],
+			'Sample labels is not active now, so this was left alone. Turn it on again, then preview and apply the change again.',
+			'Stopped because Sample labels is not active. 0 products were changed; the rest were left alone.'
+		);
 	}
 
 	public function test_a_chunk_stops_when_a_recorded_format_is_newer_than_the_provider_reads(): void {
-		$this->stops( true, [], 2 );
+		$this->stops(
+			true,
+			[],
+			'Sample labels cannot run now, so this was left alone. This change was made with another version of Sample labels, which the one active now cannot read.',
+			'Stopped because Sample labels cannot run. 0 products were changed; the rest were left alone. This change was made with another version of Sample labels, which the one active now cannot read.',
+			2
+		);
 	}
 
 	public function test_a_mixed_list_reaching_a_chunk_is_refused_there_too(): void {

@@ -10,6 +10,7 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\External;
 
+use BulkCatalogueManager\Engine\BatchFactory;
 use BulkCatalogueManager\Engine\Journal;
 use BulkCatalogueManager\Engine\WriteOutcome;
 use BulkCatalogueManager\Engine\Writer;
@@ -17,6 +18,7 @@ use BulkCatalogueManager\Extension\Context;
 use BulkCatalogueManager\Extension\ExternalField;
 use BulkCatalogueManager\Extension\Unknown;
 use BulkCatalogueManager\Operations\Result;
+use BulkCatalogueManager\Query\ProductQuery;
 use BulkCatalogueManager\Rest\Access;
 
 defined( 'ABSPATH' ) || exit;
@@ -123,6 +125,11 @@ final class ExternalWriter {
 		}
 		if ( null !== $type && Journal::object_type( $product ) !== $type ) {
 			return $this->refuse_all( $id, $operations, static fn( string $key ): Result => Result::failed( $key, null, __( 'This item has changed between a product and a variation since it was chosen, so it was left unchanged. Choose it again to change it.', 'bulk-catalogue-manager-for-woocommerce' ), Writer::CHANGED_KIND ), $product );
+		}
+		if ( Context::APPLY === $this->context->mode() && ( ! self::listed( $id ) || ( 'variation' === Journal::object_type( $product ) && ! self::listed( (int) $product->get_parent_id() ) ) ) ) {
+			// Moved to the bin (or out of the catalogue) since Apply: never written, as an unavailable member at acceptance.
+			// An undo still puts the old value back, so a product restored from the bin reads as before (EXTENSIONS §18.22).
+			return $this->refuse_all( $id, $operations, static fn( string $key ): Result => Result::failed( $key, null, BatchFactory::unavailable_reason(), Writer::NOT_FOUND ), $product );
 		}
 		$modified = null === $this->journal ? '' : $this->journal->modified_gmt( $product );
 		$subject  = ProductSubject::of( $product, $this->provider );
@@ -414,6 +421,18 @@ final class ExternalWriter {
 			static fn( Result $result ): Result => $result->is_changed() && $result->field() === $key ? Result::failed( $key, $result->old(), $reason, $code ) : $result,
 			$results
 		);
+	}
+
+	/**
+	 * Whether a post is still in the catalogue: its status is one a
+	 * catalogue row may have (Query\ProductQuery::STATUSES), not the bin or
+	 * an auto-draft. An unknown status (none read) counts as listed.
+	 *
+	 * @param int $id Post id.
+	 */
+	private static function listed( int $id ): bool {
+		$status = (string) get_post_field( 'post_status', $id );
+		return '' === $status || in_array( $status, ProductQuery::STATUSES, true );
 	}
 
 	/**

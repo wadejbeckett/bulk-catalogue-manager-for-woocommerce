@@ -325,17 +325,21 @@ final class BatchesController implements ReadController {
 				'reversibility'        => [
 					'type'       => 'object',
 					'properties' => [
-						'state'     => [
+						'state'           => [
 							'type' => 'string',
 							'enum' => Reversibility::STATES,
 						],
-						'conflicts' => [ 'type' => [ 'integer', 'null' ] ],
-						'reason'    => [
+						'conflicts'       => [ 'type' => [ 'integer', 'null' ] ],
+						'reason'          => [
 							'type' => [ 'string', 'null' ],
 							'enum' => [ ...Reversibility::REASONS, null ],
 						],
-						'provider'  => [
-							'description' => __( 'The name of the add-on that must be active to undo this change; only with the reason provider_unavailable.', 'bulk-catalogue-manager-for-woocommerce' ),
+						'provider'        => [
+							'description' => __( 'The name of the add-on that must be able to run to undo this change; only with the reason provider_missing or provider_unavailable.', 'bulk-catalogue-manager-for-woocommerce' ),
+							'type'        => 'string',
+						],
+						'provider_reason' => [
+							'description' => __( 'The add-on\'s own sentence saying why it cannot run now; only with the reason provider_unavailable.', 'bulk-catalogue-manager-for-woocommerce' ),
 							'type'        => 'string',
 						],
 					],

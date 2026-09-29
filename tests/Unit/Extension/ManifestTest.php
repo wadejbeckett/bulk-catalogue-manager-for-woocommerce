@@ -115,19 +115,21 @@ final class ManifestTest extends TestCase {
 		$manifest  = Manifest::build( self::sample(), self::steps() );
 		$providers = Providers::of( [ new SampleProvider( new MemoryStore() ) ] );
 		$this->assertNull( Manifest::blocked( $manifest, $providers ) );
-		$this->assertSame( 'Sample labels', Manifest::blocked( $manifest, Providers::none() ), 'Not registered.' );
+		$missing = Manifest::blocked( $manifest, Providers::none() );
+		$this->assertSame( [ 'provider_missing', 'Sample labels', '' ], [ $missing->kind, $missing->label, $missing->reason ], 'Not registered.' );
 		$newer = $manifest;
 		$newer['sample']['fields']['x_sample_labels']['format'] = 2;
-		$this->assertSame( 'Sample labels', Manifest::blocked( $newer, $providers ), 'A format newer than it reads.' );
+		$this->assertSame( [ 'provider_unavailable', 'This change was made with another version of Sample labels, which the one active now cannot read.' ], [ Manifest::blocked( $newer, $providers )->kind, Manifest::blocked( $newer, $providers )->reason ], 'A format newer than it reads.' );
 		$older = $manifest;
 		update_option( 'sample_provider_faults', [ 'format' => 2 ] );
 		$this->assertNull( Manifest::blocked( $older, Providers::of( [ new SampleProvider( new MemoryStore() ) ] ) ), 'An older format it can upgrade.' );
 		update_option( 'sample_provider_faults', [ 'unavailable' => true ] );
-		$this->assertSame( 'Sample labels', Manifest::blocked( $manifest, Providers::of( [ new SampleProvider( new MemoryStore() ) ] ) ), 'Unavailable.' );
+		$unavailable = Manifest::blocked( $manifest, Providers::of( [ new SampleProvider( new MemoryStore() ) ] ) );
+		$this->assertSame( [ 'provider_unavailable', 'Sample labels', 'Sample labels needs its settings saved before it can be used.' ], [ $unavailable->kind, $unavailable->label, $unavailable->reason ], 'Registered but unavailable: its own reason.' );
 		delete_option( 'sample_provider_faults' );
 		$other                       = $manifest;
 		$other['sample']['contract'] = 2;
-		$this->assertSame( 'Sample labels', Manifest::blocked( $other, $providers ), 'A contract this core does not support.' );
+		$this->assertSame( 'provider_unavailable', Manifest::blocked( $other, $providers )->kind, 'A contract this core does not support.' );
 		update_option( 'sample_provider_faults', [ 'version' => '1.1.0' ] );
 		$this->assertSame( '1.1.0', Manifest::refreshed( $manifest, Providers::of( [ new SampleProvider( new MemoryStore() ) ] ) )['sample']['version'], 'An undo records the version at undo time.' );
 	}

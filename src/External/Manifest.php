@@ -82,26 +82,41 @@ final class Manifest {
 	}
 
 	/**
-	 * The label of the first provider a manifest names that cannot work on
-	 * it now — not registered, not available, of a contract this core does
-	 * not support, or unable to read a recorded format (a field gone, or a
-	 * format newer than its own) — or null when every one can.
+	 * The first provider a manifest names that cannot work on it now, and
+	 * why (Blocked): not registered (missing); or registered but not
+	 * available (its own reason), of a contract this core does not support,
+	 * or unable to read a recorded format (a field gone, or a format newer
+	 * than its own) (unavailable). Null when every one can.
 	 *
 	 * @param array<string, mixed> $manifest  A batch's manifest.
 	 * @param Providers            $providers The providers now.
 	 * @param bool                 $formats   Whether a format it cannot read blocks it too (a chunk); an undo skips such objects one by one instead.
 	 */
-	public static function blocked( array $manifest, Providers $providers, bool $formats = true ): ?string {
+	public static function blocked( array $manifest, Providers $providers, bool $formats = true ): ?Blocked {
 		foreach ( $manifest as $id => $entry ) {
 			$label    = self::label( $manifest, (string) $id );
 			$provider = $providers->get( (string) $id );
-			if ( null === $provider || ! $provider->available() || ! in_array( (int) ( $entry['contract'] ?? 0 ), Contract::SUPPORTED, true ) ) {
-				return $label;
+			if ( null === $provider ) {
+				return Blocked::missing( $label );
+			}
+			if ( ! $provider->available() ) {
+				return Blocked::unavailable( $label, $provider->reason() );
+			}
+			$other = Blocked::unavailable(
+				$label,
+				sprintf(
+					/* translators: %s: the name of an add-on, such as "Example add-on". */
+					__( 'This change was made with another version of %s, which the one active now cannot read.', 'bulk-catalogue-manager-for-woocommerce' ),
+					$label
+				)
+			);
+			if ( ! in_array( (int) ( $entry['contract'] ?? 0 ), Contract::SUPPORTED, true ) ) {
+				return $other;
 			}
 			foreach ( $formats ? (array) ( $entry['fields'] ?? [] ) : [] as $key => $field ) {
 				$meta = $provider->field_meta( (string) $key );
 				if ( null === $meta || (int) ( $field['format'] ?? 0 ) > $meta['format'] ) {
-					return $label;
+					return $other;
 				}
 			}
 		}
@@ -181,33 +196,5 @@ final class Manifest {
 	public static function format( ?array $manifest, string $key ): int {
 		$owner = Providers::owner( $key );
 		return null === $owner || null === $manifest ? 0 : (int) ( $manifest[ $owner ]['fields'][ $key ]['format'] ?? 0 );
-	}
-
-	/**
-	 * The sentence a missing provider's items are skipped with.
-	 *
-	 * @param string $label The provider's label.
-	 */
-	public static function skipped_sentence( string $label ): string {
-		return sprintf(
-			/* translators: %s: the name of an add-on, such as "Example add-on". */
-			__( '%s is not active now, so this was left alone. Turn it on again, then preview and apply the change again.', 'bulk-catalogue-manager-for-woocommerce' ),
-			$label
-		);
-	}
-
-	/**
-	 * The note a batch stopped for a missing provider carries.
-	 *
-	 * @param string $label   The provider's label.
-	 * @param int    $changed Products and variations changed before it stopped.
-	 */
-	public static function stopped_note( string $label, int $changed ): string {
-		return sprintf(
-			/* translators: 1: the name of an add-on, such as "Example add-on"; 2: how many products were changed, such as "312". */
-			_n( 'Stopped because %1$s is not active. %2$s product was changed; the rest were left alone.', 'Stopped because %1$s is not active. %2$s products were changed; the rest were left alone.', $changed, 'bulk-catalogue-manager-for-woocommerce' ),
-			$label,
-			number_format_i18n( $changed )
-		);
 	}
 }

@@ -15,6 +15,7 @@ namespace BulkCatalogueManager\Engine;
 use BulkCatalogueManager\Data\BatchRepository;
 use BulkCatalogueManager\Data\ChangeRepository;
 use BulkCatalogueManager\Data\Registry as Data;
+use BulkCatalogueManager\External\Blocked;
 use BulkCatalogueManager\External\Manifest;
 use BulkCatalogueManager\Operations\Registry as Actions;
 use BulkCatalogueManager\Operations\Result;
@@ -115,11 +116,13 @@ defined( 'ABSPATH' ) || exit;
  * providers registered now (External\Manifest::blocked()). When one is
  * missing, unavailable, of an unsupported contract or unable to read a
  * recorded format, the run claims nothing: every still-pending item is
- * skipped with a plain reason and counted, the batch's note says "Stopped
- * because <add-on> is not active. N products were changed; the rest were
- * left alone.", and the batch ends through the final-status rule, never
- * complete. Nothing resumes it. Otherwise each chunk of an external change
- * primes its objects once before they are written.
+ * skipped with a plain reason and counted, the batch's note says why
+ * (External\Blocked: "Stopped because <add-on> is not active. …" when it is
+ * not registered, "Stopped because <add-on> cannot run. … <its reason>" when
+ * it is registered but cannot run), and the batch ends through the
+ * final-status rule, never complete. Nothing resumes it. Otherwise each
+ * chunk of an external change primes its objects once before they are
+ * written.
  */
 final class ChunkRunner {
 	/**
@@ -410,17 +413,17 @@ final class ChunkRunner {
 	 * Stop a batch whose provider cannot work on it now (T107): skip what is
 	 * pending, say so in the note, and finish it.
 	 *
-	 * @param array<string, mixed> $batch The batch row.
-	 * @param string               $label The provider's label.
+	 * @param array<string, mixed> $batch   The batch row.
+	 * @param Blocked              $blocked The provider and why it cannot work.
 	 */
-	private function stop( array $batch, string $label ): string {
+	private function stop( array $batch, Blocked $blocked ): string {
 		$batch_id = (int) $batch['batch_id'];
-		$skipped  = $this->batches->skip_pending( $batch_id, Manifest::skipped_sentence( $label ) );
+		$skipped  = $this->batches->skip_pending( $batch_id, $blocked->skipped_sentence() );
 		if ( $skipped > 0 ) {
 			$this->batches->increment_counters( $batch_id, $skipped, 0, 0 );
 		}
 		$now = $this->batches->find( $batch_id );
-		$this->batches->record_note( $batch_id, Manifest::stopped_note( $label, (int) ( $now['changed_items'] ?? 0 ) ) );
+		$this->batches->record_note( $batch_id, $blocked->stopped_note( (int) ( $now['changed_items'] ?? 0 ) ) );
 		return $this->settle( $batch, false );
 	}
 

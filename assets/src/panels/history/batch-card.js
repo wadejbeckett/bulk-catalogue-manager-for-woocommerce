@@ -534,7 +534,8 @@ export default function BatchCard( {
 				<p className="bulkcat-batch__reason">
 					{ reasonSentence(
 						batch.reversibility?.reason,
-						batch.reversibility?.provider || ''
+						batch.reversibility?.provider || '',
+						batch.reversibility?.provider_reason || ''
 					) }
 				</p>
 			) }

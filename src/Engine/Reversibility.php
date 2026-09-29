@@ -14,6 +14,7 @@ namespace BulkCatalogueManager\Engine;
 
 use BulkCatalogueManager\Data\BatchRepository;
 use BulkCatalogueManager\Data\ChangeRepository;
+use BulkCatalogueManager\External\Blocked;
 use BulkCatalogueManager\External\Manifest;
 use BulkCatalogueManager\External\Providers;
 use BulkCatalogueManager\Operations\Registry as Actions;
@@ -38,10 +39,12 @@ defined( 'ABSPATH' ) || exit;
  *   - `nothing_applied`: it finished with no `applied` journal row — every
  *     row was already at its target, skipped or failed, or it was
  *     cancelled before its first chunk — so there is nothing to put back;
- *   - `provider_unavailable` (T108): its provider manifest names an add-on
- *     that is not registered, not available or of an unsupported contract
- *     now. Recomputed on every read, so it clears when the add-on returns;
- *     the answer then also carries the add-on's label as `provider`.
+ *   - `provider_missing` (T108): its provider manifest names an add-on
+ *     that is not registered now (not active); `provider_unavailable`: one
+ *     that is registered but not available or of an unsupported contract,
+ *     whose own reason the answer carries as `provider_reason`. Recomputed
+ *     on every read, so it clears when the add-on can run again; both carry
+ *     the add-on's label as `provider` (External\Blocked).
  * - `completed_with_errors`: it ended partial or failed with applied rows;
  *   the applied part can be undone on its own (§12.6).
  * - `partially_reversible`: some applied rows were changed again since
@@ -82,14 +85,19 @@ final class Reversibility {
 	public const NOTHING_APPLIED   = 'nothing_applied';
 
 	/**
-	 * The add-on that made the change is not active now (T108).
+	 * The add-on that made the change is registered but cannot run now (T108).
 	 */
-	public const PROVIDER_UNAVAILABLE = 'provider_unavailable';
+	public const PROVIDER_UNAVAILABLE = Blocked::UNAVAILABLE;
+
+	/**
+	 * The add-on that made the change is not registered now (not active).
+	 */
+	public const PROVIDER_MISSING = Blocked::MISSING;
 
 	/**
 	 * Every reason a batch is not reversible, for the route schema.
 	 */
-	public const REASONS = [ self::OUTSIDE_RETENTION, self::ALREADY_UNDONE, self::PRUNED, self::NOTHING_APPLIED, self::PROVIDER_UNAVAILABLE ];
+	public const REASONS = [ self::OUTSIDE_RETENTION, self::ALREADY_UNDONE, self::PRUNED, self::NOTHING_APPLIED, self::PROVIDER_MISSING, self::PROVIDER_UNAVAILABLE ];
 
 	/**
 	 * Statuses in which a batch is still working.
@@ -242,7 +250,7 @@ final class Reversibility {
 		$manifest = $batch['extensions'] ?? null;
 		$blocked  = is_array( $manifest ) ? Manifest::blocked( $manifest, $this->providers ??= Actions::instance()->providers(), false ) : null;
 		if ( null !== $blocked ) {
-			return self::answer( self::NOT_REVERSIBLE, $none, self::PROVIDER_UNAVAILABLE ) + [ 'provider' => $blocked ];
+			return self::answer( self::NOT_REVERSIBLE, $none, $blocked->kind ) + [ 'provider' => $blocked->label ] + ( $blocked->is_missing() ? [] : [ 'provider_reason' => $blocked->reason ] );
 		}
 		$conflicts = $count ? max( 0, (int) ( $this->conflicts )( $batch ) ) : null;
 		if ( in_array( $batch['status'], self::WITH_ERRORS, true ) ) {

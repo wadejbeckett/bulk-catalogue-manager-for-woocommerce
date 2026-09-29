@@ -580,4 +580,73 @@ def check_undo(p: Any) -> None:
         guard(p, name, fn)
 
 
-CHECKS = [check_engine, check_undo]
+# ---------------------------------------------------------------------------
+# T91: the preview's availability block, and On not pushed down (E1, D7)
+# ---------------------------------------------------------------------------
+
+CHECKSUM_PHP = r"""
+global $wpdb;
+$ids = %s;
+$in  = implode( ',', array_map( 'intval', $ids ) );
+$posts = $wpdb->get_results( "SELECT ID, post_status, post_modified_gmt FROM {$wpdb->posts} WHERE ID IN ($in) OR post_parent IN ($in) ORDER BY ID", ARRAY_A );
+$meta  = $wpdb->get_results( "SELECT post_id, meta_key, meta_value FROM {$wpdb->postmeta} WHERE post_id IN ($in) ORDER BY meta_id", ARRAY_A );
+bulkcat_out( md5( wp_json_encode( array( $posts, $meta ) ) ) );
+"""
+
+
+def put_record(p: Any, pid: int, status: str, date: int | None = None) -> None:
+    """A record as the switch writes it, for a state a preview only reads (a saved schedule whose time has passed)."""
+    extra = f"$x->set_date_created( time() + ({int(date)}) );" if date is not None else ""
+    p.wp_eval(
+        f"$x = wc_get_product( {pid} ); {extra} $x->set_status( 'draft' ); "
+        f"$x->update_meta_data( '{META}', \\BulkCatalogueManager\\Availability\\OffRecord::create( {pid}, '{status}', gmdate( 'Y-m-d\\TH:i:s\\Z' ), 1 )->to_json() ); $x->save(); bulkcat_out( 1 );"
+    )
+
+
+def check_preview(p: Any) -> None:
+    def e1() -> None:
+        fx = upsert(p, [simple("e1-publish"), simple("e1-outside"), simple("e1-off"), simple("e1-draft", "draft"),
+                        simple("e1-on"), simple("e1-private", "private"), simple("e1-sched", "future", date=7 * 86400),
+                        simple("e1-passed"), simple("e1-never", "draft"), simple("e1-conflict"), simple("e1-kept"), simple("e1-drop")])
+        pid = {k[3:]: v["id"] for k, v in fx.items()}
+        switch(p, [pid["outside"], pid["off"], pid["on"], pid["private"], pid["sched"], pid["conflict"], pid["kept"], pid["drop"]], "draft")
+        put_record(p, pid["passed"], "future", date=-3600)
+        for key, status in (("outside", "private"), ("conflict", "private"), ("kept", "pending")):
+            set_status_outside(p, pid[key], status)
+        ids = list(pid.values())
+        before = p.wp_eval(CHECKSUM_PHP % php_ids(ids))
+        draft = preview(p, [pid["publish"], pid["outside"], pid["off"], pid["draft"]], status_step("draft"))
+        on = preview(p, [pid["on"], pid["private"], pid["sched"], pid["passed"], pid["never"], pid["conflict"]], status_step("publish"))
+        kept = preview(p, [pid["kept"]], status_step("publish", keep=True))
+        dropped = preview(p, [pid["drop"]], status_step("pending"))
+        after = p.wp_eval(CHECKSUM_PHP % php_ids(ids))
+        counts: dict[str, int] = {}
+        for pre in (draft, on, kept, dropped):
+            for code, n in ((pre.get("availability") or {}).get("counts") or {}).items():
+                counts[code] = counts.get(code, 0) + n
+        every = all(n == 1 for n in counts.values()) and len(counts) == 12
+        order = [r.get("object_id") for r in (on.get("availability") or {}).get("conflicts", [])]
+        plain = preview(p, [pid["publish"]], [{"action": "set_value", "args": {"field": "regular_price", "value": "11"}}])
+        ok = (every and before == after and order == [pid["conflict"]] and (on.get("availability") or {}).get("restores") == {"private": 1, "pending": 0}
+              and plain.get("availability") is None and all(r.get("field") == "status" for pre in (draft, on, kept, dropped) for r in pre.get("sample", [])))
+        row(p, "e1-preview", ok, f"counts {counts}; conflicts {order}; restores {(on.get('availability') or {}).get('restores')}; nothing saved (status and meta checksum unchanged): {before == after}; no block without a Status step: {plain.get('availability') is None}")
+
+    def on_not_pushed() -> None:
+        fx = upsert(p, [{"key": "d7-push", "type": "variable", "status": "publish"}])
+        v = fx["d7-push"]
+        variations = [v["small"], v["medium"], v["large"]]
+        before = snap(p, [v["id"]])[str(v["id"])]["variations"]
+        switch(p, [v["id"]], "draft", variations=True)
+        on = switch(p, [v["id"]], "publish", variations=True)
+        after = snap(p, [v["id"]])[str(v["id"])]
+        report = p.http("manager", "GET", f"/batches/{on['batch']}").json() or {}
+        kept = (on["preview"].get("availability") or {}).get("variations_kept")
+        ok = (after["status"] == "publish" and after["variations"] == before and after["variations"][str(v["large"])]["status"] == "private"
+              and kept == 3 and report.get("total_items") == 1 and all(record(p, x) == "" for x in variations))
+        row(p, "d7-on-not-pushed", ok, f"Published with Also apply to variations: variations_kept {kept}, batch items {report.get('total_items')}; the disabled variation stays {after['variations'][str(v['large'])]['status']}; variations unchanged {after['variations'] == before}")
+
+    for name, fn in [("e1-preview", e1), ("d7-on-not-pushed", on_not_pushed)]:
+        guard(p, name, fn)
+
+
+CHECKS = [check_engine, check_undo, check_preview]

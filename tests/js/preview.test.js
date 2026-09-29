@@ -522,3 +522,153 @@ describe( 'preview inside the panel', () => {
 		).toBeVisible();
 	} );
 } );
+
+describe( 'the Off and On block (T91, SPEC §9.1)', () => {
+	const statusRow = (
+		id,
+		name,
+		note,
+		context,
+		state = 'changed',
+		extra = {}
+	) => ( {
+		object_id: id,
+		object_type: 'product',
+		name,
+		field: 'status',
+		current: context.current || 'draft',
+		new: 'publish',
+		state,
+		reason: '',
+		code: '',
+		replaces: false,
+		note,
+		context,
+		...extra,
+	} );
+	const answer = () =>
+		previewResponse( {
+			sample: [
+				statusRow( 11, 'Blue Tee', 'on', {
+					saved: 'publish',
+					restores: 'publish',
+				} ),
+				statusRow(
+					12,
+					'Red Cap',
+					'on_restores',
+					{ saved: 'private', restores: 'private' },
+					'changed',
+					{ new: 'private' }
+				),
+				statusRow( 13, 'Old Hat', 'on_scheduled', {
+					saved: 'future',
+					restores: 'future',
+					scheduled_gmt: '2026-10-04 09:30:00',
+				} ),
+				statusRow( 14, 'Wool Sock', 'publishes_not_off', {
+					current: 'future',
+					scheduled_gmt: '2026-10-05 08:00:00',
+				} ),
+				statusRow(
+					15,
+					'Grey Scarf',
+					'conflict',
+					{ saved: 'publish', current: 'private' },
+					'skipped',
+					{
+						reason: 'This product was changed by someone else while it was Off, so it was left alone.',
+					}
+				),
+			],
+			availability: {
+				counts: {
+					off: 0,
+					off_recapture: 0,
+					already_off: 0,
+					already_draft: 0,
+					on: 1,
+					on_restores: 1,
+					on_scheduled: 1,
+					on_schedule_passed: 2,
+					publishes_not_off: 1,
+					conflict: 1,
+					conflict_kept: 0,
+					record_dropped: 0,
+				},
+				restores: { private: 1, pending: 0 },
+				variations_kept: 6,
+				conflicts: [
+					{
+						object_id: 15,
+						name: 'Grey Scarf',
+						current: 'private',
+						saved: 'publish',
+					},
+				],
+			},
+		} );
+	const STATUS_OPS = [
+		{ action: 'set_value', args: { field: 'status', value: 'publish' } },
+	];
+
+	it( 'counts every outcome, conflicts first, then restores, passed schedules and publications', () => {
+		const { container } = renderPreview( {
+			response: answer(),
+			operations: STATUS_OPS,
+		} );
+		const lines = Array.from(
+			container.querySelectorAll(
+				'[data-block="availability"] .bulkcat-bulk__lines li'
+			)
+		).map( ( item ) => item.textContent );
+		expect( lines ).toEqual( [
+			'1 product was changed by someone else while Off and will be left alone. Choose Keep current status to clear its Off record instead.',
+			'1 product comes back with the status it had before Off, not Published: 1 Private.',
+			'2 products were scheduled and their time has passed: this publishes them now.',
+			'1 product was not switched Off: this publishes it.',
+			'1 product will be switched back On.',
+			'1 product comes back scheduled.',
+			'6 variations are left as they are: switching On restores only what switching Off saved.',
+		] );
+		expect(
+			within(
+				container.querySelector( '[data-block="availability"]' )
+			).getByText( /Grey Scarf/ )
+		).toBeVisible();
+		// The block sits above the sample.
+		expect(
+			// eslint-disable-next-line no-bitwise
+			container
+				.querySelector( '[data-block="availability"]' )
+				.compareDocumentPosition( screen.getByRole( 'table' ) ) &
+				window.Node.DOCUMENT_POSITION_FOLLOWING
+		).toBeTruthy();
+	} );
+
+	it( 'words each Status row by its outcome', () => {
+		renderPreview( { response: answer(), operations: STATUS_OPS } );
+		expect( screen.getByText( 'Switched back On' ) ).toBeVisible();
+		expect(
+			screen.getByText( 'Was Private before Off: comes back Private' )
+		).toBeVisible();
+		expect(
+			screen.getByText(
+				/^Was scheduled before Off: comes back scheduled for /
+			)
+		).toBeVisible();
+		expect(
+			screen.getByText( /^Not switched Off: stays scheduled for / )
+		).toBeVisible();
+		expect(
+			screen.getByText( 'Changed by someone else while Off: left alone' )
+		).toBeVisible();
+	} );
+
+	it( 'shows no block for a change that does not set Status', () => {
+		const { container } = renderPreview();
+		expect(
+			container.querySelector( '[data-block="availability"]' )
+		).toBeNull();
+	} );
+} );

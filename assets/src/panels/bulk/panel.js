@@ -469,7 +469,12 @@ export default function BulkChangePanel( {
 	];
 	const threshold = values.confirm_threshold ?? DEFAULT_THRESHOLD;
 	const reasons = current
-		? alwaysConfirmReasons( registry, requestOperations, changes )
+		? alwaysConfirmReasons(
+				registry,
+				requestOperations,
+				changes,
+				response?.availability || null
+			)
 		: [];
 	const worthKnowing =
 		current &&

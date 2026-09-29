@@ -797,6 +797,10 @@ final class Field {
 		if ( '' !== $this->group ) {
 			$client['group'] = $this->group;
 		}
+		if ( \BulkCatalogueManager\Availability\StatusSwitch::governs( $this ) ) {
+			// The global Off/On switch (SPEC §5.5): the screen picks it by this flag, never by its key.
+			$client['switchesOffOn'] = true;
+		}
 		if ( '' !== $this->source ) {
 			$client['source'] = $this->source;
 		}

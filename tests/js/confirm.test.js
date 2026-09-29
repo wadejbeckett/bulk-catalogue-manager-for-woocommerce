@@ -108,7 +108,7 @@ describe( 'confirmation policy', () => {
 		[
 			'status to draft',
 			op( 'set_value', { field: 'status', value: 'draft' } ),
-			'This sets Status to Draft on 1 product, which takes them off the site.',
+			"This switches 1 product Off: they leave the site for every buyer, and each one's status is saved for switching On.",
 		],
 		[
 			'status to pending',
@@ -257,7 +257,7 @@ describe( 'confirmation policy', () => {
 			screen.queryByRole( 'group', { name: /Apply it\?/ } )
 		).toBeNull();
 
-		// Apply, on the other hand, asks, naming the draft.
+		// Apply, on the other hand, asks, naming the draft: Status is the Off/On switch (T91).
 		fireEvent.click(
 			await screen.findByRole( 'button', {
 				name: 'Apply to 5,000 products',
@@ -265,7 +265,7 @@ describe( 'confirmation policy', () => {
 		);
 		expect(
 			screen.getByText(
-				'This sets Status to Draft on 5,000 products, which takes them off the site.'
+				"This switches 5,000 products Off: they leave the site for every buyer, and each one's status is saved for switching On."
 			)
 		).toBeVisible();
 		expect( callsTo( apiFetch, 'POST batches' ) ).toHaveLength( 0 );
@@ -273,6 +273,107 @@ describe( 'confirmation policy', () => {
 			expect(
 				screen.getByRole( 'group', { name: /Apply it\?/ } )
 			).toBeVisible()
+		);
+	} );
+} );
+
+describe( 'Off/On confirmation (T91, SPEC §4.5)', () => {
+	const FIXTURE = require( '../fixtures/status-switch.json' );
+	const {
+		CONFIRMS,
+		availabilityReasons,
+	} = require( '../../assets/src/panels/bulk/availability' );
+	const step = ( value ) => ( {
+		action: 'set_value',
+		args: { field: 'status', value, skip_already: true },
+	} );
+	const block = ( counts, extra = {} ) => ( {
+		counts: Object.fromEntries(
+			FIXTURE.codes.map( ( code ) => [ code, counts[ code ] || 0 ] )
+		),
+		restores: { private: 0, pending: 0 },
+		variations_kept: 0,
+		conflicts: [],
+		...extra,
+	} );
+
+	it( 'confirms exactly the shared list the server publishes', () => {
+		expect( CONFIRMS ).toEqual( FIXTURE.confirms );
+	} );
+
+	it( 'says a Draft step switches the products Off, counted from the preview', () => {
+		expect(
+			alwaysConfirmReasons(
+				REGISTRY,
+				[ step( 'draft' ) ],
+				5,
+				block( { off: 2, off_recapture: 1, already_off: 2 } )
+			)
+		).toEqual( [
+			"This switches 3 products Off: they leave the site for every buyer, and each one's status is saved for switching On.",
+			'1 product was changed by someone else while Off and will be switched Off again.',
+		] );
+	} );
+
+	it.each( FIXTURE.confirms.filter( ( code ) => code !== 'off' ) )(
+		'confirms a Status step whose preview counts %s, naming the count',
+		( code ) => {
+			const reasons = alwaysConfirmReasons(
+				REGISTRY,
+				[ step( 'publish' ) ],
+				4,
+				block(
+					{ [ code ]: 2 },
+					code === 'on_restores'
+						? { restores: { private: 1, pending: 1 } }
+						: {}
+				)
+			);
+			expect( reasons ).toHaveLength( 1 );
+			expect( reasons[ 0 ] ).toMatch( /^2 products / );
+		}
+	);
+
+	it.each( [ 'on', 'conflict_kept', 'already_off', 'already_draft' ] )(
+		'adds no reason for %s',
+		( code ) => {
+			expect(
+				alwaysConfirmReasons(
+					REGISTRY,
+					[ step( 'publish' ) ],
+					4,
+					block( { [ code ]: 3 } )
+				)
+			).toEqual( [] );
+		}
+	);
+
+	it( 'names the statuses a restore gives back', () => {
+		expect(
+			availabilityReasons(
+				REGISTRY,
+				block(
+					{ on_restores: 3 },
+					{ restores: { private: 2, pending: 1 } }
+				)
+			)
+		).toEqual( [
+			'3 products come back with the status they had before Off, not Published: 2 Private, 1 Pending review.',
+		] );
+	} );
+
+	it( 'asks for the second click whatever the count, with every reason listed', () => {
+		const reasons = alwaysConfirmReasons(
+			REGISTRY,
+			[ step( 'publish' ) ],
+			1,
+			block( { conflict: 1, publishes_not_off: 1 } )
+		);
+		const onApply = renderApply( { count: 1, threshold: 200, reasons } );
+		fireEvent.click( applyButton( 1 ) );
+		expect( onApply ).not.toHaveBeenCalled();
+		reasons.forEach( ( reason ) =>
+			expect( screen.getByText( reason ) ).toBeVisible()
 		);
 	} );
 } );

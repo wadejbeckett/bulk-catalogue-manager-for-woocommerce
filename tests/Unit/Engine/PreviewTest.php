@@ -257,6 +257,7 @@ final class PreviewTest extends TestCase {
 				'count'            => 5,
 				'variations_added' => 0,
 				'parents_left_out' => 0,
+				'variations_kept'  => 0,
 			],
 			$result['selection']
 		);
@@ -303,6 +304,7 @@ final class PreviewTest extends TestCase {
 				'current_count'    => 7,
 				'variations_added' => 0,
 				'parents_left_out' => 0,
+				'variations_kept'  => 0,
 			],
 			$result['selection'],
 			'A filter selection answers the count when chosen and the count now.'
@@ -728,6 +730,7 @@ final class PreviewTest extends TestCase {
 				'count'            => 2,
 				'variations_added' => 2,
 				'parents_left_out' => 0,
+				'variations_kept'  => 0,
 			],
 			$result['selection']
 		);
@@ -739,6 +742,179 @@ final class PreviewTest extends TestCase {
 
 		$one = $this->answer( Selection::of_ids( [ 103 ] ), self::set( 'regular_price', '70' ) );
 		$this->assertSame( 1, $one['totals']['matched'], 'With the price default off, a parent alone reaches nothing.' );
+	}
+
+	/**
+	 * A seeded product given a status and, when named, its own Off record (T91).
+	 *
+	 * @param string      $status Its status.
+	 * @param string|null $saved  The status its record saved, or null for none.
+	 */
+	private function off_state( int $id, string $status, ?string $saved = null, string $type = 'simple' ): void {
+		$props           = $this->seeded[ $id ];
+		$props['status'] = $status;
+		unset( $props['id'] );
+		$product = $this->load( $id, $type, $props );
+		if ( null !== $saved ) {
+			$product->meta['_bulkcat_availability_off'] = \BulkCatalogueManager\Availability\OffRecord::create( $id, $saved, '2026-09-01T08:00:00Z', 7 )->to_json();
+		}
+	}
+
+	public function test_the_availability_block_counts_every_outcome_conflicts_first(): void {
+		// T91 (SPEC §9.1): the Off/On outcome of a Status step, record rows kept out of the sample.
+		$this->off_state( 101, 'publish' );
+		$this->off_state( 102, 'draft', 'publish' );
+		$this->off_state( 104, 'draft', 'private' );
+		$this->off_state( 106, 'private', 'publish' );
+		$this->off_state( 105, 'draft', null, 'grouped' );
+		$result = $this->answer( Selection::of_ids( [ 101, 102, 104, 105, 106 ] ), self::set( 'status', 'publish' ) );
+
+		$this->assertSame( [ 'totals', 'summary', 'sample', 'warnings', 'unreadable', 'selection', 'hash', 'unavailable_count', 'scope_hash', 'operations', 'availability' ], array_keys( $result ), 'T83\'s keys first, then availability.' );
+		$block = $result['availability'];
+		$this->assertSame( [ 'counts', 'restores', 'variations_kept', 'conflicts' ], array_keys( $block ) );
+		$this->assertSame( \BulkCatalogueManager\Availability\Outcome::CODES, array_keys( $block['counts'] ) );
+		$this->assertSame(
+			[
+				'on'                => 1,
+				'on_restores'       => 1,
+				'publishes_not_off' => 1,
+				'conflict'          => 1,
+			],
+			array_filter( $block['counts'] )
+		);
+		$this->assertSame(
+			[
+				'private' => 1,
+				'pending' => 0,
+			],
+			$block['restores']
+		);
+		$this->assertSame( 0, $block['variations_kept'] );
+		$this->assertSame(
+			[
+				[
+					'object_id' => 106,
+					'name'      => 'Striped Tee',
+					'current'   => 'private',
+					'saved'     => 'publish',
+				],
+			],
+			$block['conflicts']
+		);
+		$this->assertSame( [ 'status' ], array_values( array_unique( array_column( $result['sample'], 'field' ) ) ), 'The record rows never show.' );
+		$this->assertSame( 5, array_sum( $result['totals']['rows'] ), 'One row per product: its status.' );
+		$this->assertSame( 3, $result['totals']['would_change'] );
+		$this->assertSame( 'Status will change on 3 products.', $result['summary'] );
+		$notes = array_column( $result['sample'], 'note', 'object_id' );
+		$this->assertSame(
+			[
+				101 => '',
+				102 => 'on',
+				104 => 'on_restores',
+				105 => 'publishes_not_off',
+				106 => 'conflict',
+			],
+			$notes
+		);
+		$this->assertSame(
+			[
+				'saved'    => 'private',
+				'restores' => 'private',
+			],
+			array_column( $result['sample'], 'context', 'object_id' )[104]
+		);
+	}
+
+	public function test_a_product_losing_only_its_record_counts_once_under_status(): void {
+		$this->off_state( 106, 'private', 'publish' );
+		$result = $this->answer(
+			Selection::of_ids( [ 106 ] ),
+			self::ops(
+				[
+					[
+						'set_value',
+						[
+							'field'               => 'status',
+							'value'               => 'publish',
+							'keep_changed_status' => true,
+						],
+					],
+				]
+			)
+		);
+		$this->assertSame( 1, $result['availability']['counts']['conflict_kept'] );
+		$this->assertSame( 1, $result['totals']['would_change'], 'Keep current status changes the record alone: it still counts.' );
+		$this->assertSame( 0, $result['totals']['already'] );
+		$this->assertSame( 'Status will change on 1 product.', $result['summary'] );
+		$this->assertSame( [ [ 106, 'status', 'private', 'private', 'already' ] ], self::rows( $result ) );
+	}
+
+	public function test_draft_counts_off_already_off_and_already_draft(): void {
+		$this->off_state( 101, 'publish' );
+		$this->off_state( 102, 'draft', 'publish' );
+		$this->off_state( 104, 'draft' );
+		$this->off_state( 106, 'pending', 'publish' );
+		$result = $this->answer( Selection::of_ids( [ 101, 102, 104, 106 ] ), self::set( 'status', 'draft' ) );
+		$this->assertSame(
+			[
+				'off'           => 1,
+				'off_recapture' => 1,
+				'already_off'   => 1,
+				'already_draft' => 1,
+			],
+			array_filter( $result['availability']['counts'] )
+		);
+		$this->assertSame( [], $result['availability']['conflicts'] );
+	}
+
+	public function test_no_status_step_gives_no_block_and_counts_scale_when_estimated(): void {
+		$this->assertNull( $this->answer( Selection::of_ids( [ 101 ] ), self::set( 'regular_price', '12' ) )['availability'] );
+		foreach ( [ 101, 102, 104, 106 ] as $id ) {
+			$this->off_state( $id, 'publish' );
+		}
+		$estimated = $this->answer( Selection::of_ids( [ 101, 102, 104, 106 ] ), self::set( 'status', 'draft' ), 1000, self::preview( 2 ) );
+		$this->assertTrue( $estimated['totals']['estimated'] );
+		$this->assertSame( 4, $estimated['availability']['counts']['off'], '2 computed, scaled to 4.' );
+	}
+
+	public function test_the_conflicts_list_holds_up_to_the_sample_size_in_object_order(): void {
+		foreach ( [ 101, 102, 104, 106 ] as $id ) {
+			$this->off_state( $id, 'private', 'publish' );
+		}
+		$result = $this->answer( Selection::of_ids( [ 106, 101, 104, 102 ] ), self::set( 'status', 'publish' ), 2 );
+		$this->assertSame( 4, $result['availability']['counts']['conflict'] );
+		$this->assertSame( [ 106, 101 ], array_column( $result['availability']['conflicts'], 'object_id' ), 'In the order the preview computes them, as far as the sample size.' );
+	}
+
+	public function test_variations_kept_back_are_counted(): void {
+		$this->off_state( 103, 'draft', 'publish', 'variable' );
+		$GLOBALS['wpdb']->responses = [
+			'/^SELECT post_id, meta_value FROM `wp_postmeta`/' => static fn(): array => [
+				[
+					'post_id'    => '103',
+					'meta_value' => \BulkCatalogueManager\Availability\OffRecord::create( 103, 'publish', '2026-09-01T08:00:00Z', 7 )->to_json(),
+				],
+			],
+		] + $GLOBALS['wpdb']->responses;
+		$result                     = $this->answer(
+			Selection::of_ids( [ 103 ] ),
+			self::ops(
+				[
+					[
+						'set_value',
+						[
+							'field'               => 'status',
+							'value'               => 'publish',
+							'apply_to_variations' => true,
+						],
+					],
+				]
+			)
+		);
+		$this->assertSame( 2, $result['availability']['variations_kept'] );
+		$this->assertSame( 2, $result['selection']['variations_kept'] );
+		$this->assertSame( 0, $result['selection']['variations_added'] );
+		$this->assertSame( 1, $result['availability']['counts']['on'] );
 	}
 
 	public function test_the_summary_names_one_field_and_each_kind_it_changes(): void {

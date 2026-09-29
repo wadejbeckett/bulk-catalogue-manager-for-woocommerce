@@ -1,12 +1,14 @@
 /**
  * The preview (SPEC §4.4, T50), rendered from the POST /preview answer in
- * order: the summary sentence, the counts, the sample table, the warnings;
- * then the sample controls. Nothing here writes.
+ * order: the summary sentence, the counts, the Off and On block when a step
+ * sets Status (T91), the sample table, the warnings; then the sample
+ * controls. Nothing here writes.
  */
 import { __, _n, sprintf } from '@wordpress/i18n';
 
 import { termOptions } from './controls';
 import { fieldByKey } from './descriptors';
+import { availabilityLines, outcomeLabel, statusName } from './availability';
 import {
 	formatNumber,
 	listPhrase,
@@ -170,13 +172,31 @@ export function summarySentence( response, fieldNames ) {
 /**
  * One sample row's After cell.
  *
- * @param {Object} props       Props.
- * @param {Object} props.row   Sample row.
- * @param {Object} props.field Field descriptor.
- * @param {Object} props.terms Term options by source.
+ * @param {Object} props          Props.
+ * @param {Object} props.row      Sample row.
+ * @param {Object} props.field    Field descriptor.
+ * @param {Object} props.terms    Term options by source.
+ * @param {Object} props.registry The `/fields` payload, for a Status row's Off/On words.
  * @return {Element} Cell content.
  */
-function AfterCell( { row, field, terms } ) {
+function AfterCell( { row, field, terms, registry } ) {
+	// A Status step's Off/On outcome (T91) says what happens in its own words.
+	const outcome = row.note
+		? outcomeLabel( registry, row.note, row.context || {} )
+		: '';
+	if ( outcome ) {
+		return (
+			<span
+				className={
+					row.state === 'changed'
+						? 'bulkcat-bulk__to'
+						: 'bulkcat-bulk__note'
+				}
+			>
+				{ outcome }
+			</span>
+		);
+	}
 	if ( row.state === 'already' ) {
 		return (
 			<span className="bulkcat-bulk__note">
@@ -215,6 +235,64 @@ function AfterCell( { row, field, terms } ) {
 				{ formatValue( field, row.new, terms ) }
 			</strong>
 		</>
+	);
+}
+
+/**
+ * The preview's Off and On block (T91, SPEC §9.1): each counted outcome in
+ * words, conflicts first, then the variations a Published step leaves as they
+ * are, and the products changed elsewhere while Off by name.
+ *
+ * @param {Object}      props          Props.
+ * @param {Object}      props.registry The `/fields` payload.
+ * @param {Object|null} props.block    The preview's `availability` block.
+ * @return {Element|null} The block, or nothing when no step sets Status.
+ */
+function AvailabilityBlock( { registry, block } ) {
+	const lines = availabilityLines( registry, block );
+	const conflicts = Array.isArray( block?.conflicts ) ? block.conflicts : [];
+	if ( ! block || ( lines.length === 0 && conflicts.length === 0 ) ) {
+		return null;
+	}
+	return (
+		<div className="bulkcat-bulk__card" data-block="availability">
+			<h3>
+				{ __( 'Off and On', 'bulk-catalogue-manager-for-woocommerce' ) }
+			</h3>
+			<ul className="bulkcat-bulk__lines">
+				{ lines.map( ( line ) => (
+					<li key={ line.code } className={ 'is-' + line.code }>
+						{ line.text }
+					</li>
+				) ) }
+			</ul>
+			{ conflicts.length > 0 && (
+				<>
+					<p className="bulkcat-bulk__lbl">
+						{ __(
+							'Changed by someone else while Off',
+							'bulk-catalogue-manager-for-woocommerce'
+						) }
+					</p>
+					<ul className="bulkcat-bulk__conflicts">
+						{ conflicts.map( ( conflict ) => (
+							<li key={ conflict.object_id }>
+								{ sprintf(
+									/* translators: 1: a product's name; 2: its status now, such as "Private"; 3: the status saved before Off, such as "Published". */
+									__(
+										'%1$s: now %2$s, saved as %3$s',
+										'bulk-catalogue-manager-for-woocommerce'
+									),
+									conflict.name,
+									statusName( registry, conflict.current ),
+									statusName( registry, conflict.saved )
+								) }
+							</li>
+						) ) }
+					</ul>
+				</>
+			) }
+		</div>
 	);
 }
 
@@ -383,6 +461,11 @@ export function PreviewResult( {
 				</dl>
 			</div>
 
+			<AvailabilityBlock
+				registry={ registry }
+				block={ response?.availability || null }
+			/>
+
 			<div className="bulkcat-bulk__samplebar">
 				<fieldset className="bulkcat-bulk__seg">
 					<legend className="bulkcat-bulk__lbl">
@@ -541,6 +624,7 @@ export function PreviewResult( {
 											row={ row }
 											field={ field }
 											terms={ terms }
+											registry={ registry }
 										/>
 									</td>
 								</tr>

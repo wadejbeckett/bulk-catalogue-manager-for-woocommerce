@@ -14,6 +14,8 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Engine;
 
+use BulkCatalogueManager\Availability\OffRecord;
+use BulkCatalogueManager\Availability\StatusSwitch;
 use BulkCatalogueManager\Data\BatchRepository;
 use BulkCatalogueManager\Operations\BaseOperation;
 use BulkCatalogueManager\Operations\Registry as Actions;
@@ -732,9 +734,18 @@ final class BatchFactory {
 	 * could only report that. Stops reading once the objects would pass the
 	 * batch limit.
 	 *
+	 * On is not pushed down (T91, SPEC §8): a Published Status step is not
+	 * carried to the variations of a selected product that carries its own
+	 * Off record (read per page through Availability\OffRecord::owners()),
+	 * since On restores only what Off saved and Off saved nothing for them;
+	 * such a variation carries the other reaching steps as its own list, or
+	 * is not added when none is left. `kept` counts the variations the step
+	 * so left alone. Every per-variation list is signed by ExactScope, so a
+	 * parent switched Off or On after a preview makes Apply stale.
+	 *
 	 * @param list<array{0: int, 1: string}>                          $selected   The objects the selection resolved to.
 	 * @param list<array{action: string, args: array<string, mixed>}> $operations The normalised operation list.
-	 * @return array{objects: list<array{0: int, 1: string, 2?: list<array{action: string, args: array<string, mixed>}>}>, added: int, left_out: int}
+	 * @return array{objects: list<array{0: int, 1: string, 2?: list<array{action: string, args: array<string, mixed>}>}>, added: int, left_out: int, kept: int}
 	 */
 	public function expand( array $selected, array $operations ): array {
 		$reaching = array_values( array_filter( $operations, static fn( array $step ): bool => true === ( $step['args'][ BaseOperation::APPLY_TO_VARIATIONS ] ?? null ) ) );
@@ -743,10 +754,14 @@ final class BatchFactory {
 				'objects'  => $selected,
 				'added'    => 0,
 				'left_out' => 0,
+				'kept'     => 0,
 			];
 		}
-		$own     = count( $reaching ) === count( $operations ) ? null : $reaching;
-		$fields  = $this->actions->fields();
+		$own    = count( $reaching ) === count( $operations ) ? null : $reaching;
+		$fields = $this->actions->fields();
+		// A Published Status step, which never reaches the variations of an Off product (T91).
+		$not_on  = array_values( array_filter( $reaching, fn( array $step ): bool => ! $this->switches_on( $step ) ) );
+		$kept    = 0;
 		$parents = null === $own;
 		foreach ( $operations as $step ) {
 			$field   = $fields->get( (string) ( $step['args']['field'] ?? '' ) );
@@ -768,9 +783,20 @@ final class BatchFactory {
 			if ( $room < 1 ) {
 				break;
 			}
+			$off = count( $not_on ) === count( $reaching ) ? [] : OffRecord::owners( $chunk );
 			foreach ( self::children( $chunk, $room ) as [ $child, $parent ] ) {
 				$reached[ $parent ] = true;
 				if ( isset( $present[ $child ] ) ) {
+					continue;
+				}
+				if ( isset( $off[ $parent ] ) ) {
+					// On is not pushed down to an Off product's variations; any other reaching step still is.
+					++$kept;
+					if ( [] === $not_on ) {
+						continue;
+					}
+					$present[ $child ] = true;
+					$added[]           = [ $child, 'variation', $not_on ];
 					continue;
 				}
 				$present[ $child ] = true;
@@ -778,12 +804,24 @@ final class BatchFactory {
 			}
 		}
 		// A parent the steps have nothing for (T69: every step is a price reaching its variations) is left out.
-		$kept = $parents ? array_values( array_filter( $selected, static fn( array $entry ): bool => 'product' !== $entry[1] || ! isset( $reached[ $entry[0] ] ) ) ) : $selected;
+		$kept_rows = $parents ? array_values( array_filter( $selected, static fn( array $entry ): bool => 'product' !== $entry[1] || ! isset( $reached[ $entry[0] ] ) ) ) : $selected;
 		return [
-			'objects'  => [ ...$kept, ...$added ],
+			'objects'  => [ ...$kept_rows, ...$added ],
 			'added'    => count( $added ),
-			'left_out' => count( $selected ) - count( $kept ),
+			'left_out' => count( $selected ) - count( $kept_rows ),
+			'kept'     => $kept,
 		];
+	}
+
+	/**
+	 * Whether a step is Published on the Status field (T91): the step that
+	 * switches an Off product On.
+	 *
+	 * @param array{action: string, args: array<string, mixed>} $step A normalised step.
+	 */
+	private function switches_on( array $step ): bool {
+		$field = $this->actions->fields()->get( (string) ( $step['args']['field'] ?? '' ) );
+		return 'set_value' === ( $step['action'] ?? '' ) && null !== $field && StatusSwitch::governs( $field ) && 'publish' === ( $step['args']['value'] ?? null );
 	}
 
 	/**

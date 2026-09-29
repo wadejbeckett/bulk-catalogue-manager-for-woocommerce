@@ -9,7 +9,12 @@
 export const MAX_OPERATIONS = 20;
 
 /** Arguments with a control of their own rather than the generic one. */
-export const SPECIAL_ARGS = [ 'field', 'skip_already', 'apply_to_variations' ];
+export const SPECIAL_ARGS = [
+	'field',
+	'skip_already',
+	'apply_to_variations',
+	'keep_changed_status',
+];
 
 /**
  * A field descriptor by key.

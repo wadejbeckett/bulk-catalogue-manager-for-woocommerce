@@ -122,7 +122,8 @@ final class PreviewRouteTest extends TestCase {
 		$this->assertInstanceOf( \WP_REST_Response::class, $response );
 		$this->assertSame( 200, $response->get_status() );
 		$data = $response->get_data();
-		$this->assertSame( [ 'totals', 'summary', 'sample', 'warnings', 'unreadable', 'selection', 'hash', 'unavailable_count', 'scope_hash', 'operations' ], array_keys( $data ), 'The 1.0 keys keep their order; the exact-selection keys (T83) follow them.' );
+		$this->assertSame( [ 'totals', 'summary', 'sample', 'warnings', 'unreadable', 'selection', 'hash', 'unavailable_count', 'scope_hash', 'operations', 'availability' ], array_keys( $data ), 'The 1.0 keys keep their order; the exact-selection keys (T83) follow them, then the Off/On block (T91).' );
+		$this->assertNull( $data['availability'], 'No step sets Status.' );
 		$this->assertSame( 1, $data['unavailable_count'] );
 		$this->assertTrue( is_array( $data['operations'] ) && 'featured' === $data['operations'][0]['args']['field'], 'The normalised operation list comes back for the durable request intent.' );
 		$this->assertSame( 3, $data['totals']['matched'], 'The exact scope keeps the missing id (T83).' );
@@ -137,6 +138,7 @@ final class PreviewRouteTest extends TestCase {
 				'count'            => 3,
 				'variations_added' => 0,
 				'parents_left_out' => 0,
+				'variations_kept'  => 0,
 			],
 			$data['selection']
 		);

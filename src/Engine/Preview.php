@@ -11,7 +11,9 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Engine;
 
+use BulkCatalogueManager\Availability\Outcome;
 use BulkCatalogueManager\Availability\Stamp;
+use BulkCatalogueManager\Availability\StatusSwitch;
 use BulkCatalogueManager\Fields\Field;
 use BulkCatalogueManager\Fields\Registry as Fields;
 use BulkCatalogueManager\Fields\Values;
@@ -84,6 +86,18 @@ defined( 'ABSPATH' ) || exit;
  * SAMPLE_ALL of them), `scope_hash` (ExactScope's signature on the exact
  * path, T83; null otherwise) and `operations` (the normalised list, which a
  * durable Apply request's intent carries).
+ *
+ * Then (T91, SPEC §9.1) `availability`: null when no step sets Status, and
+ * otherwise the Off/On outcome of each product's Status step, counted per
+ * Availability\Outcome code (scaled like every total when estimated), the
+ * restores to Private and Pending review split out, `variations_kept` (the
+ * variations a Published step is kept away from, BatchFactory::expand()),
+ * and `conflicts`: up to the sample size of the products changed elsewhere
+ * while Off, in object order, with their current and saved status. The Off
+ * record a Status step writes with it is set on the copy but never a sample
+ * row or a counted row; a product whose only change is its record counts once
+ * under would change, named as the Status field in the summary. Status sample
+ * rows carry the step's `note` and `context`.
  *
  * The hash (hash()) binds the answer to the selection (the token as sent,
  * or the id list), the normalised operation list and the settings that
@@ -217,6 +231,14 @@ final class Preview {
 
 		$settings ??= Settings::load();
 		$missing    = array_values( array_unique( array_merge( $unreadable, $tally['unreadable'] ) ) );
+		$off_on     = $this->sets_status( $operations )
+			? [
+				'counts'          => array_map( static fn( int $n ): int => self::scale( $n, $factor ), $tally['availability']['counts'] ),
+				'restores'        => array_map( static fn( int $n ): int => self::scale( $n, $factor ), $tally['availability']['restores'] ),
+				'variations_kept' => (int) ( $expanded['kept'] ?? 0 ),
+				'conflicts'       => $tally['availability']['conflicts'],
+			]
+			: null;
 		return [
 			'totals'            => [
 				'matched'      => $matched,
@@ -244,12 +266,29 @@ final class Preview {
 				] ) + [
 					'variations_added' => $expanded['added'],
 					'parents_left_out' => $expanded['left_out'],
+					'variations_kept'  => (int) ( $expanded['kept'] ?? 0 ),
 				],
 			'hash'              => self::hash( '' !== $token ? $token : $selection->ids, $operations, $settings, $scope['scope_hash'] ?? '' ),
 			'unavailable_count' => count( $missing ),
 			'scope_hash'        => $scope['scope_hash'] ?? null,
 			'operations'        => $operations,
+			'availability'      => $off_on,
 		];
+	}
+
+	/**
+	 * Whether any step sets the Status field (T91).
+	 *
+	 * @param list<array{action: string, args: array<string, mixed>}> $operations The normalised list.
+	 */
+	private function sets_status( array $operations ): bool {
+		foreach ( $operations as $step ) {
+			$field = $this->actions->fields()->get( (string) ( $step['args']['field'] ?? '' ) );
+			if ( null !== $field && StatusSwitch::governs( $field ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -304,6 +343,14 @@ final class Preview {
 				'variation' => 0,
 			],
 			'fields'       => [],
+			'availability' => [
+				'counts'    => array_fill_keys( Outcome::CODES, 0 ),
+				'restores'  => [
+					'private' => 0,
+					'pending' => 0,
+				],
+				'conflicts' => [],
+			],
 		];
 
 		$skip = array_flip( $unavailable );
@@ -346,6 +393,9 @@ final class Preview {
 					$results[] = $set;
 					if ( 0 === $index && $result->is_changed() && ! $set->is_changed() ) {
 						$follow = [];
+					}
+					if ( 0 === $index && null !== $field && StatusSwitch::governs( $field ) ) {
+						self::count_outcome( $tally['availability'], $set, $id, $label, $limit );
 					}
 				}
 				foreach ( $follow as $result ) {
@@ -406,6 +456,36 @@ final class Preview {
 			}
 		}
 		return $tally;
+	}
+
+	/**
+	 * Count one Status step's Off/On outcome (T91): its code, a restore to
+	 * another status, and a conflict listed up to the sample size.
+	 *
+	 * @param array<string, mixed> $block  The availability tally.
+	 * @param Result               $result The Status step's Result, as set on the copy.
+	 * @param int                  $id     The object.
+	 * @param string               $name   Its name.
+	 * @param int                  $limit  Most conflicts listed.
+	 */
+	private static function count_outcome( array &$block, Result $result, int $id, string $name, int $limit ): void {
+		$code = $result->note();
+		if ( ! isset( $block['counts'][ $code ] ) ) {
+			return;
+		}
+		++$block['counts'][ $code ];
+		$context = $result->context();
+		if ( Outcome::ON_RESTORES === $code && isset( $block['restores'][ $context['restores'] ?? '' ] ) ) {
+			++$block['restores'][ $context['restores'] ];
+		}
+		if ( Outcome::CONFLICT === $code && count( $block['conflicts'] ) < $limit ) {
+			$block['conflicts'][] = [
+				'object_id' => $id,
+				'name'      => $name,
+				'current'   => (string) ( $context['current'] ?? '' ),
+				'saved'     => (string) ( $context['saved'] ?? '' ),
+			];
+		}
 	}
 
 	/**

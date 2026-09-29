@@ -139,7 +139,8 @@
                 "private"
             ],
             "variationOnlyChoices": [],
-            "group": "publishing"
+            "group": "publishing",
+            "switchesOffOn": true
         },
         {
             "key": "catalog_visibility",

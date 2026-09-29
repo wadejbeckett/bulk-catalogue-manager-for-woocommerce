@@ -186,6 +186,34 @@ function OperationControls( {
 						reason={ reasonFor( name ) }
 					/>
 				) ) }
+			{ properties.keep_changed_status &&
+				field?.switchesOffOn === true &&
+				operation.args.value === 'publish' && (
+					// Keep current status (T91, SPEC §5.5): only a Published Status step can meet a conflict.
+					<div className="bulkcat-bulk__fg is-full">
+						<label
+							className="bulkcat-bulk__check"
+							htmlFor={ idBase + '-keep_changed_status' }
+						>
+							<input
+								id={ idBase + '-keep_changed_status' }
+								type="checkbox"
+								checked={
+									!! operation.args.keep_changed_status
+								}
+								onChange={ ( event ) =>
+									onArg(
+										'keep_changed_status',
+										event.target.checked
+									)
+								}
+							/>
+							<span>
+								{ properties.keep_changed_status.title }
+							</span>
+						</label>
+					</div>
+				) }
 			<div className="bulkcat-bulk__varbox is-full">
 				{ offersVariations( field ) ? (
 					<>

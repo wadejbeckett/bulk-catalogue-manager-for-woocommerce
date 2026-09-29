@@ -9,11 +9,22 @@
  * - A change that sets status to draft or pending, switches Visible on site
  *   off (or hides a product from the catalogue), or clears a field always
  *   confirms, whatever the count, naming what it will do.
+ * - Status is the global Off/On switch (T91, SPEC §4.5, §5.5): a Draft step
+ *   says it switches the products Off, and any Status step also confirms
+ *   when its preview counts an outcome of the shared list (CONFIRMS: a
+ *   switch Off, a restore to another status or to scheduled, a publication
+ *   of a product never switched Off, a saved status dropped, a conflict),
+ *   naming each count. The grid and the drawer confirm the same cases.
  * - Nothing ever asks the owner to type a word, and a preview never confirms.
  */
 import { useEffect, useRef, useState } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 
+import {
+	availabilityReasons,
+	offOnField,
+	switchesOffSentence,
+} from './availability';
 import { actionById, fieldByKey } from './descriptors';
 import { formatNumber, productsPhrase } from './words';
 
@@ -53,14 +64,23 @@ function hidesAs( field, value ) {
  * The sentences naming what an always-confirm change will do, one per step
  * that drafts, hides or empties (SPEC §4.5).
  *
- * @param {Object}        registry   The `/fields` payload.
- * @param {Array<Object>} operations Operations `[ { action, args } ]`.
- * @param {number}        count      Products it applies to.
+ * @param {Object}        registry     The `/fields` payload.
+ * @param {Array<Object>} operations   Operations `[ { action, args } ]`.
+ * @param {number}        count        Products it applies to.
+ * @param {Object|null}   availability The preview's Off/On block (T91), or null.
  * @return {Array<string>} Sentences; empty when none always confirms.
  */
-export function alwaysConfirmReasons( registry, operations, count ) {
+export function alwaysConfirmReasons(
+	registry,
+	operations,
+	count,
+	availability = null
+) {
 	const products = productsPhrase( count );
 	const reasons = [];
+	const offOn = offOnField( registry );
+	let setsOffOn = false;
+	let switchesOff = false;
 	( operations || [] ).forEach( ( operation ) => {
 		const action = actionById( registry, operation.action );
 		const field = fieldByKey( registry, operation.args?.field );
@@ -91,6 +111,19 @@ export function alwaysConfirmReasons( registry, operations, count ) {
 		}
 		if ( ! sets ) {
 			return;
+		}
+		if ( offOn && field.key === offOn.key ) {
+			setsOffOn = true;
+			if ( value === 'draft' ) {
+				// Draft switches the products Off (SPEC §5.5), counted from the preview when there is one.
+				const counts = availability?.counts || {};
+				const off =
+					( Number( counts.off ) || 0 ) +
+					( Number( counts.off_recapture ) || 0 );
+				reasons.push( switchesOffSentence( off > 0 ? off : count ) );
+				switchesOff = true;
+				return;
+			}
 		}
 		const hides = hidesAs( field, value );
 		if ( hides === 'off_site' ) {
@@ -123,6 +156,15 @@ export function alwaysConfirmReasons( registry, operations, count ) {
 			);
 		}
 	} );
+	if ( setsOffOn ) {
+		reasons.push(
+			...availabilityReasons(
+				registry,
+				availability,
+				switchesOff ? [ 'off' ] : []
+			)
+		);
+	}
 	return reasons;
 }
 

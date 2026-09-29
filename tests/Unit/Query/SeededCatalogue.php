@@ -130,6 +130,7 @@ final class SeededCatalogue {
 		$state  = &$GLOBALS['bulkcat_test'];
 		$tables = [
 			'wp_posts'                  => [],
+			'wp_postmeta'               => [],
 			'wp_wc_product_meta_lookup' => [],
 			'wp_term_relationships'     => [],
 			'wp_term_taxonomy'          => [],
@@ -185,6 +186,17 @@ final class SeededCatalogue {
 				];
 			}
 			$state['meta'][ $id ] += $meta;
+			// T91/T92: the meta rows SQL reads (the Off record, the grid's Off filter), as scalar values.
+			foreach ( $state['meta'][ $id ] as $key => $value ) {
+				if ( is_scalar( $value ) ) {
+					$tables['wp_postmeta'][] = [
+						'meta_id'    => count( $tables['wp_postmeta'] ) + 1,
+						'post_id'    => $id,
+						'meta_key'   => $key, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- a test fixture row.
+						'meta_value' => (string) $value, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- a test fixture row.
+					];
+				}
+			}
 			foreach ( $terms as $term ) {
 				$tables['wp_term_relationships'][] = [
 					'object_id'        => $id,

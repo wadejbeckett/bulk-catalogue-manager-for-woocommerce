@@ -374,6 +374,24 @@ describe( 'bulk panel: chooser and controls', () => {
 		).toBeVisible();
 	} );
 
+	it( 'offers Keep current status only on a Published Status step (T91)', () => {
+		renderPanel();
+		choose( 'Publishing', 'Set a value' );
+		change( 'Field', 'status' );
+		const keep =
+			'For products changed by someone else while Off: keep their current status and clear the Off record';
+		expect( screen.getByLabelText( 'New value' ) ).toHaveValue( 'publish' );
+		expect( screen.getByLabelText( keep ) ).not.toBeChecked();
+		change( 'New value', 'draft' );
+		expect( screen.queryByLabelText( keep ) ).toBeNull();
+		change( 'New value', 'publish' );
+		expect( screen.getByLabelText( keep ) ).toBeVisible();
+		change( 'Field', 'featured' );
+		expect( screen.queryByLabelText( keep ) ).toBeNull();
+		choose( 'Pricing', 'Set a value' );
+		expect( screen.queryByLabelText( keep ) ).toBeNull();
+	} );
+
 	it( 'starts both switches per field: skip on, variations from the settings, absent on parent-only fields', () => {
 		renderPanel();
 		REGISTRY.actions.forEach( ( action ) => {

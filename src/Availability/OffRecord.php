@@ -174,6 +174,35 @@ final class OffRecord {
 	}
 
 	/**
+	 * Which of some products carry their own record (T91): one prepared read
+	 * of this key for the ids given (at most a page of them), each value bound
+	 * to its product in PHP, so a copied or unreadable value is no record.
+	 * BatchFactory::expand() asks it which selected products are Off before
+	 * pushing a Published step down to their variations.
+	 *
+	 * @param list<int> $ids Product ids.
+	 * @return array<int, self> Product id => its record, for those that have one.
+	 */
+	public static function owners( array $ids ): array {
+		global $wpdb;
+		$ids = array_values( array_unique( array_filter( array_map( 'intval', $ids ), static fn( int $id ): bool => $id > 0 ) ) );
+		if ( [] === $ids ) {
+			return [];
+		}
+		$in = implode( ', ', array_fill( 0, count( $ids ), '%d' ) );
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- One read of the plugin's own meta key for a page of ids; $in holds only placeholders and every value is an argument.
+		$rows   = $wpdb->get_results( $wpdb->prepare( "SELECT post_id, meta_value FROM %i WHERE meta_key = %s AND post_id IN ({$in})", $wpdb->prefix . 'postmeta', self::META_KEY, ...$ids ), ARRAY_A );
+		$owners = [];
+		foreach ( is_array( $rows ) ? $rows : [] as $row ) {
+			$record = self::parse( (string) ( $row['meta_value'] ?? '' ), (int) ( $row['post_id'] ?? 0 ) );
+			if ( null !== $record ) {
+				$owners[ $record->id ] = $record;
+			}
+		}
+		return $owners;
+	}
+
+	/**
 	 * WooCommerce's Duplicate leaves the record out of the copy
 	 * (`woocommerce_duplicate_product_exclude_meta`). The id binding stays
 	 * the guard for copies this filter does not see.

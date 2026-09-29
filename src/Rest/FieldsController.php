@@ -217,6 +217,7 @@ final class FieldsController implements ReadController {
 				],
 				'source'               => [ 'type' => 'string' ],
 				'maxLength'            => [ 'type' => 'integer' ],
+				'switchesOffOn'        => [ 'type' => 'boolean' ],
 			],
 		];
 	}

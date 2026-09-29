@@ -630,6 +630,93 @@ final class BatchFactoryTest extends TestCase {
 		$this->assertSame( [ 'batch:1', 'items:1:2', 'items:1:1' ], $this->store->log, 'Rows taking the batch list, then rows with their own, in two statements before any work.' );
 	}
 
+	/**
+	 * Give a seeded product its own Off record, as the switch writes it (T91).
+	 */
+	private function switch_off( int $id, string $saved = 'publish', int $batch = 7 ): void {
+		$this->db->tables['wp_postmeta'][] = [
+			'meta_id'    => 9000 + $id,
+			'post_id'    => $id,
+			'meta_key'   => '_bulkcat_availability_off', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- a test fixture row.
+			'meta_value' => \BulkCatalogueManager\Availability\OffRecord::create( $id, $saved, '2026-09-01T08:00:00Z', $batch )->to_json(), // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- a test fixture row.
+		];
+	}
+
+	/**
+	 * A Status step, with Also apply to variations on.
+	 *
+	 * @param string $value The status chosen.
+	 */
+	private static function status_step( string $value ): array {
+		return [
+			'action' => 'set_value',
+			'args'   => [
+				'field'               => 'status',
+				'value'               => $value,
+				'apply_to_variations' => true,
+			],
+		];
+	}
+
+	public function test_published_is_not_pushed_down_to_the_variations_of_an_off_product(): void {
+		// T91 (SPEC §8): On restores only what Off saved, and Off saved nothing for variations.
+		$this->switch_off( 103 );
+		$actions = new Actions( new Fields() );
+		$list    = $actions->validate_list( [ self::status_step( 'publish' ) ] );
+		$off     = $this->factory()->expand( [ [ 103, 'product' ], [ 107, 'product' ] ], $list );
+		$this->assertSame( [ [ 103, 'product' ], [ 107, 'product' ] ], $off['objects'], 'No variation of the Off product 103 is added: none has a step left.' );
+		$this->assertSame( [ 0, 0, 2 ], [ $off['added'], $off['left_out'], $off['kept'] ] );
+
+		// With another step reaching variations, they are added with that step only.
+		$two   = $actions->validate_list(
+			[
+				self::status_step( 'publish' ),
+				[
+					'action' => 'set_value',
+					'args'   => [
+						'field'               => 'stock_status',
+						'value'               => 'instock',
+						'apply_to_variations' => true,
+					],
+				],
+			]
+		);
+		$mixed = $this->factory()->expand( [ [ 103, 'product' ] ], $two );
+		$this->assertSame( [ 103, 202, 201 ], array_column( $mixed['objects'], 0 ) );
+		$this->assertSame( [ 'stock_status' ], array_map( static fn( array $step ): string => $step['args']['field'], $mixed['objects'][1][2] ) );
+		$this->assertSame( 2, $mixed['kept'] );
+
+		// A product that is not Off pushes Published down as before; Draft is still pushed down (and skipped per variation).
+		$this->db->tables['wp_postmeta'] = [];
+		$this->assertSame( [ [ 103, 'product' ], [ 202, 'variation' ], [ 201, 'variation' ] ], $this->factory()->expand( [ [ 103, 'product' ] ], $list )['objects'] );
+		$this->switch_off( 103 );
+		$draft = $this->factory()->expand( [ [ 103, 'product' ] ], $actions->validate_list( [ self::status_step( 'draft' ) ] ) );
+		$this->assertSame( [ [ 103, 'product' ], [ 202, 'variation' ], [ 201, 'variation' ] ], $draft['objects'] );
+		$this->assertSame( 0, $draft['kept'] );
+	}
+
+	public function test_a_copied_record_does_not_keep_variations_back(): void {
+		// A record naming another product is no record (D8): the product is not Off.
+		$this->db->tables['wp_postmeta'][] = [
+			'meta_id'    => 9999,
+			'post_id'    => 103,
+			'meta_key'   => '_bulkcat_availability_off', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- a test fixture row.
+			'meta_value' => \BulkCatalogueManager\Availability\OffRecord::create( 999, 'publish', '2026-09-01T08:00:00Z', 7 )->to_json(), // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- a test fixture row.
+		];
+		$list                              = ( new Actions( new Fields() ) )->validate_list( [ self::status_step( 'publish' ) ] );
+		$this->assertSame( 0, $this->factory()->expand( [ [ 103, 'product' ] ], $list )['kept'] );
+	}
+
+	public function test_a_parents_off_state_changing_after_the_preview_changes_the_scope(): void {
+		// The per-variation step lists are signed, so Apply is stale when the parent is switched Off or On since.
+		$list   = ( new Actions( new Fields() ) )->validate_list( [ self::status_step( 'publish' ) ] );
+		$before = \BulkCatalogueManager\Engine\ExactScope::build( Selection::of_ids( [ 103 ] ), $list, $this->factory() );
+		$this->switch_off( 103 );
+		$after = \BulkCatalogueManager\Engine\ExactScope::build( Selection::of_ids( [ 103 ] ), $list, $this->factory() );
+		$this->assertNotSame( $before['scope_hash'], $after['scope_hash'] );
+		$this->assertSame( [ 3, 1 ], [ count( $before['objects'] ), count( $after['objects'] ) ] );
+	}
+
 	public function test_variations_only_mode_is_unaffected(): void {
 		$result = $this->factory()->create( self::UUID, self::USER, self::increase( true ), self::filter( Criteria::MODE_VARIATIONS ) );
 		$this->assertSame( 2, $result['total_items'] );

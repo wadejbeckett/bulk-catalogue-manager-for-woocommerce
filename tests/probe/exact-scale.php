@@ -25,7 +25,8 @@ declare( strict_types = 1 );
 // phpcs:disable WordPress.DB -- Local-only measurement on a disposable scale site.
 // phpcs:disable WordPress.PHP.YodaConditions -- Probe expectations compare measured values directly.
 use BulkCatalogueManager\Requests\RequestService;
-if ( ! defined( 'WP_CLI' ) || ! WP_CLI || 'http://localhost:18925' !== get_option( 'siteurl' ) ) {
+require_once __DIR__ . '/fixture.php';
+if ( ! bulkcat_probe_fixture() ) {
 	exit( 1 ); }
 global $wpdb;
 wp_set_current_user( 1 );

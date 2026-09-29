@@ -213,8 +213,13 @@ docker network rm bulkcat-perf
 
 The PHP probes named `exact-*.php` and `selection-*.php` run inside WordPress
 through WP-CLI on a disposable stack whose plugin directory is this checkout,
-never on a real shop: each refuses to run unless `siteurl` is the fixture's
-(`http://localhost:18925`), and its header gives its command, for example
+never on a real shop: each refuses to run (`fixture.php`,
+`bulkcat_probe_fixture()`) unless `siteurl` is the owned fixture's
+(`http://localhost:18925`) or the WP-CLI process is given
+`BULKCAT_PROBE_SITEURL` naming this site's URL on a local development host
+(`localhost`, `127.0.0.1`, `[::1]`, `*.localhost`, `*.test`; with the
+docker stacks above, add `-e BULKCAT_PROBE_SITEURL=http://localhost:8888`
+to `WP_CMD`), and its header gives its command, for example
 
 ```sh
 wp eval 'require "wp-content/plugins/bulk-catalogue-manager-for-woocommerce/tests/probe/exact-batch.php";'
@@ -232,3 +237,14 @@ overlapping WP-CLI processes run (`$phase="prepare_apply"; require …`, then
 `undo`). They print their checks as JSON and exit 1 on the first failure,
 cleaning up the products they made. `probe.py`'s write and variations
 chapters take selections and changes through `POST /requests` grants.
+
+The plugin's cleanup is bounded (at most 100 payloads or receipts a run,
+oldest first), so a probe that checks its own row is gone drains it
+(`bulkcat_probe_drain()`: runs until one takes less than a full run, at most
+100 runs) rather than calling it once; a backlog left by earlier runs, such
+as the e2e lifecycle specs, cannot hide its row. `stale-selections.php` makes
+such a backlog (`$stale = 500; require …/stale-selections.php`: selections
+captured with the clock nine days back, so their payloads and receipts all
+await cleanup); `exact-selection-cleanup.php` and
+`exact-selection-capacity.php` still call the cleanup once, since they check
+its bound.

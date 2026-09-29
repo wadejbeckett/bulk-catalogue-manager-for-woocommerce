@@ -14,7 +14,8 @@ use BulkCatalogueManager\Data\Registry;
 use BulkCatalogueManager\Data\Schema;
 use BulkCatalogueManager\Requests\RequestService;
 
-if ( ! defined( 'WP_CLI' ) || ! WP_CLI || 'http://localhost:18925' !== get_option( 'siteurl' ) ) {
+require_once __DIR__ . '/fixture.php';
+if ( ! bulkcat_probe_fixture() ) {
 	exit( 1 );
 }
 global $wpdb;
@@ -119,11 +120,12 @@ try {
 	} finally {
 		$wpdb->query( $wpdb->prepare( 'ALTER TABLE %i ADD PRIMARY KEY (user_id,uuid)', $receipts ) ); }
 	$now += 7 * DAY_IN_SECONDS + 1;
-	$service->prune_selections();
+	// Drained, not called once: a backlog of older payloads and receipts must not hide these (ticket 11).
+	bulkcat_probe_drain( [ $service, 'prune_selections' ] );
 	$gone = $service->capture( $grant );
 	$check( is_wp_error( $gone ) && 'bulkcat_selection_expired' === $gone->get_error_code() && $count( $receipts ) >= 3, 'Payload pruning leaves durable gone receipts.' );
 	$now += DAY_IN_SECONDS;
-	$service->prune_requests();
+	bulkcat_probe_drain( [ $service, 'prune_requests' ] );
 	$expired = $service->capture( $grant );
 	$check( is_wp_error( $expired ) && 'bulkcat_request_expired' === $expired->get_error_code(), 'After receipt pruning the signed deadline still forbids recapture.' );
 } finally {

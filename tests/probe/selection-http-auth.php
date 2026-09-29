@@ -7,7 +7,8 @@
  */
 declare( strict_types = 1 );
 use BulkCatalogueManager\Requests\RequestService;
-if ( ! defined( 'WP_CLI' ) || ! WP_CLI || 'http://localhost:18925' !== get_option( 'siteurl' ) ) {
+require_once __DIR__ . '/fixture.php';
+if ( ! bulkcat_probe_fixture() ) {
 	exit( 1 ); }
 $key = 'bulkcat_probe_http_session';
 if ( 'prepare' === $phase ) {

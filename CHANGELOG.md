@@ -32,6 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Going back to 1.0.0: let every change finish first (no batch queued, running or undoing), and switch Off products On, or note their saved statuses. 1.0.0 leaves Off products as drafts and ignores their saved status, refuses to undo their Off in History, and its Published publishes them whatever status they had.
 <!-- /global-off-on -->
 
+### Added
+
+- REST: `POST /bulkcat/v1/export` exports the catalogue as CSV from exactly one source: a selection's token (its members, in ascending id order, with any no longer available left out and counted), at most 1,000 product and variation ids, or the `GET /products` filter arguments; a filter with no search, filter or category needs `confirm_all`. `identifiers` puts `ID`, `SKU`, `Parent` and `Type` first, as WooCommerce's product importer maps them, marks columns that would not read back "(for reference)", and writes the first heading unquoted so the importer reads it. `summary` answers the row, left-out and guarded counts and the file name without exporting. Every refusal comes before any CSV byte; a token is taken only from the request body. File names are `catalogue-selected`, `-filtered` or `-all`, with `-with-ids`, and the site's date and time. The export dialog that uses it is still to come; until then the screen exports through `GET /export` as before.
+- Exports lift PHP's time limit before they stream, where the host allows (`wc_set_time_limit()`).
+- An export that fails after it has started (catalogue or history) stops where it is and the error is written to the WooCommerce log, instead of the site's error page being added to the end of the file.
+
 ### Changed
 
 - Selections are exact and kept on the server: ticked rows and **Select all matching** add to one selection that survives searches, filters, pages and a reload, until **Clear selection**, **Clear search**, unticking, or a change that finished in full. **Review selected products** lists and removes members, including ones no longer available.

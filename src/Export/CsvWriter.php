@@ -113,6 +113,30 @@ final class CsvWriter {
 	}
 
 	/**
+	 * Write one line whose first cell, when it is plain ASCII letters, is
+	 * written without quotes; every other cell as row() writes it. For the
+	 * first line of a file meant for WooCommerce's product importer: PHP's
+	 * CSV reader, which the importer uses, treats a field as quoted only when
+	 * a quote is its first byte, so after the byte-order mark a quoted first
+	 * heading would be read with its quotes and not be mapped (ticket 10).
+	 * A cell of letters only needs no quoting under RFC 4180 and cannot
+	 * start a formula.
+	 *
+	 * @param array<int|string, mixed> $cells Cells; keys are ignored.
+	 */
+	public function row_bare_first( array $cells ): void {
+		$cells = array_values( $cells );
+		$first = self::text( $cells[0] ?? null );
+		if ( 1 !== preg_match( '/^[A-Za-z]+$/D', $first ) ) {
+			$this->row( $cells );
+			return;
+		}
+		$rest = array_slice( $cells, 1 );
+		$this->put( $first . ( [] === $rest ? self::EOL : $this->separator . self::line( $rest, $this->separator ) ) );
+		++$this->lines;
+	}
+
+	/**
 	 * Write many lines.
 	 *
 	 * @param iterable<array<int|string, mixed>> $rows Rows of cells.

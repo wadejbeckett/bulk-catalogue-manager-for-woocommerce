@@ -125,3 +125,27 @@ busier host.
 The T76 row's proof case (forcing the term-relationships join on to show the
 suite fails) and a `performance.json` CI job are not done: `perf.py --json`
 writes the file, and the suite is too slow for CI as it stands.
+
+## CSV export by POST (ticket 10, T102)
+
+Run on 29 September 2026 on the CSV slice's throwaway stack (PHP 8.3.33,
+MySQL 8.4.11, WordPress 7.1, WooCommerce 11.1.0, no persistent object
+cache, `DISABLE_WP_CRON`, the measurement mu-plugin above), with
+`perf.py --only export,export_post` at `seed.sh 20000`, then
+`--only export_scale` at `seed.sh 22223` (the scale category then holds
+exactly 100,000 products and variations). The identifier switch is on in
+every POST row. Budgets are §12.5's.
+
+| Metric | Result | Budget |
+| --- | --- | --- |
+| GET, 20,000 rows (unchanged group) | first byte 355 ms, complete 18.2 s, peak 17.1 MB (+0.23 MB over 2,000) | < 2 s, < 60 s, flat |
+| POST by filter, 20,000 rows | first byte 108 ms, complete 13.0 s, peak 17.1 MB (+0.23 MB) | < 2 s, < 60 s, flat |
+| POST by selection, 20,000 members | first byte 253 ms (token resolution and presence included; capture 0.3 s before it), complete 3.2 s, peak 22.2 MB (+5.26 MB) | < 2 s, < 60 s, flat |
+| POST by selection, 100,000 members | peak 48.8 MB, first byte 0.7 to 0.9 s, complete 14.5 to 17.7 s, 4,952 queries | < 128 MB |
+| Summary with identifiers, 100,000 members | 1.55 s, 129 queries (presence 100, guarded counts 20), peak 48.8 MB | recorded |
+| Summary with identifiers, 22,223 rows by filter | 0.98 s, 9 queries | recorded |
+
+A selection streams faster than a filter: its pages are hydrated straight
+from the present members, without the grid's sort and count per page. The
+selection's peak over its 2,000-member run is the members decoded while the
+token resolves (dropped before presence is read), not the streamed pages.

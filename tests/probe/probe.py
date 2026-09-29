@@ -1866,7 +1866,9 @@ def check_read_export_roundtrip(p: Probe) -> None:
         ids = state["fx"]["ids"]
         category = state["fx"]["categories"]["recorded"]
         titled = ids["rec-titled-one"]
+        binned, child = ids["rec-binned-group"], ids["rec-binned-child"]
         export_native(p, "sql", {"what": "title", "id": titled, "title": "A custom variation title"})
+        export_native(p, "sql", {"what": "trash", "id": binned})  # taken back out of the bin by the fixtures run below
         stored = export_native(p, "sql", {"what": "read_title", "id": titled})["title"]
         r, table = export(category, "filter")
         header = table[0]
@@ -1901,6 +1903,12 @@ def check_read_export_roundtrip(p: Probe) -> None:
         kept = (after["rows"][str(zero)]["post_parent"], after["rows"][str(idsku)]["post_parent"]) == (ids["rec-zero"], ids["rec-id-sku"])
         p.row("read", "read:export:parent-zero-and-id-sku", cells == (f"id:{ids['rec-zero']}", f"id:{ids['rec-id-sku']}") and kept and result.get("new_posts") == 0,
               f"Parent cells {cells}; parents kept {kept}; no placeholder ({result.get('importing')})")
+        kept = after["rows"][str(child)]["post_parent"] == binned
+        binned_status = export_eval(p, f"bulkcat_out( get_post_status( {binned} ) );")
+        p.row("read", "read:export:binned-parent",
+              binned_status == "trash" and binned not in by_id and by_id[child][2] == f"id:{binned}" and kept and result.get("new_posts") == 0 and result.get("importing") == 0,
+              f"parent {binned} in the bin ({binned_status}); its child's Parent {by_id[child][2]!r} (WooCommerce's exporter writes the SKU, which its SKU lookup "
+              f"would not find); post_parent kept {kept}; new posts {result.get('new_posts')}, placeholders {result.get('importing')}")
         p.row("read", "read:export:variation-title", stored == "A custom variation title" and by_id[titled][name_i] == stored,
               f"recorded: stored {stored!r}, exported {by_id[titled][name_i]!r}, after the import {imported_title!r} "
               f"({'WooCommerce regenerated the generated title' if imported_title != stored else 'the custom title was kept'}); "

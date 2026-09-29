@@ -158,6 +158,24 @@ final class ReimportIdentifiersTest extends TestCase {
 		$this->assertSame( [ 'id:11', 'id:12', 'id:13', 'id:14', 'id:15', 'id:16', 'id:17', 'id:18', 'id:19', 'id:20', 'id:21', 'Tom & Jerry\'s "Classic"' ], $parents );
 	}
 
+	public function test_parent_is_id_and_the_parent_id_when_the_parent_is_in_the_bin(): void {
+		// Main Build L3: WooCommerce's SKU lookup skips binned products (WC_Product_Data_Store_CPT::
+		// get_product_id_by_sku(), post_status != 'trash'), so a binned parent's SKU would make the
+		// importer create an "Import placeholder"; id:N is looked up by id, whatever the status.
+		self::post( 10, 'product', 0, [ '_sku' => 'GROUP-10' ] );
+		self::post( 11, 'product', 0, [ '_sku' => 'VAR-11' ] );
+		self::post( 12, 'product', 0, [ '_sku' => 'DRAFT-12' ] );
+		$GLOBALS['bulkcat_test']['posts'][10]['post_status'] = 'trash';
+		$GLOBALS['bulkcat_test']['posts'][11]['post_status'] = 'trash';
+		$GLOBALS['bulkcat_test']['posts'][12]['post_status'] = 'draft';
+		self::post( 20, 'product', 10 );
+		self::post( 21, 'product_variation', 11 );
+		self::post( 22, 'product_variation', 12 );
+		$items = self::decorate( [ self::row( 20, 'simple', 10 ), self::row( 21, 'variation', 11 ), self::row( 22, 'variation', 12 ) ] );
+		$this->assertSame( [ 'id:10', 'id:11', 'DRAFT-12' ], array_column( $items, ColumnPlan::PARENT ), 'Only the bin: a draft parent is found by its SKU.' );
+		$this->assertSame( 'id:10', ReimportIdentifiers::parent( 10 ), 'The same through the one-parent read.' );
+	}
+
 	public function test_reads_back_matches_the_importer_for_own_and_parent_skus(): void {
 		foreach ( [ 'P-1', 'Tom & Jerry', 'A "B"', 'é-ü', '12' ] as $sku ) {
 			$this->assertTrue( ReimportIdentifiers::reads_back( $sku ), $sku );

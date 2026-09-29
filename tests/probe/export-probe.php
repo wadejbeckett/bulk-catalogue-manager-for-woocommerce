@@ -320,6 +320,29 @@ if ( ! function_exists( 'bulkcat_export_probe' ) ) {
 				'category_ids'  => [ $recorded ],
 			]
 		);
+		// A simple product whose post parent is a grouped product (Main Build L3). The probe bins the group
+		// only for its recorded export and import, then runs this action again, which takes it back out of
+		// the bin: kept out of the bin otherwise, it never changes the make-up of another row's pages.
+		$ids['rec-binned-group'] = bulkcat_export_probe_upsert(
+			'rec-binned-group',
+			WC_Product_Grouped::class,
+			[
+				'name'         => 'REC Binned Group',
+				'sku'          => 'bulkcat-rec-binned-group',
+				'category_ids' => [ $recorded ],
+			]
+		);
+		$ids['rec-binned-child'] = bulkcat_export_probe_upsert(
+			'rec-binned-child',
+			WC_Product_Simple::class,
+			[
+				'name'          => 'REC Child Of A Binned Group',
+				'sku'           => 'bulkcat-rec-binned-child',
+				'regular_price' => '8.00',
+				'category_ids'  => [ $recorded ],
+			],
+			$ids['rec-binned-group']
+		);
 		// The custom-titled variation (amendment 9) gets its title from the probe just before its export
 		// (sql "title"): any CRUD read of the variation regenerates the title.
 

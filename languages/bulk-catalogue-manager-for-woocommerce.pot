@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-09-29T11:56:55+00:00\n"
+"POT-Creation-Date: 2026-09-29T18:53:22+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -42,6 +42,29 @@ msgid "This copy of Bulk Catalogue Manager was built for WordPress %1$s, but thi
 msgstr ""
 
 msgid "This copy of Bulk Catalogue Manager is missing its screen files. Reinstall the plugin."
+msgstr ""
+
+#. translators: 1: a status, such as "Published", 2: when it was saved, such as "28 Sep 2026 14:03".
+#, php-format
+msgid "%1$s, saved %2$s"
+msgstr ""
+
+msgid "This product was changed by someone else while it was Off, so it was left alone. Choose Keep current status to keep its status and clear its Off record."
+msgstr ""
+
+msgid "Published"
+msgstr ""
+
+msgid "Scheduled"
+msgstr ""
+
+msgid "Pending review"
+msgstr ""
+
+msgid "Private"
+msgstr ""
+
+msgid "Draft"
 msgstr ""
 
 msgid "Something went wrong while changing this category, so it may not have been finished. Reload the categories to check it."
@@ -153,6 +176,9 @@ msgstr ""
 msgid "You do not have permission to edit this product, so nothing was changed. Ask an administrator for access to it."
 msgstr ""
 
+msgid "Keep current status only applies when changing Status. Change Status too, or leave it out, and try again."
+msgstr ""
+
 msgid "That product could not be found. It may have been deleted; reload the list and try again."
 msgstr ""
 
@@ -164,7 +190,6 @@ msgstr ""
 
 #. translators: %s: a number of products, such as "1,284".
 #. translators: %s: a number of products, such as "4,312".
-#. translators: %s: number of products and variations, such as "1,248".
 #. translators: %s: how many products match.
 #, php-format,js-format
 msgid "%s product"
@@ -277,10 +302,36 @@ msgstr ""
 msgid "This item has changed between a product and a variation since it was chosen, so it was left unchanged. Choose it again to change it."
 msgstr ""
 
+#. translators: %s: a column's heading, such as "Categories". The words added mark a column the product importer should not map.
+#, php-format
+msgid "%s (for reference)"
+msgstr ""
+
 msgid "Yes"
 msgstr ""
 
 msgid "No"
+msgstr ""
+
+msgid "The selected products must not be sent in the page address. Reload the catalogue and export again."
+msgstr ""
+
+msgid "These columns could not be exported. Choose the columns again and try again."
+msgstr ""
+
+msgid "These products could not be exported. Choose the products again and try again."
+msgstr ""
+
+msgid "These filters or this sort could not be used. Clear them and try again."
+msgstr ""
+
+msgid "This would export the whole catalogue. Tick \"Yes, export the whole catalogue\", or add a search or filter, and try again."
+msgstr ""
+
+msgid "More than 1,000 products, or two kinds of rows, were sent to export. Choose Selected or All matching the current filters instead."
+msgstr ""
+
+msgid "The selected products could not be read safely. Export again; if this continues, ask an administrator to check catalogue storage."
 msgstr ""
 
 msgid "When (UTC)"
@@ -464,6 +515,9 @@ msgstr ""
 msgid "On a product, %1$s can only be: %2$s."
 msgstr ""
 
+msgid "The saved status before Off could not be read for this product, so it was not changed. Reload the list and try again."
+msgstr ""
+
 msgid "The sale price has to be below the regular price, so this product was skipped. Lower the sale price, or choose to clear it where it is not below the regular price."
 msgstr ""
 
@@ -478,7 +532,7 @@ msgstr ""
 msgid "Catalogue visibility"
 msgstr ""
 
-msgid "Visible on site"
+msgid "Shown in shop and search"
 msgstr ""
 
 msgid "Featured"
@@ -499,19 +553,13 @@ msgstr ""
 msgid "Status"
 msgstr ""
 
-msgid "Published"
-msgstr ""
-
-msgid "Draft"
-msgstr ""
-
-msgid "Pending review"
-msgstr ""
-
-msgid "Private"
-msgstr ""
-
 msgid "A variation can only be published or private."
+msgstr ""
+
+msgid "Off"
+msgstr ""
+
+msgid "Changed outside this screen"
 msgstr ""
 
 msgid "Shop and search results"
@@ -526,7 +574,7 @@ msgstr ""
 msgid "Hidden"
 msgstr ""
 
-msgid "Visible"
+msgid "Shown"
 msgstr ""
 
 msgid "Categories"
@@ -599,6 +647,12 @@ msgid "None"
 msgstr ""
 
 msgid "Tax class"
+msgstr ""
+
+msgid "Status before Off"
+msgstr ""
+
+msgid "A variation is never switched Off on its own, so it has no saved status."
 msgstr ""
 
 msgid "Type"
@@ -892,6 +946,27 @@ msgstr ""
 msgid "Step %1$d of %2$d: %3$s"
 msgstr ""
 
+msgid "Put the status back"
+msgstr ""
+
+msgid "Puts back the status, and the status saved before Off, that an undone change replaced."
+msgstr ""
+
+msgid "Status to put back"
+msgstr ""
+
+msgid "The status to put back could not be read, so this product was left alone."
+msgstr ""
+
+msgid "Status before Off to put back"
+msgstr ""
+
+msgid "The saved status before Off could not be read, so this product was left alone."
+msgstr ""
+
+msgid "There is no status to put back, so this product was left alone."
+msgstr ""
+
 msgid "Round prices"
 msgstr ""
 
@@ -974,6 +1049,15 @@ msgstr ""
 msgid "Enter the new value, then try again."
 msgstr ""
 
+msgid "For products changed by someone else while Off: keep their current status and clear the Off record"
+msgstr ""
+
+msgid "Keep current status for products changed by someone else while Off has to be on or off."
+msgstr ""
+
+msgid "Keep current status only applies when changing Status. Turn it off and try again."
+msgstr ""
+
 msgid "Add categories or tags"
 msgstr ""
 
@@ -1020,7 +1104,7 @@ msgstr ""
 msgid "This variation does not manage its own stock, so its stock quantity was not changed. Turn on Manage stock for the variation first."
 msgstr ""
 
-msgid "Bulk Catalogue Manager for WooCommerce needs WooCommerce 10.0 or later. Install or update WooCommerce to use it."
+msgid "Bulk Catalogue Manager for WooCommerce needs WooCommerce 11.1 or later. Install or update WooCommerce to use it."
 msgstr ""
 
 #. translators: %s: an attribute's name, such as "Size".
@@ -1255,10 +1339,7 @@ msgstr ""
 msgid "For the catalogue, the status filter; for the change history, only changes with this outcome."
 msgstr ""
 
-msgid "These columns could not be exported. Choose the columns again and try again."
-msgstr ""
-
-msgid "These filters or this sort could not be used. Clear them and try again."
+msgid "The export could not be prepared. Export again; if this continues, ask an administrator to check the site's error log."
 msgstr ""
 
 msgid "This export does not say which change to export. Open the change in the history and export it again."
@@ -1303,6 +1384,9 @@ msgstr ""
 msgid "How the change is recorded in the history: an edit in the list, or a change made in bulk."
 msgstr ""
 
+msgid "For a product changed by someone else while Off: keep its current status and clear its Off record. Only with a Status change."
+msgstr ""
+
 msgid "The batch of one this change is recorded as."
 msgstr ""
 
@@ -1344,6 +1428,9 @@ msgstr ""
 msgid "On a variation, its attribute values, such as \"Blue / Large\"."
 msgstr ""
 
+msgid "On a product with its own saved status before Off: whether it is Off or was changed outside this screen, the status saved and when; null otherwise."
+msgstr ""
+
 msgid "Text to find in the name or SKU."
 msgstr ""
 
@@ -1370,6 +1457,24 @@ msgstr ""
 #. translators: %s: a field's name, such as "Stock status".
 #, php-format
 msgid "The %s filter could not be used. Clear it and choose it again."
+msgstr ""
+
+msgid "Whether ID, SKU, Parent and Type come first, so the file can go back through WooCommerce's product importer."
+msgstr ""
+
+msgid "The selected products, as the selection routes issue them. Sent in the request body, never in the address."
+msgstr ""
+
+msgid "Confirms an export of the whole catalogue, needed when no search, filter or category is set."
+msgstr ""
+
+msgid "Whether to answer only the row counts and the file name, without exporting."
+msgstr ""
+
+msgid "What is exported: only the catalogue is posted."
+msgstr ""
+
+msgid "At most 1,000 products or variations, by id, instead of a selection or a filter."
 msgstr ""
 
 msgid "These products or filters could not be selected. Clear the filters, choose the products again and try again."
@@ -1660,6 +1765,9 @@ msgstr ""
 msgid "One of the values this batch changed can no longer be changed here, so this product was left alone."
 msgstr ""
 
+msgid "The saved status before Off this batch changed could not be read for this product, so it was left alone."
+msgstr ""
+
 msgid "This variation was changed since this batch ran, so it is left alone unless you choose Revert anyway."
 msgstr ""
 
@@ -1689,16 +1797,231 @@ msgstr ""
 msgid "This page tried to send a change in a form the site no longer accepts, so nothing was sent. Reload the page, then try again."
 msgstr ""
 
-#. translators: %s: a number of products, such as "24 products".
+#. translators: %s: the status saved, such as "Published".
+#, js-format
+msgid "Switched Off (was %s)"
+msgstr ""
+
+#. translators: %s: the status saved again, such as "Private".
+#, js-format
+msgid "Changed by someone else while Off: switched Off again, saving %s"
+msgstr ""
+
+msgid "Already Off"
+msgstr ""
+
+msgid "Already Draft: nothing to save"
+msgstr ""
+
+msgid "Switched back On"
+msgstr ""
+
+#. translators: 1: the status it had before Off, and comes back with, such as "Private".
+#, js-format
+msgid "Was %1$s before Off: comes back %1$s"
+msgstr ""
+
+#. translators: %s: when it is scheduled, such as "4 Oct 2026, 09:30".
+#, js-format
+msgid "Was scheduled before Off: comes back scheduled for %s"
+msgstr ""
+
+msgid "Its scheduled time has passed: this publishes it now"
+msgstr ""
+
+#. translators: %s: when it is scheduled, such as "4 Oct 2026, 09:30".
+#, js-format
+msgid "Not switched Off: stays scheduled for %s"
+msgstr ""
+
+msgid "Not switched Off: this publishes it"
+msgstr ""
+
+msgid "Changed by someone else while Off: left alone"
+msgstr ""
+
+#. translators: %s: the status it keeps, such as "Published".
+#, js-format
+msgid "Changed by someone else while Off: keeps %s, Off record cleared"
+msgstr ""
+
+#. translators: %s: the status saved before Off, such as "Published".
+#, js-format
+msgid "Its saved status (%s) will not be restored"
+msgstr ""
+
+#. translators: %s: a number of products, such as "3".
+#, js-format
+msgid "%s product will be switched Off. Its status is saved, so Published brings it back."
+msgid_plural "%s products will be switched Off. Each one's status is saved, so Published brings it back."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of products, such as "3".
+#, js-format
+msgid "%s product was changed by someone else while Off and will be switched Off again."
+msgid_plural "%s products were changed by someone else while Off and will be switched Off again."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of products, such as "3".
+#, js-format
+msgid "%s product is already Off."
+msgid_plural "%s products are already Off."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of products, such as "3".
+#, js-format
+msgid "%s product is already Draft. Nothing is saved for it."
+msgid_plural "%s products are already Draft. Nothing is saved for them."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of products, such as "3".
+#, js-format
+msgid "%s product will be switched back On."
+msgid_plural "%s products will be switched back On."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: 1: a number of products, such as "3"; 2: the statuses they get back, such as "2 Private, 1 Pending review".
+#, js-format
+msgid "%1$s product comes back with the status it had before Off, not Published: %2$s."
+msgid_plural "%1$s products come back with the status they had before Off, not Published: %2$s."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of products, such as "3".
+#, js-format
+msgid "%s product comes back scheduled."
+msgid_plural "%s products come back scheduled."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of products, such as "3".
+#, js-format
+msgid "%s product was scheduled and its time has passed: this publishes it now."
+msgid_plural "%s products were scheduled and their time has passed: this publishes them now."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of products, such as "3".
+#, js-format
+msgid "%s product was not switched Off: this publishes it."
+msgid_plural "%s products were not switched Off: this publishes them."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of products, such as "3".
+#, js-format
+msgid "%s product was changed by someone else while Off and will be left alone. Choose Keep current status to clear its Off record instead."
+msgid_plural "%s products were changed by someone else while Off and will be left alone. Choose Keep current status to clear their Off record instead."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of products, such as "3".
+#, js-format
+msgid "%s product was changed by someone else while Off and will keep its current status."
+msgid_plural "%s products were changed by someone else while Off and will keep their current status."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of products, such as "3".
+#, js-format
+msgid "%s product is Off; its saved status will not be restored."
+msgid_plural "%s products are Off; their saved status will not be restored."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of variations, such as "6".
+#, js-format
+msgid "%s variation is left as it is: switching On restores only what switching Off saved."
+msgid_plural "%s variations are left as they are: switching On restores only what switching Off saved."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: 1: a number of products, such as "1,200 products"; 2: a number of variations, such as "50 variations".
+#, js-format
+msgid "%1$s and %2$s selected"
+msgstr ""
+
+#. translators: %s: a number of variations, such as "3".
+#, js-format
+msgid "%s variation selected"
+msgid_plural "%s variations selected"
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of products, such as "25".
+#, js-format
+msgid "%s product selected"
+msgid_plural "%s products selected"
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "Your selection is still being saved. Wait a moment, then check the change."
+msgstr ""
+
+msgid "A change to your selection was not confirmed. Try again, or clear the selection, before checking a change."
+msgstr ""
+
+msgid "Your selection is kept, but it cannot be used until you sign in again. Reload the page, then try again."
+msgstr ""
+
+#. translators: %s: what is selected, such as "25 products".
+#, js-format
+msgid "Your selection is still here: %s."
+msgstr ""
+
+msgid "The search and the selection were cleared."
+msgstr ""
+
+msgid "The change finished, so the products it covered are no longer selected. Anything you selected after applying it is still selected."
+msgstr ""
+
+msgid "The change finished, so your selection was cleared."
+msgstr ""
+
+msgid "The change did not finish for every product, so your selection is kept. History shows what was not changed."
+msgstr ""
+
+msgid "The change finished, but the products it covered could not be taken out of your selection because they are no longer kept. Your selection is unchanged; review it before your next change."
+msgstr ""
+
+#. translators: %s: what was selected, such as "25 products".
+#, js-format
+msgid "You had %s selected."
+msgstr ""
+
+msgid "These selected products are no longer kept. Choose them again before starting a new change."
+msgstr ""
+
+msgid "Your last change to the selection was not confirmed before the page was reloaded. Try again to finish it, or clear the selection."
+msgstr ""
+
+msgid "Your selection could not be saved just now. Try again: the same change is sent again, so nothing is added twice."
+msgstr ""
+
+msgid "Your selection could not be saved because you need to sign in again. Reload the page, then try again."
+msgstr ""
+
+msgid "Your selection could not be changed. Check it and try again."
+msgstr ""
+
 #. translators: %s: a number of products, such as "24 products", or of products and variations, such as "1,200 products and 50 variations".
 #, js-format
 msgid "Apply to %s"
 msgstr ""
 
-#. translators: %s: a number of products, such as "1,284 products".
 #. translators: %s: a number of products, such as "1,284 products", or of products and variations, such as "1,200 products and 50 variations".
 #, js-format
 msgid "Yes, change %s"
+msgstr ""
+
+#. translators: %s: a number of products and variations, such as "1,200 products and 50 variations".
+#, js-format
+msgid "This will change %s. Apply it?"
 msgstr ""
 
 #. translators: %s: a number of products, such as "1,284".
@@ -1725,9 +2048,6 @@ msgstr ""
 
 #. translators: %d: Number of fields that need attention
 msgid "On"
-msgstr ""
-
-msgid "Off"
 msgstr ""
 
 msgid "Switched on: the variations inside these products change too."
@@ -1775,6 +2095,14 @@ msgstr ""
 msgid "Remove"
 msgstr ""
 
+msgid "Something went wrong. Try again in a moment."
+msgstr ""
+
+#. translators: %d: an HTTP status code such as 400.
+#, js-format
+msgid "HTTP %d"
+msgstr ""
+
 msgid "(empty)"
 msgstr ""
 
@@ -1800,6 +2128,17 @@ msgid "Will be skipped: %s"
 msgstr ""
 
 msgid "Replaces the whole list with"
+msgstr ""
+
+msgid "Off and On"
+msgstr ""
+
+msgid "Changed by someone else while Off"
+msgstr ""
+
+#. translators: 1: a product's name; 2: its status now, such as "Private"; 3: the status saved before Off, such as "Published".
+#, js-format
+msgid "%1$s: now %2$s, saved as %3$s"
 msgstr ""
 
 #. translators: %s: a number, such as "3".
@@ -1909,16 +2248,29 @@ msgstr ""
 msgid "The change was cancelled. Anything already applied is kept in History, where you can undo it."
 msgstr ""
 
-#. translators: 1: products done, such as "1,280"; 2: products in all, such as "1,284 products".
 #. translators: 1: products done, such as "1,280"; 2: products in all, such as "1,284 products" or "1,284 items".
 #, js-format
 msgid "%1$s of %2$s updated. The rest are listed below."
 msgstr ""
 
+#. translators: %s: a number of products and variations together, such as "1,284".
+#, js-format
+msgid "%s item"
+msgid_plural "%s items"
+msgstr[0] ""
+msgstr[1] ""
+
 #. translators: %s: a number, such as "1,284".
 #, js-format
 msgid "%s product updated."
 msgid_plural "%s products updated."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of products and variations together, such as "1,284".
+#, js-format
+msgid "%s item updated."
+msgid_plural "%s items updated."
 msgstr[0] ""
 msgstr[1] ""
 
@@ -1968,74 +2320,6 @@ msgstr ""
 msgid "View in History"
 msgstr ""
 
-#. translators: 1: a number of products, such as "1,200 products"; 2: a number of variations, such as "50 variations".
-#, js-format
-msgid "%1$s and %2$s selected"
-msgstr ""
-
-#. translators: %s: a number of variations, such as "3".
-#, js-format
-msgid "%s variation selected"
-msgid_plural "%s variations selected"
-msgstr[0] ""
-msgstr[1] ""
-
-#. translators: %s: a number of products, such as "25".
-#, js-format
-msgid "%s product selected"
-msgid_plural "%s products selected"
-msgstr[0] ""
-msgstr[1] ""
-
-msgid "Your selection is still being saved. Wait a moment, then check the change."
-msgstr ""
-
-msgid "A change to your selection was not confirmed. Try again, or clear the selection, before checking a change."
-msgstr ""
-
-msgid "Your selection is kept, but it cannot be used until you sign in again. Reload the page, then try again."
-msgstr ""
-
-#. translators: %s: what is selected, such as "25 products".
-#, js-format
-msgid "Your selection is still here: %s."
-msgstr ""
-
-msgid "The search and the selection were cleared."
-msgstr ""
-
-msgid "The change finished, so the products it covered are no longer selected. Anything you selected after applying it is still selected."
-msgstr ""
-
-msgid "The change finished, so your selection was cleared."
-msgstr ""
-
-msgid "The change did not finish for every product, so your selection is kept. History shows what was not changed."
-msgstr ""
-
-msgid "The change finished, but the products it covered could not be taken out of your selection because they are no longer kept. Your selection is unchanged; review it before your next change."
-msgstr ""
-
-#. translators: %s: what was selected, such as "25 products".
-#, js-format
-msgid "You had %s selected."
-msgstr ""
-
-msgid "These selected products are no longer kept. Choose them again before starting a new change."
-msgstr ""
-
-msgid "Your last change to the selection was not confirmed before the page was reloaded. Try again to finish it, or clear the selection."
-msgstr ""
-
-msgid "Your selection could not be saved just now. Try again: the same change is sent again, so nothing is added twice."
-msgstr ""
-
-msgid "Your selection could not be saved because you need to sign in again. Reload the page, then try again."
-msgstr ""
-
-msgid "Your selection could not be changed. Check it and try again."
-msgstr ""
-
 #. translators: %s: what is selected, such as "1,200 products and 50 variations".
 #, js-format
 msgid "%s selected"
@@ -2075,9 +2359,14 @@ msgstr ""
 msgid "This empties %1$s on %2$s."
 msgstr ""
 
-#. translators: 1: a field, such as "Visible on site"; 2: its new value, such as "Hidden"; 3: a number of products, such as "24 products".
+#. translators: %s: a number of products, such as "3 products".
 #, js-format
-msgid "This sets %1$s to %2$s on %3$s, hiding them from the shop and from search."
+msgid "This switches %s Off: they leave the site for every buyer, and each one's status is saved for switching On."
+msgstr ""
+
+#. translators: 1: a field, such as "Shown in shop and search"; 2: its new value, such as "Hidden"; 3: a number of products, such as "24 products".
+#, js-format
+msgid "This sets %1$s to %2$s on %3$s: they leave the shop and search results, but can still be opened by link and bought. To take them off sale, set Status to Draft."
 msgstr ""
 
 #. translators: 1: a field, "Status"; 2: its new value, such as "Draft"; 3: a number of products, such as "24 products".
@@ -2178,15 +2467,7 @@ msgstr ""
 msgid "Show details"
 msgstr ""
 
-msgid "Something went wrong. Try again in a moment."
-msgstr ""
-
 msgid "Restore the selection"
-msgstr ""
-
-#. translators: %d: an HTTP status code such as 400.
-#, js-format
-msgid "HTTP %d"
 msgstr ""
 
 msgid "Hide details"
@@ -2457,6 +2738,71 @@ msgstr ""
 msgid "This change can no longer be undone."
 msgstr ""
 
+#. translators: %s: the status saved when the product was switched Off, such as "Published".
+#, js-format
+msgid "Off (was %s)"
+msgstr ""
+
+msgid "This product"
+msgstr ""
+
+#. translators: 1: a product name, 2: its status now, such as "Published".
+#, js-format
+msgid "Switch %1$s Off? It leaves the site for every buyer. Its status, %2$s, is saved, so choosing Published later brings it back."
+msgstr ""
+
+#. translators: 1: a product name, 2: its status now, such as "Private".
+#, js-format
+msgid "%1$s was changed by someone else while Off. Switch it Off again? Its status now, %2$s, is saved in place of the one saved before."
+msgstr ""
+
+#. translators: 1: a product name, 2: the status it had before Off, such as "Private".
+#, js-format
+msgid "%1$s was %2$s before it was switched Off, so it comes back %2$s, not Published."
+msgstr ""
+
+#. translators: 1: a product name, 2: when it is scheduled, such as "4 Oct 2026, 09:30".
+#, js-format
+msgid "%1$s was scheduled before it was switched Off, so it comes back scheduled for %2$s."
+msgstr ""
+
+#. translators: %s: a product name.
+#, js-format
+msgid "%s was scheduled before it was switched Off and its time has passed, so this publishes it now."
+msgstr ""
+
+#. translators: %s: a product name.
+#, js-format
+msgid "%s is scheduled and was not switched Off. Published keeps it scheduled until its time, or publishes it now if that has passed."
+msgstr ""
+
+#. translators: 1: a product name, 2: its status now, such as "Draft".
+#, js-format
+msgid "%1$s is %2$s and was not switched Off, so this publishes it: buyers will see it."
+msgstr ""
+
+#. translators: 1: a product name, 2: the status saved before Off, such as "Published", 3: the status chosen, such as "Private".
+#, js-format
+msgid "%1$s has a status saved from before it was switched Off (%2$s). Changing Status to %3$s clears it, so switching On will not bring it back."
+msgstr ""
+
+#. translators: 1: a product name, 2: its status now, such as "Private".
+#, js-format
+msgid "%1$s was changed by someone else while Off, so it was left alone. Choose Keep current status to keep it %2$s and clear its Off record."
+msgstr ""
+
+msgid "Switch Off"
+msgstr ""
+
+msgid "Switch On"
+msgstr ""
+
+msgid "Keep current status"
+msgstr ""
+
+msgid "Change status"
+msgstr ""
+
 #. translators: %d: how many terms (categories, tags or classes) the product has.
 #, js-format
 msgid "%d assigned"
@@ -2629,7 +2975,7 @@ msgid_plural "Opened %d products with options."
 msgstr[0] ""
 msgstr[1] ""
 
-#. translators: 1: the switch's name, "Visible on site", 2: a product name.
+#. translators: 1: the switch's name, "Shown in shop and search", 2: a product name.
 #. translators: 1: a field's name, such as "SKU", 2: a product name.
 #, js-format
 msgid "%1$s, %2$s"
@@ -2637,7 +2983,7 @@ msgstr ""
 
 #. translators: 1: a product name, 2: what happened or what to do, as a sentence.
 #, js-format
-msgid "We could not change whether %1$s is visible on site, so it is as it was. %2$s"
+msgid "We could not change whether %1$s is shown in the shop and search, so it is as it was. %2$s"
 msgstr ""
 
 msgid "Try again in a moment."
@@ -2645,7 +2991,7 @@ msgstr ""
 
 #. translators: %s: the exact catalogue visibility, such as "Shop only".
 #, js-format
-msgid "Partly visible: %s. Choose on or off to change it."
+msgid "Partly shown: %s. Choose on or off to change it."
 msgstr ""
 
 msgid "in the shop or in search results, not both"
@@ -2654,12 +3000,24 @@ msgstr ""
 msgid "When published"
 msgstr ""
 
-msgid "On site"
-msgstr ""
-
 #. translators: %s: a status such as "Draft".
 #, js-format
 msgid "%s: not on the site until it is published."
+msgstr ""
+
+#. translators: 1: the fields saved, separated by commas, 2: what the Status change did, such as "Switched Off (was Published)".
+#, js-format
+msgid "Saved: %1$s. %2$s."
+msgstr ""
+
+#. translators: %s: the fields saved, separated by commas.
+#, js-format
+msgid "Saved: %s."
+msgstr ""
+
+#. translators: 1: a product name, 2: what happened or what to do, as a sentence.
+#, js-format
+msgid "We could not save the changes to %1$s. %2$s"
 msgstr ""
 
 msgid "No changes recorded yet."
@@ -2688,16 +3046,6 @@ msgstr ""
 msgid "Loading the product…"
 msgstr ""
 
-#. translators: %s: the fields saved, separated by commas.
-#, js-format
-msgid "Saved: %s."
-msgstr ""
-
-#. translators: 1: a product name, 2: what happened or what to do, as a sentence.
-#, js-format
-msgid "We could not save the changes to %1$s. %2$s"
-msgstr ""
-
 msgid "Save"
 msgstr ""
 
@@ -2708,6 +3056,11 @@ msgid "Recent changes"
 msgstr ""
 
 msgid "See history"
+msgstr ""
+
+#. translators: 1: a field's name, 2: a product name, 3: what the change did, such as "Switched Off (was Published)".
+#, js-format
+msgid "%1$s saved for %2$s: %3$s."
 msgstr ""
 
 #. translators: 1: a field's name, 2: a product name.
@@ -3239,10 +3592,52 @@ msgstr ""
 msgid "Clear the filter “%s”"
 msgstr ""
 
+#. translators: %s: the number of variations on this page, such as "25".
+#, js-format
+msgid "The %s variation on this page is selected."
+msgid_plural "All %s on this page are selected."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: the number of products and variations on this page, such as "25".
+#, js-format
+msgid "The %s item on this page is selected."
+msgid_plural "All %s on this page are selected."
+msgstr[0] ""
+msgstr[1] ""
+
 #. translators: %s: the number of products on this page, such as "25".
 #, js-format
 msgid "The %s product on this page is selected."
 msgid_plural "All %s on this page are selected."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of variations, such as "1,284".
+#, js-format
+msgid "Select the %s variation matching these filters."
+msgid_plural "Select all %s variations matching these filters."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of variations, such as "1,284".
+#, js-format
+msgid "Select the %s variation in the catalogue."
+msgid_plural "Select all %s variations in the catalogue."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of products and variations together, such as "1,284".
+#, js-format
+msgid "Select the %s item matching these filters."
+msgid_plural "Select all %s items matching these filters."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of products and variations together, such as "1,284".
+#, js-format
+msgid "Select the %s item in the catalogue."
+msgid_plural "Select all %s items in the catalogue."
 msgstr[0] ""
 msgstr[1] ""
 
@@ -3287,10 +3682,10 @@ msgstr ""
 msgid "Saving…"
 msgstr ""
 
-msgid "Show on site"
+msgid "Show in shop and search"
 msgstr ""
 
-msgid "Hide from site"
+msgid "Hide from shop and search"
 msgstr ""
 
 msgid "Make a change to these"
@@ -3349,6 +3744,9 @@ msgstr ""
 #. translators: 1: a saved view's name, 2: a number from 2 up.
 #, js-format
 msgid "%1$s (copy %2$d)"
+msgstr ""
+
+msgid "The view could not be saved. Try again in a moment."
 msgstr ""
 
 msgid "Keeps the filters, search, sort, columns, layout, page size and category you have on now."
@@ -3523,68 +3921,4 @@ msgid "Bulk Catalogue Manager sections"
 msgstr ""
 
 msgid "History and undo"
-msgstr ""
-
-#. translators: %s: a number of products and variations, such as "1,200 products and 50 variations".
-#, js-format
-msgid "This will change %s. Apply it?"
-msgstr ""
-
-#. translators: %s: a number of products and variations together, such as "1,284".
-#, js-format
-msgid "%s item updated."
-msgid_plural "%s items updated."
-msgstr[0] ""
-msgstr[1] ""
-
-#. translators: %s: a number of products and variations together, such as "1,284".
-#, js-format
-msgid "%s item"
-msgid_plural "%s items"
-msgstr[0] ""
-msgstr[1] ""
-
-#. translators: %s: the number of variations on this page, such as "25".
-#, js-format
-msgid "The %s variation on this page is selected."
-msgid_plural "All %s on this page are selected."
-msgstr[0] ""
-msgstr[1] ""
-
-#. translators: %s: the number of products and variations on this page, such as "25".
-#, js-format
-msgid "The %s item on this page is selected."
-msgid_plural "All %s on this page are selected."
-msgstr[0] ""
-msgstr[1] ""
-
-#. translators: %s: a number of variations, such as "1,284".
-#, js-format
-msgid "Select the %s variation matching these filters."
-msgid_plural "Select all %s variations matching these filters."
-msgstr[0] ""
-msgstr[1] ""
-
-#. translators: %s: a number of variations, such as "1,284".
-#, js-format
-msgid "Select the %s variation in the catalogue."
-msgid_plural "Select all %s variations in the catalogue."
-msgstr[0] ""
-msgstr[1] ""
-
-#. translators: %s: a number of products and variations together, such as "1,284".
-#, js-format
-msgid "Select the %s item matching these filters."
-msgid_plural "Select all %s items matching these filters."
-msgstr[0] ""
-msgstr[1] ""
-
-#. translators: %s: a number of products and variations together, such as "1,284".
-#, js-format
-msgid "Select the %s item in the catalogue."
-msgid_plural "Select all %s items in the catalogue."
-msgstr[0] ""
-msgstr[1] ""
-
-msgid "The view could not be saved. Try again in a moment."
 msgstr ""

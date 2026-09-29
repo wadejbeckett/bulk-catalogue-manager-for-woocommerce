@@ -392,6 +392,10 @@ if ( ! function_exists( 'add_filter' ) ) {
 		return $response instanceof WP_REST_Response || $response instanceof WP_Error ? $response : new WP_REST_Response( $response );
 	}
 
+	function wp_unslash( mixed $value ): mixed {
+		return is_string( $value ) ? stripslashes( $value ) : $value;
+	}
+
 	function sanitize_text_field( string $text ): string {
 		return trim( (string) preg_replace( '/\s+/', ' ', strip_tags( $text ) ) );
 	}

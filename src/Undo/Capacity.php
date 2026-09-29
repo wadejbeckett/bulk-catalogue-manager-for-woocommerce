@@ -25,6 +25,12 @@ defined( 'ABSPATH' ) || exit;
  * page runs at after WordPress raised it for administrators
  * (wp_raise_memory_limit( 'admin' ), up to WP_MAX_MEMORY_LIMIT), and never
  * above what the configured value allows. See web_limit().
+ *
+ * Proved on PHP-FPM behind nginx (php.ini, pool values, .user.ini,
+ * WP_MEMORY_LIMIT, WP_MAX_MEMORY_LIMIT, multisite, WordPress in its own
+ * directory). Not tested: Apache mod_php `php_value` in .htaccess and
+ * LiteSpeed's own settings; there the value noted as the plugin loads still
+ * caps the result.
  */
 final class Capacity {
 	/**
@@ -46,10 +52,15 @@ final class Capacity {
 
 	/**
 	 * What a limit of -1 ("no limit") is counted as: it says nothing about
-	 * the memory the host has, so it counts as the most WordPress itself
-	 * raises to for admin work (WP_MAX_MEMORY_LIMIT's default).
+	 * the memory the host has, and no undo larger than a 128 MB request holds
+	 * has been measured, so it counts as 128 MB.
 	 */
-	public const UNLIMITED = '256M';
+	public const UNLIMITED = '128M';
+
+	/**
+	 * Most directories read for .user.ini files.
+	 */
+	private const MAX_DIRECTORIES = 12;
 
 	/**
 	 * PHP interfaces that read a per-directory .user.ini file.
@@ -106,10 +117,11 @@ final class Capacity {
 	 *   includes php.ini, the PHP-FPM pool, .user.ini and WordPress's raise
 	 *   to WP_MEMORY_LIMIT but not the later raise for administrators; the
 	 *   value now when nothing was noted, and
-	 * - the configured value (php.ini and the PHP-FPM pool as PHP's master
-	 *   value; a .user.ini in the WordPress directory where PHP reads one)
-	 *   raised to WP_MEMORY_LIMIT the way WordPress raises it: only when it
-	 *   is higher and the limit may be changed.
+	 * - the configured value — PHP's master value (php.ini and the PHP-FPM
+	 *   pool), lowered, never raised, by a .user.ini where PHP reads one for
+	 *   a REST request (configured(), user_ini_directories()) — raised to
+	 *   WP_MEMORY_LIMIT the way WordPress raises it: only when it is higher
+	 *   and the limit may be changed.
 	 *
 	 * get_cfg_var() is not used: it reads php.ini alone, missing the pool
 	 * and .user.ini.
@@ -120,13 +132,83 @@ final class Capacity {
 		// As wp_is_ini_value_changeable(): changeable when ini_set() may change it, or when that cannot be read.
 		$access     = is_array( $entry ) ? (int) $entry['access'] : INI_ALL;
 		$changeable = ! is_array( $entry ) || in_array( $access & INI_ALL, [ INI_ALL, INI_USER ], true );
-		$user       = self::user_ini( ABSPATH, (string) ini_get( 'user_ini.filename' ), PHP_SAPI, $access );
+		// The REST request's index.php is in the site's home directory (get_home_path(), on admin pages), below the document root.
+		$home = function_exists( 'get_home_path' ) ? (string) get_home_path() : ABSPATH;
+		$root = isset( $_SERVER['DOCUMENT_ROOT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['DOCUMENT_ROOT'] ) ) : '';
+		$user = self::user_ini_values( self::user_ini_directories( ABSPATH, $home, $root ), (string) ini_get( 'user_ini.filename' ), PHP_SAPI, $access );
 		return self::effective(
 			self::$observed ?? (string) ini_get( 'memory_limit' ),
-			$user ?? $master,
+			self::configured( $master, $user ),
 			defined( 'WP_MEMORY_LIMIT' ) ? (string) WP_MEMORY_LIMIT : '',
 			$changeable
 		);
+	}
+
+	/**
+	 * The configured value: PHP's master value, lowered by a .user.ini value
+	 * below it; a .user.ini value above it is ignored (the conservative
+	 * choice, ticket 11: a raise in a directory the REST request does not
+	 * read would over-promise).
+	 *
+	 * @param string       $master PHP's master value (php.ini and the pool).
+	 * @param list<string> $user   memory_limit values found in .user.ini files.
+	 * @return string The value, in PHP's shorthand.
+	 */
+	public static function configured( string $master, array $user ): string {
+		$value = $master;
+		foreach ( $user as $candidate ) {
+			if ( self::bytes( $candidate ) >= 0 && self::bytes( $candidate ) < self::counted( $value ) ) {
+				$value = $candidate;
+			}
+		}
+		return $value;
+	}
+
+	/**
+	 * The directories whose .user.ini a REST request may read: the site's
+	 * home directory (where its index.php runs) and each directory above it
+	 * up to the document root, as PHP scans them, then ABSPATH (only lowers
+	 * count, so reading it too can only be more careful).
+	 *
+	 * @param string $abspath       ABSPATH.
+	 * @param string $home          The site's home directory.
+	 * @param string $document_root The document root, or '' when unknown.
+	 * @return list<string> Directories without a trailing slash, each once.
+	 */
+	public static function user_ini_directories( string $abspath, string $home, string $document_root ): array {
+		$trim = static fn( string $path ): string => '/' === $path ? $path : rtrim( str_replace( '\\', '/', $path ), '/' );
+		$home = $trim( $home );
+		$root = '' === trim( $document_root ) ? '' : $trim( $document_root );
+		$dirs = [ $home ];
+		if ( '' !== $root && str_starts_with( $home . '/', $root . '/' ) ) {
+			$dir = $home;
+			for ( $depth = 1; $dir !== $root && $depth < self::MAX_DIRECTORIES; $depth++ ) {
+				$dir    = dirname( $dir );
+				$dirs[] = $dir;
+			}
+		}
+		$dirs[] = $trim( $abspath );
+		return array_values( array_unique( array_filter( $dirs, static fn( string $dir ): bool => '' !== $dir ) ) );
+	}
+
+	/**
+	 * The memory_limit values the .user.ini files in these directories set.
+	 *
+	 * @param list<string> $dirs     Directories.
+	 * @param string       $filename `user_ini.filename`.
+	 * @param string       $sapi     PHP_SAPI.
+	 * @param int          $access   Who may change memory_limit.
+	 * @return list<string>
+	 */
+	public static function user_ini_values( array $dirs, string $filename, string $sapi, int $access ): array {
+		$values = [];
+		foreach ( $dirs as $dir ) {
+			$value = self::user_ini( $dir, $filename, $sapi, $access );
+			if ( null !== $value ) {
+				$values[] = $value;
+			}
+		}
+		return $values;
 	}
 
 	/**
@@ -156,9 +238,12 @@ final class Capacity {
 	 * The memory_limit a .user.ini file in a directory sets for the requests
 	 * PHP serves from it, or null: PHP reads one only under PHP-FPM or
 	 * FastCGI, only when `user_ini.filename` names it, and not when the
-	 * limit is locked (php_admin_value).
+	 * limit is locked (php_admin_value). The file is read line by line, not
+	 * with PHP's parser, so a malformed file raises no warning; of several
+	 * assignments the lowest counts (PHP keeps what it parsed before a syntax
+	 * error, and only a lower value is used).
 	 *
-	 * @param string $dir      The directory (the WordPress directory, where a REST request's index.php runs).
+	 * @param string $dir      A directory PHP reads .user.ini files from.
 	 * @param string $filename `user_ini.filename`; empty switches .user.ini off.
 	 * @param string $sapi     PHP_SAPI.
 	 * @param int    $access   Who may change memory_limit (ini_get_all()'s `access`).
@@ -171,8 +256,16 @@ final class Capacity {
 		if ( ! is_file( $file ) || ! is_readable( $file ) ) {
 			return null;
 		}
-		$values = parse_ini_file( $file, false, INI_SCANNER_RAW );
-		return is_array( $values ) && isset( $values['memory_limit'] ) && is_scalar( $values['memory_limit'] ) ? trim( (string) $values['memory_limit'] ) : null;
+		$lowest = null;
+		foreach ( (array) file( $file, FILE_IGNORE_NEW_LINES ) as $line ) {
+			if ( 1 !== preg_match( '/^\s*memory_limit\s*=\s*"?\s*(-?[0-9]+[kmg]?)\s*"?\s*(?:;.*)?$/i', (string) $line, $match ) ) {
+				continue;
+			}
+			if ( null === $lowest || self::counted( $match[1] ) < self::counted( $lowest ) ) {
+				$lowest = $match[1];
+			}
+		}
+		return $lowest;
 	}
 
 	/**

@@ -73,7 +73,8 @@ final class CapacityTest extends TestCase {
 
 	public function test_no_limit_counts_as_a_sane_ceiling_never_as_unlimited(): void {
 		$this->assertSame( Capacity::items( Capacity::UNLIMITED ), Capacity::items( '-1' ), '-1 says nothing about the memory there is.' );
-		$this->assertSame( 63710, Capacity::items( '-1' ), 'Counted as 256 MB, the most WordPress itself raises to for admin work.' );
+		$this->assertSame( '128M', Capacity::UNLIMITED, 'No undo larger than a 128 MB request holds has been measured (Main Build, ticket 11).' );
+		$this->assertSame( 27304, Capacity::items( '-1' ), 'Counted as 128 MB.' );
 		$this->assertSame( Capacity::items( '-1' ), Capacity::items( ' -1 ' ) );
 		$this->assertSame( Capacity::items( '-1' ), Capacity::items( '' ), 'An unreadable limit is not a promise either.' );
 	}
@@ -124,7 +125,8 @@ final class CapacityTest extends TestCase {
 		$this->assertSame( Capacity::UNLIMITED, Capacity::effective( '-1', '-1', '40M', true ), 'Unlimited everywhere: the ceiling.' );
 		$this->assertSame( '128M', Capacity::effective( '-1', '128M', '40M', true ), 'Unlimited seen, 128M configured.' );
 		$this->assertSame( '128M', Capacity::effective( '128M', '-1', '40M', true ), 'Unlimited configured, 128M seen.' );
-		$this->assertSame( Capacity::UNLIMITED, Capacity::effective( '-1', '128M', '-1', true ), 'WP_MEMORY_LIMIT -1 lifts a changeable limit.' );
+		$this->assertSame( Capacity::UNLIMITED, Capacity::effective( '-1', '128M', '-1', true ), 'WP_MEMORY_LIMIT -1 lifts a changeable limit, counted as the ceiling.' );
+		$this->assertSame( '128M', Capacity::effective( '-1', '-1', '256M', true ), 'Unlimited is never raised to a number above the ceiling.' );
 		$this->assertSame( '512M', Capacity::effective( '512M', '512M', '40M', true ), 'An explicit value above the ceiling is trusted.' );
 	}
 
@@ -151,6 +153,51 @@ final class CapacityTest extends TestCase {
 	public function test_a_custom_user_ini_filename_is_honoured(): void {
 		$dir = $this->dir_with( 'php-user.ini', "memory_limit=64M\n" );
 		$this->assertSame( '64M', Capacity::user_ini( $dir, 'php-user.ini', 'fpm-fcgi', INI_PERDIR | INI_SYSTEM ) );
+	}
+
+	public function test_a_user_ini_can_only_lower_the_configured_value(): void {
+		// Main Build's ruling (ticket 11): the conservative choice — a .user.ini raise is ignored, a lower one honoured.
+		$this->assertSame( '128M', Capacity::configured( '128M', [ '192M' ] ), 'A raise is ignored.' );
+		$this->assertSame( '128M', Capacity::configured( '128M', [ '-1' ] ), 'Unlimited is a raise.' );
+		$this->assertSame( '80M', Capacity::configured( '128M', [ '192M', '80M', '96M' ] ), 'The lowest lower value counts.' );
+		$this->assertSame( '128M', Capacity::configured( '128M', [] ) );
+		$this->assertSame( '-1', Capacity::configured( '-1', [ '512M' ] ), 'Above the ceiling an unlimited master is not lowered by a raise.' );
+		$this->assertSame( '100M', Capacity::configured( '-1', [ '100M' ] ), 'An unlimited master counts as the ceiling: 100M is lower.' );
+	}
+
+	public function test_a_user_ini_is_read_from_every_directory_php_reads_one_for_a_rest_request(): void {
+		// The REST request's script is index.php in the site's home directory; PHP reads .user.ini
+		// there and in each directory above it up to the document root. ABSPATH is read too (only lowers count).
+		$this->assertSame( [ '/srv/www', '/srv/www/wp' ], Capacity::user_ini_directories( '/srv/www/wp/', '/srv/www/', '/srv/www' ), 'WordPress in its own directory.' );
+		$this->assertSame( [ '/srv/www/shop', '/srv/www' ], Capacity::user_ini_directories( '/srv/www/shop/', '/srv/www/shop/', '/srv/www/' ), 'A site below the document root.' );
+		$this->assertSame( [ '/srv/app' ], Capacity::user_ini_directories( '/srv/app/', '/srv/app', '' ), 'No document root known.' );
+		$this->assertSame( [ '/a', '/a/wp' ], Capacity::user_ini_directories( '/a/wp/', '/a/', '/b' ), 'A home outside the document root.' );
+	}
+
+	public function test_the_lowest_of_several_user_ini_files_counts(): void {
+		$dir = $this->dir_with( '.user.ini', "memory_limit = 96M\n" );
+		mkdir( $dir . '/wp' );
+		file_put_contents( $dir . '/wp/.user.ini', "memory_limit = 64M\n" );
+		try {
+			$this->assertSame( [ '96M', '64M' ], Capacity::user_ini_values( [ $dir, $dir . '/wp', $dir . '/none' ], '.user.ini', 'fpm-fcgi', INI_ALL ) );
+			$this->assertSame( [], Capacity::user_ini_values( [ $dir ], '.user.ini', 'apache2handler', INI_ALL ) );
+		} finally {
+			unlink( $dir . '/wp/.user.ini' );
+			rmdir( $dir . '/wp' );
+		}
+	}
+
+	public function test_several_assignments_in_one_file_count_the_lowest(): void {
+		$dir = $this->dir_with( '.user.ini', "memory_limit = 256M\nmemory_limit=64M ; later\nupload_max_filesize = 8M\n" );
+		$this->assertSame( '64M', Capacity::user_ini( $dir, '.user.ini', 'fpm-fcgi', INI_ALL ) );
+	}
+
+	public function test_a_malformed_user_ini_raises_no_warning(): void {
+		// PHP applies what it parsed before a syntax error; the plugin must not warn on the admin page.
+		$dir = $this->dir_with( '.user.ini', "memory_limit = \"64M\"\n[broken\nfoo = \"unterminated\n" );
+		$this->assertSame( '64M', Capacity::user_ini( $dir, '.user.ini', 'fpm-fcgi', INI_ALL ) );
+		file_put_contents( $dir . '/.user.ini', "{{{ not ini ]]]\n\"\n" );
+		$this->assertNull( Capacity::user_ini( $dir, '.user.ini', 'fpm-fcgi', INI_ALL ) );
 	}
 
 	public function test_web_limit_uses_the_value_observed_before_an_administrators_raise(): void {

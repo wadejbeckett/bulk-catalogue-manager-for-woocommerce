@@ -421,6 +421,14 @@ if ( ! function_exists( 'add_filter' ) ) {
 	}
 
 	/**
+	 * WooCommerce's `wc_set_time_limit()`: records each limit asked for, with
+	 * the bytes a spying stream had received by then (`time_limit_bytes`).
+	 */
+	function wc_set_time_limit( int $limit = 0 ): void {
+		$GLOBALS['bulkcat_test']['time_limits'][] = [ $limit, $GLOBALS['bulkcat_test']['time_limit_bytes'] ?? null ];
+	}
+
+	/**
 	 * WooCommerce's `wc_clean()` (includes/wc-formatting-functions.php), as
 	 * its importer cleans a SKU, over core's real cleaning.
 	 */

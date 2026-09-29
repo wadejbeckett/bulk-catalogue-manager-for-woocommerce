@@ -22,6 +22,7 @@ final class RegistryTest extends TestCase {
 	 */
 	private const NOT_STORAGE = [
 		'bulkcat_selection_renew_required' => 'Selection authorization refusal.',
+		'bulkcat_export_confirm_all'       => 'refusal for a whole-catalogue export without its confirmation; nothing is streamed (CSV export, ticket 10)',
 		'bulkcat_request_conflict'         => 'refusal for an identity bound to different intent',
 		'bulkcat_invalid_request'          => 'refusal for a forged or foreign request proof',
 		'bulkcat_selection_expired'        => 'refusal for a removed membership payload',

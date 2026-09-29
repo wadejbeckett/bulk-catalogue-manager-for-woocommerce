@@ -162,6 +162,17 @@ final class GuardedValuesTest extends TestCase {
 			],
 			$search
 		);
+		// A selection's present members: the binned product and the page are left out, so not counted (T99).
+		$present = ProductQuery::present_members( range( 1, 12 ) );
+		$this->assertSame( [ 1, 2, 3, 4, 5, 6, 7, 8, 10, 11 ], array_keys( $present ) );
+		$this->assertSame(
+			[
+				'identifiers' => 6,
+				'names'       => 3,
+			],
+			( new GuardedValues() )->of_ids( array_keys( $present ) ),
+			'=BIN and =PAGE are left out of the file, so out of the counts.'
+		);
 		// Given ids: only those, however many other rows are guarded.
 		$this->assertSame(
 			[

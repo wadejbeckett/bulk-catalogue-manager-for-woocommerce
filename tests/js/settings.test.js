@@ -17,6 +17,14 @@ jest.mock( '@wordpress/api-fetch', () => {
 	return { __esModule: true, default: apiFetch };
 } );
 
+import {
+	coreJson,
+	expectNoRawText,
+	expectPlain,
+	html500,
+	htmlPage,
+} from './error-fixtures';
+
 const apiFetch = require( '@wordpress/api-fetch' ).default;
 
 const VALUES = {
@@ -395,6 +403,36 @@ describe( 'Settings tab', () => {
 				.textContent
 		).toContain( 'Only an administrator can change' );
 	} );
+
+	it.each( [
+		[ 'a server’s HTML error page', html500 ],
+		[ 'a proxy’s HTML page', htmlPage ],
+		[ 'a JSON error that is not the plugin’s own refusal', coreJson ],
+	] )(
+		'says %s in plain words, never its text (ticket 11)',
+		async ( label, failure ) => {
+			await renderTab();
+			fireEvent.change( screen.getByLabelText( 'CSV separator' ), {
+				target: { value: 'semicolon' },
+			} );
+			apiFetch.mockImplementationOnce( () =>
+				Promise.reject( failure() )
+			);
+			await act( async () => {
+				fireEvent.click( saveButton() );
+			} );
+			expect( apiFetch.mock.calls[ 1 ][ 0 ].data ).toEqual( {
+				values: { csv_separator: 'semicolon' },
+			} );
+			expectPlain(
+				document.querySelector(
+					'.bulkcat-settings .components-notice'
+				),
+				'The settings could not be saved. Try again in a moment.'
+			);
+			expectNoRawText();
+		}
+	);
 
 	it( 'renders read-only with an explanatory line for someone without manage_options', async () => {
 		await renderTab( { ...FIXTURE, canEdit: false } );

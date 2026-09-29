@@ -24,6 +24,12 @@ import {
 	descriptorsOf,
 } from '../../assets/src/panels/catalogue/fields';
 import { toQuery } from '../../assets/src/panels/catalogue/query';
+import {
+	coreJson,
+	expectNoRawText,
+	expectPlain,
+	html500,
+} from './error-fixtures';
 
 jest.mock( '@wordpress/api-fetch', () => {
 	const apiFetch = jest.fn();
@@ -189,7 +195,7 @@ describe( 'the Export control', () => {
 			)
 		).toBeTruthy();
 		expect( screen.getByText( 'Show details' ) ).toBeTruthy();
-		expect( screen.getByText( /^bulkcat_invalid_value:/ ) ).toBeTruthy();
+		expect( screen.getByText( 'bulkcat_invalid_value' ) ).toBeTruthy();
 		fireEvent.click( screen.getByRole( 'button', { name: 'Try again' } ) );
 		expect( start ).toHaveBeenCalledTimes( 2 );
 		expect( document.querySelector( '.bulkcat-error' ) ).toBeNull();
@@ -210,6 +216,33 @@ describe( 'the Export control', () => {
 				'The CSV file could not be made. Reload the page and try again.'
 			)
 		).toBeTruthy();
+	} );
+
+	it( 'says a server’s HTML error page in plain words, never its text (ticket 11)', () => {
+		const { started } = setup();
+		fireEvent.click( screen.getByRole( 'button', { name: 'Export CSV' } ) );
+		act( () => started[ 0 ].onError( html500() ) );
+		const box = document.querySelector( '.bulkcat-error' );
+		expectPlain(
+			box,
+			'The CSV file could not be made. Reload the page and try again.'
+		);
+		fireEvent.click( screen.getByText( 'Show details' ) );
+		expect( box.textContent ).toContain( 'internal_server_error' );
+		expectNoRawText();
+	} );
+
+	it( 'says a JSON error that is not the plugin’s own refusal in plain words, details included (ticket 11)', () => {
+		const { started } = setup();
+		fireEvent.click( screen.getByRole( 'button', { name: 'Export CSV' } ) );
+		act( () => started[ 0 ].onError( coreJson() ) );
+		const box = document.querySelector( '.bulkcat-error' );
+		expectPlain(
+			box,
+			'The CSV file could not be made. Reload the page and try again.'
+		);
+		expect( box.textContent ).toContain( 'rest_forbidden' );
+		expectNoRawText();
 	} );
 } );
 
@@ -248,6 +281,21 @@ describe( 'the hidden frame', () => {
 		expect( onError ).toHaveBeenCalledTimes( 1 );
 		expect( onError.mock.calls[ 0 ][ 0 ].code ).toBe( 'bulkcat_forbidden' );
 		expect( onDone ).not.toHaveBeenCalled();
+		stop();
+	} );
+
+	it( 'reads a server’s HTML error page in the frame as a failure, never as done (ticket 11)', () => {
+		const onDone = jest.fn();
+		const onError = jest.fn();
+		const stop = download( 'about:blank', { onDone, onError } );
+		const frame = document.querySelector( 'iframe.bulkcat-export__frame' );
+		frame.contentDocument.body.innerHTML =
+			'<div class="wp-die-message"><p>There has been a critical error on this website.</p></div>';
+		frame.dispatchEvent( new window.Event( 'load' ) );
+		expect( onDone ).not.toHaveBeenCalled();
+		expect( onError ).toHaveBeenCalledTimes( 1 );
+		expect( onError.mock.calls[ 0 ][ 0 ].code ).not.toMatch( /^bulkcat_/ );
+		expect( onError.mock.calls[ 0 ][ 0 ].message ).toBe( '' );
 		stop();
 	} );
 

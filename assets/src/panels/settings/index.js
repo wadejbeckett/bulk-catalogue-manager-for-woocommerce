@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useState } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 
 import { request } from '../../api';
+import { plainMessage } from '../../errors';
 import SettingRow from './row';
 import { setSettings } from './store';
 import './style.scss';
@@ -110,10 +111,12 @@ export default function Settings() {
 								'Nothing was saved. Correct the settings marked below and save again.',
 								'bulk-catalogue-manager-for-woocommerce'
 							)
-						: error?.message ||
-							__(
-								'The settings could not be saved. Try again in a moment.',
-								'bulk-catalogue-manager-for-woocommerce'
+						: plainMessage(
+								error,
+								__(
+									'The settings could not be saved. Try again in a moment.',
+									'bulk-catalogue-manager-for-woocommerce'
+								)
 							),
 				} );
 			} )

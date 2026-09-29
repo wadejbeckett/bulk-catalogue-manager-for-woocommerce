@@ -41,6 +41,7 @@ import {
 	chooseAction,
 	emptyOperation,
 } from './operations';
+import { plainMessage } from '../../errors';
 import { PreviewResult } from './preview';
 import { DoneStep } from './progress';
 import { formatNumber } from './words';
@@ -1209,20 +1210,11 @@ function Details( { error, details, onDetails } ) {
 function ErrorNotice( { error, details, onDetails, onRenew = null } ) {
 	// Only the plugin's own refusals are sentences written for people
 	// (§4.8); anything else — a server's error page, a proxy's text — is
-	// the plain fallback, its code behind Show details (T85).
-	const own =
-		/^bulkcat_/.test( error?.code || '' ) &&
-		typeof error?.message === 'string' &&
-		error.message;
+	// the plain fallback, its code behind Show details (T85; the shared
+	// rule in ../../errors.js since ticket 11).
 	return (
 		<div className="bulkcat-bulk__notice is-error" role="alert">
-			<p>
-				{ own ||
-					__(
-						'Something went wrong. Try again in a moment.',
-						'bulk-catalogue-manager-for-woocommerce'
-					) }
-			</p>
+			<p>{ plainMessage( error ) }</p>
 			{ onRenew && (
 				<div className="bulkcat-bulk__acts">
 					<button

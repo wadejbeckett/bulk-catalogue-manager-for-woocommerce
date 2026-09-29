@@ -21,6 +21,13 @@ import {
 	SELECTION_DRAG_TYPE,
 } from '../../assets/src/panels/categories/index';
 import { storageKey } from '../../assets/src/panels/categories/storage';
+import {
+	coreJson,
+	expectNoRawText,
+	expectPlain,
+	html500,
+	htmlPage,
+} from './error-fixtures';
 
 jest.mock( '@wordpress/api-fetch', () => {
 	const apiFetch = jest.fn();
@@ -619,6 +626,73 @@ describe( 'category panel', () => {
 		expect(
 			document.querySelector( '[data-bulkcat-announcer]' ).textContent
 		).toBe( 'Category is Bags or its sub-categories' );
+	} );
+
+	it( 'says a server’s HTML error page in plain words, never its text (ticket 11)', async () => {
+		routes[ 'GET categories' ] = () => Promise.reject( html500() );
+		render( <CategoryPanel settings={ MANAGER } onChange={ jest.fn() } /> );
+		const sentence = 'The categories could not be loaded.';
+		const box = (
+			await screen.findByText( sentence, { selector: 'p' } )
+		).closest( '.components-notice' );
+		expectPlain( box, sentence );
+		fireEvent.click(
+			within( box ).getByRole( 'button', { name: 'Show details' } )
+		);
+		expect(
+			within( box ).getByText( 'internal_server_error · HTTP 500' )
+		).toBeTruthy();
+		expectNoRawText();
+
+		// A move answered by an HTML page: the dialog and the announcement say the plain sentence.
+		routes[ 'GET categories' ] = () => Promise.resolve( TREE );
+		routes[ 'POST categories/6/move' ] = () => Promise.reject( htmlPage() );
+		fireEvent.click( screen.getByRole( 'button', { name: 'Try again' } ) );
+		await screen.findByRole( 'tree' );
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'More actions for Bags' } )
+		);
+		fireEvent.click( screen.getByRole( 'menuitem', { name: 'Move to…' } ) );
+		const dialog = screen.getByRole( 'dialog' );
+		fireEvent.change( within( dialog ).getByLabelText( 'Move into' ), {
+			target: { value: '1' },
+		} );
+		await act( async () => {
+			fireEvent.click(
+				within( dialog ).getByRole( 'button', { name: 'Move' } )
+			);
+		} );
+		expectPlain(
+			dialog,
+			'The category could not be moved. Try again in a moment.'
+		);
+		expectNoRawText();
+		expect( speak ).not.toHaveBeenCalledWith(
+			expect.stringMatching( /not a valid JSON/ ),
+			expect.anything()
+		);
+	} );
+
+	it( 'says a JSON error that is not the plugin’s own refusal in plain words (ticket 11)', async () => {
+		routes[ 'PATCH categories/6' ] = () => Promise.reject( coreJson() );
+		await renderPanel();
+		act( () => item( 'Bags' ).focus() );
+		fireEvent.keyDown( item( 'Bags' ), { key: 'F2' } );
+		const input = screen.getByRole( 'textbox', {
+			name: 'New name for Bags',
+		} );
+		fireEvent.change( input, { target: { value: 'Totes' } } );
+		await act( async () => {
+			fireEvent.keyDown( input, { key: 'Enter' } );
+		} );
+		const sentence =
+			'The category could not be renamed. Try again in a moment.';
+		const box = (
+			await screen.findByText( sentence, { selector: 'p' } )
+		).closest( '.components-notice' );
+		expectPlain( box, sentence );
+		expect( speak ).toHaveBeenCalledWith( sentence, 'assertive' );
+		expectNoRawText();
 	} );
 
 	it( 'is a button opening the tree as a sheet below 960 pixels', async () => {

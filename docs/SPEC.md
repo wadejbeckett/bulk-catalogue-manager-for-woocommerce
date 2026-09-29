@@ -342,7 +342,7 @@ Undo creates a batch with `source = undo` and `undo_of` set, whose operations ar
 
 *Transport and limits.* The catalogue export is `POST /export` (§12.1), posted into a hidden frame so a large file streams to disk. The nonce and the selection token travel in the body, never in a URL, the page history or a log; a token in the query string is refused. An export resolves a selection exactly as preview does and never renews, extends or releases it: a lapsed lease asks for the selection to be restored, a selection past its retention is gone, another user's or an altered token gets the uniform refusal, and a 1.0 token asks for the products to be chosen again. Explicit IDs, for API callers, are at most 1,000 and never combined with a token. Every refusal is a plain sentence sent before any CSV byte. The export writes nothing: no grant, receipt, lease, retention, selection, product, term or option, apart from the grid's own count cache. Just before streaming it lifts PHP's time limit where the host allows; a web-server or PHP-FPM timeout still applies, so on such a host a very large export is narrowed with a filter or a smaller selection.
 
-History and audit rows export the same way, through `GET /export` and their own columns (§4.6). Once the dialog ships, `GET /export` no longer exports the catalogue: a stale screen's request is refused with a sentence asking for a reload.
+History and audit rows export the same way, through `GET /export` and their own columns (§4.6). `GET /export` does not export the catalogue: a request from a page loaded before the dialog is refused with a sentence asking for a reload.
 
 ## 11. Settings
 

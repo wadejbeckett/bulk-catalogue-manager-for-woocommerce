@@ -33,6 +33,8 @@ Up to 20 changes can run in order as one step, such as "increase the regular pri
 
 **Switch products Off and On.** Status is the one switch. Setting a product to Draft takes it off the site for every buyer and saves the status it had on the product; setting it back to Published restores exactly that status, so a product that was Private comes back Private, and the preview says so first. The table shows an Off product as "Off (was Published)", and the Status filter finds Off products.
 
+**Export it.** Export CSV downloads the selected products, or every product matching your filters, in the columns the table shows. With **Include identifiers for re-import** on, the file goes back through WooCommerce's own Products → Import to update the same products.
+
 **Undo it.** Every change is recorded with the value it replaced. The History tab lists each change with who made it and when, and **Undo this change** puts the old values back. If a product was changed again since, it is left alone unless you choose otherwise.
 
 **Variations.** Variations are rows of their own. A variable product opens to show them, each editable on its own, and **Also apply to variations** carries a bulk change down to them.
@@ -75,6 +77,28 @@ Setting a product's Status to Draft takes it off the site for every buyer: its p
 = What if a product's status is changed somewhere else while it is Off? =
 
 The manager never stops the product editor, an import or another tool from changing it. The product then reads "Changed outside this screen". Published leaves it alone and says why; choose **Keep current status** to keep the status it has now and forget the saved one, or Draft to switch it Off again, saving its new status.
+
+= How do I export products as CSV? =
+
+On the Catalogue tab, choose **Export CSV**. When products are selected, **Selected** is chosen: the file holds exactly the selected products and variations, including any the list is not showing, in ID order. **All matching the current filters** exports every row the current search, filters, category and mode match; with nothing narrowing the list that is the whole catalogue, and you confirm it first. The file has the name, then the columns the table shows, in the same order. Before the download the dialog says how many rows the file will have, and how many selected items are no longer available and will be left out.
+
+= How do I update products by re-importing the file? =
+
+1. In **Export CSV**, turn on **Include identifiers for re-import**. The file then starts with ID, SKU, Parent and Type, which WooCommerce's importer uses to find each product. Re-import only files made with this switch on: without it the importer cannot match rows that have no SKU, and it maps some columns, such as the displayed price, onto real fields.
+2. Change the values you want to change. Do not edit ID, Parent or Type. Columns marked "(for reference)" (categories, tags and shipping class, which the file holds as IDs, and the displayed price) are not imported.
+3. Go to **Products → Import**, choose the file and tick **Update existing products**. If the CSV separator on the Settings tab is a semicolon, open **Show advanced options** and set the CSV delimiter to `;`.
+4. Leave **Use previous column mapping preferences** unticked, or check the mapping screen: ID, SKU, Parent and Type mapped to themselves, and every "(for reference)" column set to **Do not import**. On a site in another language, always check the mapping screen: a translated heading may not be mapped, or may be mapped to another field.
+5. Run the importer.
+
+Limits:
+
+* A SKU or a name that starts with -, +, = or @ is written with an apostrophe in front, so a spreadsheet does not run it as a formula. WooCommerce's importer keeps that apostrophe. The importer also removes line breaks, repeated or edge spaces, tags and % codes from a SKU. The dialog counts such rows: correct them, or remove the apostrophe, before re-importing.
+* WooCommerce regenerates a variation's title from its product and attributes when it saves it, so a variation with a title of its own gets the generated title back on any import.
+* An import made with WooCommerce's importer is WooCommerce's: it is not recorded in History and cannot be undone here. Keep the unedited file if you may want to go back.
+
+= Why is a very large export cut short? =
+
+The export lifts PHP's time limit where the host allows it. Some hosts do not, or stop long requests at the web server. If a large export stops early, narrow it with a filter, or export a smaller selection at a time.
 
 = Are changes made elsewhere recorded? =
 

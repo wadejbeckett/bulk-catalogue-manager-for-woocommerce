@@ -9,7 +9,8 @@ declare( strict_types = 1 );
 // phpcs:disable WordPress.DB -- Controlled, local-only database failure and capacity fixtures require uncached SQL and temporary schema changes.
 // phpcs:disable WordPress.PHP.YodaConditions -- Probe expectations compare measured values directly.
 use BulkCatalogueManager\Requests\RequestService;
-if ( ! defined( 'WP_CLI' ) || ! WP_CLI || 'http://localhost:18925' !== get_option( 'siteurl' ) ) {
+require_once __DIR__ . '/fixture.php';
+if ( ! bulkcat_probe_fixture() ) {
 	exit( 1 ); }
 wp_set_current_user( 1 );
 $service = new RequestService();

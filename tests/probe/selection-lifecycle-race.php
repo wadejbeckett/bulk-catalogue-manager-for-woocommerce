@@ -12,7 +12,8 @@ use BulkCatalogueManager\Requests\RequestService;
 use BulkCatalogueManager\Selection\SnapshotRepository;
 use BulkCatalogueManager\Selection\SnapshotToken;
 use BulkCatalogueManager\Data\FoundationStorage;
-if ( ! defined( 'WP_CLI' ) || ! WP_CLI || 'http://localhost:18925' !== get_option( 'siteurl' ) ) {
+require_once __DIR__ . '/fixture.php';
+if ( ! bulkcat_probe_fixture() ) {
 	exit( 1 ); }
 global $wpdb;
 wp_set_current_user( 1 );

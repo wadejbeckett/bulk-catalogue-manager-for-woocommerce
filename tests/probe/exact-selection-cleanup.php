@@ -13,7 +13,8 @@ use BulkCatalogueManager\Data\Schema;
 use BulkCatalogueManager\Requests\RequestRepository;
 use BulkCatalogueManager\Requests\RequestService;
 use BulkCatalogueManager\Selection\SnapshotRepository;
-if ( ! defined( 'WP_CLI' ) || ! WP_CLI || 'http://localhost:18925' !== get_option( 'siteurl' ) ) {
+require_once __DIR__ . '/fixture.php';
+if ( ! bulkcat_probe_fixture() ) {
 	exit( 1 ); }
 global $wpdb;
 $old   = time() - 45 * DAY_IN_SECONDS;

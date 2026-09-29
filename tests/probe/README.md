@@ -213,8 +213,13 @@ docker network rm bulkcat-perf
 
 The PHP probes named `exact-*.php` and `selection-*.php` run inside WordPress
 through WP-CLI on a disposable stack whose plugin directory is this checkout,
-never on a real shop: each refuses to run unless `siteurl` is the fixture's
-(`http://localhost:18925`), and its header gives its command, for example
+never on a real shop: each refuses to run (`fixture.php`,
+`bulkcat_probe_fixture()`) unless `siteurl` is the owned fixture's
+(`http://localhost:18925`) or the WP-CLI process is given
+`BULKCAT_PROBE_SITEURL` naming this site's URL on a local development host
+(`localhost`, `127.0.0.1`, `[::1]`, `*.localhost`, `*.test`; with the
+docker stacks above, add `-e BULKCAT_PROBE_SITEURL=http://localhost:8888`
+to `WP_CMD`), and its header gives its command, for example
 
 ```sh
 wp eval 'require "wp-content/plugins/bulk-catalogue-manager-for-woocommerce/tests/probe/exact-batch.php";'

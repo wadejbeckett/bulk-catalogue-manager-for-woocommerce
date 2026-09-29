@@ -15,7 +15,8 @@ use BulkCatalogueManager\Data\Schema;
 use BulkCatalogueManager\Data\Cleanup;
 use BulkCatalogueManager\Settings\Settings;
 use BulkCatalogueManager\Requests\RequestService;
-if ( ! defined( 'WP_CLI' ) || ! WP_CLI || 'http://localhost:18925' !== get_option( 'siteurl' ) ) {
+require_once __DIR__ . '/fixture.php';
+if ( ! bulkcat_probe_fixture() ) {
 	exit( 1 ); }
 global $wpdb;
 $checks = [];

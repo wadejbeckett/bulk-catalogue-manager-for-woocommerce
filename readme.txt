@@ -4,7 +4,7 @@ Tags: woocommerce, bulk edit, products, catalogue, variations
 Requires at least: 7.0
 Tested up to: 7.1
 Requires PHP: 8.1
-WC requires at least: 10.0
+WC requires at least: 11.1
 WC tested up to: 11.1
 Stable tag: 1.0.0
 License: GPL-3.0-or-later
@@ -41,7 +41,7 @@ The work runs in the background in small groups, so large catalogues do not time
 
 == Installation ==
 
-1. Install and activate WooCommerce 10.0 or later.
+1. Install and activate WooCommerce 11.1 or later.
 2. In Plugins → Add New, search for Bulk Catalogue Manager and install it, or upload the ZIP through Plugins → Add New → Upload Plugin.
 3. Activate the plugin.
 4. Open Products → Bulk Catalogue Manager.
@@ -76,7 +76,7 @@ Yes. Variations appear as rows of their own and can be edited one by one or in b
 
 = Does it need any other plugin? =
 
-No. It needs only WooCommerce 10.0 or later.
+No. It needs only WooCommerce 11.1 or later.
 
 = Who can use it? =
 
@@ -112,6 +112,9 @@ Yes. Each site keeps its own history and settings, and deleting the plugin with 
 * Settings for access, page size, confirmation, variation defaults, background batch sizes, history and data removal.
 
 == Upgrade Notice ==
+
+= Unreleased =
+Needs WooCommerce 11.1 or later. On an older WooCommerce the plugin shows only a notice asking you to update WooCommerce; its history and settings are kept.
 
 = 1.0.0 =
 First release.

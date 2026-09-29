@@ -4,7 +4,7 @@ One screen inside wp-admin for changing many WooCommerce products and variations
 
 It edits WooCommerce's own product data only, through WooCommerce's own product classes, and works on a plain WordPress and WooCommerce site with nothing else installed. It makes no request outside your site, collects no data and has no paid version. Free under GPL-3.0-or-later.
 
-- Requires WordPress 7.0 or later (tested up to 7.1), PHP 8.1 or later and WooCommerce 10.0 or later (tested up to 11.1).
+- Requires WordPress 7.0 or later (tested up to 7.1), PHP 8.1 or later and WooCommerce 11.1 or later (tested up to 11.1).
 - Scope and design: [`docs/SPEC.md`](docs/SPEC.md). Work log: [`docs/TICKETS.md`](docs/TICKETS.md). Release checklist: [`docs/RELEASE.md`](docs/RELEASE.md).
 
 ## What the screen does
@@ -131,7 +131,7 @@ The same commands continuous integration runs (`.github/workflows/ci.yml`, on ev
 | JavaScript install, lint (ESLint + Prettier, zero warnings) and Jest | `npm ci && npm run lint:js && npm test` | Node 20 |
 | Bundle build with the 400 KB compressed size check | `npm run build` (then `git diff --exit-code -- assets/build`) | Node 20 |
 | Translation template | `composer make-pot` (commit the refreshed `languages/*.pot`; `I18nTest` fails on a stale one) | |
-| Live seed and probe on WordPress with WooCommerce | `npx wp-env start`, then `WP_CMD="npx wp-env run cli wp" bash tests/probe/seed.sh` and `WP_CMD="npx wp-env run cli wp" python3 tests/probe/probe.py --base-url http://localhost:8888` | WordPress 7.1.2 and 7.0.6 × WooCommerce 11.1.2 and 10.9.4 |
+| Live seed and probe on WordPress with WooCommerce | `npx wp-env start`, then `WP_CMD="npx wp-env run cli wp" bash tests/probe/seed.sh` and `WP_CMD="npx wp-env run cli wp" python3 tests/probe/probe.py --base-url http://localhost:8888` | WordPress 7.1.2 and 7.0.6 × WooCommerce 11.1.2 and 11.1.0 |
 
 wp-env needs Docker with the Compose v2 plugin; CI installs `@wordpress/env` 11.16.0 globally rather than as a project dependency.
 

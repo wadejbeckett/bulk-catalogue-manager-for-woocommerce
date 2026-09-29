@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 // The unit suite models a supported WooCommerce. DependencyTest covers an
 // absent or older one, each in its own PHP process.
 if ( ! defined( 'WC_VERSION' ) ) {
-	define( 'WC_VERSION', '10.0' );
+	define( 'WC_VERSION', '11.1' );
 }
 
 $bulkcat_composer = dirname( __DIR__ ) . '/vendor/autoload.php';

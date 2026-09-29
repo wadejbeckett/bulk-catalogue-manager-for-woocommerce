@@ -27,7 +27,7 @@ final class Plugin {
 	 * Lowest WooCommerce version the plugin runs on. Must equal the
 	 * `WC requires at least:` header of the main plugin file.
 	 */
-	public const MIN_WC_VERSION = '10.0';
+	public const MIN_WC_VERSION = '11.1';
 
 	/**
 	 * The instance the main plugin file boots.
@@ -170,7 +170,7 @@ final class Plugin {
 		}
 		printf(
 			'<div class="notice notice-error"><p>%s</p></div>',
-			esc_html__( 'Bulk Catalogue Manager for WooCommerce needs WooCommerce 10.0 or later. Install or update WooCommerce to use it.', 'bulk-catalogue-manager-for-woocommerce' )
+			esc_html__( 'Bulk Catalogue Manager for WooCommerce needs WooCommerce 11.1 or later. Install or update WooCommerce to use it.', 'bulk-catalogue-manager-for-woocommerce' )
 		);
 	}
 

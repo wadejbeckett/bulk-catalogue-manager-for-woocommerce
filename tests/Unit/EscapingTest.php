@@ -96,7 +96,7 @@ final class EscapingTest extends TestCase {
 	/**
 	 * The admin notice's text, which a translation may replace.
 	 */
-	private const NOTICE_TEXT = 'Bulk Catalogue Manager for WooCommerce needs WooCommerce 10.0 or later. Install or update WooCommerce to use it.';
+	private const NOTICE_TEXT = 'Bulk Catalogue Manager for WooCommerce needs WooCommerce 11.1 or later. Install or update WooCommerce to use it.';
 
 	/**
 	 * Output constructs and functions the source scan checks.

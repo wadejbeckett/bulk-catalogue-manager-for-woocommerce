@@ -91,7 +91,7 @@ final class PluginTest extends TestCase {
 			'Requires at least'    => '7.0',
 			'Requires PHP'         => '8.1',
 			'Requires Plugins'     => 'woocommerce',
-			'WC requires at least' => '10.0',
+			'WC requires at least' => '11.1',
 			'Text Domain'          => 'bulk-catalogue-manager-for-woocommerce',
 			'License'              => 'GPL-3.0-or-later',
 			'License URI'          => 'https://www.gnu.org/licenses/gpl-3.0.html',

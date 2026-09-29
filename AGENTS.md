@@ -11,7 +11,7 @@ Read in this order, then start work: `docs/SPEC.md` (the agreed shared understan
 - Do not ask the owner to define these further. Fix it, do not ask.
 
 ## Identifiers (must match SPEC §15)
-Slug and text domain `bulk-catalogue-manager-for-woocommerce`; prefixes `bulkcat_` / `BULKCAT_` / `bulkcat-`; PHP namespace `BulkCatalogueManager`; REST namespace `bulkcat/v1`; PHP >= 8.1, WordPress >= 7.0, WooCommerce >= 10.0. UI on `@wordpress/dataviews` bundled via wp-scripts, server-side paged.
+Slug and text domain `bulk-catalogue-manager-for-woocommerce`; prefixes `bulkcat_` / `BULKCAT_` / `bulkcat-`; PHP namespace `BulkCatalogueManager`; REST namespace `bulkcat/v1`; PHP >= 8.1, WordPress >= 7.0, WooCommerce >= 11.1 (raised from 10.0 by ticket 04, T87). UI on `@wordpress/dataviews` bundled via wp-scripts, server-side paged.
 
 ## House conventions
 Copy the layout and tooling of the sibling repo `(local path)` (formerly hide-prices-from-guests-for-woocommerce) (composer.json, package.json, phpcs, PHPUnit with the standalone runner `tests/run-tests.php`, `.wp-env.json`, GitHub Actions, `bin/build-zip.sh`, `.distignore`, `readme.txt`, `docs/TICKETS.md` note style). Its `docs/TICKETS.md` Notes section records what does and does not run on this workstation (Docker group membership, wp-env); this workstation now has Node 20 (see Current state).

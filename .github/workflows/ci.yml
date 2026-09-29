@@ -69,9 +69,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Current and previous supported WordPress; current WooCommerce and the last 10.x.
+        # Current and previous supported WordPress; current WooCommerce and the minimum (11.1.0, ticket 04).
         wp: [ '7.1.2', '7.0.6' ]
-        wc: [ '11.1.2', '10.9.4' ]
+        wc: [ '11.1.2', '11.1.0' ]
     env:
       WP_CMD: npx wp-env run cli wp
     steps:

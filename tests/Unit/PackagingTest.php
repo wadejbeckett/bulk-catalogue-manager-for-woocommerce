@@ -373,4 +373,28 @@ final class PackagingTest extends TestCase {
 			$this->assertSame( Plugin::VERSION, $composer['version'], 'composer.json version.' );
 		}
 	}
+
+	public function test_readme_ci_and_wp_env_agree_with_the_woocommerce_minimum(): void {
+		// Ticket 04 (WooCommerce 11.1): every place that names the minimum moves together.
+		$readme = (string) file_get_contents( self::root() . '/readme.txt' );
+		$this->assertSame( 1, preg_match( '/^WC requires at least:\s*(\S+)/mi', $readme, $header ) );
+		$this->assertSame( Plugin::MIN_WC_VERSION, $header[1], 'readme.txt WC requires at least.' );
+		$this->assertStringContainsString( 'WooCommerce ' . Plugin::MIN_WC_VERSION . ' or later', $readme, 'readme.txt install step and FAQ.' );
+
+		$env = json_decode( (string) file_get_contents( self::root() . '/.wp-env.json' ), true );
+		$zip = null;
+		foreach ( (array) ( $env['plugins'] ?? [] ) as $plugin ) {
+			if ( is_string( $plugin ) && 1 === preg_match( '/woocommerce\.(\d+\.\d+(?:\.\d+)?)\.zip$/', $plugin, $match ) ) {
+				$zip = $match[1];
+			}
+		}
+		$this->assertNotNull( $zip, '.wp-env.json pins a WooCommerce zip.' );
+		$this->assertTrue( version_compare( (string) $zip, Plugin::MIN_WC_VERSION, '>=' ), ".wp-env.json's WooCommerce $zip is below the minimum." );
+
+		$ci = (string) file_get_contents( self::root() . '/.github/workflows/ci.yml' );
+		$this->assertSame( 1, preg_match( '/^\s*wc:\s*\[([^\]]*)\]/m', $ci, $legs ), 'CI has a WooCommerce matrix.' );
+		$versions = array_map( static fn( string $leg ): string => trim( $leg, " '\"" ), explode( ',', $legs[1] ) );
+		usort( $versions, 'version_compare' );
+		$this->assertTrue( version_compare( $versions[0], Plugin::MIN_WC_VERSION, '>=' ), "CI's lowest WooCommerce leg {$versions[0]} is below the minimum." );
+	}
 }

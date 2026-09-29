@@ -1177,11 +1177,16 @@ def set_remove_data(p: Probe, on: bool) -> None:
     )
 
 
+# SPEC §9.2 and §15 since T81: five tables and three recurring actions (history, selections, requests).
+LIFECYCLE_TABLES = 5
+LIFECYCLE_RECURRING = 3
+
+
 def check_lifecycle(p: Probe) -> None:
     def tables() -> None:
         found = p.wp_eval(INDEXES_PHP)
         bad = [f"{n}: want {t['want']} have {t['have']}" for n, t in found.items() if not t["exists"] or t["want"] != t["have"]]
-        p.row("lifecycle", "lifecycle:tables-and-indexes", len(found) == 3 and not bad, "; ".join(bad) or f"{sorted(found)} with every documented index")
+        p.row("lifecycle", "lifecycle:tables-and-indexes", len(found) == LIFECYCLE_TABLES and not bad, "; ".join(bad) or f"{sorted(found)} with every documented index")
 
     def compat() -> None:
         found = p.wp_eval(COMPAT_PHP)
@@ -1204,7 +1209,7 @@ def check_lifecycle(p: Probe) -> None:
         p.wp("plugin", "activate", PLUGIN)
         p.wp("plugin", "activate", PLUGIN, check=False)  # activating an active plugin is a no-op
         after = p.wp_eval(FOOTPRINT_PHP)
-        ok = after == before and mid["actions"] == 0 and mid["tables"] == before["tables"] and before["actions"] == 1
+        ok = after == before and mid["actions"] == 0 and mid["tables"] == before["tables"] and before["actions"] == LIFECYCLE_RECURRING
         p.row("lifecycle", "lifecycle:deactivate-activate-idempotent", ok,
               f"prune actions {before['actions']} -> {mid['actions']} -> {after['actions']}; rows kept {after['tables'] == before['tables']}")
 
@@ -1223,7 +1228,7 @@ def check_lifecycle(p: Probe) -> None:
         p.row("lifecycle", surface, ok, detail)
         p.wp("plugin", "activate", PLUGIN)
         again = p.wp_eval(FOOTPRINT_PHP)
-        p.row("lifecycle", surface + ":reinstalled", len(again["tables"]) == 3 and again["version"] is not None and again["actions"] == 1,
+        p.row("lifecycle", surface + ":reinstalled", len(again["tables"]) == LIFECYCLE_TABLES and again["version"] is not None and again["actions"] == LIFECYCLE_RECURRING,
               f"tables {sorted(again['tables'])} version {again['version']} prune actions {again['actions']}")
 
     for name, fn in [("tables-and-indexes", tables), ("woocommerce-compatibility", compat), ("version-bump", bump),

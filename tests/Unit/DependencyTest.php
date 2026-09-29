@@ -21,7 +21,7 @@ use PHPUnit\Framework\TestCase;
 final class DependencyTest extends TestCase {
 	private const PLUGIN_FILE = 'bulk-catalogue-manager-for-woocommerce.php';
 
-	private const NOTICE_TEXT = 'Bulk Catalogue Manager for WooCommerce needs WooCommerce 10.0 or later. Install or update WooCommerce to use it.';
+	private const NOTICE_TEXT = 'Bulk Catalogue Manager for WooCommerce needs WooCommerce 11.1 or later. Install or update WooCommerce to use it.';
 
 	protected function setUp(): void {
 		bulkcat_test_reset();
@@ -71,8 +71,15 @@ final class DependencyTest extends TestCase {
 		self::assert_inactive( self::boot( '9.9' ) );
 	}
 
-	public function test_with_woocommerce_10_0_the_plugin_boots_and_declares_compatibility(): void {
-		$result = self::boot( '10.0' );
+	public function test_below_woocommerce_11_1_only_the_notice_is_registered(): void {
+		// Ticket 04's minimum: below 11.1 the Store API can show an unpublished product by id.
+		foreach ( [ '10.0', '10.9.4', '11.0', '11.0.9' ] as $version ) {
+			self::assert_inactive( self::boot( $version ) );
+		}
+	}
+
+	public function test_with_woocommerce_11_1_the_plugin_boots_and_declares_compatibility(): void {
+		$result = self::boot( '11.1' );
 		$file   = realpath( self::root() . '/' . self::PLUGIN_FILE );
 
 		$this->assertSame(
@@ -106,7 +113,7 @@ final class DependencyTest extends TestCase {
 
 	public function test_lifecycle_hooks_are_registered_against_the_plugin_file_whatever_woocommerce(): void {
 		$file = self::root() . '/' . self::PLUGIN_FILE;
-		foreach ( [ [ 'none', 'nostub' ], [ '9.9', 'stub' ], [ '10.0', 'stub' ] ] as [ $version, $features ] ) {
+		foreach ( [ [ 'none', 'nostub' ], [ '11.0', 'stub' ], [ '11.1', 'stub' ] ] as [ $version, $features ] ) {
 			$result = self::boot( $version, $features );
 			$this->assertSame(
 				[
@@ -122,13 +129,13 @@ final class DependencyTest extends TestCase {
 	}
 
 	public function test_later_woocommerce_versions_boot(): void {
-		foreach ( [ '10.0.0', '10.3.1', '11.0' ] as $version ) {
+		foreach ( [ '11.1.0', '11.1.2', '11.2', '12.0' ] as $version ) {
 			$this->assertArrayHasKey( 'before_woocommerce_init', self::boot( $version )['hooks'], "WooCommerce $version." );
 		}
 	}
 
 	public function test_missing_features_util_is_not_fatal(): void {
-		$result = self::boot( '10.0', 'nostub' );
+		$result = self::boot( '11.1', 'nostub' );
 
 		$this->assertSame(
 			[

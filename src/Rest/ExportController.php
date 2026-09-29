@@ -16,6 +16,7 @@ declare( strict_types = 1 );
 namespace BulkCatalogueManager\Rest;
 
 use BulkCatalogueManager\Export\CallableRowSource;
+use BulkCatalogueManager\Export\ColumnPlan;
 use BulkCatalogueManager\Export\CsvExport;
 use BulkCatalogueManager\Export\ExportName;
 use BulkCatalogueManager\Export\ExportRequest;
@@ -362,7 +363,7 @@ final class ExportController implements ReadController {
 			}
 			$filename = ExportName::filename( $export->name(), $plan->identifiers(), current_datetime() );
 			if ( $export->summary ) {
-				return new \WP_REST_Response( $this->summary( $export, $rows, $plan->identifiers(), $filename ), 200 );
+				return new \WP_REST_Response( $this->summary( $export, $rows, $plan, $filename ), 200 );
 			}
 		} catch ( \RuntimeException $error ) {
 			return Refusal::unexpected(
@@ -394,21 +395,22 @@ final class ExportController implements ReadController {
 	 * The export dialog's counts: the rows the file will hold, the members
 	 * left out, and with the identifier switch on the guarded SKUs and names.
 	 *
-	 * @param ExportRequest $export      The checked request.
-	 * @param IdRows|null   $rows        The explicit rows; null for the filter.
-	 * @param bool          $identifiers Whether the identifier switch is on.
-	 * @param string        $filename    The file's name.
+	 * @param ExportRequest $export   The checked request.
+	 * @param IdRows|null   $rows     The explicit rows; null for the filter.
+	 * @param ColumnPlan    $plan     The file's columns: the counts need the switch on, and names need the Name column.
+	 * @param string        $filename The file's name.
 	 * @return array{rows: int, left_out: int, guarded_identifiers: int, guarded_names: int, whole_catalogue: bool, filename: string}
 	 * @throws \RuntimeException On a database error.
 	 */
-	private function summary( ExportRequest $export, ?IdRows $rows, bool $identifiers, string $filename ): array {
+	private function summary( ExportRequest $export, ?IdRows $rows, ColumnPlan $plan, string $filename ): array {
 		$query   = null === $rows && null !== $export->criteria ? new ProductQuery( $export->criteria ) : null;
 		$guarded = [
 			'identifiers' => 0,
 			'names'       => 0,
 		];
-		if ( $identifiers ) {
-			$guarded = null === $rows ? ( new GuardedValues() )->of_query( $query ) : ( new GuardedValues() )->of_ids( $rows->ids() );
+		if ( $plan->identifiers() ) {
+			$counter = new GuardedValues( GuardedValues::PAGE, in_array( 'name', $plan->columns(), true ) );
+			$guarded = null === $rows ? $counter->of_query( $query ) : $counter->of_ids( $rows->ids() );
 		}
 		return [
 			'rows'                => null === $rows ? ( new CountCache() )->total( $query ) : $rows->rows(),

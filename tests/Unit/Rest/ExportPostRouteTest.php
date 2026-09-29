@@ -547,6 +547,14 @@ final class ExportPostRouteTest extends TestCase {
 			]
 		);
 		$this->assertSame( [ 1, 1 ], [ $filter['guarded_identifiers'], $filter['guarded_names'] ] );
+		$nameless = $summary(
+			[
+				'columns'     => 'regular_price',
+				'ids'         => '101,104,108',
+				'identifiers' => '1',
+			]
+		);
+		$this->assertSame( [ 1, 0 ], [ $nameless['guarded_identifiers'], $nameless['guarded_names'] ], 'Without the Name column no name is written, so none is counted; the SKU always is.' );
 		$this->assertSame( [], $this->calls, 'A summary never reads a page of rows.' );
 	}
 

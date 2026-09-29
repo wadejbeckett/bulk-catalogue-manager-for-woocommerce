@@ -44,9 +44,10 @@ final class GuardedValues {
 	/**
 	 * Count in pages of $page rows.
 	 *
-	 * @param int $page Rows per statement; PAGE outside tests.
+	 * @param int  $page  Rows per statement; PAGE outside tests.
+	 * @param bool $names Whether the file has the Name column: without it no name is written, so none is counted.
 	 */
-	public function __construct( private readonly int $page = self::PAGE ) {}
+	public function __construct( private readonly int $page = self::PAGE, private readonly bool $names = true ) {}
 
 	/**
 	 * The counts for every row a filter matches.
@@ -65,7 +66,7 @@ final class GuardedValues {
 			$args = [ ...self::column_args(), ...$conditions['args'], $after, $this->page ];
 			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- ProductQuery's own FROM and WHERE (literal fragments and placeholders); every value is an argument, spread.
 			$rows  = self::checked( $wpdb->get_results( $wpdb->prepare( $sql, ...$args ), ARRAY_A ) );
-			$after = self::add( $rows, $counts ) ?? $after;
+			$after = $this->add( $rows, $counts ) ?? $after;
 			$full  = count( $rows ) === $this->page;
 		} while ( $full );
 		return $counts;
@@ -86,7 +87,7 @@ final class GuardedValues {
 			$args = [ ...self::column_args(), $wpdb->prefix . ProductQuery::TABLES['posts'], ...array_map( 'intval', $chunk ), count( $chunk ) ];
 			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in is only %d placeholders; every value is an argument, spread.
 			$rows = $wpdb->get_results( $wpdb->prepare( "SELECT p.ID AS id, p.post_title AS name, (SELECT m.meta_value FROM %i AS m WHERE m.post_id = p.ID AND m.meta_key = %s LIMIT %d) AS sku FROM %i AS p WHERE p.ID IN ({$in}) ORDER BY p.ID ASC LIMIT %d", ...$args ), ARRAY_A );
-			self::add( self::checked( $rows ), $counts );
+			$this->add( self::checked( $rows ), $counts );
 		}
 		return $counts;
 	}
@@ -123,7 +124,7 @@ final class GuardedValues {
 	 * @param array{identifiers: int, names: int} $counts Running counts.
 	 * @return int|null The last row's id, or null for no rows.
 	 */
-	private static function add( array $rows, array &$counts ): ?int {
+	private function add( array $rows, array &$counts ): ?int {
 		$last = null;
 		foreach ( $rows as $row ) {
 			$sku  = is_scalar( $row['sku'] ?? null ) ? (string) $row['sku'] : '';
@@ -131,7 +132,7 @@ final class GuardedValues {
 			if ( ! ReimportIdentifiers::reads_back( $sku ) ) {
 				++$counts['identifiers'];
 			}
-			if ( CsvWriter::guard( $name ) !== $name ) {
+			if ( $this->names && CsvWriter::guard( $name ) !== $name ) {
 				++$counts['names'];
 			}
 			$last = (int) $row['id'];

@@ -124,6 +124,24 @@ These rows are a follow-up on branch `codex/global-off-on`, cut from T85 (`fedea
 | T93 | Listing controls relabel | "Visible on site" becomes **Shown in shop and search** (Shown/Hidden/Partly), not a default column; quick actions **Show in shop and search**/**Hide from shop and search**; the CSV heading follows the label (the one heading change; a default-view export no longer has the column). Probe `offon:e5-independent`. |
 | T94 | Buyer enforcement, scale and records | Probe `offon` buyer rows A1–A12, B1–B5, C1–C2 for an anonymous visitor and a customer on a simple and a variable product, driven through the manager's routes; e2e `buyer-off.spec.js` (B6); E7 only WooCommerce and this plugin active; downgrade rows `downgrade:*`; E9 timing; `.pot`, readme FAQ, CHANGELOG. |
 
+## CSV export — planned 28 September 2026
+
+<!-- CSV export section (T95–T103). Ticket 04's rows T86–T94 go before it; the external action contract's T104–T109 after it. -->
+
+Export of the exact selection and the chosen columns, with an optional identifier block for WooCommerce's own importer. Plan, rulings R1–R13 and amendments: [CSV export of the selection and the chosen columns](plans/2026-09-28-csv-selection-export.md); contract SPEC §10 and §12.1. The server work (T95, T97–T102) is built in parallel with ticket 04 on branch `codex/csv-selection-export`, cut from the T85 head; T96 waits for ticket 04's listing-control relabel (T93) and T103 for ticket 04's acceptance. Nothing here is merged or released.
+
+| Ticket | Work | Acceptance / evidence required |
+|---|---|---|
+| T95 | SPEC and tickets first | SPEC §10's **Export.** paragraph replaced by the slice's rules (rows, columns, identifiers, format, file name, transport), with §4.1, §12.1, §12.5, §13 and §16.3 following; these rows. No runtime change. |
+| T96 — waits for ticket 04's T93 | Characterise today's export | `CatalogueBaselineTest` over a fixed row source; golden files for every non-image column and the default view, with commas and semicolons, written by the unchanged code and committed first; the heading check against 1.0.0's labels, where only the listing control's differs. |
+| T97 | Column plan | `Export\ColumnPlan`: switch off keeps the sent columns and registry labels; switch on puts `ID`, `SKU`, `Parent`, `Type` first in English, repeats none, and marks every column outside `ROUND_TRIP` "(for reference)". `CsvExportTest` and `CsvWriterTest` untouched. |
+| T98 | Identifier values and guard counts | `Export\ReimportIdentifiers`: Type in WooCommerce's native form; Parent by WooCommerce's exporter rule for any item with a post parent, `id:N` when the parent SKU would not read back (`reads_back()`: guard, `wc_clean()`, `0`, `id:<digits>`); one added read per page with parents. `Export\GuardedValues` counts SKUs that would not read back and guarded names, in keyset pages of 5,000, never hydrating. |
+| T99 | Row sources and the request | `ProductQuery::present_members()` (at most 1,000 IDs a statement), `Export\IdRows`, `Export\ExportRows::ids()`, `Export\ExportRequest` (one row source, the 1,000-ID limit, the whole-catalogue rule on the parsed conditions) and `Export\ExportName`. |
+| T100 | Selection token rows | `ExportRows::token()` resolves as preview does, from the body or JSON only, never renewing; presence kept as an integer map and the selection object released once its IDs are read. |
+| T101 | `POST /export`, summary and refusals | The route beside the GET behind the read permission; every refusal before any CSV byte; the summary; the time limit lifted before streaming; nothing written. Probe rows in the `read` chapter. |
+| T102 | WooCommerce importer round trip and scale | The mapping as the import screen builds it; the unedited round trip changes nothing and creates nothing for both separators and both row sources; an edited one changes only what was edited; guarded values, parents and variation titles recorded; 20,000 rows by filter and by selection, and 100,000 members under 128 MB. |
+| T103 — waits for ticket 04's acceptance | The dialog, the catalogue GET's retirement and the docs | The export dialog, the form post into the hidden frame, the catalogue GET refused, Jest, e2e including the import screen, the readme FAQ and README "Re-import the file" section. |
+
 ## Backlog (post 1.0)
 
 - **Before any public release (T80 checklist; Main Build, 28 September):** remove client references — `docs/SCOPE-2026-09-21.md` lines 14 and 62–66 and `AGENTS.md` line 24 name the first client, its site, its owner and its purchasing integration. (The client-prefixed SKU fixture in `tests/Unit/Operations/RegistryTest.php` was replaced with a neutral `SHOP-` prefix on 28 September.)

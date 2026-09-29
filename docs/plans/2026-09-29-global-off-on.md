@@ -64,7 +64,7 @@ Also note: a never-Off product whose date is in the future **stays scheduled** w
 
 ## 1. Data: the Off record
 
-**Key.** `_bulkcat_availability_off`, as fixed by the contract and the proof. The leading underscore makes it protected meta. It is hidden from the editor's Custom Fields box, left out of WooCommerce's CSV exporter meta columns, and not in REST.
+**Key.** `_bulkcat_availability_off`, as fixed by the contract and the proof. The leading underscore makes it protected meta. It is hidden from the editor's Custom Fields box and core's `wp/v2` REST. (Corrected 29 September after review: WooCommerce's REST API v3 returns it in `meta_data` and accepts it on write from anyone who may edit the product, and WooCommerce's CSV exporter includes it when custom meta is exported. The record's protection is its product-id binding and its fixed shape and statuses: a foreign, malformed or unreadable value is no record, and a well-formed one can only restore a status the person switching On could already set.)
 
 **Value.** One canonical JSON string, keys always in this order, encoded with `JSON_UNESCAPED_SLASHES`:
 

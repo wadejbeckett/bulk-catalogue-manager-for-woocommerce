@@ -305,9 +305,14 @@ final class WriterOffOnTest extends TestCase {
 		$this->setUp();
 		$never                                        = self::product( 18, 'future', null, self::NOW + 7 * 86400 );
 		$GLOBALS['bulkcat_test']['stored_status'][18] = 'future';
-		self::write( self::writer(), 18, $this->status_step( 'publish' ) );
+		$kept = self::write( self::writer(), 18, $this->status_step( 'publish' ) );
 		$this->assertSame( 'future', $never->props['status'] );
 		$this->assertSame( [ [ 'status', 'future', 'future', 'applied' ] ], self::summary() );
+		// Should-fix (4): the outcome (the PATCH results) says what happened, as the journal does:
+		// the status is as it was, not changed to publish.
+		$result = $kept->results()[0];
+		$this->assertSame( [ Result::ALREADY, 'future', 'future' ], [ $result->state(), $result->old(), $result->new() ] );
+		$this->assertSame( [ 'publishes_not_off', 'future' ], [ $result->note(), $result->context()['current'] ?? null ] );
 	}
 
 	public function test_intent_rows_cover_both_props_and_a_retry_replays_them(): void {

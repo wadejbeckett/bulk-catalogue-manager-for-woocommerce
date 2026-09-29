@@ -302,7 +302,9 @@ final class Writer {
 			$this->sync( $parent_id );
 		}
 		$this->settle( $id, $entries, $before, $product, $intended );
-		return new WriteOutcome( $id, $results, true, $parent_id, $changed_before );
+		// A status WordPress kept, with nothing else changed, is no change to report.
+		$saved = [] !== array_filter( $results, static fn( Result $r ): bool => $r->is_changed() );
+		return new WriteOutcome( $id, $results, $saved, $saved ? $parent_id : 0, $saved ? $changed_before : [] );
 	}
 
 	/**
@@ -322,7 +324,8 @@ final class Writer {
 
 	/**
 	 * The Results with each saved status change reporting the status the
-	 * object now holds, as WordPress stored it.
+	 * object now holds, as WordPress stored it: a status WordPress kept as it
+	 * was reads as already, with the step's note.
 	 *
 	 * @param list<Result> $results The Results.
 	 * @param object       $saved   The saved object, read back.
@@ -337,8 +340,12 @@ final class Writer {
 					return $result;
 				}
 				$now = $field->read( $saved );
-				if ( $now === $result->new() || $now === $result->old() ) {
+				if ( $now === $result->new() ) {
 					return $result;
+				}
+				if ( $now === $result->old() ) {
+					// WordPress kept the status (a Published on a never-Off scheduled product stays scheduled): already.
+					return Result::already( $result->field(), $now )->with_note( $result->note(), $result->context() );
 				}
 				return Result::changed( $result->field(), $result->old(), $now, $result->replaces() )->with_note( $result->note(), $result->context() );
 			},
@@ -420,8 +427,9 @@ final class Writer {
 		$outcome = array_values( $results );
 		if ( $saved && null !== $product && null !== $this->status_field( array_keys( $results ) ) ) {
 			$outcome = $this->stored( $outcome, $product );
+			$saved   = [] !== array_filter( $outcome, static fn( Result $r ): bool => $r->is_changed() );
 		}
-		return new WriteOutcome( $id, $outcome, $saved, $parent_id, $before );
+		return new WriteOutcome( $id, $outcome, $saved, $saved ? $parent_id : 0, $saved ? $before : [] );
 	}
 
 	/**

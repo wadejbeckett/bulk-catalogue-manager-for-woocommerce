@@ -96,6 +96,36 @@ final class OffRecordTest extends TestCase {
 		}
 	}
 
+	public function test_a_record_written_from_outside_is_bound_to_its_product_and_its_statuses(): void {
+		// Should-fix (2): the leading underscore hides the key from the editor's Custom Fields box and
+		// core's wp/v2 only; WooCommerce REST v3 returns it in meta_data and accepts it on write, and
+		// WooCommerce's CSV exporter includes it with custom meta. The protection is the record itself.
+		$from_rest = [
+			'another product\'s id'             => '{"id":124,"status":"private","at":"2026-09-01T08:00:00Z","batch":1}',
+			'a status outside the four'         => '{"id":123,"status":"trash","at":"2026-09-01T08:00:00Z","batch":1}',
+			'a JSON object, stored as an array' => [
+				'id'     => 123,
+				'status' => 'private',
+				'at'     => '2026-09-01T08:00:00Z',
+				'batch'  => 1,
+			],
+		];
+		foreach ( $from_rest as $case => $value ) {
+			$product = self::product( 123, $value );
+			$this->assertTrue( null === OffRecord::for_product( $product ), $case );
+			$this->assertSame( '', OffRecord::raw( $product ), $case );
+		}
+		// A well-formed record for the product's own id is a record: On restores its status, which is
+		// always one Status offers anyone who may edit the product (a scheduled one comes back through
+		// Published and WordPress's date rule), so it grants no status the user could not set.
+		$own = OffRecord::for_product( self::product( 123, '{"id":123,"status":"private","at":"2026-09-01T08:00:00Z","batch":1}' ) );
+		$this->assertSame( 'private', $own->status );
+		$offered = array_merge( ( new \BulkCatalogueManager\Fields\Registry() )->get( 'status' )->writable_choices(), [ 'future' ] );
+		foreach ( OffRecord::STATUSES as $status ) {
+			$this->assertContains( $status, $offered );
+		}
+	}
+
 	public function test_create_refuses_what_a_record_cannot_hold(): void {
 		foreach ( [ [ 0, 'publish', '2026-09-28T14:03:11Z', 1 ], [ 5, 'draft', '2026-09-28T14:03:11Z', 1 ], [ 5, 'publish', 'yesterday', 1 ], [ 5, 'publish', '2026-09-28T14:03:11Z', -3 ] ] as $args ) {
 			try {

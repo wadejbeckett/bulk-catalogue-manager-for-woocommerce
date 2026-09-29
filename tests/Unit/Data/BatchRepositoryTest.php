@@ -625,7 +625,7 @@ final class BatchRepositoryTest extends TestCase {
 
 	public function test_undone_by_reads_a_page_of_completed_undo_batches_at_once(): void {
 		self::db()->responses = [
-			"SELECT batch_id, undo_of FROM `wp_bulkcat_batches` WHERE undo_of IN (4, 7) AND source = 'undo' AND status = 'complete' ORDER BY batch_id ASC" => [
+			"SELECT batch_id, undo_of FROM `wp_bulkcat_batches` WHERE undo_of IN (4, 7) AND source = 'undo' AND status IN ('complete', 'partial') ORDER BY batch_id ASC" => [
 				[
 					'batch_id' => '8',
 					'undo_of'  => '7',

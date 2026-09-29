@@ -405,17 +405,21 @@ final class ExportPostRouteTest extends TestCase {
 	}
 
 	public function test_more_than_1000_ids_or_ids_with_a_selection_are_refused(): void {
-		$this->refused(
-			self::send(
-				'POST',
-				[
-					'columns' => 'name',
-					'ids'     => implode( ',', range( 1, 1001 ) ),
-				]
-			),
-			'bulkcat_invalid_value',
-			400
+		$too_many = self::send(
+			'POST',
+			[
+				'columns' => 'name',
+				'ids'     => implode( ',', range( 1, 1001 ) ),
+			]
 		);
+		$this->assertSame( 'rest_invalid_param', $too_many->get_error_code(), 'Refused by the schema\'s maxItems before the handler.' );
+		$this->assertSame( 400, $too_many->get_error_data()['status'] );
+		$this->assertSame( 'bulkcat_invalid_value', $too_many->get_error_data()['details']['ids']['code'] );
+		$this->assertSame( 1000, $too_many->get_error_data()['details']['ids']['data']['limit'] );
+		$this->assertSame( 1000, $GLOBALS['bulkcat_test']['routes']['/bulkcat/v1/export'][1]['args']['ids']['maxItems'] );
+		[ $bytes, , $served ] = $this->serve( $too_many );
+		$this->assertFalse( $served );
+		$this->assertSame( '', $bytes );
 		$this->refused(
 			self::send(
 				'POST',

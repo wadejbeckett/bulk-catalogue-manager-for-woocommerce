@@ -12,6 +12,9 @@
  *   BULKCAT_E2E_SCALE_100K=1     the 100,000-member selection, preview and Apply
  *                                (needs seed.sh 22206 on the 20,000 fixture: 100,003 objects);
  *   BULKCAT_E2E_SCALE_UNDO=<id>  undo that finished batch from History and run it;
+ *   BULKCAT_E2E_SCALE_READ=<id>  time a finished batch's progress read (light by
+ *                                default; with BULKCAT_E2E_SCALE_READ_COUNT=1 also
+ *                                the opt-in count, which plans the undo);
  *   BULKCAT_E2E_METRICS=<file>   where the numbers are written as JSON.
  *
  * Every change it makes is undone before it ends.
@@ -28,12 +31,14 @@ const {
 	screenParts,
 	lastBatchId,
 	undoLeftovers,
+	fixtureCheck,
 } = require( '../lifecycle/support' );
 
 test.skip(
-	! WP || ! process.env.BULKCAT_E2E_SCALE,
+	! process.env.BULKCAT_E2E_SCALE,
 	'Scale runs only on a scale site, with BULKCAT_E2E_SCALE=1.'
 );
+test.skip( !! fixtureCheck(), fixtureCheck() );
 
 // No click waits for ever on a run that is hours long.
 test.use( { actionTimeout: 120_000 } );
@@ -771,3 +776,57 @@ async function searchSettled( page, text ) {
 		await expect( offer ).not.toHaveText( before, { timeout: 120_000 } );
 	}
 }
+
+test( "a finished whole-catalogue batch's progress read is light (BULKCAT_E2E_SCALE_READ=<batch id>)", async ( {
+	page,
+} ) => {
+	const batchId = Number( process.env.BULKCAT_E2E_SCALE_READ || 0 );
+	test.skip( ! batchId, 'Names the finished batch to read.' );
+	test.setTimeout( 3600 * 1000 );
+	await openScreen( page );
+	const base = await lightPeak( page );
+	const read = ( query ) =>
+		page.evaluate(
+			async ( args ) => {
+				const s = window.bulkcatSettings;
+				const glue = s.root.includes( '?' ) ? '&' : '?';
+				const started = Date.now();
+				const response = await window.fetch(
+					s.root +
+						`batches/${ args.id }` +
+						( args.query ? glue + args.query : '' ),
+					{ headers: { 'X-WP-Nonce': s.nonce } }
+				);
+				const text = await response.text();
+				let json = null;
+				try {
+					json = JSON.parse( text );
+				} catch {}
+				return {
+					status: response.status,
+					ms: Date.now() - started,
+					perf: JSON.parse(
+						response.headers.get( 'x-bulkcat-perf' ) || 'null'
+					),
+					total_items: json?.total_items,
+					status_of_batch: json?.status,
+					reversibility: json?.reversibility,
+				};
+			},
+			{ id: batchId, query }
+		);
+	const light = await read( '' );
+	record( `progress_read_${ batchId }`, {
+		light_request_peak_mb: base,
+		default: light,
+	} );
+	if ( process.env.BULKCAT_E2E_SCALE_READ_COUNT ) {
+		record( `progress_read_${ batchId }`, {
+			count: await read( 'reversibility=count' ),
+		} );
+	}
+	expect( light.status ).toBe( 200 );
+	expect( light.reversibility.conflicts ).toBeNull();
+	expect( light.perf.peak_mb ).toBeLessThan( base + 16 );
+	expect( light.perf.server_ms ).toBeLessThan( 3000 );
+} );

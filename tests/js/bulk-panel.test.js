@@ -647,6 +647,76 @@ describe( 'bulk panel: preview, apply and done', () => {
 		).toBeVisible();
 	} );
 
+	it( 'does not promise an undo the screen cannot yet make for a change this large (T85)', async () => {
+		routeApi( apiFetch, {
+			'POST preview': previewResponse(),
+			'POST requests': grantFor,
+			'POST batches': {
+				batch_id: 8,
+				status: 'queued',
+				total_items: 24,
+				replayed: false,
+			},
+			'GET batches/8': {
+				batch_id: 8,
+				status: 'complete',
+				total_items: 24,
+				done_items: 24,
+				failed_items: 0,
+				pending_items: 0,
+				summary: [],
+			},
+		} );
+		const onUndo = jest.fn();
+		renderPanel( {
+			settings: { ...SETTINGS, undoLimit: 10 },
+			onUndo,
+		} );
+		const sentence =
+			'Every change is saved with the old values, but undoing a change to more than 10 products and variations is not yet supported from this screen.';
+		chooseIncrease();
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Check the change' } )
+		);
+		const apply = await screen.findByRole( 'button', {
+			name: 'Apply to 20 products',
+		} );
+		expect( panel().textContent ).toContain(
+			'Step 2 of 3 · Too large to undo from this screen'
+		);
+		expect( panel().textContent ).not.toContain(
+			'You can undo this afterwards'
+		);
+		expect( panel().textContent ).toContain( sentence );
+		fireEvent.click( apply );
+		await screen.findByText( '24 products updated.' );
+		expect( panel().textContent ).toContain( sentence );
+		expect(
+			screen.queryByText(
+				'The old values are saved, so you can put this back at any time.'
+			)
+		).toBeNull();
+		expect(
+			screen.queryByRole( 'button', { name: 'Undo this change' } )
+		).toBeNull();
+	} );
+
+	it( 'still promises undo within the size this host can undo (T85)', async () => {
+		routeApi( apiFetch, { 'POST preview': previewResponse() } );
+		renderPanel( { settings: { ...SETTINGS, undoLimit: 1000 } } );
+		chooseIncrease();
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Check the change' } )
+		);
+		await screen.findByRole( 'button', { name: 'Apply to 20 products' } );
+		expect( panel().textContent ).toContain(
+			'You can undo this afterwards'
+		);
+		expect( panel().textContent ).toContain(
+			'Every change is saved with the old values. One click in History puts them back.'
+		);
+	} );
+
 	it( 'applies through a grant: POST /requests, then the durable body, then progress and the result', async () => {
 		let finish = false;
 		routeApi( apiFetch, {

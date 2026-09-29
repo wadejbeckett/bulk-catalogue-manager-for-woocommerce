@@ -11,6 +11,8 @@
 import {
 	MAX_IDS,
 	WATCH_MS,
+	WATCH_BACKOFF_MS,
+	WATCH_TRIES,
 	cleanIds,
 	createSelectionSession,
 } from '../../assets/src/panels/catalogue/selection/session';
@@ -562,12 +564,9 @@ describe( 'selection session: completion the screen did not see (T85)', () => {
 	 * Fire the session's latest pending watch.
 	 */
 	const fireWatch = () => {
+		// The watch's own timer (its callback is the session's `poll`).
 		const timer = timers
-			.filter(
-				( each ) =>
-					! each.cancelled &&
-					[ WATCH_MS, WATCH_MS * 2 ].includes( each.ms )
-			)
+			.filter( ( each ) => ! each.cancelled && each.fn.name === 'poll' )
 			.pop();
 		expect( timer ).toBeTruthy();
 		timer.cancelled = true;
@@ -656,6 +655,138 @@ describe( 'selection session: completion the screen did not see (T85)', () => {
 		).toHaveLength( 2 );
 	} );
 
+	const watchTimers = () =>
+		timers.filter(
+			( each ) => ! each.cancelled && each.fn.name === 'poll'
+		);
+	const reads = ( id ) => server.calls( `GET batches/${ id }` ).length;
+
+	it( 'stops reading once the change is final (T85)', async () => {
+		const session = makeSession();
+		await session.add( [ 11, 12 ] );
+		server.setBatch( 43, 'running', { total_items: 2 } );
+		session.submit( 43 );
+		await flush();
+		expect( watchTimers().map( ( each ) => each.ms ) ).toEqual( [
+			WATCH_MS,
+		] );
+		server.setBatch( 43, 'complete', COMPLETE );
+		fireWatch();
+		await flush();
+		expect( session.getState().notice ).toMatchObject( {
+			kind: 'done',
+			batchId: 43,
+		} );
+		expect( watchTimers() ).toEqual( [] );
+		expect( reads( 43 ) ).toBe( 2 );
+	} );
+
+	it( 'backs off when the read fails, stops after a bounded number of tries with a plain sentence, and checks again when asked (T85)', async () => {
+		const session = makeSession();
+		await session.add( [ 11, 12 ] );
+		server.setBatch( 44, 'running', { total_items: 2 } );
+		server.fail(
+			'GET batches/44',
+			{ code: 'fetch_error', message: 'offline' },
+			{ times: 50 }
+		);
+		session.submit( 44 );
+		await flush();
+		const waits = [];
+		for ( let i = 0; i < 20 && watchTimers().length; i++ ) {
+			waits.push( watchTimers()[ 0 ].ms );
+			fireWatch();
+			await flush();
+		}
+		expect( waits ).toEqual(
+			Array.from( { length: WATCH_TRIES - 1 }, ( _, n ) =>
+				Math.min( WATCH_BACKOFF_MS * 2 ** n, 5 * 60 * 1000 )
+			)
+		);
+		expect( reads( 44 ) ).toBe( WATCH_TRIES );
+		expect( watchTimers() ).toEqual( [] );
+		expect( session.getState() ).toMatchObject( {
+			count: 2,
+			submitted: { batchId: 44 },
+			unwatched: { batchId: 44 },
+		} );
+		// Check again: one more read, now answered, and it follows again.
+		server.clearFailures( 'GET batches/44' );
+		server.setBatch( 44, 'complete', COMPLETE );
+		session.checkAgain();
+		await flush();
+		expect( session.getState() ).toMatchObject( {
+			unwatched: null,
+			count: 0,
+			notice: { kind: 'done', batchId: 44 },
+		} );
+	} );
+
+	it( 'a reload re-arms a watch that is still bounded (T85)', async () => {
+		const store = memoryStore();
+		const first = makeSession( { store } );
+		await first.add( [ 11 ] );
+		server.setBatch( 45, 'running', { total_items: 1 } );
+		first.submit( 45 );
+		await flush();
+		first.dispose();
+		server.fail(
+			'GET batches/45',
+			{ code: 'fetch_error', message: 'offline' },
+			{ times: 50 }
+		);
+		const before = reads( 45 );
+		const reloaded = makeSession( { store } );
+		reloaded.recover();
+		await flush();
+		for ( let i = 0; i < 20 && watchTimers().length; i++ ) {
+			fireWatch();
+			await flush();
+		}
+		expect( reads( 45 ) - before ).toBe( WATCH_TRIES );
+		expect( watchTimers() ).toEqual( [] );
+		expect( reloaded.getState().unwatched ).toEqual( { batchId: 45 } );
+	} );
+
+	it( 'counts a completion that was under way at the reload as seen, so it is made once (T85, pinned)', async () => {
+		const store = memoryStore();
+		const first = makeSession( { store } );
+		await first.add( [ 11, 12 ] );
+		server.setBatch( 46, 'running', { total_items: 2 } );
+		first.submit( 46 );
+		await flush();
+		await first.add( [ 21 ] );
+		// The completion's subtraction is made, its answer lost.
+		server.fail(
+			'POST selection/compose',
+			{ code: 'fetch_error', message: 'offline' },
+			{ after: true }
+		);
+		first.finish( 46, { status: 'complete', ...COMPLETE } );
+		await flush( 12 );
+		expect( first.getState().status ).toBe( 'uncertain' );
+		first.dispose();
+
+		server.setBatch( 46, 'complete', COMPLETE );
+		const reloaded = makeSession( { store } );
+		reloaded.recover();
+		await flush();
+		// The watch sees the change final; the completion is already under way.
+		const again = reloaded.finish( 46, {
+			status: 'complete',
+			...COMPLETE,
+		} );
+		await expect( again ).resolves.toBe( false );
+		reloaded.retry();
+		await flush( 12 );
+		expect( members( reloaded ) ).toEqual( [ 21 ] );
+		const subtractions = posted( 'POST selection/compose' ).filter(
+			( each ) => each.intent.remove_snapshot
+		);
+		expect( subtractions ).toHaveLength( 2 );
+		expect( subtractions[ 1 ].uuid ).toBe( subtractions[ 0 ].uuid );
+	} );
+
 	it( 'keeps the selection when the change it followed ended in part', async () => {
 		const session = makeSession();
 		await session.add( [ 11, 12 ] );
@@ -714,6 +845,24 @@ describe( 'selection session: Restore after Clear search (T85)', () => {
 		} );
 		expect( server.released( token ) ).toBe( false );
 		expect( posted( 'POST selection' ) ).toHaveLength( 1 );
+	} );
+
+	it( 'waits for the release Clear search sent before keeping the snapshot again (T85)', async () => {
+		const session = makeSession();
+		await session.add( [ 11, 12 ] );
+		const token = tokenOf( session );
+		server.hold( 'POST selection/release' );
+		session.clear( 'search' );
+		const restoring = session.restore();
+		await flush();
+		// The release has not answered yet: no renewal overtakes it.
+		expect( posted( 'POST selection/renew' ) ).toEqual( [] );
+		server.release( 'POST selection/release' );
+		await restoring;
+		await flush();
+		expect( posted( 'POST selection/renew' ) ).toEqual( [ { token } ] );
+		expect( tokenOf( session ) ).toBe( token );
+		expect( server.released( token ) ).toBe( false );
 	} );
 
 	it( 'offers no Restore once something new is selected, and reports one past the hour as lost', async () => {

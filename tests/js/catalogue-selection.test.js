@@ -265,6 +265,48 @@ describe( 'the selection bar’s notices', () => {
 	} );
 } );
 
+describe( 'the selection bar when a change could not be followed (T85)', () => {
+	it( 'says so plainly and offers Check again and History', () => {
+		const checkAgain = jest.fn();
+		const onViewHistory = jest.fn();
+		render(
+			<SelectionBar
+				selection={ {
+					count: 2,
+					byType: { products: 2, variations: 0 },
+					status: 'idle',
+					hasSelection: true,
+					notice: null,
+					offerAll: false,
+					unwatched: { batchId: 9 },
+					checkAgain,
+					dismiss: jest.fn(),
+					clear: jest.fn(),
+					retry: jest.fn(),
+				} }
+				pageCount={ 2 }
+				total={ 2 }
+				filtered={ false }
+				onMakeChange={ jest.fn() }
+				onViewHistory={ onViewHistory }
+			/>
+		);
+		expect(
+			document.querySelector( '.bulkcat-selection' ).textContent
+		).toContain(
+			'We could not check whether your last change has finished, so your selection is kept as it was.'
+		);
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Check again' } )
+		);
+		expect( checkAgain ).toHaveBeenCalled();
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'View in History' } )
+		);
+		expect( onViewHistory ).toHaveBeenCalledWith( 9 );
+	} );
+} );
+
 describe( 'selection in the catalogue', () => {
 	it( 'keeps ticked rows across a search, a filter change and pages, adding each tick', async () => {
 		await renderLoaded();

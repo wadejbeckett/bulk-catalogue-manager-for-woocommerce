@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-09-28T17:05:21+00:00\n"
+"POT-Creation-Date: 2026-09-29T09:38:03+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -1114,6 +1114,9 @@ msgstr ""
 msgid "Product %d"
 msgstr ""
 
+msgid "Pass \"count\" to count the products changed again since, which works out the whole undo; without it the count is not given."
+msgstr ""
+
 msgid "Whether the change also reached variations the selection did not name (\"Also apply to variations\"). List rows only."
 msgstr ""
 
@@ -1948,6 +1951,11 @@ msgstr ""
 msgid "Done"
 msgstr ""
 
+#. translators: %s: the most products and variations a change may cover and still be undone from this screen, such as "27,304".
+#, js-format
+msgid "Every change is saved with the old values, but undoing a change to more than %s products and variations is not yet supported from this screen."
+msgstr ""
+
 msgid "The old values are saved, so you can put this back at any time."
 msgstr ""
 
@@ -2134,6 +2142,11 @@ msgid "Back to products"
 msgstr ""
 
 msgid "Close"
+msgstr ""
+
+#. translators: %d: the current step, 1 to 3.
+#, js-format
+msgid "Step %d of 3 · Too large to undo from this screen"
 msgstr ""
 
 #. translators: %d: the current step, 1 to 3.
@@ -3244,10 +3257,16 @@ msgid_plural "Select all %s products in the catalogue."
 msgstr[0] ""
 msgstr[1] ""
 
+msgid "We could not check whether your last change has finished, so your selection is kept as it was. Check again, or see the change in History."
+msgstr ""
+
 msgid "Restore selection"
 msgstr ""
 
 msgid "This page was idle for a while, so your selection was checked again. The same products are still selected; check any change again before applying it."
+msgstr ""
+
+msgid "Check again"
 msgstr ""
 
 msgid "Clear selection"

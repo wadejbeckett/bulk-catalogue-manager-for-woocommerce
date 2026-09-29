@@ -126,7 +126,7 @@ final class Progress {
 	 * @param BatchRepository|null  $batches       Batches; the plugin's by default.
 	 * @param ChangeRepository|null $changes       The journal; the plugin's by default.
 	 * @param \Closure|null         $clock         Returns the Unix time; time() by default.
-	 * @param Reversibility|null    $reversibility The reversibility state; by default one over the same repositories and clock, counting conflicts with the undo planner (T55).
+	 * @param Reversibility|null    $reversibility The reversibility state; by default one over the same repositories and clock, able to count conflicts with the undo planner (T55) when a report asks for them.
 	 */
 	public function __construct( ?BatchRepository $batches = null, ?ChangeRepository $changes = null, ?\Closure $clock = null, ?Reversibility $reversibility = null ) {
 		$this->batches       = $batches ?? new BatchRepository();
@@ -136,14 +136,19 @@ final class Progress {
 	}
 
 	/**
-	 * A batch's full report, or null for no such batch.
+	 * A batch's full report, or null for no such batch. Every open screen
+	 * reads this until a change finishes, so conflicts are not counted
+	 * (`null`) unless `$count` asks: counting builds the whole undo plan —
+	 * every journal row and every object — which for a whole-catalogue
+	 * change costs a web request most of its memory (T85).
 	 *
-	 * @param int $batch_id Batch.
+	 * @param int  $batch_id Batch.
+	 * @param bool $count    Whether to count conflicts with the undo planner.
 	 * @return array<string, mixed>|null
 	 */
-	public function report( int $batch_id ): ?array {
+	public function report( int $batch_id, bool $count = false ): ?array {
 		$batch = $this->batches->find( $batch_id );
-		return null === $batch ? null : $this->report_for( $batch );
+		return null === $batch ? null : $this->report_for( $batch, true, null, $count );
 	}
 
 	/**
@@ -164,10 +169,11 @@ final class Progress {
 	 *
 	 * @param array<string, mixed>                                   $batch         Typed batch row (BatchRepository::find()).
 	 * @param bool                                                   $summary       Whether to add the grouped reasons (two grouped reads).
-	 * @param array{state: string, conflicts: int, reason: ?string}|null $reversibility The batch's state when already read for its page; read here otherwise.
+	 * @param array{state: string, conflicts: ?int, reason: ?string}|null $reversibility The batch's state when already read for its page; read here otherwise.
+	 * @param bool                                                    $count         When read here, whether to count conflicts (builds the undo plan); null otherwise.
 	 * @return array<string, mixed>
 	 */
-	public function report_for( array $batch, bool $summary = true, ?array $reversibility = null ): array {
+	public function report_for( array $batch, bool $summary = true, ?array $reversibility = null, bool $count = false ): array {
 		$batch   = $this->sweep( $batch );
 		$active  = in_array( $batch['status'], self::ACTIVE, true );
 		$pending = $active ? $this->batches->count_items( $batch['batch_id'], 'pending' ) : 0;
@@ -197,7 +203,7 @@ final class Progress {
 			// The selection's own objects, before any variations "Also apply to variations" added (T69).
 			'selection_difference' => self::difference( $batch['previewed_items'] ?? null, (int) ( $batch['selection']['selected'] ?? $batch['total_items'] ) ),
 			'actions'              => $batch['actions'] ?? [],
-			'reversibility'        => $reversibility ?? $this->reversibility->of( $batch ),
+			'reversibility'        => $reversibility ?? ( $count ? $this->reversibility->of( $batch ) : $this->reversibility->for_page( [ $batch ] )[ $batch['batch_id'] ] ),
 			'undo'                 => self::undo_summary( $batch ),
 		];
 		if ( $summary ) {

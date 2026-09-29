@@ -722,7 +722,8 @@ final class PlannerTest extends TestCase {
 		$this->assertSame( 1, $this->planner()->conflicts( $batch ) );
 
 		$progress = new Progress( null, null, $clock );
-		$this->assertSame( Reversibility::PARTIALLY_REVERSIBLE, $progress->report_for( $batch, false )['reversibility']['state'], 'Progress, and so the single batch read, counts conflicts with the planner by default.' );
+		$this->assertSame( Reversibility::PARTIALLY_REVERSIBLE, $progress->report_for( $batch, false, null, true )['reversibility']['state'], 'Progress, and so the single batch read when asked, counts conflicts with the planner.' );
+		$this->assertNull( $progress->report_for( $batch, false )['reversibility']['conflicts'], 'Unless asked, the report does not count them (T85).' );
 		$GLOBALS['bulkcat_test']['products_loaded'] = [];
 		$this->assertSame(
 			[

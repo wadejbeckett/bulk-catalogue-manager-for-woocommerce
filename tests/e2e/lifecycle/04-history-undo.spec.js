@@ -11,7 +11,6 @@
 const { test, expect } = require( '@playwright/test' );
 const { SEED, SCREEN, openScreen, rest } = require( '../helpers' );
 const {
-	WP,
 	php,
 	rows,
 	write,
@@ -26,9 +25,10 @@ const {
 	checkIncrease,
 	lastBatchId,
 	undoLeftovers,
+	fixtureCheck,
 } = require( './support' );
 
-test.skip( ! WP, 'Needs WP_CMD to run the queue and read the site.' );
+test.skip( !! fixtureCheck(), fixtureCheck() );
 
 // The safety net: a spec that stops before its own undo leaves nothing.
 let mark = 0;

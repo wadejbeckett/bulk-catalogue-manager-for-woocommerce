@@ -374,10 +374,10 @@ final class HistoryAuditRouteTest extends TestCase {
 		$this->assertCount( 1, preg_grep( '/^SELECT batch_id, undo_of, user_id FROM .* undo_of IN \(/', $queries ), 'The list row\'s "put back by", for the undone rows only.' );
 		$this->assertCount( 1, preg_grep( "/result = 'applied' GROUP BY batch_id/", $queries ) );
 
-		// The single read counts them, only where undo is still possible.
+		// The single read counts them when asked (T85), only where undo is still possible.
 		$states = [];
 		foreach ( range( 1, 14 ) as $id ) {
-			$states[ $id ] = array_values( $this->ok( self::dispatch( "/batches/$id" ) )['reversibility'] );
+			$states[ $id ] = array_values( $this->ok( self::dispatch( "/batches/$id", [ 'reversibility' => 'count' ] ) )['reversibility'] );
 		}
 		$this->assertSame( [ 'partially_reversible', 3, null ], $states[2], 'Three objects changed again since.' );
 		$this->assertSame( [ 'in_progress', 0, null ], $states[3] );
@@ -391,7 +391,7 @@ final class HistoryAuditRouteTest extends TestCase {
 			2 => 3,
 			5 => 1,
 		];
-		$read            = fn( int $id ): array => $this->ok( self::dispatch( "/batches/$id" ) )['reversibility'];
+		$read            = fn( int $id ): array => $this->ok( self::dispatch( "/batches/$id", [ 'reversibility' => 'count' ] ) )['reversibility'];
 		$this->assertSame(
 			[
 				'state'     => 'partially_reversible',

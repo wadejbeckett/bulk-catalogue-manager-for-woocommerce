@@ -60,8 +60,9 @@ defined( 'ABSPATH' ) || exit;
  * `reversibility` — `{ state, conflicts, reason }` from
  * Engine\Reversibility (§4.6) — the list reading every row's state with one
  * grouped pair of reads and no undo plan, so its rows carry `conflicts:
- * null` and no product is read; only the single read counts conflicts
- * (T56). An undo batch's row carries `undo` ("Undo of #418"). List rows
+ * null` and no product is read; the single read does the same unless asked
+ * with `reversibility=count`, which builds the undo plan to count them (T56;
+ * T85: every open screen polls the single read, so it stays light). An undo batch's row carries `undo` ("Undo of #418"). List rows
  * also carry `user_name` (the batch user's display name, every name on a
  * page from one get_users() call), `variations_included` (whether "Also
  * apply to variations" reached variations the selection did not name, from
@@ -245,7 +246,16 @@ final class BatchesController implements ReadController {
 					'methods'             => 'GET',
 					'callback'            => [ $this, 'get_item' ],
 					'permission_callback' => [ Access::class, 'can_read' ],
-					'args'                => self::id_arg(),
+					'args'                => self::id_arg() + [
+						'reversibility' => self::arg(
+							[
+								'description' => __( 'Pass "count" to count the products changed again since, which works out the whole undo; without it the count is not given.', 'bulk-catalogue-manager-for-woocommerce' ),
+								'type'        => 'string',
+								'enum'        => [ 'count' ],
+							],
+							'sanitize_key'
+						),
+					],
 				],
 				'schema' => [ $this, 'get_item_schema' ],
 			]
@@ -584,7 +594,7 @@ final class BatchesController implements ReadController {
 	 * @param \WP_REST_Request $request The validated, sanitised request.
 	 */
 	public function get_item( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
-		$report = $this->progress->report( (int) $request->get_param( 'id' ) );
+		$report = $this->progress->report( (int) $request->get_param( 'id' ), 'count' === $request->get_param( 'reversibility' ) );
 		return null === $report ? self::not_found() : new \WP_REST_Response( $report, 200 );
 	}
 

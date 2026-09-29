@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The search chip's clear button says what it clears ("Clear search and selection (N)"), and its notice offers **Restore selection** while the selection is still kept.
 - Previewing, applying and undoing a whole-catalogue change fit a normal web request's memory: a preview or Apply of 90,000 products and variations needed over 200 MB before, and an undo of 20,000 products about 100 MB (the scope and plan hashes are now worked out a part at a time, unchanged in value).
 - A preview or change that fails on the server says so in plain words; the server's own error page is no longer shown as text.
+- `GET /batches/{id}` no longer counts conflicts by default (`reversibility.conflicts` is `null`): counting builds the whole undo plan, and the screen polls this read until a change finishes. Pass `reversibility=count` to count them. The screen follows a change with bounded retries (10 s doubling to five minutes, six failed reads) and then says it could not check, with **Check again**.
+- The screen no longer promises undo for a change larger than the host can undo from the screen (`Undo\Capacity`, from the web request's memory limit); it says plainly that undoing a change of that size is not yet supported there.
 
 - `bulkcat_batch_created` now fires after the first chunk is scheduled, at most once per accepted batch, and not on a retry after `BatchRecovery::finish()` throws (`src/Requests/RequestService.php`, the post-acceptance guard). 1.0 listeners that assumed one call per `POST /batches` must check the batch id.
 

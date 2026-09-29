@@ -648,7 +648,7 @@ final class UndoRouteTest extends TestCase {
 		);
 		$this->assertSame( [], $GLOBALS['bulkcat_test']['products_loaded'], 'The list builds no plan, so it reads no product.' );
 
-		$read = $this->ok( self::dispatch( 'GET', '/batches/12' ) );
+		$read = $this->ok( self::dispatch( 'GET', '/batches/12', [ 'reversibility' => 'count' ] ) );
 		$this->assertSame(
 			[
 				'state'     => 'partially_reversible',
@@ -656,7 +656,7 @@ final class UndoRouteTest extends TestCase {
 				'reason'    => null,
 			],
 			$read['reversibility'],
-			'The single read counts conflicts.'
+			'The single read counts conflicts when asked.'
 		);
 		$this->assertNotSame( [], $GLOBALS['bulkcat_test']['products_loaded'] );
 
@@ -665,5 +665,45 @@ final class UndoRouteTest extends TestCase {
 		$rows = $this->ok( self::dispatch( 'GET', '/batches' ) )['items'];
 		$this->assertSame( 'Undo of #12', $rows[0]['undo']['label'] );
 		$this->assertNull( $rows[0]['undo']['left_alone'], 'The list reads no selection snapshot.' );
+	}
+
+	/**
+	 * T85 (Main Build's blocker): a batch's progress read is what every open
+	 * screen polls until the change finishes, so by default it plans
+	 * nothing — no journal page, no product — and reports conflicts as not
+	 * counted; `reversibility=count` asks for the count, which builds the
+	 * undo plan, as before.
+	 */
+	public function test_the_default_single_read_plans_nothing_and_counts_conflicts_only_when_asked(): void {
+		$GLOBALS['bulkcat_test']['products'][1002]->props['regular_price'] = '21.00';
+		$GLOBALS['bulkcat_test']['products_loaded']                        = [];
+		$GLOBALS['wpdb']->queries = [];
+		$journal                  = static fn(): array => preg_grep( '/ORDER BY change_id DESC/', $GLOBALS['wpdb']->queries );
+
+		$read = $this->ok( self::dispatch( 'GET', '/batches/12' ) );
+		$this->assertSame(
+			[
+				'state'     => 'reversible',
+				'conflicts' => null,
+				'reason'    => null,
+			],
+			$read['reversibility'],
+			'The default read does not count conflicts.'
+		);
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['products_loaded'], 'The default read loads no product.' );
+		$this->assertSame( [], $journal(), 'The default read reads no journal page for a plan.' );
+
+		$counted = $this->ok( self::dispatch( 'GET', '/batches/12', [ 'reversibility' => 'count' ] ) );
+		$this->assertSame(
+			[
+				'state'     => 'partially_reversible',
+				'conflicts' => 1,
+				'reason'    => null,
+			],
+			$counted['reversibility'],
+			'Asked for, the count plans the undo.'
+		);
+		$this->assertNotSame( [], $GLOBALS['bulkcat_test']['products_loaded'] );
+		$this->assertNotSame( [], $journal() );
 	}
 }

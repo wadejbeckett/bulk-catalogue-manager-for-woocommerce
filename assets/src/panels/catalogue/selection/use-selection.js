@@ -117,6 +117,7 @@ export default function useSelection( {
 			[ session ]
 		),
 		restore: useCallback( () => session.restore(), [ session ] ),
+		checkAgain: useCallback( () => session.checkAgain(), [ session ] ),
 		retry: useCallback( () => session.retry(), [ session ] ),
 		dismiss: useCallback(
 			( what ) => session.dismiss( what ),

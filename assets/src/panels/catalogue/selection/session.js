@@ -52,6 +52,15 @@ export const MIN_RENEW_MS = 15000;
 /** How often the session reads a running change it applied (T85). */
 export const WATCH_MS = 5000;
 
+/** The first wait after a failed read; each failure doubles it, to WATCH_MAX_MS. */
+export const WATCH_BACKOFF_MS = 10000;
+
+/** The longest wait between two reads after failures. */
+export const WATCH_MAX_MS = 5 * 60 * 1000;
+
+/** Failed reads in a row after which the session stops and says so. */
+export const WATCH_TRIES = 6;
+
 /** How long a snapshot released by Clear search can still be restored. */
 export const RESTORE_MS = 3600 * 1000;
 
@@ -227,6 +236,7 @@ class SelectionSession {
 		this.cancelRenew = null;
 		this.watching = 0;
 		this.cancelWatch = null;
+		this.unwatched = null;
 		this.finished = new Set();
 		this.restorable = null;
 		this.revision = 0;
@@ -389,7 +399,12 @@ class SelectionSession {
 			reason === 'search'
 				? { kind: 'searchCleared', restorable: !! this.restorable }
 				: null;
-		this.release( released );
+		const releasing = this.release( released );
+		if ( this.restorable ) {
+			// Restore keeps the snapshot again only after this release has
+			// answered, so a late release cannot undo the restore (T85).
+			this.restorable.releasing = releasing;
+		}
 		this.changed();
 	}
 
@@ -466,6 +481,10 @@ class SelectionSession {
 	 * progress is on screen (T85): after a reload or a visit to History the
 	 * catalogue's banner is gone, and without this a change that finished in
 	 * full would leave its products selected. finish() acts once per change.
+	 * Reads that fail are tried again after 10, 20, 40 … seconds (at most
+	 * five minutes apart); after WATCH_TRIES in a row the session stops and
+	 * says so (`unwatched`), until checkAgain() (T85: never an endless poll,
+	 * and never re-armed without that bound after a reload).
 	 */
 	watch() {
 		const id = this.submitted?.batchId || 0;
@@ -477,6 +496,8 @@ class SelectionSession {
 			this.cancelWatch = null;
 		}
 		this.watching = id;
+		this.unwatched = null;
+		let failures = 0;
 		const following = () =>
 			! this.disposed &&
 			this.watching === id &&
@@ -500,12 +521,38 @@ class SelectionSession {
 				this.finish( id, answer );
 				return;
 			}
+			if ( answer ) {
+				failures = 0;
+				this.cancelWatch = this.schedule( poll, WATCH_MS );
+				return;
+			}
+			failures += 1;
+			if ( failures >= WATCH_TRIES ) {
+				// Stop, and say so; the selection is kept as it was.
+				this.watching = 0;
+				this.unwatched = { batchId: id };
+				this.changed();
+				return;
+			}
 			this.cancelWatch = this.schedule(
 				poll,
-				answer ? WATCH_MS : WATCH_MS * 2
+				Math.min(
+					WATCH_MAX_MS,
+					WATCH_BACKOFF_MS * 2 ** ( failures - 1 )
+				)
 			);
 		};
 		poll();
+	}
+
+	/**
+	 * Read the change the session stopped following again, and follow it.
+	 */
+	checkAgain() {
+		this.unwatched = null;
+		this.watching = 0;
+		this.changed();
+		this.watch();
 	}
 
 	/**
@@ -1045,6 +1092,7 @@ class SelectionSession {
 	 * their handles and tell the server, best effort.
 	 *
 	 * @param {Array<string|null>} keys Candidate handles.
+	 * @return {Promise} Settles when every release has answered, or failed.
 	 */
 	release( keys ) {
 		const held = new Set( this.heldKeys() );
@@ -1055,8 +1103,10 @@ class SelectionSession {
 				this.handles.delete( key );
 			}
 		} );
-		chunk( tokens.filter( Boolean ), 4 ).forEach( ( part ) =>
-			this.api.release( part ).catch( () => {} )
+		return Promise.all(
+			chunk( tokens.filter( Boolean ), 4 ).map( ( part ) =>
+				this.api.release( part ).catch( () => {} )
+			)
 		);
 	}
 
@@ -1289,6 +1339,8 @@ class SelectionSession {
 			this.lost = { count: was.count, byType: was.byType, message: '' };
 			return;
 		}
+		await was.releasing;
+		this.check( job );
 		let envelope;
 		try {
 			envelope = await this.api.renew( was.token );
@@ -1571,6 +1623,7 @@ class SelectionSession {
 			submitted: this.submitted
 				? { batchId: this.submitted.batchId }
 				: null,
+			unwatched: this.unwatched,
 			lastMatching: this.lastMatching,
 			revision: this.revision,
 		};

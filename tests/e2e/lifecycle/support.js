@@ -14,8 +14,33 @@
 const { execSync } = require( 'child_process' );
 const { expect } = require( '@playwright/test' );
 const { SCREEN, runQueue } = require( '../helpers' );
+const { fixtureRefusal } = require( './guard' );
 
 const WP = process.env.WP_CMD || '';
+
+let refusal = null;
+
+/**
+ * Why these specs may not touch the site, or '' (guard.js): asked once.
+ *
+ * @return {string} The refusal, or ''.
+ */
+function fixtureCheck() {
+	if ( null === refusal ) {
+		refusal = fixtureRefusal( {
+			optIn: process.env.BULKCAT_E2E_FIXTURE || '',
+			wpCmd: WP,
+			baseUrl:
+				process.env.BULKCAT_E2E_BASE_URL || 'http://localhost:8888',
+			siteUrl: () =>
+				execSync( `${ WP } option get siteurl`, {
+					encoding: 'utf8',
+					timeout: 120_000,
+				} ),
+		} );
+	}
+	return refusal;
+}
 
 /** The must-use plugin's file name on the test site. */
 const LEASE_PROBE = 'bulkcat-e2e-lease.php';
@@ -29,6 +54,9 @@ const LEASE_PROBE = 'bulkcat-e2e-lease.php';
  * @return {*} The decoded answer.
  */
 function php( code, input = null ) {
+	if ( fixtureCheck() ) {
+		throw new Error( `Refused: ${ fixtureCheck() }` );
+	}
 	const payload = Buffer.from( JSON.stringify( input ) ).toString( 'base64' );
 	const out = execSync( `${ WP } eval-file -`, {
 		input: `<?php $in = json_decode( base64_decode( '${ payload }' ), true );\n${ code }`,
@@ -617,6 +645,7 @@ function undoLeftovers( from ) {
 }
 
 module.exports = {
+	fixtureCheck,
 	undoLeftovers,
 	SCREEN,
 	WP,

@@ -77,6 +77,18 @@ export function selectAllWords( total, filtered ) {
 }
 
 /**
+ * The line when the session stopped following the change it applied.
+ *
+ * @return {string} Sentence.
+ */
+function unwatchedText() {
+	return __(
+		'We could not check whether your last change has finished, so your selection is kept as it was. Check again, or see the change in History.',
+		'bulk-catalogue-manager-for-woocommerce'
+	);
+}
+
+/**
  * The bar.
  *
  * @param {Object}        props               Props.
@@ -118,10 +130,19 @@ export default function SelectionBar( {
 		error,
 		blocked,
 		hasSelection,
+		unwatched = null,
 	} = selection;
 	const showBar =
 		hasSelection || status === 'saving' || status === 'uncertain';
-	if ( ! showBar && ! notice && ! drift && ! lost && ! error && ! blocked ) {
+	if (
+		! showBar &&
+		! notice &&
+		! drift &&
+		! lost &&
+		! error &&
+		! blocked &&
+		! unwatched
+	) {
 		return null;
 	}
 	const waiting = waitingReason( selection );
@@ -202,6 +223,41 @@ export default function SelectionBar( {
 					onRemove={ () => selection.dismiss( 'lost' ) }
 				>
 					{ lostText( lost ) }
+				</Notice>
+			) }
+			{ unwatched && (
+				// T85: the session stopped reading the change it applied after
+				// repeated failed reads; it says so and waits to be asked.
+				<Notice
+					status="warning"
+					className="bulkcat-selection__notice"
+					isDismissible={ false }
+					spokenMessage={ unwatchedText() }
+					actions={ [
+						{
+							label: __(
+								'Check again',
+								'bulk-catalogue-manager-for-woocommerce'
+							),
+							onClick: () => selection.checkAgain(),
+							variant: 'link',
+						},
+						...( onViewHistory
+							? [
+									{
+										label: __(
+											'View in History',
+											'bulk-catalogue-manager-for-woocommerce'
+										),
+										onClick: () =>
+											onViewHistory( unwatched.batchId ),
+										variant: 'link',
+									},
+								]
+							: [] ),
+					] }
+				>
+					{ unwatchedText() }
 				</Notice>
 			) }
 			{ error && (

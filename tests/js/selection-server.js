@@ -411,6 +411,13 @@ function createSelectionServer( { objects = OBJECTS } = {} ) {
 		const data = options.data || {};
 		log.push( { key, data, query: getQueryArgs( options.url ) } );
 		const read = /^GET batches\/(\d+)$/.exec( key );
+		const failing = failures.find(
+			( each ) => each.key === key && each.times > 0
+		);
+		if ( read && ! acts[ key ] && failing ) {
+			failing.times -= 1;
+			return Promise.reject( failing.error );
+		}
 		if ( read && ! acts[ key ] ) {
 			// A change's progress report (GET /batches/{id}).
 			const batch = batches.get( Number( read[ 1 ] ) );
@@ -503,6 +510,18 @@ function createSelectionServer( { objects = OBJECTS } = {} ) {
 		 */
 		fail( key, error, { times = 1, after = false } = {} ) {
 			failures.push( { key, error, times, after } );
+		},
+		/**
+		 * Stop refusing a route.
+		 *
+		 * @param {string} key "METHOD path".
+		 */
+		clearFailures( key ) {
+			failures
+				.filter( ( each ) => each.key === key )
+				.forEach( ( each ) => {
+					each.times = 0;
+				} );
 		},
 		/**
 		 * Hold every answer of a route until release().

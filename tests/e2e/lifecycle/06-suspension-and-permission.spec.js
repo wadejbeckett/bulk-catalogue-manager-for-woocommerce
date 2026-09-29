@@ -45,9 +45,10 @@ const {
 	removeLeaseProbe,
 	lastBatchId,
 	undoLeftovers,
+	fixtureCheck,
 } = require( './support' );
 
-test.skip( ! WP, 'Needs WP_CMD to run the queue and read the site.' );
+test.skip( !! fixtureCheck(), fixtureCheck() );
 
 const DRIFT =
 	'This page was idle for a while, so your selection was checked again.';

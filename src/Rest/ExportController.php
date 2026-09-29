@@ -1,11 +1,9 @@
 <?php
 /**
- * `GET /bulkcat/v1/export` (SPEC §10, §12.1, §13): a CSV of the current view.
- * It takes the `GET /products` arguments plus `columns[]`, the visible
- * columns in order, and streams every row matching the filter, not only
- * the current page, reading 100 rows at a time so memory stays flat. It is
- * a read behind the read routes' capability, cookie and nonce, generated on
- * request and stored nowhere.
+ * `/bulkcat/v1/export` (SPEC §10, §12.1, §13): CSV exports, streamed 100
+ * rows at a time so memory stays flat, behind the read routes' capability,
+ * cookie and nonce, generated on request and stored nowhere. The catalogue
+ * is exported by `POST` (the export dialog); `GET` exports History's rows.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -28,7 +26,6 @@ use BulkCatalogueManager\Export\ReimportIdentifiers;
 use BulkCatalogueManager\Export\RowSource;
 use BulkCatalogueManager\Fields\Registry;
 use BulkCatalogueManager\Query\CountCache;
-use BulkCatalogueManager\Query\Criteria;
 use BulkCatalogueManager\Query\ProductQuery;
 use BulkCatalogueManager\Settings\Settings;
 
@@ -43,8 +40,8 @@ defined( 'ABSPATH' ) || exit;
  * ordinary JSON error.
  *
  * Rows come from a RowSource. The default one reads pages of `GET /products`
- * through ProductsController, so the export carries exactly the rows and
- * values the grid shows for the same filter.
+ * through ProductsController, so a filter export carries exactly the rows
+ * and values the grid shows for the same filter.
  *
  * History exports (T58, SPEC §4.6, §10) take `source`: `changes` with
  * `batch` (a batch's changes, optionally narrowed by `result`), `audit`
@@ -58,7 +55,10 @@ defined( 'ABSPATH' ) || exit;
  * (HistoryColumns::KEYS), each written as its label. The `status` argument
  * is the catalogue's status filter for products and the batch outcome for
  * the history list; it is validated as whichever the `source` asks for.
- * `source` defaults to `products`, so a catalogue export is unchanged.
+ * `source` defaults to `products`: since the export dialog (ticket 10,
+ * ruling R9) a catalogue `GET` is refused 400 `bulkcat_invalid_value` with
+ * a sentence asking for a reload, which is what a screen from before the
+ * dialog sees.
  *
  * `POST /export` (ticket 10, SPEC §10) is the catalogue export the export
  * dialog uses: the same route, behind the same read permission, with
@@ -107,13 +107,6 @@ final class ExportController implements ReadController {
 	 * History filter arguments that are not `/products` arguments.
 	 */
 	public const HISTORY_ARGS = [ 'batch', 'result', 'product', 'field', 'user', 'after', 'before', 'action' ];
-
-	/**
-	 * Request parameters a catalogue export does not pass to its row
-	 * source: its own columns and source, the paging it does itself and the
-	 * history filters.
-	 */
-	private const OWN_PARAMS = [ self::COLUMNS, self::SOURCE, 'page', 'per_page', ...self::HISTORY_ARGS ];
 
 	/**
 	 * The history list, built on first use.
@@ -285,7 +278,10 @@ final class ExportController implements ReadController {
 	}
 
 	/**
-	 * Validate the export and answer with it; serve() streams it.
+	 * `GET /export`: a History export (a change's rows, the audit log or the
+	 * change history), which serve() streams. The catalogue is exported by
+	 * `POST` from the export dialog; a catalogue `GET` is refused with a
+	 * sentence asking for a reload (ruling R9).
 	 *
 	 * @param \WP_REST_Request $request The validated, sanitised request.
 	 */
@@ -295,47 +291,10 @@ final class ExportController implements ReadController {
 		if ( in_array( $source, HistoryColumns::SOURCES, true ) ) {
 			return $this->history_export( $source, $params );
 		}
-		$columns = RouteSchema::as_list( $params[ self::COLUMNS ] ?? [] );
-		$refusal = Refusal::invalid(
+		return Refusal::invalid(
 			'bulkcat_invalid_value',
-			__( 'These columns could not be exported. Choose the columns again and try again.', 'bulk-catalogue-manager-for-woocommerce' ),
-			[ 'param' => self::COLUMNS ]
-		);
-		if ( [] === $columns ) {
-			return $refusal;
-		}
-		foreach ( $columns as $column ) {
-			if ( ! is_string( $column ) || ! $this->registry->has( $column ) ) {
-				return $refusal;
-			}
-		}
-		if ( count( array_unique( $columns ) ) !== count( $columns ) ) {
-			return $refusal;
-		}
-
-		try {
-			Criteria::from_array( $this->schema->criteria_input( $params ) );
-		} catch ( \InvalidArgumentException $e ) {
-			return Refusal::invalid(
-				'bulkcat_invalid_value',
-				__( 'These filters or this sort could not be used. Clear them and try again.', 'bulk-catalogue-manager-for-woocommerce' )
-			);
-		}
-
-		$read = array_diff_key( $params, array_flip( self::OWN_PARAMS ) );
-		// Each row carries just the exported columns.
-		$read['fields'] = $columns;
-
-		return new \WP_REST_Response(
-			new CsvExport(
-				$this->source,
-				$this->registry,
-				$columns,
-				$read,
-				Settings::load()->csv_separator(),
-				CsvExport::filename( current_datetime() )
-			),
-			200
+			__( 'The catalogue is now exported from the Export dialog. Reload the page and export again.', 'bulk-catalogue-manager-for-woocommerce' ),
+			[ 'param' => self::SOURCE ]
 		);
 	}
 

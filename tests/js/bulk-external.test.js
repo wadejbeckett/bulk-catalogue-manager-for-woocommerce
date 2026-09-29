@@ -54,6 +54,25 @@ function withActions( change ) {
 }
 
 /**
+ * An action as `/fields` sends it when this user cannot use it now: its
+ * label and the reason only (no description, arguments or confirmation).
+ *
+ * @param {Object} action The usable entry.
+ * @param {string} reason Why it is disabled.
+ * @return {Object} The disabled entry.
+ */
+function disabled( action, reason ) {
+	return {
+		...action,
+		description: '',
+		args: { type: 'object', properties: {}, additionalProperties: false },
+		confirmReason: '',
+		available: false,
+		unavailableReason: reason,
+	};
+}
+
+/**
  * Render the panel over a registry.
  *
  * @param {Object} registry The `/fields` payload.
@@ -188,14 +207,14 @@ describe( 'external actions in the bulk panel', () => {
 	it( 'disables an unavailable action with its reason', () => {
 		const reason =
 			'Sample labels needs its settings saved before it can be used.';
-		const registry = withActions( ( action ) => ( {
-			...action,
-			available: false,
-			unavailableReason: reason,
-		} ) );
+		const registry = withActions( ( action ) =>
+			disabled( action, reason )
+		);
 		renderPanel( registry );
 		const add = radio( 'Sample labels', 'Add labels' );
 		expect( add ).toBeDisabled();
+		// The server sends nothing of the provider's but the label and reason.
+		expect( screen.queryByText( 'Adds the chosen labels.' ) ).toBeNull();
 		expect(
 			document.getElementById( add.getAttribute( 'aria-describedby' ) )
 		).toHaveTextContent( reason );
@@ -205,12 +224,12 @@ describe( 'external actions in the bulk panel', () => {
 
 	it( 'disables an action the user may not use, saying so', () => {
 		renderPanel(
-			withActions( ( action ) => ( {
-				...action,
-				available: false,
-				unavailableReason:
-					'You do not have permission to use this action.',
-			} ) )
+			withActions( ( action ) =>
+				disabled(
+					action,
+					'You do not have permission to use this action.'
+				)
+			)
 		);
 		expect( radio( 'Organisation', 'Set sample note' ) ).toBeDisabled();
 		expect(

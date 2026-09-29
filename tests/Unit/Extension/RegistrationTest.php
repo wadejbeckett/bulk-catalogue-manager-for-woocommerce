@@ -358,6 +358,43 @@ final class RegistrationTest extends TestCase {
 		$this->assertFalse( $providers->any(), 'A late provider never appears half-way through a request.' );
 	}
 
+	public function test_too_many_choices_refuse_the_whole_provider_with_one_plain_notice(): void {
+		// §3.2, §18.18: not only the offending action; the other actions go too.
+		$many = [];
+		foreach ( range( 1, 501 ) as $n ) {
+			$many[ "c$n" ] = "Choice $n";
+		}
+		$registered = Providers::of(
+			[
+				self::provider(
+					[
+						'actions' => [
+							self::add_action_with( [ 'id' => 'x_sample_fine' ] ),
+							self::add_action_with(
+								[
+									'arguments' => [
+										'labels' => [
+											'type'    => 'multichoice',
+											'label'   => 'Labels',
+											'rule'    => 'Choose labels.',
+											'choices' => $many,
+										],
+									],
+								]
+							),
+						],
+					]
+				),
+			]
+		);
+		$this->assertFalse( $registered->any(), 'None of its actions is registered.' );
+		$this->assertCount( 1, $registered->refusals() );
+		$this->assertSame(
+			'Sample labels could not be added to Bulk Catalogue Manager: its action "x_sample_add" has an argument "labels" that offers more than 500 choices. Update the add-on, or ask its author. Everything else works as usual.',
+			$registered->refusals()[0]['reason']
+		);
+	}
+
 	public function test_each_limit_refuses_and_long_text_is_trimmed(): void {
 		$sample = new SampleProvider( new MemoryStore() );
 		$fields = [];

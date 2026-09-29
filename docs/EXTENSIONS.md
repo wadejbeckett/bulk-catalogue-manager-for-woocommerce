@@ -62,7 +62,7 @@ The registrar refuses the whole provider, with a `bulkcat_provider_incompatible`
 - a field key does not start with `x_<id>_`, is malformed, repeats, or declares a variation rule other than `parent_only` or `per_variation`;
 - an action id does not start with `x_<id>_`, repeats, names a field of another provider, names an unknown group, uses an unknown edit kind, declares an unsupported argument kind or a reserved argument name (`field`, `apply_to_variations`, `skip_already`), or has an empty capability;
 - a chooser group id does not start with `x_<id>_`;
-- a limit in §3.4 is exceeded;
+- a limit in §3.4 is exceeded (for example one argument offering more than 500 choices: the whole provider is refused, not only that action);
 - any provider method throws while being described.
 
 A refused provider contributes nothing. The core writes the reason to the WooCommerce log. The manager screen shows one plain notice naming the provider's label, or "An add-on" when no label could be read, with the reason. Native actions are unaffected.
@@ -259,7 +259,7 @@ Choices are built when descriptors are built: once per request, when `/fields` i
 
 - Native groups stay first, in their order. Provider chooser groups follow, in registration order. An external action may also sit in a native group.
 - The chooser lists a provider's actions in the provider's order, with the same label and one-line description behaviour as native actions (SPEC §4.3).
-- An unavailable provider's actions are listed disabled, carrying the provider's reason. An action whose capability the user lacks is listed disabled with "You do not have permission to use this action."
+- An unavailable provider's actions are listed disabled, carrying the provider's reason. An action whose capability the user lacks is listed disabled with "You do not have permission to use this action." A disabled action carries only its label and that reason from the provider: its description, argument schema (choices, defaults, argument labels and rules) and confirmation text are withheld (§18.17).
 - Choosing an external action while another step in the change is native or from another provider shows the reason in place: "This action can't be combined with other kinds of change. Make it a separate change." Apply stays disabled, and the server refuses the mix too (§6).
 - The Scope step, preview step, confirmation policy and Done step are unchanged.
 
@@ -582,4 +582,6 @@ Where this contract left a choice open, the implementation took the conservative
 14. **Format checks at undo.** A batch-level undo refusal is for a provider not registered, not available or of an unsupported contract; a format the provider cannot read skips that object (`cannot_restore`) instead, so the rest of the batch can still be undone.
 15. **Plural labels.** The core's sentence for an add-on's parent-only field quotes the label ("“Labels” is kept on the product, not on each variation."), so it reads right whatever the label's number.
 16. **History labels.** A batch report of an external change carries `external` (the add-on, and the labels of the actions and fields its steps used) from the manifest; History prefers the registry's labels while the add-on is active.
+17. **Disabled actions withhold provider detail.** From the independent review after T108: when the provider is unavailable or the user lacks the action's capability, a `/fields` action entry keeps its id, label, group, edit kind, field, variation rule, `alwaysConfirm` and the reason, and sends an empty `description`, an argument schema with no properties and an empty `confirmReason`, so no choice (which may name the site's own data), default, argument label or rule reaches a browser that may not act on them. Field labels, chooser group labels and the provider row are kept: they name the kind of value, History and the notice need them, and a batch's manifest already carries them. `authorise()` is per object and plays no part in `/fields`.
+18. **Limits refuse the provider.** A §3.4 limit exceeded at registration (such as more than 500 choices in one argument) refuses the whole provider with the §3.2 notice naming the first problem, as §3.2 states; the implementation does not drop only the offending action, because a partly registered provider would offer an incomplete set of actions over its field without saying so. Providers cap their own lists below the limits.
 

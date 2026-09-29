@@ -207,6 +207,38 @@ final class AdvertisingTest extends TestCase {
 		$this->assertTrue( self::payload()['providers'][0]['available'], 'The provider itself is available.' );
 	}
 
+	public function test_a_disabled_action_carries_only_its_label_and_reason(): void {
+		// Review of T108: an action the user may not use, or whose provider is
+		// unavailable, sends no choices, defaults, argument labels, rules,
+		// description or confirmation text: nothing the provider supplied but
+		// its label and the reason it is disabled.
+		$withheld = static function ( array $action ): void {
+			self::assertFalse( $action['available'] );
+			self::assertSame( '', $action['description'] );
+			self::assertSame( [], (array) $action['args']['properties'] );
+			self::assertSame( '', $action['confirmReason'] );
+			self::assertStringNotContainsString( 'Blue', (string) wp_json_encode( $action ) );
+		};
+		$GLOBALS['bulkcat_test']['user_caps'][ self::USER ] = [];
+		$actions = array_values( array_filter( self::payload()['actions'], static fn( array $action ): bool => isset( $action['provider'] ) ) );
+		$this->assertCount( 5, $actions );
+		foreach ( $actions as $action ) {
+			$withheld( $action );
+			$this->assertSame( 'You do not have permission to use this action.', $action['unavailableReason'] );
+		}
+		$this->assertSame( 'Add labels', $this->entry( $actions, 'id', 'x_sample_add' )['label'] );
+
+		$GLOBALS['bulkcat_test']['user_caps'][ self::USER ] = [ 'edit_products' => true ];
+		update_option( 'sample_provider_faults', [ 'unavailable' => true ] );
+		$actions = array_values( array_filter( self::payload()['actions'], static fn( array $action ): bool => isset( $action['provider'] ) ) );
+		$this->assertCount( 5, $actions );
+		foreach ( $actions as $action ) {
+			$withheld( $action );
+			$this->assertSame( 'Sample labels needs its settings saved before it can be used.', $action['unavailableReason'] );
+		}
+		$this->assertStringNotContainsString( '"Blue"', (string) wp_json_encode( self::payload() ), 'No choice label anywhere in the payload.' );
+	}
+
 	public function test_a_missing_or_refused_provider_adds_nothing(): void {
 		update_option( 'sample_provider_faults', [ 'malformed' => true ] );
 		$this->assertSame( ( new FieldsController( new Fields() ) )->payload(), self::payload(), 'Refused: absent, and the payload is the native one.' );
@@ -221,10 +253,12 @@ final class AdvertisingTest extends TestCase {
 				'long' => str_repeat( 'Long ', 40 ),
 			]
 		);
-		update_option( 'sample_provider_faults', [ 'unavailable' => true ] );
 		$json = (string) wp_json_encode( self::payload() );
+		update_option( 'sample_provider_faults', [ 'unavailable' => true ] );
+		$json .= (string) wp_json_encode( self::payload() );
 		$this->assertStringNotContainsString( '<script>', $json );
 		$this->assertStringNotContainsString( '<b>', $json );
+		update_option( 'sample_provider_faults', [] );
 		$add    = $this->entry( self::payload()['actions'], 'id', 'x_sample_add' );
 		$labels = array_column( $add['args']['properties']['labels']['choices'], 'label', 'value' );
 		$this->assertSame( 'Boldalert(1)', $labels['bold'] );

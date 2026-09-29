@@ -397,7 +397,10 @@ $bulkcat-bad-line: #f3c3c4;
 		border: 1px solid $bulkcat-rule;
 		border-radius: 3px;
 
+		// WCAG 2.2 target size (2.5.8): neighbouring checkboxes sit at least
+		// 24px apart, centre to centre.
 		li {
+			min-height: 24px;
 			margin: 0 0 4px;
 		}
 	}

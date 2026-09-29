@@ -9,7 +9,10 @@
  * An action is available when its provider is and the current user holds
  * its capability (checked with user_can()); otherwise it is listed disabled
  * with the provider's reason, or "You do not have permission to use this
- * action." Browser code treats an entry without `provider` as native.
+ * action.", and then carries nothing else the provider supplied but its
+ * label: no description, argument schema (choices, defaults, labels, rules)
+ * or confirmation text. Browser code treats an entry without `provider` as
+ * native.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -91,25 +94,41 @@ final class Advertiser {
 					$reason = Refusals::no_permission();
 				}
 				$meta      = $provider->field_meta( $described['field'] );
+				$usable    = '' === $reason;
 				$entries[] = [
 					'id'                => $described['id'],
 					'label'             => $described['label'],
-					'description'       => $described['description'],
+					'description'       => $usable ? $described['description'] : '',
 					'group'             => $described['group'],
 					'groups'            => [ $described['group'] ],
 					'editKinds'         => [ $described['edit_kind'] ],
 					'fields'            => [ $described['field'] ],
-					'args'              => Arguments::schema( $described, $meta ?? [] ),
+					'args'              => $usable ? Arguments::schema( $described, $meta ?? [] ) : self::withheld(),
 					'provider'          => $provider->id,
 					'variations'        => $described['rule'],
-					'available'         => '' === $reason,
+					'available'         => $usable,
 					'unavailableReason' => $reason,
 					'alwaysConfirm'     => $described['always_confirm'],
-					'confirmReason'     => $described['confirm_reason'],
+					'confirmReason'     => $usable ? $described['confirm_reason'] : '',
 				];
 			}
 		}
 		return $entries;
+	}
+
+	/**
+	 * The argument schema of an action this user cannot use now: no
+	 * arguments, so none of the provider's choices, defaults, argument labels
+	 * or rules reach a browser that may not act on them.
+	 *
+	 * @return array{type: string, properties: \stdClass, additionalProperties: false}
+	 */
+	private static function withheld(): array {
+		return [
+			'type'                 => 'object',
+			'properties'           => new \stdClass(),
+			'additionalProperties' => false,
+		];
 	}
 
 	/**

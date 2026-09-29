@@ -386,6 +386,24 @@ final class ExportPostRouteTest extends TestCase {
 		$this->assertSame( [], $this->calls );
 	}
 
+	public function test_a_catalogue_read_failure_before_streaming_is_503_export_unavailable(): void {
+		// Main Build L2: a presence failure after the selection resolved is the export's, not selection storage's.
+		global $wpdb;
+		$page                          = $wpdb->responses['/^SELECT /'];
+		$wpdb->responses['/^SELECT /'] = static function ( string $sql ) use ( $page ): mixed {
+			if ( str_contains( $sql, 'p.post_parent AS parent_id' ) && str_contains( $sql, 'p.ID IN (' ) ) {
+				$GLOBALS['wpdb']->last_error = 'Lost connection to the catalogue.';
+				return [];
+			}
+			return $page( $sql );
+		};
+		foreach ( [ [ 'selection' => 'v2.ok' ], [ 'ids' => '101,202' ] ] as $rows ) {
+			$GLOBALS['wpdb']->last_error = '';
+			$this->refused( self::send( 'POST', [ 'columns' => 'name' ] + $rows ), 'bulkcat_export_unavailable', 503 );
+		}
+		$this->assertCount( 2, $GLOBALS['bulkcat_test']['logged'] ?? [], 'Each logged once, by the controller.' );
+	}
+
 	public function test_more_than_1000_ids_or_ids_with_a_selection_are_refused(): void {
 		$this->refused(
 			self::send(

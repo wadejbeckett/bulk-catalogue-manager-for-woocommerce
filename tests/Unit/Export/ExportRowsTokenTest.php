@@ -271,6 +271,33 @@ final class ExportRowsTokenTest extends TestCase {
 		$this->assertSame( 4, $rows->left_out(), 'Binned 108, gone 99999, binned variation 203 and 204, whose product is binned.' );
 	}
 
+	public function test_a_presence_failure_is_not_a_selection_storage_refusal(): void {
+		// Main Build L2: only the selection's own read is storage (503 bulkcat_request_storage, as preview answers);
+		// a failure reading the catalogue afterwards is the export's own, answered by the controller.
+		global $wpdb;
+		$token                         = $this->snapshot(
+			[
+				'products'   => [ 101 ],
+				'variations' => [],
+			]
+		);
+		$page                          = $wpdb->responses['/^SELECT /'];
+		$wpdb->responses['/^SELECT /'] = static function ( string $sql ) use ( $page ): mixed {
+			if ( str_contains( $sql, 'p.post_parent AS parent_id' ) ) {
+				$GLOBALS['wpdb']->last_error = 'Lost connection to the catalogue.';
+				return [];
+			}
+			return $page( $sql );
+		};
+		try {
+			$result = ExportRows::token( $token, self::OWNER, new Registry() );
+			$this->fail( 'Answered ' . ( $result instanceof \WP_Error ? $result->get_error_code() : get_class( $result ) ) . ' for a presence failure.' );
+		} catch ( \RuntimeException $error ) {
+			$this->assertSame( 'The selected products could not be read.', $error->getMessage() );
+		}
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['logged'] ?? [], 'Nothing logged as a storage failure.' );
+	}
+
 	public function test_storage_that_is_not_ready_is_refused_before_any_row_is_read(): void {
 		$token = $this->snapshot(
 			[

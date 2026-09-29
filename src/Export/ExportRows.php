@@ -58,6 +58,7 @@ final class ExportRows {
 	 * @param int           $owner    The current user.
 	 * @param Registry      $registry Field registry, for hydration.
 	 * @param \Closure|null $resolve  ( token, owner ) => Selection|\WP_Error; the stored snapshot when null.
+	 * @throws \RuntimeException When the catalogue cannot be read for presence (the controller answers 503 bulkcat_export_unavailable).
 	 */
 	public static function token( string $token, int $owner, Registry $registry, ?\Closure $resolve = null ): IdRows|\WP_Error {
 		if ( ! str_starts_with( $token, 'v2.' ) ) {
@@ -65,8 +66,8 @@ final class ExportRows {
 			return SelectionToken::refusal();
 		}
 		try {
+			// Only the selection's own read is selection storage, answered as preview's guard answers it.
 			$ids = self::member_ids( $resolve ?? self::stored( ... ), $token, $owner );
-			return $ids instanceof \WP_Error ? $ids : IdRows::resolve( $ids, new Hydrator( $registry ) );
 		} catch ( \Throwable $error ) {
 			return Refusal::unexpected(
 				'bulkcat_request_storage',
@@ -75,6 +76,9 @@ final class ExportRows {
 				$error
 			);
 		}
+		// Presence is the catalogue's read: its failure is the export's own (Main Build L2), and a
+		// programming error is not dressed up as a storage refusal.
+		return $ids instanceof \WP_Error ? $ids : IdRows::resolve( $ids, new Hydrator( $registry ) );
 	}
 
 	/**

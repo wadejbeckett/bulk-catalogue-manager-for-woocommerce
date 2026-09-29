@@ -1,0 +1,338 @@
+/**
+ * External actions in the bulk panel (T105, docs/EXTENSIONS.md §5.3; E3,
+ * E13): the chooser lists a provider's actions from the descriptors alone,
+ * after the native groups, with the multichoice control; an unavailable
+ * action is disabled with its reason; a change mixing kinds says why in
+ * place and cannot be checked or applied; provider text is rendered as text;
+ * and the catalogue's grid ignores external fields. The fixture is the
+ * extended `/fields` payload the PHP suite pins
+ * (tests/Unit/Extension/fields-external.snapshot.json).
+ */
+import { fireEvent, render, screen, within } from '@testing-library/react';
+
+import apiFetch from '@wordpress/api-fetch';
+import BulkChangePanel from '../../assets/src/panels/bulk';
+import {
+	mixesKinds,
+	operationProblem,
+	propertyKind,
+	toRequestOperations,
+	unavailableReason,
+} from '../../assets/src/panels/bulk/descriptors';
+import { alwaysConfirmReasons } from '../../assets/src/panels/bulk/confirm';
+import {
+	descriptorsOf,
+	fieldsFromRegistry,
+} from '../../assets/src/panels/catalogue/fields';
+
+const { IDS, SETTINGS } = require( './bulk-fixtures' );
+const EXTERNAL = require( '../Unit/Extension/fields-external.snapshot.json' );
+
+jest.mock( '@wordpress/api-fetch', () => {
+	const mock = jest.fn( () => new Promise( () => {} ) );
+	mock.use = jest.fn();
+	mock.createNonceMiddleware = jest.fn();
+	return { __esModule: true, default: mock };
+} );
+
+const MIXED =
+	"This action can't be combined with other kinds of change. Make it a separate change.";
+
+/**
+ * The fixture with some actions replaced.
+ *
+ * @param {Function} change Maps an external action to its replacement.
+ * @return {Object} Registry.
+ */
+function withActions( change ) {
+	return {
+		...EXTERNAL,
+		actions: EXTERNAL.actions.map( ( action ) =>
+			action.provider ? change( action ) : action
+		),
+	};
+}
+
+/**
+ * Render the panel over a registry.
+ *
+ * @param {Object} registry The `/fields` payload.
+ * @return {Object} Render result.
+ */
+function renderPanel( registry = EXTERNAL ) {
+	return render(
+		<BulkChangePanel
+			selection={ { kind: 'ids', ids: IDS } }
+			registry={ registry }
+			settings={ SETTINGS }
+			onClose={ jest.fn() }
+			onApplied={ jest.fn() }
+			pollInterval={ 5 }
+		/>
+	);
+}
+
+const panel = () => screen.getByRole( 'dialog' );
+
+/**
+ * The radio of an action under a group.
+ *
+ * @param {string} group  Group label.
+ * @param {string} action Action label.
+ * @return {Element} Radio.
+ */
+function radio( group, action ) {
+	const heading = screen.getByRole( 'heading', { name: group } );
+	return within( heading.parentElement ).getByRole( 'radio', {
+		name: new RegExp( '^' + action ),
+	} );
+}
+
+describe( 'external actions in the bulk panel', () => {
+	beforeEach( () => {
+		apiFetch.mockReset();
+		apiFetch.mockImplementation( () => new Promise( () => {} ) );
+	} );
+
+	it( 'lists the provider group after the native groups, its actions in the provider’s order', () => {
+		renderPanel();
+		const headings = within( panel() )
+			.getAllByRole( 'heading', { level: 4 } )
+			.map( ( heading ) => heading.textContent );
+		expect( headings ).toEqual( [
+			'Pricing',
+			'Stock',
+			'Organisation',
+			'Shipping and tax',
+			'Publishing',
+			'Sample labels',
+		] );
+		const group = screen.getByRole( 'heading', {
+			name: 'Sample labels',
+		} ).parentElement;
+		expect(
+			within( group )
+				.getAllByRole( 'radio' )
+				.map( ( each ) => each.value )
+		).toEqual( [
+			'x_sample_labels:x_sample_add',
+			'x_sample_labels:x_sample_remove',
+			'x_sample_labels:x_sample_replace',
+			'x_sample_labels:x_sample_clear',
+		] );
+		expect( radio( 'Organisation', 'Set sample note' ) ).toBeVisible();
+	} );
+
+	it( 'generates the multichoice control and blocks until a label is chosen', () => {
+		renderPanel();
+		fireEvent.click( radio( 'Sample labels', 'Add labels' ) );
+		const labels = screen.getByRole( 'group', { name: 'Labels' } );
+		expect(
+			within( labels )
+				.getAllByRole( 'checkbox' )
+				.map( ( box ) => box.parentElement.textContent )
+		).toEqual( [ 'Blue', 'Green', 'Red', 'Sale' ] );
+		expect( panel() ).toHaveAttribute( 'data-state', 'blocked' );
+		expect(
+			screen.getAllByText( /Choose at least one label from the list\./ )
+				.length
+		).toBeGreaterThan( 0 );
+		fireEvent.click( within( labels ).getByLabelText( 'Red' ) );
+		expect( panel() ).toHaveAttribute( 'data-state', 'configuring' );
+	} );
+
+	it( 'sends the chosen labels as a list', () => {
+		const action = EXTERNAL.actions.find(
+			( each ) => each.id === 'x_sample_add'
+		);
+		expect( propertyKind( 'labels', action.args.properties.labels ) ).toBe(
+			'multichoice'
+		);
+		expect(
+			toRequestOperations( EXTERNAL, [
+				{
+					action: 'x_sample_add',
+					group: 'x_sample_labels',
+					args: {
+						field: 'x_sample_labels',
+						labels: [ 'red', 'blue' ],
+						skip_already: true,
+					},
+				},
+			] )
+		).toEqual( [
+			{
+				action: 'x_sample_add',
+				args: {
+					field: 'x_sample_labels',
+					labels: [ 'red', 'blue' ],
+					skip_already: true,
+				},
+			},
+		] );
+		const tooMany = {
+			action: 'x_sample_add',
+			args: {
+				field: 'x_sample_labels',
+				labels: Array.from( { length: 21 }, () => 'red' ),
+			},
+		};
+		expect( operationProblem( EXTERNAL, tooMany )?.arg ).toBe( 'labels' );
+		const unknown = {
+			action: 'x_sample_add',
+			args: { field: 'x_sample_labels', labels: [ 'purple' ] },
+		};
+		expect( operationProblem( EXTERNAL, unknown )?.arg ).toBe( 'labels' );
+	} );
+
+	it( 'disables an unavailable action with its reason', () => {
+		const reason =
+			'Sample labels needs its settings saved before it can be used.';
+		const registry = withActions( ( action ) => ( {
+			...action,
+			available: false,
+			unavailableReason: reason,
+		} ) );
+		renderPanel( registry );
+		const add = radio( 'Sample labels', 'Add labels' );
+		expect( add ).toBeDisabled();
+		expect(
+			document.getElementById( add.getAttribute( 'aria-describedby' ) )
+		).toHaveTextContent( reason );
+		expect( unavailableReason( registry.actions.at( -1 ) ) ).toBe( reason );
+		expect( unavailableReason( registry.actions[ 0 ] ) ).toBe( '' );
+	} );
+
+	it( 'disables an action the user may not use, saying so', () => {
+		renderPanel(
+			withActions( ( action ) => ( {
+				...action,
+				available: false,
+				unavailableReason:
+					'You do not have permission to use this action.',
+			} ) )
+		);
+		expect( radio( 'Organisation', 'Set sample note' ) ).toBeDisabled();
+		expect(
+			screen.getAllByText(
+				'You do not have permission to use this action.'
+			).length
+		).toBeGreaterThan( 0 );
+	} );
+
+	it( 'says in place that a change cannot mix kinds, and blocks it', () => {
+		renderPanel();
+		fireEvent.click( radio( 'Stock', 'Set a value' ) );
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Add another change' } )
+		);
+		fireEvent.click( radio( 'Sample labels', 'Clear labels' ) );
+		expect( screen.getAllByText( MIXED ).length ).toBeGreaterThan( 0 );
+		expect( panel() ).toHaveAttribute( 'data-state', 'blocked' );
+		expect(
+			mixesKinds( EXTERNAL, [
+				{ action: 'set_value' },
+				{ action: 'x_sample_clear' },
+			] )
+		).toBe( true );
+		expect(
+			mixesKinds( EXTERNAL, [
+				{ action: 'x_sample_add' },
+				{ action: 'x_sample_clear' },
+			] )
+		).toBe( false );
+		const other = {
+			...EXTERNAL,
+			actions: [
+				...EXTERNAL.actions,
+				{
+					...EXTERNAL.actions.at( -1 ),
+					id: 'x_other_set',
+					provider: 'other',
+				},
+			],
+		};
+		expect(
+			mixesKinds( other, [
+				{ action: 'x_sample_add' },
+				{ action: 'x_other_set' },
+			] )
+		).toBe( true );
+	} );
+
+	it( 'always confirms with the provider’s own reason', () => {
+		const reasons = alwaysConfirmReasons(
+			EXTERNAL,
+			[
+				{
+					action: 'x_sample_replace',
+					args: { field: 'x_sample_labels', labels: [ 'red' ] },
+				},
+			],
+			24
+		);
+		expect( reasons ).toEqual( [
+			'This replaces every label on the chosen products.',
+		] );
+		expect(
+			alwaysConfirmReasons(
+				EXTERNAL,
+				[
+					{
+						action: 'x_sample_add',
+						args: { field: 'x_sample_labels', labels: [ 'red' ] },
+					},
+				],
+				24
+			)
+		).toEqual( [] );
+	} );
+
+	it( 'renders provider strings as text, never as markup (E13)', () => {
+		const registry = withActions( ( action ) =>
+			action.id === 'x_sample_add'
+				? {
+						...action,
+						label: '<img src=x onerror="alert(1)">Add labels',
+						description: '<script>alert(2)</script>Adds.',
+					}
+				: action
+		);
+		renderPanel( registry );
+		expect( document.querySelector( '.bulkcat-bulk img' ) ).toBeNull();
+		expect( document.querySelector( '.bulkcat-bulk script' ) ).toBeNull();
+		expect(
+			screen.getByText( '<script>alert(2)</script>Adds.' )
+		).toBeVisible();
+	} );
+} );
+
+describe( 'the catalogue grid and external fields', () => {
+	it( 'ignores fields whose source is external', () => {
+		const keys = descriptorsOf( EXTERNAL ).map( ( field ) => field.key );
+		expect( keys.some( ( key ) => key.startsWith( 'x_' ) ) ).toBe( false );
+		expect( keys ).toEqual(
+			descriptorsOf(
+				require( '../Unit/Fields/fields.snapshot.json' )
+			).map( ( field ) => field.key )
+		);
+		expect(
+			fieldsFromRegistry( EXTERNAL ).some( ( field ) =>
+				field.id.startsWith( 'x_' )
+			)
+		).toBe( false );
+		const withViews = {
+			...EXTERNAL,
+			fields: EXTERNAL.fields.map( ( field ) =>
+				field.source === 'external'
+					? { ...field, dataviews: { type: 'text' } }
+					: field
+			),
+		};
+		expect(
+			descriptorsOf( withViews ).some(
+				( field ) => field.source === 'external'
+			)
+		).toBe( false );
+	} );
+} );

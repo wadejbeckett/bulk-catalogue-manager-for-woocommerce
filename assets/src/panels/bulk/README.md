@@ -89,6 +89,19 @@ confirms.
 - The preview shows the server's `summary` sentence and, when variations are
   counted, `totals.by_type` split into products and variations.
 
+## External actions (T105)
+
+An add-on registered on the external action contract (`docs/EXTENSIONS.md`)
+adds entries to the same `/fields` payload, and the panel lists them from the
+descriptors alone: its chooser groups after the native ones, its actions in
+its order (an action may also sit in a native group), a `multichoice`
+argument as a checkbox list sent as a list of values, and an action whose
+add-on is unavailable, or that the user may not use, disabled with the
+server's reason. One change holds native steps or one add-on's steps: a step
+of another kind says so in place and the change cannot be checked or
+applied (`mixesKinds()`). An add-on action that always confirms restates its
+own `confirmReason`. Every add-on string is rendered as text.
+
 ## Mounted by the catalogue
 
 `panels/catalogue` opens the panel from **Make a change to these** on the

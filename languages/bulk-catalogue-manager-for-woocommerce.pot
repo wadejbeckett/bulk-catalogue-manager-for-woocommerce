@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-09-29T18:47:15+00:00\n"
+"POT-Creation-Date: 2026-09-29T18:57:42+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -419,6 +419,28 @@ msgstr ""
 msgid "Yes, with errors"
 msgstr ""
 
+#. translators: %s: a field's name, such as "Featured".
+#, php-format
+msgid "%s belongs to the product, not to each variation."
+msgstr ""
+
+#. translators: %s: an action's name, such as "Round prices".
+#, php-format
+msgid "Choose the field %s should change, then try again."
+msgstr ""
+
+msgid "Also apply to variations"
+msgstr ""
+
+msgid "Also apply to variations has to be on or off."
+msgstr ""
+
+msgid "Skip rows where the value is already correct"
+msgstr ""
+
+msgid "Skip rows where the value is already correct has to be on or off."
+msgstr ""
+
 #. translators: 1: the name of an add-on, such as "Example add-on", or "An add-on"; 2: what is wrong with it.
 #, php-format
 msgid "%1$s could not be added to Bulk Catalogue Manager: %2$s Update the add-on, or ask its author. Everything else works as usual."
@@ -681,11 +703,6 @@ msgid "The saved status before Off could not be read for this product, so it was
 msgstr ""
 
 msgid "The sale price has to be below the regular price, so this product was skipped. Lower the sale price, or choose to clear it where it is not below the regular price."
-msgstr ""
-
-#. translators: %s: a field's name, such as "Featured".
-#, php-format
-msgid "%s belongs to the product, not to each variation."
 msgstr ""
 
 msgid "A variable product takes its price from its variations. Change the variations instead."
@@ -959,23 +976,6 @@ msgstr ""
 #. translators: 1: a field's name, such as "Regular price", 2: the value it would have had, such as -2.50.
 #, php-format
 msgid "%1$s would go below zero (%2$s), so it was not changed."
-msgstr ""
-
-#. translators: %s: an action's name, such as "Round prices".
-#, php-format
-msgid "Choose the field %s should change, then try again."
-msgstr ""
-
-msgid "Also apply to variations"
-msgstr ""
-
-msgid "Also apply to variations has to be on or off."
-msgstr ""
-
-msgid "Skip rows where the value is already correct"
-msgstr ""
-
-msgid "Skip rows where the value is already correct has to be on or off."
 msgstr ""
 
 msgid "Clear a value"
@@ -1508,6 +1508,9 @@ msgid "These filters or this sort could not be used. Clear them and try again."
 msgstr ""
 
 msgid "This export does not say which change to export. Open the change in the history and export it again."
+msgstr ""
+
+msgid "The add-ons that registered external actions (docs/EXTENSIONS.md); present only when one is registered."
 msgstr ""
 
 msgid "Whether the grid shows it by default, after the product cell (T40)."
@@ -2088,6 +2091,9 @@ msgid_plural "%s variations are left as they are: switching On restores only wha
 msgstr[0] ""
 msgstr[1] ""
 
+msgid "This action is not available right now."
+msgstr ""
+
 #. translators: %s: a number of products, such as "24 products".
 #, js-format
 msgid "Apply to %s"
@@ -2463,6 +2469,7 @@ msgstr ""
 msgid "Step %d has no change chosen yet. Choose one or remove the step."
 msgstr ""
 
+#. translators: 1: the step's position, such as 2; 2: why its action cannot be used now.
 #. translators: 1: the step's position, such as 2; 2: what to fix, such as "Enter how much to change it by, as a number above 0 like 10 or 2.5."
 #, js-format
 msgid "Step %1$d: %2$s"
@@ -2472,6 +2479,11 @@ msgid "Choose the change"
 msgstr ""
 
 msgid "Check it"
+msgstr ""
+
+#. translators: 1: an action's name, such as "Replace labels"; 2: a number of products, such as "24 products".
+#, js-format
+msgid "%1$s always asks before it changes %2$s."
 msgstr ""
 
 #. translators: 1: a field, such as "Sale price"; 2: a number of products, such as "24 products".

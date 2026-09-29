@@ -70,6 +70,65 @@ final class Arguments {
 	}
 
 	/**
+	 * Every argument spec of an action, as validation reads them: `field`
+	 * (a choice of the action's one field, required), the provider's own
+	 * arguments, `apply_to_variations` for a per-variation field, and
+	 * `skip_already` (on by default), in that order, as native actions have them.
+	 *
+	 * @param array<string, mixed> $described The action as it is kept (Registered::described()).
+	 * @param array<string, mixed> $meta      Its field as it is kept (Registered::field_meta()).
+	 * @return array<string, array<string, mixed>>
+	 */
+	public static function specs( array $described, array $meta ): array {
+		$specs = [
+			'field' => [
+				'type'     => 'choice',
+				'label'    => __( 'Field', 'bulk-catalogue-manager-for-woocommerce' ),
+				'rule'     => sprintf(
+					/* translators: %s: an action's name, such as "Round prices". */
+					__( 'Choose the field %s should change, then try again.', 'bulk-catalogue-manager-for-woocommerce' ),
+					$described['label']
+				),
+				'required' => true,
+				'choices'  => [ $described['field'] => (string) ( $meta['label'] ?? $described['field'] ) ],
+			],
+		] + $described['arguments'];
+		if ( 'per_variation' === ( $meta['rule'] ?? '' ) ) {
+			$specs['apply_to_variations'] = [
+				'type'  => 'boolean',
+				'label' => __( 'Also apply to variations', 'bulk-catalogue-manager-for-woocommerce' ),
+				'rule'  => __( 'Also apply to variations has to be on or off.', 'bulk-catalogue-manager-for-woocommerce' ),
+			];
+		}
+		$specs['skip_already'] = [
+			'type'    => 'boolean',
+			'label'   => __( 'Skip rows where the value is already correct', 'bulk-catalogue-manager-for-woocommerce' ),
+			'rule'    => __( 'Skip rows where the value is already correct has to be on or off.', 'bulk-catalogue-manager-for-woocommerce' ),
+			'default' => true,
+		];
+		return $specs;
+	}
+
+	/**
+	 * An action's arguments as a JSON Schema object, as `GET /fields` publishes them.
+	 *
+	 * @param array<string, mixed> $described The action as it is kept.
+	 * @param array<string, mixed> $meta      Its field as it is kept.
+	 * @return array<string, mixed>
+	 */
+	public static function schema( array $described, array $meta ): array {
+		$properties = [];
+		foreach ( self::specs( $described, $meta ) as $name => $spec ) {
+			$properties[ $name ] = self::property( $spec );
+		}
+		return [
+			'type'                 => 'object',
+			'properties'           => $properties,
+			'additionalProperties' => false,
+		];
+	}
+
+	/**
 	 * One argument spec as a JSON Schema property, as native actions publish theirs.
 	 *
 	 * @param array<string, mixed> $spec A checked argument spec.

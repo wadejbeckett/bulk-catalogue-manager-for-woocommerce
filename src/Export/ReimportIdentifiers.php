@@ -36,8 +36,10 @@ defined( 'ABSPATH' ) || exit;
  * importer set the post parent to 0, which is why the rule is copied
  * exactly. One deviation (ticket 10, R2): the parent's SKU is replaced by
  * `id:` and its ID whenever it would not read back unchanged (reads_back()),
- * because the importer's `parse_relative_field()` creates an "Import
- * placeholder" product for any SKU it cannot find, even when updating.
+ * or the parent is in the bin, which WooCommerce's SKU lookup skips
+ * (`get_product_id_by_sku()`, Main Build L3), because the importer's
+ * `parse_relative_field()` creates an "Import placeholder" product for any
+ * SKU it cannot find, even when updating.
  *
  * Cost: at most one added read per page, `update_meta_cache()` over the
  * page's parents (the rows' own meta, and the parents' posts, are already
@@ -143,6 +145,11 @@ final class ReimportIdentifiers implements RowSource {
 		$post = get_post( $parent_id );
 		if ( ! is_object( $post ) || ! in_array( $post->post_type ?? '', self::PRODUCT_POST_TYPES, true ) ) {
 			return '';
+		}
+		if ( 'trash' === ( $post->post_status ?? '' ) ) {
+			// WooCommerce's SKU lookup skips binned products, so the importer would not find this
+			// parent by its SKU and would create a placeholder; `id:` finds it whatever its status.
+			return 'id:' . $parent_id;
 		}
 		$sku = get_post_meta( $parent_id, self::SKU, true );
 		$sku = is_scalar( $sku ) ? (string) $sku : '';

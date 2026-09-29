@@ -724,13 +724,25 @@ test( 'undo a finished whole-catalogue change from History and run it (BULKCAT_E
 	const clicked = Date.now();
 	await confirm.getByRole( 'button', { name: 'Undo', exact: true } ).click();
 	await expect( confirm ).toBeHidden( { timeout: 900_000 } );
+	// The dialog closes as the request leaves; the undo batch follows.
+	const undoOf = () =>
+		Number(
+			rows(
+				'SELECT batch_id FROM {p}bulkcat_batches WHERE undo_of = %d ORDER BY batch_id DESC LIMIT 1',
+				[ batchId ]
+			)[ 0 ]?.batch_id || 0
+		);
+	await expect.poll( undoOf, { timeout: 900_000 } ).toBeGreaterThan( 0 );
+	const undoId = undoOf();
+	await expect
+		.poll(
+			() => writes.filter( ( w ) => /\/undo$/.test( w.path ) ).length,
+			{
+				timeout: 900_000,
+			}
+		)
+		.toBeGreaterThan( 1 );
 	const accepted = writes.filter( ( w ) => /\/undo$/.test( w.path ) ).pop();
-	const undoId = Number(
-		rows(
-			'SELECT batch_id FROM {p}bulkcat_batches WHERE undo_of = %d ORDER BY batch_id DESC LIMIT 1',
-			[ batchId ]
-		)[ 0 ].batch_id
-	);
 	record( `undo_${ batchId }_accept`, {
 		undo_batch_id: undoId,
 		open_to_confirm_ms: planMs,

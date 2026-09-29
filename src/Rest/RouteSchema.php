@@ -613,6 +613,78 @@ final class RouteSchema {
 		};
 	}
 
+	/*
+	 * CSV export (ticket 10, T99): the arguments of `POST /export`.
+	 */
+
+	/**
+	 * The arguments of `POST /export` (SPEC §10, §12.1): every `GET /products`
+	 * argument except paging and `fields`, used only for a filter export;
+	 * the columns, registry keys in order; the identifier switch; the row
+	 * source, a selection token or at most 1,000 ids (a list or one
+	 * comma-separated field); the whole-catalogue confirmation; the summary
+	 * switch; and `source`, taken only so that anything but the catalogue
+	 * can be refused in plain words. The token is checked here for shape
+	 * only; Export\ExportRequest reads it from the body, never the address.
+	 *
+	 * @return array<string, array<string, mixed>>
+	 */
+	public function export_args(): array {
+		$columns                      = $this->fields_arg()['fields'];
+		$columns['description']       = __( 'Columns to export, in order: the visible columns of the view.', 'bulk-catalogue-manager-for-woocommerce' );
+		$columns['required']          = true;
+		$columns['minItems']          = 1;
+		$columns['validate_callback'] = static function ( mixed $value, mixed $request = null, string $param = '' ) use ( $columns ): bool|\WP_Error {
+			unset( $request );
+			$schema = array_diff_key( $columns, array_flip( [ 'validate_callback', 'sanitize_callback' ] ) );
+			return rest_validate_value_from_schema( self::as_list( $value ), $schema, $param );
+		};
+		$switch                       = static fn( string $description ): array => self::arg(
+			[
+				'description' => $description,
+				'type'        => 'boolean',
+				'default'     => false,
+			],
+			[ self::class, 'flag' ]
+		);
+		return array_diff_key( $this->query_args(), array_flip( [ ...self::PAGING, 'fields' ] ) ) + [
+			'columns'     => $columns,
+			'identifiers' => $switch( __( 'Whether ID, SKU, Parent and Type come first, so the file can go back through WooCommerce\'s product importer.', 'bulk-catalogue-manager-for-woocommerce' ) ),
+			'selection'   => self::arg(
+				[
+					'description' => __( 'The selected products, as the selection routes issue them. Sent in the request body, never in the address.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'type'        => 'string',
+					'maxLength'   => 120,
+				],
+				'strval'
+			),
+			'ids'         => self::arg(
+				[
+					'description' => __( 'At most 1,000 products or variations, by id, instead of a selection or a filter.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'type'        => 'array',
+					'items'       => [
+						'type'    => 'integer',
+						'minimum' => 1,
+					],
+				],
+				static fn( mixed $value ): array => array_map( 'intval', self::as_list( $value ) )
+			),
+			'confirm_all' => $switch( __( 'Confirms an export of the whole catalogue, needed when no search, filter or category is set.', 'bulk-catalogue-manager-for-woocommerce' ) ),
+			'summary'     => $switch( __( 'Whether to answer only the row counts and the file name, without exporting.', 'bulk-catalogue-manager-for-woocommerce' ) ),
+			'source'      => self::arg(
+				[
+					'description' => __( 'What is exported: only the catalogue is posted.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'type'        => 'string',
+				],
+				'strval'
+			),
+		];
+	}
+
+	/*
+	 * End of CSV export arguments.
+	 */
+
 	/**
 	 * An argument: its schema, a validator checking a value against that
 	 * schema through core, and the sanitiser given.

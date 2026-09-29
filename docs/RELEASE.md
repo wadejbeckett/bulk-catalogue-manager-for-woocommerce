@@ -80,9 +80,10 @@ Plugin Check on the archive reports these WARNING rows, and `bin/plugin-check-al
 
 | File | Code | Rows | Why |
 | --- | --- | --- | --- |
-| `src/Query/ProductQuery.php` | `PluginCheck.Security.DirectDB.UnescapedDBParameter` | 3 | The catalogue list, its count and bounded frozen ID/type capture (SPEC §12.2). Values are prepared; only allow-listed clauses and placeholders are composed. |
+| `src/Query/ProductQuery.php` | `PluginCheck.Security.DirectDB.UnescapedDBParameter` | 4 | The catalogue list, its count, bounded frozen ID/type capture and an export's present members (SPEC §10, §12.2). Values are prepared; only allow-listed clauses and placeholders are composed. |
 | `src/Categories/Counts.php` | `PluginCheck.Security.DirectDB.UnescapedDBParameter` | 1 | Category product counts in one grouped read (SPEC §7). |
 | `src/Engine/BatchFactory.php` | `PluginCheck.Security.DirectDB.UnescapedDBParameter` | 1 | The ids a filter selects, read through ProductQuery's own FROM and WHERE. |
+| `src/Export/GuardedValues.php` | `PluginCheck.Security.DirectDB.UnescapedDBParameter` | 1 | The CSV export's guarded SKU and name counts over a filter's rows, read through ProductQuery's own FROM and WHERE (SPEC §10). |
 | `src/Data/ChangeRepository.php` | `PluginCheck.Security.DirectDB.UnescapedDBParameter` | 4 | History and audit feeds (SPEC §9.3). |
 | `src/Data/BatchRepository.php` | `PluginCheck.Security.DirectDB.UnescapedDBParameter` | 2 | The batch list and its count (SPEC §9.3). |
 

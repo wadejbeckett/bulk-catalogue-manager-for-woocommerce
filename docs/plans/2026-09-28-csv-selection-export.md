@@ -1,6 +1,6 @@
 # CSV export of the selection and the chosen columns (delivery ticket 10, Parts A and B together)
 
-> **Core copy.** This is the repository's copy of the CSV export plan (tickets T95–T103), made on 29 September 2026 from the delivery plan with every client path and client name removed; the rulings (R1–R13, B1–B23) and Main Build's amendments and review are kept. The delivery tracker's ticket 10 and ticket 04 files are referred to by name, not linked. Where the two copies differ, the delivery copy is the record of what was decided and this one follows it.
+> **Core copy.** This is the repository's copy of the CSV export plan (tickets T95–T103), made on 29 September 2026 from the delivery plan with every client path and client name removed; the rulings (R1–R13, B1–B27) and Main Build's amendments and review are kept. The delivery tracker's ticket 10 and ticket 04 files are referred to by name, not linked. Where the two copies differ, the delivery copy is the record of what was decided and this one follows it.
 
 **Stage:** approved by Main Build 28 Sept 19:05, amendments applied. Main Build accepted R1–R13 and asked for twelve amendments, which are applied in place and listed in [Main Build's amendments](#main-builds-amendments-28-september-1905). The plan was written on 28 September 2026. This is a documentation change only: no code, test, build or worktree change is part of it, and nothing here was run.
 
@@ -149,6 +149,16 @@ Main Build accepted the server work at `d72bed9` with no blocker: B1 as built; B
 - **B22 (from the `maxItems` minor).** With the cap in the schema, core refuses more than 1,000 ids before the handler: the top-level code is `rest_invalid_param`, and the plan's refusal (`bulkcat_invalid_value`, the plain sentence, `{ param: ids, limit: 1000 }`) is carried in its `details.ids`, as the filter arguments' refusals already are. Ids sent together with a token are still refused by the handler as `bulkcat_invalid_value`. Contract step 5 reads accordingly.
 - **B23.** The review asked for a full stop in SPEC §10's Rows paragraph; every sentence and paragraph end in §10 already has one, so the SPEC was left unchanged pending the exact place.
 - **Note for T103 (not started).** Until T103 retires it, `GET /export` still exports the whole catalogue without a confirmation, so the server-side whole-catalogue confirmation can be bypassed through GET. T103's retirement (R9) closes it, with the CHANGELOG line recording the REST change (amendment 3).
+
+### After ticket 04's T93 (29 September)
+
+The branch was rebased onto ticket 04's `ca86255` (T93), ticket 04 kept on every conflict. Taken by the builder, each the conservative option:
+
+- **B24. The goldens come from ticket 04's head.** The parallel start put this slice's production commits before T96, so "written by the unchanged code" was met by writing the golden files with `BULKCAT_WRITE_GOLDEN=1` in a detached checkout of `ca86255` (ticket 04's head, without this slice), then committing them on the branch, where they pass unchanged. On the fixture, T96's three live views gave identical GET bytes at `ca86255` and on the branch against one database state. The golden folder is `-text` in `.gitattributes`, because the repository otherwise stores text as LF.
+- **B25. The Off product is switched Off through the manager's bulk path** (Status to Draft on the product alone: preview, grant, Apply, the queue), as ticket 04's `offon` chapter does. At `ca86255` the inline `PATCH` also sent Status to a variable product's variations, which refuse Draft; ticket 04's T94 changes that. It is switched back On after the round trip, so other rows' pages keep their make-up.
+- **B26. The `.pot` follows a fresh local build.** `make-pot` also reads `assets/build`; regenerated from the committed (older) bundle during the rebase, the `.pot` had lost ticket 04's JavaScript strings. It is regenerated after `npm run build`; the build itself is not committed.
+- **B27. WooCommerce 11.1.2 locally.** The read chapter ran on 11.1.0 and on 11.1.2, copied read-only from the T85 fixture (no download). The merge stays gated on ticket 04's 11.1.2 CI leg (B12).
+- **Findings for ticket 04**, reported and not changed here: `read:fields:flags` still expects `visible_on_site` among the default columns; ticket 04's committed `.pot` at `ca86255` predates T93's JavaScript relabel, so I18nTest fails there with either bundle; the inline Status `PATCH` on a variable product (B25, addressed by T94).
 
 ## Baseline and reproduction
 

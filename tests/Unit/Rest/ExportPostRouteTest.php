@@ -575,6 +575,53 @@ final class ExportPostRouteTest extends TestCase {
 		}
 	}
 
+	public function test_a_failure_while_streaming_stops_the_file_and_is_logged(): void {
+		// Main Build L1: an error escaping serve() would let WordPress append its critical-error page to a cut-off CSV.
+		foreach ( [ new \RuntimeException( 'The database went away.' ), new \TypeError( 'A page was not a list.' ) ] as $failure ) {
+			bulkcat_test_reset();
+			$GLOBALS['bulkcat_test']['logged_in']                  = true;
+			$GLOBALS['bulkcat_test']['caps']['manage_woocommerce'] = true;
+			$source           = new CallableRowSource(
+				static function ( array $params, int $page, int $per_page ) use ( $failure ): array {
+					if ( 2 === $page ) {
+						throw $failure;
+					}
+					$items = [];
+					for ( $id = 1; $id <= $per_page; ++$id ) {
+						$items[] = [
+							'id'   => $id,
+							'name' => "Product $id",
+						];
+					}
+					return [
+						'items' => $items,
+						'total' => 250,
+					];
+				}
+			);
+			$this->controller = new ExportController( new Registry(), $source );
+			( new Routes( [ $this->controller ] ) )->register();
+			$response           = self::send(
+				'POST',
+				[
+					'columns' => 'id,name',
+					'search'  => 'Product',
+				]
+			);
+			[ $csv, , $served ] = $this->serve( $response );
+			$this->assertTrue( $served, 'Served: nothing reaches WordPress\'s fatal-error handler.' );
+			$lines = self::lines( $csv );
+			$this->assertCount( 101, $lines, 'The header and the first page, then nothing: ' . get_class( $failure ) );
+			$this->assertStringEndsWith( CsvWriter::EOL, $csv, 'The file stops at the end of a line.' );
+			$logged = $GLOBALS['bulkcat_test']['logged'] ?? [];
+			$this->assertCount( 1, $logged );
+			$this->assertSame( 'error', $logged[0][0] );
+			$this->assertSame( [ 'source' => 'bulk-catalogue-manager-for-woocommerce' ], $logged[0][2] );
+			$this->assertStringContainsString( get_class( $failure ), $logged[0][1] );
+			$this->assertStringContainsString( $failure->getMessage(), $logged[0][1] );
+		}
+	}
+
 	public function test_an_export_writes_no_grant_receipt_selection_option_product_or_term(): void {
 		$options = $GLOBALS['bulkcat_test']['options'];
 		$bodies  = [

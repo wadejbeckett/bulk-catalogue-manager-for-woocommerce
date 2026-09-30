@@ -2,6 +2,34 @@
 
 Ordered; each ticket is independently mergeable and ends with tests green. "Probe" means `tests/probe/probe.py` from T10, which every later ticket extends with its own surfaces. Update this file as tickets close.
 
+### Delivery follow-up 12 — category creation feedback (2026-09-30; local native checks complete, review pending)
+
+Task 3 adds `tests/e2e/category-create-feedback.spec.js` and the disposable-fixture
+procedure in `tests/probe/README.md`. All 21 category browser cases have passing
+results across the combined run and focused reruns on plain WordPress 7.1 /
+WooCommerce 11.1.2 / PHP 8.3.33 / Chromium 153.0.8010.12. Measured cases cover real
+root/child creation and term/journal readback, selected-product/search preservation,
+pending submit from the button and Name input, native modal exit/save focus,
+GET-only omission/503/retry/recovery and simulated initial-empty readback.
+Desktop and 900px sheet paths pass; the fault matrix also covers 1440px.
+The measured modal, notice, retry and normal/hover/focused disclosure states have
+zero axe violations. Exact UUID term cleanup restores the fixture's baseline.
+
+Native acceptance exposed three corrected causes: disabling the focused submit
+button disrupted modal focus restoration; sibling native modals dismissed the
+narrow sheet; the native error tint lacked disclosure contrast. The fixes keep
+the busy button accessibly disabled with a submission guard, nest the single
+create dialog in the sheet, and lighten only the category error notice background.
+No automatic reopen or unconditional background focus was added.
+
+Focused JS: 90 tests; PHP: 1,068 tests / 23,858 assertions; JS/PHP lint, POT and
+the 319,981-byte compressed build pass. A hung PHP packaging pipe was rerun with
+a private stdin-buffering wrapper around real Git; no packaging check was skipped.
+Generated assets remain for controller integration. Independent Task 3 review is
+pending. Category write routes, Undo/history and the external action API are
+unchanged and receive no broader acceptance claim. Membership repair and its
+affected-installation release gate remain separate delivery follow-up 13.
+
 | # | Title | Done when |
 | --- | --- | --- |
 | **E1 Repo bootstrap and packaging** | | |

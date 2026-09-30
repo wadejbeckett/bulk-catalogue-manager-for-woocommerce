@@ -111,6 +111,9 @@ export default function CategoryManager( {
 
 	const submit = async ( event ) => {
 		event.preventDefault();
+		if ( saving ) {
+			return;
+		}
 		const refusal = validateCategory( form );
 		if ( refusal ) {
 			setError( refusal );
@@ -261,6 +264,7 @@ export default function CategoryManager( {
 					type="submit"
 					isBusy={ saving }
 					disabled={ saving }
+					accessibleWhenDisabled
 					__next40pxDefaultSize
 				>
 					{ categoryId

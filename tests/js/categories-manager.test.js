@@ -136,6 +136,32 @@ describe( 'category manager', () => {
 		expect( speak ).not.toHaveBeenCalled();
 	} );
 
+	it( 'keeps busy submit focusable and refuses repeated form submission until the answer', async () => {
+		let resolve;
+		apiFetch.mockReturnValue(
+			new Promise( ( done ) => {
+				resolve = done;
+			} )
+		);
+		const tree = makeTree();
+		render( <CategoryManager tree={ tree } canManage /> );
+		fireEvent.change( field( 'Name' ), { target: { value: 'Caps' } } );
+		const button = screen.getByRole( 'button', { name: 'Add category' } );
+		button.focus();
+		fireEvent.click( button );
+		expect( apiFetch ).toHaveBeenCalledTimes( 1 );
+		// Enter in an input can submit the form independently of button activation.
+		fireEvent.submit( button.closest( 'form' ) );
+		expect( apiFetch ).toHaveBeenCalledTimes( 1 );
+		expect( button.disabled ).toBe( false );
+		expect( button.getAttribute( 'aria-disabled' ) ).toBe( 'true' );
+		await act( async () => {
+			resolve( { item: { id: 9, name: 'Caps' } } );
+		} );
+		expect( tree.recordCreated ).toHaveBeenCalledTimes( 1 );
+		expect( button.getAttribute( 'aria-disabled' ) ).toBeNull();
+	} );
+
 	it.each( [
 		undefined,
 		{},

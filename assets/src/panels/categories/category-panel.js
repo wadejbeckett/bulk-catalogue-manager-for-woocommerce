@@ -571,9 +571,9 @@ export default function CategoryPanel( {
 						className="bulkcat-cat-sheet"
 					>
 						{ body() }
+						{ dialogs }
 					</Modal>
 				) }
-				{ dialogs }
 			</div>
 		);
 	}

@@ -397,6 +397,11 @@ $bulkcat-bad: #d63638;
 	gap: 16px;
 }
 
+// Keep the native disclosure accent readable against the error tint.
+.bulkcat-cat-error.components-notice.is-error {
+	background-color: #fcf0f1;
+}
+
 .bulkcat-cat-error__details {
 	margin: 4px 0 0;
 }

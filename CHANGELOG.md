@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Category creation now keeps a visible confirmation after the dialog closes, distinguishing successful list readback, a missing entry and a failed refresh. Refresh retries only read the list and never create another category. An incomplete save response asks the user to check the list without claiming success.
+- Category saves keep native dialog focus restoration working while busy and refuse repeated form submission until the response. Notices preserve a focus target when the empty-state opener or refresh button disappears, without taking focus from a user who has moved elsewhere.
+- The narrow category sheet remains open beneath its create dialog, keeping confirmation and retry controls available after saving. Category error details retain native disclosure behavior with readable contrast.
+
+These changes report creation and readback outcomes; they do not repair category membership restrictions on an affected installation.
+
 ## [1.1.0] - 2026-09-30
 
 <!-- external-action-contract (branch codex/external-action-contract): T104–T109 entries -->

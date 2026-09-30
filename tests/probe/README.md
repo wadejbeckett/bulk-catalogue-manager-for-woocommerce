@@ -80,6 +80,49 @@ docker network rm bulkcat-probe
 `-v` also removes the anonymous volume the `mariadb` image creates for its
 data, so nothing is left behind.
 
+## Category creation feedback (delivery 12)
+
+`tests/e2e/category-create-feedback.spec.js` uses the native manager POST and
+authoritative category GET, then reads the exact term ID, unique name and
+`source=tree` batch/change rows through WP-CLI. It requires an explicit
+`BULKCAT_E2E_BASE_URL`, `BULKCAT_E2E_FIXTURE=1` and a matching local `WP_CMD`;
+the existing lifecycle fixture guard remains in force. Use an already owned,
+seeded disposable fixture, with this checkout mounted as the plugin. No lease
+probe or external provider is needed. Do not reset another fixture or overwrite
+an existing `seed.json` (pass its path with `--seed` if also running `probe.py`).
+
+After rebuilding, run the uninterrupted root/child journeys before the fault
+simulations (the file declares them in that order):
+
+```sh
+npm run build
+export BULKCAT_E2E_SHOTS="$(mktemp -d /tmp/bulkcat-category-evidence-XXXXXXXX)"
+npm run e2e -- category-create-feedback.spec.js category-panel.spec.js
+```
+
+Keyboard root/child journeys cover 1280×900 and 900×900. The readback fault
+matrix additionally covers 1440×900. A native MutationObserver also records busy
+focus for Save-button activation and Enter in Name, with one POST per journey;
+the POST is never held or altered. Fault interception changes **only GET**:
+omission removes the newly created ID from a real list response, and failure
+returns a synthetic HTTP 503. A second faulty GET precedes recovery through an
+unmodified GET; no POST is replayed. Empty-state tests simulate empty pre-create
+GETs without deleting seeded categories, then allow immediate or deferred native
+readback, including moving focus to search before completion. These are transport
+simulations, not evidence of repairing an installation's membership restriction.
+The failed-GET journeys also check error disclosure contrast in normal, hover and
+keyboard-focus states, then toggle Show/Hide details before retrying. The native
+admin stylesheet replaces the focused link's underline with its focus ring; the
+test preserves that behavior and does not suppress axe rules.
+
+Screenshots and JSON readbacks go to the evidence directory (or the test output
+directory when the variable is absent). Save component/browser versions beside
+them. Axe checks use the existing WCAG 2.2 conventions; they do not constitute
+manual assistive-technology acceptance. Every test deletes only its exact unique
+terms in `finally`, child before parent, and checks no matching terms remain.
+The native audit journal is retained in the disposable fixture. Preserve failure
+traces privately: they may contain the synthetic fixture's login cookies.
+
 ## Performance (T76)
 
 `perf.py` measures SPEC §12.5 on the scale catalogue and exits 1 when a

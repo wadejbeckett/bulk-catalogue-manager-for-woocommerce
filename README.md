@@ -9,7 +9,7 @@ It edits WooCommerce's own product data only, through WooCommerce's own product 
 
 ## What the screen does
 
-The screen is **Products → Bulk Catalogue Manager**. It has four tabs.
+The screen is **Products → Bulk Catalogue Manager**. It has five tabs.
 
 - **Catalogue.** Every product in one table (or a grid of cards), paged on the server at 25, 50 or 100 rows. Search by name or SKU; filter by category, tag, type, status, visibility, featured, stock, price, tax class, shipping class and date modified; sort, choose columns and save the result as a named view. A category panel on the left filters by category. The mode switch shows **Products**, **Products and variations** (a variable product opens to show its variations as rows of their own) or **Variations only**. Many cells can be edited in place; **Edit details** opens every editable field for one product. **Export CSV** downloads the selected products and variations, or every row matching the filters, in the table's columns (see [Re-import the file](#re-import-the-file)).
 - **Bulk change.** Tick rows, and add every product matching the filters, across as many searches, filters and pages as you like: the selection is kept on the server until you clear it (**Clear selection**, or **Clear search and selection** on the search chip, which clears both and can be restored for a while), untick a row, or a change made to it finishes in full. **Review selected products** lists everything selected, including rows the list is not showing, and removes any of them. Then open the side panel: choose one or more changes (up to 20, applied in order), check the preview of exactly those products, then apply. The work runs in the background, so you can leave the screen; a reload of the page keeps the selection.
@@ -172,8 +172,8 @@ The probe prints one PASS, FAIL or SKIP row per surface and exits non-zero on an
 
 ### Browser tests and performance
 
-- **Browser (end-to-end) tests.** The Playwright suite from T75 (keyboard-only bulk change and undo, expanding a variable product, a category move through **Move to…**, and an axe-core check of every screen) runs against the same seeded site as the probe. Its command and CI job are listed in `package.json` and `.github/workflows/ci.yml` once T75 lands.
-- **Performance.** `bash tests/probe/seed.sh 20000` adds the scale catalogue (20,000 products and 70,000 variations) in resumable runs. The T76 performance suite measures the SPEC §12.5 budgets against it on PHP 8.3 and MySQL 8 and writes `performance.json`; its command and CI job are listed in `.github/workflows/ci.yml` once T76 lands.
+- **Browser (end-to-end) tests.** The Playwright suite from T75 (keyboard-only bulk change and undo, expanding a variable product, a category move through **Move to…**, and an axe-core check of every screen) runs against the same seeded site as the probe. Run `npm run e2e` with the fixture settings in `tests/e2e/playwright.config.js`. The CI job is in `.github/workflows/ci.yml`.
+- **Performance.** `bash tests/probe/seed.sh 20000` adds the scale catalogue (20,000 products and 70,000 variations) in resumable runs. `tests/probe/perf.py --runs 20 --json performance.json` measures the SPEC §12.5 budgets. Set `WP_CMD` and install the temporary measurement fixture as described in `tests/probe/README.md`; measured results and limits are in `tests/probe/PERF.md`.
 
 ### JavaScript build
 

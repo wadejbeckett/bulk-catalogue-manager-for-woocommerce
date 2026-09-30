@@ -394,6 +394,12 @@ class Perf:
 
     def offon_switch(self, label: str, token: str, value: str) -> int:
         """Preview and Apply Status set to a value over the captured selection, through a grant; run and measure it."""
+        # Long queue runs can outlive the authorization lease. Renew the same
+        # retained membership before each fresh preview, never recapture a query.
+        renewal = self.call("POST", "/selection/renew", body={"token": token})
+        renewed = self.json_of(renewal) or {}
+        assert renewal["status"] == 200 and renewed.get("token"), f"selection renewal {renewal['status']}"
+        token = renewed["token"]
         operations = [{"action": "set_value", "args": {"field": "status", "value": value, "apply_to_variations": False}}]
         pre = self.json_of(self.call("POST", "/preview", body={"token": token, "operations": operations})) or {}
         reply = self.call("POST", "/batches", body=self.p.apply_body("manager", pre, {"token": token}))

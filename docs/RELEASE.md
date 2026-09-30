@@ -109,4 +109,44 @@ Site: WordPress <x.y.z>, WooCommerce <x.y.z>, PHP <x.y>, <MySQL or MariaDB x.y>
 
 ## Releases
 
-None recorded yet.
+### 1.1.0 — 30 September 2026 — private installation candidate
+
+Performed by: Codex. Functional runtime: `a7291ac`; integration fixture fixes:
+`17571bd`. Version 1.1.0, schema 8. Archive:
+`bulk-catalogue-manager-for-woocommerce-1.1.0.zip`, 280 files, 1,364,901 bytes.
+SHA-256: `594b3a768731c007112272380c117cbb895915f2d6c9efa8cc3f1ed14fed2acb`.
+
+Site for local checks: WordPress 7.1.2, WooCommerce 11.1.2, PHP 8.3.33,
+MySQL 8.4.11. Measurements and limits: `tests/probe/PERF.md`. Sanitised result
+logs are retained outside the repository.
+
+1. Version alignment: done; five version locations agree, schema 8, current
+   POT and committed assets. The normal archive build rebuilt the exported
+   source and produced byte-identical compiled assets.
+2. Local automated gates: done. PHP both runners: 1,068 tests / 23,854
+   assertions. Without vendor: 1,061 passed and seven dependency/archive
+   skips. PHPCS: 328 files clean. JavaScript lint clean; Jest: 576 tests in
+   40 suites. Bundle: 319,000 compressed bytes, below 400 KB. Plugin Check
+   2.1.0: zero errors, 13 allow-listed prepared-query warnings. Full HTTP
+   probe: 237 passed, zero failed, one translation skip. Full scale-fixture
+   browser suite: 61 passed, zero failed, seven documented skips. All native
+   exact-selection/batch/lifecycle probes, races and provider checks passed.
+   GitHub Actions quota was exhausted until 1 October: no new green CI or
+   PHP 8.1–8.4 matrix is claimed. The owner authorised local release gates.
+3. Fresh archive activation and upgrade: done on disposable sites and an
+   isolated copy of a real catalogue. The archive upgraded 1.0.0/schema 6
+   to schema 8 without changing catalogue/category fingerprints. The copy's
+   18/18 journey checks cover reversible Off/On and price/variation changes.
+   Populated schema migration: the HTTP lifecycle probe downgraded its schema
+   marker to 5 then migrated to 8; all five table row counts were preserved.
+   The optional browser fixture containing a legacy-1.0 batch was not present;
+   that browser check was skipped, not reported as passed.
+4. Deactivation/reactivation and both uninstall policies: the final native
+   lifecycle probe passed, preserving or removing plugin-owned rows as
+   requested while leaving product data intact. Network-wide two-site
+   uninstall was not repeated in this local run; unit coverage remains.
+5. Empty/no-match catalogue and access refusal: covered by the browser/native
+   suites. Administrator/shop-manager access works; anonymous writes refused.
+6. Publish: not performed. No main merge, public tag, GitHub release or
+   WordPress.org submission is authorised. This record covers the private
+   installation candidate; deployment evidence belongs with the operator.

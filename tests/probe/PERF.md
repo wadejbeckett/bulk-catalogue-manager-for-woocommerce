@@ -2,9 +2,66 @@
 
 The numbers `perf.py` measured against SPEC §12.5. How to run it, and what
 each number means, is in `README.md` (Performance). Rerun it before a release
-and replace this record.
+and add a dated record; keep older measurements as history.
 
-## Last run
+## Release verification — 30 September 2026
+
+Final runtime `a7291ac`, integration test corrections `17571bd`; version
+1.1.0, schema 8. Local Docker on a shared 12-core workstation: PHP 8.3.33,
+MySQL 8.4.11, WordPress 7.1.2, WooCommerce 11.1.2, no persistent object cache,
+WP-Cron disabled. Scale fixture: 20,013 products and 70,003 variations.
+Evidence is retained outside the repository; the log names below identify it.
+These are local measurements, not a new CI matrix result.
+
+| Check | Result |
+| --- | --- |
+| Final HTTP probe, every chapter (`82-probe-final.log`) | 237 passed, zero failed; one German translation check skipped because that language was not installed |
+| Full browser suite on the scale fixture (`68-e2e-20k.log`) | 61 passed, zero failed, seven opt-in/fixture skips; 21.8 minutes |
+| Exact selection/batch/lifecycle native probes and races | All passed; provider journey 145 checks |
+| Real-catalogue copy, archive upgrade from 1.0.0/schema 6 | 18/18 journey checks; catalogue and category fingerprints unchanged by upgrade; Off/On and price/variation undo restored exactly |
+| 5,000-product price Apply / Undo (`77-perf.log`) | 1,062 / 884 products per minute; 17.4 / 17.7 MB peak per chunk; both complete, zero failed |
+| 5,000-product Off / Undo / Off again | 1,087 / 1,055 / 1,017 per minute; 17.4–17.7 MB peak per chunk; retained memory +0.4 MB |
+| Final On after renewal (`84-perf-on-recovery.log`) | 998 products per minute; 17.4 MB peak; +0.4 MB retained; 5,000 changed, zero failed and zero Off records left |
+| Off filter, 25 rows | Cold 225 ms; warm p95 140 ms, 12 queries |
+| History, 25 / 100 rows | Warm p95 137 / 94 ms; seven queries at both sizes |
+| Whole-catalogue UI previews (`85-scale-preview.log`) | Two passed; 20,111 products and 70,095 variations selected; enabled Apply after 10.4 / 11.5 seconds; preview peaks 27.96 / 65.86 MB |
+
+The first performance run deliberately remains recorded with its failure:
+`77-perf.log` has 19 passed metrics, one failure and six information rows.
+Its script reused one selection through several long queue runs without
+renewing its authorization lease; the final On correctly refused with
+`bulkcat_selection_renew_required`. The harness now renews the same retained
+snapshot before each fresh preview. The recovery run reuses the original
+snapshot, verifies its members equal the accepted 5,000-object Off batch,
+renews through the REST route and verifies an unchanged membership hash.
+Its final On measurements are recorded separately in `84-perf-on-recovery.log`:
+six passed metrics, one information row; exit 0.
+
+The browser skips were the legacy-1.0 populated-batch fixture, the optional
+real 30-minute suspension (the bounded real suspension and simulated
+long suspension passed), and five explicit whole-catalogue scale jobs.
+A separate opt-in preview run covers the whole product catalogue and the
+products-and-variations catalogue; Apply/Undo at large size is measured by
+the queue runs above and the retained 100,000-object job below.
+
+### Retained 100,000-object undo
+
+The original fixture remains untouched. On an isolated copy with the final
+runtime and a 128 MB web memory limit, the interrupted undo resumed its last
+13,927 objects in 140 chunks, at most 18.56 MB per chunk. It finished with
+100,000 done and changed, zero failed, the original batch marked undone.
+Both stored and CRUD-read weight checksums across all 100,000 objects match
+the recorded before-state. This is recovery and completion of a retained
+job, not a freshly timed full 100,000-item run on the final head.
+
+The old whole-plan and streamed planners produced the same plan hash. The
+streamed planner used about 12 MB rather than 257 MB. The 100,000-item web
+preview needed its route to lift PHP's 30-second execution limit and used
+27.29 MB. The final checksum reporter's quoting error happened after the
+work completed; raw chunk logs and an independent fingerprint check verified
+the result (`53-undo-checksum.json`, `undo-resumed-final.json`).
+
+## Historical baseline — 24 September
 
 - Date: 24 September 2026, branch `t76-perf`.
 - Stack: throwaway docker stack on a 12-core workstation shared with other

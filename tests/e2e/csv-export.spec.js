@@ -455,6 +455,58 @@ test.describe( 'the export dialog', () => {
 		);
 	} );
 
+	test( 'a download refused in the hidden frame says so in plain words, and Try again gives focus back to Export', async ( {
+		page,
+	} ) => {
+		await openScreen( page );
+		await clearSelection( page );
+		// The server's answer to the form post, replaced by a refusal as the
+		// plugin sends one (JSON, before any CSV byte); the summary is real.
+		await page.route( EXPORT, ( route ) => {
+			const request = route.request();
+			const form = (
+				request.headers()[ 'content-type' ] || ''
+			).startsWith( 'application/x-www-form-urlencoded' );
+			if ( request.method() !== 'POST' || ! form ) {
+				return route.fallback();
+			}
+			return route.fulfill( {
+				status: 409,
+				contentType: 'application/json; charset=UTF-8',
+				body: JSON.stringify( {
+					code: 'bulkcat_selection_renew_required',
+					message:
+						'Your selection has been paused. Restore it, then try again.',
+					data: { status: 409 },
+				} ),
+			} );
+		} );
+		const dialog = await openExport( page );
+		const confirm = dialog.getByRole( 'checkbox', {
+			name: 'Yes, export the whole catalogue',
+		} );
+		await confirm.check();
+		await dialog.getByRole( 'button', { name: 'Download' } ).click();
+		await expect( dialog ).toBeHidden();
+		const notice = page.locator( '.bulkcat-export .bulkcat-error' );
+		await expect( notice ).toContainText(
+			'Your selection has been paused. Restore it, then try again.'
+		);
+		await expect( page.locator( '.bulkcat-export__button' ) ).toHaveText(
+			'Export CSV'
+		);
+		// Try again by keyboard, then Escape: focus is back on Export.
+		const again = notice.getByRole( 'button', { name: 'Try again' } );
+		await again.focus();
+		await page.keyboard.press( 'Enter' );
+		await expect( dialog ).toBeVisible();
+		await expect( dialog ).toContainText( /The file will have/ );
+		await page.keyboard.press( 'Escape' );
+		await expect( dialog ).toBeHidden();
+		await expect( page.locator( '.bulkcat-export__button' ) ).toBeFocused();
+		await page.unroute( EXPORT );
+	} );
+
 	for ( const [ label, size ] of [
 		[ '1280 pixels wide', { width: 1280, height: 900 } ],
 		[ '320 pixels wide', { width: 320, height: 720 } ],

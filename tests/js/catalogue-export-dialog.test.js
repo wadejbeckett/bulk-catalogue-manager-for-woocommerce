@@ -623,6 +623,11 @@ describe( 'the export dialog', () => {
 		const [ form ] = submitted;
 		const frame = document.querySelector( 'iframe.bulkcat-export__frame' );
 		expect( frame.hidden ).toBe( true );
+		// Sandboxed: no script runs in the answer; the page can still read a
+		// refusal (same origin) and the browser can still save the file.
+		expect( frame.getAttribute( 'sandbox' ) ).toBe(
+			'allow-same-origin allow-downloads'
+		);
 		expect( form.method ).toBe( 'post' );
 		expect( form.getAttribute( 'action' ) ).toBe( 'export' );
 		expect( form.target ).toBe( frame.name );

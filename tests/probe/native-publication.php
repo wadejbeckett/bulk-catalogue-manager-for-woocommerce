@@ -128,7 +128,230 @@ add_action( 'woocommerce_before_product_object_save', $watch_crud );
 add_action( 'pre_post_update', $watch_post );
 try {
 	$grant();
-	if ( 'scale-setup' === $a['case'] ) {
+	if ( 'variation-password' === $a['case'] ) {
+		wp_set_current_user( $actor );
+		( new WP_User( $actor ) )->add_cap( 'edit_product' ); // Native variation child gate, separate from parent edit.
+		$native = (int) $a['other_id'];
+		bulkcat_native_owned( $native, $a['run'] );
+		foreach ( [ $native, $id ] as $pid ) {
+			wp_update_post(
+				wp_slash(
+					[
+						'ID'            => $pid,
+						'post_status'   => 'publish',
+						'post_password' => $secret,
+					]
+				)
+			);
+		}
+		$p = wc_get_product( $native );
+		$check( 'native_stored_exact_getter_omits_password', get_post_field( 'post_password', $native, 'raw' ) === $secret && '' === $p->get_post_password( 'edit' ) );
+		$p->set_status( 'private' );
+		$p->save();
+		$check( 'native_private_clears_variation_password', '' === get_post_field( 'post_password', $native, 'raw' ) );
+		$p = wc_get_product( $native );
+		$p->set_status( 'publish' );
+		$p->set_post_password( $secret );
+		$p->save();
+		$check( 'native_single_CRUD_cannot_restore_password', '' === get_post_field( 'post_password', $native, 'raw' ) );
+		foreach ( [ 'set_status', 'set_value', 'restore_status' ] as $action ) {
+			wp_update_post(
+				wp_slash(
+					[
+						'ID'            => $id,
+						'post_status'   => 'publish',
+						'post_password' => $secret,
+					]
+				)
+			);
+			$args = [
+				'field' => 'status',
+				'value' => 'private',
+			];
+			if ( 'restore_status' === $action ) {
+				$args['password'] = $secret;
+			}
+			$ops    = [
+				[
+					'action' => $action,
+					'args'   => $actions->get( $action )->validate( $args )->args(),
+				],
+			];
+			$counts = [
+				'crud' => 0,
+				'post' => 0,
+			];
+			$out    = ( new Writer( $actions, null, $actor ) )->write( $id, $ops );
+			$check(
+				$action . '_protected_variation_refused',
+				( 'publish' === get_post_field( 'post_status', $id, 'raw' ) ) && ( get_post_field( 'post_password', $id, 'raw' ) === $secret ) && ( 0 === $counts['crud'] && 0 === $counts['post'] ) && Result::SKIPPED === $out->results()[0]->state() && 'bulkcat_variation_password_unsupported' === $out->results()[0]->code()
+			);
+		}
+		wp_update_post(
+			[
+				'ID'            => $id,
+				'post_status'   => 'private',
+				'post_password' => '',
+			]
+		);
+		$args   = [
+			'field'             => 'status',
+			'value'             => 'publish',
+			'password'          => $secret,
+			'expected_password' => '',
+		];
+		$ops    = [
+			[
+				'action' => 'restore_status',
+				'args'   => $actions->get( 'restore_status' )->validate( $args )->args(),
+			],
+		];
+		$counts = [
+			'crud' => 0,
+			'post' => 0,
+		];
+		$out    = ( new Writer( $actions, null, $actor ) )->write( $id, $ops );
+		$check(
+			'internal_password_undo_refused_before_save',
+			'private' === get_post_field( 'post_status', $id, 'raw' ) && '' === get_post_field( 'post_password', $id, 'raw' ) && ( 0 === $counts['crud'] && 0 === $counts['post'] ) && Result::SKIPPED === $out->results()[0]->state() && 'bulkcat_variation_password_unsupported' === $out->results()[0]->code()
+		);
+		foreach ( [ 'set_status', 'set_value' ] as $action ) {
+			wp_update_post(
+				wp_slash(
+					[
+						'ID'            => $id,
+						'post_status'   => 'publish',
+						'post_password' => $secret,
+					]
+				)
+			);
+			$batch     = ( new BatchFactory() )->open( $actor, $step( 'set_status', 'private' ), [ [ $id, 'variation' ] ] );
+			$batches[] = $batch;
+			$journal->intend( $batch, $id, 'variation', get_post_field( 'post_modified_gmt', $id, 'raw' ), [ [ Result::changed( 'status', 'publish', 'private' ), true ] ], [ 'status' => 'publish' ] );
+			$counts = [
+				'crud' => 0,
+				'post' => 0,
+			];
+			$out    = Writer::for_batch( $actions, $journal, $batch, $actor )->write( $id, $step( $action, 'private' ) );
+			$rows   = $changes->for_objects( $batch, [ $id ] );
+			$check(
+				$action . '_pending_replay_refused',
+				( 'publish' === get_post_field( 'post_status', $id, 'raw' ) ) && ( get_post_field( 'post_password', $id, 'raw' ) === $secret ) && ( 0 === $counts['crud'] && 0 === $counts['post'] ) && 'failed' === $rows[0]['result'] && 'bulkcat_variation_password_unsupported' === $out->results()[0]->code()
+			);
+		}
+		wp_update_post(
+			[
+				'ID'            => $id,
+				'post_status'   => 'publish',
+				'post_password' => '',
+			]
+		);
+		$counts = [
+			'crud' => 0,
+			'post' => 0,
+		];
+		( new Writer( $actions, null, $actor ) )->write( $id, $step( 'set_status', 'private' ) );
+		$check(
+			'ordinary_password_empty_variation_supported',
+			'private' === get_post_field( 'post_status', $id, 'raw' ) && ( 1 === $counts['crud'] && 1 === $counts['post'] )
+		);
+	} elseif ( 'scheduled-replay' === $a['case'] ) {
+		foreach ( [ 'set_status', 'set_value' ] as $action ) {
+			foreach ( [ true, false ] as $publish ) {
+				$grant();
+				wp_set_current_user( 0 );
+				$reset();
+				$date = time() + 65;
+				wp_update_post(
+					[
+						'ID'            => $id,
+						'post_date'     => gmdate( 'Y-m-d H:i:s', $date ),
+						'post_date_gmt' => gmdate( 'Y-m-d H:i:s', $date ),
+					]
+				);
+				$ops       = $step( $action, 'publish' );
+				$batch     = ( new BatchFactory() )->open( $actor, $step( 'set_status', 'publish' ), [ [ $id, 'product' ] ] );
+				$batches[] = $batch;
+				$interrupt = static function ( $p ) use ( $id ): void {
+					if ( (int) $p->get_id() === $id ) {
+						throw new Error( 'Owned scheduled save interruption' );
+					}
+				};
+				add_action( 'woocommerce_after_product_object_save', $interrupt, 99 );
+				$counts = [
+					'crud' => 0,
+					'post' => 0,
+				];
+				try {
+					Writer::for_batch( $actions, $journal, $batch, $actor )->write( $id, $ops );
+				} catch ( Error $e ) {
+					if ( 'Owned scheduled save interruption' !== $e->getMessage() ) {
+						throw $e;
+					}
+				} finally {
+					remove_action( 'woocommerce_after_product_object_save', $interrupt, 99 );
+				}
+				$key = $action . '_' . ( $publish ? 'retained' : 'revoked' );
+				$check(
+					$key . '_interrupted_after_one_scheduled_save',
+					'future' === $read()['status'] && ( 1 === $counts['crud'] && 1 === $counts['post'] ) && [
+						'status' => [
+							'old' => 'draft',
+							'new' => 'publish',
+						],
+					] === $journal->intents(
+						$batch,
+						$id
+					)
+				);
+				// Cross the real minute boundary, before the native scheduled event is due.
+				while ( time() < $date - 59 ) {
+					usleep( 100000 );
+				}
+				( new WP_User( $actor ) )->add_cap( 'publish_products', $publish );
+				$now                  = time();
+				$observations[ $key ] = [
+					'date'          => $date,
+					'recovery_time' => $now,
+					'prediction'    => StatusTransition::predict( wc_get_product( $id ), 'publish', $now )['effective'],
+				];
+				$check( $key . '_crossed_boundary_before_due', $now > $date - 60 && $now < $date && 'publish' === $observations[ $key ]['prediction'] );
+				$counts = [
+					'crud' => 0,
+					'post' => 0,
+				];
+				$out    = Writer::for_batch( $actions, $journal, $batch, $actor )->write( $id, $ops );
+				$rows   = $changes->for_objects( $batch, [ $id ] );
+				$check(
+					$key . '_landed_actual_future_zero_saves',
+					'future' === $read()['status'] && ( 0 === $counts['crud'] && 0 === $counts['post'] ) && 'future' === $out->results()[0]->new() && 'applied' === $rows[0]['result'] && 'draft' === $rows[0]['old_value'] && 'future' === $rows[0]['new_value']
+				);
+				// A genuinely unwritten Future -> Publish intent must still save exactly once.
+				$date = time() + 600;
+				wp_update_post(
+					[
+						'ID'            => $id,
+						'post_status'   => 'future',
+						'post_date'     => gmdate( 'Y-m-d H:i:s', $date ),
+						'post_date_gmt' => gmdate( 'Y-m-d H:i:s', $date ),
+					]
+				);
+				$batch     = ( new BatchFactory() )->open( $actor, $step( 'set_status', 'publish' ), [ [ $id, 'product' ] ] );
+				$batches[] = $batch;
+				$journal->intend( $batch, $id, 'product', get_post_field( 'post_modified_gmt', $id, 'raw' ), [ [ Result::changed( 'status', 'future', 'publish' ), true ] ], [ 'status' => 'future' ] );
+				$counts = [
+					'crud' => 0,
+					'post' => 0,
+				];
+				$out    = Writer::for_batch( $actions, $journal, $batch, $actor )->write( $id, $ops );
+				$rows   = $changes->for_objects( $batch, [ $id ] );
+				$check(
+					$key . '_unwritten_resave_one_save',
+					'future' === $read()['status'] && ( 1 === $counts['crud'] && 1 === $counts['post'] ) && 'future' === $out->results()[0]->new() && 'applied' === $rows[0]['result'] && 'future' === $rows[0]['old_value'] && 'future' === $rows[0]['new_value']
+				);
+			}
+		}
+	} elseif ( 'scale-setup' === $a['case'] ) {
 		wp_set_current_user( $actor );
 		$ids   = [];
 		$start = microtime( true );

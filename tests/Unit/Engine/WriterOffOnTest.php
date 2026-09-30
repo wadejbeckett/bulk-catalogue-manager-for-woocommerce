@@ -751,4 +751,182 @@ final class WriterOffOnTest extends TestCase {
 			$this->assertSame( [ 'failed','failed' ], array_column( self::rows(), 'result' ) );
 		}
 	}
+
+	public function test_landed_scheduled_replay_is_independent_of_recovery_clock(): void {
+		foreach ( [ 'set_status', 'set_value' ] as $action ) {
+			foreach ( [ true, false ] as $publish ) {
+				foreach ( [ 940, 941, 1001 ] as $now ) {
+					$this->setUp();
+					$p       = self::product( 501, 'future', null, 1000 );
+					$fields  = new Fields();
+					$journal = new Journal( new ChangeRepository(), $fields, false );
+					$journal->intend( self::BATCH, 501, 'product', '2026-09-01 00:00:00', [ [ Result::changed( 'status', 'draft', 'publish' ), true ] ], [ 'status' => 'draft' ] );
+					$GLOBALS['bulkcat_test']['user_caps'][23] = [
+						'edit_post'        => true,
+						'publish_products' => $publish,
+					];
+					$writer                                   = Writer::for_batch( new Registry( $fields ), $journal, self::BATCH, 23 );
+					$out                                      = Stamp::within(
+						0,
+						static fn(): int => $now,
+						static fn() => $writer->write(
+							501,
+							[
+								[
+									'action' => $action,
+									'args'   => [
+										'field' => 'status',
+										'value' => 'publish',
+									],
+								],
+							]
+						)
+					);
+					$this->assertSame( [ [ 'status', 'draft', 'future', 'applied' ] ], self::summary(), $action . ':' . $now );
+					$this->assertSame( 'future', $out->results()[0]->new() );
+					$this->assertSame( [], $p->sets );
+					$this->assertSame( [], $p->saves );
+				}
+			}
+		}
+	}
+
+	public function test_unwritten_future_publish_replay_still_saves_once(): void {
+		foreach ( [ 'set_status', 'set_value' ] as $action ) {
+			foreach ( [ true, false ] as $publish ) {
+				foreach ( [
+					940 => 'future',
+					941 => 'publish',
+				] as $now => $stored ) {
+					$this->setUp();
+					$p = self::product( 501, 'future', null, 1000 );
+					$GLOBALS['bulkcat_test']['stored_status'][501] = $stored;
+					$fields                                        = new Fields();
+					$journal                                       = new Journal( new ChangeRepository(), $fields, false );
+					$journal->intend( self::BATCH, 501, 'product', '2026-09-01 00:00:00', [ [ Result::changed( 'status', 'future', 'publish' ), true ] ], [ 'status' => 'future' ] );
+					$GLOBALS['bulkcat_test']['user_caps'][23] = [
+						'edit_post'        => true,
+						'publish_products' => $publish,
+					];
+					$writer                                   = Writer::for_batch( new Registry( $fields ), $journal, self::BATCH, 23 );
+					Stamp::within(
+						0,
+						static fn(): int => $now,
+						static fn() => $writer->write(
+							501,
+							[
+								[
+									'action' => $action,
+									'args'   => [
+										'field' => 'status',
+										'value' => 'publish',
+									],
+								],
+							]
+						)
+					);
+					$this->assertCount( 1, $p->saves, $action . ':' . $now );
+					$this->assertSame( 'publish', $p->saves[0]['status'] );
+					$this->assertSame( [ [ 'status', 'future', $stored, 'applied' ] ], self::summary() );
+				}
+			}
+		}
+	}
+
+	public function test_pending_variation_password_replay_refuses_before_any_setter(): void {
+		foreach ( [ false, true ] as $password_intent ) {
+			$this->setUp();
+			$p                                        = new SavedProduct(
+				'variation',
+				[
+					'id'            => 501,
+					'parent_id'     => 500,
+					'status'        => 'publish',
+					'post_password' => '',
+				]
+			);
+			$GLOBALS['bulkcat_test']['products'][501] = $p;
+			$GLOBALS['bulkcat_test']['post_fields'][501]['post_password'] = ' native \\ preimage ';
+			$GLOBALS['bulkcat_test']['user_caps'][23]                     = [ 'edit_post' => true ];
+			$fields  = new Fields();
+			$journal = new Journal( new ChangeRepository(), $fields, false );
+			$entries = [ [ Result::changed( 'status', 'publish', 'private' ), true ] ];
+			$before  = [ 'status' => 'publish' ];
+			if ( $password_intent ) {
+				$entries[]                      = [ Result::changed( 'publication_password', ' native \\ preimage ', '' ), true ];
+				$before['publication_password'] = ' native \\ preimage ';
+			}
+			$journal->intend( self::BATCH, 501, 'variation', '2026-09-01 00:00:00', $entries, $before );
+			$out = Writer::for_batch( new Registry( $fields ), $journal, self::BATCH, 23 )->write(
+				501,
+				[
+					[
+						'action' => 'set_status',
+						'args'   => [
+							'field' => 'status',
+							'value' => 'private',
+						],
+					],
+				]
+			);
+			$this->assertSame( [], $p->sets );
+			$this->assertSame( [], $p->saves );
+			$this->assertSame( 'bulkcat_variation_password_unsupported', $out->results()[0]->code() );
+			$this->assertSame( [ 'failed' ], array_values( array_unique( array_column( self::rows(), 'result' ) ) ) );
+		}
+	}
+
+	public function test_variation_password_added_after_status_setter_is_protected_at_final_check(): void {
+		foreach ( [ false, true ] as $replay ) {
+			$this->setUp();
+			$p = new SavedProduct(
+				'variation',
+				[
+					'id'            => 501,
+					'parent_id'     => 500,
+					'status'        => 'publish',
+					'post_password' => '',
+				]
+			);
+			$GLOBALS['bulkcat_test']['post_fields'][501]['post_password'] = '';
+			$GLOBALS['bulkcat_test']['user_caps'][23]                     = [ 'edit_post' => true ];
+			$GLOBALS['bulkcat_test']['products'][501]                     = new class($p) {
+				public function __construct( public SavedProduct $inner ) {}
+				public function is_type( string $type ): bool {
+					return $this->inner->is_type( $type ); }
+				public function __call( string $method, array $args ): mixed {
+					$value = $this->inner->$method( ...$args );
+					if ( 'set_status' === $method ) {
+						$GLOBALS['bulkcat_test']['post_fields'][501]['post_password'] = ' concurrent native \\ password ';
+					}
+					return $value;
+				}
+			};
+			$fields  = new Fields();
+			$journal = new Journal( new ChangeRepository(), $fields, false );
+			if ( $replay ) {
+				$journal->intend( self::BATCH, 501, 'variation', '2026-09-01 00:00:00', [ [ Result::changed( 'status', 'publish', 'private' ), true ] ], [ 'status' => 'publish' ] );
+			}
+			$actions = new Registry( $fields );
+			$args    = $actions->get( 'set_status' )->validate(
+				[
+					'field' => 'status',
+					'value' => 'private',
+				]
+			)->args();
+			$out     = Writer::for_batch( $actions, $journal, self::BATCH, 23 )->write(
+				501,
+				[
+					[
+						'action' => 'set_status',
+						'args'   => $args,
+					],
+				]
+			);
+			$this->assertSame( [ [ 'set_status', 'private' ] ], $p->sets, 'The password appears only after successful initial validation.' );
+			$this->assertSame( [], $p->saves );
+			$this->assertSame( 'bulkcat_variation_password_unsupported', $out->results()[0]->code() );
+			$this->assertSame( 'failed', self::rows()[0]['result'] );
+		}
+	}
 }

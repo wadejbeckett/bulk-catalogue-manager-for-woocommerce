@@ -494,7 +494,8 @@ against the preserved release ZIP through its own guarded workflow; completed
 Task 1 history is not proof of queued upgrade recovery.
 
 Each run records start/end SHA-256 manifests of the candidate PHP sources and
-built assets, plus Git HEAD and the runtime version labels. A version label alone
+built assets and probe/fixture files, plus Git HEAD and the runtime version labels.
+A changing manifest fails the chapter. A version label alone
 does not establish an archive identity. A changed manifest means the run cannot
 be claimed as one run of the final source. The native chapter also counts exact
 object CRUD saves and native post updates: equal second-resolution timestamps
@@ -516,7 +517,7 @@ python3 tests/probe/native-publication.py --base-url "$BULKCAT_E2E_BASE_URL" \
 ```
 
 `BULKCAT_NATIVE_PUBLICATION_CASES` selects exact comma-separated cases from
-`transport,private-undo,crash,setter-failure,final-check,hooks,binding,http` for
+`transport,private-undo,crash,setter-failure,final-check,hooks,binding,http,scheduled-replay,variation-password` for
 repair reruns. The browser checks use installed Playwright and the exact owned
 HTTP session in process memory; cookies/passwords are not saved in evidence.
 The binding measurement is bounded cost evidence, not the release scale gate.
@@ -524,3 +525,11 @@ Native-oracle, harness and cleanup failures must remain in the evidence beside
 any corrected rerun. Investigate a baseline discrepancy before acceptance;
 never overwrite original user preferences or remove unrelated sessions to make
 a hash match. Never report a source-only concern as a demonstrated exploit.
+
+`scheduled-replay` crosses the real minute boundary after an interrupted Scheduled
+save and distinguishes it from an unwritten Future→Publish intent, with retained
+and revoked publication rights. `variation-password` qualifies the native
+variation datastore’s omitted password load/update, then proves safe refusal of
+password-bearing Private changes, internal restoration and pending replay. Empty
+password variation edits remain supported; no variation password writer is added.
+The Status chapter includes future-dated variation Preview/Apply/native readback.

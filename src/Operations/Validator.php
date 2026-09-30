@@ -140,7 +140,8 @@ final class Validator {
 		}
 		$field = $this->fields->get( $result->field() );
 		if ( null !== $field && \BulkCatalogueManager\Availability\StatusSwitch::governs( $field ) && in_array( $result->state(), [ Result::CHANGED,Result::ALREADY ], true ) ) {
-			$denied = \BulkCatalogueManager\Publishing\StatusPermission::check( $this->user_id, $subject, (string) $result->new() );
+			$denied   = \BulkCatalogueManager\Publishing\StatusPermission::check( $this->user_id, $subject, (string) $result->new() );
+			$denied ??= \BulkCatalogueManager\Publishing\PublicationPassword::variation_refusal( $subject, (string) $result->new(), array_key_exists( 'password', $args ) );
 			if ( null !== $denied ) {
 				return [ Result::skipped( $result->field(), $result->old(), $denied->get_error_message(), (string) $denied->get_error_code() ) ]; }
 		}

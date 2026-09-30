@@ -112,4 +112,52 @@ final class PublicationPasswordTest extends TestCase {
 		$this->assertSame( $secret, $plan->items()[0]['operations'][0]['args']['password'], 'Only the protected server plan retains the exact preimage.' );
 		$this->assertNotSame( $secret, ( new Fields() )->get( 'sku' )->clean( $secret ), 'Ordinary public text sanitation is unchanged.' );
 	}
+
+	public function test_native_variation_preimage_is_read_but_destructive_status_and_restore_are_refused(): void {
+		foreach ( [ 'set_status', 'set_value', 'restore_status' ] as $action ) {
+			bulkcat_test_reset();
+			$GLOBALS['bulkcat_test']['caps']          = [
+				'edit_post'        => true,
+				'publish_products' => true,
+			];
+			$p                                        = new SavedProduct(
+				'variation',
+				[
+					'id'            => 501,
+					'parent_id'     => 500,
+					'status'        => 'publish',
+					'post_password' => '',
+				]
+			);
+			$GLOBALS['bulkcat_test']['products'][501] = $p;
+			$secret                                   = "  <native> ' \\ preimage  ";
+			$GLOBALS['bulkcat_test']['post_fields'][501]['post_password'] = $secret;
+			$this->assertSame( $secret, PublicationPassword::field()->read( $p ) );
+			$args = [
+				'field' => 'status',
+				'value' => 'private',
+			];
+			if ( 'restore_status' === $action ) {
+				$args['password'] = 'other protected preimage';
+			}
+			$actions    = new Registry( new Fields() );
+			$validation = $actions->get( $action )->validate( $args );
+			$this->assertNull( $validation->error() );
+			$out = ( new \BulkCatalogueManager\Engine\Writer( $actions ) )->write(
+				501,
+				[
+					[
+						'action' => $action,
+						'args'   => $validation->args(),
+					],
+				]
+			);
+			$this->assertSame( Result::SKIPPED, $out->results()[0]->state() );
+			$this->assertSame( 'bulkcat_variation_password_unsupported', $out->results()[0]->code() );
+			$this->assertSame( [], $p->sets );
+			$this->assertSame( [], $p->saves );
+			$this->assertInstanceOf( \WP_Error::class, PublicationPassword::field()->write( $p, '' ) );
+			$this->assertSame( [], $p->sets );
+		}
+	}
 }

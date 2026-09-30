@@ -280,6 +280,7 @@ def check_native_status(p):
         evidence['cleanup'] = cleanup
         evidence['source_end'] = source_manifest()
         evidence['source_unchanged'] = evidence['source_start'] == evidence['source_end']
+        result('source-unchanged', evidence['source_unchanged'], 'runtime, build and probe file manifests match at start/end')
         result('baseline-preserved', cleanup['baseline'] == baseline['baseline'], 'full original product/meta/term/user/config hashes retained (login session_tokens excluded); owned users removed; timezone restored')
         result('owned-users-removed', not cleanup['remaining_users'], 'exact UUID-owned user IDs no longer exist')
         evidence['rows'] = [r for r in p.rows if r[0] == 'native-status']

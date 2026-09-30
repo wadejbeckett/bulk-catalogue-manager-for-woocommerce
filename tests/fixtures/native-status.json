@@ -656,6 +656,19 @@
       "allowed": true
     },
     {
+      "case": "variation-private-future-publish",
+      "kind": "variation",
+      "actor": "variation_editor",
+      "initial": "private",
+      "requested": [
+        "publish"
+      ],
+      "record": "none",
+      "date": "ahead",
+      "effective": "future",
+      "allowed": true
+    },
+    {
       "case": "deleted-draft-publish",
       "actor": "deleted",
       "initial": "draft",

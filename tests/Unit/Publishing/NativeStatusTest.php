@@ -250,4 +250,26 @@ final class NativeStatusTest extends TestCase {
 		$this->assertSame( 'set_post_password', $field->setter() );
 		$this->assertStringNotContainsString( 'synthetic-password', PublicationPassword::display( 'synthetic-password' ) );
 	}
+
+	public function test_variation_prediction_and_binding_obey_native_minute_boundary(): void {
+		$product = self::product( 'private', 1000, 'variation' );
+		$GLOBALS['bulkcat_test']['products'][ self::ID ] = $product;
+		$step      = self::step( 'publish' );
+		$operation = ( new Registry( new Fields() ) )->get( 'set_status' );
+		$objects   = [ [ self::ID, 'variation' ] ];
+		foreach ( [
+			939 => 'future',
+			940 => 'future',
+			941 => 'publish',
+		] as $now => $expected ) {
+			$this->assertSame( $expected, StatusTransition::predict( $product, 'publish', $now )['effective'] );
+			$result = \BulkCatalogueManager\Availability\Stamp::within( 0, static fn(): int => $now, static fn() => $operation->compute( $product, $step['args'] ) );
+			$this->assertSame( $expected, $result->context()['effective_status'] );
+			$bindings[ $now ] = \BulkCatalogueManager\Publishing\PublicationBinding::of( $objects, [ $step ], $now );
+		}
+		$this->assertSame( $bindings[939], $bindings[940] );
+		$this->assertNotSame( $bindings[940], $bindings[941] );
+		$this->assertSame( [], $product->sets );
+		$this->assertSame( [], $product->saves );
+	}
 }

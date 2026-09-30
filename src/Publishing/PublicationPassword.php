@@ -35,6 +35,21 @@ final class PublicationPassword {
 			internal: true
 		);
 	}
+	/** Refuse native variation password loss or restoration unsupported by its datastore.
+	 * @param object $product Loaded object.
+	 * @param string $requested Status this save requests.
+	 * @param bool $restoring Whether an internal password write is requested.
+	 */
+	public static function variation_refusal( object $product, string $requested, bool $restoring = false ): ?\WP_Error {
+		if ( ! $product->is_type( 'variation' ) || ( ! $restoring && ( 'private' !== $requested || '' === self::field()->read( $product ) ) ) ) {
+			return null;
+		}
+		return \BulkCatalogueManager\Rest\Refusal::create(
+			'bulkcat_variation_password_unsupported',
+			__( 'WooCommerce cannot safely restore publication passwords for variations. This change was left alone to protect the stored password.', 'bulk-catalogue-manager-for-woocommerce' ),
+			400
+		);
+	}
 	/** Safe public rendering.
 	 * @param mixed $value Protected value.
 	 */

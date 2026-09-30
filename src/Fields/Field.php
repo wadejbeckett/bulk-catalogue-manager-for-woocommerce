@@ -610,6 +610,10 @@ final class Field {
 	 * @param object $product A WooCommerce product or variation.
 	 */
 	public function read( object $product ): mixed {
+		if ( $this->internal && self::ADAPTER_PUBLICATION_PASSWORD === $this->adapter && self::is_type( $product, 'variation' ) ) {
+			// The native variation datastore omits this property when loading CRUD objects.
+			return (string) get_post_field( 'post_password', (int) $product->get_id(), 'raw' );
+		}
 		switch ( $this->adapter ) {
 			case self::ADAPTER_PLAIN:
 				return self::call( $product, $this->getter, false );
@@ -647,6 +651,9 @@ final class Field {
 	 * @param mixed  $value   Submitted value.
 	 */
 	public function refusal( object $subject, mixed $value ): ?\WP_Error {
+		if ( $this->internal && self::ADAPTER_PUBLICATION_PASSWORD === $this->adapter && self::is_type( $subject, 'variation' ) ) {
+			return \BulkCatalogueManager\Publishing\PublicationPassword::variation_refusal( $subject, '', true );
+		}
 		if ( $this->read_only() ) {
 			$valid = $this->validate( $value );
 			return $valid instanceof \WP_Error ? $valid : null;

@@ -64,9 +64,9 @@ def main():
             evidence['cases'].append(current)
             ids = []
             try:
-                made = native('create', row={'case':case, 'date':'past', 'record':'none', 'initial':'draft'}, author=actor, actor=actor, fixture_admin=int(p.seed['users']['admin']['id']))
+                made = native('create', row={'case':case, 'date':'past', 'record':'none', 'initial':'publish' if case == 'variation-password' else 'draft', 'kind':'variation' if case.startswith('variation-') else 'simple'}, author=actor, actor=actor, fixture_admin=int(p.seed['users']['admin']['id']))
                 current['before'] = made['before']
-                ids = list(made['ids'].values())
+                ids = list(made['ids'].values()) + made['parents']
                 evidence['owned_ids'].extend(ids)
                 save()
                 extra = {}
@@ -161,7 +161,7 @@ def main():
         evidence['source_end'] = source_manifest()
         evidence['source_unchanged'] = evidence['source_start'] == evidence['source_end']
         evidence['baseline_preserved'] = cleanup['baseline'] == baseline['baseline']
-        failed += not evidence['baseline_preserved'] or bool(cleanup['remaining_users'])
+        failed += not evidence['source_unchanged'] or not evidence['baseline_preserved'] or bool(cleanup['remaining_users'])
         evidence['failures'] = failed
         save()
         print(f'Baseline preserved: {evidence["baseline_preserved"]}; failures: {failed}; evidence: {path}', flush=True)

@@ -115,10 +115,10 @@ final class SetStatus extends BaseOperation {
 	 * @return list<Result>
 	 */
 	public function follow( object $subject, Result $checked, array $args ): array {
-		if ( ! $checked->is_changed() || ! StatusSwitch::applies( $this->field( $args ), $subject ) ) {
+		if ( ! $checked->is_changed() ) {
 			return [];
 		}
-		$record = OffRecord::raw( $subject );
+		$record = StatusSwitch::applies( $this->field( $args ), $subject ) ? OffRecord::raw( $subject ) : '';
 		return array_merge( '' === $record ? [] : [ Result::changed( OffRecord::FIELD, $record, '' ) ], \BulkCatalogueManager\Publishing\PublicationPassword::clearing( $subject, $checked ) );
 	}
 }

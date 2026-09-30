@@ -310,4 +310,20 @@ final class RestoreStatusTest extends TestCase {
 			}
 		}
 	}
+
+	public function test_variation_password_restore_is_refused_even_when_current_password_is_empty(): void {
+		$p   = self::product( 501, 'private', '', 'variation' );
+		$out = $this->undo(
+			501,
+			[
+				'value'             => 'publish',
+				'password'          => ' exact \\ native ',
+				'expected_password' => '',
+			]
+		);
+		$this->assertSame( Result::SKIPPED, $out->results()[0]->state() );
+		$this->assertSame( 'bulkcat_variation_password_unsupported', $out->results()[0]->code() );
+		$this->assertSame( [], $p->sets );
+		$this->assertSame( [], $p->saves );
+	}
 }

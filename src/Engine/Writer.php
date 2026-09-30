@@ -575,9 +575,11 @@ final class Writer {
 				$results[ $key ] = self::changed_kind( [ [ null,[ 'field' => $key ] ] ] )[0];
 				continue;
 			}
-			$current   = $field->read( $product );
-			$effective = StatusSwitch::governs( $field ) ? StatusTransition::predict( $product, (string) $value, Stamp::now() )['effective'] : $value;
-			if ( Planner::same( $field, $current, $value ) || ( StatusSwitch::governs( $field ) && $current === $effective ) ) {
+			$current = $field->read( $product );
+			// Native Publish may have landed as Scheduled. Its stored outcome does not
+			// expire at the minute boundary. An unchanged Future preimage is still pending.
+			$scheduled = StatusSwitch::governs( $field ) && 'publish' === $value && 'future' === $current && $old !== $current;
+			if ( Planner::same( $field, $current, $value ) || $scheduled ) {
 				$results[ $key ] = Planner::same( $field, $old, $current ) ? Result::already( $key, $current ) : Result::changed( $key, $old, $current );
 			} else {
 				$pending[ $key ] = Result::changed( $key, $old, $value );
@@ -594,6 +596,7 @@ final class Writer {
 				$previous = (string) $intents[ $status->key() ]['old'];
 				$denied ??= StatusPermission::check( $this->user_id, $native_before, (string) $intents[ $status->key() ]['new'], $previous );
 			}
+			$denied ??= PublicationPassword::variation_refusal( $native_before, null === $status ? '' : (string) $intents[ $status->key() ]['new'], isset( $intents[ PublicationPassword::FIELD ] ) );
 			foreach ( $pending as $key => $result ) {
 				$field = $fields->get( $key );
 				if ( null !== $denied ) {
@@ -628,6 +631,7 @@ final class Writer {
 				if ( $publication && null !== $status && isset( $intents[ $status->key() ] ) ) {
 					$denied ??= StatusPermission::check( $this->user_id, $native_before, (string) $intents[ $status->key() ]['new'], $previous );
 				}
+				$denied ??= PublicationPassword::variation_refusal( $native_before, null === $status ? '' : (string) $intents[ $status->key() ]['new'], isset( $intents[ PublicationPassword::FIELD ] ) );
 				if ( null !== $denied ) {
 					foreach ( $pending as $key => $result ) {
 						$results[ $key ] = Result::failed( $key, $result->old(), $denied->get_error_message(), (string) $denied->get_error_code() );
@@ -686,6 +690,7 @@ final class Writer {
 			$field = $this->operations->fields()->get( $result->field() );
 			if ( null !== $field && StatusSwitch::governs( $field ) && in_array( $result->state(), [ Result::CHANGED,Result::ALREADY ], true ) ) {
 				$denied ??= StatusPermission::check( $this->user_id, $before, (string) $result->new() );
+				$denied ??= PublicationPassword::variation_refusal( $before, (string) $result->new() );
 			}
 		}
 		return $denied;

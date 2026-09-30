@@ -42,7 +42,7 @@ final class StatusTransition {
 		$inputs    = self::inputs( $product );
 		$date      = $inputs['timestamp'] ?? $now;
 		$effective = $requested;
-		if ( ! $product->is_type( 'variation' ) && in_array( $requested, [ 'publish', 'future' ], true ) ) {
+		if ( in_array( $requested, [ 'publish', 'future' ], true ) ) {
 			$effective = $date - $now >= 60 ? 'future' : 'publish';
 		}
 		return [

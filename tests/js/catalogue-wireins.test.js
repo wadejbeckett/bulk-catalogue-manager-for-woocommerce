@@ -296,11 +296,11 @@ describe( 'registry flags in place of client lists', () => {
 		const flagged = {
 			...REGISTRY,
 			fields: fields.map( ( field ) =>
-				field.key === 'status'
+				field.key === 'catalog_visibility'
 					? {
 							...field,
 							choices: field.choices.map( ( choice ) =>
-								choice.value === 'private'
+								choice.value === 'visible'
 									? {
 											...choice,
 											hidesProduct: true,
@@ -314,7 +314,7 @@ describe( 'registry flags in place of client lists', () => {
 		};
 		const operation = {
 			action: 'set_value',
-			args: { field: 'status', value: 'private' },
+			args: { field: 'catalog_visibility', value: 'visible' },
 		};
 		expect( alwaysConfirmReasons( REGISTRY, [ operation ], 1 ) ).toEqual(
 			[]

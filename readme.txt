@@ -31,7 +31,7 @@ Up to 20 changes can run in order as one step, such as "increase the regular pri
 
 **See it first.** Nothing is saved until a preview has shown how many products will change, a sample of old and new values, and any warnings, such as a sale price above the regular price or a duplicate SKU.
 
-**Switch products Off and On.** Status is the one switch. Setting a product to Draft takes it off the site for every buyer and saves the status it had on the product; setting it back to Published restores exactly that status, so a product that was Private comes back Private, and the preview says so first. The table shows an Off product as "Off (was Published)", and the Status filter finds Off products.
+**Change native Status.** Choose Published, Pending Review, Draft or Private. A stored future publication date can make a Published request become Scheduled; the preview and saved row show that result. Draft does not remember a status, and Published does not restore one. Individual edits use one Save; bulk Status changes use Preview then Apply, with one additional count confirmation at or above your configured threshold. Password consequences appear as redacted warnings in Preview, while optional-provider reviews remain.
 
 **Export it.** Export CSV downloads the selected products, or every product matching your filters, in the columns the table shows. With **Include identifiers for re-import** on, the file goes back through WooCommerce's own Products → Import to update the same products.
 
@@ -70,13 +70,13 @@ Open the History tab, find the change and choose **Undo this change**. You will 
 
 90 days by default. You can choose from 7 to 730 days, or keep it indefinitely, on the Settings tab. Older changes stay listed but can no longer be undone. To keep a copy, use **Export log (CSV)** on the History tab before they are removed.
 
-= What does switching a product Off do? =
+= What does changing Status to Draft do? =
 
-Setting a product's Status to Draft takes it off the site for every buyer: its page, the shop, search, feeds and the store's APIs no longer show it, it cannot be added to a cart, and carts that already hold it lose it before checkout. The status it had is saved on the product. Setting Status back to Published restores exactly that status, whether it was Published, Private, Pending review or scheduled (a scheduled product whose time has passed is published). Nothing else about the product changes. Orders already placed are not touched. Hiding a product with **Shown in shop and search** or Catalogue visibility only changes where it is listed; a hidden product can still be opened by link and bought.
+Setting a product's Status to Draft takes it off sale through native WordPress and WooCommerce behavior. Choosing Published later requests publication, subject to the stored date and your permissions. It does not restore a remembered Private or Pending Review status. Explicit Undo restores recorded before/after values with conflict checks. Shown in shop and search and Catalogue visibility only change listings; they are separate from publication Status.
 
-= What if a product's status is changed somewhere else while it is Off? =
+= What happens to old Off/On history and filters? =
 
-The manager never stops the product editor, an import or another tool from changing it. The product then reads "Changed outside this screen". Published leaves it alone and says why; choose **Keep current status** to keep the status it has now and forget the saved one, or Draft to switch it Off again, saving its new status.
+Accepted legacy changes retain their original interpretation, receipts and Undo behavior. History labels legacy Status requests separately from new native Status changes. Saved Off and Changed outside this screen filters still match their exact original conditions and are labelled as legacy status filters; they are not offered for new filters. New Status edits ignore remembered targets.
 
 = How do I export products as CSV? =
 
@@ -93,7 +93,7 @@ On the Catalogue tab, choose **Export CSV**. When products are selected, **Selec
 Limits:
 
 * A SKU or a name that starts with -, +, = or @ is written with an apostrophe in front, so a spreadsheet does not run it as a formula. WooCommerce's importer keeps that apostrophe. The importer also removes line breaks, repeated or edge spaces, tags and % codes from a SKU. The dialog counts such rows: correct them, or remove the apostrophe, before re-importing.
-* A product switched Off is in the file with its Status, Draft, but never with the status it saved: that stays on the product. Importing the file leaves the product Off with its saved status, so Published still restores it.
+* Legacy saved-status records are never exported. The file carries the actual Status, such as Draft, and an unchanged re-import preserves the existing record. New Status edits still request the native target rather than restoring that record.
 * WooCommerce regenerates a variation's title from its product and attributes when it saves it, so a variation with a title of its own gets the generated title back on any import.
 * An import made with WooCommerce's importer is WooCommerce's: it is not recorded in History and cannot be undone here. Keep the unedited file if you may want to go back.
 
@@ -119,7 +119,7 @@ Shop managers and administrators by default, or administrators only. Each produc
 
 = What happens when I deactivate or delete the plugin? =
 
-Deactivating stops the daily history clean-up and leaves everything else in place. Deleting the plugin keeps your history, settings and saved views by default, so they are there if you reinstall. To remove everything when the plugin is deleted, turn on **Remove all data when the plugin is deleted** on the Settings tab first. Your product data itself is never removed. With that setting on, deleting the plugin also removes the saved status of every product switched Off: those products stay Draft, off the site, and Published would then publish them rather than restore what they were. Switch them On first.
+Deactivating stops the daily history clean-up and leaves everything else in place. Deleting the plugin keeps your history, settings and saved views by default, so they are there if you reinstall. To remove everything when the plugin is deleted, turn on **Remove all data when the plugin is deleted** on the Settings tab first. Your product data itself is never removed. With that setting on, deletion also removes legacy saved-status records while leaving product statuses unchanged. Review the products and history before removing retained data.
 
 = Does it work on a multisite network? =
 

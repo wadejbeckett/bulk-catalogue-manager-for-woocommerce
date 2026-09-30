@@ -134,7 +134,7 @@ export function useEditScope( {
 	 * @param {Object}        values       Field key => value.
 	 * @param {Array<string>} extra        Further fields the answer should carry.
 	 * @param {Object}        options      Options.
-	 * @param {boolean}       options.keep Keep current status (T92, SPEC §5.5).
+	 * @param {boolean}       options.keep Legacy intent only; current controls never send it.
 	 * @return {Promise<Object>} The answer.
 	 */
 	const commit = useCallback(

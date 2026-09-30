@@ -345,13 +345,13 @@ describe( 'bulk panel: chooser and controls', () => {
 
 	it( 'types the set value control by the field', () => {
 		renderPanel();
-		choose( 'Publishing', 'Set a value' );
-		change( 'Field', 'status' );
+		choose( 'Publishing', 'Set Status' );
 		expect(
 			within( screen.getByLabelText( 'New value' ) )
 				.getAllByRole( 'option' )
 				.map( ( option ) => option.value )
 		).toEqual( [ 'publish', 'draft', 'pending', 'private' ] );
+		choose( 'Publishing', 'Set a value' );
 		change( 'Field', 'featured' );
 		expect(
 			within( screen.getByLabelText( 'New value' ) )
@@ -374,22 +374,18 @@ describe( 'bulk panel: chooser and controls', () => {
 		).toBeVisible();
 	} );
 
-	it( 'offers Keep current status only on a Published Status step (T91)', () => {
+	it( 'discovers Set Status without a remembered-status control', () => {
 		renderPanel();
-		choose( 'Publishing', 'Set a value' );
-		change( 'Field', 'status' );
-		const keep =
-			'For products changed by someone else while Off: keep their current status and clear the Off record';
+		choose( 'Publishing', 'Set Status' );
 		expect( screen.getByLabelText( 'New value' ) ).toHaveValue( 'publish' );
-		expect( screen.getByLabelText( keep ) ).not.toBeChecked();
-		change( 'New value', 'draft' );
-		expect( screen.queryByLabelText( keep ) ).toBeNull();
-		change( 'New value', 'publish' );
-		expect( screen.getByLabelText( keep ) ).toBeVisible();
-		change( 'Field', 'featured' );
-		expect( screen.queryByLabelText( keep ) ).toBeNull();
-		choose( 'Pricing', 'Set a value' );
-		expect( screen.queryByLabelText( keep ) ).toBeNull();
+		expect( document.body.textContent ).not.toMatch(
+			/Keep current status|while Off/
+		);
+		expect(
+			Array.from( screen.getByLabelText( 'New value' ).options ).map(
+				( option ) => option.value
+			)
+		).toEqual( [ 'publish', 'draft', 'pending', 'private' ] );
 	} );
 
 	it( 'starts both switches per field: skip on, variations from the settings, absent on parent-only fields', () => {
@@ -408,11 +404,11 @@ describe( 'bulk panel: chooser and controls', () => {
 			).toBeChecked();
 		} );
 
-		choose( 'Publishing', 'Set a value' );
-		change( 'Field', 'status' );
+		choose( 'Publishing', 'Set Status' );
 		expect(
 			screen.getByLabelText( 'Also apply to variations' )
 		).toBeChecked();
+		choose( 'Publishing', 'Set a value' );
 		change( 'Field', 'catalog_visibility' );
 		expect(
 			screen.queryByLabelText( 'Also apply to variations' )
@@ -451,8 +447,7 @@ describe( 'bulk panel: chooser and controls', () => {
 		expect(
 			screen.getByLabelText( 'Also apply to variations' )
 		).toBeChecked();
-		choose( 'Publishing', 'Set a value' );
-		change( 'Field', 'status' );
+		choose( 'Publishing', 'Set Status' );
 		expect(
 			screen.getByLabelText( 'Also apply to variations' )
 		).not.toBeChecked();
@@ -1446,4 +1441,82 @@ describe( 'bulk panel: preview, apply and done', () => {
 		expect( document.activeElement ).toBe( opener );
 		opener.remove();
 	} );
+} );
+
+describe( 'native Status bulk review', () => {
+	it.each( [
+		[ 1, false ],
+		[ 2, true ],
+	] )(
+		'applies %i changed rows with warnings at threshold two',
+		async ( count, confirms ) => {
+			apiFetch.mockReset();
+			const operations = [
+				{
+					action: 'set_status',
+					args: {
+						field: 'status',
+						value: 'private',
+						skip_already: true,
+						apply_to_variations: false,
+					},
+				},
+			];
+			const response = previewResponse( {
+				operations,
+				warnings: { publication_password_cleared: count },
+				totals: {
+					...previewResponse().totals,
+					matched: count,
+					would_change: count,
+					would_fail: {},
+					by_type: {
+						product: { matched: count, would_change: count },
+						variation: { matched: 0, would_change: 0 },
+					},
+				},
+			} );
+			routeApi( apiFetch, {
+				'POST preview': response,
+				'POST requests': grantFor,
+				'POST batches': { batch_id: 99, status: 'queued' },
+			} );
+			renderPanel( {
+				settings: {
+					...SETTINGS,
+					confirm_threshold: 2,
+					variations_status: false,
+				},
+			} );
+			choose( 'Publishing', 'Set Status' );
+			change( 'New value', 'private' );
+			fireEvent.click(
+				screen.getByRole( 'button', { name: 'Check the change' } )
+			);
+			const apply = await screen.findByRole( 'button', {
+				name: `Apply to ${ count } ${ count === 1 ? 'product' : 'products' }`,
+			} );
+			expect(
+				document.querySelector( '[data-block="warnings"]' ).textContent
+			).toMatch( /publication password/i );
+			fireEvent.click( apply );
+			expect(
+				screen.queryAllByRole( 'button', { name: /^Yes, change/ } )
+			).toHaveLength( confirms ? 1 : 0 );
+			expect( callsTo( apiFetch, 'POST batches' ) ).toHaveLength( 0 );
+			if ( confirms ) {
+				fireEvent.click(
+					screen.getByRole( 'button', {
+						name: 'Yes, change 2 products',
+					} )
+				);
+			}
+			await waitFor( () =>
+				expect( callsTo( apiFetch, 'POST batches' ) ).toHaveLength( 1 )
+			);
+			expect(
+				callsTo( apiFetch, 'POST batches' )[ 0 ].data.intent.operations
+			).toEqual( operations );
+		}
+	);
 } );

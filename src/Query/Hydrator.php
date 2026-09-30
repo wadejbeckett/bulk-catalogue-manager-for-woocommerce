@@ -90,10 +90,11 @@ final class Hydrator {
 	public const ATTRIBUTES = 'attributes';
 
 	/**
-	 * Extra item property on a product row whenever Status shows (T92, SPEC
+	 * Legacy compatibility property on a product row whenever Status shows (SPEC
 	 * §5.5): null, or `{ state: 'off'|'changed_outside', saved, saved_label,
 	 * switched_off_gmt, batch_id }` from its own Off record, plus
-	 * `scheduled_gmt` (its date) when the status saved is scheduled.
+	 * `scheduled_gmt` (its date) when the status saved is scheduled. Native
+	 * controls display the actual Status field, never a target from this record.
 	 */
 	public const OFF_STATE = 'off_state';
 

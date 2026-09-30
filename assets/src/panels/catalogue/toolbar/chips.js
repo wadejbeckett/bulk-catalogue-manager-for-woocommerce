@@ -126,7 +126,10 @@ export function spanPhrase( count, unit ) {
  * @return {Array<string>} Names.
  */
 function valueNames( descriptor, values, termNames ) {
-	const elements = descriptor.dataviews?.elements || [];
+	const elements = [
+		...( descriptor.dataviews?.elements || [] ),
+		...( descriptor.legacyFilterChoices || [] ),
+	];
 	const names = termNames?.[ descriptor.source ];
 	return values.map( ( value ) => {
 		if ( descriptor.source ) {

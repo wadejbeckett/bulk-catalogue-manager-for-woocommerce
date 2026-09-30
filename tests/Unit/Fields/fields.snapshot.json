@@ -99,19 +99,11 @@
                     },
                     {
                         "value": "pending",
-                        "label": "Pending review"
+                        "label": "Pending Review"
                     },
                     {
                         "value": "private",
                         "label": "Private"
-                    },
-                    {
-                        "value": "off",
-                        "label": "Off"
-                    },
-                    {
-                        "value": "changed_outside",
-                        "label": "Changed outside this screen"
                     }
                 ]
             },
@@ -136,7 +128,7 @@
                 },
                 {
                     "value": "pending",
-                    "label": "Pending review",
+                    "label": "Pending Review",
                     "hidesProduct": true,
                     "hidesAs": "off_site"
                 },
@@ -159,7 +151,17 @@
             ],
             "variationOnlyChoices": [],
             "group": "publishing",
-            "switchesOffOn": true
+            "nativeStatus": true,
+            "legacyFilterChoices": [
+                {
+                    "value": "off",
+                    "label": "Off (legacy status filter)"
+                },
+                {
+                    "value": "changed_outside",
+                    "label": "Changed outside this screen (legacy status filter)"
+                }
+            ]
         },
         {
             "key": "catalog_visibility",

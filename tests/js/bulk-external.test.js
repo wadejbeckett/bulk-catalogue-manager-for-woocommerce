@@ -26,7 +26,7 @@ import {
 	fieldsFromRegistry,
 } from '../../assets/src/panels/catalogue/fields';
 
-const { IDS, SETTINGS } = require( './bulk-fixtures' );
+const { IDS, SETTINGS, callsTo } = require( './bulk-fixtures' );
 const EXTERNAL = require( '../Unit/Extension/fields-external.snapshot.json' );
 
 jest.mock( '@wordpress/api-fetch', () => {
@@ -525,6 +525,10 @@ describe( 'the preview of an external change', () => {
 		expect(
 			screen.getByRole( 'button', { name: 'Yes, change 2 products' } )
 		).toBeVisible();
+		expect(
+			screen.getAllByRole( 'button', { name: 'Yes, change 2 products' } )
+		).toHaveLength( 1 );
+		expect( callsTo( apiFetch, 'POST batches' ) ).toHaveLength( 0 );
 		expect( screen.getByText( SALE ) ).toBeVisible(); // Restated by the confirmation; the warning reads "… — 2 products".
 	} );
 } );

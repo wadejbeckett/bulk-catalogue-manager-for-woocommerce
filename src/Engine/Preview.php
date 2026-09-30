@@ -444,9 +444,11 @@ final class Preview {
 			}
 			// The Off record a Status step writes with it (T89) is set on the copy but never shown
 			// as a row: an object whose only change is its record still counts, under its step's field.
-			$hidden = [];
+			$hidden          = [];
+			$password_clears = [];
 			foreach ( $steps as [ $operation, $args ] ) {
-				$computed = $operation->compute( $subject, $args );
+				$result_index = count( $results );
+				$computed     = $operation->compute( $subject, $args );
 				$this->warn( $tally['warnings'], $subject, $computed );
 				$checked = $validator->check( $subject, $computed, $args );
 				// What follows the step (the Off record, T89), decided before anything is set, as the writer does.
@@ -472,9 +474,16 @@ final class Preview {
 					if ( $set->is_changed() ) {
 						$hidden[ $computed->field() ] = true;
 					}
+					// Disclose only an actual native clear projected on this copy, never its preimage.
+					if ( 'set_status' === $operation->id() && $set->is_changed() && \BulkCatalogueManager\Publishing\PublicationPassword::FIELD === $set->field() && '' === $set->new() && '' !== $set->old() ) {
+						$password_clears[ $result_index ] = true;
+					}
 				}
 			}
 
+			if ( [] !== $password_clears ) {
+				$tally['warnings']['publication_password_cleared'] = ( $tally['warnings']['publication_password_cleared'] ?? 0 ) + 1;
+			}
 			$states = [];
 			$failed = [];
 			if ( [] !== $hidden ) {
@@ -486,7 +495,7 @@ final class Preview {
 					}
 				}
 			}
-			foreach ( $results as $result ) {
+			foreach ( $results as $result_index => $result ) {
 				$state = $result->state();
 				++$tally['rows'][ $state ];
 				$states[ $state ] = true;
@@ -511,7 +520,7 @@ final class Preview {
 						'replaces'    => $result->replaces(),
 						'note'        => $result->note(),
 						'context'     => $result->context(),
-					];
+					] + ( isset( $password_clears[ $result_index ] ) ? [ 'password_cleared' => true ] : [] );
 				}
 			}
 			if ( isset( $states[ Result::CHANGED ] ) ) {

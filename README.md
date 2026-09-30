@@ -17,6 +17,14 @@ The screen is **Products → Bulk Catalogue Manager**. It has five tabs.
 - **Categories.** The product category tree: create, rename, change slug and description, move under another parent and reorder, by dragging or through **Move to…**. Dropping selected products on a category adds it to them as an ordinary previewed change.
 - **Settings.** See [Settings](#settings).
 
+## Native Status
+
+Status uses Published, Pending Review, Draft and Private. A stored scheduled date may make a Published request become Scheduled; the returned row and bulk Preview show that native result. Scheduled is a stored label and filter, not an ordinary edit target. An old remembered status never changes a new requested target.
+
+Individual edits use one Save (or Enter/blur in a cell). Bulk Status changes use Preview → Apply; warnings stay in Preview, with one extra count confirmation only at or above the configured threshold. Optional-provider review remains. Preview reports a password clear only when the server successfully projects that native consequence, without exposing a password. Variations whose stored passwords cannot safely be restored are refused in the ordinary result surface.
+
+Accepted legacy work and explicit Undo retain their recorded meaning. Existing Off/Changed outside this screen filters retain their exact predicates with a “legacy status filter” chip; new filter choices use native states. Native browser/archive-upgrade and release qualification remain required before release of this correction.
+
 ## Re-import the file
 
 **Export CSV** opens a dialog. **Selected**, chosen whenever anything is selected, exports exactly the selection in ascending ID order, including rows the list is not showing; items no longer available are left out and counted. **All matching the current filters** exports every matching row in the view's sort order; with no search, filter or category it is the whole catalogue and needs **Yes, export the whole catalogue** (the server requires it too). The columns are the name, then the visible columns in order, without the image. The catalogue is exported by `POST /bulkcat/v1/export` into a hidden frame, the nonce and the selection's token in the body; `GET /bulkcat/v1/export` exports History's rows only.
@@ -33,7 +41,7 @@ Limits of the round trip:
 
 - Re-import only files made with the switch on. Without it the first heading follows the byte-order mark quoted, which PHP's CSV reader keeps as `"ID"`, so rows are matched by SKU alone and rows without a SKU are skipped; and the rendered Price and the term ID columns are mapped.
 - The formula guard stays: a value starting (after spaces) with `=`, `+`, `-` or `@`, or with a tab or carriage return, gets an apostrophe in front. WooCommerce's importer keeps that apostrophe in a SKU and a name (recorded: `'-P1` is imported as `'-P1`), and cleans a SKU of line breaks, repeated or edge spaces, tags and `%` codes. With the switch on, the dialog counts both kinds of row and says to correct them first.
-- The saved status of a product switched Off (`_bulkcat_availability_off`) is never exported, whatever columns are chosen: the round trip carries Status (`draft`) and not the saved status. The record is bound to its product, and a copy on another product is ignored by design. Re-importing the file leaves an Off product Draft with its own record (`OffRecordExportTest`; probe rows `read:export:off-record-absent` and `read:export:native-import-roundtrip:off-product`).
+- A legacy saved status (`_bulkcat_availability_off`) is never exported, whatever columns are chosen: the round trip carries Status (`draft`) and not the saved status. The record is bound to its product, and a copy on another product is ignored by design. Re-importing an unchanged legacy Draft leaves its stored status and owned record intact (`OffRecordExportTest`; probe rows `read:export:off-record-absent` and `read:export:native-import-roundtrip:off-product`).
 - WooCommerce regenerates a variation's title whenever it saves the variation, so a variation with a custom title gets the generated one back on any import, from any file.
 - The import is WooCommerce's: it is not recorded in History and cannot be undone from this screen.
 - Before it streams, the export lifts PHP's time limit with `wc_set_time_limit( 0 )` where the host allows. A web-server, proxy or PHP-FPM timeout still applies (on the test stack, Apache's 300-second `Timeout`), so on such a host narrow a very large export with a filter or a smaller selection.
@@ -46,7 +54,7 @@ Every write goes through WooCommerce's product classes (`wc_get_product()`, the 
 | --- | --- | --- |
 | Name | `post_title` (the slug is never changed) | Not editable; WooCommerce builds it from the attributes |
 | Status | `post_status` | Published or private only |
-| Catalogue visibility, and the **Shown in shop and search** switch (a listing control; Status is the Off/On control) | `product_visibility` terms `exclude-from-catalog` and `exclude-from-search` | Product only |
+| Catalogue visibility, and the **Shown in shop and search** switch (a listing control; Status is the native publication control) | `product_visibility` terms `exclude-from-catalog` and `exclude-from-search` | Product only |
 | Featured | `product_visibility` term `featured` | Product only |
 | Categories, tags | `product_cat`, `product_tag` terms | Product only |
 | Regular price | `_regular_price` | Each variation; a variable product's price comes from its variations |

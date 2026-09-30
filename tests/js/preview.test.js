@@ -554,7 +554,7 @@ describe( 'preview inside the panel', () => {
 	} );
 } );
 
-describe( 'the Off and On block (T91, SPEC §9.1)', () => {
+describe( 'retained legacy Status outcomes (SPEC §9.1)', () => {
 	const statusRow = (
 		id,
 		name,
@@ -654,7 +654,7 @@ describe( 'the Off and On block (T91, SPEC §9.1)', () => {
 			)
 		).map( ( item ) => item.textContent );
 		expect( lines ).toEqual( [
-			'1 product was changed by someone else while Off and will be left alone. Choose Keep current status to clear its Off record instead.',
+			'1 product was changed by someone else while Off and will be left alone.',
 			'1 product comes back with the status it had before Off, not Published: 1 Private.',
 			'2 products were scheduled and their time has passed: this publishes them now.',
 			'1 product was not switched Off: this publishes it.',

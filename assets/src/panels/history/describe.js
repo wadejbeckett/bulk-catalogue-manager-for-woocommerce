@@ -114,8 +114,19 @@ export function formatValue( value, field ) {
 export function describeOperation( operation, byKey = {}, actions = {} ) {
 	const args = operation?.args || {};
 	const field = byKey[ args.field ];
+	if ( operation?.action === 'set_value' && field?.nativeStatus ) {
+		return sprintf(
+			/* translators: %s: the status requested by an accepted legacy change, which may have restored a remembered status. */
+			__(
+				'Legacy Status change requested %s',
+				'bulk-catalogue-manager-for-woocommerce'
+			),
+			formatValue( args.value, field )
+		);
+	}
 	const label = inSentence( fieldLabel( args.field, byKey ) );
 	switch ( operation?.action ) {
+		case 'set_status':
 		case 'set_value':
 			return sprintf(
 				/* translators: 1: a field, such as "regular price"; 2: the value it was set to. */

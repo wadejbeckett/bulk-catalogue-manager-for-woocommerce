@@ -1,14 +1,18 @@
 /**
  * The preview (SPEC §4.4, T50), rendered from the POST /preview answer in
- * order: the summary sentence, the counts, the Off and On block when a step
- * sets Status (T91), the sample table, the warnings; then the sample
+ * order: the summary sentence, the counts, retained legacy outcomes when present, the sample table, the warnings; then the sample
  * controls. Nothing here writes.
  */
 import { __, _n, sprintf } from '@wordpress/i18n';
 
 import { termOptions } from './controls';
 import { fieldByKey } from './descriptors';
-import { availabilityLines, outcomeLabel, statusName } from './availability';
+import {
+	availabilityLines,
+	outcomeLabel,
+	publicationSentence,
+	statusName,
+} from './availability';
 import { countPhrase } from '../catalogue/selection/model';
 import {
 	formatNumber,
@@ -146,6 +150,19 @@ export function warningSentences( warnings, byType = null ) {
 				'bulk-catalogue-manager-for-woocommerce'
 			),
 			formatNumber( count( 'sku_duplicate' ) )
+		)
+	);
+	add(
+		'publication_password_cleared',
+		sprintf(
+			/* translators: %s: the number of products whose publication passwords will be cleared. */
+			_n(
+				'The publication password will be cleared on %s product.',
+				'Publication passwords will be cleared on %s products.',
+				count( 'publication_password_cleared' ),
+				'bulk-catalogue-manager-for-woocommerce'
+			),
+			formatNumber( count( 'publication_password_cleared' ) )
 		)
 	);
 	return out;
@@ -322,6 +339,19 @@ function AfterCell( { row, field, terms, registry } ) {
 					? row.new
 					: formatValue( field, row.new, terms ) }
 			</strong>
+			{ publicationSentence( registry, row.context ) && (
+				<span className="bulkcat-bulk__note">
+					{ publicationSentence( registry, row.context ) }
+				</span>
+			) }
+			{ row.password_cleared === true && (
+				<span className="bulkcat-bulk__note">
+					{ __(
+						'The publication password will be cleared.',
+						'bulk-catalogue-manager-for-woocommerce'
+					) }
+				</span>
+			) }
 			{ row.external && row.change && (
 				<span className="bulkcat-bulk__change">{ row.change }</span>
 			) }
@@ -355,7 +385,10 @@ function AvailabilityBlock( { registry, block } ) {
 	return (
 		<div className="bulkcat-bulk__card" data-block="availability">
 			<h3>
-				{ __( 'Off and On', 'bulk-catalogue-manager-for-woocommerce' ) }
+				{ __(
+					'Legacy Status outcomes',
+					'bulk-catalogue-manager-for-woocommerce'
+				) }
 			</h3>
 			<ul className="bulkcat-bulk__lines">
 				{ lines.map( ( line ) => (

@@ -14,10 +14,7 @@
  * PATCH — a batch of one, journalled and undoable — and the row updates from
  * the answer.
  *
- * Status is the Off/On switch (T92, SPEC §5.5): a Save whose Status change
- * confirms shows the same confirm as the grid's cell above the Save button
- * before writing, and the same PATCH follows; a Published refused because
- * the product was changed elsewhere while Off offers Keep current status.
+ * Status follows the same one-Save path and displays the returned native state.
  */
 import { Button, Notice, Spinner } from '@wordpress/components';
 import { DataForm } from '@wordpress/dataviews';
@@ -38,7 +35,6 @@ import { flattenTree } from '../use-catalogue';
 import { request } from '../../../api';
 import { loadProduct, loadRecentChange, loadVariations } from './requests';
 import {
-	allowedChoices,
 	comparable,
 	failureText,
 	fieldErrors,
@@ -46,14 +42,7 @@ import {
 	unavailableReason,
 	validate,
 } from './rules';
-import {
-	CONFLICT_CODE,
-	StatusConfirm,
-	offStateText,
-	savedOutcome,
-	statusOutcome,
-	switchesOffOn,
-} from './status';
+import { editChoices, savedOutcome } from './status';
 import { productName } from './switch';
 
 const FOCUSABLE =
@@ -95,11 +84,7 @@ export function formField( descriptor, item, termNames ) {
 		return { ...field, readOnly: true, description: reason, render: show };
 	}
 	if ( descriptor.type === 'enum' ) {
-		field.elements = allowedChoices( descriptor, item );
-	}
-	if ( switchesOffOn( descriptor, item ) && offStateText( item ) ) {
-		// The Off state, as the grid's badge reads it (T92).
-		field.description = offStateText( item );
+		field.elements = editChoices( descriptor, item );
 	}
 	if ( descriptor.type === 'terms' || descriptor.type === 'term' ) {
 		const names = termNames[ descriptor.source ];
@@ -223,7 +208,6 @@ export default function DetailDrawer( {
 	const [ saving, setSaving ] = useState( false );
 	const [ savedNote, setSavedNote ] = useState( '' );
 	const [ asking, setAsking ] = useState( false );
-	const [ confirming, setConfirming ] = useState( null );
 	const [ variations, setVariations ] = useState( [] );
 	const [ recent, setRecent ] = useState( undefined );
 	const panel = useRef( null );
@@ -231,7 +215,6 @@ export default function DetailDrawer( {
 	const closeButton = useRef( null );
 	const keepButton = useRef( null );
 	const saveButton = useRef( null );
-	const refocusSave = useRef( false );
 	const report = useRef( false );
 	const id = item.id;
 
@@ -266,18 +249,6 @@ export default function DetailDrawer( {
 			keepButton.current?.focus();
 		}
 	}, [ asking ] );
-
-	// The confirm had focus: once it has gone, Save takes it (§14).
-	useEffect( () => {
-		if ( confirming || ! refocusSave.current ) {
-			return;
-		}
-		refocusSave.current = false;
-		const doc = panel.current?.ownerDocument;
-		if ( doc && ! panel.current.contains( doc.activeElement ) ) {
-			saveButton.current?.focus();
-		}
-	}, [ confirming ] );
 
 	// Show the refusals once the controls carry them (their effects run first).
 	useEffect( () => {
@@ -319,7 +290,7 @@ export default function DetailDrawer( {
 	const onChange = ( edits ) => {
 		setData( ( current ) => ( { ...current, ...edits } ) );
 		setSavedNote( '' );
-		setConfirming( null );
+
 		setValidity( ( current ) => {
 			const next = { ...current };
 			Object.keys( edits ).forEach( ( key ) => delete next[ key ] );
@@ -361,41 +332,27 @@ export default function DetailDrawer( {
 			values[ key ] = toRequestValue( field, data[ key ] );
 		} );
 		const status = shown.find(
-			( field ) =>
-				changed.includes( field.key ) && switchesOffOn( field, saved )
+			( field ) => changed.includes( field.key ) && field.nativeStatus
 		);
-		if ( status ) {
-			const outcome = statusOutcome( saved, data[ status.key ], {
-				descriptor: status,
-				name: productName( item, descriptors ),
-			} );
-			if ( outcome.confirm ) {
-				setFailure( null );
-				setConfirming( { ...outcome, values, status } );
-				return;
-			}
-		}
-		write( values, false, status );
+		write( values, status );
 	};
 
 	/**
-	 * The one PATCH for the changed fields; keep is Keep current status.
+	 * The one PATCH for the changed fields.
 	 *
-	 * @param {Object}  values Field key => value.
-	 * @param {boolean} keep   Keep current status (SPEC §5.5).
-	 * @param {Object}  status The Status descriptor when Status changed.
+	 * @param {Object} values Field key => value.
+	 * @param {Object} status The Status descriptor when Status changed.
 	 */
-	const write = ( values, keep, status ) => {
+	const write = ( values, status ) => {
 		setSaving( true );
 		setFailure( null );
-		commit( item, values, Object.keys( saved ), keep ? { keep: true } : {} )
+		commit( item, values, Object.keys( saved ), {} )
 			.then( ( answer ) => {
 				const row = { ...saved, ...( answer?.item || {} ) };
 				setSaved( row );
 				setData( row );
 				setValidity( {} );
-				refocusSave.current = true;
-				setConfirming( null );
+
 				const labels = changed
 					.map(
 						( key ) =>
@@ -406,7 +363,7 @@ export default function DetailDrawer( {
 				setSavedNote(
 					outcome
 						? sprintf(
-								/* translators: 1: the fields saved, separated by commas, 2: what the Status change did, such as "Switched Off (was Published)". */
+								/* translators: 1: the fields saved, separated by commas, 2: what the Status change did, such as "Scheduled". */
 								__(
 									'Saved: %1$s. %2$s.',
 									'bulk-catalogue-manager-for-woocommerce'
@@ -425,22 +382,6 @@ export default function DetailDrawer( {
 				);
 			} )
 			.catch( ( error ) => {
-				if ( error?.code === CONFLICT_CODE && ! keep && status ) {
-					// The server's sentence, with Keep current status as the confirm.
-					setConfirming( {
-						code: 'conflict',
-						context: error?.data?.context || {},
-						sentence:
-							typeof error?.message === 'string'
-								? error.message
-								: '',
-						values,
-						status,
-					} );
-					return;
-				}
-				refocusSave.current = true;
-				setConfirming( null );
 				const refusals = fieldErrors( error, changed );
 				if ( Object.keys( refusals ).length ) {
 					refuse( refusals );
@@ -646,23 +587,6 @@ export default function DetailDrawer( {
 								onChange={ onChange }
 								validity={ validity }
 							/>
-							{ confirming && (
-								<StatusConfirm
-									outcome={ confirming }
-									busy={ saving }
-									onConfirm={ () =>
-										write(
-											confirming.values,
-											confirming.code === 'conflict',
-											confirming.status
-										)
-									}
-									onCancel={ () => {
-										setConfirming( null );
-										saveButton.current?.focus();
-									} }
-								/>
-							) }
 							<div className="bulkcat-drawer__actions">
 								<Button
 									ref={ saveButton }

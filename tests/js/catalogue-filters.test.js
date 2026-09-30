@@ -92,20 +92,20 @@ const TABLE = [
 		'status',
 		{ operator: 'isNone', value: [ 'draft', 'pending' ] },
 		{ operator: 'isNone', value: [ 'draft', 'pending' ] },
-		'Status is not Draft or Pending review',
+		'Status is not Draft or Pending Review',
 	],
 	// T92 (SPEC §4.1, §5.5): Off and Changed outside this screen are values of the one Status filter.
 	[
 		'status',
 		{ operator: 'isAny', value: [ 'off' ] },
 		{ operator: 'isAny', value: [ 'off' ] },
-		'Status is Off',
+		'Status is Off (legacy status filter)',
 	],
 	[
 		'status',
 		{ operator: 'isAny', value: [ 'draft', 'changed_outside' ] },
 		{ operator: 'isAny', value: [ 'draft', 'changed_outside' ] },
-		'Status is Draft or Changed outside this screen',
+		'Status is Draft or Changed outside this screen (legacy status filter)',
 	],
 	[
 		'catalog_visibility',
@@ -326,20 +326,18 @@ describe( 'filters offered through DataViews', () => {
 			'isNone',
 		] );
 		expect( field( 'stock_status' ).elements ).toHaveLength( 3 );
-		// T92: the Status filter offers Off and Changed outside this screen, never a choice to write.
+		// T92: the Status filter offers native states; legacy predicates remain only in existing views.
 		expect( field( 'status' ).elements ).toEqual( [
 			{ value: 'publish', label: 'Published' },
 			// T114: filtered as Scheduled, never written.
 			{ value: 'future', label: 'Scheduled' },
 			{ value: 'draft', label: 'Draft' },
-			{ value: 'pending', label: 'Pending review' },
+			{ value: 'pending', label: 'Pending Review' },
 			{ value: 'private', label: 'Private' },
-			{ value: 'off', label: 'Off' },
-			{ value: 'changed_outside', label: 'Changed outside this screen' },
 		] );
 		expect(
 			descriptors
-				.find( ( each ) => each.switchesOffOn )
+				.find( ( each ) => each.nativeStatus )
 				.choices.map( ( choice ) => choice.value )
 		).not.toContain( 'off' );
 		expect( field( 'featured' ).elements.map( ( e ) => e.value ) ).toEqual(

@@ -106,6 +106,123 @@ final class PreviewTest extends TestCase {
 		}
 	}
 
+	public function test_native_password_clear_projection_is_redacted_and_counted_beyond_the_sample(): void {
+		$secret = "  <synthetic> ' \\ opaque password  ";
+		foreach ( [ 101, 102 ] as $id ) {
+			$this->load(
+				$id,
+				'simple',
+				[
+					'name'          => 'Preview subject',
+					'status'        => 'publish',
+					'post_password' => $secret,
+				]
+			);
+		}
+		$answer = self::preview()->run(
+			Selection::of_ids( [ 101, 102 ] ),
+			self::ops(
+				[
+					[
+						'set_status',
+						[
+							'field'               => 'status',
+							'value'               => 'private',
+							'apply_to_variations' => false,
+						],
+					],
+				]
+			),
+			1
+		);
+		$this->assertTrue( is_array( $answer ) );
+		$this->assertCount( 1, $answer['sample'] );
+		$this->assertTrue( $answer['sample'][0]['password_cleared'] ?? false );
+		$this->assertSame( 2, $answer['warnings']['publication_password_cleared'] ?? 0 );
+		$this->assertStringNotContainsString( 'opaque password', wp_json_encode( $answer ), 'The marker remains searchable even when JSON escapes password punctuation.' );
+		$this->assertStringNotContainsString( hash( 'sha256', $secret ), wp_json_encode( $answer ) );
+		$this->assertSame( 'private', $answer['operations'][0]['args']['value'] );
+	}
+
+	public function test_native_password_projection_preserves_request_and_hash_compatibility(): void {
+		$actions    = new Actions( new Fields() );
+		$preview    = new Preview( $actions, new BatchFactory( $actions ), Preview::CAP, static fn(): int => 1790899200 );
+		$operations = self::ops(
+			[
+				[
+					'set_status',
+					[
+						'field'               => 'status',
+						'value'               => 'private',
+						'apply_to_variations' => false,
+					],
+				],
+			]
+		);
+		$answers    = [];
+		foreach ( [ '', 'synthetic opaque password' ] as $password ) {
+			$this->load(
+				101,
+				'simple',
+				[
+					'name'          => 'Preview subject',
+					'status'        => 'publish',
+					'post_password' => $password,
+				]
+			);
+			$answers[] = $preview->run( Selection::of_ids( [ 101 ] ), $operations );
+		}
+		$this->assertTrue( $answers[1]['sample'][0]['password_cleared'] );
+		$this->assertSame( 1, $answers[1]['warnings']['publication_password_cleared'] );
+		unset( $answers[1]['sample'][0]['password_cleared'], $answers[1]['warnings']['publication_password_cleared'] );
+		$this->assertSame( $answers[0], $answers[1], 'Only the redacted consequence projection changes; operations, hash and old response properties remain identical.' );
+	}
+
+	public function test_native_password_projection_never_claims_an_unperformed_clear(): void {
+		foreach ( [ 'blank', 'denied', 'already', 'variation', 'failed_status', 'failed_password' ] as $case ) {
+			$id      = 'variation' === $case ? 201 : 101;
+			$subject = $this->load(
+				$id,
+				'variation' === $case ? 'variation' : 'simple',
+				[
+					'name'          => 'Preview subject',
+					'parent_id'     => 201 === $id ? 103 : 0,
+					'status'        => 'already' === $case ? 'private' : 'publish',
+					'post_password' => 'blank' === $case ? '' : 'nonempty synthetic password',
+				]
+			);
+			$GLOBALS['bulkcat_test']['caps']['edit_post'] = 'denied' !== $case;
+			if ( 'variation' === $case ) {
+				$GLOBALS['bulkcat_test']['post_fields'][201]['post_password'] = 'nonempty synthetic password';
+			}
+			if ( str_starts_with( $case, 'failed_' ) ) {
+				$subject->refuse[ 'failed_status' === $case ? 'set_status' : 'set_post_password' ] = 'Synthetic projection refusal.';
+			}
+			$answer = self::preview()->run(
+				Selection::of_ids( [ $id ] ),
+				self::ops(
+					[
+						[
+							'set_status',
+							[
+								'field'               => 'status',
+								'value'               => 'private',
+								'apply_to_variations' => false,
+							],
+						],
+					]
+				)
+			);
+			$this->assertTrue( is_array( $answer ), $case );
+			$this->assertArrayNotHasKey( 'publication_password_cleared', $answer['warnings'], $case );
+			$this->assertArrayNotHasKey( 'password_cleared', $answer['sample'][0], $case );
+			$this->assertSame( array_fill_keys( Preview::WARNINGS, 0 ), $answer['warnings'], 'Existing warning shape without a clear: ' . $case );
+			if ( 'variation' === $case ) {
+				$this->assertSame( 'bulkcat_variation_password_unsupported', $answer['sample'][0]['code'] );
+			}
+		}
+	}
+
 	/**
 	 * Register an object for wc_get_product().
 	 *

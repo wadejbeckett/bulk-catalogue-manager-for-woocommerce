@@ -1386,3 +1386,38 @@ describe( 'plain messages (ticket 11)', () => {
 		expectNoRawText();
 	} );
 } );
+
+it( 'distinguishes native Status requests from accepted legacy Status actions', () => {
+	const {
+		describeOperation,
+		fieldsByKey,
+	} = require( '../../assets/src/panels/history/describe' );
+	const registry = require( '../Unit/Fields/fields.snapshot.json' );
+	const fields = fieldsByKey( registry.fields );
+	expect(
+		describeOperation(
+			{
+				action: 'set_status',
+				args: { field: 'status', value: 'publish' },
+			},
+			fields
+		)
+	).toBe( 'Set the status to Published' );
+	expect(
+		describeOperation(
+			{
+				action: 'set_value',
+				args: { field: 'status', value: 'publish' },
+			},
+			fields
+		)
+	).toBe( 'Legacy Status change requested Published' );
+	const {
+		formatValue,
+	} = require( '../../assets/src/panels/history/describe' );
+	expect( formatValue( 'future', fields.status ) ).toBe( 'Scheduled' );
+	expect( formatValue( 'Private, saved 28 Sep 2026 14:03' ) ).toBe(
+		'Private, saved 28 Sep 2026 14:03'
+	);
+	expect( formatValue( 'Password protected' ) ).toBe( 'Password protected' );
+} );

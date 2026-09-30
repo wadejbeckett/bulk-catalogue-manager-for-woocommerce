@@ -248,7 +248,7 @@ final class FieldsController implements ReadController {
 							'value'        => [ 'type' => 'string' ],
 							'label'        => [ 'type' => 'string' ],
 							'hidesProduct' => [
-								'description' => __( 'Whether setting this choice takes the product out of shoppers\' sight, so a bulk change to it always asks first (SPEC §4.5).', 'bulk-catalogue-manager-for-woocommerce' ),
+								'description' => __( 'Whether setting this choice takes the product out of shoppers\' sight. Native Status uses Preview and the count threshold (SPEC §4.5).', 'bulk-catalogue-manager-for-woocommerce' ),
 								'type'        => 'boolean',
 							],
 							'hidesAs'      => [
@@ -269,6 +269,17 @@ final class FieldsController implements ReadController {
 				'source'               => [ 'type' => 'string' ],
 				'maxLength'            => [ 'type' => 'integer' ],
 				'switchesOffOn'        => [ 'type' => 'boolean' ],
+				'nativeStatus'         => [ 'type' => 'boolean' ],
+				'legacyFilterChoices'  => [
+					'type'  => 'array',
+					'items' => [
+						'type'       => 'object',
+						'properties' => [
+							'value' => [ 'type' => 'string' ],
+							'label' => [ 'type' => 'string' ],
+						],
+					],
+				],
 			],
 		];
 		if ( $external ) {

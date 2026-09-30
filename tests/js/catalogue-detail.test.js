@@ -65,10 +65,12 @@ const VARIATIONS = [
 ];
 
 let patch;
+let fullRow;
 
 beforeEach( () => {
 	apiFetch.mockReset();
 	patch = jest.fn();
+	fullRow = FULL;
 	apiFetch.mockImplementation( ( { url, method, data } ) => {
 		const path = url.split( '?' )[ 0 ];
 		const query = getQueryArgs( url );
@@ -82,7 +84,7 @@ beforeEach( () => {
 				return Promise.resolve( page( ROWS ) );
 			// T47 reads the full row through GET /products/{id}.
 			case 'products/11':
-				return Promise.resolve( { item: FULL } );
+				return Promise.resolve( { item: fullRow } );
 			case 'products/11/variations':
 				return Promise.resolve( page( VARIATIONS, 1 ) );
 			case 'audit':
@@ -297,138 +299,102 @@ describe( 'detail panel', () => {
 	} );
 } );
 
-describe( 'Status as the Off/On switch in the detail panel (T92)', () => {
-	const status = ( dialog ) =>
-		within( dialog ).getByRole( 'combobox', { name: 'Status' } );
-	const confirmBox = ( dialog ) =>
-		dialog.querySelector( '.bulkcat-status-confirm' );
+describe( 'native Status in the drawer', () => {
+	it( 'opens an already-Scheduled row and saves no literal future when no target changes', async () => {
+		fullRow = { ...FULL, status: 'future' };
+		const { dialog } = await openDrawer();
+		const status = within( dialog ).getByRole( 'combobox', {
+			name: 'Status',
+		} );
+		expect( status.value ).toBe( 'future' );
+		expect( status.selectedOptions[ 0 ].textContent ).toBe( 'Scheduled' );
+		expect( status.selectedOptions[ 0 ].disabled ).toBe( true );
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Save' } )
+		);
+		expect( patches() ).toHaveLength( 0 );
+		expect( status.selectedOptions[ 0 ].textContent ).toBe( 'Scheduled' );
+		expect( dialog.querySelector( '.bulkcat-status-confirm' ) ).toBeNull();
+	} );
 
-	it( 'confirms above Save, then writes the same PATCH as the cell', async () => {
-		patch.mockResolvedValue( {
-			item: {
-				...FULL,
-				status: 'draft',
-				off_state: {
-					state: 'off',
-					saved: 'publish',
-					saved_label: 'Published',
-				},
+	it( 'uses one Save for Published despite a legacy Private record and keeps the returned Scheduled result', async () => {
+		fullRow = {
+			...FULL,
+			status: 'draft',
+			off_state: {
+				state: 'off',
+				saved: 'private',
+				saved_label: 'Private',
 			},
+		};
+		patch.mockResolvedValue( {
+			item: { ...FULL, status: 'future', off_state: null },
 			batch_id: 41,
 			status: 'complete',
 			results: [
 				{
 					field: 'status',
+					new: 'future',
 					state: 'changed',
-					old: 'publish',
-					new: 'draft',
-					note: 'off',
-					context: { saved: 'publish' },
+					context: {
+						requested_status: 'publish',
+						effective_status: 'future',
+					},
 				},
 			],
 		} );
 		const { dialog } = await openDrawer();
-		fireEvent.change( status( dialog ), { target: { value: 'draft' } } );
+		const status = within( dialog ).getByRole( 'combobox', {
+			name: 'Status',
+		} );
+		expect( status.value ).toBe( 'draft' );
+		fireEvent.change( status, { target: { value: 'publish' } } );
 		fireEvent.click(
 			within( dialog ).getByRole( 'button', { name: 'Save' } )
 		);
-		const box = confirmBox( dialog );
-		expect( box ).not.toBeNull();
-		expect( box.getAttribute( 'data-bulkcat-outcome' ) ).toBe( 'off' );
-		expect( box.textContent ).toContain(
-			'Switch Classic Cotton T-Shirt Off? It leaves the site for every buyer.'
-		);
-		// Above the Save button: the next thing in the form is the actions row.
-		expect( box.nextElementSibling.className ).toBe(
-			'bulkcat-drawer__actions'
-		);
 		expect(
-			within( box.nextElementSibling ).getByRole( 'button', {
-				name: 'Save',
-			} )
+			await within( dialog ).findByText( 'Saved: Status. Scheduled.' )
 		).toBeTruthy();
-		expect( patches() ).toHaveLength( 0 );
-
-		// Escape goes back to the form, not out of the drawer.
-		fireEvent.keyDown(
-			within( dialog ).getByRole( 'button', { name: 'Switch Off' } ),
-			{ key: 'Escape' }
+		expect( patches() ).toHaveLength( 1 );
+		expect( patch.mock.calls[ 0 ][ 1 ] ).toEqual( { status: 'publish' } );
+		expect( status.selectedOptions[ 0 ].textContent ).toBe( 'Scheduled' );
+		expect( status.selectedOptions[ 0 ].disabled ).toBe( true );
+		expect( dialog.textContent ).not.toMatch(
+			/Switch On|before Off|Keep current status/
 		);
-		expect( confirmBox( dialog ) ).toBeNull();
-		expect(
-			screen.getByRole( 'dialog', { name: 'Details' } )
-		).toBeTruthy();
-		expect( patches() ).toHaveLength( 0 );
-
-		fireEvent.click(
-			within( dialog ).getByRole( 'button', { name: 'Save' } )
-		);
-		fireEvent.keyDown(
-			within( dialog ).getByRole( 'button', { name: 'Switch Off' } ),
-			{ key: 'Enter' }
-		);
-		await waitFor( () => expect( patches() ).toHaveLength( 1 ) );
-		expect( patch.mock.calls[ 0 ][ 0 ] ).toBe( 'products/11' );
-		expect( patch.mock.calls[ 0 ][ 1 ] ).toEqual( { status: 'draft' } );
-		expect(
-			await within( dialog ).findByText(
-				'Saved: Status. Switched Off (was Published).'
-			)
-		).toBeTruthy();
-		// The confirm had focus; Save has it now, so Escape still reaches the drawer.
-		expect( document.activeElement ).toBe(
-			within( dialog ).getByRole( 'button', { name: 'Save' } )
-		);
-		// The drawer and the grid both read the Off state now.
-		expect(
-			within( dialog ).getAllByText( 'Off (was Published)' ).length
-		).toBeGreaterThan( 0 );
-		expect( confirmBox( dialog ) ).toBeNull();
-	} );
-
-	it( 'offers Keep current status when the server refuses a conflict', async () => {
-		const sentence =
-			'This product was changed by someone else while it was Off, so it was left alone. Choose Keep current status to keep its status and clear its Off record.';
-		patch
-			.mockRejectedValueOnce( {
-				code: 'bulkcat_availability_conflict',
-				message: sentence,
-				data: {
-					status: 400,
-					field: 'status',
-					outcome: 'conflict',
-					context: { saved: 'private', current: 'publish' },
-				},
-			} )
-			.mockResolvedValueOnce( {
-				item: { ...FULL, status: 'publish', off_state: null },
-				batch_id: 42,
-				status: 'complete',
-				results: [],
-			} );
-		const { dialog } = await openDrawer();
-		// Never Off as far as the row knows: Published on a Draft would
-		// confirm, so start from Pending review, an ordinary change.
-		fireEvent.change( status( dialog ), { target: { value: 'pending' } } );
-		fireEvent.click(
-			within( dialog ).getByRole( 'button', { name: 'Save' } )
-		);
-		await waitFor( () => expect( patches() ).toHaveLength( 1 ) );
-		await waitFor( () =>
-			expect( confirmBox( dialog )?.textContent ).toContain( sentence )
+		// Saving another field must not send the stored future value as a target.
+		fireEvent.change(
+			within( dialog ).getByRole( 'textbox', { name: 'SKU' } ),
+			{ target: { value: 'NEW-SKU' } }
 		);
 		fireEvent.click(
-			within( dialog ).getByRole( 'button', {
-				name: 'Keep current status',
-			} )
+			within( dialog ).getByRole( 'button', { name: 'Save' } )
 		);
 		await waitFor( () => expect( patches() ).toHaveLength( 2 ) );
-		expect( patch.mock.calls[ 1 ][ 1 ] ).toEqual( {
-			status: 'pending',
-			keep_changed_status: true,
+		expect( patch.mock.calls[ 1 ][ 1 ] ).toEqual( { sku: 'NEW-SKU' } );
+	} );
+
+	it( 'shows a safe refusal beside Status with no new confirmation or second request', async () => {
+		patch.mockRejectedValue( {
+			code: 'bulkcat_variation_password_unsupported',
+			message:
+				'This change was left alone to protect the stored password.',
+			data: { status: 400, field: 'status' },
 		} );
+		const { dialog } = await openDrawer();
+		fireEvent.change(
+			within( dialog ).getByRole( 'combobox', { name: 'Status' } ),
+			{ target: { value: 'private' } }
+		);
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Save' } )
+		);
 		expect(
-			await within( dialog ).findByText( 'Saved: Status.' )
+			await within( dialog ).findByText(
+				/left alone to protect the stored password/
+			)
 		).toBeTruthy();
+		expect( patches() ).toHaveLength( 1 );
+		expect( dialog.querySelector( '.bulkcat-status-confirm' ) ).toBeNull();
 	} );
 } );

@@ -267,7 +267,7 @@ final class Registry {
 					// T114: a scheduled product reads, filters and validates as Scheduled; it is never set (SPEC §5.5).
 					'future'  => Outcome::status_label( 'future' ),
 					'draft'   => __( 'Draft', 'bulk-catalogue-manager-for-woocommerce' ),
-					'pending' => __( 'Pending review', 'bulk-catalogue-manager-for-woocommerce' ),
+					'pending' => __( 'Pending Review', 'bulk-catalogue-manager-for-woocommerce' ),
 					'private' => __( 'Private', 'bulk-catalogue-manager-for-woocommerce' ),
 				],
 				write_choices: [ 'publish', 'draft', 'pending', 'private' ],
@@ -283,8 +283,8 @@ final class Registry {
 					'pending' => Field::HIDES_OFF_SITE,
 				],
 				filter_choices: [
-					'off'             => __( 'Off', 'bulk-catalogue-manager-for-woocommerce' ),
-					'changed_outside' => __( 'Changed outside this screen', 'bulk-catalogue-manager-for-woocommerce' ),
+					'off'             => __( 'Off (legacy status filter)', 'bulk-catalogue-manager-for-woocommerce' ),
+					'changed_outside' => __( 'Changed outside this screen (legacy status filter)', 'bulk-catalogue-manager-for-woocommerce' ),
 				]
 			),
 			new Field(

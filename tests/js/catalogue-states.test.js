@@ -57,7 +57,7 @@ describe( 'catalogue states', () => {
 		expect(
 			skeleton.querySelector( 'table' ).getAttribute( 'aria-hidden' )
 		).toBe( 'true' );
-		expect( screen.getByRole( 'status' ).textContent ).toBe(
+		expect( within( skeleton ).getByRole( 'status' ).textContent ).toBe(
 			'Loading products…'
 		);
 	} );

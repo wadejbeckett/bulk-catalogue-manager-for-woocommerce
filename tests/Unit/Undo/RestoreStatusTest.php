@@ -300,7 +300,7 @@ final class RestoreStatusTest extends TestCase {
 					],
 					true
 				);
-				$this->assertIsArray( $steps );
+				$this->assertTrue( is_array( $steps ) );
 				$out = ( new Writer( $actions, null, $actor ) )->write( 501, $steps );
 				$this->assertSame( Result::SKIPPED, $out->results()[0]->state() );
 				$this->assertSame( [], $p->sets );

@@ -23,8 +23,9 @@ const REFUSED = [ 'skipped', 'failed' ];
  * the answer in `data.answer`, so a caller treats it like a refusal.
  *
  * `options.keep` sends Keep current status (`keep_changed_status`, T92):
- * for a product changed elsewhere while Off, a Published keeps its status
- * and clears its Off record instead of being refused.
+ * retained for callers with explicit legacy intent. New requests carrying it
+ * are refused by the server with refresh/review guidance; current controls
+ * never send it.
  *
  * @param {number}        id           Product or variation id.
  * @param {Object}        values       Field key => value.

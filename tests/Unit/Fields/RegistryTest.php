@@ -784,23 +784,26 @@ final class RegistryTest extends TestCase {
 		$this->assertSame( [ 'on', 'off' ], $field->writable_choices() );
 	}
 
-	public function test_status_filters_by_off_and_changed_outside_but_never_writes_them(): void {
+	public function test_status_keeps_legacy_filter_predicates_without_offering_them(): void {
 		// T92 (SPEC §4.1, §5.5): filter-only choices are filter elements and filter values, never choices.
 		$status = self::field( 'status' );
-		$this->assertTrue( $status->inline(), 'Status is set in the cell, with the Off/On confirm.' );
+		$this->assertTrue( $status->inline(), 'Status uses one ordinary native edit.' );
 		$this->assertSame(
 			[
-				'off'             => 'Off',
-				'changed_outside' => 'Changed outside this screen',
+				'off'             => 'Off (legacy status filter)',
+				'changed_outside' => 'Changed outside this screen (legacy status filter)',
 			],
 			$status->filter_choices()
 		);
+		$this->assertTrue( $status->to_client()['nativeStatus'] );
+		$this->assertArrayNotHasKey( 'switchesOffOn', $status->to_client() );
+		$this->assertSame( [ 'off', 'changed_outside' ], array_column( $status->to_client()['legacyFilterChoices'], 'value' ) );
 		$this->assertArrayNotHasKey( 'off', $status->choices() );
 		$this->assertNotContains( 'off', $status->writable_choices() );
 		$this->assertNotContains( 'changed_outside', $status->writable_choices() );
 		$elements = array_column( $status->dataviews()['elements'], 'label', 'value' );
 		// T114: Scheduled is read and filtered, never written.
-		$this->assertSame( [ 'publish', 'future', 'draft', 'pending', 'private', 'off', 'changed_outside' ], array_keys( $elements ) );
+		$this->assertSame( [ 'publish', 'future', 'draft', 'pending', 'private' ], array_keys( $elements ) );
 		foreach ( ( new Registry() )->all() as $key => $field ) {
 			if ( 'status' !== $key ) {
 				$this->assertSame( [], $field->filter_choices(), "$key has no filter-only choices." );

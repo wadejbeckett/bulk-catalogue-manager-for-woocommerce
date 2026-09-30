@@ -486,8 +486,7 @@ export default function BulkChangePanel( {
 					...alwaysConfirmReasons(
 						registry,
 						requestOperations,
-						changes,
-						response?.availability || null
+						changes
 					),
 					// An add-on's change that always confirms, or a warning asking for it (T106).
 					...( response?.external?.confirm

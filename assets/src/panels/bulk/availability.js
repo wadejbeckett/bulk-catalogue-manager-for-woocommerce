@@ -1,14 +1,7 @@
-/**
- * Status as the global Off/On switch, in words (T91, SPEC §5.5, §4.5, §9.1):
- * the outcome codes the server puts on a Status step (a preview row's
- * `note`, with its `context`), the sentence for each count of the preview's
- * `availability` block, the row wording, and the confirmation reasons. The
- * bulk panel, the grid's in-place Status edit and the drawer all word Off
- * and On from here, so they say the same thing.
- */
+/** Native publication labels and retained legacy Status outcome descriptions. */
 import { __, _n, sprintf } from '@wordpress/i18n';
 
-import { formatNumber, productsPhrase } from './words';
+import { formatNumber } from './words';
 
 /**
  * Every outcome code, in the order the server counts them
@@ -30,8 +23,7 @@ export const CODES = [
 ];
 
 /**
- * The outcomes that always confirm, in the bulk panel, the grid and the
- * drawer alike (Availability\Outcome::CONFIRMS; Jest checks it against the
+ * The historical outcomes that required confirmation (Availability\Outcome::CONFIRMS; Jest checks it against the
  * shared fixture, tests/fixtures/status-switch.json).
  */
 export const CONFIRMS = [
@@ -66,15 +58,16 @@ export const ORDER = [
 ];
 
 /**
- * The field that switches products Off and On (the registry flags it).
+ * The Status field, including descriptors accompanying historical responses.
  *
  * @param {Object} registry The `/fields` payload.
  * @return {Object|null} The Status field.
  */
-export function offOnField( registry ) {
+export function statusField( registry ) {
 	return (
 		( registry?.fields || [] ).find(
-			( field ) => field.switchesOffOn === true
+			( field ) =>
+				field.nativeStatus === true || field.switchesOffOn === true
 		) || null
 	);
 }
@@ -91,7 +84,7 @@ export function statusName( registry, status ) {
 	if ( status === 'future' ) {
 		return __( 'Scheduled', 'bulk-catalogue-manager-for-woocommerce' );
 	}
-	const choice = ( offOnField( registry )?.choices || [] ).find(
+	const choice = ( statusField( registry )?.choices || [] ).find(
 		( each ) => each.value === status
 	);
 	return choice ? choice.label : String( status || '' );
@@ -121,6 +114,27 @@ export function scheduledTime( gmt ) {
 	} catch {
 		return date.toISOString();
 	}
+}
+
+/**
+ * A native schedule consequence, solely from the server prediction.
+ * @param {Object} registry Field registry.
+ * @param {Object} context  Server prediction.
+ * @return {string} Consequence or empty text.
+ */
+export function publicationSentence( registry, context = {} ) {
+	if ( context.effective_status !== 'future' || ! context.scheduled_gmt ) {
+		return '';
+	}
+	return sprintf(
+		/* translators: 1: the requested status, such as Published; 2: the scheduled time. */
+		__(
+			'%1$s will be Scheduled for %2$s.',
+			'bulk-catalogue-manager-for-woocommerce'
+		),
+		statusName( registry, context.requested_status ),
+		scheduledTime( context.scheduled_gmt )
+	);
 }
 
 /**
@@ -234,7 +248,7 @@ export function outcomeLabel( registry, code, context = {} ) {
 }
 
 /**
- * The sentence for one count of the availability block.
+ * The sentence for one count of a retained legacy availability block.
  *
  * @param {Object} registry The `/fields` payload.
  * @param {string} code     The outcome code.
@@ -358,8 +372,8 @@ export function countLine( registry, code, count, restores = {} ) {
 			return sprintf(
 				/* translators: %s: a number of products, such as "3". */
 				_n(
-					'%s product was changed by someone else while Off and will be left alone. Choose Keep current status to clear its Off record instead.',
-					'%s products were changed by someone else while Off and will be left alone. Choose Keep current status to clear their Off record instead.',
+					'%s product was changed by someone else while Off and will be left alone.',
+					'%s products were changed by someone else while Off and will be left alone.',
 					count,
 					'bulk-catalogue-manager-for-woocommerce'
 				),
@@ -433,39 +447,4 @@ export function availabilityLines( registry, block ) {
 		} );
 	}
 	return lines;
-}
-
-/**
- * The reasons an Apply always confirms for the preview's Off/On counts: one
- * sentence per listed outcome it counts (CONFIRMS), in ORDER.
- *
- * @param {Object}        registry The `/fields` payload.
- * @param {Object}        block    The preview's `availability` block, or null.
- * @param {Array<string>} skip     Codes another sentence already names.
- * @return {Array<string>} Sentences.
- */
-export function availabilityReasons( registry, block, skip = [] ) {
-	return availabilityLines( registry, block )
-		.filter(
-			( line ) =>
-				CONFIRMS.includes( line.code ) && ! skip.includes( line.code )
-		)
-		.map( ( line ) => line.text );
-}
-
-/**
- * The sentence for a Draft step on the Off/On field (SPEC §4.5).
- *
- * @param {number} count Products it switches Off.
- * @return {string} The sentence.
- */
-export function switchesOffSentence( count ) {
-	return sprintf(
-		/* translators: %s: a number of products, such as "3 products". */
-		__(
-			"This switches %s Off: they leave the site for every buyer, and each one's status is saved for switching On.",
-			'bulk-catalogue-manager-for-woocommerce'
-		),
-		productsPhrase( count )
-	);
 }

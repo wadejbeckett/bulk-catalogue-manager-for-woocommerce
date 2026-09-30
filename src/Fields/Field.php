@@ -779,7 +779,7 @@ final class Field {
 			'filterBy'      => [] === $this->filter_operators ? false : [ 'operators' => $this->filter_operators ],
 		];
 		if ( self::ENUM === $this->type ) {
-			$definition['elements'] = self::elements( $this->choices() + $this->filter_choices );
+			$definition['elements'] = self::elements( $this->choices() + ( \BulkCatalogueManager\Availability\StatusSwitch::governs( $this ) ? [] : $this->filter_choices ) );
 		}
 		return $definition;
 	}
@@ -823,8 +823,9 @@ final class Field {
 			$client['group'] = $this->group;
 		}
 		if ( \BulkCatalogueManager\Availability\StatusSwitch::governs( $this ) ) {
-			// The global Off/On switch (SPEC §5.5): the screen picks it by this flag, never by its key.
-			$client['switchesOffOn'] = true;
+			// Native presentation; legacy predicates remain parseable but are not newly offered.
+			$client['nativeStatus']        = true;
+			$client['legacyFilterChoices'] = self::elements( $this->filter_choices );
 		}
 		if ( '' !== $this->source ) {
 			$client['source'] = $this->source;

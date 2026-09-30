@@ -105,16 +105,6 @@ describe( 'confirmation policy', () => {
 		args: { skip_already: true, ...args },
 	} );
 	it.each( [
-		[
-			'status to draft',
-			op( 'set_value', { field: 'status', value: 'draft' } ),
-			"This switches 1 product Off: they leave the site for every buyer, and each one's status is saved for switching On.",
-		],
-		[
-			'status to pending',
-			op( 'set_value', { field: 'status', value: 'pending' } ),
-			'This sets Status to Pending review on 1 product, which takes them off the site.',
-		],
 		// T93: a listing control hides a product from the shop and search; it stays on sale.
 		[
 			'Shown in shop and search off',
@@ -224,7 +214,7 @@ describe( 'confirmation policy', () => {
 		expect( onApply ).toHaveBeenCalledTimes( 1 );
 	} );
 
-	it( 'never confirms a preview, even for a large always-confirm change', async () => {
+	it( 'never confirms a preview and confirms a large native Status change only by count', async () => {
 		apiFetch.mockReset();
 		routeApi( apiFetch, {
 			'POST preview': previewResponse( {
@@ -241,12 +231,9 @@ describe( 'confirmation policy', () => {
 		const heading = screen.getByRole( 'heading', { name: 'Publishing' } );
 		fireEvent.click(
 			within( heading.parentElement ).getByRole( 'radio', {
-				name: /^Set a value/,
+				name: /^Set Status/,
 			} )
 		);
-		fireEvent.change( screen.getByLabelText( 'Field' ), {
-			target: { value: 'status' },
-		} );
 		fireEvent.change( screen.getByLabelText( 'New value' ), {
 			target: { value: 'draft' },
 		} );
@@ -258,17 +245,15 @@ describe( 'confirmation policy', () => {
 			screen.queryByRole( 'group', { name: /Apply it\?/ } )
 		).toBeNull();
 
-		// Apply, on the other hand, asks, naming the draft: Status is the Off/On switch (T91).
 		fireEvent.click(
 			await screen.findByRole( 'button', {
 				name: 'Apply to 5,000 products',
 			} )
 		);
 		expect(
-			screen.getByText(
-				"This switches 5,000 products Off: they leave the site for every buyer, and each one's status is saved for switching On."
-			)
+			screen.getByText( 'This will change 5,000 products. Apply it?' )
 		).toBeVisible();
+		expect( document.body.textContent ).not.toContain( 'switches' );
 		expect( callsTo( apiFetch, 'POST batches' ) ).toHaveLength( 0 );
 		await waitFor( () =>
 			expect(
@@ -278,103 +263,25 @@ describe( 'confirmation policy', () => {
 	} );
 } );
 
-describe( 'Off/On confirmation (T91, SPEC §4.5)', () => {
-	const FIXTURE = require( '../fixtures/status-switch.json' );
-	const {
-		CONFIRMS,
-		availabilityReasons,
-	} = require( '../../assets/src/panels/bulk/availability' );
-	const step = ( value ) => ( {
-		action: 'set_value',
-		args: { field: 'status', value, skip_already: true },
-	} );
-	const block = ( counts, extra = {} ) => ( {
-		counts: Object.fromEntries(
-			FIXTURE.codes.map( ( code ) => [ code, counts[ code ] || 0 ] )
-		),
-		restores: { private: 0, pending: 0 },
-		variations_kept: 0,
-		conflicts: [],
-		...extra,
-	} );
-
-	it( 'confirms exactly the shared list the server publishes', () => {
-		expect( CONFIRMS ).toEqual( FIXTURE.confirms );
-	} );
-
-	it( 'says a Draft step switches the products Off, counted from the preview', () => {
-		expect(
-			alwaysConfirmReasons(
-				REGISTRY,
-				[ step( 'draft' ) ],
-				5,
-				block( { off: 2, off_recapture: 1, already_off: 2 } )
-			)
-		).toEqual( [
-			"This switches 3 products Off: they leave the site for every buyer, and each one's status is saved for switching On.",
-			'1 product was changed by someone else while Off and will be switched Off again.',
-		] );
-	} );
-
-	it.each( FIXTURE.confirms.filter( ( code ) => code !== 'off' ) )(
-		'confirms a Status step whose preview counts %s, naming the count',
-		( code ) => {
+describe( 'native Status confirmation', () => {
+	it.each( [ 'set_status', 'set_value' ] )(
+		'ignores old availability counts for a new %s Status request',
+		( action ) => {
 			const reasons = alwaysConfirmReasons(
 				REGISTRY,
-				[ step( 'publish' ) ],
-				4,
-				block(
-					{ [ code ]: 2 },
-					code === 'on_restores'
-						? { restores: { private: 1, pending: 1 } }
-						: {}
-				)
+				[ { action, args: { field: 'status', value: 'draft' } } ],
+				1,
+				{ counts: { off: 1, on_restores: 1, conflict: 1 } }
 			);
-			expect( reasons ).toHaveLength( 1 );
-			expect( reasons[ 0 ] ).toMatch( /^2 products / );
+			expect( reasons ).toEqual( [] );
+			const onApply = renderApply( {
+				count: 1,
+				threshold: 200,
+				reasons,
+			} );
+			fireEvent.click( applyButton( 1 ) );
+			expect( onApply ).toHaveBeenCalledTimes( 1 );
+			expect( screen.queryByRole( 'group' ) ).toBeNull();
 		}
 	);
-
-	it.each( [ 'on', 'conflict_kept', 'already_off', 'already_draft' ] )(
-		'adds no reason for %s',
-		( code ) => {
-			expect(
-				alwaysConfirmReasons(
-					REGISTRY,
-					[ step( 'publish' ) ],
-					4,
-					block( { [ code ]: 3 } )
-				)
-			).toEqual( [] );
-		}
-	);
-
-	it( 'names the statuses a restore gives back', () => {
-		expect(
-			availabilityReasons(
-				REGISTRY,
-				block(
-					{ on_restores: 3 },
-					{ restores: { private: 2, pending: 1 } }
-				)
-			)
-		).toEqual( [
-			'3 products come back with the status they had before Off, not Published: 2 Private, 1 Pending review.',
-		] );
-	} );
-
-	it( 'asks for the second click whatever the count, with every reason listed', () => {
-		const reasons = alwaysConfirmReasons(
-			REGISTRY,
-			[ step( 'publish' ) ],
-			1,
-			block( { conflict: 1, publishes_not_off: 1 } )
-		);
-		const onApply = renderApply( { count: 1, threshold: 200, reasons } );
-		fireEvent.click( applyButton( 1 ) );
-		expect( onApply ).not.toHaveBeenCalled();
-		reasons.forEach( ( reason ) =>
-			expect( screen.getByText( reason ) ).toBeVisible()
-		);
-	} );
 } );

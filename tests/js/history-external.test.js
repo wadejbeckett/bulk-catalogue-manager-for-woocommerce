@@ -98,3 +98,16 @@ describe( 'history of an external change', () => {
 		expect( reasonSentence( 'pruned' ) ).toContain( 'cannot be undone' );
 	} );
 } );
+
+it( 'retains provider-v1 history descriptions with the new native registry', () => {
+	const {
+		fieldsByKey,
+	} = require( '../../assets/src/panels/history/describe' );
+	const registry = require( '../Unit/Fields/fields.snapshot.json' );
+	const actions = Object.fromEntries(
+		registry.actions.map( ( action ) => [ action.id, action ] )
+	);
+	expect(
+		describeBatch( BATCH, fieldsByKey( registry.fields ), actions )
+	).toBe( 'Add labels: sample labels' );
+} );

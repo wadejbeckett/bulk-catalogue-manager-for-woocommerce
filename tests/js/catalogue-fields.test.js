@@ -156,7 +156,7 @@ describe( 'cells', () => {
 		expect( badge.className ).toContain( 'is-good' );
 	} );
 
-	it( 'shows the Off state in the status badge, through the grid field (T92)', () => {
+	it( 'shows native status despite legacy records, through the grid field', () => {
 		const off = cell( 'status', {
 			...ROWS[ 1 ],
 			off_state: {
@@ -165,7 +165,7 @@ describe( 'cells', () => {
 				saved_label: 'Published',
 			},
 		} ).querySelector( '.bulkcat-badge' );
-		expect( off.textContent ).toBe( 'Off (was Published)' );
+		expect( off.textContent ).toBe( 'Draft' );
 		const outside = cell( 'status', {
 			...ROWS[ 0 ],
 			off_state: {
@@ -174,8 +174,8 @@ describe( 'cells', () => {
 				saved_label: 'Private',
 			},
 		} ).querySelector( '.bulkcat-badge' );
-		expect( outside.textContent ).toBe( 'Changed outside this screen' );
-		expect( outside.className ).toContain( 'is-warn' );
+		expect( outside.textContent ).toBe( 'Published' );
+		expect( outside.className ).toContain( 'is-good' );
 		expect(
 			cell( 'status', { ...ROWS[ 1 ], off_state: null } ).textContent
 		).toBe( 'Draft' );

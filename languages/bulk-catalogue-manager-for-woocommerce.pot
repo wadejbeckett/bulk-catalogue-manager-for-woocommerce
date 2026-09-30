@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-09-30T07:26:32+00:00\n"
+"POT-Creation-Date: 2026-09-30T08:03:57+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -121,12 +121,6 @@ msgstr ""
 msgid "That batch could not be found. It may have been removed. Reload the history and try again."
 msgstr ""
 
-msgid "Everything this batch changed has been changed again since, so nothing was undone. Choose Revert anyway to put the old values back regardless."
-msgstr ""
-
-msgid "Nothing this batch changed can be put back now, so nothing was undone. The preview lists why for each product."
-msgstr ""
-
 msgid "This item could not be changed: since it was chosen it was deleted, moved to the bin, taken out of the list or changed between a product and a variation. It was left unchanged."
 msgstr ""
 
@@ -225,6 +219,9 @@ msgstr[1] ""
 msgid "WooCommerce did not accept this value. Check it and try again."
 msgstr ""
 
+msgid "Nothing was put back, because everything had been changed again by the time the undo reached it. The change can still be undone: choose Revert anyway to put the old values back regardless."
+msgstr ""
+
 #. translators: 1: number of products left alone, such as "12"; 2: number of products the batch changed, such as "1,284".
 #, php-format
 msgid "%1$s of %2$s was changed again after this batch and was left alone."
@@ -292,6 +289,12 @@ msgid "This change is more than %d day old, so its detailed record was removed a
 msgid_plural "This change is more than %d days old, so its detailed record was removed as the history setting asks and it can no longer be undone."
 msgstr[0] ""
 msgstr[1] ""
+
+msgid "Everything this batch changed has been changed again since, so nothing was undone. Choose Revert anyway to put the old values back regardless."
+msgstr ""
+
+msgid "Nothing this batch changed can be put back now, so nothing was undone. The preview lists why for each product."
+msgstr ""
 
 msgid "WooCommerce could not save this product, so this change was not made. Try again, or open the product to see why."
 msgstr ""
@@ -1217,6 +1220,9 @@ msgid "Product %d"
 msgstr ""
 
 msgid "Pass \"count\" to count the products changed again since, which works out the whole undo; without it the count is not given."
+msgstr ""
+
+msgid "How many products and how many variations the undo puts back; null for an undo recorded before this was kept."
 msgstr ""
 
 msgid "Whether the change also reached variations the selection did not name (\"Also apply to variations\"). List rows only."
@@ -2177,6 +2183,20 @@ msgid_plural "%s prices would fall to zero or below."
 msgstr[0] ""
 msgstr[1] ""
 
+#. translators: %s: a number of products and variations together, such as "3".
+#, js-format
+msgid "Stock would go below zero on %s item."
+msgid_plural "Stock would go below zero on %s items."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of variations, such as "3".
+#, js-format
+msgid "Stock would go below zero on %s variation."
+msgid_plural "Stock would go below zero on %s variations."
+msgstr[0] ""
+msgstr[1] ""
+
 #. translators: %s: a number, such as "3".
 #, js-format
 msgid "Stock would go below zero on %s product."
@@ -2321,11 +2341,6 @@ msgstr ""
 msgid "Done"
 msgstr ""
 
-#. translators: %s: the most products and variations a change may cover and still be undone from this screen, such as "27,304".
-#, js-format
-msgid "Every change is saved with the old values, but undoing a change to more than %s products and variations is not yet supported from this screen."
-msgstr ""
-
 msgid "The old values are saved, so you can put this back at any time."
 msgstr ""
 
@@ -2449,11 +2464,6 @@ msgid "Back to products"
 msgstr ""
 
 msgid "Close"
-msgstr ""
-
-#. translators: %d: the current step, 1 to 3.
-#, js-format
-msgid "Step %d of 3 · Too large to undo from this screen"
 msgstr ""
 
 #. translators: %d: the current step, 1 to 3.
@@ -3326,42 +3336,45 @@ msgstr ""
 msgid "Progress of the change"
 msgstr ""
 
-#. translators: %s: number of products, such as "120".
+#. translators: %s: what is put back, such as "120 products" or "100 products and 20 variations".
 #, js-format
-msgid "This puts %s product back to its old price. Continue?"
-msgid_plural "This puts %s products back to their old prices. Continue?"
+msgid "This puts %s back to its old price. Continue?"
+msgid_plural "This puts %s back to their old prices. Continue?"
 msgstr[0] ""
 msgstr[1] ""
 
-#. translators: %s: number of products, such as "120".
+#. translators: %s: what is put back, such as "120 products" or "100 products and 20 variations".
 #, js-format
-msgid "This puts %s product back to its old stock. Continue?"
-msgid_plural "This puts %s products back to their old stock. Continue?"
+msgid "This puts %s back to its old stock. Continue?"
+msgid_plural "This puts %s back to their old stock. Continue?"
 msgstr[0] ""
 msgstr[1] ""
 
-#. translators: %s: number of products, such as "120".
+#. translators: %s: what is put back, such as "120 products" or "100 products and 20 variations".
 #, js-format
-msgid "This puts %s product back to how it showed on the site. Continue?"
-msgid_plural "This puts %s products back to how they showed on the site. Continue?"
+msgid "This puts %s back to how it showed on the site. Continue?"
+msgid_plural "This puts %s back to how they showed on the site. Continue?"
 msgstr[0] ""
 msgstr[1] ""
 
-#. translators: %s: number of products, such as "120".
+#. translators: %s: what is put back, such as "120 products" or "100 products and 20 variations".
 #, js-format
-msgid "This puts %s product back to its old values. Continue?"
-msgid_plural "This puts %s products back to their old values. Continue?"
+msgid "This puts %s back to its old values. Continue?"
+msgid_plural "This puts %s back to their old values. Continue?"
 msgstr[0] ""
 msgstr[1] ""
 
-#. translators: %s: number of products, such as "1,248".
+msgid "Nothing was put back."
+msgstr ""
+
+#. translators: %s: what was put back, such as "1,248 products", "20 variations" or "1,268 items".
 #, js-format
-msgid "%s product was put back."
-msgid_plural "%s products were put back."
+msgid "%s was put back."
+msgid_plural "%s were put back."
 msgstr[0] ""
 msgstr[1] ""
 
-#. translators: %s: how many were put back, such as "12 products were put back.".
+#. translators: %s: what was put back, such as "12 products were put back.".
 #, js-format
 msgid "Redone. %s"
 msgstr ""
@@ -3423,10 +3436,10 @@ msgstr ""
 msgid "Products changed since"
 msgstr ""
 
-#. translators: %s: number of products changed again since, such as "3".
+#. translators: %s: what changed again since, such as "3 products" or "2 products and 1 variation".
 #, js-format
-msgid "%s of these products has changed since"
-msgid_plural "%s of these products have changed since"
+msgid "%s has changed since"
+msgid_plural "%s have changed since"
 msgstr[0] ""
 msgstr[1] ""
 
@@ -3454,17 +3467,17 @@ msgstr ""
 msgid "Undo this change?"
 msgstr ""
 
-#. translators: %s: number of products changed again since, such as "3".
+#. translators: %s: what changed again since, such as "3 products" or "2 products and 1 variation".
 #, js-format
-msgid "This includes %s product someone edited after this change; that later edit will be overwritten."
-msgid_plural "This includes %s products someone edited after this change; those later edits will be overwritten."
+msgid "This includes %s someone edited after this change; that later edit will be overwritten."
+msgid_plural "This includes %s someone edited after this change; those later edits will be overwritten."
 msgstr[0] ""
 msgstr[1] ""
 
-#. translators: %s: number of products changed again since, such as "3".
+#. translators: %s: what changed again since, such as "3 products" or "2 products and 1 variation".
 #, js-format
-msgid "The %s product that changed since will be left alone."
-msgid_plural "The %s products that changed since will be left alone."
+msgid "The %s that changed since will be left alone."
+msgid_plural "The %s that changed since will be left alone."
 msgstr[0] ""
 msgstr[1] ""
 
@@ -3830,6 +3843,11 @@ msgstr ""
 #. translators: 1: this page's number, such as "2"; 2: the number of pages, such as "5".
 #, js-format
 msgid "Page %1$s of %2$s"
+msgstr ""
+
+#. translators: %s: the number of the page being loaded, such as "3".
+#, js-format
+msgid "Loading page %s…"
 msgstr ""
 
 #. translators: %s: a saved view's name.

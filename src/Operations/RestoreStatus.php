@@ -125,25 +125,37 @@ final class RestoreStatus extends BaseOperation {
 	 */
 	protected function arguments(): array {
 		return [
-			'value'           => [
+			'value'             => [
 				'type'    => 'choice',
 				'label'   => __( 'Status to put back', 'bulk-catalogue-manager-for-woocommerce' ),
 				'rule'    => __( 'The status to put back could not be read, so this product was left alone.', 'bulk-catalogue-manager-for-woocommerce' ),
 				'choices' => array_combine( self::STATUSES, self::STATUSES ),
 			],
-			'record'          => [
+			'record'            => [
 				'type'        => 'text',
 				'label'       => __( 'Status before Off to put back', 'bulk-catalogue-manager-for-woocommerce' ),
 				'rule'        => __( 'The saved status before Off could not be read, so this product was left alone.', 'bulk-catalogue-manager-for-woocommerce' ),
 				'allow_empty' => true,
 			],
-			'expected_status' => [
+			'expected_status'   => [
 				'type'        => 'text',
 				'label'       => __( 'Status when the undo was planned', 'bulk-catalogue-manager-for-woocommerce' ),
 				'rule'        => __( 'The status this product had when the undo was planned could not be read, so it was left alone.', 'bulk-catalogue-manager-for-woocommerce' ),
 				'allow_empty' => true,
 			],
-			'expected_record' => [
+			'password'          => [
+				'type'        => 'text',
+				'label'       => __( 'Password to put back', 'bulk-catalogue-manager-for-woocommerce' ),
+				'rule'        => __( 'The recorded password could not be read, so this product was left alone.', 'bulk-catalogue-manager-for-woocommerce' ),
+				'allow_empty' => true,
+			],
+			'expected_password' => [
+				'type'        => 'text',
+				'label'       => __( 'Password when the undo was planned', 'bulk-catalogue-manager-for-woocommerce' ),
+				'rule'        => __( 'The recorded password could not be read, so this product was left alone.', 'bulk-catalogue-manager-for-woocommerce' ),
+				'allow_empty' => true,
+			],
+			'expected_record'   => [
 				'type'        => 'text',
 				'label'       => __( 'Saved status before Off when the undo was planned', 'bulk-catalogue-manager-for-woocommerce' ),
 				'rule'        => __( 'The saved status before Off this product had when the undo was planned could not be read, so it was left alone.', 'bulk-catalogue-manager-for-woocommerce' ),
@@ -161,7 +173,7 @@ final class RestoreStatus extends BaseOperation {
 	 */
 	protected function normalise( array $args, Field $field ): array|string {
 		unset( $field );
-		if ( ! array_key_exists( 'value', $args ) && ! array_key_exists( 'record', $args ) ) {
+		if ( ! array_key_exists( 'value', $args ) && ! array_key_exists( 'record', $args ) && ! array_key_exists( 'password', $args ) ) {
 			return __( 'There is no status to put back, so this product was left alone.', 'bulk-catalogue-manager-for-woocommerce' );
 		}
 		foreach ( [ 'record', 'expected_record' ] as $key ) {
@@ -229,6 +241,9 @@ final class RestoreStatus extends BaseOperation {
 	private static function changed_since( Field $field, object $subject, array $args ): bool {
 		$status = (string) $field->read( $subject );
 		$record = OffRecord::raw( $subject );
+		if ( array_key_exists( 'expected_password', $args ) && \BulkCatalogueManager\Publishing\PublicationPassword::field()->read( $subject ) !== $args['expected_password'] ) {
+			return true;
+		}
 		if ( array_key_exists( 'expected_status', $args ) && $status !== (string) $args['expected_status'] ) {
 			return true;
 		}
@@ -246,6 +261,27 @@ final class RestoreStatus extends BaseOperation {
 	 * @return list<Result>
 	 */
 	public function follow( object $subject, Result $checked, array $args ): array {
+		if ( ! in_array( $checked->state(), [ Result::CHANGED,Result::ALREADY ], true ) ) {
+			return [];
+		}
+		$follow = $this->record_follow( $subject, $checked, $args );
+		if ( array_key_exists( 'password', $args ) ) {
+			$old = \BulkCatalogueManager\Publishing\PublicationPassword::field()->read( $subject );
+			if ( $old !== $args['password'] ) {
+				$follow[] = Result::changed( \BulkCatalogueManager\Publishing\PublicationPassword::FIELD, $old, $args['password'] );
+			}
+		} else {
+			$follow = array_merge( $follow, \BulkCatalogueManager\Publishing\PublicationPassword::clearing( $subject, $checked ) );
+		}
+		return $follow;
+	}
+	/** Legacy record restoration only.
+	 * @param object $subject Product.
+	 * @param Result $checked Checked status.
+	 * @param array $args Stored arguments.
+	 * @return list<Result>
+	 */
+	private function record_follow( object $subject, Result $checked, array $args ): array {
 		if ( ! StatusSwitch::applies( $this->field( $args ), $subject ) || ! in_array( $checked->state(), [ Result::CHANGED, Result::ALREADY ], true ) ) {
 			return [];
 		}

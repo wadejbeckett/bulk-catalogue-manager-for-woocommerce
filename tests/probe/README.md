@@ -430,12 +430,13 @@ With it in place and `BULKCAT_PROBE_SITEURL` added to `WP_CMD`:
   site without the must-use plugin, so the rest of the browser suite runs
   unchanged elsewhere.
 
-## Native Status oracle (plan 14, deliberately RED before engine changes)
+## Native Status oracle and publication lifecycle (plan 14)
 
-Use an **existing** owned synthetic fixture with the actual released archive
-installed through the native plugin installer. Do not mount the candidate over
-it, reseed another fixture, or run the lifecycle/offon chapters as setup. Supply
-its own seed file; never overwrite the default `seed.json`:
+Use an **existing, explicitly assigned** synthetic candidate fixture. The
+comparator is the actual native product editor on that fixture, not a previous
+manager release. Keep any separate released-archive upgrade fixture untouched;
+do not create a stack, reseed, or run the lifecycle/offon chapters as setup.
+Supply the assigned fixture’s seed file; never overwrite `seed.json`:
 
 ```sh
 BULKCAT_FIXTURE_URL="$BULKCAT_E2E_BASE_URL" \
@@ -461,7 +462,7 @@ and the separately inspected coarse AJAX permission gate are reported distinctly
 The manager leg uses real HTTP preview/grants/acceptance, then calls the
 installed `ChunkRunner::handle` for that exact batch (never drains other work).
 A raw new `set_value` status request intentionally exercises old-client
-normalisation after the future upgrade. Accepted legacy execution remains in
+normalisation at the candidate’s new-write boundary. Accepted legacy execution remains in
 the unchanged `status-switch.json` tests, not redefined by this chapter.
 
 Every case uses unique run-owned products, paired initial state and dedicated
@@ -480,16 +481,46 @@ column (WordPress has no such post row).
 The JSON is also the ownership/reversal record: original timezone and baseline
 are saved before writes, each pair's IDs before submissions, and actor IDs
 before requests. `finally` deletes only exact UUID-marked products (children
-before parents) and users and restores the original timezone. Native audit
-batches/receipts are retained as release evidence in the disposable fixture;
-no queue-wide pruning, uninstall or reset is performed. Compare exact baseline
-product/category rows after cleanup. On interruption, use this record and verify
+before parents) and users and restores the original timezone. Native authentication uses a
+UUID-owned administrator, and its auto-draft dashboard posts are removed before
+deleting that user. Existing users, their sessions and preferences are untouched.
+Native audit batches/receipts are retained as candidate evidence in the fixture;
+no queue-wide pruning, uninstall or reset is performed. Compare the saved hashes of original products/variations and their metadata,
+terms/taxonomy/relationships, users, non-session usermeta and selected
+configuration after cleanup. These hashes do not claim to cover the whole database. On interruption, use this record and verify
 each object's `_bulkcat_native_probe` UUID before cleanup; do not use broad name
 or SKU matching. Task 5 must seed its accepted-but-unfinished upgrade cases
 against the preserved release ZIP through its own guarded workflow; completed
 Task 1 history is not proof of queued upgrade recovery.
 
-A nonzero result on released 1.1.0 is expected for its obsolete restoration,
-record, prediction or permission behaviour. Native-oracle, harness and cleanup
-failures are **not** expected RED: inspect and resolve or report those separately.
-Never report a source-only permission concern as a demonstrated exploit.
+Each run records start/end SHA-256 manifests of the candidate PHP sources and
+built assets, plus Git HEAD and the runtime version labels. A version label alone
+does not establish an archive identity. A changed manifest means the run cannot
+be claimed as one run of the final source. The native chapter also counts exact
+object CRUD saves and native post updates: equal second-resolution timestamps
+are not proof of no save. Stored GMT and observed scheduled event timestamps
+are recorded separately, including site-timezone/DST cases; the probe does not
+claim that cron eventually published anything.
+
+The companion lifecycle probe exercises exact native password transport and
+Undo, conflicts/public redaction, interrupted coupled saves and recorded-actor
+revocation, final checks after setters, hook intent/cleanup, and complete
+publication binding over 1,001 owned objects. It also checks preview/PATCH/GET
+and renders History with the existing browser build, without changing the UI:
+
+```sh
+BULKCAT_FIXTURE_URL="$BULKCAT_E2E_BASE_URL" \
+BULKCAT_NATIVE_STATUS_EVIDENCE=/private/owned-fixture/publication-evidence \
+python3 tests/probe/native-publication.py --base-url "$BULKCAT_E2E_BASE_URL" \
+  --wp-cmd "$WP_CMD" --seed "$SEED_JSON"
+```
+
+`BULKCAT_NATIVE_PUBLICATION_CASES` selects exact comma-separated cases from
+`transport,private-undo,crash,setter-failure,final-check,hooks,binding,http` for
+repair reruns. The browser checks use installed Playwright and the exact owned
+HTTP session in process memory; cookies/passwords are not saved in evidence.
+The binding measurement is bounded cost evidence, not the release scale gate.
+Native-oracle, harness and cleanup failures must remain in the evidence beside
+any corrected rerun. Investigate a baseline discrepancy before acceptance;
+never overwrite original user preferences or remove unrelated sessions to make
+a hash match. Never report a source-only concern as a demonstrated exploit.

@@ -435,9 +435,10 @@ final class ValidatorTest extends TestCase {
 	}
 
 	public function test_each_object_is_authorised_in_a_request(): void {
-		$GLOBALS['bulkcat_test']['caps']['edit_post:81'] = false;
-		$validator                                       = self::validator();
-		$states = [];
+		$GLOBALS['bulkcat_test']['caps']['publish_products'] = true;
+		$GLOBALS['bulkcat_test']['caps']['edit_post:81']     = false;
+		$validator = self::validator();
+		$states    = [];
 		foreach ( [ 80, 81, 82 ] as $id ) {
 			$product       = new FakeProduct(
 				'simple',

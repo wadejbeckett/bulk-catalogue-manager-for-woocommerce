@@ -61,7 +61,7 @@ final class Result {
 	 * the status an Off record saves or saved, the status an On restores, the
 	 * product's status now, and a scheduled time (GMT, `Y-m-d H:i:s`).
 	 */
-	public const CONTEXT_KEYS = [ 'saved', 'restores', 'current', 'scheduled_gmt' ];
+	public const CONTEXT_KEYS = [ 'saved', 'restores', 'current', 'scheduled_gmt', 'requested_status', 'effective_status' ];
 
 	/**
 	 * A code a Result may carry: the plugin's own, or an external provider's (T106).
@@ -330,8 +330,8 @@ final class Result {
 		}
 		return [
 			'field'    => $this->field,
-			'old'      => $this->old,
-			'new'      => $this->new_value,
+			'old'      => \BulkCatalogueManager\Publishing\PublicationPassword::FIELD === $this->field ? \BulkCatalogueManager\Publishing\PublicationPassword::display( $this->old ) : $this->old,
+			'new'      => \BulkCatalogueManager\Publishing\PublicationPassword::FIELD === $this->field ? \BulkCatalogueManager\Publishing\PublicationPassword::display( $this->new_value ) : $this->new_value,
 			'state'    => $this->state,
 			'reason'   => $this->reason,
 			'code'     => $this->code,

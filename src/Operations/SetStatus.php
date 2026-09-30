@@ -87,7 +87,22 @@ final class SetStatus extends BaseOperation {
 	 * @param array<string, mixed> $args Normalised arguments.
 	 */
 	public function compute( object $subject, array $args ): Result {
-		return self::value_outcome( $this->field( $args ), $subject, $args['value'] ?? null );
+		$result = self::value_outcome( $this->field( $args ), $subject, $args['value'] ?? null );
+		if ( ! in_array( $result->state(), [ Result::CHANGED,Result::ALREADY ], true ) ) {
+			return $result;
+		}
+		$prediction = \BulkCatalogueManager\Publishing\StatusTransition::predict( $subject, (string) $args['value'], \BulkCatalogueManager\Availability\Stamp::now() );
+		if ( $prediction['effective'] === $result->old() ) {
+			$result = Result::already( $result->field(), $result->old() );
+		}
+		return $result->with_note(
+			'',
+			[
+				'requested_status' => $prediction['requested'],
+				'effective_status' => $prediction['effective'],
+				'scheduled_gmt'    => $prediction['date_gmt'],
+			]
+		);
 	}
 
 	/**
@@ -104,6 +119,6 @@ final class SetStatus extends BaseOperation {
 			return [];
 		}
 		$record = OffRecord::raw( $subject );
-		return '' === $record ? [] : [ Result::changed( OffRecord::FIELD, $record, '' ) ];
+		return array_merge( '' === $record ? [] : [ Result::changed( OffRecord::FIELD, $record, '' ) ], \BulkCatalogueManager\Publishing\PublicationPassword::clearing( $subject, $checked ) );
 	}
 }

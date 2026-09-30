@@ -35,6 +35,7 @@ final class WriterTest extends TestCase {
 		bulkcat_test_reset();
 		$GLOBALS['bulkcat_test']['caps']  = [
 			'edit_post'            => true,
+			'publish_products'     => true,
 			'assign_product_terms' => true,
 		];
 		$GLOBALS['bulkcat_test']['terms'] = [

@@ -664,16 +664,16 @@ final class Planner {
 				];
 			}
 			$status = StatusSwitch::governs( $field );
-			if ( $status || OffRecord::FIELD === $key ) {
+			if ( $status || OffRecord::FIELD === $key || \BulkCatalogueManager\Publishing\PublicationPassword::FIELD === $key ) {
 				// Status and its Off record go back together, as one internal step, where the first of them was.
-				if ( ! $status && '' !== (string) $values['target'] && null === OffRecord::parse( $values['target'], $object_id ) ) {
+				if ( OffRecord::FIELD === $key && '' !== (string) $values['target'] && null === OffRecord::parse( $values['target'], $object_id ) ) {
 					return self::skipped( $object_id, $type, self::CANNOT_RESTORE, __( 'The saved status before Off this batch changed could not be read for this product, so it was left alone.', 'bulk-catalogue-manager-for-woocommerce' ) );
 				}
 				if ( null === $restore ) {
 					$restore      = count( $operations );
 					$operations[] = [];
 				}
-				$operations[ $restore ][ $status ? 'value' : 'record' ] = $values['target'] ?? '';
+				$operations[ $restore ][ $status ? 'value' : ( OffRecord::FIELD === $key ? 'record' : 'password' ) ] = $values['target'] ?? '';
 				continue;
 			}
 			$operation = self::operation( $field, $values['target'], $values['expected'] );
@@ -811,6 +811,8 @@ final class Planner {
 	 */
 	private static function restore_step( \BulkCatalogueManager\Fields\Registry $fields, array $parts, object $subject ): array {
 		$status = null;
+		if ( array_key_exists( 'password', $parts ) ) {
+			$parts['expected_password'] = \BulkCatalogueManager\Publishing\PublicationPassword::field()->read( $subject );}
 		foreach ( $fields->editable() as $field ) {
 			if ( StatusSwitch::governs( $field ) ) {
 				$status = $field;

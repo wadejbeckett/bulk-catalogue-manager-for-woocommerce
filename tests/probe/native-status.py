@@ -1,6 +1,6 @@
-"""Native Status oracle on an existing guarded fixture, including release RED.
+"""Native Status comparison against the actual editor on an existing guarded fixture.
 
-No engine is mounted or installed. PHP helper text is evaluated in a short-lived
+This probe does not mount or install an engine; it records the installed source/build identity. PHP helper text is evaluated in a short-lived
 WP-CLI process. Native writes use actual authenticated post.php / Woo AJAX;
 manager writes use preview, durable grants and the installed engine's worker.
 All owned IDs/users and configuration reversal are recorded before cleanup.
@@ -14,6 +14,7 @@ from html.parser import HTMLParser
 import json
 import os
 from pathlib import Path
+from native_identity import source_manifest
 import re
 import urllib.parse
 import uuid
@@ -161,10 +162,11 @@ def check_native_status(p):
         bid = (reply.json() or {}).get('batch_id')
         if bid:
             # Drive this exact batch, not the fixture's whole queue.
-            record['worker'] = p.wp_eval(f'\\BulkCatalogueManager\\Engine\\ChunkRunner::handle({int(bid)}); bulkcat_out(true);')
+            record['worker'] = native('worker', batch=int(bid), id=pid)
             record['report'] = p.http('admin', 'GET', f'/batches/{bid}').json()
         return record
 
+    evidence['source_start'] = source_manifest()
     baseline = native('inspect')
     evidence['baseline'] = baseline
     save()  # configuration backup exists before any timezone write.
@@ -175,6 +177,7 @@ def check_native_status(p):
     try:
         users = native('users', password=p.seed['password'])
         evidence['owned_users'] = [u['id'] for u in users.values()]
+        p.seed['users']['admin'] = users['admin']  # No native login side effects on original users.
         save()
         for name, user in users.items():
             p.seed['users']['native_' + name] = user
@@ -243,7 +246,7 @@ def check_native_status(p):
                         expected_record = '' if own and before['status'] != n['status'] else raw
                         result(row['case'] + ':' + target + ':legacy-record', m['record'] == expected_record, 'only a changed native status clears a valid own record; no new record or foreign cleanup')
                         if before['status'] == n['status']:
-                            result(row['case'] + ':' + target + ':no-save', m['modified_gmt'] == before['modified_gmt'], 'genuinely already-effective status does not save')
+                            result(row['case'] + ':' + target + ':no-save', managed.get('worker') == {'crud_saves': 0, 'post_updates': 0}, 'exact-object CRUD and native post-update observers detect same-second writes')
                     for side in ('native','manager'):
                         before_fields = made['before'][side]['unrelated']
                         after_fields = states[side]['unrelated']
@@ -275,7 +278,9 @@ def check_native_status(p):
         native('timezone', timezone=baseline['timezone'])
         cleanup = native('cleanup', ids=[], users=[u['id'] for u in users.values()], final=True)
         evidence['cleanup'] = cleanup
-        result('baseline-preserved', cleanup['baseline'] == baseline['baseline'], 'exact original catalogue/category rows retained; owned users removed; timezone restored')
+        evidence['source_end'] = source_manifest()
+        evidence['source_unchanged'] = evidence['source_start'] == evidence['source_end']
+        result('baseline-preserved', cleanup['baseline'] == baseline['baseline'], 'full original product/meta/term/user/config hashes retained (login session_tokens excluded); owned users removed; timezone restored')
         result('owned-users-removed', not cleanup['remaining_users'], 'exact UUID-owned user IDs no longer exist')
         evidence['rows'] = [r for r in p.rows if r[0] == 'native-status']
         save()

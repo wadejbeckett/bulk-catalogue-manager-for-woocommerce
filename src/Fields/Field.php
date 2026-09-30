@@ -127,6 +127,9 @@ final class Field {
 	 */
 	public const ADAPTER_OFF_RECORD = 'off_record';
 
+	/** Exact protected native password preimages only. */
+	public const ADAPTER_PUBLICATION_PASSWORD = 'publication_password';
+
 	/**
 	 * The condition a conditional field needs: the object manages its stock.
 	 */
@@ -494,6 +497,8 @@ final class Field {
 	 * @param mixed $value Submitted value.
 	 */
 	public function sanitise( mixed $value ): mixed {
+		if ( $this->internal && self::ADAPTER_PUBLICATION_PASSWORD === $this->adapter ) {
+			return is_string( $value ) ? $value : ''; }
 		if ( self::ADAPTER_OFF_RECORD === $this->adapter ) {
 			$record = OffRecord::read( $value );
 			return null === $record ? '' : $record->to_json();

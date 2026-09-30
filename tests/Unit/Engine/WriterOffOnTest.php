@@ -40,7 +40,10 @@ final class WriterOffOnTest extends TestCase {
 
 	protected function setUp(): void {
 		bulkcat_test_reset();
-		$GLOBALS['bulkcat_test']['caps'] = [ 'edit_post' => true ];
+		$GLOBALS['bulkcat_test']['caps'] = [
+			'edit_post'        => true,
+			'publish_products' => true,
+		];
 		$GLOBALS['wpdb']->responses['/^SELECT change_id FROM `wp_bulkcat_changes` WHERE batch_id = (\d+) AND object_id = (\d+) LIMIT 1$/']                                  = static function ( string $sql ): ?string {
 			preg_match( '/batch_id = (\d+) AND object_id = (\d+)/', $sql, $m );
 			foreach ( self::rows() as $row ) {
@@ -307,7 +310,10 @@ final class WriterOffOnTest extends TestCase {
 
 		// A never-Off scheduled product set to Published stays scheduled (a 1.0 bug: journalled as publish).
 		bulkcat_test_reset();
-		$GLOBALS['bulkcat_test']['caps'] = [ 'edit_post' => true ];
+		$GLOBALS['bulkcat_test']['caps'] = [
+			'edit_post'        => true,
+			'publish_products' => true,
+		];
 		$this->setUp();
 		$never                                        = self::product( 18, 'future', null, self::NOW + 7 * 86400 );
 		$GLOBALS['bulkcat_test']['stored_status'][18] = 'future';
@@ -541,5 +547,208 @@ final class WriterOffOnTest extends TestCase {
 		self::write( self::writer(), 21, $list );
 		$this->assertSame( 'future', $fresh->props['status'] );
 		$this->assertSame( [ [ 'status', 'draft', 'future', 'applied' ], [ 'availability_off', self::record( 21, 'future' ), '', 'applied' ] ], self::summary() );
+	}
+	public function test_denied_pending_publication_replay_never_writes_or_settles_applied(): void {
+		foreach ( [ 'set_status', 'set_value' ] as $action ) {
+			foreach ( [ 'publish', 'edit', 'deleted', 'parent' ] as $loss ) {
+				$this->setUp();
+				$p = self::product( 501, 'draft', 'private' );
+				if ( 'parent' === $loss ) {
+					$p                                        = new SavedProduct(
+						'variation',
+						[
+							'id'        => 501,
+							'parent_id' => 500,
+							'status'    => 'private',
+						]
+					);
+					$GLOBALS['bulkcat_test']['products'][501] = $p;
+				}
+				$p->props['post_password'] = ' exact <secret> \\ ';
+				$fields                    = new Fields();
+				$journal                   = new Journal( new ChangeRepository(), $fields, false );
+				$before                    = [
+					'status'               => $p->get_status( 'edit' ),
+					'publication_password' => $p->get_post_password( 'edit' ),
+				];
+				$entries                   = [ [ Result::changed( 'status', $before['status'], 'publish' ), true ], [ Result::changed( 'publication_password', $before['publication_password'], '' ), true ] ];
+				$journal->intend( self::BATCH, 501, 'parent' === $loss ? 'variation' : 'product', '2026-09-01 00:00:00', $entries, $before );
+				$GLOBALS['bulkcat_test']['caps']          = [
+					'edit_post'        => true,
+					'publish_products' => true,
+				];
+				$GLOBALS['bulkcat_test']['user_caps'][23] = [
+					'edit_post'        => true,
+					'publish_products' => false,
+				];
+				if ( 'edit' === $loss || 'deleted' === $loss ) {
+					$GLOBALS['bulkcat_test']['user_caps'][23] = []; }
+				if ( 'parent' === $loss ) {
+					$GLOBALS['bulkcat_test']['user_caps'][23]['edit_post:500'] = false; }
+				$out = Writer::for_batch( new Registry( $fields ), $journal, self::BATCH, 23 )->write(
+					501,
+					[
+						[
+							'action' => $action,
+							'args'   => [
+								'field' => 'status',
+								'value' => 'publish',
+							],
+						],
+					]
+				);
+				$this->assertSame( [], $p->sets, $action . $loss );
+				$this->assertSame( [], $p->saves );
+				$this->assertSame( $before['publication_password'], $p->get_post_password( 'edit' ) );
+				$this->assertSame( [ Result::FAILED,Result::FAILED ], array_map( static fn( Result $r ): string=>$r->state(), $out->results() ) );
+				$this->assertSame( [ 'failed','failed' ], array_column( self::rows(), 'result' ) );
+			}
+		}
+	}
+
+	public function test_final_save_uses_original_status_when_actor_is_revoked_after_setters(): void {
+		foreach ( [ 'draft', 'publish', 'future' ] as $original ) {
+			$this->setUp();
+			$p                                        = self::product( 501, $original );
+			$GLOBALS['bulkcat_test']['user_caps'][23] = [
+				'edit_post'        => true,
+				'publish_products' => true,
+			];
+			$fields                                   = new Fields();
+			$journal                                  = new Journal( new ChangeRepository(), $fields, false );
+			$writer                                   = new Writer(
+				new Registry( $fields ),
+				static function (): void {
+					$GLOBALS['bulkcat_test']['user_caps'][23]['publish_products'] = false;
+				},
+				23,
+				$journal,
+				self::BATCH
+			);
+			// Stored legacy Publish requests still execute their accepted meaning.
+			// Future -> Publish exercises a real resave; Published itself is a no-op.
+			$out = self::write( $writer, 501, $this->status_step( 'publish' ) );
+			if ( 'draft' === $original ) {
+				$this->assertSame( [], $p->saves, 'A dirty Publish target is not a previously published product.' );
+				$this->assertSame( Result::FAILED, $out->results()[0]->state() );
+				$this->assertSame( 'failed', self::rows()[0]['result'] );
+			} elseif ( 'future' === $original ) {
+				$this->assertCount( 1, $p->saves, 'The genuine stored Future resave exception survives revocation.' );
+			} else {
+				$this->assertSame( [], $p->saves, 'Already Published remains a genuine no-op.' );
+			}
+		}
+	}
+	public function test_replay_final_check_uses_journal_preimage_after_setters_revoke_actor(): void {
+		foreach ( [ 'draft', 'future' ] as $original ) {
+			$this->setUp();
+			$p       = self::product( 501, $original );
+			$fields  = new Fields();
+			$journal = new Journal( new ChangeRepository(), $fields, false );
+			$journal->intend( self::BATCH, 501, 'product', '2026-09-01 00:00:00', [ [ Result::changed( 'status', $original, 'publish' ), true ] ], [ 'status' => $original ] );
+			$GLOBALS['bulkcat_test']['user_caps'][23] = [
+				'edit_post'        => true,
+				'publish_products' => true,
+			];
+			$GLOBALS['bulkcat_test']['products'][501] = new class($p) {
+				public function __construct( public SavedProduct $inner ) {}
+				public function __call( string $method, array $args ): mixed {
+					$value = $this->inner->$method( ...$args );
+					if ( 'set_status' === $method ) {
+						$GLOBALS['bulkcat_test']['user_caps'][23]['publish_products'] = false; }
+					return $value;
+				}
+			};
+			$out                                      = Writer::for_batch( new Registry( $fields ), $journal, self::BATCH, 23 )->write( 501, $this->status_step( 'publish' ) );
+			$this->assertCount( 'draft' === $original ? 0 : 1, $p->saves );
+			$this->assertSame( 'draft' === $original ? Result::FAILED : Result::CHANGED, $out->results()[0]->state() );
+			$this->assertSame( 'draft' === $original ? 'failed' : 'applied', self::rows()[0]['result'] );
+		}
+	}
+
+	public function test_landed_and_partial_coupled_recovery_reports_facts_without_new_writes(): void {
+		foreach ( [ 'set_status', 'set_value' ] as $action ) {
+			foreach ( [ false, true ] as $partial ) {
+				$this->setUp();
+				$p                         = self::product( 501, 'private', $partial ? 'publish' : null );
+				$p->props['post_password'] = $partial ? ' exact <secret> \\ ' : '';
+				$before                    = [
+					'status'               => 'draft',
+					'publication_password' => ' exact <secret> \\ ',
+					OffRecord::FIELD       => self::record( 501, 'publish' ),
+				];
+				$new                       = [
+					'status'               => 'private',
+					'publication_password' => '',
+					OffRecord::FIELD       => '',
+				];
+				$entries                   = [];
+				foreach ( $before as $key => $value ) {
+					$entries[] = [ Result::changed( $key, $value, $new[ $key ] ), true ]; }
+				$fields  = new Fields();
+				$journal = new Journal( new ChangeRepository(), $fields, false );
+				$journal->intend( self::BATCH, 501, 'product', '2026-09-01 00:00:00', $entries, $before );
+				$GLOBALS['bulkcat_test']['user_caps'][23] = [];
+				$out                                      = Writer::for_batch( new Registry( $fields ), $journal, self::BATCH, 23 )->write(
+					501,
+					[
+						[
+							'action' => $action,
+							'args'   => [
+								'field' => 'status',
+								'value' => 'private',
+							],
+						],
+					]
+				);
+				$this->assertSame( [], $p->sets );
+				$this->assertSame( [], $p->saves );
+				$this->assertSame( [], $p->meta_calls );
+				$this->assertSame( $partial ? [ 'applied','failed','failed' ] : [ 'applied','applied','applied' ], array_column( self::rows(), 'result' ) );
+				$this->assertSame( $partial ? [ Result::CHANGED,Result::FAILED,Result::FAILED ] : [ Result::CHANGED,Result::CHANGED,Result::CHANGED ], array_map( static fn( Result $r ): string=>$r->state(), $out->results() ) );
+			}
+		}
+	}
+
+	public function test_coupled_password_setter_failure_never_saves_half_a_transition(): void {
+		foreach ( [ false, true ] as $replay ) {
+			$this->setUp();
+			$p                              = self::product( 501, 'draft' );
+			$p->props['post_password']      = 'secret';
+			$p->refuse['set_post_password'] = 'A native setter refused the value.';
+			$fields                         = new Fields();
+			$journal                        = new Journal( new ChangeRepository(), $fields, false );
+			$args                           = ( new Registry( $fields ) )->get( 'set_status' )->validate(
+				[
+					'field' => 'status',
+					'value' => 'private',
+				]
+			)->args();
+			if ( $replay ) {
+				$journal->intend(
+					self::BATCH,
+					501,
+					'product',
+					'2026-09-01 00:00:00',
+					[ [ Result::changed( 'status', 'draft', 'private' ),true ],[ Result::changed( 'publication_password', 'secret', '' ),true ] ],
+					[
+						'status'               => 'draft',
+						'publication_password' => 'secret',
+					]
+				);
+			}
+			$out = Writer::for_batch( new Registry( $fields ), $journal, self::BATCH )->write(
+				501,
+				[
+					[
+						'action' => 'set_status',
+						'args'   => $args,
+					],
+				]
+			);
+			$this->assertSame( [], $p->saves );
+			$this->assertSame( [ Result::FAILED,Result::FAILED ], array_map( static fn( Result $r ): string=>$r->state(), $out->results() ) );
+			$this->assertSame( [ 'failed','failed' ], array_column( self::rows(), 'result' ) );
+		}
 	}
 }

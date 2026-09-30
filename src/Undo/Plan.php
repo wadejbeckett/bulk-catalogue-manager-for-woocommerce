@@ -123,7 +123,19 @@ final class Plan {
 	public function to_array(): array {
 		return [
 			'batch_id' => $this->batch_id,
-			'items'    => $this->items,
+			'items'    => array_map(
+				static function ( array $item ): array {
+					$item['operations'] = \BulkCatalogueManager\Publishing\PublicationPassword::operations( $item['operations'] );
+					foreach ( $item['conflicts'] as &$conflict ) {
+						if ( \BulkCatalogueManager\Publishing\PublicationPassword::FIELD === $conflict['field'] ) {
+							$conflict['expected'] = \BulkCatalogueManager\Publishing\PublicationPassword::display( $conflict['expected'] );
+							$conflict['current']  = \BulkCatalogueManager\Publishing\PublicationPassword::display( $conflict['current'] );
+						}
+					}
+					return $item;
+				},
+				$this->items
+			),
 			'counts'   => $this->counts,
 			'hash'     => $this->hash,
 		];

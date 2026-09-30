@@ -350,8 +350,8 @@ final class UndoController implements Controller {
 							'current'  => OffRecord::describe( $conflict['current'] ),
 						]
 						: [
-							'expected' => $conflict['expected'],
-							'current'  => $conflict['current'],
+							'expected' => \BulkCatalogueManager\Publishing\PublicationPassword::FIELD === $conflict['field'] ? \BulkCatalogueManager\Publishing\PublicationPassword::display( $conflict['expected'] ) : $conflict['expected'],
+							'current'  => \BulkCatalogueManager\Publishing\PublicationPassword::FIELD === $conflict['field'] ? \BulkCatalogueManager\Publishing\PublicationPassword::display( $conflict['current'] ) : $conflict['current'],
 						]
 				),
 				$item['conflicts']

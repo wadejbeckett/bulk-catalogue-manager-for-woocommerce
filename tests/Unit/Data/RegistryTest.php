@@ -21,6 +21,7 @@ final class RegistryTest extends TestCase {
 	 * Add a new hook name or code here only if it is never a storage key.
 	 */
 	private const NOT_STORAGE = [
+		'bulkcat_cannot_publish'           => 'Publication permission refusal, not storage.',
 		'bulkcat_selection_renew_required' => 'Selection authorization refusal.',
 		'bulkcat_export_confirm_all'       => 'refusal for a whole-catalogue export without its confirmation; nothing is streamed (CSV export, ticket 10)',
 		'bulkcat_export_unavailable'       => 'refusal when a catalogue export cannot be prepared (a database error before any byte); nothing is streamed',

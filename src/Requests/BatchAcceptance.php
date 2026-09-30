@@ -142,7 +142,7 @@ final class BatchAcceptance {
 				return Refusal::create( Refusals::ERROR, Refusals::error_sentence(), 409 );
 			}
 		}
-		$hash = Preview::hash( $bound, $operations, Settings::load(), $scope['scope_hash'], $binding );
+		$hash = Preview::hash( $bound, $operations, Settings::load(), $scope['scope_hash'], $binding, \BulkCatalogueManager\Publishing\PublicationBinding::of( $scope['objects'], $operations, (int) $clock() ) );
 		if ( ! hash_equals( $scope['scope_hash'], $intent['scope_hash'] ) ) {
 			return self::stale( null === $provider ? '' : 'scope_changed' );
 		}

@@ -385,7 +385,12 @@ final class VariationRunTest extends TestCase {
 		$this->assertSame( [ 'failed', $sentence ], [ $store->item( 501 )['state'], $store->item( 501 )['message'] ] );
 
 		bulkcat_test_reset();
-		$GLOBALS['bulkcat_test']['user_caps'] = [ self::USER => [ 'edit_post' => true ] ];
+		$GLOBALS['bulkcat_test']['user_caps'] = [
+			self::USER => [
+				'edit_post'        => true,
+				'publish_products' => true,
+			],
+		];
 		self::catalogue();
 		$store = new RunnerStore(
 			self::BATCH,

@@ -26,7 +26,10 @@ use PHPUnit\Framework\TestCase;
 final class RestoreStatusTest extends TestCase {
 	protected function setUp(): void {
 		bulkcat_test_reset();
-		$GLOBALS['bulkcat_test']['caps'] = [ 'edit_post' => true ];
+		$GLOBALS['bulkcat_test']['caps'] = [
+			'edit_post'        => true,
+			'publish_products' => true,
+		];
 	}
 
 	private static function off( int $id, string $status, int $batch = 7 ): string {
@@ -261,5 +264,50 @@ final class RestoreStatusTest extends TestCase {
 			true
 		);
 		$this->assertInstanceOf( \WP_Error::class, $list );
+	}
+	public function test_internal_restore_cannot_borrow_publication_rights_even_without_conflict_guards(): void {
+		foreach ( [ null, 23, 0 ] as $actor ) {
+			foreach ( [ false, true ] as $guarded ) {
+				$this->setUp();
+				$p                                        = self::product( 501, 'draft', self::off( 501, 'publish' ) );
+				$p->props['post_password']                = 'current opaque password';
+				$GLOBALS['bulkcat_test']['user_caps'][23] = [
+					'edit_post'        => true,
+					'publish_products' => false,
+				];
+				if ( null === $actor ) {
+					$GLOBALS['bulkcat_test']['caps']['publish_products'] = false;
+				}
+				$actions = new Registry( new Fields() );
+				$args    = [
+					'field'    => 'status',
+					'value'    => 'publish',
+					'record'   => '',
+					'password' => 'protected preimage',
+				];
+				if ( $guarded ) {
+					$args += [
+						'expected_status'   => 'draft',
+						'expected_password' => $p->props['post_password'],
+					];
+				}
+				$steps = $actions->validate_list(
+					[
+						[
+							'action' => 'restore_status',
+							'args'   => $args,
+						],
+					],
+					true
+				);
+				$this->assertIsArray( $steps );
+				$out = ( new Writer( $actions, null, $actor ) )->write( 501, $steps );
+				$this->assertSame( Result::SKIPPED, $out->results()[0]->state() );
+				$this->assertSame( [], $p->sets );
+				$this->assertSame( [], $p->saves );
+				$this->assertSame( 'current opaque password', $p->get_post_password( 'edit' ) );
+				$this->assertSame( self::off( 501, 'publish' ), OffRecord::raw( $p ) );
+			}
+		}
 	}
 }

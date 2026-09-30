@@ -42,10 +42,11 @@ final class InlineWriteTest extends TestCase {
 
 	protected function setUp(): void {
 		bulkcat_test_reset();
-		$GLOBALS['bulkcat_test']['logged_in']         = true;
-		$GLOBALS['bulkcat_test']['user_id']           = self::USER;
-		$GLOBALS['bulkcat_test']['caps']['edit_post'] = true;
-		$GLOBALS['bulkcat_test']['scheduled']         = [];
+		$GLOBALS['bulkcat_test']['logged_in']                = true;
+		$GLOBALS['bulkcat_test']['user_id']                  = self::USER;
+		$GLOBALS['bulkcat_test']['caps']['publish_products'] = true;
+		$GLOBALS['bulkcat_test']['caps']['edit_post']        = true;
+		$GLOBALS['bulkcat_test']['scheduled']                = [];
 		// The chunk runner listens on bulkcat_batch_created, as it does on a live site.
 		( new Plugin() )->boot();
 		$this->store   = new InlineStore();
@@ -152,7 +153,12 @@ final class InlineWriteTest extends TestCase {
 		// The same operations as a queued bulk batch, worked by the chunk runner.
 		$operations = json_decode( (string) wp_json_encode( $this->writes()->operations( $values ) ), true );
 		bulkcat_test_reset();
-		$GLOBALS['bulkcat_test']['user_caps'] = [ self::USER => [ 'edit_post' => true ] ];
+		$GLOBALS['bulkcat_test']['user_caps'] = [
+			self::USER => [
+				'edit_post'        => true,
+				'publish_products' => true,
+			],
+		];
 		self::product(
 			101,
 			'simple',
@@ -256,7 +262,12 @@ final class InlineWriteTest extends TestCase {
 		$operations = json_decode( (string) wp_json_encode( $this->writes()->operations( [ 'status' => 'draft' ] ) ), true );
 		$this->assertSame( 'set_status', $operations[0]['action'] );
 		bulkcat_test_reset();
-		$GLOBALS['bulkcat_test']['user_caps'] = [ self::USER => [ 'edit_post' => true ] ];
+		$GLOBALS['bulkcat_test']['user_caps'] = [
+			self::USER => [
+				'edit_post'        => true,
+				'publish_products' => true,
+			],
+		];
 		$product                              = self::product( 106, 'simple', [ 'status' => 'publish' ] );
 		$runner                               = new RunnerStore( 7, [ 106 ], $operations, self::USER );
 		$this->assertSame( 'complete', ( new ChunkRunner( null, $this->actions, null, new Settings( [] ), static fn(): float => 1790000000.0, 30 ) )->run( 7 ) );

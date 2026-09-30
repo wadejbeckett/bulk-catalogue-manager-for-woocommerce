@@ -137,7 +137,7 @@ final class RequestService {
 				if ( is_wp_error( $selection ) ) {
 					return $selection;
 				}
-				return ( new Preview() )->run( $selection, $input['operations'] ?? null, (int) ( $input['sample_size'] ?? Preview::DEFAULT_SAMPLE ), $token, null, true );
+				return ( new Preview( clock: $this->clock ) )->run( $selection, $input['operations'] ?? null, (int) ( $input['sample_size'] ?? Preview::DEFAULT_SAMPLE ), $token, null, true );
 			}
 		);
 	}

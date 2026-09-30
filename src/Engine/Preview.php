@@ -198,7 +198,7 @@ final class Preview {
 	 * @param BatchFactory|null $factory Selection resolver; a factory over the same registry by default.
 	 * @param int               $cap     Most objects computed (CAP; tests lower it).
 	 */
-	public function __construct( ?Actions $actions = null, ?BatchFactory $factory = null, private readonly int $cap = self::CAP ) {
+	public function __construct( ?Actions $actions = null, ?BatchFactory $factory = null, private readonly int $cap = self::CAP, private readonly ?\Closure $clock = null ) {
 		$this->actions = $actions ?? Actions::instance();
 		$this->factory = $factory ?? new BatchFactory( $this->actions );
 	}
@@ -219,6 +219,7 @@ final class Preview {
 		if ( $operations instanceof \WP_Error ) {
 			return $operations;
 		}
+		$now      = null === $this->clock ? Stamp::now() : (int) ( $this->clock )();
 		$provider = $this->actions->external_provider( $operations );
 		if ( $selection->too_large() ) {
 			return self::too_large( $selection->count );
@@ -253,7 +254,7 @@ final class Preview {
 		}
 		// A preview's Off records are stamped batch 0 and never stored (T89).
 		$tally   = null === $provider
-			? Stamp::within( 0, null, fn(): array => $this->compute( $computed, $operations, max( 1, min( self::SAMPLE_ALL, $sample_size ) ), $scope['unavailable'] ?? [] ) )
+			? Stamp::within( 0, static fn(): int => $now, fn(): array => $this->compute( $computed, $operations, max( 1, min( self::SAMPLE_ALL, $sample_size ) ), $scope['unavailable'] ?? [] ) )
 			: $this->compute_external( $provider, $context, $computed, $operations, max( 1, min( self::SAMPLE_ALL, $sample_size ) ), $scope['unavailable'] ?? [] );
 		$factor  = [] === $computed ? 1.0 : $matched / count( $computed );
 		$changes = self::scale( $tally['would_change'], $factor );
@@ -308,7 +309,7 @@ final class Preview {
 					'parents_left_out' => $expanded['left_out'],
 					'variations_kept'  => (int) ( $expanded['kept'] ?? 0 ),
 				],
-			'hash'              => self::hash( '' !== $token ? $token : $selection->ids, $operations, $settings, $scope['scope_hash'] ?? '', $binding ),
+			'hash'              => self::hash( '' !== $token ? $token : $selection->ids, $operations, $settings, $scope['scope_hash'] ?? '', $binding, \BulkCatalogueManager\Publishing\PublicationBinding::of( $objects, $operations, $now ) ),
 			'unavailable_count' => count( $missing ),
 			'scope_hash'        => $scope['scope_hash'] ?? null,
 			'operations'        => $operations,
@@ -361,7 +362,7 @@ final class Preview {
 	 * @param array<mixed>      $operations The normalised operation list.
 	 * @param Settings          $settings   The settings.
 	 */
-	public static function hash( string|array $selection, array $operations, Settings $settings, string $scope_hash = '', array $external = [] ): string {
+	public static function hash( string|array $selection, array $operations, Settings $settings, string $scope_hash = '', array $external = [], array $publication = [] ): string {
 		$bound = array_intersect_key( $settings->values(), array_flip( self::SETTINGS ) );
 		ksort( $bound );
 		$payload = [
@@ -376,6 +377,8 @@ final class Preview {
 			// T106: the provider's id, version, contract, field formats and state token (External\Binding).
 			$payload['external'] = self::canonical( $external );
 		}
+		if ( [] !== $publication ) {
+			$payload['publication'] = self::canonical( $publication ); }
 		return hash_hmac( 'sha256', self::CONTEXT . (string) wp_json_encode( $payload ), wp_salt( 'auth' ) );
 	}
 
@@ -453,8 +456,10 @@ final class Preview {
 					++$tally['warnings']['sku_duplicate'];
 				}
 				foreach ( $checked as $index => $result ) {
-					$set       = $this->set( $fields, $result, $subject );
-					$results[] = $set;
+					$set        = $this->set( $fields, $result, $subject );
+					$projection = $set->context()['effective_status'] ?? null;
+					$results[]  = $set->is_changed() && is_string( $projection ) && $projection !== $set->old()
+					? Result::changed( $set->field(), $set->old(), $projection )->with_note( $set->note(), $set->context() ) : $set;
 					if ( 0 === $index && $result->is_changed() && ! $set->is_changed() ) {
 						$follow = [];
 					}

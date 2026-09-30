@@ -218,6 +218,10 @@ final class BatchChangesController implements ReadController {
 			$row['old_value'] = Envelope::text( $row['old_value'] );
 			$row['new_value'] = Envelope::text( $row['new_value'] );
 		}
+		if ( \BulkCatalogueManager\Publishing\PublicationPassword::FIELD === $row['prop'] ) {
+			$row['old_value'] = \BulkCatalogueManager\Publishing\PublicationPassword::display( $row['old_value'] );
+			$row['new_value'] = \BulkCatalogueManager\Publishing\PublicationPassword::display( $row['new_value'] );
+		}
 		if ( OffRecord::FIELD === $row['prop'] ) {
 			// The Off record reads as the status it saved and when (SPEC §9.4); the journal keeps the JSON.
 			$row['old_value'] = OffRecord::describe( $row['old_value'] );

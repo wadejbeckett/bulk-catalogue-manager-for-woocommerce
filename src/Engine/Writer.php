@@ -13,6 +13,9 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Engine;
 
+use BulkCatalogueManager\Publishing\StatusPermission;
+use BulkCatalogueManager\Publishing\StatusTransition;
+use BulkCatalogueManager\Publishing\PublicationPassword;
 use BulkCatalogueManager\Availability\Stamp;
 use BulkCatalogueManager\Availability\StatusSwitch;
 use BulkCatalogueManager\External\ExternalWriter;
@@ -362,7 +365,7 @@ final class Writer {
 		$steps = $this->resolve( $operations );
 		if ( null !== $this->journal && $this->journal->already_done( $this->batch_id, $id ) ) {
 			$intents = $this->journal->intents( $this->batch_id, $id );
-			return [] === $intents ? new WriteOutcome( $id, self::done_before( $steps ), false ) : $this->replay( $id, $intents );
+			return [] === $intents ? new WriteOutcome( $id, self::done_before( $steps ), false ) : $this->replay( $id, $intents, $type );
 		}
 
 		$product = wc_get_product( $id );
@@ -393,7 +396,8 @@ final class Writer {
 		if ( is_string( $reason ) && '' !== $reason ) {
 			return $this->left_alone( $id, $product, $steps, $reason, $modified, $before );
 		}
-		$entries = [];
+		$native_before = clone $product;
+		$entries       = [];
 		foreach ( $steps as [ $operation, $args ] ) {
 			$skip_already = (bool) ( $args['skip_already'] ?? true );
 			$checked      = $validator->check( $product, $operation->compute( $product, $args ), $args );
@@ -425,6 +429,13 @@ final class Writer {
 			}
 		}
 		$results = array_column( $entries, 0 );
+		foreach ( $results as $result ) {
+			if ( Result::FAILED === $result->state() && in_array( $result->field(), [ PublicationPassword::FIELD, \BulkCatalogueManager\Availability\OffRecord::FIELD ], true ) ) {
+				$entries = self::denied_entries( $entries, \BulkCatalogueManager\Rest\Refusal::create( $result->code(), $result->reason(), 400 ) );
+				$this->journal( $id, $product, $modified, $entries, $before, null );
+				return new WriteOutcome( $id, array_column( $entries, 0 ), false );
+			}
+		}
 
 		$touched = array_values( array_unique( array_map( static fn( Result $r ): string => $r->field(), array_filter( $results, static fn( Result $r ): bool => $r->is_changed() ) ) ) );
 		if ( [] === $touched ) {
@@ -438,8 +449,19 @@ final class Writer {
 		}
 		// Intent rows first (§12.3): a run killed after WooCommerce saved leaves the value it wrote on record.
 		$intended = null === $this->journal ? [] : $this->journal->intend( $this->batch_id, $id, Journal::object_type( $product ), $modified, $entries, $before );
+		// Check against the loaded pre-setter status: the dirty target is never a resave exception.
+		$denied = $this->publication_permission( $native_before, $results );
+		if ( null !== $denied ) {
+			$entries = self::denied_entries( $entries, $denied );
+			$this->settle( $id, $entries, $before, null, $intended );
+			return new WriteOutcome( $id, array_column( $entries, 0 ), false );
+		}
 		try {
-			$product->save();
+			if ( null !== $this->status_field( array_keys( $before ) ) || isset( $before[ PublicationPassword::FIELD ] ) ) {
+				StatusTransition::save( $product, $this->user_id );
+			} else {
+				$product->save();
+			}
 		} catch ( \Exception $e ) {
 			$entries = self::save_failed( $entries );
 			$this->settle( $id, $entries, $before, null, $intended );
@@ -447,9 +469,12 @@ final class Writer {
 		}
 
 		$status = $this->status_field( $touched );
-		if ( null !== $status ) {
+		if ( null !== $status || in_array( PublicationPassword::FIELD, $touched, true ) ) {
 			// WooCommerce does not read post_status back; the journal and the outcome report what WordPress stored.
-			StatusSwitch::read_back( $status, $product );
+			if ( null !== $status ) {
+				StatusSwitch::read_back( $status, $product );
+			}
+			PublicationPassword::read_back( $product );
 			$results = $this->stored( $results, $product );
 		}
 		$parent_id = self::variable_parent( $product );
@@ -491,10 +516,16 @@ final class Writer {
 		return array_map(
 			static function ( Result $result ) use ( $fields, $saved ): Result {
 				$field = $fields->get( $result->field() );
-				if ( ! $result->is_changed() || null === $field || ! StatusSwitch::governs( $field ) ) {
+				if ( ! $result->is_changed() || null === $field || ( ! StatusSwitch::governs( $field ) && PublicationPassword::FIELD !== $field->key() ) ) {
 					return $result;
 				}
 				$now = $field->read( $saved );
+				if ( isset( $result->context()['effective_status'] ) ) {
+					$context                     = $result->context();
+					$context['effective_status'] = (string) $now;
+					$context['scheduled_gmt']    = (string) get_post_field( 'post_date_gmt', (int) $saved->get_id(), 'raw' );
+					$result                      = $result->with_note( $result->note(), $context );
+				}
 				if ( $now === $result->new() ) {
 					return $result;
 				}
@@ -522,69 +553,150 @@ final class Writer {
 	 * @param int                                          $id      Object id.
 	 * @param array<string, array{old: mixed, new: mixed}> $intents Field key => the values the killed run recorded.
 	 */
-	private function replay( int $id, array $intents ): WriteOutcome {
+	private function replay( int $id, array $intents, ?string $type = null ): WriteOutcome {
 		$product = wc_get_product( $id );
 		$fields  = $this->operations->fields();
 		$results = [];
+		$pending = [];
 		$written = false;
 		if ( ! is_object( $product ) ) {
 			$product = null;
 		}
-		foreach ( $intents as $key => [ 'old' => $old, 'new' => $value ] ) {
+		$native_before = null === $product ? null : clone $product;
+		$status        = $this->status_field( array_keys( $intents ) );
+		$publication   = null !== $status || isset( $intents[ PublicationPassword::FIELD ] ) || isset( $intents[ \BulkCatalogueManager\Availability\OffRecord::FIELD ] );
+		foreach ( $intents as $key => ['old' => $old, 'new' => $value] ) {
 			$field = $fields->get( $key );
 			if ( null === $product || null === $field ) {
-				$results[ $key ] = self::not_found( [ [ null, [ 'field' => $key ] ] ] )[0];
+				$results[ $key ] = self::not_found( [ [ null,[ 'field' => $key ] ] ] )[0];
 				continue;
 			}
-			if ( ! Planner::same( $field, $field->read( $product ), $value ) ) {
-				$refused = $field->write( $product, $value );
-				if ( $refused instanceof \WP_Error ) {
-					$code            = (string) $refused->get_error_code();
-					$results[ $key ] = Result::failed( $key, $old, $refused->get_error_message(), str_starts_with( $code, 'bulkcat_' ) ? $code : '' );
+			if ( null !== $type && Journal::object_type( $product ) !== $type ) {
+				$results[ $key ] = self::changed_kind( [ [ null,[ 'field' => $key ] ] ] )[0];
+				continue;
+			}
+			$current   = $field->read( $product );
+			$effective = StatusSwitch::governs( $field ) ? StatusTransition::predict( $product, (string) $value, Stamp::now() )['effective'] : $value;
+			if ( Planner::same( $field, $current, $value ) || ( StatusSwitch::governs( $field ) && $current === $effective ) ) {
+				$results[ $key ] = Planner::same( $field, $old, $current ) ? Result::already( $key, $current ) : Result::changed( $key, $old, $current );
+			} else {
+				$pending[ $key ] = Result::changed( $key, $old, $value );
+				$results[ $key ] = $pending[ $key ];
+			}
+		}
+		// Authorise the entire still-pending coupled group before any setter. Landed facts need no new grant.
+		$denied = null;
+		if ( [] !== $pending && null !== $product ) {
+			$denied   = $this->new_validator()->authorise( $native_before );
+			$previous = null;
+			if ( $publication && null !== $status && isset( $intents[ $status->key() ] ) ) {
+				// A partial save does not turn the original Draft transition into a resave exemption.
+				$previous = (string) $intents[ $status->key() ]['old'];
+				$denied ??= StatusPermission::check( $this->user_id, $native_before, (string) $intents[ $status->key() ]['new'], $previous );
+			}
+			foreach ( $pending as $key => $result ) {
+				$field = $fields->get( $key );
+				if ( null !== $denied ) {
+					$results[ $key ] = Result::failed( $key, $result->old(), $denied->get_error_message(), (string) $denied->get_error_code() );
+				} elseif ( $publication && ! Planner::same( $field, $field->read( $product ), $result->old() ) ) {
+					$results[ $key ] = Result::failed( $key, $result->old(), __( 'This product changed while the interrupted change was waiting, so its remaining values were left alone. Review it before trying again.', 'bulk-catalogue-manager-for-woocommerce' ), RestoreStatus::CHANGED_SINCE );
+				}
+			}
+			// Refuse the coupled pending group together when any of its members conflicts.
+			$failure = array_values( array_filter( $results, static fn( Result $r ): bool => Result::FAILED === $r->state() ) );
+			if ( $publication && [] !== $failure ) {
+				foreach ( $pending as $key => $result ) {
+					$results[ $key ] = Result::failed( $key, $result->old(), $failure[0]->reason(), $failure[0]->code() );
+				}
+			}
+			foreach ( $pending as $key => $result ) {
+				if ( Result::FAILED === $results[ $key ]->state() ) {
 					continue;
 				}
-				$written = true;
+				$results[ $key ] = $this->apply_field( $result, $product );
+				$written         = $written || $results[ $key ]->is_changed();
 			}
-			$results[ $key ] = Planner::same( $field, $old, $value ) ? Result::already( $key, $value ) : Result::changed( $key, $old, $value );
-		}
-
-		if ( $written ) {
-			try {
-				$product->save();
-				$status = $this->status_field( array_keys( $results ) );
-				if ( null !== $status ) {
-					StatusSwitch::read_back( $status, $product );
+			$failures = array_values( array_filter( $results, static fn( Result $r ): bool => Result::FAILED === $r->state() ) );
+			if ( $publication && [] !== $failures ) {
+				foreach ( $pending as $key => $result ) {
+					$results[ $key ] = Result::failed( $key, $result->old(), $failures[0]->reason(), $failures[0]->code() );
 				}
-			} catch ( \Exception $e ) {
-				$entries = self::save_failed( array_map( static fn( Result $r ): array => [ $r, true ], array_values( $results ) ) );
-				$results = array_combine( array_keys( $results ), array_column( $entries, 0 ) );
+				$written = false;
+			}
+			if ( $written ) {
+				$denied = $this->new_validator()->authorise( $native_before );
+				if ( $publication && null !== $status && isset( $intents[ $status->key() ] ) ) {
+					$denied ??= StatusPermission::check( $this->user_id, $native_before, (string) $intents[ $status->key() ]['new'], $previous );
+				}
+				if ( null !== $denied ) {
+					foreach ( $pending as $key => $result ) {
+						$results[ $key ] = Result::failed( $key, $result->old(), $denied->get_error_message(), (string) $denied->get_error_code() );
+					}
+					$written = false;
+				} else {
+					try {
+						if ( $publication ) {
+							StatusTransition::save( $product, $this->user_id );
+						} else {
+							$product->save();
+						}
+						if ( null !== $status || isset( $intents[ PublicationPassword::FIELD ] ) ) {
+							if ( null !== $status ) {
+								StatusSwitch::read_back( $status, $product );
+							}PublicationPassword::read_back( $product );
+						}
+					} catch ( \Exception $e ) {
+						foreach ( $pending as $key => $result ) {
+							$results[ $key ] = self::save_failed( [ [ $result,true ] ] )[0][0];
+						}
+						$written = false;
+					}
+				}
 			}
 		}
-		$saved     = [] !== array_filter( $results, static fn( Result $r ): bool => $r->is_changed() );
-		$parent_id = $saved ? self::variable_parent( $product ) : 0;
-		if ( $parent_id > 0 ) {
-			$this->sync( $parent_id );
-		}
-		foreach ( $results as $key => $result ) {
-			$field = $fields->get( $key );
-			if ( Result::FAILED === $result->state() ) {
-				$this->journal->settle_one( $this->batch_id, $id, $key, 'failed', $intents[ $key ]['old'], $result->reason() );
-			} else {
-				$this->journal->settle_one( $this->batch_id, $id, $key, 'applied', null !== $field && null !== $product ? $field->read( $product ) : $result->new() );
-			}
+		if ( $written ) {
+			$results = array_combine( array_keys( $results ), $this->stored( array_values( $results ), $product ) );
 		}
 		$before = [];
 		foreach ( $results as $key => $result ) {
+			$failed = in_array( $result->state(), [ Result::FAILED,Result::SKIPPED ], true );
+			$this->journal->settle_one( $this->batch_id, $id, $key, $failed ? 'failed' : 'applied', $failed ? $intents[ $key ]['old'] : $result->new(), $failed ? $result->reason() : '' );
 			if ( $result->is_changed() ) {
 				$before[ $key ] = $result->old();
 			}
 		}
-		$outcome = array_values( $results );
-		if ( $saved && null !== $product && null !== $this->status_field( array_keys( $results ) ) ) {
-			$outcome = $this->stored( $outcome, $product );
-			$saved   = [] !== array_filter( $outcome, static fn( Result $r ): bool => $r->is_changed() );
+		$saved  = [] !== $before;
+		$parent = $written ? self::variable_parent( $product ) : 0;
+		if ( $parent > 0 ) {
+			$this->sync( $parent );
 		}
-		return new WriteOutcome( $id, $outcome, $saved, $saved ? $parent_id : 0, $saved ? $before : [] );
+		return new WriteOutcome( $id, array_values( $results ), $saved, $parent, $before );
+	}
+
+	/** Final permission check uses the immutable pre-setter native state.
+	 * @param object $before Loaded state before setters.
+	 * @param list<Result> $results Computed writes.
+	 */
+	private function publication_permission( object $before, array $results ): ?\WP_Error {
+		if ( null === $this->status_field( array_map( static fn( Result $r ): string => $r->field(), $results ) ) ) {
+			return null;
+		}
+		$denied = $this->new_validator()->authorise( $before );
+		foreach ( $results as $result ) {
+			$field = $this->operations->fields()->get( $result->field() );
+			if ( null !== $field && StatusSwitch::governs( $field ) && in_array( $result->state(), [ Result::CHANGED,Result::ALREADY ], true ) ) {
+				$denied ??= StatusPermission::check( $this->user_id, $before, (string) $result->new() );
+			}
+		}
+		return $denied;
+	}
+	/** Fail unsaved intents, never settle a permission refusal as applied.
+	 * @param array $entries Journal entries.
+	 * @param \WP_Error $denied Refusal.
+	 * @return array
+	 */
+	private static function denied_entries( array $entries, \WP_Error $denied ): array {
+		return array_map( static fn( array $entry ): array => [ $entry[0]->is_changed() ? Result::failed( $entry[0]->field(), $entry[0]->old(), $denied->get_error_message(), (string) $denied->get_error_code() ) : $entry[0],$entry[1] ], $entries );
 	}
 
 	/**
@@ -720,7 +832,11 @@ final class Writer {
 		if ( null === $field ) {
 			throw new \LogicException( esc_html( sprintf( 'Field "%s" is not in the registry.', $result->field() ) ) );
 		}
-		$written = $field->write( $product, $result->new() );
+		try {
+			$written = $field->write( $product, $result->new() );
+		} catch ( \WC_Data_Exception $error ) {
+			return Result::failed( $result->field(), $result->old(), __( 'WooCommerce did not accept this value. Check it and try again.', 'bulk-catalogue-manager-for-woocommerce' ), self::INVALID );
+		}
 		if ( $written instanceof \WP_Error ) {
 			$code = (string) $written->get_error_code();
 			return Result::failed( $result->field(), $result->old(), $written->get_error_message(), str_starts_with( $code, 'bulkcat_' ) ? $code : '' );

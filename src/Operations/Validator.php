@@ -139,6 +139,11 @@ final class Validator {
 			return [ Result::skipped( $result->field(), $result->old(), $denied->get_error_message(), (string) $denied->get_error_code() ) ];
 		}
 		$field = $this->fields->get( $result->field() );
+		if ( null !== $field && \BulkCatalogueManager\Availability\StatusSwitch::governs( $field ) && in_array( $result->state(), [ Result::CHANGED,Result::ALREADY ], true ) ) {
+			$denied = \BulkCatalogueManager\Publishing\StatusPermission::check( $this->user_id, $subject, (string) $result->new() );
+			if ( null !== $denied ) {
+				return [ Result::skipped( $result->field(), $result->old(), $denied->get_error_message(), (string) $denied->get_error_code() ) ]; }
+		}
 		if ( null !== $field && $field->requires_managed_stock() && self::is( $subject, 'variation' ) && true !== $subject->get_manage_stock( 'edit' ) ) {
 			return [ Result::skipped( $result->field(), $result->old(), self::unmanaged_stock_reason(), self::NOT_AVAILABLE ) ];
 		}
@@ -188,7 +193,11 @@ final class Validator {
 		if ( ! in_array( $checked->state(), [ Result::CHANGED, Result::ALREADY ], true ) ) {
 			return [];
 		}
-		return $operation->follow( $subject, $checked, $args );
+		$follow = $operation->follow( $subject, $checked, $args );
+		$field  = $this->fields->get( $checked->field() );
+		if ( 'set_value' === $operation->id() && null !== $field && \BulkCatalogueManager\Availability\StatusSwitch::governs( $field ) ) {
+			$follow = array_merge( $follow, \BulkCatalogueManager\Publishing\PublicationPassword::clearing( $subject, $checked ) ); }
+		return $follow;
 	}
 
 	/**

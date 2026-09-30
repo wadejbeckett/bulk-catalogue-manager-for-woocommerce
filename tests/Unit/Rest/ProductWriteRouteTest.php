@@ -37,6 +37,7 @@ final class ProductWriteRouteTest extends TestCase {
 		bulkcat_test_reset();
 		$GLOBALS['bulkcat_test']['logged_in']                  = true;
 		$GLOBALS['bulkcat_test']['user_id']                    = 12;
+		$GLOBALS['bulkcat_test']['caps']['publish_products']   = true;
 		$GLOBALS['bulkcat_test']['caps']['manage_woocommerce'] = true;
 		$GLOBALS['bulkcat_test']['caps']['edit_products']      = true;
 		$GLOBALS['bulkcat_test']['caps']['edit_post']          = true;

@@ -77,6 +77,7 @@ final class UndoRouteTest extends TestCase {
 		$GLOBALS['bulkcat_test']['user_caps']                  = [
 			self::USER => [
 				'edit_post'            => true,
+				'publish_products'     => true,
 				'assign_product_terms' => true,
 			],
 		];

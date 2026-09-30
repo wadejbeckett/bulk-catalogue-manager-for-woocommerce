@@ -119,6 +119,13 @@ if ( ! function_exists( 'add_filter' ) ) {
 		return true;
 	}
 
+	/** Remove exactly the named callback/priority, preserving other hooks. */
+	function remove_filter( string $hook, mixed $callback, int $priority = 10 ): bool {
+		$before                                      = $GLOBALS['bulkcat_test']['filters'][ $hook ] ?? [];
+		$GLOBALS['bulkcat_test']['filters'][ $hook ] = array_values( array_filter( $before, static fn( array $entry ): bool=>$entry[0] !== $callback || $entry[1] !== $priority ) );
+		return count( $before ) !== count( $GLOBALS['bulkcat_test']['filters'][ $hook ] );
+	}
+
 	function add_action( string $hook, mixed $callback, int $priority = 10, int $accepted_args = 1 ): bool {
 		return add_filter( $hook, $callback, $priority, $accepted_args );
 	}
@@ -750,6 +757,8 @@ if ( ! function_exists( 'get_post_field' ) ) {
 	function get_post_field( string $field, int|object $post, string $context = 'display' ): mixed {
 		unset( $context );
 		$id = is_object( $post ) ? (int) $post->ID : $post;
+		if ( isset( $GLOBALS['bulkcat_test']['post_fields'][ $id ][ $field ] ) ) {
+			return $GLOBALS['bulkcat_test']['post_fields'][ $id ][ $field ];}
 		if ( 'post_status' === $field && isset( $GLOBALS['bulkcat_test']['stored_status'][ $id ] ) ) {
 			return $GLOBALS['bulkcat_test']['stored_status'][ $id ];
 		}
@@ -757,6 +766,8 @@ if ( ! function_exists( 'get_post_field' ) ) {
 		if ( 'post_status' === $field && is_object( $product ) && isset( $product->props['status'] ) ) {
 			return $product->props['status'];
 		}
+		if ( 'post_password' === $field && is_object( $product ) ) {
+			return $product->get_post_password( 'edit' );}
 		return '';
 	}
 }
@@ -937,4 +948,18 @@ if ( ! function_exists( 'add_option' ) ) {
 if ( ! function_exists( 'get_current_blog_id' ) ) {
 	function get_current_blog_id(): int {
 		return 1; }
+}
+
+if ( ! function_exists( 'get_post_type_object' ) ) {
+	function get_post_type_object( string $post_type ): ?object {
+		if ( ! in_array( $post_type, [ 'product','product_variation' ], true ) ) {
+			return null;}
+		return (object) [
+			'name' => $post_type,
+			'cap'  => (object) [
+				'publish_posts' => 'publish_products',
+				'edit_post'     => 'edit_product',
+			],
+		];
+	}
 }

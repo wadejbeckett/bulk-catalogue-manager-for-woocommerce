@@ -65,15 +65,27 @@ function bulkcat_native_baseline(): array {
 	global $wpdb;
 	$posts = $wpdb->get_results( "SELECT ID,post_type,post_status,post_title,post_date,post_date_gmt,SHA2(post_password,256) AS password_sha256,post_parent FROM {$wpdb->posts} WHERE post_type IN ('product','product_variation') ORDER BY ID", ARRAY_A );
 	$terms = $wpdb->get_results( "SELECT t.term_id,t.name,t.slug,tt.parent FROM {$wpdb->terms} t JOIN {$wpdb->term_taxonomy} tt ON tt.term_id=t.term_id WHERE tt.taxonomy='product_cat' ORDER BY t.term_id", ARRAY_A );
-	// phpcs:enable WordPress.DB.DirectDatabaseQuery
 	return [
-		'products'   => $posts,
-		'categories' => $terms,
+		'products'           => $posts,
+		'categories'         => $terms,
+		// Hash full protected rows; reports never contain passwords or user credentials.
+		'posts_hash'         => hash( 'sha256', wp_json_encode( $wpdb->get_results( "SELECT * FROM {$wpdb->posts} WHERE post_type IN ('product','product_variation') ORDER BY ID", ARRAY_A ) ) ),
+		'meta_hash'          => hash( 'sha256', wp_json_encode( $wpdb->get_results( "SELECT pm.* FROM {$wpdb->postmeta} pm JOIN {$wpdb->posts} p ON p.ID=pm.post_id WHERE p.post_type IN ('product','product_variation') ORDER BY pm.meta_id", ARRAY_A ) ) ),
+		'terms_hash'         => hash( 'sha256', wp_json_encode( $wpdb->get_results( "SELECT * FROM {$wpdb->terms} ORDER BY term_id", ARRAY_A ) ) ),
+		'taxonomy_hash'      => hash( 'sha256', wp_json_encode( $wpdb->get_results( "SELECT * FROM {$wpdb->term_taxonomy} ORDER BY term_taxonomy_id", ARRAY_A ) ) ),
+		'relationships_hash' => hash( 'sha256', wp_json_encode( $wpdb->get_results( "SELECT * FROM {$wpdb->term_relationships} ORDER BY object_id,term_taxonomy_id", ARRAY_A ) ) ),
+		'users_hash'         => hash( 'sha256', wp_json_encode( $wpdb->get_results( "SELECT * FROM {$wpdb->users} ORDER BY ID", ARRAY_A ) ) ),
+		// Authenticated oracle requests intentionally establish login sessions only.
+		'usermeta_hash'      => hash( 'sha256', wp_json_encode( $wpdb->get_results( "SELECT * FROM {$wpdb->usermeta} WHERE meta_key != 'session_tokens' ORDER BY umeta_id", ARRAY_A ) ) ),
+		'config_hash'        => hash( 'sha256', wp_json_encode( $wpdb->get_results( "SELECT option_name,option_value FROM {$wpdb->options} WHERE option_name IN ('siteurl','home','timezone_string','gmt_offset','active_plugins','wp_user_roles','bulkcat_settings','woocommerce_currency','woocommerce_manage_stock','woocommerce_default_catalog_orderby','bulkcat_schema_version') ORDER BY option_name", ARRAY_A ) ) ),
 	];
+	// phpcs:enable WordPress.DB.DirectDatabaseQuery
 }
 
 $a = $bulkcat_native_args;
 switch ( $a['phase'] ) {
+	case 'library':
+		break;
 	case 'inspect':
 		$methods = [];
 		foreach ( [ 'get_post_password', 'set_post_password', 'get_date_created', 'set_date_created' ] as $name ) {
@@ -99,6 +111,12 @@ switch ( $a['phase'] ) {
 				'wc'            => WC_VERSION,
 				'php'           => PHP_VERSION,
 				'manager'       => \BulkCatalogueManager\Plugin::VERSION,
+				'identity'      => [
+					'comparison'        => 'Installed candidate engine versus actual native editor; not an archive upgrade',
+					'writer_sha256'     => hash_file( 'sha256', ( new ReflectionClass( \BulkCatalogueManager\Engine\Writer::class ) )->getFileName() ),
+					'transition_sha256' => hash_file( 'sha256', ( new ReflectionClass( \BulkCatalogueManager\Publishing\StatusTransition::class ) )->getFileName() ),
+					'build_sha256'      => hash_file( 'sha256', dirname( ( new ReflectionClass( \BulkCatalogueManager\Plugin::class ) )->getFileName(), 2 ) . '/assets/build/index.js' ),
+				],
 				'methods'       => $methods,
 				'timezone'      => get_option( 'timezone_string' ),
 				'offset'        => get_option( 'gmt_offset' ),
@@ -108,14 +126,14 @@ switch ( $a['phase'] ) {
 		break;
 	case 'users':
 		$users = [];
-		foreach ( [ 'publisher', 'editor', 'other', 'removed', 'variation_editor', 'deleted' ] as $name ) {
+		foreach ( [ 'publisher', 'editor', 'other', 'removed', 'variation_editor', 'deleted', 'admin' ] as $name ) {
 			$login = 'native-' . $a['run'] . '-' . $name;
 			$id    = wp_insert_user(
 				[
 					'user_login' => $login,
 					'user_pass'  => $a['password'],
 					'user_email' => $login . '@example.test',
-					'role'       => 'subscriber',
+					'role'       => 'admin' === $name ? 'administrator' : 'subscriber',
 				]
 			);
 			if ( is_wp_error( $id ) ) {
@@ -214,6 +232,28 @@ switch ( $a['phase'] ) {
 			]
 		);
 		break;
+	case 'worker':
+		bulkcat_native_owned( (int) $a['id'], $a['run'] );
+		$counts = [
+			'crud_saves'   => 0,
+			'post_updates' => 0,
+		];
+		$crud   = static function ( $product ) use ( &$counts, $a ): void {
+			if ( (int) $product->get_id() === (int) $a['id'] ) {
+				++$counts['crud_saves'];
+			} };
+		$post   = static function ( $id ) use ( &$counts, $a ): void {
+			if ( (int) $id === (int) $a['id'] ) {
+				++$counts['post_updates'];
+			} };
+		add_action( 'woocommerce_before_product_object_save', $crud );
+		add_action( 'pre_post_update', $post );
+		try {
+			\BulkCatalogueManager\Engine\ChunkRunner::handle( (int) $a['batch'] ); } finally {
+			remove_action( 'woocommerce_before_product_object_save', $crud );
+			remove_action( 'pre_post_update', $post ); }
+			bulkcat_out( $counts );
+		break;
 	case 'read':
 		bulkcat_out( array_map( static fn( $id ) => bulkcat_native_read( (int) $id, $a['run'], $a['actor'] ), $a['ids'] ) );
 		break;
@@ -272,16 +312,32 @@ switch ( $a['phase'] ) {
 			bulkcat_native_owned( (int) $id, $a['run'] );
 			wp_delete_post( (int) $id, true ); }
 		require_once ABSPATH . 'wp-admin/includes/user.php';
+		$auth_posts = [];
 		foreach ( $a['users'] ?? [] as $id ) {
 			if ( get_user_meta( $id, '_bulkcat_native_probe', true ) !== $a['run'] ) {
 				throw new RuntimeException( 'Not an owned actor.' ); }
+			// The dashboard creates an empty Quick Draft for a newly logged-in
+			// UUID-owned actor. Delete it before native user deletion can trash it.
+			foreach ( get_posts(
+				[
+					'author'      => $id,
+					'post_type'   => 'post',
+					'post_status' => 'auto-draft',
+					'fields'      => 'ids',
+					'numberposts' => -1,
+				]
+			) as $draft ) {
+				$auth_posts[] = (int) $draft;
+				wp_delete_post( (int) $draft, true );
+			}
 			wp_delete_user( $id );
 		}
 		bulkcat_out(
 			[
-				'remaining'       => array_values( array_filter( $a['ids'], 'get_post' ) ),
-				'remaining_users' => array_values( array_filter( $a['users'] ?? [], 'get_userdata' ) ),
-				'baseline'        => bulkcat_native_baseline(),
+				'remaining'          => array_values( array_filter( $a['ids'], 'get_post' ) ),
+				'remaining_users'    => array_values( array_filter( $a['users'] ?? [], 'get_userdata' ) ),
+				'auth_posts_removed' => $auth_posts,
+				'baseline'           => bulkcat_native_baseline(),
 			]
 		);
 		break;

@@ -9,7 +9,7 @@
  * its capability is unknown, and without a user nobody holds it. In both
  * cases, and for anyone else, only the core's own keys are kept (`field`,
  * `skip_already`, `apply_to_variations`), which History needs to describe
- * the change. Native steps are never touched.
+ * the change. Native arguments are kept except protected internal password preimages.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -42,6 +42,7 @@ final class Disclosure {
 		if ( ! is_array( $operations ) ) {
 			return $operations;
 		}
+		$operations = \BulkCatalogueManager\Publishing\PublicationPassword::operations( $operations );
 		foreach ( $operations as $index => $step ) {
 			if ( ! is_array( $step ) || ! is_string( $step['action'] ?? null ) ) {
 				continue;

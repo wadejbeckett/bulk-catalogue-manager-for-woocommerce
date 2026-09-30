@@ -52,6 +52,7 @@ let reads;
 let receipt;
 let postFailure;
 let selectionServer;
+let immediateReadback;
 
 const deferred = () => {
 	let resolve;
@@ -70,6 +71,7 @@ beforeEach( () => {
 	receipt = CREATED;
 	postFailure = null;
 	selectionServer = null;
+	immediateReadback = false;
 	apiFetch.mockReset();
 	apiFetch.mockImplementation( ( options ) => {
 		const route = options.url.split( '?' )[ 0 ];
@@ -77,6 +79,9 @@ beforeEach( () => {
 		if ( route === 'categories' && method === 'GET' ) {
 			const read = deferred();
 			reads.push( read );
+			if ( immediateReadback && reads.length > 1 ) {
+				read.resolve( [ CREATED ] );
+			}
 			return read.promise;
 		}
 		if ( route === 'categories' && method === 'POST' ) {
@@ -204,6 +209,61 @@ test( 'successful create shows a visible receipt while GET waits, then a confirm
 		expect.stringMatching( /created/ ),
 		expect.anything()
 	);
+	expect( posts() ).toHaveLength( 1 );
+} );
+
+// The native Modal restores its own focus, but the first successful GET
+// replaces the empty-state opener after that restoration has already happened.
+test.each( [ 'immediate', 'deferred' ] )(
+	'first-category %s readback preserves useful focus when the empty opener disappears',
+	async ( timing ) => {
+		const { rerender } = await start(
+			<CategoryPanel settings={ SETTINGS } />,
+			[]
+		);
+		immediateReadback = timing === 'immediate';
+		const opener = await submit();
+		const returnedFocus = immediateReadback ? status() : opener;
+		expect( document.activeElement ).toBe( returnedFocus );
+		expect( opener.isConnected ).toBe( ! immediateReadback );
+		// An ordinary rerender must not detach an unstable callback ref
+		// and move focus before the empty opener actually disappears.
+		rerender( <CategoryPanel settings={ SETTINGS } total={ 1 } /> );
+		expect( document.activeElement ).toBe( returnedFocus );
+		expectVisibleNotice(
+			immediateReadback
+				? 'Category “Caps” was created.'
+				: 'Category “Caps” was created. Refreshing the category list…'
+		);
+		if ( timing === 'deferred' ) {
+			await settle( 1, [ CREATED ] );
+		}
+		expectVisibleNotice( 'Category “Caps” was created.' );
+		expect( opener.isConnected ).toBe( false );
+		expect(
+			screen.getByRole( 'treeitem', { name: /^Caps,/ } )
+		).toBeTruthy();
+		expect( posts() ).toHaveLength( 1 );
+		expect( reads ).toHaveLength( 2 );
+		expect( document.activeElement ).toBe( status() );
+	}
+);
+
+test( 'first-category completion leaves focus in search when the user moved away from the empty opener', async () => {
+	await start( <CategoryPanel settings={ SETTINGS } />, [] );
+	const opener = await submit();
+	expect( document.activeElement ).toBe( opener );
+	const search = screen.getByRole( 'searchbox' );
+	act( () => search.focus() );
+	fireEvent.change( search, { target: { value: 'Bags' } } );
+	// A render while the opener still exists must not trigger a fallback either.
+	expect( document.activeElement ).toBe( search );
+	await settle( 1, [ CREATED ] );
+	expectVisibleNotice( 'Category “Caps” was created.' );
+	expect( opener.isConnected ).toBe( false );
+	expect( screen.queryByRole( 'treeitem', { name: /^Caps,/ } ) ).toBeNull();
+	expect( search.value ).toBe( 'Bags' );
+	expect( document.activeElement ).toBe( search );
 	expect( posts() ).toHaveLength( 1 );
 } );
 

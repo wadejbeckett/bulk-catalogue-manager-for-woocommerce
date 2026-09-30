@@ -117,6 +117,19 @@ export default function CategoryPanel( {
 	const userId = settings?.user?.id || 0;
 	const openDefault = settings?.settings?.category_panel !== false;
 
+	const bodyElement = useRef( null );
+	const emptyOpener = useRef( null );
+	const emptyOpenerRef = useCallback( ( button ) => {
+		const previous = emptyOpener.current;
+		// Readback can remove the first-category opener after Modal restored
+		// focus to it. Rescue only that focused removal, never a background
+		// read while the user works elsewhere. Keep this ref callback stable.
+		if ( ! button && previous === previous?.ownerDocument.activeElement ) {
+			bodyElement.current?.querySelector( '[role="status"]' )?.focus();
+		}
+		emptyOpener.current = button;
+	}, [] );
+
 	const [ layout, setLayout ] = useState( () =>
 		readPanelState( userId, openDefault )
 	);
@@ -330,7 +343,7 @@ export default function CategoryPanel( {
 	const sentence = categorySentence( value, tree.byId );
 
 	const body = ( toggle = null ) => (
-		<div className="bulkcat-cat-panel__body">
+		<div ref={ bodyElement } className="bulkcat-cat-panel__body">
 			<div className="bulkcat-cat-panel__head">
 				<div className="bulkcat-cat-panel__row">
 					<h2 className="bulkcat-cat-panel__title">
@@ -436,7 +449,11 @@ export default function CategoryPanel( {
 							) }
 						</p>
 						{ canManage && (
-							<Button variant="primary" onClick={ addCategory }>
+							<Button
+								ref={ emptyOpenerRef }
+								variant="primary"
+								onClick={ addCategory }
+							>
 								{ __(
 									'Create your first category',
 									'bulk-catalogue-manager-for-woocommerce'

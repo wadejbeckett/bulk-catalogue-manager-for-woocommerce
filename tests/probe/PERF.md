@@ -181,3 +181,24 @@ A selection streams faster than a filter: its pages are hydrated straight
 from the present members, without the grid's sort and count per page. The
 selection's peak over its 2,000-member run is the members decoded while the
 token resolves (dropped before presence is read), not the streamed pages.
+
+### After T103: the catalogue GET retired (29–30 September)
+
+The catalogue GET is refused since T103, so `perf.py`'s `export` group
+posts the same rows and columns as the export dialog's form does, with the
+switch off (the bytes the GET wrote). Run locally on 29–30 September 2026 on a
+fresh throwaway stack of the same make (no CI run exists this month), at
+`seed.sh 20000` and then `seed.sh 22223`:
+
+| Metric | Result | Budget |
+| --- | --- | --- |
+| POST, switch off, 20,000 rows (the `export` group) | first byte 303 ms, complete 18.3 s, 1,063 queries, peak 17.2 MB (+0.23 MB over 2,000) | < 2 s, < 60 s, flat |
+| POST by filter, identifiers, 20,000 rows | first byte 253 ms, complete 21.4 s, peak 17.2 MB (+0.23 MB) | < 2 s, < 60 s, flat |
+| POST by selection, identifiers, 20,000 members | first byte 307 ms (capture 0.4 s before it), complete 5.8 s, peak 22.3 MB (+5.27 MB) | < 2 s, < 60 s, flat |
+| POST by selection, 100,000 members | peak 48.9 MB, first byte 1.3 s, complete 21.7 s, 4,949 queries | < 128 MB |
+| Summary with identifiers, 100,000 members | 2.63 s, 130 queries, peak 48.9 MB | recorded |
+| Summary with identifiers, 22,223 rows by filter | 2.10 s, 10 queries | recorded |
+
+The machine was shared and busy (load average 6 to 7) around this run,
+which accounts for the slower totals than on 29 September; every budget
+held.

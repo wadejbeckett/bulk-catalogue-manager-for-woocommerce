@@ -35,6 +35,7 @@ import {
 	SELECTED,
 	columnsSentence,
 	filenameSentence,
+	goneSentence,
 	guardSentences,
 	initialChoice,
 	rowChoices,
@@ -74,6 +75,9 @@ export default function ExportDialog( {
 
 	const waiting =
 		choice === SELECTED ? waitingSentence( selection?.waiting ) : '';
+	// Selected stays chosen when the selection goes (cleared elsewhere, or
+	// found gone by the renewal after a lapsed lease): say so.
+	const gone = choice === SELECTED && ! waiting && ! selection?.token;
 	const body = rowsBody( { choice, selection, filterArgs, identifiers } );
 	const summary = useExportSummary( {
 		body,
@@ -186,6 +190,7 @@ export default function ExportDialog( {
 			/>
 			<div className="bulkcat-export-dialog__summary" aria-live="polite">
 				{ waiting && <p>{ waiting }</p> }
+				{ gone && <p>{ goneSentence() }</p> }
 				{ ( summary.status === 'loading' ||
 					summary.status === 'renewing' ) && (
 					<p className="bulkcat-export-dialog__counting">

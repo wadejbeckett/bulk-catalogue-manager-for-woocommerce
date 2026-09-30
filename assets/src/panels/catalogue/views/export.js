@@ -239,7 +239,10 @@ export function formFields( body, { nonce = '', confirmAll = false } = {} ) {
 /**
  * Post the download form into a hidden frame: the browser downloads the
  * attachment, and a refusal page is read back. The form's address is the
- * route alone; every value travels in the body. The frame's blank page
+ * route alone; every value travels in the body. The frame is sandboxed
+ * (`allow-same-origin allow-downloads`): no script in the answer runs, a
+ * refusal can still be read, and the download still starts (checked in
+ * Chromium by tests/e2e/csv-export.spec.js). The frame's blank page
  * (`about:blank`, reported by some browsers after the form is sent) is not
  * a report.
  *
@@ -272,6 +275,9 @@ export function postDownload(
 	frame.tabIndex = -1;
 	frame.className = 'bulkcat-export__frame';
 	frame.name = name;
+	// No script runs in whatever answers the post; the page can still read
+	// a refusal (same origin) and the browser can still save the file.
+	frame.setAttribute( 'sandbox', 'allow-same-origin allow-downloads' );
 	const form = doc.createElement( 'form' );
 	form.hidden = true;
 	form.className = 'bulkcat-export__form';
@@ -353,6 +359,7 @@ export default function ExportControl( {
 	const [ busy, setBusy ] = useState( false );
 	const [ error, setError ] = useState( null );
 	const cleanup = useRef( null );
+	const button = useRef( null );
 
 	useEffect(
 		() => () => {
@@ -366,6 +373,13 @@ export default function ExportControl( {
 	const choose = () => {
 		setError( null );
 		setOpen( true );
+	};
+
+	// Try again sits in the notice the dialog replaces: focus Export first,
+	// so the dialog gives focus back to Export, not to a button that is gone.
+	const retry = () => {
+		button.current?.focus();
+		choose();
 	};
 
 	const run = ( { body, confirmAll } ) => {
@@ -398,6 +412,7 @@ export default function ExportControl( {
 	return (
 		<div className="bulkcat-export">
 			<Button
+				ref={ button }
 				variant="secondary"
 				className="bulkcat-export__button"
 				onClick={ choose }
@@ -419,7 +434,7 @@ export default function ExportControl( {
 				<ErrorNotice
 					message={ plain }
 					error={ error }
-					onRetry={ choose }
+					onRetry={ retry }
 				/>
 			) }
 			{ open && (

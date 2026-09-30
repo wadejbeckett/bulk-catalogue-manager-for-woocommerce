@@ -9,7 +9,7 @@ rest-nonce`` where the admin page carries none, as for a subscriber), and
 prints one PASS, FAIL or SKIP row per surface. It exits 1 on any FAIL, 0
 otherwise.
 
-Chapters (``--chapters``, comma separated, default all, run in this order):
+Chapters (``--chapters``, comma separated, default all except native-status, run in this order):
 
   screen     T8. The Products -> Bulk Catalogue Manager screen renders its
              one mount element, the localised settings, the bundle and its
@@ -67,6 +67,8 @@ Chapters (``--chapters``, comma separated, default all, run in this order):
              upserts (SKUs bulkcat-offon-*): the capture and restore table
              (D1-D10, E10), the status WordPress stores read back into the
              journal, and the later slices' rows.
+  native-status  Guarded native editor/variation comparison against the installed
+             archive (tests/probe/native-status.py); private evidence path required.
   lifecycle  Activation created the three tables with every documented
              index; WooCommerce lists the plugin compatible with HPOS and the
              Cart and Checkout Blocks; a bulkcat_db_version bump re-runs dbDelta on
@@ -106,6 +108,7 @@ import csv
 import hashlib
 import http.cookiejar
 import io
+import importlib.util
 import json
 import os
 import re
@@ -121,6 +124,11 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 import offon  # ticket 04: the offon chapter lives in tests/probe/offon.py
+
+# The chapter filename follows the documented CLI chapter name.
+_native_spec = importlib.util.spec_from_file_location("native_status", os.path.join(os.path.dirname(__file__), "native-status.py"))
+native_status = importlib.util.module_from_spec(_native_spec)
+_native_spec.loader.exec_module(native_status)
 
 TIMEOUT_SECONDS = 60
 NS = "/wp-json/bulkcat/v1"
@@ -2066,9 +2074,10 @@ CHAPTERS: dict[str, list[Callable[[Probe], None]]] = {
     "access": [check_access, check_settings],
     "variations": [check_variations],
     "offon": offon.CHECKS,  # ticket 04
+    "native-status": native_status.CHECKS,  # plan 14: native oracle and release RED
     "lifecycle": [check_lifecycle],
 }
-NEEDS_WP = {"write", "access", "variations", "offon", "lifecycle"}
+NEEDS_WP = {"write", "access", "variations", "offon", "native-status", "lifecycle"}
 
 
 def main() -> int:
@@ -2077,7 +2086,7 @@ def main() -> int:
     parser.add_argument("--seed", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "seed.json"))
     parser.add_argument("--wp-cmd", default=os.environ.get("WP_CMD", "wp"))
     parser.add_argument("--no-wp", action="store_true", help="skip every surface that needs WP-CLI (documented SKIP)")
-    parser.add_argument("--chapters", default=",".join(CHAPTERS))
+    parser.add_argument("--chapters", default=",".join(c for c in CHAPTERS if c != "native-status"))
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
 

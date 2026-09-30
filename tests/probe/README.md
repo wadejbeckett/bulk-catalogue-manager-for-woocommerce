@@ -429,3 +429,67 @@ With it in place and `BULKCAT_PROBE_SITEURL` added to `WP_CMD`:
   History, Undo, the labels read back through `WP_CMD`. It skips itself on a
   site without the must-use plugin, so the rest of the browser suite runs
   unchanged elsewhere.
+
+## Native Status oracle (plan 14, deliberately RED before engine changes)
+
+Use an **existing** owned synthetic fixture with the actual released archive
+installed through the native plugin installer. Do not mount the candidate over
+it, reseed another fixture, or run the lifecycle/offon chapters as setup. Supply
+its own seed file; never overwrite the default `seed.json`:
+
+```sh
+BULKCAT_FIXTURE_URL="$BULKCAT_E2E_BASE_URL" \
+BULKCAT_NATIVE_STATUS_EVIDENCE=/private/owned-fixture/native-status-evidence \
+python3 tests/probe/probe.py --base-url "$BULKCAT_E2E_BASE_URL" \
+  --wp-cmd "$WP_CMD" --seed "$SEED_JSON" --chapters native-status
+```
+
+`native-status.py` follows the existing chapter interface. It evaluates the
+repository's `fixture.php` guard and `native-status.php` setup/readback helper
+inside ephemeral WP-CLI processes: no installed helper, MU plugin, new fixture,
+or engine substitution. Guarding requires the explicitly named local URL to
+match the actual site's `siteurl`. Never point `WP_CMD` at a different site.
+The chapter is opt-in (`--chapters native-status`), excluded from the default
+chapter list; it fails closed without the matching guard and private evidence directory. An optional comma-separated
+`BULKCAT_NATIVE_STATUS_CASES` limits a covering rerun by exact fixture case name.
+
+The native leg submits the classic product editor's successful form controls
+to `wp-admin/post.php` using its real session/nonce, or submits the native
+`woocommerce_save_variations` AJAX request using the parent editor's nonce.
+A user denied the parent editor does not get an invented nonce: editor denial
+and the separately inspected coarse AJAX permission gate are reported distinctly.
+The manager leg uses real HTTP preview/grants/acceptance, then calls the
+installed `ChunkRunner::handle` for that exact batch (never drains other work).
+A raw new `set_value` status request intentionally exercises old-client
+normalisation after the future upgrade. Accepted legacy execution remains in
+the unchanged `status-switch.json` tests, not redefined by this chapter.
+
+Every case uses unique run-owned products, paired initial state and dedicated
+capability actors. Fixture creation sets an administrator only in its short-lived
+setup process, to retain explicit slugs for native draft/pending records. Worker
+execution uses its normal recorded-actor path. Variation menu order starts at
+the native one-child value; the probe still fingerprints it. The private JSON records native submissions, manager
+preview/batch reports, status, local/GMT/CRUD dates, password fingerprints,
+legacy metadata, unrelated fields, modification time and the exact native
+`publish_future_post` hook/arguments/timestamp. It never stores cookies or
+password values. Source-derived ±minute boundaries use the injected-clock unit
+fixture; the live probe uses distant dates. Zero GMT is deliberately seeded on
+an owned product only; a missing GMT submission is distinct from an absent SQL
+column (WordPress has no such post row).
+
+The JSON is also the ownership/reversal record: original timezone and baseline
+are saved before writes, each pair's IDs before submissions, and actor IDs
+before requests. `finally` deletes only exact UUID-marked products (children
+before parents) and users and restores the original timezone. Native audit
+batches/receipts are retained as release evidence in the disposable fixture;
+no queue-wide pruning, uninstall or reset is performed. Compare exact baseline
+product/category rows after cleanup. On interruption, use this record and verify
+each object's `_bulkcat_native_probe` UUID before cleanup; do not use broad name
+or SKU matching. Task 5 must seed its accepted-but-unfinished upgrade cases
+against the preserved release ZIP through its own guarded workflow; completed
+Task 1 history is not proof of queued upgrade recovery.
+
+A nonzero result on released 1.1.0 is expected for its obsolete restoration,
+record, prediction or permission behaviour. Native-oracle, harness and cleanup
+failures are **not** expected RED: inspect and resolve or report those separately.
+Never report a source-only permission concern as a demonstrated exploit.

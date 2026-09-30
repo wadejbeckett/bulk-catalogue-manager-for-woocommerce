@@ -309,6 +309,11 @@ describe( 'inline cell editing', () => {
 		} );
 		fireEvent.keyDown( editor( 'SKU' ), { key: 'Enter' } );
 		await waitFor( () => expect( patches() ).toHaveLength( 2 ) );
+		// The request has started; wait for its rejection to finish before
+		// submitting again, as the editor ignores Enter while it is saving.
+		await waitFor( () =>
+			expect( editor( 'SKU' ).getAttribute( 'aria-busy' ) ).toBeNull()
+		);
 		expect( document.body.textContent ).not.toContain(
 			'not allowed to do that'
 		);

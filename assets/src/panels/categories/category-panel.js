@@ -92,6 +92,7 @@ function useNarrow( width ) {
  * @param {number}   props.total           Optional count for the All products row.
  * @param {Function} props.onDropSelection Called with a category id when the product selection is dropped on it.
  * @param {number}   props.narrowWidth     Breakpoint for the sheet; 960 by default.
+ * @param {boolean}  props.compact         Use the sheet while the bulk panel needs the space.
  * @return {Element} The panel.
  */
 export default function CategoryPanel( {
@@ -104,6 +105,7 @@ export default function CategoryPanel( {
 	total,
 	onDropSelection,
 	narrowWidth = NARROW_WIDTH,
+	compact = false,
 } ) {
 	const ownTree = useCategoryTree( query, { enabled: ! sharedTree } );
 	const tree = sharedTree || ownTree;
@@ -496,7 +498,7 @@ export default function CategoryPanel( {
 		</>
 	);
 
-	if ( narrow ) {
+	if ( narrow || compact ) {
 		return (
 			<div className="bulkcat-cat-panel is-narrow">
 				<Button

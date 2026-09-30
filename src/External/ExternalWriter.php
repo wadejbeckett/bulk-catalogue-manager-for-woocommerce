@@ -117,8 +117,9 @@ final class ExternalWriter {
 	 * @param int                                                     $id         Object id.
 	 * @param list<array{action: string, args: array<string, mixed>}> $operations The normalised steps.
 	 * @param string|null                                             $type       The kind it was chosen as, or null not to check.
+	 * @param \Closure|null $guard The queued undo check after the object is loaded, or null.
 	 */
-	public function write( int $id, array $operations, ?string $type ): WriteOutcome {
+	public function write( int $id, array $operations, ?string $type, ?\Closure $guard = null ): WriteOutcome {
 		$product = self::load( $id );
 		if ( null === $product ) {
 			return $this->refuse_all( $id, $operations, static fn( string $key ): Result => Result::failed( $key, null, __( 'That product could not be found. It may have been deleted; reload the list and try again.', 'bulk-catalogue-manager-for-woocommerce' ), Writer::NOT_FOUND ) );
@@ -138,6 +139,11 @@ final class ExternalWriter {
 			$reason = $allowed instanceof \WP_Error ? $allowed->get_error_message() : __( 'You can no longer edit this product, so it was left alone.', 'bulk-catalogue-manager-for-woocommerce' );
 			$code   = $allowed instanceof \WP_Error ? (string) $allowed->get_error_code() : Access::CANNOT_EDIT;
 			return $this->refuse_all( $id, $operations, static fn( string $key ): Result => Result::skipped( $key, null, $reason, $code ), $product, $modified );
+		}
+
+		$reason = null === $guard ? null : $guard( $id, $product );
+		if ( is_string( $reason ) && '' !== $reason ) {
+			return $this->refuse_all( $id, $operations, static fn( string $key ): Result => Result::skipped( $key, null, $reason, \BulkCatalogueManager\Operations\RestoreStatus::CHANGED_SINCE ), $product, $modified );
 		}
 
 		$computation = ( new Computer( $this->provider, $this->context ) )->run( $subject, $operations );

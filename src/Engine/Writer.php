@@ -343,7 +343,7 @@ final class Writer {
 				? new WriteOutcome( $id, self::done_before( array_map( static fn( array $step ): array => [ null, $step['args'] ], $operations ) ), false )
 				: $external->replay( $id, $intents );
 		}
-		return $external->write( $id, $operations, $type );
+		return $external->write( $id, $operations, $type, $this->guard );
 	}
 
 	/**

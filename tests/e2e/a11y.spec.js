@@ -39,6 +39,13 @@ test.describe( 'axe-core on each screen', () => {
 			.click();
 		const panel = page.getByRole( 'dialog', { name: 'Bulk change' } );
 		await expect( panel ).toBeVisible();
+		expect(
+			( await page.locator( '.bulkcat-catalogue__main' ).boundingBox() )
+				.width
+		).toBeGreaterThan( 360 );
+		await expect(
+			page.locator( '.bulkcat-cat-panel.is-narrow' )
+		).toBeVisible();
 		await expectAxeClean( page, 'the bulk panel' );
 		await panel
 			.getByRole( 'radio', { name: /^Increase or decrease/ } )
@@ -206,7 +213,7 @@ test( 'a focused row is never hidden under the sticky selection bar', async ( {
 	await page.getByRole( 'checkbox', { name: SEED.simple( 1 ) } ).check();
 	const bar = page.getByRole( 'region', { name: 'Selection' } );
 	await expect( bar ).toContainText( '1 product selected' );
-	const target = page.getByRole( 'checkbox', { name: SEED.simple( 3 ) } );
+	const target = page.getByRole( 'checkbox', { name: SEED.variable } );
 	// Scroll until the row sits just under the admin bar, behind the sticky bar.
 	await target.evaluate( ( node ) =>
 		window.scrollBy( 0, node.getBoundingClientRect().top - 40 )
@@ -291,6 +298,21 @@ test.describe( 'in the Default admin colour scheme', () => {
 		await expect(
 			page.getByRole( 'region', { name: 'Selection' } )
 		).toContainText( '1 product selected' );
+		// Checking a row near the bottom scrolls the toolbar under the sticky
+		// actions. Keyboard focus must reveal its controls too, before the scan.
+		const options = page.getByRole( 'button', {
+			name: 'View options',
+			exact: true,
+		} );
+		await options.focus();
+		await expect
+			.poll( async () => {
+				const bar = await page
+					.getByRole( 'region', { name: 'Selection' } )
+					.boundingBox();
+				return ( await options.boundingBox() ).y >= bar.y + bar.height;
+			} )
+			.toBe( true );
 		await expectAxeClean( page, 'the catalogue in Default colours' );
 		await page
 			.getByRole( 'button', { name: 'Make a change to these' } )

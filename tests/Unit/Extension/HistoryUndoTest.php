@@ -179,6 +179,17 @@ final class HistoryUndoTest extends TestCase {
 		$this->assertSame( $after, $this->store->data, 'Redo (the undo of the undo) puts the change back.' );
 	}
 
+	public function test_external_undo_preserves_a_value_changed_after_confirmation(): void {
+		$this->forward();
+		$plan = $this->planner()->plan( self::BATCH, self::USER );
+		$this->assertInstanceOf( Plan::class, $plan );
+		$made = ( new BatchFactory( $this->actions(), new BatchRepository() ) )->create_undo( self::UUID, self::USER, $plan, false );
+		$this->assertTrue( is_array( $made ) );
+		$this->store->data[1002] = [ '_sample_labels' => '["green"]' ];
+		$this->run_batch( $made['batch_id'] );
+		$this->assertSame( [ '_sample_labels' => '["green"]' ], $this->store->data[1002] ?? [], 'The newer edit must survive a queued undo.' );
+	}
+
 	public function test_conflicts_are_listed_as_text_and_left_alone_unless_forced(): void {
 		$this->forward();
 		$this->store->data[1002] = [ '_sample_labels' => '["green"]' ];

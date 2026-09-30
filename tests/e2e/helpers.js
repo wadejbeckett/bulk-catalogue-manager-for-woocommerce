@@ -172,6 +172,19 @@ async function expectAxeClean(
 		'.bulkcat-drawer',
 	]
 ) {
+	// Read final colours and hit areas, rather than an opening modal's fade.
+	await page.evaluate( () =>
+		Promise.all(
+			document
+				.getAnimations()
+				.filter( ( animation ) =>
+					Number.isFinite(
+						animation.effect.getComputedTiming().iterations
+					)
+				)
+				.map( ( animation ) => animation.finished.catch( () => {} ) )
+		)
+	);
 	let builder = new AxeBuilder( { page } ).withTags( [
 		'wcag2a',
 		'wcag2aa',

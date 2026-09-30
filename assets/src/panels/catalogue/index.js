@@ -46,6 +46,7 @@ import { BatchProgress, StalledNotice } from '../history';
 import { useSettings } from '../settings/store';
 import { rowActions } from './actions';
 import { descriptorsOf, defaultView, fieldsFromRegistry } from './fields';
+import { onCatalogueFocus } from './focus-visibility';
 import { categoryArgs, clearFilters, isFiltered } from './query';
 import { ErrorNotice, LoadingRows, NoMatches, NoProducts } from './states';
 import { useCatalogue, useRegistry, useTermNames } from './use-catalogue';
@@ -530,6 +531,7 @@ export function CatalogueGrid( {
 			}
 		>
 			<CategoryPanel
+				compact={ !! bulk }
 				value={ category }
 				onChange={ chooseCategory }
 				query={ treeQuery }
@@ -537,7 +539,10 @@ export function CatalogueGrid( {
 				settings={ settings }
 				onDropSelection={ hasSelection ? dropSelection : undefined }
 			/>
-			<div className="bulkcat-catalogue__main">
+			<div
+				className="bulkcat-catalogue__main"
+				onFocusCapture={ onCatalogueFocus }
+			>
 				{ /* T51–T53; T75: one row, as in the prototype. */ }
 				<div className="bulkcat-catalogue__top">
 					<SavedViewsBar

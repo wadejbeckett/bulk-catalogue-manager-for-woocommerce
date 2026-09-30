@@ -77,7 +77,7 @@ History is kept for 90 days by default (7 to 730 days, or indefinitely). A daily
 
 ### Undo at any size
 
-Undo is offered for every change, up to the largest selection (100,000 products and variations). The undo is prepared a page of products at a time rather than all at once, so previewing it, confirming it and running it stay within an ordinary web request's memory on a host with a 128 MB limit. Each product is checked again just before its part of the undo is written: one changed after you confirmed the undo is left alone and listed, unless you chose **Revert anyway**.
+Undo is offered for every change, up to the largest selection (100,000 products and variations). The undo is prepared a page of products at a time rather than all at once, so previewing it, confirming it and running it stay within an ordinary web request's memory on a host with a 128 MB limit. Preparing it still reads every product the change touched, about two minutes for 100,000 on the test server, so those requests lift PHP's time limit where the host allows (as exports do); a proxy in front of the site with a shorter timeout (nginx's default is 60 seconds) can end the wait before the answer arrives. Confirming an undo is safe to repeat: the same request is answered with the undo it made. Each product is checked again just before its part of the undo is written: one changed after you confirmed the undo is left alone and listed, unless you chose **Revert anyway**.
 
 ### What is not recorded
 

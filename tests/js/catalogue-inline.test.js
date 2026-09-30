@@ -75,6 +75,15 @@ const ITEMS = [
 			batch_id: 418,
 		},
 	},
+	// T114: a scheduled product (post status future) reads as Scheduled.
+	{
+		...ROWS[ 0 ],
+		id: 17,
+		name: 'Linen Scarf',
+		sku: 'SCF-170',
+		type: 'simple',
+		status: 'future',
+	},
 	{
 		...ROWS[ 0 ],
 		id: 16,
@@ -373,6 +382,22 @@ describe( 'Status as the Off/On switch in the cell (T92)', () => {
 		expect(
 			screen.getByText( 'Changed outside this screen' )
 		).toBeTruthy();
+	} );
+
+	it( 'reads a scheduled product as Scheduled and offers only the four statuses it can be set to (T114)', async () => {
+		await renderLoaded();
+		expect( screen.getByText( 'Scheduled' ) ).toBeTruthy();
+		expect( document.body.textContent ).not.toMatch( /\bfuture\b/ );
+		fireEvent.click( trigger( 'Status', 'Linen Scarf' ) );
+		const options = Array.from( select( 'Linen Scarf' ).options ).map(
+			( option ) => option.textContent
+		);
+		expect( options ).toEqual( [
+			'Published',
+			'Draft',
+			'Pending review',
+			'Private',
+		] );
 	} );
 
 	it( 'confirms an Off in the cell before the PATCH; Enter confirms and the cell reads Off', async () => {

@@ -201,6 +201,7 @@ final class RegistryTest extends TestCase {
 		$this->assertSame(
 			[
 				'status'             => [
+					'future'  => Field::HIDES_OFF_SITE,
 					'draft'   => Field::HIDES_OFF_SITE,
 					'pending' => Field::HIDES_OFF_SITE,
 				],
@@ -210,6 +211,16 @@ final class RegistryTest extends TestCase {
 			$hiding
 		);
 		$this->assertArrayNotHasKey( 'hidesProduct', $client['status']['dataviews']['elements'][0], 'The DataViews elements stay value and label.' );
+
+		// T114: a scheduled product reads as Scheduled (its post status future), which the field
+		// cannot be set to: shown, filtered and validated when read, never offered or accepted to write.
+		$status = self::field( 'status' );
+		$this->assertSame( 'Scheduled', $status->choices()['future'] ?? null );
+		$this->assertSame( [ 'publish', 'draft', 'pending', 'private' ], $status->writable_choices() );
+		$this->assertTrue( true === rest_validate_value_from_schema( 'future', $status->rest_schema(), 'status' ), 'A scheduled row validates against the read schema.' );
+		$this->assertNotContains( 'future', $status->rest_arg()['enum'] ?? [], 'Never accepted as a value to write.' );
+		$this->assertInstanceOf( \WP_Error::class, $status->validate( 'future' ), 'Nor written by a bulk step.' );
+		$this->assertContains( 'future', array_column( $client['status']['dataviews']['elements'], 'value' ), 'The Status filter offers Scheduled.' );
 
 		$bad = static fn( array $args ): Field => new Field(
 			...( $args + [
@@ -788,7 +799,8 @@ final class RegistryTest extends TestCase {
 		$this->assertNotContains( 'off', $status->writable_choices() );
 		$this->assertNotContains( 'changed_outside', $status->writable_choices() );
 		$elements = array_column( $status->dataviews()['elements'], 'label', 'value' );
-		$this->assertSame( [ 'publish', 'draft', 'pending', 'private', 'off', 'changed_outside' ], array_keys( $elements ) );
+		// T114: Scheduled is read and filtered, never written.
+		$this->assertSame( [ 'publish', 'future', 'draft', 'pending', 'private', 'off', 'changed_outside' ], array_keys( $elements ) );
 		foreach ( ( new Registry() )->all() as $key => $field ) {
 			if ( 'status' !== $key ) {
 				$this->assertSame( [], $field->filter_choices(), "$key has no filter-only choices." );

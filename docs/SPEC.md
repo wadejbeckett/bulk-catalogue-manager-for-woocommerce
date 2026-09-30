@@ -136,7 +136,7 @@ Version 1 edits single-value native fields. Each is declared once in a PHP regis
 | Field | Type | Storage | Edit kinds | Variations |
 | --- | --- | --- | --- | --- |
 | Name | text | `post_title` | set, find and replace | Read-only; derived |
-| Status | choice; the global Off/On switch (§5.5) | `post_status`, plus the product meta `_bulkcat_availability_off` holding the status saved by Off | set (inline) | Publish and private only; never the saved status |
+| Status | choice; the global Off/On switch (§5.5); a product whose date is still ahead reads and filters as **Scheduled** (post status `future`, off the site for buyers until then), which Status is never set to | `post_status`, plus the product meta `_bulkcat_availability_off` holding the status saved by Off | set (inline) | Publish and private only; never the saved status |
 | Catalogue visibility | four choices | `product_visibility` terms `exclude-from-catalog`, `exclude-from-search` | set | Parent only |
 | Shown in shop and search (was Visible on site) | switch (§5.3) | the same terms | set (inline) | Parent only |
 | Featured | boolean | `product_visibility` term `featured` | set (inline) | Parent only |

@@ -65,7 +65,7 @@ final class CriteriaTest extends TestCase {
 			$this->assertSame( [ ...array_keys( $field->choices() ), ...array_keys( $field->filter_choices() ) ], Criteria::FILTERS[ $key ][2], $key );
 		}
 		// T92 (SPEC §4.1): the Status filter also finds Off products and those changed elsewhere while Off.
-		$this->assertSame( [ 'publish', 'draft', 'pending', 'private', 'off', 'changed_outside' ], Criteria::FILTERS['status'][2] );
+		$this->assertSame( [ 'publish', 'future', 'draft', 'pending', 'private', 'off', 'changed_outside' ], Criteria::FILTERS['status'][2], 'T114: a scheduled product is filtered as Scheduled.' );
 		$this->assertSame( [ 'off', 'changed_outside' ], self::filter_value( Criteria::from_array( self::filter( 'status', 'isAny', [ 'off', 'changed_outside' ] ) ) ) );
 	}
 

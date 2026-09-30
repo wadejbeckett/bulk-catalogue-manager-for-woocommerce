@@ -329,6 +329,8 @@ describe( 'filters offered through DataViews', () => {
 		// T92: the Status filter offers Off and Changed outside this screen, never a choice to write.
 		expect( field( 'status' ).elements ).toEqual( [
 			{ value: 'publish', label: 'Published' },
+			// T114: filtered as Scheduled, never written.
+			{ value: 'future', label: 'Scheduled' },
 			{ value: 'draft', label: 'Draft' },
 			{ value: 'pending', label: 'Pending review' },
 			{ value: 'private', label: 'Private' },

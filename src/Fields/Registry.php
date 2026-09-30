@@ -13,6 +13,7 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Fields;
 
+use BulkCatalogueManager\Availability\Outcome;
 use BulkCatalogueManager\Operations\Group;
 use BulkCatalogueManager\Rest\Refusal;
 
@@ -263,16 +264,21 @@ final class Registry {
 				setter: 'set_status',
 				choices: [
 					'publish' => __( 'Published', 'bulk-catalogue-manager-for-woocommerce' ),
+					// T114: a scheduled product reads, filters and validates as Scheduled; it is never set (SPEC §5.5).
+					'future'  => Outcome::status_label( 'future' ),
 					'draft'   => __( 'Draft', 'bulk-catalogue-manager-for-woocommerce' ),
 					'pending' => __( 'Pending review', 'bulk-catalogue-manager-for-woocommerce' ),
 					'private' => __( 'Private', 'bulk-catalogue-manager-for-woocommerce' ),
 				],
+				write_choices: [ 'publish', 'draft', 'pending', 'private' ],
 				variation_choices: [ 'publish', 'private' ],
 				variation_note: __( 'A variation can only be published or private.', 'bulk-catalogue-manager-for-woocommerce' ),
 				inline: true,
 				filter_operators: [ 'isAny', 'isNone' ],
 				default_order: 5,
+				// Not published yet, so off the site for buyers until its date, as WooCommerce's is_visible() and is_purchasable() read it.
 				hiding_choices: [
+					'future'  => Field::HIDES_OFF_SITE,
 					'draft'   => Field::HIDES_OFF_SITE,
 					'pending' => Field::HIDES_OFF_SITE,
 				],

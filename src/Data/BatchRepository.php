@@ -901,7 +901,8 @@ final class BatchRepository {
 	}
 
 	/**
-	 * The undo batch that completed undoing a batch, or null (T54, §4.6:
+	 * The undo batch that finished undoing a batch (complete, or partial with
+	 * items left alone; Undo\Original::UNDONE_BY), or null (T54, §4.6:
 	 * "already undone"). A redo is an undo of the undo batch, so it names the
 	 * undo batch, never the original.
 	 *
@@ -913,7 +914,7 @@ final class BatchRepository {
 
 	/**
 	 * For a page of batches in one read, the latest undo batch that
-	 * completed undoing each: batch id => undo batch id, batches without one
+	 * finished undoing each (complete or partial): batch id => undo batch id, batches without one
 	 * left out.
 	 *
 	 * @param list<int> $batch_ids Batches.
@@ -930,7 +931,7 @@ final class BatchRepository {
 		$in   = implode( ', ', array_fill( 0, count( $batch_ids ), '%d' ) );
 		$args = array_merge( [ $this->registry->table( Schema::BATCHES ) ], $batch_ids );
 		// $in holds only %d placeholders, one per id; every id is a prepared argument.
-		$rows   = $wpdb->get_results( $wpdb->prepare( "SELECT batch_id, undo_of FROM %i WHERE undo_of IN ({$in}) AND source = 'undo' AND status = 'complete' ORDER BY batch_id ASC", $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in is only %d placeholders; every id is an argument.
+		$rows   = $wpdb->get_results( $wpdb->prepare( "SELECT batch_id, undo_of FROM %i WHERE undo_of IN ({$in}) AND source = 'undo' AND status IN ('complete', 'partial') ORDER BY batch_id ASC", $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in is only %d placeholders; every id is an argument.
 		$undone = [];
 		foreach ( is_array( $rows ) ? $rows : [] as $row ) {
 			$undone[ (int) $row['undo_of'] ] = (int) $row['batch_id'];
@@ -940,7 +941,7 @@ final class BatchRepository {
 
 	/**
 	 * For a page of batches in one read, the latest undo batch that
-	 * completed undoing each, with its user: batch id => [ batch_id,
+	 * finished undoing each (complete or partial), with its user: batch id => [ batch_id,
 	 * user_id ] of the undo batch, batches without one left out (the
 	 * history's "put back by").
 	 *
@@ -958,7 +959,7 @@ final class BatchRepository {
 		$in   = implode( ', ', array_fill( 0, count( $batch_ids ), '%d' ) );
 		$args = array_merge( [ $this->registry->table( Schema::BATCHES ) ], $batch_ids );
 		// $in holds only %d placeholders, one per id; every id is a prepared argument.
-		$rows   = $wpdb->get_results( $wpdb->prepare( "SELECT batch_id, undo_of, user_id FROM %i WHERE undo_of IN ({$in}) AND source = 'undo' AND status = 'complete' ORDER BY batch_id ASC", $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in is only %d placeholders; every id is an argument.
+		$rows   = $wpdb->get_results( $wpdb->prepare( "SELECT batch_id, undo_of, user_id FROM %i WHERE undo_of IN ({$in}) AND source = 'undo' AND status IN ('complete', 'partial') ORDER BY batch_id ASC", $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in is only %d placeholders; every id is an argument.
 		$undone = [];
 		foreach ( is_array( $rows ) ? $rows : [] as $row ) {
 			$undone[ (int) $row['undo_of'] ] = [

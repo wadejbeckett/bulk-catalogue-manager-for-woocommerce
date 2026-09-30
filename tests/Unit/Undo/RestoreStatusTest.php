@@ -163,4 +163,103 @@ final class RestoreStatusTest extends TestCase {
 		$this->assertSame( [], $product->saves );
 		$this->assertSame( [], $product->meta_calls );
 	}
+
+	public function test_the_undo_expects_the_status_and_record_it_was_planned_against(): void {
+		// Should-fix (1): the planner takes these when it plans the undo (at preview and at Apply).
+		$fields  = new Fields();
+		$status  = $fields->get( 'status' );
+		$product = self::product( 80, 'draft', self::off( 80, 'publish', 12 ) );
+		$this->assertSame(
+			[
+				'expected_status' => 'draft',
+				'expected_record' => self::off( 80, 'publish', 12 ),
+			],
+			\BulkCatalogueManager\Operations\RestoreStatus::expecting( $product, $status )
+		);
+		$variation = self::product( 83, 'publish', '', 'variation' );
+		$this->assertSame(
+			[
+				'expected_status' => 'publish',
+				'expected_record' => '',
+			],
+			\BulkCatalogueManager\Operations\RestoreStatus::expecting( $variation, $status )
+		);
+	}
+
+	public function test_a_change_after_the_undo_was_applied_leaves_the_item_alone_when_it_is_written(): void {
+		// Should-fix (1): the plan's changed-since guard held when the undo was applied; a change that
+		// lands before its chunk runs is caught when the item is written: skipped, not written, not failed.
+		$sentence = 'This product was changed since this batch ran, so it is left alone unless you choose Revert anyway.';
+		$cases    = [
+			'switched Off again by a newer batch' => [ 81, 'draft', self::off( 81, 'publish', 30 ) ],
+			'status changed outside the screen'   => [ 82, 'private', self::off( 82, 'publish', 12 ) ],
+			'record removed'                      => [ 84, 'draft', '' ],
+		];
+		foreach ( $cases as $case => [ $id, $status, $record ] ) {
+			$product = self::product( $id, $status, $record );
+			$outcome = $this->undo(
+				$id,
+				[
+					'value'           => 'publish',
+					'record'          => '',
+					'expected_status' => 'draft',
+					'expected_record' => self::off( $id, 'publish', 12 ),
+				]
+			);
+			$this->assertSame( [ [ 'status', Result::SKIPPED, $status, $status ] ], self::summary( $outcome ), $case );
+			$this->assertSame( \BulkCatalogueManager\Operations\RestoreStatus::CHANGED_SINCE, $outcome->results()[0]->code(), $case );
+			$this->assertSame( $sentence, $outcome->results()[0]->reason(), $case );
+			$this->assertFalse( $outcome->saved(), $case );
+			$this->assertSame( [], $product->saves, $case . ': nothing written.' );
+			$this->assertSame( [], $product->meta_calls, $case . ': the record untouched.' );
+			$this->assertSame( [ 'skipped', $sentence ], \BulkCatalogueManager\Engine\ChunkRunner::item_state( $outcome ), $case . ': skipped, not failed.' );
+		}
+
+		$variation = self::product( 85, 'publish', '', 'variation' );
+		$outcome   = $this->undo(
+			85,
+			[
+				'value'           => 'publish',
+				'expected_status' => 'private',
+				'expected_record' => '',
+			]
+		);
+		$this->assertSame( Result::SKIPPED, $outcome->results()[0]->state() );
+		$this->assertSame( 'This variation was changed since this batch ran, so it is left alone unless you choose Revert anyway.', $outcome->results()[0]->reason() );
+		$this->assertSame( [], $variation->saves );
+	}
+
+	public function test_an_item_unchanged_since_the_undo_was_applied_is_written_as_planned(): void {
+		$product = self::product( 86, 'draft', self::off( 86, 'private', 12 ) );
+		$outcome = $this->undo(
+			86,
+			[
+				'value'           => 'private',
+				'record'          => '',
+				'expected_status' => 'draft',
+				'expected_record' => self::off( 86, 'private', 12 ),
+			]
+		);
+		$this->assertSame( [ [ 'status', Result::CHANGED, 'draft', 'private' ], [ 'availability_off', Result::CHANGED, self::off( 86, 'private', 12 ), '' ] ], self::summary( $outcome ) );
+		$this->assertSame( 'private', $product->saves[0]['status'] );
+	}
+
+	public function test_an_unreadable_expected_record_is_refused_when_planned(): void {
+		$list = ( new Registry( new Fields() ) )->validate_list(
+			[
+				[
+					'action' => 'restore_status',
+					'args'   => [
+						'field'               => 'status',
+						'value'               => 'publish',
+						'expected_status'     => 'draft',
+						'expected_record'     => '{"id":1,"status":"trash"}',
+						'apply_to_variations' => false,
+					],
+				],
+			],
+			true
+		);
+		$this->assertInstanceOf( \WP_Error::class, $list );
+	}
 }

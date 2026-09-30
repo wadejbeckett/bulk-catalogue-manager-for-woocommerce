@@ -632,7 +632,7 @@ final class Planner {
 			}
 		}
 		if ( null !== $restore ) {
-			$operations[ $restore ] = self::restore_step( $fields, $operations[ $restore ] );
+			$operations[ $restore ] = self::restore_step( $fields, $operations[ $restore ], $subject );
 			$newer                  = $this->newer_record( $subject, $batch_id, $conflicts );
 			if ( null !== $newer ) {
 				$conflicts[] = $newer;
@@ -670,21 +670,22 @@ final class Planner {
 	/**
 	 * The internal step putting a status and its Off record back (T90).
 	 *
-	 * @param \BulkCatalogueManager\Fields\Registry $fields The field registry.
-	 * @param array<string, mixed>                   $parts  `value` and/or `record` from the journal.
+	 * @param \BulkCatalogueManager\Fields\Registry $fields  The field registry.
+	 * @param array<string, mixed>                   $parts   `value` and/or `record` from the journal.
+	 * @param object                                 $subject The object as planned: the step expects to find it so when written.
 	 * @return array{action: string, args: array<string, mixed>}
 	 */
-	private static function restore_step( \BulkCatalogueManager\Fields\Registry $fields, array $parts ): array {
-		$key = '';
+	private static function restore_step( \BulkCatalogueManager\Fields\Registry $fields, array $parts, object $subject ): array {
+		$status = null;
 		foreach ( $fields->editable() as $field ) {
 			if ( StatusSwitch::governs( $field ) ) {
-				$key = $field->key();
+				$status = $field;
 				break;
 			}
 		}
 		return [
 			'action' => RestoreStatus::ID,
-			'args'   => [ 'field' => $key ] + $parts + [ 'apply_to_variations' => false ],
+			'args'   => [ 'field' => null === $status ? '' : $status->key() ] + $parts + ( null === $status ? [] : RestoreStatus::expecting( $subject, $status ) ) + [ 'apply_to_variations' => false ],
 		];
 	}
 

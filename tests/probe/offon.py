@@ -578,8 +578,41 @@ def check_undo(p: Any) -> None:
         ok = s2 == s0 and s3 == s1 and s4 == s0 and u1["report"].get("status") == "complete" and u2["report"].get("status") == "complete"
         row(p, "e2-chain", ok, f"after On == before {s2 == s0}; undo On == after Off {s3 == s1}; undo Off == before {s4 == s0}")
 
+    def changed_after_apply() -> None:
+        # The planner's changed-since guard holds when the undo is applied; these changes land after
+        # that, before the queue runs its chunk, and the item is left alone when it is written.
+        fx = upsert(p, [simple("late-again"), simple("late-outside"), simple("late-cleared"), simple("late-control")])
+        again, outside, cleared, control = (fx[k]["id"] for k in ("late-again", "late-outside", "late-cleared", "late-control"))
+        off = switch(p, [again, outside, cleared, control], "draft")
+        route = f"/batches/{off['batch']}/undo"
+        pre = p.http("manager", "POST", route, body={"preview": True}).json() or {}
+        reply = p.http("manager", "POST", route, body=p.undo_body("manager", off["batch"], pre.get("plan_hash")))
+        made = reply.json() or {}
+        if reply.status != 201 or not made.get("batch_id"):
+            raise AssertionError(f"undo {reply.brief()} {made}")
+        on = patch(p, again, {"status": "publish"}, ["status"])
+        re_off = patch(p, again, {"status": "draft"}, ["status"])
+        newer = record(p, again)
+        set_status_outside(p, outside, "private")
+        p.wp_eval(f"$x = wc_get_product( {cleared} ); $x->delete_meta_data( '{META}' ); $x->save(); bulkcat_out( 1 );")
+        report = p.run_queue(made["batch_id"])
+        end = statuses(p, [again, outside, cleared, control])
+        items = p.wp_eval(
+            "global $wpdb; bulkcat_out( $wpdb->get_results( $wpdb->prepare( 'SELECT object_id, state, message FROM %i WHERE batch_id = %d ORDER BY object_id', "
+            f"$wpdb->prefix . 'bulkcat_batch_items', {int(made['batch_id'])} ), ARRAY_A ) );"
+        )
+        states = {int(i["object_id"]): i["state"] for i in items}
+        sentence = "This product was changed since this batch ran, so it is left alone unless you choose Revert anyway."
+        ok = (pre.get("counts", {}).get("revertible") == 4 and on["status"] == 200 and re_off["status"] == 200
+              and states == {again: "skipped", outside: "skipped", cleared: "skipped", control: "done"}
+              and all(i["message"] == sentence for i in items if int(i["object_id"]) != control)
+              and end == {str(again): "draft", str(outside): "private", str(cleared): "draft", str(control): "publish"}
+              and record(p, again) == newer and own_record(newer, again) is not None and record(p, cleared) == "" and not report.get("failed_items"))
+        row(p, "e2-undo-changed-after-apply", ok, f"undo applied with 4 revertible, then: switched On and Off again (newer record), changed outside, record removed; queue run {report.get('status')}, items {states}, statuses {end}; newer record kept {record(p, again) == newer}")
+
     for name, fn in [("e2-undo-off", undo_off), ("e2-undo-on", undo_on), ("e2-undo-conflict", undo_conflict),
-                     ("undo-status-only", status_only), ("d10-undo-exact", scheduled_exact), ("e2-chain", chain)]:
+                     ("undo-status-only", status_only), ("d10-undo-exact", scheduled_exact), ("e2-chain", chain),
+                     ("e2-undo-changed-after-apply", changed_after_apply)]:
         guard(p, name, fn)
 
 
@@ -1188,4 +1221,56 @@ def buyer_rows(p: Any, setup: dict, logins: dict, password: str) -> None:
         f"Off {off['report'].get('status')}, On {on['report'].get('status')}; {sum(a != b for a, b in same.values())} of {len(same)} surfaces differ from before Off; a new cart checks out: {said}")
 
 
-CHECKS = [check_engine, check_undo, check_preview, check_grid, check_listing, check_buyer]
+# ---------------------------------------------------------------------------
+# Should-fix 2: a record written from outside the manager (WooCommerce REST v3 meta_data)
+# ---------------------------------------------------------------------------
+
+def wc_rest(p: Any, method: str, route: str, body: Any = None) -> Any:
+    """WooCommerce's own REST v3 as the probe's shop manager (cookie and nonce stay in memory)."""
+    opener, nonce = p.session("manager")
+    headers = {"Accept": "application/json", "X-WP-Nonce": nonce}
+    data = None
+    if body is not None:
+        data = json.dumps(body).encode()
+        headers["Content-Type"] = "application/json"
+    return p._raw(opener, method, "/wp-json/wc/v3" + route, data, headers)
+
+
+def check_outside(p: Any) -> None:
+    def written_from_outside() -> None:
+        fx = upsert(p, [simple("rest-foreign", "draft"), simple("rest-tampered", "draft"), simple("rest-own", "draft")])
+        foreign, tampered, own = (fx[k]["id"] for k in ("rest-foreign", "rest-tampered", "rest-own"))
+        values = {
+            foreign: OFF_JSON % (foreign + 1, "private"),
+            tampered: OFF_JSON % (tampered, "trash"),
+            own: OFF_JSON % (own, "private"),
+        }
+        wrote = {pid: wc_rest(p, "PUT", f"/products/{pid}", {"meta_data": [{"key": META, "value": value}]}).status for pid, value in values.items()}
+        stored = {pid: record(p, pid) == value for pid, value in values.items()}
+        shown = wc_rest(p, "GET", f"/products/{own}").json() or {}
+        exposed = META in [m.get("key") for m in shown.get("meta_data", [])]
+        narrow = {"search": SKU + "rest-"}
+        rows = {i["id"]: i.get("off_state") for i in listed(p, ["off", "changed_outside", "draft"], extra=narrow)["items"]}
+        found_off = set(listed(p, ["off"], extra=narrow)["ids"])
+        pre = preview(p, [foreign, tampered, own], status_step("publish"))
+        codes = notes(pre)
+        on = switch(p, [foreign, tampered, own], "publish")
+        end = statuses(p, [foreign, tampered, own])
+        ok = (set(wrote.values()) == {200} and all(stored.values()) and exposed
+              and rows.get(foreign) is None and rows.get(tampered) is None and (rows.get(own) or {}).get("state") == "off"
+              and foreign not in found_off and own in found_off
+              and codes == {foreign: "publishes_not_off", tampered: "publishes_not_off", own: "on_restores"}
+              and on["report"].get("status") == "complete" and end == {str(foreign): "publish", str(tampered): "publish", str(own): "private"})
+        row(p, "record-written-from-outside", ok,
+            f"WooCommerce REST v3 accepted meta_data writes {sorted(set(wrote.values()))} and returns the key in meta_data: {exposed}; "
+            f"another product's id and a status outside the four read as no record (off_state {rows.get(foreign)}, {rows.get(tampered)}; Published {codes.get(foreign)}, {codes.get(tampered)}); "
+            f"a well-formed record for the product's own id reads as Off and On restores its status ({codes.get(own)} -> {end.get(str(own))}); "
+            f"the Off filter's SQL prefix match lists the tampered value with its own id: {tampered in found_off} (the documented, accepted case; the row, the switch and undo read it as no record)")
+
+    guard(p, "record-written-from-outside", written_from_outside)
+
+
+OFF_JSON = '{"id":%d,"status":"%s","at":"2026-09-01T08:00:00Z","batch":1}'
+
+
+CHECKS = [check_engine, check_undo, check_preview, check_grid, check_listing, check_outside, check_buyer]

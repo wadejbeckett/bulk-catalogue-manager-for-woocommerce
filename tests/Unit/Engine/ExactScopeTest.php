@@ -123,6 +123,9 @@ final class ExactScopeTest extends TestCase {
 	}
 
 	public function test_scope_signature_of_a_large_scope_adds_almost_no_memory(): void {
+		if ( ! function_exists( 'memory_reset_peak_usage' ) ) {
+			$this->markTestSkipped( 'Measuring what one call adds needs memory_reset_peak_usage(), from PHP 8.2; the PHP 8.2 to 8.4 runs take this measurement.' );
+		}
 		bulkcat_test_reset();
 		$ops     = [
 			[

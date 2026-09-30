@@ -16,9 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The table shows an Off product as "Off (was Published)"; the Status filter offers **Off** and **Changed outside this screen**; product rows carry `off_state` when Status is read.
 - Undo in History restores the status and the saved status together (an internal `restore_status` step no client can send), leaves a product alone when it was switched Off again since, and shows the saved status as "Published, saved <date>".
 - Uninstall with **Remove all data** on deletes the saved statuses and leaves every product's status as it is (Off products stay drafts). The native Duplicate does not copy a saved status, and a saved status copied onto another product by any other means is ignored.
+- The saved status is protected meta, which only hides it from the editor's Custom Fields box and core's REST: WooCommerce's REST API v3 returns it in `meta_data` and accepts it on write from anyone who may edit the product, and WooCommerce's CSV exporter includes it with custom meta. What protects it is the record itself: bound to its product's id with a fixed shape and one of four statuses, so any other value is ignored, and a well-formed one can only restore a status the person switching On could already set.
 
 ### Fixed
 
+- A queued undo re-checks each product when it is written: a product switched Off again by a newer change, given another status outside this screen, or with its saved status removed after the undo was applied is left alone and reported as changed since (skipped, not failed), instead of being published by the undo. The undo's internal step now carries the status and saved status it was planned against.
+- History names who undid a batch when the undo finished partial (an item left alone); it showed the batch as Undone with no name.
+- Setting a never-Off scheduled product to Published reports that it stayed scheduled (already, not changed to Published) in the change's results; the history was already exact.
 - The history now records the status WordPress actually stored after a status change: a Published on a product whose date is ahead is recorded as scheduled (`future`), as WordPress keeps it, instead of `publish`.
 - An edit in the grid's cell or the detail panel writes only the product it names: its steps carry **Also apply to variations** off, so switching a variable product Off in place is no longer refused for its variations (before, a Status change on a variable product in the detail panel could be refused because the settings' default carried it down to the variations it never writes).
 

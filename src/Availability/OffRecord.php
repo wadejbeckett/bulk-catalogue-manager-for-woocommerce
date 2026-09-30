@@ -36,8 +36,15 @@ defined( 'ABSPATH' ) || exit;
  */
 final class OffRecord {
 	/**
-	 * The product meta key. The leading underscore keeps it out of the
-	 * editor's Custom Fields box, WooCommerce's CSV export and REST.
+	 * The product meta key. The leading underscore makes it protected meta,
+	 * which hides it from the editor's Custom Fields box and core's wp/v2
+	 * REST only: WooCommerce's REST API v3 returns it in `meta_data` and
+	 * accepts it on write from anyone who may edit the product, and
+	 * WooCommerce's CSV exporter includes it when custom meta is exported.
+	 * The protection is the record itself (see the class): a value naming
+	 * another product, or of any other shape or status, is no record, and a
+	 * well-formed one can only restore one of STATUSES, each a status the
+	 * person switching On could already set through Status.
 	 */
 	public const META_KEY = '_bulkcat_availability_off';
 

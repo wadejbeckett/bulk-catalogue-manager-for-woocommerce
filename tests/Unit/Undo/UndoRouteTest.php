@@ -707,6 +707,30 @@ final class UndoRouteTest extends TestCase {
 		$this->assertSame( 'Private, saved 23 Sep 2026 08:01', $item['conflicts'][0]['expected'] );
 	}
 
+	public function test_a_product_changed_after_the_undo_was_applied_is_left_alone_when_its_chunk_runs(): void {
+		// Should-fix (1): the plan's changed-since guard held at Apply; the change lands before the chunk.
+		$record               = \BulkCatalogueManager\Availability\OffRecord::create( 1001, 'publish', '2026-09-23T08:01:00Z', self::BATCH )->to_json();
+		$this->store->changes = [];
+		$this->change( 1001, 'status', 'publish', 'draft' );
+		$this->change( 1001, 'availability_off', '', $record );
+		$product                                    = self::product( 1001, [ 'status' => 'draft' ] );
+		$product->meta['_bulkcat_availability_off'] = $record;
+		$this->store->sync();
+		$undo_id = $this->undo()['batch_id'];
+
+		// A newer batch switches it On and Off again before the undo's chunk runs.
+		$newer                                      = \BulkCatalogueManager\Availability\OffRecord::create( 1001, 'publish', '2026-09-24T09:00:00Z', 40 )->to_json();
+		$product->meta['_bulkcat_availability_off'] = $newer;
+
+		$this->assertSame( 'partial', $this->run_batch( $undo_id ) );
+		$item = array_values( array_filter( $this->store->items_of( $undo_id ), static fn( array $row ): bool => 1001 === $row['object_id'] ) )[0];
+		$this->assertSame( 'skipped', $item['state'], 'Skipped, not failed.' );
+		$this->assertSame( 'This product was changed since this batch ran, so it is left alone unless you choose Revert anyway.', $item['message'] );
+		$this->assertSame( 'draft', self::prop( 1001, 'status' ), 'Not published again by the queued undo.' );
+		$this->assertSame( $newer, $product->meta['_bulkcat_availability_off'], 'The newer Off record is kept.' );
+		$this->assertSame( [], array_values( array_filter( $this->store->changes, static fn( array $row ): bool => $undo_id === $row['batch_id'] && 'applied' === ( $row['result'] ?? 'applied' ) ) ), 'Nothing journalled as applied.' );
+	}
+
 	public function test_a_batch_the_planner_refuses_answers_409_with_its_reason(): void {
 		$this->run_batch( $this->undo()['batch_id'] );
 		$refusal = $this->refused( self::dispatch( 'POST', '/batches/12/undo', [ 'preview' => true ] ), 'bulkcat_not_reversible', 409 );

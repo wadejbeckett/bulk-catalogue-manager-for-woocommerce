@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-09-29T20:57:18+00:00\n"
+"POT-Creation-Date: 2026-09-30T07:26:32+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -1357,6 +1357,9 @@ msgstr ""
 msgid "For the catalogue, the status filter; for the change history, only changes with this outcome."
 msgstr ""
 
+msgid "The catalogue is now exported from the Export dialog. Reload the page and export again."
+msgstr ""
+
 msgid "The export could not be prepared. Export again; if this continues, ask an administrator to check the site's error log."
 msgstr ""
 
@@ -1808,6 +1811,13 @@ msgstr ""
 
 msgid "This page tried to send a change in a form the site no longer accepts, so nothing was sent. Reload the page, then try again."
 msgstr ""
+
+#. translators: %s: a number of products and variations together, such as "1,284".
+#, js-format
+msgid "%s item"
+msgid_plural "%s items"
+msgstr[0] ""
+msgstr[1] ""
 
 #. translators: %s: the status saved, such as "Published".
 #, js-format
@@ -2264,13 +2274,6 @@ msgstr ""
 #, js-format
 msgid "%1$s of %2$s updated. The rest are listed below."
 msgstr ""
-
-#. translators: %s: a number of products and variations together, such as "1,284".
-#, js-format
-msgid "%s item"
-msgid_plural "%s items"
-msgstr[0] ""
-msgstr[1] ""
 
 #. translators: %s: a number, such as "1,284".
 #, js-format
@@ -3117,13 +3120,94 @@ msgstr ""
 msgid "Clear filters"
 msgstr ""
 
+#. translators: %s: the column names, such as "Name, SKU and Regular price".
+#, js-format
+msgid "Columns: %s, as the table shows them. Change them with the column chooser."
+msgstr ""
+
+#. translators: %s: a number of rows, such as "1,284".
+#, js-format
+msgid "The file will have %s row."
+msgid_plural "The file will have %s rows."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of selected products and variations, such as "2".
+#, js-format
+msgid "%s selected item will be left out."
+msgid_plural "%s selected items will be left out."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: the CSV file's name, such as "catalogue-selected-2026-10-05-1432.csv".
+#, js-format
+msgid "File name: %s"
+msgstr ""
+
+msgid "Your selection is still being saved. Download is available once it is."
+msgstr ""
+
+msgid "A change to your selection was not confirmed. Close this dialog, try the change again or clear the selection, then export."
+msgstr ""
+
+#. translators: %s: what is selected, such as "25 products and 3 variations".
+#, js-format
+msgid "Selected: %s"
+msgstr ""
+
+msgid "Selected"
+msgstr ""
+
+msgid "Nothing selected"
+msgstr ""
+
+#. translators: %s: how many rows the catalogue has, such as "90 products" or "1,284 items".
+#, js-format
+msgid "The whole catalogue (%s)"
+msgstr ""
+
+msgid "All matching the current filters"
+msgstr ""
+
+#. translators: %s: a number of rows, such as "3". "%%" is a percent sign.
+#, js-format
+msgid "%s row has a SKU that WooCommerce’s importer would not keep as it is. It starts with -, +, = or @, or has line breaks, repeated or edge spaces, tags or %% codes that the importer removes. Correct these SKUs, or remove the leading apostrophe, before re-importing."
+msgid_plural "%s rows have a SKU that WooCommerce’s importer would not keep as it is. It starts with -, +, = or @, or has line breaks, repeated or edge spaces, tags or %% codes that the importer removes. Correct these SKUs, or remove the leading apostrophe, before re-importing."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of rows, such as "3".
+#, js-format
+msgid "%s row has a name that starts with -, +, = or @, so the file puts an apostrophe in front of it. WooCommerce’s importer keeps that apostrophe: remove it before re-importing."
+msgid_plural "%s rows have a name that starts with -, +, = or @, so the file puts an apostrophe in front of it. WooCommerce’s importer keeps that apostrophe: remove it before re-importing."
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "Export CSV"
+msgstr ""
+
+msgid "Yes, export the whole catalogue"
+msgstr ""
+
+msgid "Include identifiers for re-import"
+msgstr ""
+
+msgid "Puts ID, SKU, Parent and Type first, so the file can go back through Products → Import to update the same products."
+msgstr ""
+
+msgid "Counting the rows…"
+msgstr ""
+
+msgid "The rows could not be counted. Try again."
+msgstr ""
+
+msgid "Download"
+msgstr ""
+
 msgid "The CSV file could not be made. Reload the page and try again."
 msgstr ""
 
 msgid "Preparing CSV…"
-msgstr ""
-
-msgid "Export CSV"
 msgstr ""
 
 msgid "Waiting"

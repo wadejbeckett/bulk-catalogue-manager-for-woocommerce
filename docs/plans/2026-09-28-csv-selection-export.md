@@ -648,6 +648,21 @@ These tests pass when they arrive: they are the safety net, not red tests.
 - **Conflicts with T85.** T85's commit `00c0abe` touches `catalogue/index.js` and the selection files. The export mount is one small change there, rebased at T103; the new files are separate.
 - **Summary cost.** Counting guarded values on 20,000 rows takes 4 lean statements, and on 100,000 members 20. This is measured in T102, not assumed.
 
+### T103 (29 September)
+
+Built on the integrated code (`f498629`: ticket 04 final, the CSV server work and ticket 11's follow-ups), test-first, one commit per slice. Taken by the builder, each the conservative option where the plan left a choice open:
+
+- **B28. The catalogue GET's refusal names `source`** (`{ param: source }` beside the 400 `bulkcat_invalid_value` and R9's sentence), and a catalogue GET is refused whatever it carries, `confirm_all` included. The GET's arguments stay registered, so a malformed history request is still refused by core's schema first.
+- **B29. The golden files are no longer written by a test.** The GET that wrote them is gone, so `BULKCAT_WRITE_GOLDEN` is removed and `CatalogueBaselineTest` compares the files (B24) with the switch-off `POST` over the whole catalogue. `ExportPostRouteTest`'s GET-against-POST case now pins the read arguments the GET passed to the `/products` reader.
+- **B30. The dialog says the selection's wait in its own words.** `waitingReason()` speaks of checking a change; the dialog maps its saving and unconfirmed reasons to export sentences and shows any other (such as signing in again) as it is. `selection/model.js` is unchanged.
+- **B31. The whole-catalogue label and confirmation come from the filter choice's summary** (`whole_catalogue`), kept while the summary is asked again for the switch, since the switch cannot change it; Download still waits for the new answer. Changing the row choice unticks the confirmation.
+- **B32. The left-out count is always shown for Selected**, 0 included, so the summary always carries both counts the ticket names.
+- **B33. R3's optional "I'll correct these" tick is not added:** the counted warnings alone, the plan's default.
+- **B34. Try again after a refused download opens the dialog again**, where the rows are chosen, rather than repeating a post whose token may have lapsed.
+- **B35. The hidden frame ignores `about:blank`.** Some browsers report the new frame's blank page after the form is sent; only a page at another address is read as the answer.
+- **B36. `read:export:query-nonce` keeps its name** and now posts the form with `_wpnonce` in the body and no header; `read:export:switch-off-identical` became `read:export:get-retired` (R9's refusal for T96's three views, the switch-off POST streaming each, History's GET still streaming).
+- **B37. The saved status is never exported (from ticket 04's review).** The Off record (`_bulkcat_availability_off`) is an internal field, not a column, so no choice of columns reaches it. `OffRecordExportTest` exports an Off product with every column, both switch states, by ids and by filter: no heading, key, label or value of the record, and Status `draft`; asking for it as a column is refused 400 `rest_invalid_param` before any row is read. Live, `read:export:off-record-absent` does the same for the round trip's Off product. The FAQ says the round trip carries Status (Draft) but not the saved status. History's CSV of a change still shows a saved status in ticket 04's words ("Published, saved …"), never the record itself.
+
 ## Stopping point
 
 This plan is documentation only. Nothing was built or run, and the worktree was only read. Main Build approved it at 19:05 on 28 September with R1–R13 and twelve amendments, all applied here; the version before the amendments is kept in the delivery tracker. Before T95, the owner confirms the start commit (accepted T85 plus ticket 04, or the [parallel start](#parallel-start) if Wade chooses it), and the coordinator copies the plan into the core `docs/plans/` without client references. Ticket 10's header and the delivery tracker's ticket row link to the delivery copy.

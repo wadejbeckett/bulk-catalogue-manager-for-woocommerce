@@ -1,15 +1,13 @@
 /**
- * T53: the Export control downloads the current view through GET /export
- * with the grid's filters, search, sort and mode and the visible columns in
- * the owner's order, the wp_rest nonce as `_wpnonce` (core's cookie check
- * reads it before the header); it is busy while the file is produced, the
- * rest of the screen untouched, and a refusal shows a §4.8 notice.
+ * T53: the export arguments are the grid's filters, search, sort and mode and
+ * the visible columns in the owner's order; the wp_rest nonce goes as
+ * `_wpnonce` (core's cookie check reads it before the header); and the
+ * hidden frame History's GET exports load. The Export control itself opens
+ * the export dialog since T103: catalogue-export-dialog.test.js.
  */
-import { act, fireEvent, render, screen } from '@testing-library/react';
 import { getQueryArgs } from '@wordpress/url';
 
 import {
-	ExportControl,
 	exportArgs,
 	exportColumns,
 	exportUrl,
@@ -24,12 +22,6 @@ import {
 	descriptorsOf,
 } from '../../assets/src/panels/catalogue/fields';
 import { toQuery } from '../../assets/src/panels/catalogue/query';
-import {
-	coreJson,
-	expectNoRawText,
-	expectPlain,
-	html500,
-} from './error-fixtures';
 
 jest.mock( '@wordpress/api-fetch', () => {
 	const apiFetch = jest.fn();
@@ -131,118 +123,6 @@ describe( 'export arguments', () => {
 		expect( currentNonce() ).toBe( 'pagenonce1' );
 		apiFetch.nonceMiddleware = { nonce: 'freshnonce' };
 		expect( currentNonce() ).toBe( 'freshnonce' );
-	} );
-} );
-
-describe( 'the Export control', () => {
-	function setup() {
-		const started = [];
-		const start = jest.fn( ( url, handlers ) => {
-			started.push( { url, ...handlers } );
-			return jest.fn();
-		} );
-		render(
-			<>
-				<ExportControl
-					query={ QUERY }
-					view={ VIEW }
-					registry={ REGISTRY }
-					getNonce={ () => 'nonce00001' }
-					start={ start }
-				/>
-				<button type="button">Elsewhere</button>
-			</>
-		);
-		return { start, started };
-	}
-
-	it( 'downloads the current view and is busy until the file is on its way', () => {
-		const { start, started } = setup();
-		fireEvent.click( screen.getByRole( 'button', { name: 'Export CSV' } ) );
-		expect( start ).toHaveBeenCalledTimes( 1 );
-		expect( started[ 0 ].url ).toBe(
-			exportUrl( exportArgs( QUERY, VIEW, REGISTRY ), 'nonce00001' )
-		);
-		const busy = screen.getByRole( 'button', { name: 'Preparing CSV…' } );
-		expect( busy.getAttribute( 'aria-disabled' ) ).toBe( 'true' );
-		// The rest of the screen stays usable.
-		expect(
-			screen.getByRole( 'button', { name: 'Elsewhere' } ).disabled
-		).toBe( false );
-		act( () => started[ 0 ].onDone() );
-		expect(
-			screen.getByRole( 'button', { name: 'Export CSV' } )
-		).toBeTruthy();
-		expect( screen.queryByText( /could not/ ) ).toBeNull();
-	} );
-
-	it( 'shows a refusal in plain words with its details, and tries again', () => {
-		const { start, started } = setup();
-		fireEvent.click( screen.getByRole( 'button', { name: 'Export CSV' } ) );
-		act( () =>
-			started[ 0 ].onError(
-				Object.assign(
-					new Error(
-						'These columns could not be exported. Choose the columns again and try again.'
-					),
-					{ code: 'bulkcat_invalid_value' }
-				)
-			)
-		);
-		expect(
-			screen.getByText(
-				'These columns could not be exported. Choose the columns again and try again.'
-			)
-		).toBeTruthy();
-		expect( screen.getByText( 'Show details' ) ).toBeTruthy();
-		expect( screen.getByText( 'bulkcat_invalid_value' ) ).toBeTruthy();
-		fireEvent.click( screen.getByRole( 'button', { name: 'Try again' } ) );
-		expect( start ).toHaveBeenCalledTimes( 2 );
-		expect( document.querySelector( '.bulkcat-error' ) ).toBeNull();
-	} );
-
-	it( 'words a refusal from core in its own sentence', () => {
-		const { started } = setup();
-		fireEvent.click( screen.getByRole( 'button', { name: 'Export CSV' } ) );
-		act( () =>
-			started[ 0 ].onError(
-				Object.assign( new Error( 'Cookie check failed' ), {
-					code: 'rest_cookie_invalid_nonce',
-				} )
-			)
-		);
-		expect(
-			screen.getByText(
-				'The CSV file could not be made. Reload the page and try again.'
-			)
-		).toBeTruthy();
-	} );
-
-	it( 'says a server’s HTML error page in plain words, never its text (ticket 11)', () => {
-		const { started } = setup();
-		fireEvent.click( screen.getByRole( 'button', { name: 'Export CSV' } ) );
-		act( () => started[ 0 ].onError( html500() ) );
-		const box = document.querySelector( '.bulkcat-error' );
-		expectPlain(
-			box,
-			'The CSV file could not be made. Reload the page and try again.'
-		);
-		fireEvent.click( screen.getByText( 'Show details' ) );
-		expect( box.textContent ).toContain( 'internal_server_error' );
-		expectNoRawText();
-	} );
-
-	it( 'says a JSON error that is not the plugin’s own refusal in plain words, details included (ticket 11)', () => {
-		const { started } = setup();
-		fireEvent.click( screen.getByRole( 'button', { name: 'Export CSV' } ) );
-		act( () => started[ 0 ].onError( coreJson() ) );
-		const box = document.querySelector( '.bulkcat-error' );
-		expectPlain(
-			box,
-			'The CSV file could not be made. Reload the page and try again.'
-		);
-		expect( box.textContent ).toContain( 'rest_forbidden' );
-		expectNoRawText();
 	} );
 } );
 

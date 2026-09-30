@@ -516,7 +516,8 @@ def read_routes(p: Probe) -> list[tuple[str, str, str, Any, Any, Callable[[Respo
         ("variations", "GET", f"/products/{variable}/variations", None, None, list_shape),
         ("selection", "POST", "/selection", None, {"category_ids": {"operator": "isAny", "value": [root]}}, selection_shape),
         ("categories", "GET", "/categories", None, None, tree_shape),
-        ("export", "GET", "/export", cat + [("columns[]", c) for c in cols], None, export_shape),
+        # T103: the catalogue is exported by POST (the export dialog's route); a catalogue GET is refused.
+        ("export", "POST", "/export", None, {"category_ids": {"operator": "isAny", "value": [root]}, "columns": cols}, export_shape),
         # T54's history and audit routes carry the same four legs.
         ("batches", "GET", "/batches", None, None, paged_shape),
         ("audit", "GET", "/audit", None, None, paged_shape),
@@ -646,8 +647,9 @@ def check_read_queries(p: Probe) -> None:
         p.row("read", "read:categories:counts", node is not None and want in count.values(), f"shirts {count}, WooCommerce {want}")
 
     def export_diff() -> None:
+        # T103: posted as the export dialog's form posts it (the catalogue GET is retired).
         cols = ["id", "sku", "name", "regular_price"]
-        r = p.http("manager", "GET", "/export", cat + [("columns[]", c) for c in cols] + [("per_page", "4")])
+        r = export_form(p, "manager", cat + [("columns", ",".join(cols))])
         lines = list(csv.reader(io.StringIO(r.body.decode("utf-8-sig"))))
         rows = [[p_ for p_ in line] for line in lines[1:]]
         grid: list[list[str]] = []
@@ -765,13 +767,13 @@ def check_saved_views(p: Probe) -> None:
         p.row("read", "read:views:schema", bad.code() == "bulkcat_invalid_view" and dup.code() == "bulkcat_view_exists", f"{bad.brief()}; {dup.brief()}")
 
     def export_query_nonce() -> None:
-        _, nonce = p.session("manager")
-        params = filter_params("category_ids", "isAny", [p.seed["categories"]["root"]]) + [
-            ("columns[]", "name"), ("columns[]", "sku"), ("_wpnonce", nonce)]
-        r = p.http("manager", "GET", "/export", params, nonce="none")
+        # T103: the nonce travels as the export form sends it, `_wpnonce` in the POST body with no X-WP-Nonce header
+        # (core reads $_REQUEST['_wpnonce']); the row keeps its name from the GET era.
+        fields = filter_params("category_ids", "isAny", [p.seed["categories"]["root"]]) + [("columns", "name,sku")]
+        r = export_form(p, "manager", fields, nonce="body")
         ctype = r.headers.get("Content-Type", "")
         rows = list(csv.reader(io.StringIO(r.body.decode("utf-8-sig")))) if "text/csv" in ctype else []
-        p.row("read", "read:export:query-nonce", r.status == 200 and len(rows) == 13, f"{r.status} {ctype}; {len(rows)} lines")
+        p.row("read", "read:export:query-nonce", r.status == 200 and len(rows) == 13, f"POST, _wpnonce in the body: {r.status} {ctype}; {len(rows)} lines")
 
     def cleanup() -> None:
         r = p.http("manager", "DELETE", f"/views/{state['id']}")
@@ -1708,22 +1710,30 @@ def check_read_export_post(p: Probe) -> None:
         p.row("read", "read:export:parent-id-fallback", bool(cells) and not bad_parents and any(v[0].startswith("id:") for v in parents.values()),
               f"{with_parent} rows with a Parent, {sum(1 for v in parents.values() if v[0].startswith('id:'))} as id:N; differing {bad_parents}")
 
-    def switch_off_identical() -> None:
-        # T96's three live views: the GET (today's export) and the switch-off POST give the same bytes.
+    def get_retired() -> None:
+        # T103 (ruling R9): T96's three live views. The catalogue GET is refused 400 with the reload sentence and no CSV
+        # byte, whatever it carries (confirm_all included); the switch-off POST streams the view (its bytes were proven
+        # equal to the GET's at T96, and PHPUnit's golden files pin them since); History's GET exports still stream.
         views = t96_views(p)
+        sentence = "The catalogue is now exported from the Export dialog. Reload the page and export again."
         rows, ok = [], True
         for name, (columns, filters, separator) in views.items():
             export_native(p, "sql", {"what": "separator", "value": separator})
             try:
-                get = p.http("manager", "GET", "/export", [("columns[]", c) for c in columns] + filters)
+                get = p.http("manager", "GET", "/export", [("columns[]", c) for c in columns] + filters + [("confirm_all", "1")])
                 post = export_form(p, "manager", [("columns", ",".join(columns))] + filters + ([("confirm_all", "1")] if len(filters) == 1 else []))  # only the mode: the whole catalogue
             finally:
                 export_native(p, "sql", {"what": "separator", "value": "comma"})
-            same = get.status == 200 and post.status == 200 and get.body == post.body and "text/csv" in post.headers.get("Content-Type", "")
-            ok = ok and same and len(get.body) > 100
-            rows.append(f"{name}: {len(csv_table(get, ';' if separator == 'semicolon' else ','))} lines, sha256 {hashlib.sha256(get.body).hexdigest()[:16]}, POST identical {same}, "
-                        f"names {attachment(get)} / {attachment(post)}")
-        p.row("read", "read:export:switch-off-identical", ok, "; ".join(rows))
+            refused = (get.status == 400 and get.code() == "bulkcat_invalid_value" and (get.json() or {}).get("message") == sentence
+                       and "text/csv" not in get.headers.get("Content-Type", ""))
+            streamed = post.status == 200 and "text/csv" in post.headers.get("Content-Type", "") and len(post.body) > 100
+            ok = ok and refused and streamed
+            rows.append(f"{name}: GET {get.brief()}; POST {len(csv_table(post, ';' if separator == 'semicolon' else ','))} lines, "
+                        f"sha256 {hashlib.sha256(post.body).hexdigest()[:16]}, {attachment(post)}")
+        history = p.http("manager", "GET", "/export", [("source", "audit"), ("columns[]", "batch_id")])
+        ok = ok and history.status == 200 and "text/csv" in history.headers.get("Content-Type", "")
+        rows.append(f"history GET (source=audit) {history.status} {history.headers.get('Content-Type', '')}")
+        p.row("read", "read:export:get-retired", ok, "; ".join(rows))
 
     def writes_nothing() -> None:
         tokens = [p.capture("manager", {"ids": [s1, s2, variation]}).get("token", ""),
@@ -1758,7 +1768,7 @@ def check_read_export_post(p: Probe) -> None:
 
     steps = [("fixtures", fixtures), ("post-auth", post_auth), ("ids-exact", ids_exact), ("token-exact", token_exact),
              ("token-not-in-url", token_not_in_url), ("token-refusals", token_refusals), ("whole-catalogue", whole_catalogue),
-             ("identifiers-header", identifiers_header), ("type-flags", type_and_parent), ("switch-off-identical", switch_off_identical),
+             ("identifiers-header", identifiers_header), ("type-flags", type_and_parent), ("get-retired", get_retired),
              ("writes-nothing", writes_nothing), ("fixed-query-count-identifiers", query_count)]
     for name, fn in steps:
         if name != "fixtures" and "fx" not in state:
@@ -1894,6 +1904,28 @@ def check_read_export_roundtrip(p: Probe) -> None:
         p.row("read", "read:export:native-import-roundtrip:off-product", ok and off_ok,
               f"variable product {off} switched Off through the manager ({o['switched']}): status {o['status']}, its own Off record saving {(o['record'] or {}).get('status')}, "
               f"variations left {o['variations']}; through each import: {'; '.join(o['legs'])}; nothing published")
+        # T103 (ticket 04's review): the saved status never reaches the catalogue CSV, whatever columns are chosen.
+        keys = [f["key"] for f in (p.http("manager", "GET", "/fields").json() or {}).get("fields", [])]
+        raw = start[str(off)]["off_record"]
+        absent, notes = True, []
+        for identifiers in ("0", "1"):
+            for source, rows in (("ids", [("ids", ",".join(str(i) for i in [off, *off_vars]))]), ("selection", [("selection", p.capture("manager", {"ids": [off, *off_vars]}).get("token", ""))])):
+                r = export_form(p, "manager", [("columns", ",".join(keys)), ("identifiers", identifiers)] + rows)
+                table = csv_table(r)
+                head = table[0] if table else []
+                id_at = head.index("ID") if "ID" in head else -1
+                status_at = head.index("Status") if "Status" in head else -1
+                status = next((row[status_at] for row in table[1:] if min(id_at, status_at) >= 0 and row[id_at] == str(off)), None)
+                text = r.body.decode("utf-8-sig", "replace")
+                needles = ["_bulkcat_availability_off", "availability_off", "Status before Off", raw, raw.replace('"', '""'), (record or {}).get("at") or ""]
+                leaked = [n for n in needles if n and n in text]
+                good = r.status == 200 and len(table) == 4 and not leaked and status == "draft"
+                absent = absent and good
+                notes.append(f"{source}, identifiers {identifiers}: {r.status}, {len(table) - 1} rows, {len(head)} columns, Status {status}, leaked {leaked or 'nothing'}")
+        refused = export_form(p, "manager", [("columns", "availability_off"), ("ids", str(off))])
+        absent = absent and refused.status == 400 and refused.code() == "rest_invalid_param"
+        notes.append(f"columns=availability_off {refused.brief()}")
+        p.row("read", "read:export:off-record-absent", bool(raw) and absent, f"product {off} Off with its own record; every column ({len(keys)}): " + "; ".join(notes))
         back = offon.switch(p, [off], "publish")  # back On, so other rows' pages keep their make-up
         if back["report"].get("status") != "complete":
             raise AssertionError(f"switching the Off product back On: {back['report']}")

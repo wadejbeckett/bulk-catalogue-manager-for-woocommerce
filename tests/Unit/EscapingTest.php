@@ -416,7 +416,14 @@ final class EscapingTest extends TestCase {
 		self::seed();
 		$controller = new ExportController( new Fields() );
 		( new Routes( [ $controller ] ) )->register();
-		$response = self::dispatch( 'GET', '/export', [ 'columns' => [ 'id', 'name', 'sku' ] ] );
+		$response = self::dispatch(
+			'POST',
+			'/export',
+			[
+				'columns'     => [ 'id', 'name', 'sku' ],
+				'confirm_all' => '1',
+			]
+		);
 		$this->assertInstanceOf( \WP_REST_Response::class, $response );
 
 		$server = new class() {

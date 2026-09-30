@@ -469,22 +469,22 @@ class Perf:
         self.metric("history", "GET /batches query count constant", "yes" if flat else "no", "", "25 = 100", flat, str(counts))
 
     def export(self) -> None:
+        # T103: the catalogue is exported by POST, as the export dialog's form posts it, switch off (the file the
+        # retired catalogue GET wrote, byte for byte: T96); the same rows, columns and budgets as before.
         peaks = {}
         for rows in (2000, 20000):
-            params = filter_params("category_ids", "isAny", [self.scale_cat]) + [("columns[]", c) for c in ("name", "sku", "regular_price", "stock_quantity", "stock_status")]
+            fields = filter_params("category_ids", "isAny", [self.scale_cat]) + [("columns", "name,sku,regular_price,stock_quantity,stock_status")]
             if rows == 2000:
-                params += filter_params("type", "isAny", ["simple"]) + filter_params("stock_quantity", "between", ["1", "8"])
-            log_id = f"export-{rows}-{uuid.uuid4().hex[:8]}"
-            reply = self.call("GET", "/export", params, log=log_id)
-            lines = reply["body"].count(b"\n") - 1
-            logged = next((r for r in self.perf_log() if r.get("id") == log_id), {})
-            peaks[rows] = logged.get("peak_mb", 0.0)
+                fields += filter_params("type", "isAny", ["simple"]) + filter_params("stock_quantity", "between", ["1", "8"])
+            reply = self.post_export(fields, f"export-{rows}-{uuid.uuid4().hex[:8]}")
+            lines = reply["lines"]
+            peaks[rows] = reply["peak_mb"]
             if rows == 20000:
                 self.metric("export", "20,000 rows: first byte", reply["ttfb_ms"], "ms", "< 2 s", reply["status"] == 200 and reply["ttfb_ms"] < BUDGET["export_ttfb_ms"],
                             f"{len(reply['body']) / 1048576:.1f} MB")
                 self.metric("export", "20,000 rows: complete", reply["total_ms"], "ms", "< 60 s, every row",
                             lines == rows and reply["total_ms"] < BUDGET["export_total_ms"],
-                            f"{lines} data rows; server {logged.get('total_ms')} ms, {logged.get('queries')} queries")
+                            f"{lines} data rows; server {reply['server_ms']} ms, {reply['queries']} queries")
             else:
                 self.metric("export", f"{rows} rows: peak memory", peaks[rows], "MB", "", None, f"{lines} data rows in {reply['total_ms']:.0f} ms")
         grew = peaks[20000] - peaks[2000]

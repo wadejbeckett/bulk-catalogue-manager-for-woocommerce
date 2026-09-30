@@ -684,6 +684,20 @@ final class UndoRouteTest extends TestCase {
 		$this->assertSame( 'undone', $this->store->batch()['status'] );
 	}
 
+	public function test_a_product_moved_to_the_bin_after_the_undo_started_is_unavailable_and_never_written(): void {
+		$created = $this->undo();
+		$GLOBALS['bulkcat_test']['products'][1002]->props['status'] = 'trash';
+
+		$this->assertSame( 'partial', $this->run_batch( $created['batch_id'] ) );
+		$this->assertSame( '22.00', self::prop( 1002, 'regular_price' ), 'Not put back.' );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['products'][1002]->saves );
+		$this->assertSame( '10.00', self::prop( 1001, 'regular_price' ) );
+		$items = array_column( $this->store->items_of( $created['batch_id'] ), null, 'object_id' );
+		$this->assertSame( 'skipped', $items[1002]['state'] );
+		$this->assertSame( BatchFactory::unavailable_reason(), $items[1002]['message'] );
+		$this->assertSame( 'undone', $this->store->batch()['status'], 'The rest was put back.' );
+	}
+
 	public function test_skipped_objects_are_reported_with_their_reason(): void {
 		unset( $GLOBALS['bulkcat_test']['products'][2001] );
 

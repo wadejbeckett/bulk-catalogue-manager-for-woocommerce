@@ -125,6 +125,11 @@ final class Writer {
 	public const CHANGED_KIND = 'bulkcat_changed_kind';
 
 	/**
+	 * Code of an object moved to the bin after it was chosen: left alone as unavailable.
+	 */
+	public const UNAVAILABLE = 'bulkcat_unavailable';
+
+	/**
 	 * The code for a value WooCommerce's own setter refused.
 	 */
 	public const INVALID = 'bulkcat_invalid_value';
@@ -262,6 +267,14 @@ final class Writer {
 			// Chosen as one kind, now another: never written under the kind it was chosen as.
 			$results = self::changed_kind( $steps );
 			$this->journal( $id, null, '', self::entries( $results, $steps ), [], null );
+			return new WriteOutcome( $id, $results, false );
+		}
+		if ( is_callable( [ $product, 'get_status' ] ) && 'trash' === $product->get_status( 'edit' ) ) {
+			// Moved to the bin since it was chosen (WooCommerce bins a variable product's variations with it):
+			// unavailable, as a member binned before Apply is (T83); skipped, never written, never failed.
+			$before  = $this->before( $product, $steps );
+			$results = array_map( static fn( array $step ): Result => Result::skipped( (string) $step[1]['field'], $before[ $step[1]['field'] ] ?? null, BatchFactory::unavailable_reason(), self::UNAVAILABLE ), $steps );
+			$this->journal( $id, $product, '', self::entries( $results, $steps ), $before, null );
 			return new WriteOutcome( $id, $results, false );
 		}
 

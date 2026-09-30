@@ -687,13 +687,22 @@ if ( ! function_exists( 'bulkcat_export_probe' ) ) {
 			\BulkCatalogueManager\Query\CountCache::invalidate();
 			$types = 'products' === $mode ? "'product'" : ( 'variations' === $mode ? "'product_variation'" : "'product', 'product_variation'" );
 			$ids   = array_map( 'intval', $wpdb->get_col( "SELECT ID FROM {$wpdb->posts} WHERE post_type IN ( $types ) AND post_status IN ( 'publish', 'private' ) ORDER BY ID LIMIT 100" ) );
-			$read  = [
+			if ( 'products_and_variations' === $mode ) {
+				// Keep the measured page shape consistent: one parentless product plus variations
+				// whose parents are outside the selection. A general ID slice can contain all its
+				// parents at 25 rows, but need two batched parent reads at 100; that measures a
+				// different shape, not queries growing per row.
+				$ids   = array_map( 'intval', $wpdb->get_col( "SELECT ID FROM {$wpdb->posts} WHERE post_type = 'product_variation' AND post_status IN ( 'publish', 'private' ) ORDER BY ID LIMIT 99" ) );
+				$ids[] = (int) $wpdb->get_var( "SELECT ID FROM {$wpdb->posts} WHERE post_type = 'product' AND post_parent = 0 AND post_status = 'publish' ORDER BY ID LIMIT 1" );
+				sort( $ids );
+			}
+			$read = [
 				'mode'    => $mode,
 				'orderby' => [ 'id' ],
 				'order'   => [ 'asc' ],
 				'fields'  => $plan->fields(),
 			];
-			$rows  = \BulkCatalogueManager\Export\ExportRows::ids( $ids, $registry );
+			$rows = \BulkCatalogueManager\Export\ExportRows::ids( $ids, $registry );
 			foreach ( [
 				'filter' => $filter,
 				'ids'    => $rows,
@@ -709,10 +718,14 @@ if ( ! function_exists( 'bulkcat_export_probe' ) ) {
 					wp_cache_flush();
 					$before                      = $wpdb->num_queries;
 					$page                        = $decorated->page( $read, 1, $n );
+					$outside_parents             = array_diff( array_filter( array_column( $page['items'], 'parent_id' ) ), array_column( $page['items'], 'id' ) );
 					$out[ $mode ][ $name ][ $n ] = [
-						'queries' => $wpdb->num_queries - $before,
-						'rows'    => count( $page['items'] ),
-						'parents' => count( array_filter( array_column( $page['items'], 'parent_id' ) ) ),
+						'queries'      => $wpdb->num_queries - $before,
+						'rows'         => count( $page['items'] ),
+						'parents'      => count( array_filter( array_column( $page['items'], 'parent_id' ) ) ),
+						// A cold page whose parents are not in its rows needs one grouped post read
+						// and one grouped meta read, regardless of how many parents it has.
+						'parent_reads' => [] === $outside_parents ? 0 : 2,
 					];
 				}
 			}

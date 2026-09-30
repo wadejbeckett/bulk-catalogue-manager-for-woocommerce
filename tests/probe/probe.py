@@ -709,9 +709,12 @@ def check_read_queries(p: Probe) -> None:
         default = [f["key"] for f in sorted((f for f in fields if f.get("defaultColumn")), key=lambda f: f["defaultOrder"])]
         hiding = {f["key"]: sorted(c["value"] for c in f.get("choices", []) if c.get("hidesProduct")) for f in fields}
         hiding = {k: v for k, v in hiding.items() if v}
-        want_hiding = {"status": ["draft", "pending"], "catalog_visibility": ["hidden"], "visible_on_site": ["off"]}
+        want_hiding = {"status": ["draft", "future", "pending"], "catalog_visibility": ["hidden"], "visible_on_site": ["off"]}
         # T93: Shown in shop and search (visible_on_site) is a listing control an owner may add, not a default column.
+        status = next(f for f in fields if f["key"] == "status")
+        # T114: Scheduled can be read and filtered, but never selected as a new status.
         ok = default == ["sku", "category_ids", "regular_price", "stock_status", "status"] and hiding == want_hiding
+        ok = ok and "future" not in status["writableChoices"]
         p.row("read", "read:fields:flags", ok, f"default columns {default}; hiding choices {hiding}")
 
     for name, fn in [("hydration", hydration), ("filter-category", category), ("search", search), ("filter-price", price_range),
@@ -1575,7 +1578,8 @@ def t96_views(p: Probe) -> dict[str, tuple[list[str], list[tuple[str, str]], str
     fields = (p.http("manager", "GET", "/fields").json() or {}).get("fields", [])
     defaults = sorted((f for f in fields if f.get("defaultColumn") and f.get("type") != "image"), key=lambda f: f.get("defaultOrder") or 0)
     default = ["name", *[f["key"] for f in defaults if f["key"] != "name"]]
-    every = [f["key"] for f in fields if f.get("type") != "image"]
+    # As exportColumns() does, leave out images and add-on fields without a DataViews column.
+    every = [f["key"] for f in fields if f.get("type") != "image" and f.get("dataviews")]
     return {
         "default view": (default, [("mode", "products")], "comma"),
         "every column, products and variations": (every, [("mode", "products_and_variations")], "comma"),
@@ -1761,10 +1765,12 @@ def check_read_export_post(p: Probe) -> None:
 
     def query_count() -> None:
         found = export_native(p, "query_counts", {"user": p.seed["users"]["manager"]["id"]})
-        spread = {f"{mode}/{source}": sorted({v["queries"] for v in sizes.values()}) for mode, sources in found.items() for source, sizes in sources.items()}
+        spread = {f"{mode}/{source}": sorted({v["queries"] - v["parent_reads"] for v in sizes.values()}) for mode, sources in found.items() for source, sizes in sources.items()}
+        raw = {f"{mode}/{source}": [v["queries"] for v in sizes.values()] for mode, sources in found.items() for source, sizes in sources.items()}
         rows = {f"{mode}/{source}": [v["rows"] for v in sizes.values()] for mode, sources in found.items() for source, sizes in sources.items()}
         p.row("read", "read:export:fixed-query-count-identifiers", all(len(q) == 1 for q in spread.values()),
-              f"queries per page at 25/50/100 rows, switch on, cold cache: {spread}; rows {rows}")
+              f"base queries per page at 25/50/100 rows, switch on, cold cache: {spread}; raw {raw}; rows {rows}; "
+              "a page with parents outside its rows needs two additional grouped reads, independent of parent count")
 
     steps = [("fixtures", fixtures), ("post-auth", post_auth), ("ids-exact", ids_exact), ("token-exact", token_exact),
              ("token-not-in-url", token_not_in_url), ("token-refusals", token_refusals), ("whole-catalogue", whole_catalogue),
@@ -2023,7 +2029,9 @@ def check_read_export_roundtrip(p: Probe) -> None:
         export_native(p, "fixtures")  # put the recorded products back
 
     def time_limit() -> None:
-        export_native(p, "time_limit", {"step": "install"})
+        installed = export_native(p, "time_limit", {"step": "install"})
+        if not installed.get("installed"):
+            raise AssertionError("the fixture could not install its temporary time-limit observer; check mu-plugins ownership")
         opener, nonce = p.session("manager")
         fields = urllib.parse.urlencode([("columns", "name"), ("confirm_all", "1"), ("_wpnonce", nonce)]).encode()
         r = p._raw(opener, "POST", NS + "/export", fields, {"Content-Type": "application/x-www-form-urlencoded", "X-Bulkcat-Time-Limit": "1"})

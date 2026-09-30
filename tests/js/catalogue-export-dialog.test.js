@@ -287,6 +287,50 @@ describe( 'the export dialog', () => {
 		).toBeTruthy();
 	} );
 
+	it( 'says the selection is gone when the renewal after a lapsed lease finds nothing to keep', async () => {
+		const renewed = deferred();
+		const onRenewSelection = jest.fn( () => renewed.promise );
+		const { rerender } = setup( { onRenewSelection }, ( { data } ) =>
+			data.selection
+				? Promise.reject( {
+						code: 'bulkcat_selection_renew_required',
+						message: 'Your selection needs renewing.',
+						data: { status: 409 },
+					} )
+				: Promise.resolve( summary( { left_out: 0 } ) )
+		);
+		const dialog = open();
+		await waitFor( () =>
+			expect( onRenewSelection ).toHaveBeenCalledTimes( 1 )
+		);
+		// The renewal found the selection gone: the session now holds nothing.
+		rerender( { onRenewSelection, selection: NOTHING } );
+		await act( async () => renewed.resolve() );
+		const selected = within( dialog ).getByRole( 'radio', {
+			name: 'Selected',
+		} );
+		expect( selected.checked ).toBe( true );
+		expect( selected.disabled ).toBe( true );
+		expect( isDisabled( download() ) ).toBe( true );
+		expect(
+			within( dialog ).getByText(
+				'Your selection is no longer kept, so there is nothing selected to export. Choose the products again, or export all matching the current filters.'
+			)
+		).toBeTruthy();
+		expect( summaries() ).toHaveLength( 1 );
+		expectNoRawText();
+		// The other choice still works.
+		fireEvent.click(
+			within( dialog ).getByRole( 'radio', {
+				name: 'All matching the current filters',
+			} )
+		);
+		await within( dialog ).findByText( 'The file will have 26 rows.' );
+		expect( summaries() ).toHaveLength( 2 );
+		expect( dialog.textContent ).not.toContain( 'no longer kept' );
+		expect( isDisabled( download() ) ).toBe( false );
+	} );
+
 	it( 'shows the server’s sentence for an expired selection and keeps Selected chosen', async () => {
 		setup( {}, () =>
 			Promise.reject( {
@@ -694,6 +738,58 @@ describe( 'the export dialog', () => {
 		const dialog = screen.getByRole( 'dialog', { name: 'Export CSV' } );
 		expect( document.querySelector( '.bulkcat-error' ) ).toBeNull();
 		await within( dialog ).findByText( /The file will have 26 rows/ );
+	} );
+
+	it( 'gives focus back to Export when the dialog Try again opened is closed, by Cancel or by Escape', async () => {
+		const { started } = setup();
+		const refuse = ( n ) =>
+			act( () =>
+				started[ n ].onError(
+					Object.assign(
+						new Error(
+							'This selection is no longer kept. Choose the products again.'
+						),
+						{ code: 'bulkcat_selection_expired' }
+					)
+				)
+			);
+		open();
+		await waitFor( () => expect( isDisabled( download() ) ).toBe( false ) );
+		fireEvent.click( download() );
+		refuse( 0 );
+		// A pointer or Enter on Try again focuses it; the notice then goes as the dialog opens.
+		let again = screen.getByRole( 'button', { name: 'Try again' } );
+		again.focus();
+		fireEvent.click( again );
+		let dialog = screen.getByRole( 'dialog', { name: 'Export CSV' } );
+		await within( dialog ).findByText( /The file will have 26 rows/ );
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Cancel' } )
+		);
+		await waitFor( () =>
+			expect( screen.queryByRole( 'dialog' ) ).toBeNull()
+		);
+		expect( document.activeElement ).toBe(
+			screen.getByRole( 'button', { name: 'Export CSV' } )
+		);
+		// The same through Escape, after a second refusal.
+		fireEvent.click( screen.getByRole( 'button', { name: 'Export CSV' } ) );
+		dialog = screen.getByRole( 'dialog', { name: 'Export CSV' } );
+		await waitFor( () => expect( isDisabled( download() ) ).toBe( false ) );
+		fireEvent.click( download() );
+		refuse( 1 );
+		again = screen.getByRole( 'button', { name: 'Try again' } );
+		again.focus();
+		fireEvent.click( again );
+		dialog = screen.getByRole( 'dialog', { name: 'Export CSV' } );
+		await within( dialog ).findByText( /The file will have 26 rows/ );
+		fireEvent.keyDown( dialog, { key: 'Escape', code: 'Escape' } );
+		await waitFor( () =>
+			expect( screen.queryByRole( 'dialog' ) ).toBeNull()
+		);
+		expect( document.activeElement ).toBe(
+			screen.getByRole( 'button', { name: 'Export CSV' } )
+		);
 	} );
 } );
 

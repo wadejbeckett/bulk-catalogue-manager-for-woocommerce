@@ -253,6 +253,20 @@ export function guardSentences( answer, identifiers ) {
 }
 
 /**
+ * What the dialog says when Selected is chosen but the selection is gone:
+ * cleared elsewhere, or found gone when a lapsed lease was renewed. The
+ * dialog never switches the choice itself (ruling R13).
+ *
+ * @return {string} Sentence.
+ */
+export function goneSentence() {
+	return __(
+		'Your selection is no longer kept, so there is nothing selected to export. Choose the products again, or export all matching the current filters.',
+		'bulk-catalogue-manager-for-woocommerce'
+	);
+}
+
+/**
  * Why Download waits for the selection, in the dialog's words: the
  * selection's own reasons speak of checking a change, so the two the
  * dialog knows are said for an export; any other (such as signing in

@@ -353,6 +353,7 @@ export default function ExportControl( {
 	const [ busy, setBusy ] = useState( false );
 	const [ error, setError ] = useState( null );
 	const cleanup = useRef( null );
+	const button = useRef( null );
 
 	useEffect(
 		() => () => {
@@ -366,6 +367,13 @@ export default function ExportControl( {
 	const choose = () => {
 		setError( null );
 		setOpen( true );
+	};
+
+	// Try again sits in the notice the dialog replaces: focus Export first,
+	// so the dialog gives focus back to Export, not to a button that is gone.
+	const retry = () => {
+		button.current?.focus();
+		choose();
 	};
 
 	const run = ( { body, confirmAll } ) => {
@@ -398,6 +406,7 @@ export default function ExportControl( {
 	return (
 		<div className="bulkcat-export">
 			<Button
+				ref={ button }
 				variant="secondary"
 				className="bulkcat-export__button"
 				onClick={ choose }
@@ -419,7 +428,7 @@ export default function ExportControl( {
 				<ErrorNotice
 					message={ plain }
 					error={ error }
-					onRetry={ choose }
+					onRetry={ retry }
 				/>
 			) }
 			{ open && (

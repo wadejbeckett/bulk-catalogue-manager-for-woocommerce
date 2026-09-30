@@ -145,6 +145,7 @@ add_filter( 'rest_post_dispatch', function ( $response ) {
 			'dispatch_ms'      => round( ( $now - $GLOBALS['bulkcat_perf']['d0'] ) * 1000, 1 ),
 			'server_ms'        => round( ( $now - $GLOBALS['bulkcat_perf']['t0'] ) * 1000, 1 ),
 			'peak_mb'          => round( memory_get_peak_usage() / 1048576, 2 ),
+			'memory_limit'     => ini_get( 'memory_limit' ),
 		) ) );
 	}
 	return $response;
@@ -173,6 +174,8 @@ add_action( 'wp_loaded', function () {
 	if ( '' === $key || ! hash_equals( (string) get_option( 'bulkcat_perf_queue_key', '' ), $key ) ) {
 		return;
 	}
+	// Two minutes a request, not Action Scheduler's 30 seconds: many chunks in one request, fewer requests.
+	add_filter( 'action_scheduler_queue_runner_time_limit', fn() => 120 );
 	$ran = ActionScheduler_QueueRunner::instance()->run( 'bulkcat perf web runner' );
 	wp_send_json( array( 'ran' => $ran, 'memory_limit' => ini_get( 'memory_limit' ), 'peak_mb' => round( memory_get_peak_usage() / 1048576, 2 ) ) );
 } );
@@ -204,6 +207,23 @@ write the numbers down:
 bash tests/probe/seed.sh 20000   # also writes seed.json with the probe users
 python3 tests/probe/perf.py --base-url http://localhost:8896 --json /tmp/performance.json
 ```
+
+The `undo_scale` group (T111) runs only when named: it makes a
+100,000-object change (Weight set to 0.777 on the scale category after
+`seed.sh 22223`) and undoes it, or undoes one already made
+(`--undo-batch N`). Its web requests and queue run must stay at 128 MB, so
+give the stack `WP_MAX_MEMORY_LIMIT` 128M for the run (Action Scheduler's
+runners raise the limit to it) and remove it after:
+
+```sh
+$WP_CMD config set WP_MAX_MEMORY_LIMIT 128M
+python3 tests/probe/perf.py --base-url http://localhost:8896 --only undo_scale [--undo-batch N]
+$WP_CMD config delete WP_MAX_MEMORY_LIMIT
+```
+
+It takes hours: the change and its undo each run 100,000 product saves, and
+each of the undo's web requests (preview, last page, conflict count,
+confirm) plans all 100,000 objects, about two minutes apiece.
 
 What each number means, and why: server time is the request from PHP's start
 to the end of the REST dispatch as the mu-plugin sees it (WordPress and

@@ -30,7 +30,8 @@ $bulkcat-bad-line: #f3c3c4;
 	right: 0;
 	bottom: 0;
 	z-index: 9990;
-	width: min(860px, 100vw);
+	// T113: set with the catalogue, which reflows beside it (catalogue/style.scss).
+	width: var(--bulkcat-slide-over, min(860px, 100vw));
 	container-type: inline-size;
 	display: flex;
 	flex-direction: column;

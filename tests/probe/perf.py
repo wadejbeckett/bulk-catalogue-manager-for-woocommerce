@@ -592,9 +592,6 @@ class Perf:
         return time.perf_counter() - start, report, runs
 
     def undo_scale(self) -> None:
-        state = self.p.wp_eval(
-            "bulkcat_out( array( 'limit' => ini_get( 'memory_limit' ), 'max' => WP_MAX_MEMORY_LIMIT, 'wp' => WP_MEMORY_LIMIT ) );"
-        )
         batch_id = self.undo_batch
         if not batch_id:
             token, count, capture = self.capture_token({"category_ids": {"operator": "isAny", "value": [self.scale_cat]}, "mode": "products_and_variations"})
@@ -618,14 +615,15 @@ class Perf:
         )
         if facts["objects"] < 100000:
             raise RuntimeError(f"batch {batch_id} journalled {facts['objects']} objects (want 100,000)")
-        limit = "under a " + str(state["limit"]) + " limit"
         route = f"/batches/{batch_id}/undo"
 
         def budget(name: str, reply: dict[str, Any], detail: str) -> None:
+            # The limit the web request itself ran under, from the mu-plugin's header.
             peak = float(reply["perf"].get("peak_mb", 0.0))
-            ok = reply["status"] in (200, 201) and 0 < peak < BUDGET["chunk_peak_mb"] and state["limit"] == "128M"
+            limit = reply["perf"].get("memory_limit")
+            ok = reply["status"] in (200, 201) and 0 < peak < BUDGET["chunk_peak_mb"] and limit == "128M"
             self.metric("undo_scale", name, peak, "MB", "< 96 MB", ok,
-                        f"{limit}; HTTP {reply['status']}, {reply['perf'].get('server_ms')} ms server, {reply['perf'].get('dispatch_queries')} queries; {detail}")
+                        f"under the request's {limit} limit; HTTP {reply['status']}, {reply['perf'].get('server_ms')} ms server, {reply['perf'].get('dispatch_queries')} queries; {detail}")
 
         first = self.call("POST", route, body={"preview": True, "per_page": 25})
         plan = self.json_of(first) or {}

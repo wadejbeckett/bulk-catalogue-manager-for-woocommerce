@@ -62,7 +62,7 @@ Three database tables holding the history of changes made through the screen, wi
 
 = How do I undo a change? =
 
-Open the History tab, find the change and choose **Undo this change**. You will see a preview first. Any product changed again since the original change is listed and left alone unless you choose **Revert anyway**. An undo can itself be undone.
+Open the History tab, find the change and choose **Undo this change**. You will see a preview first. Any product changed again since the original change is listed and left alone unless you choose **Revert anyway**; so is a product changed after you confirm the undo, before its turn comes. An undo can itself be undone. Undo works for a change of any size, up to 100,000 products and variations; for the largest, preparing the preview takes a couple of minutes.
 
 = How long is history kept? =
 

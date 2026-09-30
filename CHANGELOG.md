@@ -59,6 +59,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - A long-running background process no longer grows in memory as it works through a change. WordPress counts every hook name it fires for as long as the process lives, and WooCommerce's product save fires hooks named after each product's cached transients (`wc_var_prices_{id}` and four more), so one `wp action-scheduler run` over 400 chunks kept about 34 MB. At the end of every chunk, whichever runner runs it (WP-CLI, WP-Cron, Action Scheduler's async request runner or the **Run** link on the Scheduled Actions screen), the plugin now forgets those per-product transient hook names that chunk added, and only those: every other hook name keeps its count, and no callback is touched.
+- **Review selected products** removes the product it lists: its pager named the next page at once while the list still showed the previous one, so **Remove** could take a product from the page before. The pager now names the page listed; while another page loads the rows stay but cannot be removed, and a late answer for a page no longer asked for is dropped.
+- The bulk change slide-over no longer covers controls of the catalogue: while it is open the catalogue narrows into the room beside it (on a phone-width screen the slide-over covers the page). A control that takes the keyboard focus is scrolled clear of the sticky selection bar.
+- Counts that can include variations say what they count in three more places: History's undo question ("This puts 100 products and 20 variations back to their old prices."), its changed-since lines and the finished notice ("items" when an undo held both), and the preview's "Stock would go below zero on 3 items".
+- An estimated preview's parts add up to the totals they split (products and variations to the change count; restores to Private and Pending review to the restores counted; the Off/On outcomes and the rows to their totals); each part was rounded on its own before.
+- A failed save in the table's cell, the detail panel or a switch says the plugin's own sentence, never another program's error page or message.
+- Undo requests that plan a whole change (its preview, confirming it, and counting conflicts with `reversibility=count`) lift PHP's time limit where the host allows, as exports do: planning 100,000 objects takes about two minutes.
+
+REST: the undo preview answers `by_type` (products and variations apart, per state), and an undo batch's `undo` summary carries `by_type` (`{ products, variations }`, `null` for an undo recorded before this).
 
 ## [1.0.0] - 2026-09-24
 

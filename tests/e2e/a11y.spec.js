@@ -196,6 +196,32 @@ for ( const [ label, size ] of [
 	} );
 }
 
+// T113 (WCAG 2.4.11 Focus Not Obscured): a control that takes the focus is
+// scrolled clear of the sticky selection bar, never left beneath it.
+test( 'a focused row is never hidden under the sticky selection bar', async ( {
+	page,
+} ) => {
+	await page.setViewportSize( { width: 1440, height: 520 } );
+	await openScreen( page );
+	await page.getByRole( 'checkbox', { name: SEED.simple( 1 ) } ).check();
+	const bar = page.getByRole( 'region', { name: 'Selection' } );
+	await expect( bar ).toContainText( '1 product selected' );
+	const target = page.getByRole( 'checkbox', { name: SEED.simple( 3 ) } );
+	// Scroll until the row sits just under the admin bar, behind the sticky bar.
+	await target.evaluate( ( node ) =>
+		window.scrollBy( 0, node.getBoundingClientRect().top - 40 )
+	);
+	const hidden = await bar.boundingBox();
+	const before = await target.boundingBox();
+	expect( before.y ).toBeLessThan( hidden.y + hidden.height );
+	// Keyboard focus reaches it: it is scrolled into the clear.
+	await target.evaluate( ( node ) => node.focus() );
+	await expect( target ).toBeFocused();
+	const shown = await bar.boundingBox();
+	const after = await target.boundingBox();
+	expect( after.y ).toBeGreaterThanOrEqual( shown.y + shown.height );
+} );
+
 test( 'animation stops for reduced motion', async ( { page } ) => {
 	await page.emulateMedia( { reducedMotion: 'reduce' } );
 	// Hold the products until the skeleton has been measured.

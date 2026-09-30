@@ -524,7 +524,11 @@ export function CatalogueGrid( {
 	}
 
 	return (
-		<div className="bulkcat-catalogue__body">
+		<div
+			className={
+				'bulkcat-catalogue__body' + ( bulk ? ' has-slide-over' : '' )
+			}
+		>
 			<CategoryPanel
 				value={ category }
 				onChange={ chooseCategory }

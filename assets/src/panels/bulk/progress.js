@@ -83,14 +83,12 @@ export function doneSentence( report, byType = null ) {
  * @param {Function} props.onFinished    Receives the finished report, once (T84).
  * @param {boolean}  props.replayed      The server answered a change it had already accepted.
  * @param {boolean}  props.earlier       That change was an earlier attempt, resolved before a new one.
- * @param {number}   props.undoLimit     The most products and variations an undo here can cover (T85).
  * @return {Element} Done step.
  */
 export function DoneStep( {
 	batchId,
 	count,
 	byType = null,
-	undoLimit = Infinity,
 	interval,
 	onUndo,
 	onViewHistory,
@@ -202,8 +200,6 @@ export function DoneStep( {
 	}
 
 	const ok = [ 'complete', 'partial' ].includes( report.status );
-	// T85: no undo is promised for a change larger than this host can undo.
-	const tooLarge = total > undoLimit;
 	return (
 		<section className="bulkcat-bulk__section" data-step="done">
 			<h3 className="bulkcat-bulk__h">
@@ -231,23 +227,14 @@ export function DoneStep( {
 				) }
 				{ ok && (
 					<p>
-						{ tooLarge
-							? sprintf(
-									/* translators: %s: the most products and variations a change may cover and still be undone from this screen, such as "27,304". */
-									__(
-										'Every change is saved with the old values, but undoing a change to more than %s products and variations is not yet supported from this screen.',
-										'bulk-catalogue-manager-for-woocommerce'
-									),
-									formatNumber( undoLimit )
-								)
-							: __(
-									'The old values are saved, so you can put this back at any time.',
-									'bulk-catalogue-manager-for-woocommerce'
-								) }
+						{ __(
+							'The old values are saved, so you can put this back at any time.',
+							'bulk-catalogue-manager-for-woocommerce'
+						) }
 					</p>
 				) }
 				<div className="bulkcat-bulk__acts">
-					{ onUndo && ok && ! tooLarge && (
+					{ onUndo && ok && (
 						<button
 							type="button"
 							className="button button-small"

@@ -29,11 +29,16 @@ defined( 'ABSPATH' ) || exit;
  * The undo route.
  *
  * With `preview: true` it plans the undo through Undo\Planner and writes
- * nothing: `{ batch_id, preview, counts, total, items, pagination,
- * plan_hash, sentence }`, the items a page of the plan with the conflicted
+ * nothing: `{ batch_id, preview, counts, by_type, total, items,
+ * pagination, plan_hash, sentence }` (`by_type` the counts of products and
+ * of variations apart, T114), the items a page of the plan with the conflicted
  * ones first (each with its name, state, plain reason, the fields it puts
  * back and, when conflicted, each changed field with the value the batch
  * left and the value found now), bound to the plan's hash like any preview.
+ * The plan is walked, not held (T111): the walk counts and hashes every
+ * item keeping only each object's id by state, and the page's objects are
+ * then planned again as they stand (Planner::items()), so a preview of a
+ * whole-catalogue undo fits a web request's memory on any page.
  *
  * Applied (`preview` false, the default) it is a durable request (T83):
  * the body carries the server-issued `uuid` and `request_proof` from `POST
@@ -180,10 +185,9 @@ final class UndoController implements Controller {
 	 */
 	public function undo( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
 		$batch_id = (int) $request->get_param( 'id' );
+		self::lift_time_limit();
 		if ( true === $request->get_param( 'preview' ) ) {
-			$this->planner ??= new Planner( $this->batches, $this->changes, null, null, $this->clock );
-			$plan            = $this->planner->plan( $batch_id, get_current_user_id() );
-			return $plan instanceof \WP_Error ? $plan : $this->preview( $plan, (int) ( $request->get_param( 'page' ) ?? 1 ), (int) ( $request->get_param( 'per_page' ) ?? 25 ) );
+			return $this->preview( $batch_id, (int) ( $request->get_param( 'page' ) ?? 1 ), (int) ( $request->get_param( 'per_page' ) ?? 25 ) );
 		}
 		if ( null === $request->get_param( 'request_proof' ) && null === $request->get_param( 'intent' ) ) {
 			return $this->legacy( $request, $batch_id );
@@ -198,6 +202,20 @@ final class UndoController implements Controller {
 		}
 		$result = ( new RequestService( $this->clock ) )->undo( array_intersect_key( $request->get_params(), array_flip( [ 'uuid', 'request_proof', 'intent' ] ) ) );
 		return $result instanceof \WP_Error ? $result : $this->created( $result, $result['replayed'] ? 200 : 201 );
+	}
+
+	/**
+	 * Lift PHP's time limit, where the host allows it, for a request that
+	 * walks a whole undo plan (T111): memory stays bounded, but planning
+	 * reads every object the change touched, about two minutes of work for
+	 * 100,000 (measured on the scale fixture), past PHP's default 30
+	 * seconds. The preview, the accepted undo and the single batch read that
+	 * counts conflicts call it; as the CSV export does.
+	 */
+	public static function lift_time_limit(): void {
+		if ( function_exists( 'wc_set_time_limit' ) ) {
+			wc_set_time_limit( 0 );
+		}
 	}
 
 	/**
@@ -227,23 +245,63 @@ final class UndoController implements Controller {
 	}
 
 	/**
-	 * The preview of a plan: counts, a page of items with the conflicted first, and the hash.
+	 * The preview of a batch's undo: counts, a page of items with the
+	 * conflicted first, and the hash. The walk keeps each object's id by
+	 * state (a list of numbers), never the items; the page's objects are
+	 * planned again afterwards.
 	 *
-	 * @param Plan $plan     The plan.
-	 * @param int  $page     Page, from 1.
-	 * @param int  $per_page Items per page.
+	 * @param int $batch_id The batch to undo.
+	 * @param int $page     Page, from 1.
+	 * @param int $per_page Items per page.
 	 */
-	private function preview( Plan $plan, int $page, int $per_page ): \WP_REST_Response {
-		$ordered = $plan->conflicts_first();
-		$total   = count( $ordered );
-		$items   = array_slice( $ordered, ( max( 1, $page ) - 1 ) * $per_page, $per_page );
+	private function preview( int $batch_id, int $page, int $per_page ): \WP_REST_Response|\WP_Error {
+		$this->planner ??= new Planner( $this->batches, $this->changes, null, null, $this->clock );
+		$user_id         = get_current_user_id();
+		$ids             = array_fill_keys( [ Plan::CONFLICTED, Plan::REVERTIBLE, Plan::SKIPPED ], [] );
+		// T114: what the counts hold, products and variations apart, for the dialog's words.
+		$by_type = array_fill_keys( [ 'product', 'variation' ], array_fill_keys( Plan::STATES, 0 ) );
+		$summary = $this->planner->walk(
+			$batch_id,
+			$user_id,
+			static function ( array $item ) use ( &$ids, &$by_type ): void {
+				$ids[ $item['state'] ][] = $item['object_id'];
+				++$by_type[ 'variation' === $item['object_type'] ? 'variation' : 'product' ][ $item['state'] ];
+			}
+		);
+		if ( $summary instanceof \WP_Error ) {
+			return $summary;
+		}
+		// The page's objects in conflicts-first order, then each planned as it stands now.
+		$window = [];
+		$skip   = ( max( 1, $page ) - 1 ) * $per_page;
+		foreach ( $ids as $of_state ) {
+			if ( count( $window ) >= $per_page ) {
+				break;
+			}
+			if ( $skip >= count( $of_state ) ) {
+				$skip -= count( $of_state );
+				continue;
+			}
+			$window = array_merge( $window, array_slice( $of_state, $skip, $per_page - count( $window ) ) );
+			$skip   = 0;
+		}
+		unset( $ids );
+		$now   = [] === $window ? [] : $this->planner->items( $batch_id, $window, $user_id );
+		$items = [];
+		foreach ( $window as $object_id ) {
+			if ( isset( $now[ $object_id ] ) ) {
+				$items[] = $now[ $object_id ];
+			}
+		}
 		BatchChangesController::prime_names( $items );
-		$counts = $plan->counts();
+		$counts = $summary->counts();
+		$total  = $summary->total();
 		return new \WP_REST_Response(
 			[
-				'batch_id'   => $plan->batch_id(),
+				'batch_id'   => $batch_id,
 				'preview'    => true,
 				'counts'     => $counts,
+				'by_type'    => $by_type,
 				'total'      => $total,
 				'items'      => array_map( [ $this, 'item' ], $items ),
 				'pagination' => [
@@ -252,7 +310,7 @@ final class UndoController implements Controller {
 					'total'      => $total,
 					'totalPages' => (int) ceil( $total / max( 1, $per_page ) ),
 				],
-				'plan_hash'  => $plan->hash(),
+				'plan_hash'  => $summary->hash(),
 				'sentence'   => $counts[ Plan::CONFLICTED ] > 0 ? sprintf(
 					/* translators: 1: number of products changed since the batch, such as "12"; 2: number of products the batch changed, such as "1,284". */
 					_n( '%1$s of %2$s was changed again after this batch and will be left alone unless you choose Revert anyway.', '%1$s of %2$s were changed again after this batch and will be left alone unless you choose Revert anyway.', $counts[ Plan::CONFLICTED ], 'bulk-catalogue-manager-for-woocommerce' ),

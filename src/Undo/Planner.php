@@ -64,9 +64,17 @@ defined( 'ABSPATH' ) || exit;
  *   cover every field, for **Revert anyway**;
  * - revertible otherwise.
  *
- * Objects are read a page at a time (Engine\Memory), so a plan over
- * thousands of objects — the single batch read counts conflicts with one —
- * runs in bounded memory.
+ * The plan is walked, never held (T111, ticket 11): walk() reads which
+ * objects the batch journalled, newest first, keeping only their order (a
+ * few dozen bytes an object), then plans them a page at a time — the page's
+ * journal rows read by object, its products primed, planned and released
+ * (Engine\Memory) — handing each item to the caller and folding it into the
+ * counts and the hash, so previewing, counting and accepting the undo of a
+ * whole-catalogue change fit a web request's memory. plan() collects the
+ * same items into an Undo\Plan for callers that want them all (tests, small
+ * batches); items() and checker() plan named objects as they stand now, for
+ * the preview's page and for the check each undo item gets again as its
+ * chunk writes it (Engine\ChunkRunner).
  * Status and its Off record (T90, SPEC §9.4) fold into one internal step,
  * `restore_status`, carrying the journal's old status (`value`) and old
  * record (`record`), each only when the batch applied that prop; it is
@@ -150,9 +158,9 @@ final class Planner {
 	private const UNDO_RUNNING = [ 'queued', 'running' ];
 
 	/**
-	 * Journal rows read at a time.
+	 * Objects planned a page at a time: primed, planned and released together.
 	 */
-	private const PAGE = ChangeRepository::MAX_PAGE;
+	private const PAGE = Preview::PAGE;
 
 	/**
 	 * Context mixed into the hash, so it cannot be mistaken for another signature.
@@ -217,16 +225,41 @@ final class Planner {
 	}
 
 	/**
-	 * Plan the undo of a batch, writing nothing. Each object is checked
-	 * against the person undoing — the user who will run the undo batch —
-	 * not the batch's original author, who may since have been demoted or
-	 * removed.
+	 * Plan the undo of a batch, writing nothing, and keep every item: the
+	 * whole plan in memory. Each object is checked against the person
+	 * undoing — the user who will run the undo batch — not the batch's
+	 * original author, who may since have been demoted or removed. The
+	 * routes walk() instead, holding a page at a time.
 	 *
 	 * @param int      $batch_id The batch to undo.
 	 * @param int|null $user_id  The person undoing; the current user by default.
 	 * @return Plan|\WP_Error The plan, or 404 `bulkcat_not_found`, or 409 `bulkcat_not_reversible` with its reason.
 	 */
 	public function plan( int $batch_id, ?int $user_id = null ): Plan|\WP_Error {
+		$items   = [];
+		$summary = $this->walk(
+			$batch_id,
+			$user_id,
+			static function ( array $item ) use ( &$items ): void {
+				$items[] = $item;
+			}
+		);
+		return $summary instanceof \WP_Error ? $summary : new Plan( $batch_id, $items, $summary->hash() );
+	}
+
+	/**
+	 * Walk the undo plan of a batch, writing nothing (T111): each item, in
+	 * the order the undo writes them (the object journalled last first), is
+	 * handed to $each as soon as it is planned and then let go, so memory
+	 * holds the batch's object order and one page, never the plan. The
+	 * summary carries the counts and the same hash plan() gives.
+	 *
+	 * @param int                               $batch_id The batch to undo.
+	 * @param int|null                          $user_id  The person undoing; the current user by default.
+	 * @param callable( array<string, mixed> ): void|null $each Given each item in plan order.
+	 * @return PlanSummary|\WP_Error The summary, or 404 `bulkcat_not_found`, or 409 `bulkcat_not_reversible` with its reason.
+	 */
+	public function walk( int $batch_id, ?int $user_id = null, ?callable $each = null ): PlanSummary|\WP_Error {
 		$user_id ??= get_current_user_id();
 		$batch     = $batch_id > 0 ? $this->batches->find( $batch_id ) : null;
 		if ( null === $batch ) {
@@ -237,36 +270,92 @@ final class Planner {
 			return $refusal;
 		}
 
-		$objects = $this->journal( $batch_id );
-		if ( [] === $objects && $batch['total_items'] > 0 && $batch['done_items'] > 0 ) {
+		$order = $this->order( $batch_id );
+		if ( [] === $order && $batch['total_items'] > 0 && $batch['done_items'] > 0 ) {
 			return self::not_reversible( self::PRUNED, self::pruned_sentence() );
 		}
 
-		$items = [];
-		$index = 0;
-		$ids   = array_keys( $objects );
-		foreach ( $objects as $object_id => $journal ) {
-			if ( 0 === $index % Preview::PAGE ) {
-				// T76: a 5,000-product batch's plan outgrew 128 MB with every object kept loaded.
-				Memory::next_page( array_slice( $ids, $index, Preview::PAGE ), 0 < $index );
+		$context = $this->hash_start( $batch_id );
+		$counts  = array_fill_keys( Plan::STATES, 0 );
+		$first   = true;
+		// What WordPress counts from here: each page's per-product hook names are forgotten with its objects (ticket 11).
+		$mark = Memory::mark();
+		$page = [];
+		$done = 0;
+		foreach ( $order as $object_id => $type ) {
+			$page[ $object_id ] = $type;
+			if ( self::PAGE > count( $page ) ) {
+				continue;
 			}
-			++$index;
-			$items[] = $this->item( $object_id, $journal, $user_id, $batch_id );
+			$this->walk_page( $batch_id, $page, $user_id, 0 < $done ? $mark : null, $context, $counts, $first, $each );
+			$done += count( $page );
+			$page  = [];
 		}
-		return new Plan( $batch_id, $items, $this->hash( $batch_id, $items ) );
+		if ( [] !== $page ) {
+			$this->walk_page( $batch_id, $page, $user_id, 0 < $done ? $mark : null, $context, $counts, $first, $each );
+		}
+		return new PlanSummary( $batch_id, $counts, $this->hash_end( $context ) );
+	}
+
+	/**
+	 * Plan named objects of a batch as they stand now, keyed by object id
+	 * in the order asked (T111): the preview's page, planned again after the
+	 * walk that counted it. No batch-level refusal applies; an object the
+	 * batch did not journal is left out.
+	 *
+	 * @param int       $batch_id   The batch undone.
+	 * @param list<int> $object_ids Objects.
+	 * @param int|null  $user_id    The person undoing; the current user by default.
+	 * @return array<int, array<string, mixed>> Plan items by object id.
+	 */
+	public function items( int $batch_id, array $object_ids, ?int $user_id = null ): array {
+		$out = [];
+		foreach ( array_chunk( self::ids( $object_ids ), self::PAGE ) as $ids ) {
+			$check = $this->checker( $batch_id, $ids, $user_id );
+			foreach ( $ids as $id ) {
+				$item = $check( $id );
+				if ( null !== $item ) {
+					$out[ $id ] = $item;
+				}
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * A check of each of these objects as it stands at the moment it is
+	 * asked (T111): their journal rows in the batch are read once, and each
+	 * call loads the object then and plans it — every field the batch
+	 * changed, status and its Off record included — so an undo item is
+	 * checked again just before its chunk writes it. The closure answers the
+	 * plan item, or null for an object the batch did not journal.
+	 *
+	 * @param int       $batch_id   The batch undone.
+	 * @param list<int> $object_ids Objects, at most ChangeRepository::MAX_OBJECTS.
+	 * @param int|null  $user_id    The person undoing; the current user by default.
+	 * @return \Closure( int ): ?array<string, mixed>
+	 */
+	public function checker( int $batch_id, array $object_ids, ?int $user_id = null ): \Closure {
+		$user_id ??= get_current_user_id();
+		$ids       = self::ids( $object_ids );
+		$journals  = $this->journals( $batch_id, $ids );
+		Memory::next_page( $ids, false );
+		return function ( int $object_id ) use ( $journals, $user_id, $batch_id ): ?array {
+			return isset( $journals[ $object_id ] ) ? $this->item( $object_id, $journals[ $object_id ], $user_id, $batch_id ) : null;
+		};
 	}
 
 	/**
 	 * How many of a batch's objects were changed again since it ran (the
 	 * plan's conflicted items), or 0 where it cannot be planned. This is the
 	 * count Engine\Reversibility shows as `conflicts` and turns into
-	 * `partially_reversible`.
+	 * `partially_reversible`. The plan is walked, not kept.
 	 *
 	 * @param array<string, mixed> $batch Typed batch row; only its id is read.
 	 */
 	public function conflicts( array $batch ): int {
-		$plan = $this->plan( (int) $batch['batch_id'] );
-		return $plan instanceof Plan ? $plan->counts()[ Plan::CONFLICTED ] : 0;
+		$summary = $this->walk( (int) $batch['batch_id'] );
+		return $summary instanceof PlanSummary ? $summary->counts()[ Plan::CONFLICTED ] : 0;
 	}
 
 	/**
@@ -382,44 +471,120 @@ final class Planner {
 	}
 
 	/**
-	 * The batch's journal grouped by object, the object journalled last
-	 * first. Per object: its type, whether it has any row, and per applied
-	 * field (newest first) the value the batch left and the value before it.
+	 * The objects a batch journalled, the object journalled last first, each
+	 * with its type (that of its newest row): read a page of rows at a time
+	 * with no values, keeping only this order.
 	 *
 	 * @param int $batch_id Batch.
-	 * @return array<int, array{type: string, fields: array<string, array{expected: mixed, target: mixed}>}>
+	 * @return array<int, string> Object id => type, in plan order.
 	 */
-	private function journal( int $batch_id ): array {
-		$objects = [];
-		$before  = 0;
+	private function order( int $batch_id ): array {
+		$order  = [];
+		$types  = [];
+		$before = 0;
 		do {
-			$rows = $this->changes->newest_first( $batch_id, $before, self::PAGE );
-			$full = self::PAGE === count( $rows );
+			$rows = $this->changes->objects_newest_first( $batch_id, $before, ChangeRepository::OBJECTS_PAGE );
+			$full = ChangeRepository::OBJECTS_PAGE === count( $rows );
 			foreach ( $rows as $row ) {
-				$before           = $row['change_id'];
-				$id               = $row['object_id'];
-				$objects[ $id ] ??= [
-					'type'   => $row['object_type'],
-					'fields' => [],
-				];
-				// An intent row (§12.3) a killed run left unsettled counts as applied: whether its save
-				// landed shows as the object holding the value, or as a conflict when it does not.
-				if ( 'applied' !== $row['result'] && Schema::CHANGE_INTENT !== $row['result'] ) {
-					continue;
+				$before = $row['change_id'];
+				if ( ! isset( $order[ $row['object_id'] ] ) ) {
+					// One string per type, shared by every object of it.
+					$types[ $row['object_type'] ] ??= $row['object_type'];
+					$order[ $row['object_id'] ]     = $types[ $row['object_type'] ];
 				}
-				$prop = $row['prop'];
-				if ( isset( $objects[ $id ]['fields'][ $prop ] ) ) {
-					// An older applied row for the same field: the value to put back is the oldest one.
-					$objects[ $id ]['fields'][ $prop ]['target'] = $row['old_value'];
-					continue;
-				}
-				$objects[ $id ]['fields'][ $prop ] = [
-					'expected' => $row['new_value'],
-					'target'   => $row['old_value'],
-				];
 			}
 		} while ( $full );
+		return $order;
+	}
+
+	/**
+	 * Some objects' journal in the batch, grouped: per object its type (that
+	 * of its newest row) and, per applied field (newest first), the value
+	 * the batch left and the value before it.
+	 *
+	 * @param int       $batch_id Batch.
+	 * @param list<int> $ids      Objects.
+	 * @return array<int, array{type: string, fields: array<string, array{expected: mixed, target: mixed}>}>
+	 */
+	private function journals( int $batch_id, array $ids ): array {
+		$objects = [];
+		foreach ( $this->changes->for_objects( $batch_id, $ids ) as $row ) {
+			$id               = $row['object_id'];
+			$objects[ $id ] ??= [
+				'type'   => $row['object_type'],
+				'fields' => [],
+			];
+			// An intent row (§12.3) a killed run left unsettled counts as applied: whether its save
+			// landed shows as the object holding the value, or as a conflict when it does not.
+			if ( 'applied' !== $row['result'] && Schema::CHANGE_INTENT !== $row['result'] ) {
+				continue;
+			}
+			$prop = $row['prop'];
+			if ( isset( $objects[ $id ]['fields'][ $prop ] ) ) {
+				// An older applied row for the same field: the value to put back is the oldest one.
+				$objects[ $id ]['fields'][ $prop ]['target'] = $row['old_value'];
+				continue;
+			}
+			$objects[ $id ]['fields'][ $prop ] = [
+				'expected' => $row['new_value'],
+				'target'   => $row['old_value'],
+			];
+		}
 		return $objects;
+	}
+
+	/**
+	 * Plan one page of the walk: release what the previous page loaded,
+	 * prime this one's objects, read their journal rows, and plan each in
+	 * order, folding it into the hash and the counts and handing it on.
+	 *
+	 * @param int                                   $batch_id The batch undone.
+	 * @param array<int, string>                    $page     Object id => type, in plan order.
+	 * @param int                                   $user_id  The person undoing.
+	 * @param array{0: int, 1: int}|null            $mark     Memory::mark() at the walk's start, to release the previous page; null on the first.
+	 * @param \HashContext                          $context  The plan hash so far.
+	 * @param array<string, int>                    $counts   Items by state so far.
+	 * @param bool                                  $first    Whether no item has been hashed yet.
+	 * @param callable( array<string, mixed> ): void|null $each Given each item.
+	 */
+	private function walk_page( int $batch_id, array $page, int $user_id, ?array $mark, \HashContext $context, array &$counts, bool &$first, ?callable $each ): void {
+		if ( null !== $mark ) {
+			// T76: a 5,000-product batch's plan outgrew 128 MB with every object kept loaded.
+			Memory::release( $mark );
+		}
+		$ids = array_keys( $page );
+		Memory::next_page( $ids, false );
+		$journals = $this->journals( $batch_id, $ids );
+		foreach ( $page as $object_id => $type ) {
+			$item = $this->item(
+				$object_id,
+				$journals[ $object_id ] ?? [
+					'type'   => $type,
+					'fields' => [],
+				],
+				$user_id,
+				$batch_id
+			);
+			self::hash_item( $context, $item, $first );
+			$first = false;
+			if ( ! isset( $counts[ $item['state'] ] ) ) {
+				throw new \InvalidArgumentException( 'An undo plan item has an unknown state.' );
+			}
+			++$counts[ $item['state'] ];
+			if ( null !== $each ) {
+				$each( $item );
+			}
+		}
+	}
+
+	/**
+	 * Positive object ids, each once, in the order given.
+	 *
+	 * @param array<mixed> $ids Candidate ids.
+	 * @return list<int>
+	 */
+	private static function ids( array $ids ): array {
+		return array_values( array_unique( array_filter( array_map( 'intval', $ids ), static fn( int $id ): bool => $id > 0 ) ) );
 	}
 
 	/**
@@ -726,27 +891,41 @@ final class Planner {
 	}
 
 	/**
-	 * The hash binding a plan: the batch, the items and the settings a
-	 * preview binds (Preview::SETTINGS), in canonical order.
+	 * Start the hash binding a plan: the batch, the items and the settings a
+	 * preview binds (Preview::SETTINGS), in canonical order — the HMAC of
+	 * { batch, items, settings } in canonical JSON, fed a part at a time
+	 * (T85): a sorted copy of every item and one encoding of them all cost
+	 * about 1.7 KB an item. JSON encoding is compositional, so the hash is
+	 * the one the whole-payload form gave; each item is added as it is
+	 * planned (walk_page()), and hash_end() closes it.
 	 *
-	 * @param int                        $batch_id Batch.
-	 * @param list<array<string, mixed>> $items    Items.
+	 * @param int $batch_id Batch.
 	 */
-	private function hash( int $batch_id, array $items ): string {
-		$bound = array_intersect_key( $this->settings->values(), array_flip( Preview::SETTINGS ) );
-		ksort( $bound );
-		// The HMAC of { batch, items, settings } in canonical JSON, fed a part
-		// at a time (T85): a sorted copy of every item and one encoding of
-		// them all cost about 1.7 KB an item, most of a web request's memory
-		// for a whole-catalogue undo. JSON encoding is compositional, so the
-		// hash is the one the whole-payload form gave.
+	private function hash_start( int $batch_id ): \HashContext {
 		$context = hash_init( 'sha256', HASH_HMAC, wp_salt( 'auth' ) );
 		hash_update( $context, self::CONTEXT . '{"batch":' . wp_json_encode( $batch_id ) . ',"items":[' );
-		$first = true;
-		foreach ( $items as $item ) {
-			hash_update( $context, ( $first ? '' : ',' ) . wp_json_encode( self::sorted( $item ) ) );
-			$first = false;
-		}
+		return $context;
+	}
+
+	/**
+	 * Add one item to the hash of a plan, in canonical order.
+	 *
+	 * @param \HashContext         $context The hash so far.
+	 * @param array<string, mixed> $item    The item.
+	 * @param bool                 $first   Whether it is the plan's first item.
+	 */
+	private static function hash_item( \HashContext $context, array $item, bool $first ): void {
+		hash_update( $context, ( $first ? '' : ',' ) . wp_json_encode( self::sorted( $item ) ) );
+	}
+
+	/**
+	 * Close the hash of a plan with the settings it binds.
+	 *
+	 * @param \HashContext $context The hash with every item added.
+	 */
+	private function hash_end( \HashContext $context ): string {
+		$bound = array_intersect_key( $this->settings->values(), array_flip( Preview::SETTINGS ) );
+		ksort( $bound );
 		hash_update( $context, '],"settings":' . wp_json_encode( $bound ) . '}' );
 		return hash_final( $context );
 	}

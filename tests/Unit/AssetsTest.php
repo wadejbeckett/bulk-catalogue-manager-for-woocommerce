@@ -165,8 +165,7 @@ final class AssetsTest extends TestCase {
 		$this->assertSame( 7, $settings['user']['id'] );
 		$this->assertSame( 7, $settings['wpMajor'] );
 		$this->assertSame( Screen::DATAVIEWS_VERSION, $settings['dataviews'] );
-		$this->assertArrayHasKey( 'undoLimit', $settings, 'The largest change the screen promises to undo (T85).' );
-		$this->assertTrue( null === $settings['undoLimit'] || is_int( $settings['undoLimit'] ) );
+		$this->assertArrayNotHasKey( 'undoLimit', $settings, 'T111: undo is streamed, so the screen promises it for any change a selection can hold.' );
 		$this->assertSame( 25, $settings['settings']['rows_per_page'] );
 
 		$styles = bulkcat_test_admin_calls( 'wp_enqueue_style' );

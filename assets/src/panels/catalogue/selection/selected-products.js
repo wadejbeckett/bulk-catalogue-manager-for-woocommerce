@@ -7,6 +7,13 @@
  *
  * A slide-over like the details drawer: focus moves into it, Tab stays in
  * it, Escape or Close returns focus to what opened it.
+ *
+ * The list, the pager and every Remove belong to the page on screen (T110):
+ * the pager names the page listed, not the one asked for; while another page
+ * or a changed selection is read, the rows stay as they were but cannot be
+ * removed, the pager waits (aria-disabled, so it keeps the focus) and a
+ * status line says which page is loading; an answer for a page or a
+ * selection no longer asked for is dropped.
  */
 import { useEffect, useRef, useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
@@ -47,8 +54,9 @@ export default function SelectedProducts( {
 } ) {
 	const panel = useRef( null );
 	const heading = useRef( null );
+	// The page asked for, and what is listed: { key, page, answer } of the last answer kept.
 	const [ page, setPage ] = useState( 1 );
-	const [ answer, setAnswer ] = useState( null );
+	const [ shown, setShown ] = useState( null );
 	const [ failed, setFailed ] = useState( false );
 	const [ removing, setRemoving ] = useState( 0 );
 	const { inspectPage } = selection;
@@ -69,12 +77,13 @@ export default function SelectedProducts( {
 	useEffect( () => {
 		let live = true;
 		if ( ! key ) {
-			setAnswer( null );
+			setShown( null );
 			return undefined;
 		}
 		setFailed( false );
 		inspectPage( page, perPage )
 			.then( ( next ) => {
+				// An answer for a page or a selection no longer asked for is dropped.
 				if ( ! live ) {
 					return;
 				}
@@ -83,7 +92,7 @@ export default function SelectedProducts( {
 					setPage( pages );
 					return;
 				}
-				setAnswer( next );
+				setShown( { key, page, answer: next } );
 			} )
 			.catch( () => live && setFailed( true ) );
 		return () => {
@@ -143,9 +152,21 @@ export default function SelectedProducts( {
 		}
 	};
 
+	const answer = shown?.answer || null;
 	const items = answer?.items || [];
 	const pages = Number( answer?.pagination?.total_pages ) || 1;
+	const listed = shown?.page || 1;
+	// Another page, or the selection changed: what is listed is not what was asked for.
+	const loading =
+		!! key && !! shown && ( shown.key !== key || shown.page !== page );
 	const busy = selection.status !== 'idle';
+	const canPrevious = ! loading && listed > 1;
+	const canNext = ! loading && listed < pages;
+	const turn = ( to, allowed ) => {
+		if ( allowed ) {
+			setPage( to );
+		}
+	};
 	return (
 		<>
 			{ /* A pointer-only shortcut; Close and Escape do the same. */ }
@@ -219,7 +240,13 @@ export default function SelectedProducts( {
 						</p>
 					) }
 					{ items.length > 0 && (
-						<ul className="bulkcat-review__list">
+						<ul
+							className={
+								'bulkcat-review__list' +
+								( loading ? ' is-loading' : '' )
+							}
+							aria-busy={ loading || undefined }
+						>
 							{ items.map( ( item ) => {
 								const available = item.state === 'available';
 								const name = available
@@ -251,7 +278,9 @@ export default function SelectedProducts( {
 											type="button"
 											className="button button-small"
 											disabled={
-												busy || removing === item.id
+												busy ||
+												loading ||
+												removing === item.id
 											}
 											onClick={ () => remove( item ) }
 											aria-label={
@@ -288,11 +317,14 @@ export default function SelectedProducts( {
 								'bulk-catalogue-manager-for-woocommerce'
 							) }
 						>
+							{ /* aria-disabled, not disabled: a button pressed keeps the focus while its page loads and at the last page. */ }
 							<button
 								type="button"
 								className="button button-small"
-								disabled={ page <= 1 }
-								onClick={ () => setPage( page - 1 ) }
+								aria-disabled={ ! canPrevious }
+								onClick={ () =>
+									turn( listed - 1, canPrevious )
+								}
 							>
 								{ __(
 									'Previous',
@@ -306,15 +338,15 @@ export default function SelectedProducts( {
 										'Page %1$s of %2$s',
 										'bulk-catalogue-manager-for-woocommerce'
 									),
-									formatNumber( page ),
+									formatNumber( listed ),
 									formatNumber( pages )
 								) }
 							</span>
 							<button
 								type="button"
 								className="button button-small"
-								disabled={ page >= pages }
-								onClick={ () => setPage( page + 1 ) }
+								aria-disabled={ ! canNext }
+								onClick={ () => turn( listed + 1, canNext ) }
 							>
 								{ __(
 									'Next',
@@ -323,6 +355,18 @@ export default function SelectedProducts( {
 							</button>
 						</nav>
 					) }
+					<p className="bulkcat-review__loading" role="status">
+						{ loading && shown.page !== page
+							? sprintf(
+									/* translators: %s: the number of the page being loaded, such as "3". */
+									__(
+										'Loading page %s…',
+										'bulk-catalogue-manager-for-woocommerce'
+									),
+									formatNumber( page )
+								)
+							: '' }
+					</p>
 					<p>
 						<button
 							type="button"

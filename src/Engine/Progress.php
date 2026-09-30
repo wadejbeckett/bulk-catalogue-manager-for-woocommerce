@@ -235,7 +235,7 @@ final class Progress {
 	 * any other batch.
 	 *
 	 * @param array<string, mixed> $batch Typed batch row.
-	 * @return array{undo_of: int, label: string, forced: ?bool, counts: ?array<string, int>, left_alone: ?int, not_undone: ?int, sentence: string, reasons: list<array{message: string, count: int, sentence: string}>}|null
+	 * @return array{undo_of: int, label: string, forced: ?bool, counts: ?array<string, int>, left_alone: ?int, not_undone: ?int, sentence: string, reasons: list<array{message: string, count: int, sentence: string}>, by_type: ?array{products: int, variations: int}}|null
 	 */
 	public static function undo_summary( array $batch ): ?array {
 		if ( 'undo' !== ( $batch['source'] ?? '' ) || null === ( $batch['undo_of'] ?? null ) ) {
@@ -286,6 +286,13 @@ final class Progress {
 			'not_undone' => null === $snapshot ? null : (int) ( $snapshot['not_undone'] ?? 0 ),
 			'sentence'   => $sentence,
 			'reasons'    => $reasons,
+			// T114: how many products and variations the undo holds, null for an undo recorded before it was kept.
+			'by_type'    => is_array( $snapshot['by_type'] ?? null )
+				? [
+					'products'   => (int) ( $snapshot['by_type']['products'] ?? 0 ),
+					'variations' => (int) ( $snapshot['by_type']['variations'] ?? 0 ),
+				]
+				: null,
 		];
 	}
 

@@ -60,6 +60,7 @@ function makeTree() {
 		nodes: NODES,
 		byId: indexTree( NODES ),
 		reload: jest.fn(),
+		recordCreated: jest.fn(),
 		remember: jest.fn(),
 		descriptions: new Map(),
 	};
@@ -80,7 +81,7 @@ describe( 'category manager', () => {
 		delete window.wp;
 	} );
 
-	it( 'creates a category with POST /categories and refreshes the tree', async () => {
+	it( 'hands the confirmed create receipt to its owner exactly once', async () => {
 		const tree = makeTree();
 		const onSaved = jest.fn();
 		apiFetch.mockResolvedValue( {
@@ -117,18 +118,49 @@ describe( 'category manager', () => {
 			url: 'categories',
 			data: { name: 'Caps', description: 'Hats with a peak', parent: 1 },
 		} );
-		expect( tree.reload ).toHaveBeenCalled();
-		expect( tree.remember ).toHaveBeenCalledWith(
-			expect.objectContaining( { id: 9 } )
+		expect( tree.recordCreated ).toHaveBeenCalledTimes( 1 );
+		expect( tree.recordCreated ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				id: 9,
+				description: 'Hats with a peak',
+			} ),
+			'Caps'
 		);
+		expect( tree.reload ).not.toHaveBeenCalled();
+		expect( tree.remember ).not.toHaveBeenCalled();
 		expect( onSaved ).toHaveBeenCalledWith(
 			expect.objectContaining( { id: 9, name: 'Caps' } ),
 			expect.objectContaining( { batch_id: 3 } )
 		);
-		expect( speak ).toHaveBeenCalledWith(
-			'Category "Caps" created.',
-			'polite'
+		// The visible receipt owns the polite announcement.
+		expect( speak ).not.toHaveBeenCalled();
+	} );
+
+	it.each( [
+		undefined,
+		{},
+		{ id: 0 },
+		{ id: -1 },
+		{ id: 1.5 },
+		{ id: '9' },
+	] )( 'never confirms an incomplete create receipt %p', async ( item ) => {
+		const tree = makeTree();
+		const onSaved = jest.fn();
+		apiFetch.mockResolvedValue( { item } );
+		render(
+			<CategoryManager tree={ tree } canManage onSaved={ onSaved } />
 		);
+		fireEvent.change( field( 'Name' ), { target: { value: 'Caps' } } );
+		await act( async () => {
+			fireEvent.click(
+				screen.getByRole( 'button', { name: 'Add category' } )
+			);
+		} );
+		expect( tree.recordCreated ).not.toHaveBeenCalled();
+		expect( tree.reload ).not.toHaveBeenCalled();
+		expect( tree.remember ).not.toHaveBeenCalled();
+		expect( speak ).not.toHaveBeenCalled();
+		expect( onSaved ).toHaveBeenCalledTimes( 1 );
 	} );
 
 	it( 'edits with PATCH /categories/{id}, sending only what changed', async () => {
@@ -158,7 +190,8 @@ describe( 'category manager', () => {
 			url: 'categories/2',
 			data: { name: 'Tees', slug: 'tees' },
 		} );
-		expect( tree.reload ).toHaveBeenCalled();
+		expect( tree.reload ).toHaveBeenCalledTimes( 1 );
+		expect( tree.recordCreated ).not.toHaveBeenCalled();
 		expect( speak ).toHaveBeenCalledWith(
 			'Category "Tees" saved.',
 			'polite'

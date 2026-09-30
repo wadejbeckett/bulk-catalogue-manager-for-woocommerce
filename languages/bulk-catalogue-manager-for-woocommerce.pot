@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-09-30T09:42:45+00:00\n"
+"POT-Creation-Date: 2026-09-30T18:45:35+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -2848,11 +2848,6 @@ msgstr ""
 msgid "Category \"%s\" saved."
 msgstr ""
 
-#. translators: %s: a category name.
-#, js-format
-msgid "Category \"%s\" created."
-msgstr ""
-
 msgid "The category could not be saved. Try again in a moment."
 msgstr ""
 
@@ -2944,6 +2939,32 @@ msgid "Press Shift+F10 for a category’s actions, including Move to…, or F2 t
 msgstr ""
 
 msgid "No categories match this search."
+msgstr ""
+
+#. translators: %s: a category name.
+#, js-format
+msgid "Category “%s” was created. Refreshing the category list…"
+msgstr ""
+
+#. translators: %s: a category name.
+#, js-format
+msgid "Category “%s” was created."
+msgstr ""
+
+#. translators: %s: a category name.
+#, js-format
+msgid "Category “%s” was created, but is missing from the refreshed category list. You do not need to create it again."
+msgstr ""
+
+#. translators: %s: a category name.
+#, js-format
+msgid "Category “%s” was created, but the category list could not refresh."
+msgstr ""
+
+msgid "Refresh category list"
+msgstr ""
+
+msgid "The server returned an incomplete save response. Check the category list before creating it again."
 msgstr ""
 
 #. translators: %s: a category name.

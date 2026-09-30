@@ -138,27 +138,23 @@ export default function CategoryManager( {
 				? await updateCategory( categoryId, data )
 				: await createCategory( data );
 			const item = answer?.item || {};
-			tree.remember?.( item );
-			tree.reload();
-			announce(
-				categoryId
-					? sprintf(
-							/* translators: %s: a category name. */
-							__(
-								'Category "%s" saved.',
-								'bulk-catalogue-manager-for-woocommerce'
-							),
-							item.name || form.name.trim()
-						)
-					: sprintf(
-							/* translators: %s: a category name. */
-							__(
-								'Category "%s" created.',
-								'bulk-catalogue-manager-for-woocommerce'
-							),
-							item.name || form.name.trim()
-						)
-			);
+			if ( categoryId ) {
+				tree.remember?.( item );
+				tree.reload();
+				announce(
+					sprintf(
+						/* translators: %s: a category name. */
+						__(
+							'Category "%s" saved.',
+							'bulk-catalogue-manager-for-woocommerce'
+						),
+						item.name || form.name.trim()
+					)
+				);
+			} else if ( Number.isInteger( item.id ) && item.id > 0 ) {
+				// The tree owner refreshes once and its visible notice announces the result.
+				tree.recordCreated( item, form.name.trim() );
+			}
 			setSaving( false );
 			onSaved( item, answer );
 		} catch ( failure ) {

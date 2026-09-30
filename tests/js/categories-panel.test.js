@@ -684,6 +684,56 @@ describe( 'category panel', () => {
 		);
 	} );
 
+	it( 'shows a redacted refresh failure alongside the retained tree', async () => {
+		const { rerender } = await renderPanel();
+		routes[ 'GET categories' ] = () => Promise.reject( html500() );
+		rerender(
+			<CategoryPanel settings={ MANAGER } query={ { search: 'new' } } />
+		);
+		const sentence = 'The categories could not be loaded.';
+		const box = (
+			await screen.findByText( sentence, { selector: 'p' } )
+		).closest( '.components-notice' );
+		expectPlain( box, sentence );
+		expect( item( 'Clothing' ) ).toBeTruthy();
+		fireEvent.click(
+			within( box ).getByRole( 'button', { name: 'Show details' } )
+		);
+		expect(
+			within( box ).getByText( 'internal_server_error · HTTP 500' )
+		).toBeTruthy();
+		expectNoRawText();
+		routes[ 'GET categories' ] = () => Promise.resolve( TREE );
+		fireEvent.click( screen.getByRole( 'button', { name: 'Try again' } ) );
+		await waitFor( () =>
+			expect( screen.queryByText( sentence ) ).toBeNull()
+		);
+	} );
+
+	it.each( [ 'Cancel', 'Close', 'Escape' ] )(
+		'returns create-dialog focus to the opener on %s',
+		async ( action ) => {
+			await renderPanel();
+			const opener = screen.getByRole( 'button', {
+				name: '+ Add category',
+			} );
+			// A pointer activation must restore focus even when the browser did not focus the button.
+			fireEvent.click( opener );
+			const dialog = screen.getByRole( 'dialog' );
+			if ( action === 'Escape' ) {
+				fireEvent.keyDown( dialog, { key: 'Escape', keyCode: 27 } );
+			} else {
+				fireEvent.click(
+					within( dialog ).getByRole( 'button', { name: action } )
+				);
+			}
+			await waitFor( () =>
+				expect( screen.queryByRole( 'dialog' ) ).toBeNull()
+			);
+			expect( document.activeElement ).toBe( opener );
+		}
+	);
+
 	it( 'says a JSON error that is not the plugin’s own refusal in plain words (ticket 11)', async () => {
 		routes[ 'PATCH categories/6' ] = () => Promise.reject( coreJson() );
 		await renderPanel();

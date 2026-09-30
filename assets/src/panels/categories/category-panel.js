@@ -20,6 +20,7 @@ import { __, sprintf } from '@wordpress/i18n';
 import { announce } from './announce';
 import CategoryManager from './category-manager';
 import CategoryTree, { ALL } from './category-tree';
+import CreationNotice, { IncompleteCreationNotice } from './creation-notice';
 import ErrorNotice, { errorMessage } from './error-notice';
 import MoveDialog from './move-dialog';
 import { moveCategory, updateCategory } from './requests';
@@ -124,6 +125,7 @@ export default function CategoryPanel( {
 		value?.includeChildren ?? true
 	);
 	const [ editing, setEditing ] = useState( null );
+	const [ incompleteCreation, setIncompleteCreation ] = useState( false );
 	const [ moving, setMoving ] = useState( null );
 	const [ failure, setFailure ] = useState( null );
 	// T75: when Move to… closes, focus goes back into the tree — the moved
@@ -306,6 +308,25 @@ export default function CategoryPanel( {
 	const setCollapsed = ( collapsed ) =>
 		setLayout( ( current ) => ( { ...current, collapsed } ) );
 
+	const addCategory = ( event ) => {
+		// Some pointer activations do not focus buttons. Give the native Modal
+		// a reliable focus-return target before it captures the active element.
+		event.currentTarget.focus();
+		setEditing( { id: null } );
+	};
+
+	const saved = ( item ) => {
+		if ( ! editing.id ) {
+			const complete = Number.isInteger( item?.id ) && item.id > 0;
+			setIncompleteCreation( ! complete );
+			if ( ! complete ) {
+				// A prior receipt cannot confirm this new, incomplete response.
+				tree.dismissCreation();
+			}
+		}
+		setEditing( null );
+	};
+
 	const sentence = categorySentence( value, tree.byId );
 
 	const body = ( toggle = null ) => (
@@ -359,6 +380,18 @@ export default function CategoryPanel( {
 					onChange={ toggleChildren }
 				/>
 			</div>
+			{ incompleteCreation ? (
+				<IncompleteCreationNotice
+					onRetry={ tree.reload }
+					loading={ tree.loading }
+				/>
+			) : (
+				<CreationNotice
+					creation={ tree.creation }
+					onRetry={ tree.reload }
+					onDismiss={ tree.dismissCreation }
+				/>
+			) }
 			{ failure && (
 				<ErrorNotice
 					error={ failure.error }
@@ -367,7 +400,7 @@ export default function CategoryPanel( {
 				/>
 			) }
 			<div className="bulkcat-cat-panel__scroll">
-				{ tree.error && ! tree.loaded && (
+				{ tree.error && (
 					<div className="bulkcat-cat-panel__state">
 						<ErrorNotice
 							error={ tree.error }
@@ -376,12 +409,14 @@ export default function CategoryPanel( {
 								'bulk-catalogue-manager-for-woocommerce'
 							) }
 						/>
-						<Button variant="secondary" onClick={ tree.reload }>
-							{ __(
-								'Try again',
-								'bulk-catalogue-manager-for-woocommerce'
-							) }
-						</Button>
+						{ ! tree.creation && ! incompleteCreation && (
+							<Button variant="secondary" onClick={ tree.reload }>
+								{ __(
+									'Try again',
+									'bulk-catalogue-manager-for-woocommerce'
+								) }
+							</Button>
+						) }
 					</div>
 				) }
 				{ ! tree.loaded && ! tree.error && (
@@ -401,10 +436,7 @@ export default function CategoryPanel( {
 							) }
 						</p>
 						{ canManage && (
-							<Button
-								variant="primary"
-								onClick={ () => setEditing( { id: null } ) }
-							>
+							<Button variant="primary" onClick={ addCategory }>
 								{ __(
 									'Create your first category',
 									'bulk-catalogue-manager-for-woocommerce'
@@ -437,7 +469,7 @@ export default function CategoryPanel( {
 						<Button
 							variant="secondary"
 							size="compact"
-							onClick={ () => setEditing( { id: null } ) }
+							onClick={ addCategory }
 						>
 							{ __(
 								'+ Add category',
@@ -479,7 +511,7 @@ export default function CategoryPanel( {
 						tree={ tree }
 						categoryId={ editing.id }
 						canManage={ canManage }
-						onSaved={ () => setEditing( null ) }
+						onSaved={ saved }
 						onCancel={ () => setEditing( null ) }
 					/>
 				</Modal>

@@ -456,6 +456,28 @@ def check_engine(p: Any) -> None:
               and (undo.get("counts") or {}).get("conflicted") == 0)
         row(p, "scheduled-never-off", ok, f"status {statuses(p, [pid])[str(pid)]} event kept {event(p, pid) == when}; preview {sample.get('note')} {sample.get('context')}; journal {rows}; undo conflicted {(undo.get('counts') or {}).get('conflicted')}")
 
+    def scheduled_reads() -> None:
+        # T114: a scheduled product (post status future) reads, validates and filters as Scheduled,
+        # and Status is never set to it.
+        fx = upsert(p, [simple("sched-read", "future", date=7 * 86400)])
+        pid = fx["sched-read"]["id"]
+        fields = p.http("manager", "GET", "/fields").json() or {}
+        status = next((f for f in fields.get("fields", []) if f.get("key") == "status"), {})
+        labels = {c.get("value"): c.get("label") for c in status.get("choices", [])}
+        schema_enum = (status.get("schema") or {}).get("enum") or []
+        listed = p.http("manager", "GET", "/products", params=[("search", SKU + "sched-read"), ("fields[]", "status")]).json() or {}
+        found = next((i for i in listed.get("items", []) if i.get("id") == pid), {})
+        valid = p.wp_eval(
+            "$f = \\BulkCatalogueManager\\Fields\\Registry::instance()->get( 'status' ); "
+            "bulkcat_out( true === rest_validate_value_from_schema( 'future', $f->rest_schema(), 'status' ) );"
+        )
+        filtered = p.http("manager", "GET", "/products", params=[("status[operator]", "isAny"), ("status[value][]", "future"), ("search", SKU + "sched-read")]).json() or {}
+        refused = p.http("manager", "PATCH", f"/products/{pid}", body={"status": "future"})
+        ok = (labels.get("future") == "Scheduled" and "future" not in (status.get("writableChoices") or []) and "future" in schema_enum
+              and found.get("status") == "future" and valid is True and [i.get("id") for i in filtered.get("items", [])] == [pid]
+              and refused.status == 400 and statuses(p, [pid])[str(pid)] == "future")
+        row(p, "scheduled-reads-scheduled", ok, f"label {labels.get('future')}, writable {status.get('writableChoices')}; row {found.get('status')} valid {valid}; filter {[i.get('id') for i in filtered.get('items', [])]}; PATCH future {refused.brief()}")
+
     def single_control() -> None:
         fx = upsert(p, [simple("to-private"), simple("to-pending")])
         a, b = fx["to-private"]["id"], fx["to-pending"]["id"]
@@ -472,7 +494,7 @@ def check_engine(p: Any) -> None:
                      ("d3-repeat", repeat_off_on), ("d3-second-published", second_published), ("d4-edits-survive", edits_survive),
                      ("d5-conflict", conflicts), ("d6-slug-reserved", slug_reserved), ("d7-variation-choices", variation_choices),
                      ("d8-duplicate", duplicate), ("d9-bin", bin_restore), ("d10-scheduled", scheduled), ("d10-schedule-passed", schedule_passed),
-                     ("scheduled-never-off", never_off_scheduled), ("e10-single-control", single_control)]:
+                     ("scheduled-never-off", never_off_scheduled), ("scheduled-reads-scheduled", scheduled_reads), ("e10-single-control", single_control)]:
         guard(p, name, fn)
     p.offon_state = state
 

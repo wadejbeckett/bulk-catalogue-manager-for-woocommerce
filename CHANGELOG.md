@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.1.0] - 2026-09-30
 
 <!-- external-action-contract (branch codex/external-action-contract): T104–T109 entries -->
 ### Added: actions from other plugins (external action contract, version 1)
@@ -69,7 +69,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A preview or change that fails on the server says so in plain words; the server's own error page is no longer shown as text.
 - `GET /batches/{id}` no longer counts conflicts by default (`reversibility.conflicts` is `null`): counting builds the whole undo plan, and the screen polls this read until a change finishes. Pass `reversibility=count` to count them. The screen follows a change with bounded retries (after 10, 20, 40, 80 and 160 seconds, about five minutes in all; six failed reads) and then says it could not check, with **Check again**, which starts one follow however often it is pressed.
 - Undo works at any size: the undo plan is walked a page of products at a time instead of held whole, so previewing, counting and confirming the undo of the largest change a selection can hold (100,000 products and variations) fit a 128 MB web request, and the queued undo runs in bounded memory. The screen offers undo for every change again; the interim size limit (and its "not yet supported from this screen" wording) is gone.
-- A queued undo checks each product again just before writing it, for every field the change touched: a product changed after the undo was confirmed is left alone and reported ("changed again after the undo was started"), unless **Revert anyway** was chosen.
+- A queued undo checks each product again just before writing it, for every field the change touched: a product changed after the undo was confirmed is left alone whole and reported as changed since, as a status changed since is, unless **Revert anyway** was chosen. A product whose status step is found changed since is left alone whole too: its other fields are not put back either. A retried chunk finishes what it had written instead of calling it changed.
+- An undo that put nothing back (every product changed again before it reached them) no longer marks the change undone: the change keeps its status and can still be undone with **Revert anyway**, and History says nothing was put back.
+- A product moved to the bin after a change or an undo was confirmed is left alone when its turn comes, reported as no longer available (skipped, not failed), as a product in the bin at preview is; it is never written.
+- A scheduled product shows its status as **Scheduled** in the table, the detail panel and the Status filter, instead of a blank or an unknown value. Status can still only be set to Published, Draft, Pending review or Private; WordPress schedules a product by its date.
 - Every tab says a failed request in plain words: History, Categories, Settings, saved views and the CSV export now show the plugin's own sentence or their own, never a server's error page or message as text (its code and HTTP status stay behind **Show details**, in Settings too).
 - Counts that can include variations say so: **Select all** names variations in the Variations mode and items where products and variations are listed together; **Apply** and its confirmation count products and variations apart ("Apply to 1,200 products and 50 variations"); the result of a change counts items unless only products changed, and History's rows count items.
 

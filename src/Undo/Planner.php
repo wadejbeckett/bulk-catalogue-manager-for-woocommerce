@@ -325,23 +325,24 @@ final class Planner {
 	/**
 	 * A check of each of these objects as it stands at the moment it is
 	 * asked (T111): their journal rows in the batch are read once, and each
-	 * call loads the object then and plans it — every field the batch
-	 * changed, status and its Off record included — so an undo item is
-	 * checked again just before its chunk writes it. The closure answers the
-	 * plan item, or null for an object the batch did not journal.
+	 * call plans the object then — every field the batch changed, status and
+	 * its Off record included — from the object given (the one the writer
+	 * has just loaded, so an undo item is checked just before it is written)
+	 * or loaded afresh. The closure answers the plan item, or null for an
+	 * object the batch did not journal.
 	 *
 	 * @param int       $batch_id   The batch undone.
 	 * @param list<int> $object_ids Objects, at most ChangeRepository::MAX_OBJECTS.
 	 * @param int|null  $user_id    The person undoing; the current user by default.
-	 * @return \Closure( int ): ?array<string, mixed>
+	 * @return \Closure( int, ?object ): ?array<string, mixed>
 	 */
 	public function checker( int $batch_id, array $object_ids, ?int $user_id = null ): \Closure {
 		$user_id ??= get_current_user_id();
 		$ids       = self::ids( $object_ids );
 		$journals  = $this->journals( $batch_id, $ids );
 		Memory::next_page( $ids, false );
-		return function ( int $object_id ) use ( $journals, $user_id, $batch_id ): ?array {
-			return isset( $journals[ $object_id ] ) ? $this->item( $object_id, $journals[ $object_id ], $user_id, $batch_id ) : null;
+		return function ( int $object_id, ?object $subject = null ) use ( $journals, $user_id, $batch_id ): ?array {
+			return isset( $journals[ $object_id ] ) ? $this->item( $object_id, $journals[ $object_id ], $user_id, $batch_id, $subject ) : null;
 		};
 	}
 
@@ -439,7 +440,8 @@ final class Planner {
 			return self::not_reversible( self::ALREADY_UNDONE, self::undone_sentence() );
 		}
 		foreach ( $this->batches->undos_of( $batch['batch_id'] ) as $undo ) {
-			if ( in_array( $undo['status'], self::UNDO_DONE, true ) ) {
+			// An undo that put nothing back (every item changed again first) undid nothing (F2).
+			if ( in_array( $undo['status'], self::UNDO_DONE, true ) && 0 < ( $undo['changed_items'] ?? 1 ) ) {
 				return self::not_reversible( self::ALREADY_UNDONE, self::undone_sentence(), [ 'undo_batch_id' => $undo['batch_id'] ] );
 			}
 			if ( in_array( $undo['status'], self::UNDO_RUNNING, true ) ) {
@@ -594,9 +596,10 @@ final class Planner {
 	 * @param array{type: string, fields: array<string, array{expected: mixed, target: mixed}>} $journal   Its journal.
 	 * @param int                                                                                   $user_id   The person undoing.
 	 * @param int                                                                                   $batch_id  The batch undone.
+	 * @param object|null                                                                           $loaded    The object, already loaded; loaded here when null.
 	 * @return array{object_id: int, object_type: string, operations: list<array{action: string, args: array<string, mixed>}>, state: string, code: string, reason: string, conflicts: list<array{field: string, expected: mixed, current: mixed}>}
 	 */
-	private function item( int $object_id, array $journal, int $user_id, int $batch_id = 0 ): array {
+	private function item( int $object_id, array $journal, int $user_id, int $batch_id = 0, ?object $loaded = null ): array {
 		$type      = $journal['type'];
 		$variation = 'variation' === $type;
 		if ( [] === $journal['fields'] ) {
@@ -613,7 +616,7 @@ final class Planner {
 			return self::skipped( $object_id, $type, self::CANNOT_RESTORE, __( 'This change cannot be undone here, so it was left alone.', 'bulk-catalogue-manager-for-woocommerce' ) );
 		}
 
-		$subject = self::load( $object_id );
+		$subject = $loaded ?? self::load( $object_id );
 		if ( null === $subject || self::is_variation( $subject ) !== $variation ) {
 			return self::skipped(
 				$object_id,

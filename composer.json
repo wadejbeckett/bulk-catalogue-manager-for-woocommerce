@@ -2,7 +2,7 @@
     "name": "wadejbeckett/bulk-catalogue-manager-for-woocommerce",
     "description": "Manage many WooCommerce products at once from one simple screen. Every bulk change is previewed first, recorded and reversible.",
     "type": "wordpress-plugin",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "license": "GPL-3.0-or-later",
     "require": {
         "php": ">=8.1"

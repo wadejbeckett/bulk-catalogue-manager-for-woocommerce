@@ -175,7 +175,7 @@ final class BatchAcceptance {
 			$summary['ids'] = $selection->ids;
 		}
 		// T107: the provider manifest commits with the header, the items and the receipt.
-		return $factory->record_scope( $claims, $operations, $scope['objects'], $summary, null, $scope['missing'], null === $provider ? null : Manifest::build( $provider, $operations ) );
+		return $factory->record_scope( $claims, $operations, $scope['objects'], $summary, $scope['missing'], null === $provider ? null : Manifest::build( $provider, $operations ) );
 	}
 
 	/**

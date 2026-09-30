@@ -650,6 +650,46 @@ try {
 	$check( $id === $again['batch_id'] && true === $again['replayed'] && 1 === count( $pending( $id ) ), 'The retry answers it, still queued once.' );
 	$check( 'complete' === $drain( $id ) && 151.0 === $price( $l ), 'It runs once.' );
 
+	// R. A product moved to the bin after Apply, or after an undo was confirmed, is unavailable when its chunk
+	// reaches it: skipped with the plain reason, never written, never failed.
+	$m      = $simple( '160' );
+	$binned = $simple( '170' );
+	$case   = $prepare( [ $m, $binned ], $set( '161' ) );
+	$id     = $accepted( $service->apply( $case['submit'] ), 'Apply two.' )['batch_id'];
+	wp_trash_post( $binned );
+	$status = $drain( $id );
+	$report = ( new BatchRepository() )->find( $id );
+	$item   = $wpdb->get_row( $wpdb->prepare( 'SELECT state, message FROM %i WHERE batch_id = %d AND object_id = %d', $tables['items'], $id, $binned ), ARRAY_A );
+	$check( 'partial' === $status && 1 === $report['changed_items'] && 0 === $report['failed_items'] && 2 === $report['done_items'], 'Apply: one changed, none failed.' );
+	$check( 'skipped' === $item['state'] && BatchFactory::unavailable_reason() === $item['message'], 'Apply: the binned product is skipped as unavailable.' );
+	$check( 161.0 === $price( $m ) && 170.0 === $price( $binned ) && 'trash' === get_post_status( $binned ), 'Apply: the binned product was not written.' );
+	$n     = $simple( '180' );
+	$later = $simple( '190' );
+	$case  = $prepare( [ $n, $later ], $set( '181' ) );
+	$id    = $accepted( $service->apply( $case['submit'] ), 'Apply two to undo.' )['batch_id'];
+	$check( 'complete' === $drain( $id ) && 181.0 === $price( $n ) && 181.0 === $price( $later ), 'Both changed.' );
+	$plan = ( new Planner() )->plan( $id, 1 );
+	$undo = $accepted(
+		$service->undo(
+			$accepted(
+				$service->issue(
+					'batch.undo',
+					[
+						'batch_id'  => $id,
+						'plan_hash' => $plan->hash(),
+					]
+				),
+				'Undo grant.'
+			)
+		),
+		'Undo accepted.'
+	);
+	wp_trash_post( $later );
+	$status = $drain( $undo['batch_id'] );
+	$item   = $wpdb->get_row( $wpdb->prepare( 'SELECT state, message FROM %i WHERE batch_id = %d AND object_id = %d', $tables['items'], $undo['batch_id'], $later ), ARRAY_A );
+	$check( 'partial' === $status && 'skipped' === $item['state'] && BatchFactory::unavailable_reason() === $item['message'], 'Undo: the binned product is skipped as unavailable.' );
+	$check( 180.0 === $price( $n ) && 181.0 === $price( $later ), 'Undo: the rest was put back; the binned product was not written.' );
+
 	echo wp_json_encode( [ 'checks' => $checks ], JSON_PRETTY_PRINT ) . "\n";
 } finally {
 	foreach ( array_keys( $restore ) as $id ) {

@@ -21,6 +21,7 @@ use BulkCatalogueManager\External\RunContext;
 use BulkCatalogueManager\Fields\Field;
 use BulkCatalogueManager\Operations\Operation;
 use BulkCatalogueManager\Operations\Registry;
+use BulkCatalogueManager\Operations\RestoreStatus;
 use BulkCatalogueManager\Operations\Result;
 use BulkCatalogueManager\Operations\Validator;
 use BulkCatalogueManager\Operations\WriteRefused;
@@ -136,6 +137,11 @@ final class Writer {
 	public const CHANGED_KIND = 'bulkcat_changed_kind';
 
 	/**
+	 * Code of an object moved to the bin after it was chosen: left alone as unavailable.
+	 */
+	public const UNAVAILABLE = 'bulkcat_unavailable';
+
+	/**
 	 * The code for a value WooCommerce's own setter refused.
 	 */
 	public const INVALID = 'bulkcat_invalid_value';
@@ -181,6 +187,14 @@ final class Writer {
 	private array $externals = [];
 
 	/**
+	 * A check each loaded object must pass before anything is computed for
+	 * it (T111: an undo item planned again as it stands), or null.
+	 *
+	 * @var \Closure|null
+	 */
+	private ?\Closure $guard = null;
+
+	/**
 	 * Build over the operation registry.
 	 *
 	 * @param Registry      $operations  Resolves each step's action and the field registry.
@@ -214,6 +228,22 @@ final class Writer {
 	 */
 	public static function for_batch( Registry $operations, Journal $journal, int $batch_id, ?int $user_id = null ): self {
 		return new self( $operations, null, $user_id, $journal, $batch_id );
+	}
+
+	/**
+	 * Check each object before it is written (T111, SPEC §9.4): the check
+	 * gets the id and the object just loaded, after the retry guard (an
+	 * object this batch already journalled is finished as before, never
+	 * checked), and answers null to go on or the plain reason the object was
+	 * changed since; then the object is left alone whole, as a step's own
+	 * "changed since" leaves it (RestoreStatus): nothing is computed or
+	 * written for it, and every step is journalled skipped with that reason.
+	 *
+	 * @param \Closure|null $guard fn( int $id, object $product ): ?string, or null for none.
+	 */
+	public function guarded( ?\Closure $guard ): self {
+		$this->guard = $guard;
+		return $this;
 	}
 
 	/**
@@ -347,14 +377,31 @@ final class Writer {
 			$this->journal( $id, null, '', self::entries( $results, $steps ), [], null );
 			return new WriteOutcome( $id, $results, false );
 		}
+		if ( is_callable( [ $product, 'get_status' ] ) && 'trash' === $product->get_status( 'edit' ) ) {
+			// Moved to the bin since it was chosen (WooCommerce bins a variable product's variations with it):
+			// unavailable, as a member binned before Apply is (T83); skipped, never written, never failed.
+			$before  = $this->before( $product, $steps );
+			$results = array_map( static fn( array $step ): Result => Result::skipped( (string) $step[1]['field'], $before[ $step[1]['field'] ] ?? null, BatchFactory::unavailable_reason(), self::UNAVAILABLE ), $steps );
+			$this->journal( $id, $product, '', self::entries( $results, $steps ), $before, null );
+			return new WriteOutcome( $id, $results, false );
+		}
 
 		$modified  = null === $this->journal ? '' : $this->journal->modified_gmt( $product );
 		$validator = $this->validator ?? $this->new_validator();
 		$before    = $this->before( $product, $steps );
-		$entries   = [];
+		$reason    = null === $this->guard ? null : ( $this->guard )( $id, $product );
+		if ( is_string( $reason ) && '' !== $reason ) {
+			return $this->left_alone( $id, $product, $steps, $reason, $modified, $before );
+		}
+		$entries = [];
 		foreach ( $steps as [ $operation, $args ] ) {
 			$skip_already = (bool) ( $args['skip_already'] ?? true );
 			$checked      = $validator->check( $product, $operation->compute( $product, $args ), $args );
+			if ( Result::SKIPPED === $checked[0]->state() && RestoreStatus::CHANGED_SINCE === $checked[0]->code() ) {
+				// One product, one outcome (Main Build's F1): a step changed since leaves the whole object alone,
+				// what earlier steps set on it unsaved.
+				return $this->left_alone( $id, $product, $steps, $checked[0]->reason(), $modified, $before );
+			}
 			// What follows the step (the Off record, T89) is decided before anything is applied.
 			$follow = $validator->follow( $operation, $product, $checked[0], $args );
 			foreach ( $checked as $index => $result ) {
@@ -735,6 +782,25 @@ final class Writer {
 	private static function done_before( array $steps ): array {
 		$reason = __( 'This product was already updated by this change, so it was not changed again.', 'bulk-catalogue-manager-for-woocommerce' );
 		return array_map( static fn( array $step ): Result => Result::skipped( $step[1]['field'], null, $reason, Journal::ALREADY_DONE ), $steps );
+	}
+
+	/**
+	 * Leave an object alone whole because it was changed since (T111, F1):
+	 * every step skipped with the one reason and code
+	 * RestoreStatus::CHANGED_SINCE, journalled with the values it holds,
+	 * nothing saved.
+	 *
+	 * @param int                                                $id       The object.
+	 * @param object                                             $product  It, as loaded.
+	 * @param list<array{0: Operation, 1: array<string, mixed>}> $steps    Resolved steps.
+	 * @param string                                             $reason   The plain reason.
+	 * @param string                                             $modified Its modified time, for the journal.
+	 * @param array<string, mixed>                               $before   Each step's field value as loaded.
+	 */
+	private function left_alone( int $id, object $product, array $steps, string $reason, string $modified, array $before ): WriteOutcome {
+		$results = array_map( static fn( array $step ): Result => Result::skipped( (string) $step[1]['field'], $before[ $step[1]['field'] ] ?? null, $reason, RestoreStatus::CHANGED_SINCE ), $steps );
+		$this->journal( $id, $product, $modified, self::entries( $results, $steps ), $before, null );
+		return new WriteOutcome( $id, $results, false );
 	}
 
 	/**

@@ -258,7 +258,10 @@ final class Progress {
 		$conflicted = (int) ( $counts['conflicted'] ?? 0 );
 		$total      = (int) ( $counts['revertible'] ?? 0 ) + $conflicted;
 		$sentence   = '';
-		if ( null !== $left && $left > 0 ) {
+		if ( 'partial' === ( $batch['status'] ?? '' ) && 0 === (int) ( $batch['changed_items'] ?? 0 ) && 0 === (int) ( $batch['failed_items'] ?? 0 ) && (int) ( $batch['done_items'] ?? 0 ) > 0 ) {
+			// Main Build's F2: every item was changed again before the undo reached it; the batch stays undoable.
+			$sentence = __( 'Nothing was put back, because everything had been changed again by the time the undo reached it. The change can still be undone: choose Revert anyway to put the old values back regardless.', 'bulk-catalogue-manager-for-woocommerce' );
+		} elseif ( null !== $left && $left > 0 ) {
 			$sentence = sprintf(
 				/* translators: 1: number of products left alone, such as "12"; 2: number of products the batch changed, such as "1,284". */
 				_n( '%1$s of %2$s was changed again after this batch and was left alone.', '%1$s of %2$s were changed again after this batch and were left alone.', $left, 'bulk-catalogue-manager-for-woocommerce' ),

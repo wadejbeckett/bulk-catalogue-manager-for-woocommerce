@@ -460,6 +460,24 @@ final class ChunkRunnerTest extends TestCase {
 		);
 	}
 
+	public function test_a_member_moved_to_the_bin_after_apply_is_unavailable_and_never_written(): void {
+		// Found on the external write path and true here: a product binned between Apply and its chunk
+		// is unavailable at write time, as a member binned before Apply is: skipped, not written, not failed.
+		$ids   = self::products( 3 );
+		$store = new RunnerStore( self::BATCH, $ids, $this->increase(), self::USER );
+		$GLOBALS['bulkcat_test']['products'][1002]->props['status'] = 'trash';
+
+		$this->assertSame( 'partial', $this->runner()->run( self::BATCH ) );
+		$this->assertSame( '10', self::price( 1002 ), 'Not written.' );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['products'][1002]->saves );
+		$this->assertSame( [ '11.00', '11.00' ], [ self::price( 1001 ), self::price( 1003 ) ] );
+		$item = array_values( array_filter( $store->items_of( self::BATCH ), static fn( array $row ): bool => 1002 === $row['object_id'] ) )[0];
+		$this->assertSame( 'skipped', $item['state'], 'Skipped, never failed.' );
+		$this->assertSame( \BulkCatalogueManager\Engine\BatchFactory::unavailable_reason(), $item['message'] );
+		$this->assertContains( [ 1002, 'regular_price', '10', '10', 'skipped' ], $store->journal() );
+		$this->assertSame( 0, $store->batch()['failed_items'] );
+	}
+
 	public function test_a_run_writes_only_the_items_it_still_holds(): void {
 		$ids   = self::products( 3 );
 		$store = new RunnerStore( self::BATCH, $ids, $this->increase(), self::USER );

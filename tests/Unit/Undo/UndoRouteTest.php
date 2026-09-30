@@ -567,13 +567,15 @@ final class UndoRouteTest extends TestCase {
 		$this->assertSame( '20.00', self::prop( 1002, 'regular_price' ), 'The rest revert.' );
 		$this->assertSame( [ 5 ], self::prop( 1002, 'category_ids' ) );
 		$items = array_column( $this->store->items_of( $created['batch_id'] ), null, 'object_id' );
+		// One rule and one sentence with the status guard (RestoreStatus): the plan's "changed since".
 		$this->assertSame( 'skipped', $items[1001]['state'] );
-		$this->assertSame( 'This product was changed again after the undo was started, so it was left alone.', $items[1001]['message'] );
+		$this->assertSame( 'This product was changed since this batch ran, so it is left alone unless you choose Revert anyway.', $items[1001]['message'] );
 		$this->assertSame( 'skipped', $items[2001]['state'] );
-		$this->assertSame( 'This variation was changed again after the undo was started, so it was left alone.', $items[2001]['message'] );
+		$this->assertSame( 'This variation was changed since this batch ran, so it is left alone unless you choose Revert anyway.', $items[2001]['message'] );
 		$this->assertSame( 'done', $items[1002]['state'] );
-		$this->assertSame( [], array_values( array_filter( $this->store->changes, static fn( array $row ): bool => $created['batch_id'] === $row['batch_id'] && in_array( $row['object_id'], [ 1001, 2001 ], true ) ) ), 'Nothing journalled for them: nothing was written.' );
-		$this->assertSame( 'undone', $this->store->batch()['status'], 'A partial undo still undoes the batch; its report says what was left.' );
+		$left = array_values( array_filter( $this->store->changes, static fn( array $row ): bool => $created['batch_id'] === $row['batch_id'] && in_array( $row['object_id'], [ 1001, 2001 ], true ) ) );
+		$this->assertSame( [ 'skipped' ], array_values( array_unique( array_column( $left, 'result' ) ) ), 'Journalled as left alone, every field, nothing applied.' );
+		$this->assertSame( 'undone', $this->store->batch()['status'], 'A partial undo that put something back undoes the batch; its report says what was left.' );
 	}
 
 	public function test_a_stock_quantity_changed_after_the_undo_started_is_left_alone(): void {
@@ -601,6 +603,99 @@ final class UndoRouteTest extends TestCase {
 		$this->assertSame( 'complete', $this->run_batch( $created['batch_id'] ) );
 		$this->assertSame( '10.00', self::prop( 1001, 'regular_price' ), 'Revert anyway puts it back regardless.' );
 		$this->assertSame( '', self::prop( 1001, 'sale_price' ) );
+	}
+
+	public function test_a_status_changed_since_under_revert_anyway_leaves_the_whole_product_alone(): void {
+		// Main Build's F1: a product whose status step is changed since is left alone whole: its
+		// price is not put back either (one product, one outcome), even under Revert anyway.
+		$record               = \BulkCatalogueManager\Availability\OffRecord::create( 1001, 'publish', '2026-09-23T08:01:00Z', self::BATCH )->to_json();
+		$this->store->changes = [];
+		$this->change( 1001, 'regular_price', '10.00', '11.00' );
+		$this->change( 1001, 'status', 'publish', 'draft' );
+		$this->change( 1001, 'availability_off', '', $record );
+		$product                                    = self::product(
+			1001,
+			[
+				'status'        => 'draft',
+				'regular_price' => '11.00',
+			]
+		);
+		$product->meta['_bulkcat_availability_off'] = $record;
+		$this->store->sync();
+		$undo_id = $this->undo( self::BATCH, true )['batch_id'];
+		// Switched On and Off again by a later batch before the undo's chunk runs.
+		$product->meta['_bulkcat_availability_off'] = \BulkCatalogueManager\Availability\OffRecord::create( 1001, 'publish', '2026-09-24T09:00:00Z', 40 )->to_json();
+
+		$this->run_batch( $undo_id );
+		$this->assertSame( '11.00', self::prop( 1001, 'regular_price' ), 'The price is not put back on a product left alone.' );
+		$this->assertSame( 'draft', self::prop( 1001, 'status' ) );
+		$this->assertSame( [], $product->saves, 'Nothing written for it.' );
+		$item = array_values( array_filter( $this->store->items_of( $undo_id ), static fn( array $row ): bool => 1001 === $row['object_id'] ) )[0];
+		$this->assertSame( 'skipped', $item['state'] );
+		$this->assertSame( 'This product was changed since this batch ran, so it is left alone unless you choose Revert anyway.', $item['message'] );
+		$rows = array_values( array_filter( $this->store->changes, static fn( array $row ): bool => $undo_id === $row['batch_id'] ) );
+		$this->assertSame( [ 'skipped' ], array_values( array_unique( array_column( $rows, 'result' ) ) ) );
+	}
+
+	public function test_an_undo_that_put_nothing_back_leaves_the_batch_undoable_and_says_so(): void {
+		// Main Build's F2: every item changed after the undo was confirmed: nothing is put back, so
+		// the batch is not marked undone and Revert anyway stays available.
+		$created = $this->undo();
+		foreach ( [
+			1001 => '15.00',
+			1002 => '25.00',
+			2001 => '7.00',
+		] as $id => $price ) {
+			$GLOBALS['bulkcat_test']['products'][ $id ]->props['regular_price'] = $price;
+		}
+
+		$this->run_batch( $created['batch_id'] );
+		$this->assertSame( 'complete', $this->store->batch()['status'], 'Back to the status it had, not undone.' );
+		$report = $this->ok( self::dispatch( 'GET', '/batches/' . $created['batch_id'] ) );
+		$this->assertSame( 0, $report['changed_items'] );
+		$this->assertSame( 'Nothing was put back, because everything had been changed again by the time the undo reached it. The change can still be undone: choose Revert anyway to put the old values back regardless.', $report['undo']['sentence'] );
+		$this->assertSame( 'nothing_applied', $report['reversibility']['reason'], 'The empty undo itself has nothing to put back.' );
+		$this->assertNull( $this->ok( self::dispatch( 'GET', '/batches/12' ) )['undone_by'] ?? null, 'History names no one as having undone it.' );
+		$again = $this->preview();
+		$this->assertSame( 3, $again['counts']['conflicted'], 'It can be previewed again, every object changed since.' );
+		$forced = $this->undo( self::BATCH, true, self::UUID_2 );
+		$this->assertSame( 3, $forced['total_items'], 'Revert anyway is still available.' );
+	}
+
+	public function test_a_retried_undo_chunk_finishes_what_it_wrote_and_calls_nothing_changed_since(): void {
+		// Review of T111: a chunk killed after saving an item but before marking it runs again; the
+		// item holds the undo's own value now, which is no change made by someone else.
+		$created = $this->undo();
+		$undo_id = $created['batch_id'];
+		$ops     = [];
+		foreach ( $this->store->items_of( $undo_id ) as $row ) {
+			if ( 1001 === $row['object_id'] ) {
+				$ops = json_decode( (string) $row['operations'], true );
+			}
+		}
+		// The killed run wrote 1001 through the writer and journal, and died before marking it.
+		\BulkCatalogueManager\Engine\Writer::for_batch( new Registry( new Fields() ), \BulkCatalogueManager\Engine\Journal::from_settings( ( new Registry( new Fields() ) )->fields(), new Settings( [] ) ), $undo_id, self::USER )->write( 1001, $ops, 'product' );
+		$this->assertSame( '10.00', self::prop( 1001, 'regular_price' ) );
+
+		$this->assertSame( 'complete', $this->run_batch( $undo_id ), 'Nothing is reported changed since.' );
+		$items = array_column( $this->store->items_of( $undo_id ), null, 'object_id' );
+		$this->assertSame( 'done', $items[1001]['state'] );
+		$this->assertCount( 1, $GLOBALS['bulkcat_test']['products'][1001]->saves, 'Saved once, not again.' );
+		$this->assertSame( 'undone', $this->store->batch()['status'] );
+	}
+
+	public function test_a_product_moved_to_the_bin_after_the_undo_started_is_unavailable_and_never_written(): void {
+		$created = $this->undo();
+		$GLOBALS['bulkcat_test']['products'][1002]->props['status'] = 'trash';
+
+		$this->assertSame( 'partial', $this->run_batch( $created['batch_id'] ) );
+		$this->assertSame( '22.00', self::prop( 1002, 'regular_price' ), 'Not put back.' );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['products'][1002]->saves );
+		$this->assertSame( '10.00', self::prop( 1001, 'regular_price' ) );
+		$items = array_column( $this->store->items_of( $created['batch_id'] ), null, 'object_id' );
+		$this->assertSame( 'skipped', $items[1002]['state'] );
+		$this->assertSame( BatchFactory::unavailable_reason(), $items[1002]['message'] );
+		$this->assertSame( 'undone', $this->store->batch()['status'], 'The rest was put back.' );
 	}
 
 	public function test_skipped_objects_are_reported_with_their_reason(): void {

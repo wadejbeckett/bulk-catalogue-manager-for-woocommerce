@@ -33,6 +33,7 @@ final class RegistryTest extends TestCase {
 		'bulkcat_request_gone'             => 'refusal for an accepted change whose batch is no longer in the history; nothing is created again',
 		'bulkcat_schedule_'                => 'prefix of the MySQL named lock that serialises queueing one batch\'s first chunk; nothing is stored',
 		'bulkcat_changed_kind'             => 'result code for a batch item whose object became the other kind (product or variation) after it was chosen; it is not written',
+		'bulkcat_unavailable'              => 'result code for a batch item whose object was moved to the bin after it was chosen; it is not written',
 		'bulkcat_invalid_'                 => 'prefix of the settings error codes passed to add_settings_error()',
 		'bulkcat_capability'               => 'filter hook for the capability the screen and read routes need',
 		'bulkcat_forbidden'                => 'REST refusal code for a user without that capability',

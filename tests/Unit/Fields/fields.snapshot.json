@@ -60,6 +60,7 @@
                 "type": "string",
                 "enum": [
                     "publish",
+                    "future",
                     "draft",
                     "pending",
                     "private"
@@ -89,6 +90,10 @@
                         "label": "Published"
                     },
                     {
+                        "value": "future",
+                        "label": "Scheduled"
+                    },
+                    {
                         "value": "draft",
                         "label": "Draft"
                     },
@@ -116,6 +121,12 @@
                     "label": "Published",
                     "hidesProduct": false,
                     "hidesAs": null
+                },
+                {
+                    "value": "future",
+                    "label": "Scheduled",
+                    "hidesProduct": true,
+                    "hidesAs": "off_site"
                 },
                 {
                     "value": "draft",

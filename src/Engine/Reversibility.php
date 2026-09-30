@@ -32,7 +32,8 @@ defined( 'ABSPATH' ) || exit;
  *   - `pruned`: retention pruning removed its journal (`pruned_gmt` set;
  *     the pruner sets it, T60). The batch stays listed;
  *   - `already_undone`: its status is `undone`, or an undo batch naming it
- *     in `undo_of` has completed (BatchRepository::undone_by()). A redo is
+ *     in `undo_of` has completed or finished partial (BatchRepository::
+ *     undone_by()). A redo is
  *     an undo of that undo batch, so the undo batch itself stays reversible;
  *   - `outside_retention`: it was created more than *Keep history for* days
  *     ago (Settings::history_days(); never when kept indefinitely);

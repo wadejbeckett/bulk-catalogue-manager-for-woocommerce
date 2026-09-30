@@ -6,7 +6,7 @@ Tested up to: 7.1
 Requires PHP: 8.1
 WC requires at least: 11.1
 WC tested up to: 11.1
-Stable tag: 1.0.0
+Stable tag: 1.1.0
 License: GPL-3.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -135,6 +135,13 @@ Yes. Each site keeps its own history and settings, and deleting the plugin with 
 
 == Changelog ==
 
+= 1.1.0 =
+* Keep an exact selection across searches and pages; preview and apply it safely, with truthful progress and undo.
+* Status switches products Off and restores their previous status when switched On.
+* Export selected products and chosen columns as CSV, with optional identifiers for re-import.
+* Separately installed add-ons can provide actions through the same preview, history and undo.
+* Stream undo plans at any supported catalogue size; improve keyboard access and clear outcome messages.
+
 = 1.0.0 =
 * First release.
 * Catalogue table and grid with search, filters, sorting, column choice, saved views and CSV export.
@@ -148,7 +155,7 @@ Yes. Each site keeps its own history and settings, and deleting the plugin with 
 
 == Upgrade Notice ==
 
-= Unreleased =
+= 1.1.0 =
 Needs WooCommerce 11.1 or later. Status becomes the Off/On switch: Draft saves a product's status, Published restores it. Before going back to 1.0.0, let every change finish and switch Off products On: 1.0.0's Published ignores the saved status.
 
 = 1.0.0 =

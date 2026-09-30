@@ -265,6 +265,19 @@ function putBackPhrase( count, byType ) {
 export function undoneNotice( what, report, redo = false ) {
 	const count =
 		Number( report?.changed_items ) || Number( report?.done_items ) || 0;
+	if (
+		report?.changed_items !== undefined &&
+		0 === Number( report.changed_items )
+	) {
+		// Main Build's F2: an undo that put nothing back is not called done; the route says why.
+		return (
+			report?.undo?.sentence ||
+			__(
+				'Nothing was put back.',
+				'bulk-catalogue-manager-for-woocommerce'
+			)
+		);
+	}
 	const putBack = sprintf(
 		/* translators: %s: what was put back, such as "1,248 products", "20 variations" or "1,268 items". */
 		_n(

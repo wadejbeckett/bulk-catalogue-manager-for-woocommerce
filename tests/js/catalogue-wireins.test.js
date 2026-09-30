@@ -280,8 +280,9 @@ describe( 'registry flags in place of client lists', () => {
 	} );
 
 	it( 'reads the hiding choices from hidesProduct and hidesAs', () => {
+		// T114: a scheduled product is off the site until its date too; it is never written.
 		expect( offSiteChoices( fields ) ).toEqual( {
-			status: [ 'draft', 'pending' ],
+			status: [ 'future', 'draft', 'pending' ],
 		} );
 		const hiding = hidingChoices( fields );
 		expect( Object.keys( hiding )[ 0 ] ).toBe( 'visible_on_site' );

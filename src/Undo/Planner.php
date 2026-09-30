@@ -19,6 +19,7 @@ use BulkCatalogueManager\Data\Schema;
 use BulkCatalogueManager\Engine\Memory;
 use BulkCatalogueManager\Engine\Preview;
 use BulkCatalogueManager\Engine\Writer;
+use BulkCatalogueManager\External;
 use BulkCatalogueManager\Fields\Field;
 use BulkCatalogueManager\Fields\Values;
 use BulkCatalogueManager\Operations\Registry as Actions;
@@ -82,6 +83,22 @@ defined( 'ABSPATH' ) || exit;
  * through wc_format_decimal() at the shop's precision (10 and 10.00 are the
  * same price, '' and 0.00 are not), a whole number with null distinct from
  * 0, a switch as a boolean, a term list as a sorted id list, text exactly.
+ *
+ * External values (T108, docs/EXTENSIONS.md §8.4): a batch whose manifest
+ * names a provider that is not registered is refused 409 with `data.reason:
+ * provider_missing` ("… is not active now. Turn it on again …"), and one
+ * that is registered but not available or of an unsupported contract with
+ * `provider_unavailable` and the add-on's own reason after the core's
+ * words (External\Blocked). Otherwise, for each external field of an object,
+ * after the core's own edit check: the capability of every action of the
+ * provider that changes the field and the provider's authorise() (a refusal
+ * skips the object, `cannot_edit`); the value read now (an Unknown skips,
+ * `cannot_restore`); the journalled values converted to the field's format
+ * (older through upgrade(); newer, or an upgrade error, skips
+ * `cannot_restore`); a conflict, listed with the expected and current values
+ * as the provider describes them, when the value now is not the value the
+ * batch left; and the internal step `restore_external` putting the oldest
+ * old value back.
  */
 final class Planner {
 	/**
@@ -97,6 +114,16 @@ final class Planner {
 	public const UNDO_IN_PROGRESS = 'undo_in_progress';
 	public const RETENTION        = 'retention';
 	public const PRUNED           = 'pruned';
+
+	/**
+	 * Refusal reason: the add-on that made the change is registered but cannot run now (T108).
+	 */
+	public const PROVIDER_UNAVAILABLE = External\Blocked::UNAVAILABLE;
+
+	/**
+	 * Refusal reason: the add-on that made the change is not registered (not active).
+	 */
+	public const PROVIDER_MISSING = External\Blocked::MISSING;
 
 	/*
 	 * Item codes: why an item is conflicted or skipped.
@@ -333,6 +360,11 @@ final class Planner {
 		if ( null !== ( $batch['pruned_gmt'] ?? null ) ) {
 			return self::not_reversible( self::PRUNED, self::pruned_sentence() );
 		}
+		$manifest = $batch['extensions'] ?? null;
+		$blocked  = is_array( $manifest ) ? External\Manifest::blocked( $manifest, $this->actions->providers(), false ) : null;
+		if ( null !== $blocked ) {
+			return self::not_reversible( $blocked->kind, $blocked->undo_sentence() );
+		}
 		$days    = $this->settings->history_days();
 		$created = strtotime( $batch['created_gmt'] . ' UTC' );
 		if ( $days > 0 && false !== $created && $created < ( $this->now )() - $days * self::DAY ) {
@@ -435,7 +467,22 @@ final class Planner {
 		$operations = [];
 		$conflicts  = [];
 		$restore    = null;
+		$external   = false;
+		$checked    = [];
 		foreach ( $journal['fields'] as $key => $values ) {
+			if ( External\Providers::is_external( (string) $key ) ) {
+				// T108: an add-on's value goes back through its provider.
+				$part = $this->external( $subject, (string) $key, $values, $user_id, $batch_id, $checked );
+				if ( isset( $part['skip'] ) ) {
+					return self::skipped( $object_id, $type, $part['skip'][0], $part['skip'][1] );
+				}
+				if ( null !== $part['conflict'] ) {
+					$conflicts[] = $part['conflict'];
+				}
+				$operations[] = $part['operation'];
+				$external     = true;
+				continue;
+			}
 			$field = $fields->get( $key );
 			if ( null === $field || $field->read_only() ) {
 				return self::skipped( $object_id, $type, self::CANNOT_RESTORE, __( 'One of the values this batch changed can no longer be changed here, so this product was left alone.', 'bulk-catalogue-manager-for-woocommerce' ) );
@@ -474,7 +521,7 @@ final class Planner {
 			}
 		}
 
-		$normalised = [] === $operations ? [] : $this->actions->validate_list( $operations, null !== $restore );
+		$normalised = [] === $operations ? [] : $this->actions->validate_list( $operations, null !== $restore || $external );
 		if ( $normalised instanceof \WP_Error ) {
 			return self::skipped( $object_id, $type, self::CANNOT_RESTORE, $normalised->get_error_message() );
 		}
@@ -500,6 +547,90 @@ final class Planner {
 			'reason'      => '',
 			'conflicts'   => [],
 		];
+	}
+
+	/**
+	 * One external field of an object (T108): the step putting it back and
+	 * its conflict, or why the object is skipped.
+	 *
+	 * @param object                                  $subject  The loaded object.
+	 * @param string                                  $key      Field key.
+	 * @param array{expected: mixed, target: mixed}   $values   The journalled envelopes.
+	 * @param int                                     $user_id  The person undoing.
+	 * @param int                                     $batch_id The batch undone.
+	 * @param array<string, bool>                     $checked  Providers whose permission is already checked for this object.
+	 * @return array{operation?: array<string, mixed>, conflict?: array<string, mixed>|null, skip?: array{0: string, 1: string}}
+	 */
+	private function external( object $subject, string $key, array $values, int $user_id, int $batch_id, array &$checked ): array {
+		$provider = $this->actions->providers()->owning( $key );
+		if ( null === $provider || null === $provider->field( $key ) ) {
+			return [ 'skip' => [ self::CANNOT_RESTORE, __( 'One of the values this batch changed can no longer be changed here, so this product was left alone.', 'bulk-catalogue-manager-for-woocommerce' ) ] ];
+		}
+		$context = new External\RunContext( External\RunContext::UNDO, $user_id, $batch_id );
+		$object  = External\ProductSubject::of( $subject, $provider );
+		$step    = [
+			'action' => External\RestoreExternal::ID,
+			'args'   => [ 'field' => $key ],
+		];
+		if ( ! ( new External\Computer( $provider, $context ) )->may( $user_id, $step ) ) {
+			return [ 'skip' => [ self::CANNOT_EDIT, External\Refusals::no_permission() ] ];
+		}
+		if ( ! isset( $checked[ $provider->id ] ) ) {
+			$refusal = self::authorise( $provider, $user_id, $object );
+			if ( null !== $refusal ) {
+				return [ 'skip' => [ self::CANNOT_EDIT, $refusal ] ];
+			}
+			$checked[ $provider->id ] = true;
+		}
+		$current = $object->fresh( $key );
+		if ( $current instanceof \BulkCatalogueManager\Extension\Unknown ) {
+			return [ 'skip' => [ self::CANNOT_RESTORE, External\Text::plain( $current->reason(), External\Text::REASON ) ] ];
+		}
+		$expected = External\Envelope::current( $provider, $key, $values['expected'] );
+		$target   = External\Envelope::current( $provider, $key, $values['target'] );
+		if ( $expected instanceof \WP_Error || $target instanceof \WP_Error ) {
+			return [ 'skip' => [ self::CANNOT_RESTORE, __( 'A value this batch changed was saved in a shape the add-on can no longer read, so this product was left alone.', 'bulk-catalogue-manager-for-woocommerce' ) ] ];
+		}
+		$field = $provider->field( $key );
+		try {
+			$same = true === External\Guard::run( $provider->id, 'same', static fn(): mixed => $field?->same( $current, $expected ) );
+		} catch ( External\ProviderFailure $e ) {
+			return [ 'skip' => [ self::CANNOT_RESTORE, External\Refusals::error_sentence() ] ];
+		}
+		return [
+			'operation' => [
+				'action' => External\RestoreExternal::ID,
+				'args'   => [
+					'field' => $key,
+					'value' => $target,
+				],
+			],
+			'conflict'  => $same ? null : [
+				'field'    => $key,
+				'expected' => $provider->describe( $object, $key, $expected ),
+				'current'  => $provider->describe( $object, $key, $current ),
+			],
+		];
+	}
+
+	/**
+	 * The provider's refusal of the person undoing on an object, or null when it allows it.
+	 *
+	 * @param External\Registered     $provider The provider.
+	 * @param int            $user_id  The person undoing.
+	 * @param External\ProductSubject $item     The object.
+	 */
+	private static function authorise( External\Registered $provider, int $user_id, External\ProductSubject $item ): ?string {
+		try {
+			$answer = External\Guard::run( $provider->id, 'authorise', static fn(): mixed => $provider->provider->authorise( $user_id, $item ) );
+		} catch ( External\ProviderFailure $e ) {
+			return External\Refusals::error_sentence();
+		}
+		if ( true === $answer ) {
+			return null;
+		}
+		$reason = $answer instanceof \WP_Error ? External\Text::plain( $answer->get_error_message(), External\Text::REASON ) : '';
+		return '' === $reason ? __( 'The add-on does not allow a change to this product, so it was left alone.', 'bulk-catalogue-manager-for-woocommerce' ) : $reason;
 	}
 
 	/**

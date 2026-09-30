@@ -21,11 +21,15 @@ import {
 } from './confirm';
 import {
 	MAX_OPERATIONS,
+	actionById,
 	fieldByKey,
+	mixedSentence,
+	mixesKinds,
 	offersVariations,
 	operationProblem,
 	settingsValues,
 	toRequestOperations,
+	unavailableReason,
 } from './descriptors';
 import {
 	PREVIEW_STALE,
@@ -147,6 +151,20 @@ export function blockedReason( registry, operations, count, waiting = '' ) {
 				index + 1
 			);
 		}
+		const unavailable = unavailableReason(
+			actionById( registry, operation.action )
+		);
+		if ( unavailable ) {
+			return sprintf(
+				/* translators: 1: the step's position, such as 2; 2: why its action cannot be used now. */
+				__(
+					'Step %1$d: %2$s',
+					'bulk-catalogue-manager-for-woocommerce'
+				),
+				index + 1,
+				unavailable
+			);
+		}
 		const problem = operationProblem( registry, operation );
 		if ( problem ) {
 			return sprintf(
@@ -159,6 +177,10 @@ export function blockedReason( registry, operations, count, waiting = '' ) {
 				problem.reason
 			);
 		}
+	}
+	// T105: one change holds native steps or one add-on's steps, never both.
+	if ( mixesKinds( registry, operations ) ) {
+		return mixedSentence();
 	}
 	return '';
 }
@@ -484,12 +506,20 @@ export default function BulkChangePanel( {
 	];
 	const threshold = values.confirm_threshold ?? DEFAULT_THRESHOLD;
 	const reasons = current
-		? alwaysConfirmReasons(
-				registry,
-				requestOperations,
-				changes,
-				response?.availability || null
-			)
+		? [
+				...new Set( [
+					...alwaysConfirmReasons(
+						registry,
+						requestOperations,
+						changes,
+						response?.availability || null
+					),
+					// An add-on's change that always confirms, or a warning asking for it (T106).
+					...( response?.external?.confirm
+						? response.external.reasons || []
+						: [] ),
+				] ),
+			]
 		: [];
 	const worthKnowing =
 		current &&
@@ -682,6 +712,7 @@ export default function BulkChangePanel( {
 												<ActionChooser
 													registry={ registry }
 													operation={ operation }
+													operations={ operations }
 													index={ index }
 													terms={ terms }
 													onChoose={ ( id, group ) =>

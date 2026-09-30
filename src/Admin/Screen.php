@@ -19,6 +19,7 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Admin;
 
+use BulkCatalogueManager\Operations\Registry as Actions;
 use BulkCatalogueManager\Rest\Access;
 use BulkCatalogueManager\Rest\Routes;
 use BulkCatalogueManager\Settings\Settings;
@@ -230,6 +231,10 @@ final class Screen {
 		echo '<div class="wrap">';
 		printf( '<h1>%s</h1>', esc_html__( 'Bulk Catalogue Manager', 'bulk-catalogue-manager-for-woocommerce' ) );
 		echo '<hr class="wp-header-end">';
+		// An add-on refused at registration (docs/EXTENSIONS.md §3.2): one plain notice each; everything else works.
+		foreach ( Actions::instance()->providers()->refusals() as $refusal ) {
+			printf( '<div class="notice notice-warning"><p>%s</p></div>', esc_html( $refusal['reason'] ) );
+		}
 		if ( ! self::host_supported() ) {
 			printf(
 				'<div class="notice notice-error"><p>%s</p></div>',

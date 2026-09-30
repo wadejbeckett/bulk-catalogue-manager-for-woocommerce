@@ -88,6 +88,24 @@ export function alwaysConfirmReasons(
 		if ( ! action || ! field ) {
 			return;
 		}
+		if ( action.provider ) {
+			// An add-on's action (T105) confirms when it says so, in its own words.
+			if ( action.alwaysConfirm ) {
+				reasons.push(
+					action.confirmReason ||
+						sprintf(
+							/* translators: 1: an action's name, such as "Replace labels"; 2: a number of products, such as "24 products". */
+							__(
+								'%1$s always asks before it changes %2$s.',
+								'bulk-catalogue-manager-for-woocommerce'
+							),
+							action.label,
+							products
+						)
+				);
+			}
+			return;
+		}
 		const sets = Object.prototype.hasOwnProperty.call(
 			operation.args,
 			'value'

@@ -26,6 +26,11 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Operations;
 
+use BulkCatalogueManager\External\ExternalOperation;
+use BulkCatalogueManager\External\Providers;
+use BulkCatalogueManager\External\Refusals;
+use BulkCatalogueManager\External\Registered;
+use BulkCatalogueManager\External\RestoreExternal;
 use BulkCatalogueManager\Fields\Registry as Fields;
 use BulkCatalogueManager\Rest\Refusal;
 
@@ -33,6 +38,21 @@ defined( 'ABSPATH' ) || exit;
 
 /**
  * Every action.
+ *
+ * External providers (T104, docs/EXTENSIONS.md §3.1): the shared registry
+ * fires `bulkcat_register_providers` once per request, the first time it is
+ * built on or after `init`, and keeps the providers that registered
+ * (External\Providers). Built before `init` it holds none and is rebuilt,
+ * with the action fired, the first time it is asked for after `init`. With
+ * no provider nothing else changes.
+ *
+ * External actions (T106): get() and has() also resolve each registered
+ * provider's actions (External\ExternalOperation), validated here like any
+ * step; ids(), descriptors(), to_client() and actions_for() list native
+ * actions only, and external_ids() lists the others. validate_list() refuses,
+ * before any step is validated, a change mixing native steps with a
+ * provider's or two providers' steps (400 `bulkcat_mixed_change`), and an
+ * action of a provider that is not registered (409 `bulkcat_provider_unavailable`).
  */
 final class Registry {
 	/**
@@ -58,7 +78,7 @@ final class Registry {
 	/**
 	 * Actions only the engine itself may list (T90).
 	 */
-	public const INTERNAL = [ RestoreStatus::ID ];
+	public const INTERNAL = [ RestoreStatus::ID, RestoreExternal::ID ];
 
 	/**
 	 * The instance runtime code shares.
@@ -68,6 +88,13 @@ final class Registry {
 	private static ?self $instance = null;
 
 	/**
+	 * Whether the shared instance was built after `init`, with the providers it fired.
+	 *
+	 * @var bool
+	 */
+	private static bool $fired = false;
+
+	/**
 	 * Operations by id, in panel order.
 	 *
 	 * @var array<string, Operation>
@@ -75,20 +102,42 @@ final class Registry {
 	private array $operations = [];
 
 	/**
+	 * The external providers.
+	 *
+	 * @var Providers
+	 */
+	private readonly Providers $providers;
+
+	/**
+	 * External actions by id, provider by provider (T106).
+	 *
+	 * @var array<string, ExternalOperation>
+	 */
+	private array $external = [];
+
+	/**
 	 * Build every action over a field registry. Code outside tests passes no
 	 * list; a test double passes its own operations.
 	 *
 	 * @param Fields               $fields     Field registry the actions resolve their fields from.
 	 * @param list<Operation>|null $operations The operations, or null for every version 1 action.
+	 * @param Providers|null       $providers  The external providers; none by default.
 	 * @throws \LogicException When two operations share an id.
 	 */
-	public function __construct( private readonly Fields $fields, ?array $operations = null ) {
-		foreach ( $operations ?? self::defaults( $fields ) as $operation ) {
+	public function __construct( private readonly Fields $fields, ?array $operations = null, ?Providers $providers = null ) {
+		$this->providers = $providers ?? Providers::none();
+		$list            = $operations ?? [ ...self::defaults( $fields ), new RestoreExternal( $this->providers ) ];
+		foreach ( $list as $operation ) {
 			$id = $operation->describe()->id();
 			if ( isset( $this->operations[ $id ] ) ) {
 				throw new \LogicException( esc_html( sprintf( 'Action "%s" is registered twice.', $id ) ) );
 			}
 			$this->operations[ $id ] = $operation;
+		}
+		foreach ( $this->providers->all() as $provider ) {
+			foreach ( array_keys( $provider->all_described() ) as $id ) {
+				$this->external[ $id ] = new ExternalOperation( $provider, $id );
+			}
 		}
 	}
 
@@ -96,10 +145,18 @@ final class Registry {
 	 * The shared registry, over the shared field registry.
 	 */
 	public static function instance(): self {
-		if ( null === self::$instance ) {
-			self::$instance = new self( Fields::instance() );
+		if ( null === self::$instance || ( ! self::$fired && did_action( 'init' ) > 0 ) ) {
+			self::$fired    = did_action( 'init' ) > 0;
+			self::$instance = new self( Fields::instance(), null, self::$fired ? Providers::fire() : null );
 		}
 		return self::$instance;
+	}
+
+	/**
+	 * The external providers this registry holds (T104).
+	 */
+	public function providers(): Providers {
+		return $this->providers;
 	}
 
 	/**
@@ -133,7 +190,49 @@ final class Registry {
 	 * @param string $id Action id.
 	 */
 	public function has( string $id ): bool {
-		return isset( $this->operations[ $id ] );
+		return isset( $this->operations[ $id ] ) || isset( $this->external[ $id ] );
+	}
+
+	/**
+	 * Every registered external action id, provider by provider (T106).
+	 *
+	 * @return list<string>
+	 */
+	public function external_ids(): array {
+		return array_keys( $this->external );
+	}
+
+	/**
+	 * The kinds of change a list's steps make, each once (T107): '' for
+	 * native steps, else a provider id. A list the writer is given holds one
+	 * kind; more than one means it mixes kinds.
+	 *
+	 * @param array<mixed> $operations An operation list.
+	 * @return list<string>
+	 */
+	public function kinds( array $operations ): array {
+		$kinds = [];
+		foreach ( $operations as $step ) {
+			$kinds[ is_array( $step ) ? self::kind( $step ) : '' ] = true;
+		}
+		return array_map( 'strval', array_keys( $kinds ) );
+	}
+
+	/**
+	 * The provider of a change with external steps, or null for a native one
+	 * (a normalised list holds one provider's steps at most). An internal
+	 * external step names its provider through its field.
+	 *
+	 * @param array<mixed> $operations A normalised operation list.
+	 */
+	public function external_provider( array $operations ): ?Registered {
+		foreach ( $operations as $step ) {
+			$kind = is_array( $step ) ? self::kind( $step ) : '';
+			if ( '' !== $kind ) {
+				return $this->providers->get( $kind );
+			}
+		}
+		return null;
 	}
 
 	/**
@@ -142,7 +241,7 @@ final class Registry {
 	 * @param string $id Action id.
 	 */
 	public function get( string $id ): ?Operation {
-		return $this->operations[ $id ] ?? null;
+		return $this->operations[ $id ] ?? $this->external[ $id ] ?? null;
 	}
 
 	/**
@@ -223,6 +322,19 @@ final class Registry {
 			);
 		}
 
+		$kinds = [];
+		foreach ( $operations as $entry ) {
+			$kinds[ is_array( $entry ) ? self::kind( $entry ) : '' ] = true;
+		}
+		if ( count( $kinds ) > 1 ) {
+			// T106: one change holds native steps or one provider's steps, never both.
+			return Refusals::mixed();
+		}
+		$external = (string) array_key_first( $kinds );
+		if ( '' !== $external && null === $this->providers->get( $external ) ) {
+			return Refusals::missing();
+		}
+
 		$valid = [];
 		foreach ( $operations as $index => $entry ) {
 			$step = $index + 1;
@@ -241,6 +353,21 @@ final class Registry {
 			}
 			$args  = $entry['args'] ?? [];
 			$field = $args['field'] ?? null;
+			if ( $operation instanceof ExternalOperation || $operation instanceof RestoreExternal ) {
+				$validation = $operation->validate( $args );
+				$error      = $validation->error();
+				if ( null !== $error ) {
+					$data = (array) $error->get_error_data();
+					return in_array( (int) ( $data['status'] ?? 400 ), [ 400 ], true )
+						? self::step_refusal( $step, $count, (string) $error->get_error_code(), $error->get_error_message(), $data )
+						: $error;
+				}
+				$valid[] = [
+					'action' => $entry['action'],
+					'args'   => $validation->args(),
+				];
+				continue;
+			}
 			if ( is_string( $field ) && '' !== $field && ! $operation->describe()->accepts( $field ) ) {
 				$refusal = $operation instanceof BaseOperation
 					? $operation->field_refusal( $field )
@@ -258,6 +385,22 @@ final class Registry {
 			];
 		}
 		return $valid;
+	}
+
+	/**
+	 * The kind of change a step makes (T106): '' for a native action, else
+	 * the provider id its action (or, for an internal external step, its
+	 * field) names.
+	 *
+	 * @param array<mixed> $step A step as submitted.
+	 */
+	private static function kind( array $step ): string {
+		$action = is_string( $step['action'] ?? null ) ? $step['action'] : '';
+		if ( Providers::is_external( $action ) ) {
+			return (string) Providers::owner( $action );
+		}
+		$field = is_array( $step['args'] ?? null ) && is_string( $step['args']['field'] ?? null ) ? $step['args']['field'] : '';
+		return Providers::is_external( $field ) ? (string) Providers::owner( $field ) : '';
 	}
 
 	/**

@@ -12,6 +12,13 @@
  * BatchesController, behind Access::can_read; a missing batch answers 404
  * `bulkcat_not_found`.
  *
+ * External values (T108, docs/EXTENSIONS.md §8.3): a row whose field starts
+ * `x_` takes its field label from its batch's provider manifest and its old
+ * and new values from the text journalled with them, never the raw value
+ * and never the provider, so it stays readable after the add-on has gone;
+ * without a manifest the field reads "A value from an add-on that is not
+ * active". Manifests are read once per page (prime_manifests()).
+ *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
  */
@@ -24,6 +31,9 @@ use BulkCatalogueManager\Availability\OffRecord;
 use BulkCatalogueManager\Data\BatchRepository;
 use BulkCatalogueManager\Data\ChangeRepository;
 use BulkCatalogueManager\Data\Schema;
+use BulkCatalogueManager\External\Envelope;
+use BulkCatalogueManager\External\Manifest;
+use BulkCatalogueManager\External\Providers;
 use BulkCatalogueManager\Fields\Registry as Fields;
 
 defined( 'ABSPATH' ) || exit;
@@ -36,6 +46,13 @@ final class BatchChangesController implements ReadController {
 	 * The route, under Access::REST_NAMESPACE.
 	 */
 	public const ROUTE = '/batches/(?P<id>[\d]+)/changes';
+
+	/**
+	 * Provider manifests read so far, by batch id; null for a batch without one (T108).
+	 *
+	 * @var array<int, array<string, mixed>|null>
+	 */
+	private array $manifests = [];
 
 	/**
 	 * Build over the repositories.
@@ -141,6 +158,7 @@ final class BatchChangesController implements ReadController {
 	public function rows( int $batch_id, ?array $results, int $page, int $per_page, bool $count = true ): array {
 		$rows = $this->changes->page( $batch_id, $page, $per_page, $results );
 		self::prime_names( $rows );
+		$this->prime_manifests( $rows );
 		return [
 			'items' => array_map( [ $this, 'change' ], $rows ),
 			'total' => $count ? $this->changes->page_count( $batch_id, $results ) : 0,
@@ -162,6 +180,29 @@ final class BatchChangesController implements ReadController {
 	}
 
 	/**
+	 * Read the provider manifests of a page's batches in one go (T108), for
+	 * the pages with an external row.
+	 *
+	 * @param list<array<string, mixed>> $rows Typed journal rows.
+	 */
+	public function prime_manifests( array $rows ): void {
+		$missing = [];
+		foreach ( $rows as $row ) {
+			$batch = (int) ( $row['batch_id'] ?? 0 );
+			if ( Providers::is_external( (string) $row['prop'] ) && ! array_key_exists( $batch, $this->manifests ) ) {
+				$missing[ $batch ] = true;
+			}
+		}
+		if ( [] === $missing ) {
+			return;
+		}
+		$found = $this->batches->manifests( array_keys( $missing ) );
+		foreach ( array_keys( $missing ) as $batch ) {
+			$this->manifests[ $batch ] = $found[ $batch ] ?? null;
+		}
+	}
+
+	/**
 	 * One journal row as the feed shows it (and, with its batch, the audit log).
 	 *
 	 * @param array<string, mixed> $row Typed journal row.
@@ -169,6 +210,14 @@ final class BatchChangesController implements ReadController {
 	 */
 	public function change( array $row ): array {
 		$field = $this->fields->get( $row['prop'] );
+		$label = null === $field ? $row['prop'] : $field->label();
+		if ( Providers::is_external( (string) $row['prop'] ) ) {
+			// An add-on's value reads from the batch's manifest and the text journalled with it (T108).
+			$this->prime_manifests( [ $row ] );
+			$label            = Manifest::field_label( $this->manifests[ (int) ( $row['batch_id'] ?? 0 ) ] ?? null, (string) $row['prop'] ) ?? self::gone_label();
+			$row['old_value'] = Envelope::text( $row['old_value'] );
+			$row['new_value'] = Envelope::text( $row['new_value'] );
+		}
 		if ( OffRecord::FIELD === $row['prop'] ) {
 			// The Off record reads as the status it saved and when (SPEC §9.4); the journal keeps the JSON.
 			$row['old_value'] = OffRecord::describe( $row['old_value'] );
@@ -180,7 +229,7 @@ final class BatchChangesController implements ReadController {
 			'object_type' => $row['object_type'],
 			'name'        => self::name( $row['object_id'], $row['object_type'] ),
 			'field'       => $row['prop'],
-			'field_label' => null === $field ? $row['prop'] : $field->label(),
+			'field_label' => $label,
 			'old_value'   => $row['old_value'],
 			'new_value'   => $row['new_value'],
 			'result'      => $row['result'],
@@ -196,6 +245,13 @@ final class BatchChangesController implements ReadController {
 			),
 			'applied_gmt' => $row['applied_gmt'],
 		];
+	}
+
+	/**
+	 * The field label of an add-on's value whose batch keeps no manifest (T108).
+	 */
+	public static function gone_label(): string {
+		return __( 'A value from an add-on that is not active', 'bulk-catalogue-manager-for-woocommerce' );
 	}
 
 	/**

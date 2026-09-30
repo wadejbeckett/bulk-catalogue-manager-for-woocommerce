@@ -309,9 +309,14 @@ final class UndoController implements Controller {
 	 */
 	private function field( string $key ): array {
 		$field = $this->fields->get( $key );
+		$label = null === $field ? $key : $field->label();
+		if ( \BulkCatalogueManager\External\Providers::is_external( $key ) ) {
+			// T108: an add-on's field by its label (a plan exists only while its provider is active); never its key.
+			$label = \BulkCatalogueManager\Operations\Registry::instance()->providers()->owning( $key )?->field_meta( $key )['label'] ?? BatchChangesController::gone_label();
+		}
 		return [
 			'field'       => $key,
-			'field_label' => null === $field ? $key : $field->label(),
+			'field_label' => $label,
 		];
 	}
 

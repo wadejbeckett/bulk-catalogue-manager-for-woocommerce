@@ -438,10 +438,10 @@ final class BatchFactory {
 		$prepared = $this->undo_scope( $plan, $force );
 		if ( is_wp_error( $prepared ) ) {
 			return $prepared; }
-		[ $undo_of, $previous, $objects, $outline, $snapshot ] = $prepared;
+		[ $undo_of, $previous, $objects, $outline, $snapshot, $manifest ] = $prepared;
 
 		try {
-			$batch_id = $this->batches->create( $uuid, $user_id, 'undo', array_values( $outline ), $snapshot, count( $objects ), $undo_of );
+			$batch_id = $this->batches->create( $uuid, $user_id, 'undo', array_values( $outline ), $snapshot, count( $objects ), $undo_of, null, $manifest );
 			try {
 				$this->batches->materialise_items( $batch_id, $objects );
 			} catch ( \RuntimeException $e ) {
@@ -534,7 +534,9 @@ final class BatchFactory {
 			'materialised'    => count( $objects ),
 		];
 
-		return [ $undo_of, $previous, $objects, $outline, $snapshot ];
+		// T108: an undo batch copies its source's provider manifest, with each provider's version now.
+		$manifest = is_array( $original['extensions'] ?? null ) ? \BulkCatalogueManager\External\Manifest::refreshed( $original['extensions'], $this->actions->providers() ) : null;
+		return [ $undo_of, $previous, $objects, $outline, $snapshot, $manifest ];
 	}
 
 	/**
@@ -551,11 +553,12 @@ final class BatchFactory {
 	 * @param array<string,mixed>            $snapshot    The selection summary the header keeps.
 	 * @param int|null                       $undo_of     The batch an undo undoes.
 	 * @param list<array{0: int, 1: string}> $unavailable Unavailable members, as [ object_id, object_type ].
+	 * @param array|null                     $extensions  The provider manifest of an external change (T107), or null.
 	 * @return array{batch_id: int, status: string, total_items: int, replayed: bool}
 	 * @throws \RuntimeException When the items are not all recorded.
 	 */
-	public function record_scope( array $claims, array $operations, array $objects, array $snapshot, ?int $undo_of = null, array $unavailable = [] ): array {
-		$id    = $this->batches->create( $claims['uuid'], $claims['owner'], null === $undo_of ? 'bulk' : 'undo', $operations, $snapshot, count( $objects ), $undo_of );
+	public function record_scope( array $claims, array $operations, array $objects, array $snapshot, ?int $undo_of = null, array $unavailable = [], ?array $extensions = null ): array {
+		$id    = $this->batches->create( $claims['uuid'], $claims['owner'], null === $undo_of ? 'bulk' : 'undo', $operations, $snapshot, count( $objects ), $undo_of, null, $extensions );
 		$plain = [];
 		$own   = [];
 		foreach ( $objects as $entry ) {

@@ -80,6 +80,17 @@ final class RegistryTest extends TestCase {
 		'bulkcat_view_not_found'           => 'REST refusal code for a view id not in the current user\'s bulkcat_views',
 		'bulkcat_availability_conflict'    => 'result and refusal code for Published on a product whose status was changed elsewhere while Off (SPEC §5.5); nothing is stored under it',
 		'bulkcat_changed_since'            => 'result code of a queued undo item whose product changed after the undo was planned (SPEC §9.4); nothing is stored under it',
+		'bulkcat_register_providers'       => 'action hook external providers register on (docs/EXTENSIONS.md §3.1); fired once per request, nothing is stored',
+		'bulkcat_provider_incompatible'    => 'registration refusal for a provider that breaks the external action contract; it contributes nothing',
+		'bulkcat_provider_late'            => 'registration refusal for a provider registered after bulkcat_register_providers finished',
+		'bulkcat_provider_unavailable'     => 'refusal and result code for a change whose provider is missing or unavailable (409); nothing is stored under it',
+		'bulkcat_mixed_change'             => 'refusal code for a change mixing native steps with a provider\'s, or two providers\' (400)',
+		'bulkcat_external_not_inline'      => 'refusal code for an external value sent to the single-product write route (400)',
+		'bulkcat_changed_during_write'     => 'result code for an external write whose stored value changed underneath it (compare-and-set miss)',
+		'bulkcat_unknown_state'            => 'result code for an external value its provider could not read',
+		'bulkcat_external_not_stored'      => 'result code for an external write that did not stick on read-back',
+		'bulkcat_external_error'           => 'result code for a provider call that threw or broke the contract for one object',
+		'bulkcat_value_too_large'          => 'result code for an external value above 64 KB encoded',
 	];
 
 	/**

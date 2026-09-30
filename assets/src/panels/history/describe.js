@@ -300,6 +300,16 @@ export function describeBatch( batch, byKey = {}, actions = {} ) {
 		);
 	}
 	const operations = batch?.operations || [];
+	// T108: an add-on's change keeps the labels its manifest recorded, used where the registry has none (the add-on has gone).
+	const kept = batch?.external || {};
+	const keys = { ...byKey };
+	Object.entries( kept.fields || {} ).forEach( ( [ key, label ] ) => {
+		keys[ key ] = keys[ key ] || { key, label };
+	} );
+	const known = { ...actions };
+	Object.entries( kept.actions || {} ).forEach( ( [ id, label ] ) => {
+		known[ id ] = known[ id ] || { id, label };
+	} );
 	if ( ! operations.length ) {
 		return batch?.source === 'tree'
 			? __(
@@ -312,7 +322,7 @@ export function describeBatch( batch, byKey = {}, actions = {} ) {
 				);
 	}
 	return operations
-		.map( ( operation ) => describeOperation( operation, byKey, actions ) )
+		.map( ( operation ) => describeOperation( operation, keys, known ) )
 		.join( ' · ' );
 }
 
@@ -409,11 +419,43 @@ export function statusLabel( status ) {
 /**
  * Why a batch can no longer be undone, as one plain sentence (§4.8).
  *
- * @param {string|null} reason Reversibility reason.
+ * @param {string|null} reason   Reversibility reason.
+ * @param {string}      provider For `provider_missing` and `provider_unavailable` (T108), the add-on's name.
+ * @param {string}      detail   For `provider_unavailable`, the add-on's own reason, plain text.
  * @return {string} Sentence.
  */
-export function reasonSentence( reason ) {
+export function reasonSentence( reason, provider = '', detail = '' ) {
 	switch ( reason ) {
+		case 'provider_unavailable': {
+			// Registered but cannot run: its own reason follows the core's words.
+			const lead = sprintf(
+				/* translators: %s: the name of an add-on, such as "Example add-on". */
+				__(
+					'%s cannot run now, so this change cannot be undone yet.',
+					'bulk-catalogue-manager-for-woocommerce'
+				),
+				provider ||
+					__(
+						'The add-on that made this change',
+						'bulk-catalogue-manager-for-woocommerce'
+					)
+			);
+			return detail ? lead + ' ' + detail : lead;
+		}
+		case 'provider_missing':
+			return provider
+				? sprintf(
+						/* translators: %s: the name of an add-on, such as "Example add-on". */
+						__(
+							'Needs %s to be active to undo.',
+							'bulk-catalogue-manager-for-woocommerce'
+						),
+						provider
+					)
+				: __(
+						'Needs the add-on that made this change to be active to undo.',
+						'bulk-catalogue-manager-for-woocommerce'
+					);
 		case 'pruned':
 			return __(
 				'The saved values for this change were removed when old history was cleared, so it cannot be undone.',

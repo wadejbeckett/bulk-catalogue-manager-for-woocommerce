@@ -121,6 +121,11 @@ final class HistoryColumns {
 		foreach ( self::KEYS[ $source ] ?? [] as $key ) {
 			$cells[ $key ] = self::cell( $key, $row[ $key ] ?? null );
 		}
+		if ( isset( $cells['actions'] ) && is_array( $row['external']['actions'] ?? null ) ) {
+			// T108: an add-on's action by the label its manifest kept, even after the add-on has gone.
+			$labels           = $row['external']['actions'];
+			$cells['actions'] = array_map( static fn( mixed $label, mixed $id ): mixed => $labels[ $id ] ?? $label, $cells['actions'], (array) ( $row['actions'] ?? [] ) );
+		}
 		return $cells;
 	}
 

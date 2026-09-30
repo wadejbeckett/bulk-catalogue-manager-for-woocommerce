@@ -15,6 +15,8 @@ namespace BulkCatalogueManager\Engine;
 use BulkCatalogueManager\Data\BatchRepository;
 use BulkCatalogueManager\Data\ChangeRepository;
 use BulkCatalogueManager\Data\Registry as Data;
+use BulkCatalogueManager\External\Blocked;
+use BulkCatalogueManager\External\Manifest;
 use BulkCatalogueManager\Operations\Registry as Actions;
 use BulkCatalogueManager\Operations\Result;
 use BulkCatalogueManager\Settings\Settings;
@@ -108,6 +110,19 @@ defined( 'ABSPATH' ) || exit;
  *
  * The queue runner's own batch size and concurrency options are never
  * touched; chunk size is the only knob (§12.4).
+ *
+ * External changes (T107, docs/EXTENSIONS.md §11): before claiming, a run of
+ * a batch with a provider manifest checks each provider it names against the
+ * providers registered now (External\Manifest::blocked()). When one is
+ * missing, unavailable, of an unsupported contract or unable to read a
+ * recorded format, the run claims nothing: every still-pending item is
+ * skipped with a plain reason and counted, the batch's note says why
+ * (External\Blocked: "Stopped because <add-on> is not active. …" when it is
+ * not registered, "Stopped because <add-on> cannot run. … <its reason>" when
+ * it is registered but cannot run), and the batch ends through the
+ * final-status rule, never complete. Nothing resumes it. Otherwise each
+ * chunk of an external change primes its objects once before they are
+ * written.
  */
 final class ChunkRunner {
 	/**
@@ -346,6 +361,12 @@ final class ChunkRunner {
 			$this->batches->increment_counters( $batch_id, $exhausted, 0, $exhausted );
 		}
 
+		$manifest = $batch['extensions'] ?? null;
+		$blocked  = is_array( $manifest ) ? Manifest::blocked( $manifest, $this->actions->providers() ) : null;
+		if ( null !== $blocked ) {
+			return $this->stop( $batch, $blocked );
+		}
+
 		$configured = $this->configured_size( $batch_id, self::PRODUCT );
 		$size       = $batch['chunk_size'] > 0 ? min( self::clamp( $batch['chunk_size'] ), $configured ) : $configured;
 		$token      = bin2hex( random_bytes( 16 ) );
@@ -389,6 +410,24 @@ final class ChunkRunner {
 	}
 
 	/**
+	 * Stop a batch whose provider cannot work on it now (T107): skip what is
+	 * pending, say so in the note, and finish it.
+	 *
+	 * @param array<string, mixed> $batch   The batch row.
+	 * @param Blocked              $blocked The provider and why it cannot work.
+	 */
+	private function stop( array $batch, Blocked $blocked ): string {
+		$batch_id = (int) $batch['batch_id'];
+		$skipped  = $this->batches->skip_pending( $batch_id, $blocked->skipped_sentence() );
+		if ( $skipped > 0 ) {
+			$this->batches->increment_counters( $batch_id, $skipped, 0, 0 );
+		}
+		$now = $this->batches->find( $batch_id );
+		$this->batches->record_note( $batch_id, $blocked->stopped_note( (int) ( $now['changed_items'] ?? 0 ) ) );
+		return $this->settle( $batch, false );
+	}
+
+	/**
 	 * Write the claimed items through one writer run, term counting deferred.
 	 * Each item is claimed for this run alone just before it is written
 	 * (BatchRepository::claim_item()): an item whose chunk claim another run
@@ -415,6 +454,8 @@ final class ChunkRunner {
 		$lease      = $this->lease_clock;
 		$deadline   = $lease() + self::LEASE_SHARE * BatchRepository::LEASE_SECONDS;
 
+		// An external change's objects are primed once per chunk (T107).
+		$writer->prime_external( $operations, array_values( array_map( static fn( array $item ): int => (int) $item['object_id'], $items ) ) );
 		wp_defer_term_counting( true );
 		try {
 			$writer->run(

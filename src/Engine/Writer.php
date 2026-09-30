@@ -15,6 +15,9 @@ namespace BulkCatalogueManager\Engine;
 
 use BulkCatalogueManager\Availability\Stamp;
 use BulkCatalogueManager\Availability\StatusSwitch;
+use BulkCatalogueManager\External\ExternalWriter;
+use BulkCatalogueManager\External\Refusals;
+use BulkCatalogueManager\External\RunContext;
 use BulkCatalogueManager\Fields\Field;
 use BulkCatalogueManager\Operations\Operation;
 use BulkCatalogueManager\Operations\Registry;
@@ -111,6 +114,15 @@ defined( 'ABSPATH' ) || exit;
  * by wp_set_object_terms() before save(), so after a failed save a term
  * change may have stuck although it is reported failed. An exception from
  * the before-save hook or from the journal itself is not caught.
+ *
+ * External changes (T107, docs/EXTENSIONS.md §7.3): a list whose steps are
+ * one provider's is written through External\ExternalWriter, one per
+ * provider per writer, which journals from inside the same way and never
+ * saves the product; its flush() runs once at the end of run() (or after a
+ * write() outside one), even when the run throws. A list mixing native
+ * steps with a provider's, or two providers', fails every step with
+ * `bulkcat_mixed_change` and writes nothing, and a provider that is not
+ * registered fails every step with `bulkcat_provider_unavailable`.
  */
 final class Writer {
 	/**
@@ -162,6 +174,13 @@ final class Writer {
 	private ?Validator $validator = null;
 
 	/**
+	 * External writers by provider id (T107), flushed at the end of each run.
+	 *
+	 * @var array<string, ExternalWriter>
+	 */
+	private array $externals = [];
+
+	/**
 	 * Build over the operation registry.
 	 *
 	 * @param Registry      $operations  Resolves each step's action and the field registry.
@@ -209,7 +228,92 @@ final class Writer {
 		// A record an Off writes names the batch writing it (T89).
 		$write = fn(): WriteOutcome => Stamp::within( $this->batch_id, null, fn(): WriteOutcome => $this->write_one( $id, $operations, $type ) );
 		// Background work acts for the batch's user: their unfiltered_html decides, as in their own edit.
-		return null === $this->user_id ? $write() : Field::acting_as( $this->user_id, $write );
+		try {
+			return null === $this->user_id ? $write() : Field::acting_as( $this->user_id, $write );
+		} finally {
+			if ( 0 === $this->depth ) {
+				$this->flush_external();
+			}
+		}
+	}
+
+	/**
+	 * Load the values of a chunk's objects for an external change (T107).
+	 *
+	 * @param list<array<string, mixed>> $operations The batch's operation list.
+	 * @param list<int>                  $ids        The chunk's objects.
+	 */
+	public function prime_external( array $operations, array $ids ): void {
+		$kinds = $this->operations->kinds( $operations );
+		if ( 1 === count( $kinds ) && '' !== $kinds[0] ) {
+			$this->external_writer( $kinds[0], self::external_mode( $operations ) )?->prime( $ids );
+		}
+	}
+
+	/**
+	 * The writer for one provider's changes, or null when it is not registered.
+	 *
+	 * @param string $provider_id Provider id.
+	 */
+	private function external_writer( string $provider_id, string $mode = RunContext::APPLY ): ?ExternalWriter {
+		$slot = $provider_id . ':' . $mode;
+		if ( ! isset( $this->externals[ $slot ] ) ) {
+			$provider = $this->operations->providers()->get( $provider_id );
+			if ( null === $provider ) {
+				return null;
+			}
+			$this->externals[ $slot ] = new ExternalWriter( $provider, new RunContext( $mode, $this->user_id ?? get_current_user_id(), $this->batch_id ), $this->journal, $this->batch_id );
+		}
+		return $this->externals[ $slot ];
+	}
+
+	/**
+	 * The run an external list writes in: undo for restore steps (T108), else apply.
+	 *
+	 * @param array<mixed> $operations The list.
+	 */
+	private static function external_mode( array $operations ): string {
+		foreach ( $operations as $step ) {
+			if ( \BulkCatalogueManager\External\RestoreExternal::ID !== ( $step['action'] ?? '' ) ) {
+				return RunContext::APPLY;
+			}
+		}
+		return RunContext::UNDO;
+	}
+
+	/**
+	 * Flush every external writer of the run.
+	 */
+	private function flush_external(): void {
+		foreach ( $this->externals as $external ) {
+			$external->flush();
+		}
+	}
+
+	/**
+	 * Write an object of an external change, or refuse a list mixing kinds (T107).
+	 *
+	 * @param int                                                     $id         Object id.
+	 * @param list<array{action: string, args: array<string, mixed>}> $operations The list.
+	 * @param string|null                                             $type       The kind it was chosen as.
+	 * @param list<string>                                            $kinds      The list's kinds of change.
+	 */
+	private function write_external( int $id, array $operations, ?string $type, array $kinds ): WriteOutcome {
+		$external = 1 === count( $kinds ) ? $this->external_writer( $kinds[0], self::external_mode( $operations ) ) : null;
+		if ( null === $external ) {
+			$reason  = 1 === count( $kinds ) ? Refusals::missing()->get_error_message() : Refusals::mixed_sentence();
+			$code    = 1 === count( $kinds ) ? Refusals::UNAVAILABLE : Refusals::MIXED;
+			$results = array_map( static fn( array $step ): Result => Result::failed( (string) ( $step['args']['field'] ?? '' ), null, $reason, $code ), $operations );
+			$this->journal( $id, null, '', array_map( static fn( Result $r ): array => [ $r, true ], $results ), [], null );
+			return new WriteOutcome( $id, $results, false );
+		}
+		if ( null !== $this->journal && $this->journal->already_done( $this->batch_id, $id ) ) {
+			$intents = $this->journal->intents( $this->batch_id, $id );
+			return [] === $intents
+				? new WriteOutcome( $id, self::done_before( array_map( static fn( array $step ): array => [ null, $step['args'] ], $operations ) ), false )
+				: $external->replay( $id, $intents );
+		}
+		return $external->write( $id, $operations, $type );
 	}
 
 	/**
@@ -221,6 +325,10 @@ final class Writer {
 	 * @throws \LogicException When the list was not validated.
 	 */
 	private function write_one( int $id, array $operations, ?string $type = null ): WriteOutcome {
+		$kinds = $this->operations->kinds( $operations );
+		if ( [ '' ] !== $kinds && [] !== $kinds ) {
+			return $this->write_external( $id, $operations, $type, $kinds );
+		}
 		$steps = $this->resolve( $operations );
 		if ( null !== $this->journal && $this->journal->already_done( $this->batch_id, $id ) ) {
 			$intents = $this->journal->intents( $this->batch_id, $id );
@@ -467,6 +575,8 @@ final class Writer {
 				$parents         = array_keys( $this->pending );
 				$this->pending   = [];
 				$this->validator = null;
+				// T107: an external change's flush(), once for the run, whatever happened in it.
+				$this->flush_external();
 				foreach ( $parents as $parent_id ) {
 					\WC_Product_Variable::sync( $parent_id );
 				}

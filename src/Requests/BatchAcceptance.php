@@ -14,6 +14,12 @@ use BulkCatalogueManager\Data\BatchRepository;
 use BulkCatalogueManager\Engine\BatchFactory;
 use BulkCatalogueManager\Engine\ExactScope;
 use BulkCatalogueManager\Engine\Preview;
+use BulkCatalogueManager\External\Binding;
+use BulkCatalogueManager\External\Manifest;
+use BulkCatalogueManager\External\ProviderFailure;
+use BulkCatalogueManager\External\Refusals;
+use BulkCatalogueManager\External\RunContext;
+use BulkCatalogueManager\Operations\Registry as Actions;
 use BulkCatalogueManager\Rest\Refusal;
 use BulkCatalogueManager\Selection\Selection;
 use BulkCatalogueManager\Selection\SnapshotService;
@@ -40,6 +46,12 @@ defined( 'ABSPATH' ) || exit;
  * expansion; then exactly the checked scope is recorded
  * (BatchFactory::record_scope()), unavailable members as items already
  * failed.
+ *
+ * An external change (T106, docs/EXTENSIONS.md §7.1, §7.2) is validated with
+ * its provider (409 `bulkcat_provider_unavailable` when it is not active), and
+ * the preview hash must also bind the provider's identity and state token as
+ * they are now (External\Binding): a stale refusal then says why in
+ * `data.reason`, `scope_changed` or `provider_changed`.
  *
  * Undo: the batch undone is locked first, before this transaction reads
  * anything, then planned afresh and must still have the intent's plan hash; the undo batch is recorded and the batch undone moved
@@ -74,10 +86,13 @@ final class BatchAcceptance {
 	}
 
 	/**
-	 * The refusal for an Apply that no longer matches its preview.
+	 * The refusal for an Apply that no longer matches its preview, with its
+	 * reason for an external change (T106).
+	 *
+	 * @param string $reason `scope_changed` or `provider_changed`, or '' for a native change.
 	 */
-	public static function stale(): \WP_Error {
-		return Refusal::create( BatchFactory::STALE_PREVIEW, __( 'This change no longer matches its preview. Preview the exact selected products again, then apply it.', 'bulk-catalogue-manager-for-woocommerce' ), 409 );
+	public static function stale( string $reason = '' ): \WP_Error {
+		return Refusal::create( BatchFactory::STALE_PREVIEW, __( 'This change no longer matches its preview. Preview the exact selected products again, then apply it.', 'bulk-catalogue-manager-for-woocommerce' ), 409, '' === $reason ? [] : [ 'reason' => $reason ] );
 	}
 
 	/**
@@ -113,10 +128,23 @@ final class BatchAcceptance {
 			$selection = Selection::of_ids( $intent['ids'] );
 			$bound     = $selection->ids;
 		}
-		$scope = ExactScope::build( $selection, $operations, $factory );
-		$hash  = Preview::hash( $bound, $operations, Settings::load(), $scope['scope_hash'] );
-		if ( ! hash_equals( $scope['scope_hash'], $intent['scope_hash'] ) || ! is_string( $credentials['preview_hash'] ?? null ) || ! hash_equals( $hash, $credentials['preview_hash'] ) ) {
-			return self::stale();
+		$scope    = ExactScope::build( $selection, $operations, $factory );
+		$provider = Actions::instance()->external_provider( $operations );
+		$binding  = [];
+		if ( null !== $provider ) {
+			$gone = array_flip( $scope['unavailable'] );
+			try {
+				$binding = Binding::of( $provider, $operations, array_values( array_filter( array_column( $scope['objects'], 0 ), static fn( int $id ): bool => ! isset( $gone[ $id ] ) ) ), RunContext::apply( $claims['owner'], 0 ) );
+			} catch ( ProviderFailure $e ) {
+				return Refusal::create( Refusals::ERROR, Refusals::error_sentence(), 409 );
+			}
+		}
+		$hash = Preview::hash( $bound, $operations, Settings::load(), $scope['scope_hash'], $binding );
+		if ( ! hash_equals( $scope['scope_hash'], $intent['scope_hash'] ) ) {
+			return self::stale( null === $provider ? '' : 'scope_changed' );
+		}
+		if ( ! is_string( $credentials['preview_hash'] ?? null ) || ! hash_equals( $hash, $credentials['preview_hash'] ) ) {
+			return self::stale( null === $provider ? '' : 'provider_changed' );
 		}
 		if ( [] === $scope['objects'] ) {
 			return Refusal::invalid( BatchFactory::EMPTY, __( 'No products are selected. Choose products before making a change.', 'bulk-catalogue-manager-for-woocommerce' ) );
@@ -143,7 +171,8 @@ final class BatchAcceptance {
 		} else {
 			$summary['ids'] = $selection->ids;
 		}
-		return $factory->record_scope( $claims, $operations, $scope['objects'], $summary, null, $scope['missing'] );
+		// T107: the provider manifest commits with the header, the items and the receipt.
+		return $factory->record_scope( $claims, $operations, $scope['objects'], $summary, null, $scope['missing'], null === $provider ? null : Manifest::build( $provider, $operations ) );
 	}
 
 	/**
@@ -167,8 +196,8 @@ final class BatchAcceptance {
 		if ( is_wp_error( $scope ) ) {
 			return $scope;
 		}
-		[ $original, $previous, $objects, $outline, $snapshot ] = $scope;
-		$result = $factory->record_scope( $claims, array_values( $outline ), $objects, $snapshot, $original );
+		[ $original, $previous, $objects, $outline, $snapshot, $manifest ] = $scope;
+		$result = $factory->record_scope( $claims, array_values( $outline ), $objects, $snapshot, $original, [], $manifest );
 		if ( ! $batches->transition( $original, $previous, 'undoing' ) ) {
 			return Refusal::create( Planner::NOT_REVERSIBLE, Planner::undoing_sentence(), 409, [ 'reason' => Planner::UNDO_IN_PROGRESS ] );
 		}

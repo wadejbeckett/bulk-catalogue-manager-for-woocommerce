@@ -3,7 +3,15 @@
  * SPEC §6, §12.1): the chooser, the argument controls and the operation list
  * are all generated from the action descriptors, so no action, argument or
  * group is listed here by hand.
+ *
+ * External actions (T105, docs/EXTENSIONS.md §5.3) come from the same
+ * descriptors: an entry with a `provider` belongs to a separately installed
+ * add-on, one without is native. The add-on's groups follow the native ones
+ * in the registry's `groups`, an action it cannot offer now carries
+ * `available: false` with its reason, and one change holds either native
+ * steps or one add-on's steps (mixesKinds()).
  */
+import { __ } from '@wordpress/i18n';
 
 /** Most steps one change may hold (Operations\Registry::validate_list()). */
 export const MAX_OPERATIONS = 20;
@@ -116,7 +124,7 @@ export function propertyKind( name, property ) {
 		return 'boolean';
 	}
 	if ( types.includes( 'array' ) ) {
-		return 'ids';
+		return Array.isArray( property?.items?.enum ) ? 'multichoice' : 'ids';
 	}
 	if ( types.includes( 'integer' ) ) {
 		return 'integer';
@@ -352,6 +360,17 @@ export function operationProblem( registry, operation ) {
 		) {
 			return { arg: name, reason };
 		}
+		if (
+			kind === 'multichoice' &&
+			( ! Array.isArray( value ) ||
+				( property.maxItems && value.length > property.maxItems ) ||
+				( property.minItems && value.length < property.minItems ) ||
+				value.some(
+					( each ) => ! property.items.enum.includes( each )
+				) )
+		) {
+			return { arg: name, reason };
+		}
 	}
 	return null;
 }
@@ -464,4 +483,64 @@ export function variationsDefault( field, settings ) {
 	}
 	const key = variationsSetting( field );
 	return !! key && !! settingsValues( settings )[ key ];
+}
+
+/**
+ * Why an action cannot be chosen now: its add-on is unavailable, or the user
+ * may not use it (the server's own sentence); '' when it can.
+ *
+ * @param {Object|null} action Action descriptor.
+ * @return {string} Reason.
+ */
+export function unavailableReason( action ) {
+	if ( ! action?.provider || action.available !== false ) {
+		return '';
+	}
+	return (
+		action.unavailableReason ||
+		__(
+			'This action is not available right now.',
+			'bulk-catalogue-manager-for-woocommerce'
+		)
+	);
+}
+
+/**
+ * The kind of change a step makes: '' for a native action, else its add-on's id.
+ *
+ * @param {Object} registry  The `/fields` payload.
+ * @param {Object} operation Panel operation.
+ * @return {string} Kind.
+ */
+export function changeKind( registry, operation ) {
+	return actionById( registry, operation?.action )?.provider || '';
+}
+
+/**
+ * Whether the chosen steps mix kinds of change: native steps with an
+ * add-on's, or two add-ons' (version 1 of the contract keeps one kind per change).
+ *
+ * @param {Object}        registry   The `/fields` payload.
+ * @param {Array<Object>} operations Panel operations.
+ * @return {boolean} True when mixed.
+ */
+export function mixesKinds( registry, operations ) {
+	const kinds = new Set(
+		( operations || [] )
+			.filter( ( operation ) => operation.action )
+			.map( ( operation ) => changeKind( registry, operation ) )
+	);
+	return kinds.size > 1;
+}
+
+/**
+ * The sentence shown in place when a change mixes kinds (the server's own words).
+ *
+ * @return {string} Sentence.
+ */
+export function mixedSentence() {
+	return __(
+		"This action can't be combined with other kinds of change. Make it a separate change.",
+		'bulk-catalogue-manager-for-woocommerce'
+	);
 }

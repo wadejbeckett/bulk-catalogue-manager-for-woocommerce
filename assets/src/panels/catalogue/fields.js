@@ -20,8 +20,10 @@ import { renderEditable } from './edit';
  */
 export function descriptorsOf( registry ) {
 	const list = Array.isArray( registry ) ? registry : registry?.fields;
+	// An add-on's field (T105, `source: external`) has no column, filter, inline edit or drawer entry.
 	return ( Array.isArray( list ) ? list : [] ).filter(
-		( field ) => field?.key && field.dataviews
+		( field ) =>
+			field?.key && field.dataviews && field.source !== 'external'
 	);
 }
 

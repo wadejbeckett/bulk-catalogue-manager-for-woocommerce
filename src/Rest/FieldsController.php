@@ -8,6 +8,11 @@
  * definition, and no storage key; each action its descriptor; groups the
  * five bulk action panel groups in order with their labels.
  *
+ * External actions (T105, docs/EXTENSIONS.md §5.4): only when at least one
+ * provider is registered, each list gains its external entries after the
+ * native ones (External\Advertiser) and the payload gains `providers`; with
+ * none it is byte-identical to the native payload, and so is the schema.
+ *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
  */
@@ -16,6 +21,7 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Rest;
 
+use BulkCatalogueManager\External\Advertiser;
 use BulkCatalogueManager\Fields\Field;
 use BulkCatalogueManager\Fields\Registry;
 use BulkCatalogueManager\Operations\Group;
@@ -73,13 +79,24 @@ final class FieldsController implements ReadController {
 	 * The payload: every field's client definition in registry order, every
 	 * action's descriptor in panel order, and the panel groups.
 	 *
-	 * @return array{fields: list<array<string, mixed>>, actions: list<array<string, mixed>>, groups: list<array{id: string, label: string}>}
+	 * @return array{fields: list<array<string, mixed>>, actions: list<array<string, mixed>>, groups: list<array{id: string, label: string}>, providers?: list<array<string, mixed>>}
 	 */
 	public function payload(): array {
-		return [
+		$payload   = [
 			'fields'  => $this->registry->to_client(),
 			'actions' => $this->actions->to_client(),
 			'groups'  => Group::to_client(),
+		];
+		$providers = $this->actions->providers();
+		if ( ! $providers->any() ) {
+			return $payload;
+		}
+		$external = new Advertiser( $providers );
+		return [
+			'fields'    => [ ...$payload['fields'], ...$external->fields() ],
+			'actions'   => [ ...$payload['actions'], ...$external->actions( get_current_user_id() ) ],
+			'groups'    => [ ...$payload['groups'], ...$external->groups() ],
+			'providers' => $external->providers(),
 		];
 	}
 
@@ -103,18 +120,20 @@ final class FieldsController implements ReadController {
 			'type'  => 'array',
 			'items' => [ 'type' => 'string' ],
 		];
-		return [
+		$external    = $this->actions->providers()->any() ? new Advertiser( $this->actions->providers() ) : null;
+		$group_ids   = [ ...Group::ALL, ...( null === $external ? [] : array_column( $external->groups(), 'id' ) ) ];
+		$schema      = [
 			'$schema'    => 'http://json-schema.org/draft-04/schema#',
 			'title'      => 'bulkcat-fields',
 			'type'       => 'object',
 			'properties' => [
 				'fields'  => [
 					'type'  => 'array',
-					'items' => self::field_schema( $string_list ),
+					'items' => self::field_schema( $string_list, $group_ids, null !== $external ),
 				],
 				'actions' => [
 					'type'  => 'array',
-					'items' => self::action_schema( $string_list ),
+					'items' => self::action_schema( $string_list, $group_ids, null !== $external ),
 				],
 				'groups'  => [
 					'type'  => 'array',
@@ -123,7 +142,7 @@ final class FieldsController implements ReadController {
 						'properties' => [
 							'id'    => [
 								'type' => 'string',
-								'enum' => Group::ALL,
+								'enum' => $group_ids,
 							],
 							'label' => [ 'type' => 'string' ],
 						],
@@ -131,16 +150,35 @@ final class FieldsController implements ReadController {
 				],
 			],
 		];
+		if ( null !== $external ) {
+			$schema['properties']['providers'] = [
+				'description' => __( 'The add-ons that registered external actions (docs/EXTENSIONS.md); present only when one is registered.', 'bulk-catalogue-manager-for-woocommerce' ),
+				'type'        => 'array',
+				'items'       => [
+					'type'       => 'object',
+					'properties' => [
+						'id'        => [ 'type' => 'string' ],
+						'label'     => [ 'type' => 'string' ],
+						'version'   => [ 'type' => 'string' ],
+						'available' => [ 'type' => 'boolean' ],
+						'reason'    => [ 'type' => 'string' ],
+					],
+				],
+			];
+		}
+		return $schema;
 	}
 
 	/**
 	 * The schema of one action descriptor.
 	 *
 	 * @param array<string, mixed> $string_list Schema of a list of strings.
+	 * @param list<string>         $group_ids   Every chooser group id.
+	 * @param bool                 $external    Whether external entries are listed.
 	 * @return array<string, mixed>
 	 */
-	private static function action_schema( array $string_list ): array {
-		return [
+	private static function action_schema( array $string_list, array $group_ids, bool $external ): array {
+		$schema = [
 			'type'       => 'object',
 			'properties' => [
 				'id'          => [ 'type' => 'string' ],
@@ -148,7 +186,7 @@ final class FieldsController implements ReadController {
 				'description' => [ 'type' => 'string' ],
 				'group'       => [
 					'type' => 'string',
-					'enum' => Group::ALL,
+					'enum' => $group_ids,
 				],
 				'groups'      => $string_list,
 				'editKinds'   => $string_list,
@@ -156,16 +194,29 @@ final class FieldsController implements ReadController {
 				'args'        => [ 'type' => 'object' ],
 			],
 		];
+		if ( $external ) {
+			$schema['properties'] += [
+				'provider'          => [ 'type' => 'string' ],
+				'variations'        => [ 'type' => 'string' ],
+				'available'         => [ 'type' => 'boolean' ],
+				'unavailableReason' => [ 'type' => 'string' ],
+				'alwaysConfirm'     => [ 'type' => 'boolean' ],
+				'confirmReason'     => [ 'type' => 'string' ],
+			];
+		}
+		return $schema;
 	}
 
 	/**
 	 * The schema of one field definition.
 	 *
 	 * @param array<string, mixed> $string_list Schema of a list of strings.
+	 * @param list<string>         $group_ids   Every chooser group id.
+	 * @param bool                 $external    Whether external entries are listed.
 	 * @return array<string, mixed>
 	 */
-	private static function field_schema( array $string_list ): array {
-		return [
+	private static function field_schema( array $string_list, array $group_ids, bool $external ): array {
+		$schema = [
 			'type'       => 'object',
 			'properties' => [
 				'key'                  => [ 'type' => 'string' ],
@@ -213,12 +264,17 @@ final class FieldsController implements ReadController {
 				'variationOnlyChoices' => $string_list,
 				'group'                => [
 					'type' => 'string',
-					'enum' => Group::ALL,
+					'enum' => $group_ids,
 				],
 				'source'               => [ 'type' => 'string' ],
 				'maxLength'            => [ 'type' => 'integer' ],
 				'switchesOffOn'        => [ 'type' => 'boolean' ],
 			],
 		];
+		if ( $external ) {
+			$schema['properties']['provider']          = [ 'type' => 'string' ];
+			$schema['properties']['dataviews']['type'] = [ 'object', 'null' ];
+		}
+		return $schema;
 	}
 }

@@ -532,7 +532,11 @@ export default function BatchCard( {
 
 			{ state === STATES.NOT_REVERSIBLE && ! settled && (
 				<p className="bulkcat-batch__reason">
-					{ reasonSentence( batch.reversibility?.reason ) }
+					{ reasonSentence(
+						batch.reversibility?.reason,
+						batch.reversibility?.provider || '',
+						batch.reversibility?.provider_reason || ''
+					) }
 				</p>
 			) }
 

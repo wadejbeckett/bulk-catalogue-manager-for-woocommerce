@@ -374,6 +374,23 @@ export function ArgControl( {
 		);
 	}
 
+	if ( kind === 'multichoice' ) {
+		// An add-on's list of choices (T105): a checkbox per choice, sent as a list of values.
+		return (
+			<TermsPicker
+				id={ id }
+				label={ label }
+				options={ ( property.choices || [] ).map( ( choice ) => ( {
+					id: choice.value,
+					label: choice.label,
+				} ) ) }
+				value={ value }
+				onChange={ onChange }
+				reason={ reason }
+			/>
+		);
+	}
+
 	if ( kind === 'boolean' ) {
 		return (
 			<div className="bulkcat-bulk__fg is-full">

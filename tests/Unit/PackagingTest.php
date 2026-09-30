@@ -175,6 +175,20 @@ final class PackagingTest extends TestCase {
 		}
 	}
 
+	public function test_the_external_action_test_provider_never_ships(): void {
+		// E1 (docs/EXTENSIONS.md §15.1): the neutral test provider lives in the test tree only.
+		$files = $this->archive_files();
+		foreach ( [ 'tests/Support/Extension/SampleProvider.php', 'tests/Support/Extension/load.php', 'tests/fixtures/mu-plugins/bulkcat-sample-provider.php' ] as $fixture ) {
+			$this->assertFileExists( self::root() . '/' . $fixture );
+			$this->assertNotContains( $fixture, $files, $fixture . ' must not ship.' );
+		}
+		foreach ( $this->code_files() as $file ) {
+			$code = (string) file_get_contents( self::root() . '/' . $file );
+			$this->assertStringNotContainsString( 'Tests\\Support\\Extension', $code, $file . ' refers to the test provider.' );
+			$this->assertStringNotContainsString( 'x_sample_', $code, $file . ' names a test provider id.' );
+		}
+	}
+
 	public function test_distignore_and_gitattributes_leave_out_the_same_paths(): void {
 		$attributes = [];
 		foreach ( file( self::root() . '/.gitattributes', FILE_IGNORE_NEW_LINES ) as $line ) {

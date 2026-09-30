@@ -292,3 +292,53 @@ ZIP10=/path/to/bulk-catalogue-manager-for-woocommerce-1.0.0.zip bash tests/probe
 `all` runs `up`, `upgrade`, `downgrade` and `down` (the teardown runs even
 after a failure); set `WORK` to a directory to run the phases one by one. The
 script's header lists every row.
+
+## External actions (T104–T109)
+
+The generic external action contract (`docs/EXTENSIONS.md`) is proven on a
+real site with the neutral test provider "Sample labels", which lives only in
+`tests/Support/Extension/` and is never shipped. On a throwaway stack (the one
+above, or one of its own with every docker name suffixed and another host
+port, as T109 ran it) copy its must-use plugin into place after `seed.sh`:
+
+```sh
+docker exec bulkcat-probe-wp mkdir -p /var/www/html/wp-content/mu-plugins
+docker cp tests/fixtures/mu-plugins/bulkcat-sample-provider.php \
+  bulkcat-probe-wp:/var/www/html/wp-content/mu-plugins/
+docker exec bulkcat-probe-wp chown -R www-data:www-data /var/www/html/wp-content/mu-plugins
+```
+
+It registers only when the core is active and loads the provider from the
+bind-mounted checkout. Remove it again before `probe.py` (`offon:e7-*` checks
+that no must-use plugin is present):
+
+```sh
+docker exec bulkcat-probe-wp rm /var/www/html/wp-content/mu-plugins/bulkcat-sample-provider.php
+```
+
+With it in place and `BULKCAT_PROBE_SITEURL` added to `WP_CMD`:
+
+- `provider-journey.php` walks E5–E12 through the plugin's own services,
+  REST routes, queue, journal and undo, with every provider-missing case,
+  and cleans up what it made. Its uninstall phases prove E16 around a real
+  uninstall with *Remove all data* on (then reactivate and seed again):
+
+  ```sh
+  $WP_CMD eval '$phase = "journey"; require "wp-content/plugins/bulk-catalogue-manager-for-woocommerce/tests/probe/provider-journey.php";'
+  $WP_CMD eval '$phase = "uninstall_before"; require "wp-content/plugins/bulk-catalogue-manager-for-woocommerce/tests/probe/provider-journey.php";'
+  $WP_CMD plugin uninstall bulk-catalogue-manager-for-woocommerce --deactivate --skip-delete
+  $WP_CMD eval '$phase = "uninstall_after"; require "wp-content/plugins/bulk-catalogue-manager-for-woocommerce/tests/probe/provider-journey.php";'
+  $WP_CMD plugin activate bulk-catalogue-manager-for-woocommerce
+  ```
+
+- `provider-scale.php` (E15), after `seed.sh 10000`: `/fields` with and
+  without one provider, the test provider's state token over 10,000 products,
+  a 10,000-object preview of Add labels next to a native preview of the same
+  capture, a 1,000-object Apply through the queue (at least 300 products a
+  minute, under 96 MB a chunk) and its undo. It prints the figures as JSON.
+
+- `tests/e2e/provider-labels.spec.js` (E14) is the browser journey by
+  keyboard with axe-core: two SKU searches, Add labels, preview, Apply,
+  History, Undo, the labels read back through `WP_CMD`. It skips itself on a
+  site without the must-use plugin, so the rest of the browser suite runs
+  unchanged elsewhere.

@@ -14,6 +14,9 @@ namespace BulkCatalogueManager\Engine;
 
 use BulkCatalogueManager\Data\BatchRepository;
 use BulkCatalogueManager\Data\ChangeRepository;
+use BulkCatalogueManager\External\Disclosure;
+use BulkCatalogueManager\External\Providers;
+use BulkCatalogueManager\Operations\Registry as Actions;
 use BulkCatalogueManager\Undo\Original;
 use BulkCatalogueManager\Undo\Planner;
 
@@ -121,14 +124,23 @@ final class Progress {
 	private Reversibility $reversibility;
 
 	/**
+	 * The providers registered now, for which external arguments a reader may see; read when first needed.
+	 *
+	 * @var Providers|null
+	 */
+	private ?Providers $providers;
+
+	/**
 	 * Build over the repositories.
 	 *
 	 * @param BatchRepository|null  $batches       Batches; the plugin's by default.
 	 * @param ChangeRepository|null $changes       The journal; the plugin's by default.
 	 * @param \Closure|null         $clock         Returns the Unix time; time() by default.
 	 * @param Reversibility|null    $reversibility The reversibility state; by default one over the same repositories and clock, able to count conflicts with the undo planner (T55) when a report asks for them.
+	 * @param Providers|null        $providers     The providers; the request's by default.
 	 */
-	public function __construct( ?BatchRepository $batches = null, ?ChangeRepository $changes = null, ?\Closure $clock = null, ?Reversibility $reversibility = null ) {
+	public function __construct( ?BatchRepository $batches = null, ?ChangeRepository $changes = null, ?\Closure $clock = null, ?Reversibility $reversibility = null, ?Providers $providers = null ) {
+		$this->providers     = $providers;
 		$this->batches       = $batches ?? new BatchRepository();
 		$this->changes       = $changes ?? new ChangeRepository();
 		$this->clock         = $clock ?? static fn(): int => time();
@@ -194,7 +206,8 @@ final class Progress {
 			'pending_items'        => $pending,
 			'chunk_size'           => $batch['chunk_size'],
 			'note'                 => $batch['note'],
-			'operations'           => $batch['operations'],
+			// An add-on's own argument values only for a reader holding the step's capability (EXTENSIONS §18.20).
+			'operations'           => Disclosure::operations( $batch['operations'], get_current_user_id(), $this->providers ??= Actions::instance()->providers() ),
 			'cancellable'          => $active,
 			'stalled'              => $stalled,
 			'stalled_message'      => $stalled ? self::stalled_message() : '',
@@ -206,6 +219,10 @@ final class Progress {
 			'reversibility'        => $reversibility ?? ( $count ? $this->reversibility->of( $batch ) : $this->reversibility->for_page( [ $batch ] )[ $batch['batch_id'] ] ),
 			'undo'                 => self::undo_summary( $batch ),
 		];
+		if ( is_array( $batch['extensions'] ?? null ) ) {
+			// T108: an external change's add-on and labels, from its manifest; absent for a native change.
+			$report['external'] = \BulkCatalogueManager\External\Manifest::client( $batch['extensions'] );
+		}
 		if ( $summary ) {
 			$report['summary'] = $this->summary( $batch['batch_id'] );
 		}

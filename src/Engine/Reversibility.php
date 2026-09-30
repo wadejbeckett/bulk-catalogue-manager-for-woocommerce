@@ -14,6 +14,10 @@ namespace BulkCatalogueManager\Engine;
 
 use BulkCatalogueManager\Data\BatchRepository;
 use BulkCatalogueManager\Data\ChangeRepository;
+use BulkCatalogueManager\External\Blocked;
+use BulkCatalogueManager\External\Manifest;
+use BulkCatalogueManager\External\Providers;
+use BulkCatalogueManager\Operations\Registry as Actions;
 use BulkCatalogueManager\Settings\Settings;
 
 defined( 'ABSPATH' ) || exit;
@@ -34,7 +38,13 @@ defined( 'ABSPATH' ) || exit;
  *     ago (Settings::history_days(); never when kept indefinitely);
  *   - `nothing_applied`: it finished with no `applied` journal row — every
  *     row was already at its target, skipped or failed, or it was
- *     cancelled before its first chunk — so there is nothing to put back.
+ *     cancelled before its first chunk — so there is nothing to put back;
+ *   - `provider_missing` (T108): its provider manifest names an add-on
+ *     that is not registered now (not active); `provider_unavailable`: one
+ *     that is registered but not available or of an unsupported contract,
+ *     whose own reason the answer carries as `provider_reason`. Recomputed
+ *     on every read, so it clears when the add-on can run again; both carry
+ *     the add-on's label as `provider` (External\Blocked).
  * - `completed_with_errors`: it ended partial or failed with applied rows;
  *   the applied part can be undone on its own (§12.6).
  * - `partially_reversible`: some applied rows were changed again since
@@ -75,9 +85,19 @@ final class Reversibility {
 	public const NOTHING_APPLIED   = 'nothing_applied';
 
 	/**
+	 * The add-on that made the change is registered but cannot run now (T108).
+	 */
+	public const PROVIDER_UNAVAILABLE = Blocked::UNAVAILABLE;
+
+	/**
+	 * The add-on that made the change is not registered now (not active).
+	 */
+	public const PROVIDER_MISSING = Blocked::MISSING;
+
+	/**
 	 * Every reason a batch is not reversible, for the route schema.
 	 */
-	public const REASONS = [ self::OUTSIDE_RETENTION, self::ALREADY_UNDONE, self::PRUNED, self::NOTHING_APPLIED ];
+	public const REASONS = [ self::OUTSIDE_RETENTION, self::ALREADY_UNDONE, self::PRUNED, self::NOTHING_APPLIED, self::PROVIDER_MISSING, self::PROVIDER_UNAVAILABLE ];
 
 	/**
 	 * Statuses in which a batch is still working.
@@ -130,6 +150,13 @@ final class Reversibility {
 	private \Closure $conflicts;
 
 	/**
+	 * The providers registered now, or null to read the shared registry's when asked (T108).
+	 *
+	 * @var Providers|null
+	 */
+	private ?Providers $providers;
+
+	/**
 	 * Build over the repositories.
 	 *
 	 * @param BatchRepository|null  $batches   Batches; the plugin's by default.
@@ -137,8 +164,10 @@ final class Reversibility {
 	 * @param Settings|null         $settings  Settings; read when needed by default.
 	 * @param \Closure|null         $clock     Returns the Unix time; time() by default.
 	 * @param \Closure|null         $conflicts Counts a batch's conflicts (T55); none by default.
+	 * @param Providers|null        $providers The providers registered now; the shared registry's by default.
 	 */
-	public function __construct( ?BatchRepository $batches = null, ?ChangeRepository $changes = null, ?Settings $settings = null, ?\Closure $clock = null, ?\Closure $conflicts = null ) {
+	public function __construct( ?BatchRepository $batches = null, ?ChangeRepository $changes = null, ?Settings $settings = null, ?\Closure $clock = null, ?\Closure $conflicts = null, ?Providers $providers = null ) {
+		$this->providers = $providers;
 		$this->batches   = $batches ?? new BatchRepository();
 		$this->changes   = $changes ?? new ChangeRepository();
 		$this->settings  = $settings;
@@ -217,6 +246,11 @@ final class Reversibility {
 		};
 		if ( null !== $reason ) {
 			return self::answer( self::NOT_REVERSIBLE, $none, $reason );
+		}
+		$manifest = $batch['extensions'] ?? null;
+		$blocked  = is_array( $manifest ) ? Manifest::blocked( $manifest, $this->providers ??= Actions::instance()->providers(), false ) : null;
+		if ( null !== $blocked ) {
+			return self::answer( self::NOT_REVERSIBLE, $none, $blocked->kind ) + [ 'provider' => $blocked->label ] + ( $blocked->is_missing() ? [] : [ 'provider_reason' => $blocked->reason ] );
 		}
 		$conflicts = $count ? max( 0, (int) ( $this->conflicts )( $batch ) ) : null;
 		if ( in_array( $batch['status'], self::WITH_ERRORS, true ) ) {

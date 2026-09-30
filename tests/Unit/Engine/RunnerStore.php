@@ -133,6 +133,7 @@ final class RunnerStore {
 			"/^UPDATE $items SET state = 'failed', message = .* AND attempts >= /s" => fn( string $sql ): int => $this->exhaust( $sql ),
 			"/^UPDATE $items SET state = '\\w+', message = .* AND item_id IN /s" => fn( string $sql ): int => $this->mark( $sql ),
 			"/^UPDATE $items SET state = 'failed', message = .* AND state = 'pending'$/s" => fn( string $sql ): int => $this->fail_pending( $sql ),
+			"/^UPDATE $items SET state = 'skipped', message = .* AND state = 'pending'$/s" => fn( string $sql ): int => $this->fail_pending( $sql, 'skipped' ),
 			"/^UPDATE $batches SET done_items = /"      => fn( string $sql ): int => $this->count_up( $sql ),
 			"/^SELECT COUNT\\(\\*\\) FROM $items WHERE batch_id = \\d+ AND state = '/" => fn( string $sql ): string => $this->count_state( $sql ),
 			"/^SELECT COUNT\\(\\*\\) FROM $items WHERE batch_id = \\d+ AND state <> 'pending'/" => fn( string $sql ): string => $this->count_reported( $sql ),
@@ -451,12 +452,12 @@ final class RunnerStore {
 		return $marked;
 	}
 
-	private function fail_pending( string $sql ): int {
+	private function fail_pending( string $sql, string $state = 'failed' ): int {
 		preg_match( "/message = '(.*)' WHERE batch_id = (\\d+) AND state = 'pending'$/s", $sql, $m );
 		$failed = 0;
 		foreach ( $this->items as $id => $item ) {
 			if ( (int) $m[2] === $item['batch_id'] && 'pending' === $item['state'] ) {
-				$this->items[ $id ]['state']   = 'failed';
+				$this->items[ $id ]['state']   = $state;
 				$this->items[ $id ]['message'] = stripslashes( $m[1] );
 				++$failed;
 			}

@@ -1,13 +1,16 @@
 <?php
 /**
- * Today's catalogue export, pinned byte for byte (T96, ticket 10's
- * byte-identical rule). `GET /export` over a fixed row source
- * (BaselineRows), with every non-image column in registry order and with the
- * default view's columns, is compared with golden files written once by the
- * export as it stood before the slice's switch existed (ticket 04's head,
- * `BULKCAT_WRITE_GOLDEN=1`); the switch-off `POST /export` must produce the
- * same bytes (ExportPostRouteTest). The heading check: every registry
- * heading is 1.0.0's, except the listing control ticket 04 relabelled.
+ * The catalogue export, pinned byte for byte (T96, ticket 10's
+ * byte-identical rule). The golden files were written once by the
+ * catalogue `GET /export` as it stood before the slice's switch existed
+ * (ticket 04's head ca86255, builder ruling B24; committed in becb5b8),
+ * over a fixed row source (BaselineRows), with every non-image column in
+ * registry order and with the default view's columns. That `GET` is retired
+ * (T103, ruling R9); the switch-off `POST /export` over the whole catalogue
+ * must still produce those bytes. The files are not rewritten: a difference
+ * is a change to every export and is agreed first. The heading check: every
+ * registry heading is 1.0.0's, except the listing control ticket 04
+ * relabelled.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -76,17 +79,23 @@ final class CatalogueBaselineTest extends TestCase {
 	}
 
 	/**
-	 * Today's GET export of a view's columns, with a separator setting.
+	 * Today's switch-off export of the whole catalogue in a view's columns,
+	 * with a separator setting.
 	 *
 	 * @param list<string> $columns   Columns.
 	 * @param string       $separator comma or semicolon.
 	 */
-	private static function get_bytes( array $columns, string $separator ): string {
+	private static function export_bytes( array $columns, string $separator ): string {
 		$GLOBALS['bulkcat_test']['options']['bulkcat_settings'] = [ 'csv_separator' => $separator ];
 		$controller = new ExportController( new Registry(), BaselineRows::source() );
 		( new Routes( [ $controller ] ) )->register();
-		$request = new \WP_REST_Request( 'GET', '/bulkcat/v1/export' );
-		$request->set_param( 'columns', $columns );
+		$request = new \WP_REST_Request( 'POST', '/bulkcat/v1/export' );
+		$request->set_body_params(
+			[
+				'columns'     => $columns,
+				'confirm_all' => '1',
+			]
+		);
 		$response = rest_get_server()->dispatch( $request );
 		$stream   = fopen( 'php://memory', 'w+b' );
 		$server   = new class() {
@@ -102,21 +111,15 @@ final class CatalogueBaselineTest extends TestCase {
 	}
 
 	/**
-	 * Compare a view's bytes with its golden file, or write the file when asked.
+	 * Compare a view's bytes with its golden file.
 	 *
 	 * @param string $view      all or default.
 	 * @param string $separator comma or semicolon.
 	 */
 	private function assert_golden( string $view, string $separator ): void {
-		$bytes = self::get_bytes( BaselineRows::views()[ $view ], $separator );
+		$bytes = self::export_bytes( BaselineRows::views()[ $view ], $separator );
 		$file  = BaselineRows::golden( $view, $separator );
-		if ( '1' === getenv( 'BULKCAT_WRITE_GOLDEN' ) ) {
-			if ( ! is_dir( BaselineRows::DIR ) ) {
-				mkdir( BaselineRows::DIR, 0755, true );
-			}
-			file_put_contents( $file, $bytes );
-		}
-		$this->assertFileExists( $file, 'Write the golden files once, from the export before the slice: BULKCAT_WRITE_GOLDEN=1.' );
+		$this->assertFileExists( $file, 'The golden files are recorded (B24) and not rewritten.' );
 		$this->assertStringStartsWith( CsvWriter::BOM, $bytes );
 		$this->assertSame( (string) file_get_contents( $file ), $bytes, "catalogue-$view-$separator.csv differs from today's export." );
 	}

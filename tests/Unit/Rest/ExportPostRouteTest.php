@@ -212,7 +212,7 @@ final class ExportPostRouteTest extends TestCase {
 
 	public function test_post_registers_behind_the_read_permission(): void {
 		$route = $GLOBALS['bulkcat_test']['routes']['/bulkcat/v1/export'];
-		$this->assertSame( 'GET', $route[0]['methods'], 'The GET stays for history exports (and the catalogue until the dialog ships).' );
+		$this->assertSame( 'GET', $route[0]['methods'], 'The GET stays for history exports; a catalogue GET is refused (R9).' );
 		$this->assertSame( 'POST', $route[1]['methods'] );
 		$this->assertSame( [ Access::class, 'can_read' ], $route[1]['permission_callback'] );
 		$this->assertSame( [ $this->controller, 'create_item' ], $route[1]['callback'] );
@@ -254,7 +254,9 @@ final class ExportPostRouteTest extends TestCase {
 		$this->assertSame( [], array_filter( $GLOBALS['wpdb']->queries, static fn( string $sql ): bool => str_contains( $sql, 'parent_id' ) ) );
 	}
 
-	public function test_a_filter_post_with_the_switch_off_streams_what_the_get_streams(): void {
+	public function test_a_filter_post_with_the_switch_off_reads_the_view_the_get_read(): void {
+		// The read arguments the retired catalogue GET passed to the /products reader for this view (T96, ca86255):
+		// the filter and order as the grid sends them, the columns as fields, no paging of its own.
 		$view                    = [
 			'columns'      => 'sku,name',
 			'search'       => 'shoe',
@@ -265,14 +267,24 @@ final class ExportPostRouteTest extends TestCase {
 				'value'    => [ 'instock' ],
 			],
 		];
-		[ $get, $get_headers ]   = $this->serve( self::send( 'GET', $view ) );
-		$get_params              = $this->calls[0][0];
-		$this->calls             = [];
 		[ $post, $post_headers ] = $this->serve( self::send( 'POST', $view ) );
-		$this->assertSame( $get, $post, 'Byte for byte what the GET export writes for the same view.' );
-		$this->assertSame( 'attachment; filename="catalogue-export-2026-09-23.csv"', $get_headers['Content-Disposition'] );
-		$this->assertSame( 'attachment; filename="catalogue-filtered-2026-09-23-1000.csv"', $post_headers['Content-Disposition'], 'Only the file name differs.' );
-		$this->assertSame( $get_params, $this->calls[0][0], 'The same read arguments reach the /products reader.' );
+		$this->assertSame(
+			[
+				'mode'         => 'products',
+				'search'       => 'shoe',
+				'orderby'      => [ 'sku' ],
+				'order'        => [ 'desc' ],
+				'stock_status' => [
+					'operator' => 'isAny',
+					'value'    => [ 'instock' ],
+				],
+				'fields'       => [ 'sku', 'name' ],
+			],
+			$this->calls[0][0],
+			'The same read arguments reach the /products reader.'
+		);
+		$this->assertSame( 'attachment; filename="catalogue-filtered-2026-09-23-1000.csv"', $post_headers['Content-Disposition'] );
+		$this->assertSame( '"SKU","Name"', self::lines( $post )[0] );
 		$this->assertCount( 251, self::lines( $post ) );
 	}
 
@@ -293,7 +305,7 @@ final class ExportPostRouteTest extends TestCase {
 					)
 				);
 				$this->assertSame( (string) file_get_contents( \BulkCatalogueManager\Tests\Unit\Export\BaselineRows::golden( $view, $separator ) ), $csv, "$view, $separator" );
-				$this->assertSame( 'attachment; filename="catalogue-filtered-2026-09-23-1000.csv"', $headers['Content-Disposition'], 'Only the file name differs from the GET.' );
+				$this->assertSame( 'attachment; filename="catalogue-filtered-2026-09-23-1000.csv"', $headers['Content-Disposition'], 'Only the file name differs from the retired GET.' );
 			}
 		}
 	}

@@ -914,8 +914,9 @@ final class BatchRepository {
 
 	/**
 	 * For a page of batches in one read, the latest undo batch that
-	 * finished undoing each (complete or partial): batch id => undo batch id, batches without one
-	 * left out.
+	 * finished undoing each (complete or partial, having put something back:
+	 * an undo whose every item was changed again first undid nothing, F2):
+	 * batch id => undo batch id, batches without one left out.
 	 *
 	 * @param list<int> $batch_ids Batches.
 	 * @return array<int, int>
@@ -931,7 +932,7 @@ final class BatchRepository {
 		$in   = implode( ', ', array_fill( 0, count( $batch_ids ), '%d' ) );
 		$args = array_merge( [ $this->registry->table( Schema::BATCHES ) ], $batch_ids );
 		// $in holds only %d placeholders, one per id; every id is a prepared argument.
-		$rows   = $wpdb->get_results( $wpdb->prepare( "SELECT batch_id, undo_of FROM %i WHERE undo_of IN ({$in}) AND source = 'undo' AND status IN ('complete', 'partial') ORDER BY batch_id ASC", $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in is only %d placeholders; every id is an argument.
+		$rows   = $wpdb->get_results( $wpdb->prepare( "SELECT batch_id, undo_of FROM %i WHERE undo_of IN ({$in}) AND source = 'undo' AND status IN ('complete', 'partial') AND changed_items > 0 ORDER BY batch_id ASC", $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in is only %d placeholders; every id is an argument.
 		$undone = [];
 		foreach ( is_array( $rows ) ? $rows : [] as $row ) {
 			$undone[ (int) $row['undo_of'] ] = (int) $row['batch_id'];
@@ -941,7 +942,8 @@ final class BatchRepository {
 
 	/**
 	 * For a page of batches in one read, the latest undo batch that
-	 * finished undoing each (complete or partial), with its user: batch id => [ batch_id,
+	 * finished undoing each (complete or partial, having put something back),
+	 * with its user: batch id => [ batch_id,
 	 * user_id ] of the undo batch, batches without one left out (the
 	 * history's "put back by").
 	 *
@@ -959,7 +961,7 @@ final class BatchRepository {
 		$in   = implode( ', ', array_fill( 0, count( $batch_ids ), '%d' ) );
 		$args = array_merge( [ $this->registry->table( Schema::BATCHES ) ], $batch_ids );
 		// $in holds only %d placeholders, one per id; every id is a prepared argument.
-		$rows   = $wpdb->get_results( $wpdb->prepare( "SELECT batch_id, undo_of, user_id FROM %i WHERE undo_of IN ({$in}) AND source = 'undo' AND status IN ('complete', 'partial') ORDER BY batch_id ASC", $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in is only %d placeholders; every id is an argument.
+		$rows   = $wpdb->get_results( $wpdb->prepare( "SELECT batch_id, undo_of, user_id FROM %i WHERE undo_of IN ({$in}) AND source = 'undo' AND status IN ('complete', 'partial') AND changed_items > 0 ORDER BY batch_id ASC", $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in is only %d placeholders; every id is an argument.
 		$undone = [];
 		foreach ( is_array( $rows ) ? $rows : [] as $row ) {
 			$undone[ (int) $row['undo_of'] ] = [
@@ -1240,18 +1242,20 @@ final class BatchRepository {
 
 	/**
 	 * The undo batches recorded against a batch (T55), newest first, as
-	 * `{ batch_id, status }`, so the planner can refuse one already undone.
+	 * `{ batch_id, status, changed_items }`, so the planner can refuse one
+	 * already undone (an undo that put nothing back does not count, F2).
 	 *
 	 * @param int $batch_id The batch undone.
-	 * @return list<array{batch_id: int, status: string}>
+	 * @return list<array{batch_id: int, status: string, changed_items: int}>
 	 */
 	public function undos_of( int $batch_id ): array {
 		global $wpdb;
-		$rows = $wpdb->get_results( $wpdb->prepare( 'SELECT batch_id, status FROM %i WHERE undo_of = %d ORDER BY batch_id DESC LIMIT %d', $this->registry->table( Schema::BATCHES ), $batch_id, self::MAX_CLAIM ), ARRAY_A );
+		$rows = $wpdb->get_results( $wpdb->prepare( 'SELECT batch_id, status, changed_items FROM %i WHERE undo_of = %d ORDER BY batch_id DESC LIMIT %d', $this->registry->table( Schema::BATCHES ), $batch_id, self::MAX_CLAIM ), ARRAY_A );
 		return array_map(
 			static fn( array $row ): array => [
-				'batch_id' => (int) $row['batch_id'],
-				'status'   => (string) $row['status'],
+				'batch_id'      => (int) $row['batch_id'],
+				'status'        => (string) $row['status'],
+				'changed_items' => (int) ( $row['changed_items'] ?? 0 ),
 			],
 			is_array( $rows ) ? $rows : []
 		);

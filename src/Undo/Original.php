@@ -4,12 +4,15 @@
  * T56). BatchFactory::create_undo() moves the batch undone to `undoing`
  * before the undo's first chunk; when the undo batch finishes:
  *
- * - complete or partial: the batch undone moves `undoing` -> `undone`
- *   (Reversibility and the planner then read it as already undone; a
- *   partial undo left some objects alone, and says so in its own report);
- * - failed (nothing put back) or cancelled: it moves back from `undoing` to
- *   the status it had before, kept in the undo batch's selection snapshot,
- *   so a failed undo leaves the batch undoable (§12.6).
+ * - complete or partial, having put something back: the batch undone moves
+ *   `undoing` -> `undone` (Reversibility and the planner then read it as
+ *   already undone; a partial undo left some objects alone, and says so in
+ *   its own report);
+ * - failed, cancelled, or finished having put nothing back (every item
+ *   changed again before the undo reached it, Main Build's F2): it moves
+ *   back from `undoing` to the status it had before, kept in the undo
+ *   batch's selection snapshot, so the batch stays undoable — Revert anyway
+ *   included (§12.6).
  *
  * Each move is conditional on `undoing` through BatchRepository::transition(),
  * which keeps the batch's own finished time. Any other batch is left alone.
@@ -47,14 +50,15 @@ final class Original {
 	 * @param BatchRepository      $batches Batches.
 	 * @param array<string, mixed> $undo    The undo batch's typed row (BatchRepository::find()); its selection holds the status before.
 	 * @param string               $status  The undo batch's final status: complete, partial, failed or cancelled.
+	 * @param int|null             $applied The undo batch's applied journal rows, when known; 0 is an undo that put nothing back.
 	 * @return bool Whether the batch undone moved.
 	 */
-	public static function settle( BatchRepository $batches, array $undo, string $status ): bool {
+	public static function settle( BatchRepository $batches, array $undo, string $status, ?int $applied = null ): bool {
 		$original = (int) ( $undo['undo_of'] ?? 0 );
 		if ( 'undo' !== ( $undo['source'] ?? '' ) || $original < 1 ) {
 			return false;
 		}
-		if ( in_array( $status, self::UNDONE_BY, true ) ) {
+		if ( in_array( $status, self::UNDONE_BY, true ) && 0 !== $applied ) {
 			return $batches->transition( $original, 'undoing', 'undone' );
 		}
 		$previous = (string) ( $undo['selection']['previous_status'] ?? 'complete' );

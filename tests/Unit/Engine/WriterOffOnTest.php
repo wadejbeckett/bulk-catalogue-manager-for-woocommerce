@@ -440,6 +440,57 @@ final class WriterOffOnTest extends TestCase {
 		);
 	}
 
+	public function test_a_replayed_status_wordpress_kept_is_already_and_not_saved(): void {
+		// Should-fix 4's replay half (Writer::replay()'s `saved` recomputed through stored()): a retry
+		// of a Published that WordPress keeps scheduled reports already and no save, as write() does.
+		$lost                                    = self::product( 22, 'future', null, self::NOW + 7 * 86400 );
+		$dying                                   = new class( $lost ) {
+			public function __construct( private SavedProduct $lost ) {}
+
+			public function is_type( string $type ): bool {
+				return $this->lost->is_type( $type );
+			}
+
+			public function get_meta( string $key = '', bool $single = true, string $context = 'view' ): mixed {
+				return $this->lost->get_meta( $key, $single, $context );
+			}
+
+			public function update_meta_data( string $key, mixed $value, int $meta_id = 0 ): void {
+				$this->lost->update_meta_data( $key, $value, $meta_id );
+			}
+
+			public function delete_meta_data( string $key ): void {
+				$this->lost->delete_meta_data( $key );
+			}
+
+			public function save(): int {
+				throw new \Error( 'Maximum execution time of 30 seconds exceeded' );
+			}
+
+			public function __call( string $method, array $args ): mixed {
+				return $this->lost->$method( ...$args );
+			}
+		};
+		$GLOBALS['bulkcat_test']['products'][22] = $dying;
+		$list                                    = $this->status_step( 'publish' );
+		try {
+			self::write( self::writer(), 22, $list );
+			$this->fail( 'The request was meant to die in save().' );
+		} catch ( \Error $e ) {
+			$this->assertNotSame( '', $e->getMessage() );
+		}
+		$this->assertSame( [ [ 'status', 'future', 'publish', 'pending' ] ], self::summary() );
+
+		$fresh                                        = self::product( 22, 'future', null, self::NOW + 7 * 86400 );
+		$GLOBALS['bulkcat_test']['stored_status'][22] = 'future';
+		$replayed                                     = self::write( self::writer(), 22, $list );
+		$this->assertSame( 'future', $fresh->props['status'] );
+		$this->assertFalse( $replayed->saved(), 'WordPress kept it scheduled: no change to report.' );
+		$result = $replayed->results()[0];
+		$this->assertSame( [ Result::ALREADY, 'future', 'future' ], [ $result->state(), $result->old(), $result->new() ] );
+		$this->assertSame( [ [ 'status', 'future', 'future', 'applied' ] ], self::summary(), 'The journal records what WordPress stored.' );
+	}
+
 	public function test_replay_reads_back_the_stored_status_too(): void {
 		$lost                                    = self::product( 21, 'draft', 'future', self::NOW + 7 * 86400 );
 		$dying                                   = new class( $lost ) {

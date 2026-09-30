@@ -147,7 +147,7 @@ final class PlannerTest extends TestCase {
 	private function undo_batches( array $undos ): void {
 		global $wpdb;
 		$wpdb->responses = [
-			'/^SELECT batch_id, status FROM `wp_bulkcat_batches` WHERE undo_of = /' => fn( string $sql ): array => ( new SqlEvaluator( [ 'wp_bulkcat_batches' => array_merge( [ $this->store->batch ], $undos ) ] ) )->rows( $sql ),
+			'/^SELECT batch_id, status, changed_items FROM `wp_bulkcat_batches` WHERE undo_of = /' => fn( string $sql ): array => ( new SqlEvaluator( [ 'wp_bulkcat_batches' => array_merge( [ $this->store->batch ], $undos ) ] ) )->rows( $sql ),
 		] + $wpdb->responses;
 	}
 
@@ -780,11 +780,24 @@ final class PlannerTest extends TestCase {
 
 		$this->store->batch['status'] = 'complete';
 		$undo                         = [
-			'batch_id' => 40,
-			'status'   => 'complete',
-			'source'   => 'undo',
-			'undo_of'  => self::BATCH,
+			'batch_id'      => 40,
+			'status'        => 'complete',
+			'source'        => 'undo',
+			'undo_of'       => self::BATCH,
+			'changed_items' => 1,
 		];
+		// F2: an undo that finished having put nothing back undid nothing: the batch can still be undone.
+		$this->undo_batches( [ [ 'changed_items' => 0 ] + $undo ] );
+		$this->assertInstanceOf( Plan::class, $this->planner()->plan( self::BATCH ) );
+		$this->undo_batches(
+			[
+				[
+					'status'        => 'partial',
+					'changed_items' => 0,
+				] + $undo,
+			]
+		);
+		$this->assertInstanceOf( Plan::class, $this->planner()->plan( self::BATCH ) );
 		$this->undo_batches( [ $undo ] );
 		$refusal = $this->assert_refused( 'already_undone' );
 		$this->assertSame( 40, $refusal->get_error_data()['undo_batch_id'] );

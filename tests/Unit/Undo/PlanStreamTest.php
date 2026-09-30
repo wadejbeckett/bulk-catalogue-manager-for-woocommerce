@@ -11,9 +11,11 @@
  * record, a term list emptied, conflicts in price, stock and status, a
  * missing product and a category item — is planned and compared, item for
  * item and hash for hash, with the golden file the whole-plan planner wrote
- * before the walk existed (`golden/stream-plan.json`, written with
- * BULKCAT_WRITE_GOLDEN=1 at f498629). The undo preview's pages, conflicts
- * first, are the same slices the whole plan gave.
+ * (`golden/stream-plan.json`, written with BULKCAT_WRITE_GOLDEN=1 by the
+ * planner of 69e2533, the integration head whose restore_status also
+ * carries the status and record expected when planned; first written at
+ * f498629, where only those 13 status items and the hash differ). The undo
+ * preview's pages, conflicts first, are the same slices the whole plan gave.
  *
  * Memory: walking 12,000 objects keeps what it holds bounded by the page,
  * not by the batch (the whole plan kept about 2.7 KB an item).

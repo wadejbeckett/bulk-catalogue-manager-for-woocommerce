@@ -554,6 +554,20 @@ describe( 'history words', () => {
 		expect( undoneNotice( 'Set the stock', report( undefined ) ) ).toBe(
 			'Undone: Set the stock. 120 items were put back.'
 		);
+		// Main Build's F2: an undo that put nothing back is not called done.
+		const sentence =
+			'Nothing was put back, because everything had been changed again by the time the undo reached it. The change can still be undone: choose Revert anyway to put the old values back regardless.';
+		expect(
+			undoneNotice( 'Set the stock', {
+				changed_items: 0,
+				done_items: 3,
+				undo: {
+					undo_of: 1,
+					sentence,
+					by_type: { products: 3, variations: 0 },
+				},
+			} )
+		).toBe( sentence );
 	} );
 
 	it( 'names one undo by its batch, plan and force, so a retry keeps its grant', () => {

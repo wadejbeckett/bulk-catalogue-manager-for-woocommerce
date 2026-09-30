@@ -145,6 +145,17 @@ final class Descriptor {
 	}
 
 	/**
+	 * Copy with a different field surface, leaving the runtime descriptor intact.
+	 *
+	 * @param string[]             $fields Accepted fields.
+	 * @param string[]             $groups Groups of those fields.
+	 * @param array<string, mixed> $args Argument schema.
+	 */
+	public function with_fields( array $fields, array $groups, array $args ): self {
+		return new self( $this->id, $this->group, $this->label, $this->description, $this->edit_kinds, $fields, $groups, $args );
+	}
+
+	/**
 	 * Everything the client needs about the action.
 	 *
 	 * @return array<string, mixed>

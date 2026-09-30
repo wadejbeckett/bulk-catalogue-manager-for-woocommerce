@@ -82,6 +82,24 @@ final class BatchIntentTest extends TestCase {
 		);
 	}
 
+	public function test_released_status_intent_stays_exact_but_needs_new_identity_before_acceptance(): void {
+		bulkcat_test_reset();
+		$fixture = json_decode( (string) file_get_contents( dirname( __DIR__, 2 ) . '/fixtures/released-status-receipts.json' ), true );
+		foreach ( $fixture['batches'] as $case ) {
+			$intent = $case['intent'];
+			$this->assertSame( $case['receipt']['fingerprint'], CaptureIntent::fingerprint( $intent ) );
+			$this->assertSame( $intent, BatchIntent::normalize( 'batch.apply', $intent, (int) $case['receipt']['user_id'] ) );
+			$this->assertFalse( BatchIntent::current_operations( $intent ), 'Unaccepted released grants must require a new preview.' );
+			$raw = $intent;
+			unset( $raw['version'] );
+			$new = BatchIntent::normalize( 'batch.apply', $raw, (int) $case['receipt']['user_id'] );
+			$this->assertSame( 'set_status', $new['operations'][0]['action'] );
+			$this->assertArrayNotHasKey( 'keep_changed_status', $new['operations'][0]['args'] );
+			$this->assertNotSame( $case['receipt']['fingerprint'], CaptureIntent::fingerprint( $new ) );
+			$this->assertSame( $new['operations'], BatchIntent::current_operations( $new ) );
+		}
+	}
+
 	public function test_undo_intent_binds_force_original_and_plan(): void {
 		bulkcat_test_reset();
 		$intent = BatchIntent::normalize(

@@ -41,6 +41,7 @@ final class RegistryTest extends TestCase {
 	 */
 	private const ACTIONS = [
 		'set_value'     => [ SetValue::class, 'publishing', 'T25' ],
+		'set_status'    => [ \BulkCatalogueManager\Operations\SetStatus::class, 'publishing', 'Native Status Task 2' ],
 		'clear'         => [ Clear::class, 'pricing', 'T25' ],
 		'adjust'        => [ Adjust::class, 'pricing', 'T26' ],
 		'round'         => [ \BulkCatalogueManager\Operations\Round::class, 'pricing', 'T26' ],
@@ -75,6 +76,10 @@ final class RegistryTest extends TestCase {
 			'set_value'     => [
 				'field' => 'regular_price',
 				'value' => '12.5',
+			],
+			'set_status'    => [
+				'field' => 'status',
+				'value' => 'draft',
 			],
 			'clear'         => [ 'field' => 'sale_price' ],
 			'adjust'        => [
@@ -283,7 +288,7 @@ final class RegistryTest extends TestCase {
 				'skip_already'        => true,
 				'apply_to_variations' => false,
 			],
-			$valid[3]['args'],
+			$valid[4]['args'],
 			'Round keeps only the setting its way uses.'
 		);
 		$this->assertSame(
@@ -295,7 +300,7 @@ final class RegistryTest extends TestCase {
 				'case_sensitive' => false,
 				'skip_already'   => true,
 			],
-			$valid[5]['args']
+			$valid[6]['args']
 		);
 
 		$off = self::registry()->validate_list(
@@ -314,7 +319,6 @@ final class RegistryTest extends TestCase {
 			[
 				'field'               => 'status',
 				'value'               => 'draft',
-				'keep_changed_status' => false,
 				'skip_already'        => true,
 				'apply_to_variations' => true,
 			],
@@ -380,7 +384,7 @@ final class RegistryTest extends TestCase {
 		$this->assertNotContains( 'restore_status', $registry->ids() );
 		$this->assertArrayNotHasKey( 'restore_status', $registry->descriptors() );
 		$this->assertNotContains( 'restore_status', array_column( $registry->to_client(), 'id' ) );
-		$this->assertSame( [ 'set_value' ], $registry->actions_for( 'status', Field::SET ), 'Setting Status is set_value, never the internal step.' );
+		$this->assertSame( [ 'set_status' ], $registry->actions_for( 'status', Field::SET ), 'New Status uses set_status, never the internal step.' );
 
 		$step    = [
 			'action' => 'restore_status',
@@ -798,7 +802,7 @@ final class RegistryTest extends TestCase {
 			],
 		];
 		foreach ( $bad as $case => [ $action, $args ] ) {
-			$refusal = $this->refused(
+			$refusal         = $this->refused(
 				self::registry()->validate_list(
 					[
 						[
@@ -810,7 +814,8 @@ final class RegistryTest extends TestCase {
 				'bulkcat_invalid_operation',
 				$case
 			);
-			$this->assertSame( $action, $refusal->get_error_data()['action'], $case );
+			$expected_action = 'set_value' === $action && 'status' === ( $args['field'] ?? '' ) ? 'set_status' : $action;
+			$this->assertSame( $expected_action, $refusal->get_error_data()['action'], $case );
 			$this->assertSame( 1, $refusal->get_error_data()['step'], $case );
 		}
 

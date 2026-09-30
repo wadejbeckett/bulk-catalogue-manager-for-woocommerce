@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-09-30T19:46:38+00:00\n"
+"POT-Creation-Date: 2026-09-30T20:33:34+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -170,7 +170,7 @@ msgstr ""
 msgid "You do not have permission to edit this product, so nothing was changed. Ask an administrator for access to it."
 msgstr ""
 
-msgid "Keep current status only applies when changing Status. Change Status too, or leave it out, and try again."
+msgid "Status controls have changed. Reload and review the change again."
 msgstr ""
 
 msgid "That product could not be found. It may have been deleted; reload the list and try again."
@@ -1330,13 +1330,19 @@ msgid_plural "Your prices have %d decimals, so the ending cannot have more. Ente
 msgstr[0] ""
 msgstr[1] ""
 
+msgid "Set Status"
+msgstr ""
+
+msgid "Sets the native publication status of the chosen products."
+msgstr ""
+
+msgid "Enter the new value, then try again."
+msgstr ""
+
 msgid "Set a value"
 msgstr ""
 
 msgid "Gives every chosen product the same value for one field, replacing what is there now."
-msgstr ""
-
-msgid "Enter the new value, then try again."
 msgstr ""
 
 msgid "For products changed by someone else while Off: keep their current status and clear the Off record"

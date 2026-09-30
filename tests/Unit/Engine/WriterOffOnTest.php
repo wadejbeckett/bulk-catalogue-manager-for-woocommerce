@@ -93,21 +93,27 @@ final class WriterOffOnTest extends TestCase {
 	 * @param bool   $skip   Skip rows already correct.
 	 */
 	private function status_step( string $status, bool $keep = false, bool $skip = true ): array {
-		$list = ( new Registry( new Fields() ) )->validate_list(
+		// These are accepted legacy operations, not new public requests.
+		$validation = ( new Registry( new Fields() ) )->get( 'set_value' )->validate(
 			[
-				[
-					'action' => 'set_value',
-					'args'   => [
-						'field'               => 'status',
-						'value'               => $status,
-						'keep_changed_status' => $keep,
-						'skip_already'        => $skip,
-					],
-				],
+				'field'               => 'status',
+				'value'               => $status,
+				'keep_changed_status' => $keep,
+				'skip_already'        => $skip,
 			]
 		);
-		$this->assertTrue( is_array( $list ), $list instanceof \WP_Error ? $list->get_error_message() : '' );
-		return json_decode( (string) wp_json_encode( $list ), true );
+		$this->assertNull( $validation->error() );
+		return json_decode(
+			(string) wp_json_encode(
+				[
+					[
+						'action' => 'set_value',
+						'args'   => $validation->args(),
+					],
+				]
+			),
+			true
+		);
 	}
 
 	/**

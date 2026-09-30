@@ -81,20 +81,16 @@ final class StatusSwitchTest extends TestCase {
 	 * @return array<string, mixed>
 	 */
 	private static function step( string $target, bool $keep ): array {
-		$list = ( new Registry( new Fields() ) )->validate_list(
+		// Accepted stored work resolves SetValue directly, bypassing new-request aliases.
+		$validation = ( new Registry( new Fields() ) )->get( 'set_value' )->validate(
 			[
-				[
-					'action' => 'set_value',
-					'args'   => [
-						'field'               => 'status',
-						'value'               => $target,
-						'keep_changed_status' => $keep,
-					],
-				],
+				'field'               => 'status',
+				'value'               => $target,
+				'keep_changed_status' => $keep,
 			]
 		);
-		self::assertTrue( is_array( $list ), $list instanceof \WP_Error ? $list->get_error_message() : '' );
-		return $list[0]['args'];
+		self::assertNull( $validation->error() );
+		return $validation->args();
 	}
 
 	public function test_the_fixture_lists_every_outcome_and_the_confirm_list_is_the_servers(): void {

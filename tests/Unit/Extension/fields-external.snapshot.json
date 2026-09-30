@@ -1657,7 +1657,6 @@
             ],
             "fields": [
                 "name",
-                "status",
                 "catalog_visibility",
                 "visible_on_site",
                 "featured",
@@ -1686,7 +1685,6 @@
                         "type": "string",
                         "enum": [
                             "name",
-                            "status",
                             "catalog_visibility",
                             "visible_on_site",
                             "featured",
@@ -1710,10 +1708,6 @@
                             {
                                 "value": "name",
                                 "label": "Name"
-                            },
-                            {
-                                "value": "status",
-                                "label": "Status"
                             },
                             {
                                 "value": "catalog_visibility",
@@ -1807,11 +1801,63 @@
                         "type": "boolean",
                         "default": false
                     },
-                    "keep_changed_status": {
-                        "title": "For products changed by someone else while Off: keep their current status and clear the Off record",
-                        "description": "Keep current status for products changed by someone else while Off has to be on or off.",
+                    "apply_to_variations": {
+                        "title": "Also apply to variations",
+                        "description": "Also apply to variations has to be on or off.",
+                        "type": "boolean"
+                    },
+                    "skip_already": {
+                        "title": "Skip rows where the value is already correct",
+                        "description": "Skip rows where the value is already correct has to be on or off.",
                         "type": "boolean",
-                        "default": false
+                        "default": true
+                    }
+                },
+                "additionalProperties": false
+            }
+        },
+        {
+            "id": "set_status",
+            "label": "Set Status",
+            "description": "Sets the native publication status of the chosen products.",
+            "group": "publishing",
+            "groups": [
+                "publishing"
+            ],
+            "editKinds": [
+                "set"
+            ],
+            "fields": [
+                "status"
+            ],
+            "args": {
+                "type": "object",
+                "properties": {
+                    "field": {
+                        "title": "Field",
+                        "description": "Choose the field Set Status should change, then try again.",
+                        "type": "string",
+                        "enum": [
+                            "status"
+                        ],
+                        "choices": [
+                            {
+                                "value": "status",
+                                "label": "Status"
+                            }
+                        ],
+                        "required": true
+                    },
+                    "value": {
+                        "title": "New value",
+                        "description": "Enter the new value, then try again.",
+                        "type": [
+                            "string",
+                            "number",
+                            "boolean",
+                            "null"
+                        ],
+                        "required": true
                     },
                     "apply_to_variations": {
                         "title": "Also apply to variations",

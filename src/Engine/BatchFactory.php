@@ -691,7 +691,7 @@ final class BatchFactory {
 	 * could only report that. Stops reading once the objects would pass the
 	 * batch limit.
 	 *
-	 * On is not pushed down (T91, SPEC §8): a Published Status step is not
+	 * Accepted legacy On is not pushed down (T91, SPEC §8): a set_value Published step is not
 	 * carried to the variations of a selected product that carries its own
 	 * Off record (read per page through Availability\OffRecord::owners()),
 	 * since On restores only what Off saved and Off saved nothing for them;
@@ -716,7 +716,7 @@ final class BatchFactory {
 		}
 		$own    = count( $reaching ) === count( $operations ) ? null : $reaching;
 		$fields = $this->actions->fields();
-		// A Published Status step, which never reaches the variations of an Off product (T91).
+		// Only accepted legacy set_value On exempts children; new set_status always uses normal reach.
 		$not_on  = array_values( array_filter( $reaching, fn( array $step ): bool => ! $this->switches_on( $step ) ) );
 		$kept    = 0;
 		$parents = null === $own;
@@ -771,7 +771,7 @@ final class BatchFactory {
 	}
 
 	/**
-	 * Whether a step is Published on the Status field (T91): the step that
+	 * Whether a stored legacy set_value step is Published (T91): the step that
 	 * switches an Off product On.
 	 *
 	 * @param array{action: string, args: array<string, mixed>} $step A normalised step.

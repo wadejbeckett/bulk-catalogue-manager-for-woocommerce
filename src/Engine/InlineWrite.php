@@ -40,7 +40,7 @@ defined( 'ABSPATH' ) || exit;
  *    (`current_user_can( 'edit_post', $id )`, through Access::can_edit_object());
  * 3. turns the submitted values into an operation list, one step per field
  *    in the field registry's order (operations()): the action that sets the
- *    field (set_value, or replace_terms for a term list), or `clear` for an
+ *    field (set_status, set_value, or replace_terms for a term list), or `clear` for an
  *    empty value on a nullable field that allows clearing. When two prices
  *    arrive together the regular price's step clears a sale price it would
  *    leave not below it, so the later sale price step decides the pair.
@@ -64,13 +64,9 @@ defined( 'ABSPATH' ) || exit;
  * A write that throws (the journal refusing a row) still finalises the batch
  * as failed and is answered 500 `bulkcat_save_failed`.
  *
- * Status (T89, SPEC §5.5) is the Off/On switch here as in bulk: the same
- * set_value step, so an inline Off or On journals the same `status` and
- * `availability_off` rows. A product changed elsewhere while Off is a
- * conflict the dry run refuses 400 `bulkcat_availability_conflict` naming
- * `status`, with the outcome and its context in the data; `$keep_changed_status`
- * (Keep current status) resolves it by clearing the record, and is refused
- * 400 without a Status change.
+ * Status emits set_status explicitly. Obsolete Keep current status intent is
+ * refused with reload/review guidance; accepted legacy batches resolve through
+ * their stored operation instead of this new-write entry point.
  */
 final class InlineWrite {
 	/**
@@ -141,7 +137,7 @@ final class InlineWrite {
 	 * @param array<string, mixed> $values  Field key => value, for any of the registry's editable fields.
 	 * @param string               $source  One of SOURCES.
 	 * @param int                  $user_id The user the batch is recorded for (the current user).
-	 * @param bool                 $keep_changed_status Keep current status (T89): for a product changed elsewhere while Off, clear its record instead of refusing; only with a Status change.
+	 * @param bool                 $keep_changed_status Obsolete explicit legacy intent; true is refused for new writes.
 	 * @return array{batch_id: int, status: string, outcome: WriteOutcome}|\WP_Error
 	 * @throws \InvalidArgumentException On a source outside SOURCES: a programming error.
 	 */
@@ -183,7 +179,7 @@ final class InlineWrite {
 	 * of the first field that cannot be set, naming it.
 	 *
 	 * @param array<string, mixed> $values              Field key => value.
-	 * @param bool                 $keep_changed_status Keep current status, for the Status step.
+	 * @param bool                 $keep_changed_status Obsolete explicit legacy intent, refused when true.
 	 * @return list<array{action: string, args: array<string, mixed>}>|\WP_Error
 	 */
 	public function operations( array $values, bool $keep_changed_status = false ): array|\WP_Error {
@@ -191,11 +187,10 @@ final class InlineWrite {
 		if ( [] === $editable ) {
 			return $this->actions->validate_list( [] );
 		}
-		$status = array_filter( $editable, static fn( Field $field ): bool => StatusSwitch::governs( $field ) );
-		if ( $keep_changed_status && [] === $status ) {
+		if ( $keep_changed_status ) {
 			return Refusal::invalid(
 				self::INVALID,
-				__( 'Keep current status only applies when changing Status. Change Status too, or leave it out, and try again.', 'bulk-catalogue-manager-for-woocommerce' ),
+				__( 'Status controls have changed. Reload and review the change again.', 'bulk-catalogue-manager-for-woocommerce' ),
 				[ 'field' => 'keep_changed_status' ]
 			);
 		}
@@ -203,9 +198,6 @@ final class InlineWrite {
 		$operations = [];
 		foreach ( $editable as $key => $field ) {
 			$step = $this->step( $field, $values[ $key ], count( $prices ) > 1 );
-			if ( null !== $step && isset( $status[ $key ] ) ) {
-				$step['args']['keep_changed_status'] = $keep_changed_status;
-			}
 			$list = null === $step ? null : $this->actions->validate_list( [ $step ] );
 			if ( ! is_array( $list ) ) {
 				$message = $list instanceof \WP_Error ? $list->get_error_message() : $field->rule_text();
@@ -257,7 +249,7 @@ final class InlineWrite {
 			$args['clear_invalid_sale'] = $price_pair;
 		}
 		return [
-			'action' => $ids[0],
+			'action' => StatusSwitch::governs( $field ) ? 'set_status' : $ids[0],
 			'args'   => $args,
 		];
 	}

@@ -202,81 +202,66 @@ final class InlineWriteTest extends TestCase {
 		$this->assertArrayNotHasKey( 'apply_to_variations', $writes->operations( [ 'catalog_visibility' => 'hidden' ] )[0]['args'], 'A product-only field has no such argument.' );
 	}
 
-	public function test_a_conflict_is_refused_400_naming_status_with_nothing_written(): void {
-		// T89: a product changed to Private elsewhere while Off; Published leaves it alone.
-		self::off_product( 102, 'private', 'publish' );
-		$refused = $this->assert_refused( $this->writes()->write( 102, [ 'status' => 'publish' ], 'inline', self::USER ), 'bulkcat_availability_conflict', 400 );
-		$this->assertSame( 'status', $refused->get_error_data()['field'] );
-		$this->assertSame( 'conflict', $refused->get_error_data()['outcome'] );
+	public function test_new_publish_ignores_a_legacy_conflict_and_journals_owned_record_removal(): void {
+		$product = self::off_product( 102, 'private', 'publish' );
+		$result  = $this->writes()->write( 102, [ 'status' => 'publish' ], 'inline', self::USER );
+		$this->assertTrue( is_array( $result ) );
+		$this->assertSame( 'publish', $product->props['status'] );
+		$this->assertSame( 1, $product->saves );
+		$this->assertArrayNotHasKey( '_bulkcat_availability_off', $product->meta );
 		$this->assertSame(
 			[
-				'saved'   => 'publish',
-				'current' => 'private',
+				[ 102, 'status', 'private', 'publish', 'applied' ],
+				[ 102, 'availability_off', '{"id":102,"status":"publish","at":"2026-09-01T08:00:00Z","batch":7}', '', 'applied' ],
 			],
-			$refused->get_error_data()['context']
+			$this->store->journal()
 		);
-		$this->assertSame( \BulkCatalogueManager\Availability\Outcome::conflict_reason(), $refused->get_error_message() );
 	}
 
-	public function test_keep_current_status_clears_the_record_and_keeps_the_status(): void {
-		// A simple product: the dry run of a Status step expands a variable product's variations.
+	public function test_explicit_keep_current_status_requires_reload_without_writes(): void {
 		$product = self::off_product( 104, 'private', 'publish' );
-		$result  = $this->writes()->write( 104, [ 'status' => 'publish' ], 'inline', self::USER, true );
-		$this->assertTrue( is_array( $result ), $result instanceof \WP_Error ? $result->get_error_message() : '' );
-		$this->assertSame( 'complete', $result['status'] );
+		$refused = $this->assert_refused( $this->writes()->write( 104, [ 'status' => 'publish' ], 'inline', self::USER, true ), InlineWrite::INVALID, 400 );
+		$this->assertStringContainsString( 'Reload and review', $refused->get_error_message() );
 		$this->assertSame( 'private', $product->props['status'] );
-		$this->assertArrayNotHasKey( '_bulkcat_availability_off', $product->meta );
-		$this->assertSame( [ [ 104, 'availability_off', '{"id":104,"status":"publish","at":"2026-09-01T08:00:00Z","batch":7}', '', 'applied' ] ], $this->store->journal() );
-
-		// Keep current status goes with a status change only.
-		$refused = $this->writes()->write( 101, [ 'regular_price' => '21' ], 'inline', self::USER, true );
-		$this->assertInstanceOf( \WP_Error::class, $refused );
+		$this->assertArrayHasKey( '_bulkcat_availability_off', $product->meta );
+		$refused = $this->assert_refused( $this->writes()->write( 101, [ 'regular_price' => '21' ], 'inline', self::USER, true ), InlineWrite::INVALID, 400 );
 		$this->assertSame( 'keep_changed_status', $refused->get_error_data()['field'] );
 	}
 
-	public function test_already_off_and_already_draft_write_nothing_and_say_so(): void {
-		self::off_product( 105, 'draft', 'publish' );
-		$off = $this->writes()->write( 105, [ 'status' => 'draft' ], 'inline', self::USER );
+	public function test_already_draft_preserves_legacy_record_without_save_or_journal(): void {
+		$product = self::off_product( 105, 'draft', 'publish' );
+		$before  = $product->meta;
+		$off     = $this->writes()->write( 105, [ 'status' => 'draft' ], 'inline', self::USER );
 		$this->assertTrue( is_array( $off ) );
 		$this->assertFalse( $off['outcome']->saved() );
-		$this->assertSame( 'already_off', $off['outcome']->results()[0]->note() );
-		self::product( 102, 'simple', [ 'status' => 'draft' ] );
+		$this->assertSame( Result::ALREADY, $off['outcome']->results()[0]->state() );
+		$this->assertSame( '', $off['outcome']->results()[0]->note() );
+		$this->assertSame( 0, $product->saves );
+		$this->assertSame( $before, $product->meta );
+		$plain = self::product( 102, 'simple', [ 'status' => 'draft' ] );
 		$draft = $this->writes()->write( 102, [ 'status' => 'draft' ], 'inline', self::USER );
-		$this->assertSame( 'already_draft', $draft['outcome']->results()[0]->note() );
+		$this->assertSame( Result::ALREADY, $draft['outcome']->results()[0]->state() );
+		$this->assertSame( '', $draft['outcome']->results()[0]->note() );
+		$this->assertSame( 0, $plain->saves );
 		$this->assertSame( [], $this->store->journal() );
 	}
 
-	public function test_inline_off_and_on_journal_the_same_rows_as_a_bulk_batch(): void {
-		// E3, server half: the record a PATCH writes is the record a bulk batch writes, apart from its batch and time.
-		self::product( 106, 'simple', [ 'status' => 'publish' ] );
-		$off = $this->writes()->write( 106, [ 'status' => 'draft' ], 'inline', self::USER );
+	public function test_inline_native_status_journals_the_same_rows_as_a_bulk_batch(): void {
+		$product = self::product( 106, 'simple', [ 'status' => 'publish' ] );
+		$off     = $this->writes()->write( 106, [ 'status' => 'draft' ], 'inline', self::USER );
 		$this->assertSame( 'complete', $off['status'] );
-		$inline = self::without_stamp( $this->store->journal() );
-		$this->assertSame( [ 'status', 'availability_off' ], array_column( $inline, 1 ) );
-		$this->assertStringStartsWith( '{"id":106,"status":"publish","at":"', (string) $this->store->journal()[1][3] );
-		$this->assertStringEndsWith( ',"batch":' . $off['batch_id'] . '}', (string) $this->store->journal()[1][3] );
-
+		$inline = $this->store->journal();
+		$this->assertSame( [ [ 106, 'status', 'publish', 'draft', 'applied' ] ], $inline );
+		$this->assertSame( [], $product->meta );
 		$operations = json_decode( (string) wp_json_encode( $this->writes()->operations( [ 'status' => 'draft' ] ) ), true );
+		$this->assertSame( 'set_status', $operations[0]['action'] );
 		bulkcat_test_reset();
 		$GLOBALS['bulkcat_test']['user_caps'] = [ self::USER => [ 'edit_post' => true ] ];
-		self::product( 106, 'simple', [ 'status' => 'publish' ] );
-		$runner = new RunnerStore( 7, [ 106 ], $operations, self::USER );
+		$product                              = self::product( 106, 'simple', [ 'status' => 'publish' ] );
+		$runner                               = new RunnerStore( 7, [ 106 ], $operations, self::USER );
 		$this->assertSame( 'complete', ( new ChunkRunner( null, $this->actions, null, new Settings( [] ), static fn(): float => 1790000000.0, 30 ) )->run( 7 ) );
-		$this->assertSame( self::without_stamp( $runner->journal() ), $inline, 'Identical rows apart from the stamp.' );
-		$this->assertStringEndsWith( ',"batch":7}', (string) $runner->journal()[1][3] );
-	}
-
-	/**
-	 * Journal rows with each record's time and batch blanked.
-	 *
-	 * @param list<array<int, mixed>> $rows Rows as InlineStore::journal() lists them.
-	 * @return list<array<int, mixed>>
-	 */
-	private static function without_stamp( array $rows ): array {
-		return array_map(
-			static fn( array $row ): array => array_map( static fn( mixed $value ): mixed => is_string( $value ) ? (string) preg_replace( '/"at":"[^"]*","batch":\d+/', '"at":"","batch":0', $value ) : $value, $row ),
-			$rows
-		);
+		$this->assertSame( $runner->journal(), $inline );
+		$this->assertSame( [], $product->meta );
 	}
 
 	public function test_fields_become_one_step_each_in_registry_order(): void {

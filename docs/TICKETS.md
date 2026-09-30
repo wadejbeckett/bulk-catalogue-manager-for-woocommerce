@@ -2,6 +2,30 @@
 
 Ordered; each ticket is independently mergeable and ends with tests green. "Probe" means `tests/probe/probe.py` from T10, which every later ticket extends with its own surfaces. Update this file as tickets close.
 
+### Delivery follow-up 14 — native Status identity (2026-09-30; Task 2 only, review pending)
+
+New Status requests and inline writes use `set_status`; raw Status `set_value`
+aliases normalize before validation and obsolete explicit Keep current status
+intent requires reload/review. Public discovery projects Status out of SetValue
+without changing its stored-work descriptor, compute or apply. New edits never
+create an Off record; only a changed status clears a valid owned record, journalled
+with that status. No-ops and foreign/malformed records remain untouched. New
+cascade follows per-step reach, while accepted legacy On retains its exemption.
+
+Compatibility fixtures contain real completed 1.1.0 operations and receipts from
+the native oracle. Unit replay preserves their batch IDs and fingerprints before
+current-operation checks; unaccepted old canonical operations require a new
+preview. These are not native queued-upgrade results. Task 5 owns that proof.
+
+Meaningful RED → GREEN: 18 focused tests / 203 assertions; exact-selection,
+request/recovery, operation, legacy, writer and preview groups 295 / 8,135;
+provider and REST covering groups 88 / 2,354. The full PHP run (1,092 tests) retained
+eight intentional Task 3 missing-class errors and found three outdated discovery/
+route expectations, corrected and covered by the 88-test run. No full-green plan
+claim: Task 3 owns prediction/permissions/password/binding and native save context;
+Task 4 owns UI and Task 5 native upgrade qualification. Source/tests/POT only;
+generated assets, release and deployment remain separate.
+
 ### Delivery follow-up 12 — category creation feedback (2026-09-30; local native checks complete, review pending)
 
 Final-review I1 follow-up (2026-09-30): the creation status now exists empty

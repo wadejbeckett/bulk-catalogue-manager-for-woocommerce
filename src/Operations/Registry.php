@@ -26,6 +26,7 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Operations;
 
+use BulkCatalogueManager\Availability\StatusSwitch;
 use BulkCatalogueManager\External\ExternalOperation;
 use BulkCatalogueManager\External\Providers;
 use BulkCatalogueManager\External\Refusals;
@@ -261,7 +262,19 @@ final class Registry {
 	 * @return array<string, Descriptor>
 	 */
 	public function descriptors(): array {
-		return array_map( static fn( Operation $operation ): Descriptor => $operation->describe(), array_diff_key( $this->operations, array_flip( self::INTERNAL ) ) );
+		$descriptors = array_map( static fn( Operation $operation ): Descriptor => $operation->describe(), array_diff_key( $this->operations, array_flip( self::INTERNAL ) ) );
+		if ( isset( $descriptors['set_value'] ) ) {
+			// Discovery hides legacy Status; get()->describe() must still accept stored work.
+			$legacy                                 = $descriptors['set_value'];
+			$fields                                 = array_values( array_filter( $legacy->fields(), fn( string $key ): bool => ! StatusSwitch::governs( $this->fields->get( $key ) ) ) );
+			$groups                                 = array_values( array_intersect( Group::ALL, array_map( fn( string $key ): string => $this->fields->get( $key )->group(), $fields ) ) );
+			$args                                   = $legacy->args();
+			$args['properties']['field']['enum']    = $fields;
+			$args['properties']['field']['choices'] = array_values( array_filter( $args['properties']['field']['choices'], static fn( array $choice ): bool => in_array( $choice['value'], $fields, true ) ) );
+			unset( $args['properties']['keep_changed_status'] );
+			$descriptors['set_value'] = $legacy->with_fields( $fields, $groups, $args );
+		}
+		return $descriptors;
 	}
 
 	/**
@@ -368,6 +381,18 @@ final class Registry {
 				];
 				continue;
 			}
+			$resolved = is_string( $field ) ? $this->fields->get( $field ) : null;
+			if ( 'set_value' === $entry['action'] && null !== $resolved && StatusSwitch::governs( $resolved ) ) {
+				if ( array_key_exists( 'keep_changed_status', $args ) && false !== $args['keep_changed_status'] ) {
+					return self::step_refusal( $step, $count, BaseOperation::INVALID, __( 'Status controls have changed. Reload and review the change again.', 'bulk-catalogue-manager-for-woocommerce' ) );
+				}
+				$entry['action'] = 'set_status';
+				unset( $args['keep_changed_status'] );
+				$operation = $this->get( 'set_status' );
+				if ( null === $operation ) {
+					return self::step_refusal( $step, $count, self::UNKNOWN_ACTION, __( 'This step asks for an action that is not available. Choose an action from the list and try again.', 'bulk-catalogue-manager-for-woocommerce' ) );
+				}
+			}
 			if ( is_string( $field ) && '' !== $field && ! $operation->describe()->accepts( $field ) ) {
 				$refusal = $operation instanceof BaseOperation
 					? $operation->field_refusal( $field )
@@ -412,6 +437,7 @@ final class Registry {
 	private static function defaults( Fields $fields ): array {
 		return [
 			new SetValue( $fields ),
+			new SetStatus( $fields ),
 			new Clear( $fields ),
 			new Adjust( $fields ),
 			new Round( $fields ),

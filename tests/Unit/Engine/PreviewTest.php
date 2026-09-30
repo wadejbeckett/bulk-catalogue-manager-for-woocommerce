@@ -760,74 +760,50 @@ final class PreviewTest extends TestCase {
 		}
 	}
 
-	public function test_the_availability_block_counts_every_outcome_conflicts_first(): void {
-		// T91 (SPEC §9.1): the Off/On outcome of a Status step, record rows kept out of the sample.
+	public function test_new_status_preview_has_no_legacy_restores_or_conflicts(): void {
 		$this->off_state( 101, 'publish' );
 		$this->off_state( 102, 'draft', 'publish' );
 		$this->off_state( 104, 'draft', 'private' );
 		$this->off_state( 106, 'private', 'publish' );
 		$this->off_state( 105, 'draft', null, 'grouped' );
 		$result = $this->answer( Selection::of_ids( [ 101, 102, 104, 105, 106 ] ), self::set( 'status', 'publish' ) );
-
-		$this->assertSame( [ 'totals', 'summary', 'sample', 'warnings', 'unreadable', 'selection', 'hash', 'unavailable_count', 'scope_hash', 'operations', 'availability' ], array_keys( $result ), 'T83\'s keys first, then availability.' );
+		$this->assertSame( 'set_status', $result['operations'][0]['action'] );
+		$this->assertSame( [ 'totals', 'summary', 'sample', 'warnings', 'unreadable', 'selection', 'hash', 'unavailable_count', 'scope_hash', 'operations', 'availability' ], array_keys( $result ) );
 		$block = $result['availability'];
 		$this->assertSame( [ 'counts', 'restores', 'variations_kept', 'conflicts' ], array_keys( $block ) );
 		$this->assertSame( \BulkCatalogueManager\Availability\Outcome::CODES, array_keys( $block['counts'] ) );
+		$this->assertSame( [], array_filter( $block['counts'] ) );
 		$this->assertSame(
 			[
-				'on'                => 1,
-				'on_restores'       => 1,
-				'publishes_not_off' => 1,
-				'conflict'          => 1,
-			],
-			array_filter( $block['counts'] )
-		);
-		$this->assertSame(
-			[
-				'private' => 1,
+				'private' => 0,
 				'pending' => 0,
 			],
 			$block['restores']
 		);
 		$this->assertSame( 0, $block['variations_kept'] );
+		$this->assertSame( [], $block['conflicts'] );
 		$this->assertSame(
 			[
-				[
-					'object_id' => 106,
-					'name'      => 'Striped Tee',
-					'current'   => 'private',
-					'saved'     => 'publish',
-				],
+				[ 101, 'status', 'publish', 'publish', 'already' ],
+				[ 102, 'status', 'draft', 'publish', 'changed' ],
+				[ 104, 'status', 'draft', 'publish', 'changed' ],
+				[ 105, 'status', 'draft', 'publish', 'changed' ],
+				[ 106, 'status', 'private', 'publish', 'changed' ],
 			],
-			$block['conflicts']
+			self::rows( $result )
 		);
-		$this->assertSame( [ 'status' ], array_values( array_unique( array_column( $result['sample'], 'field' ) ) ), 'The record rows never show.' );
+		$this->assertSame( 4, $result['totals']['would_change'] );
 		$this->assertSame( 5, array_sum( $result['totals']['rows'] ), 'One row per product: its status.' );
-		$this->assertSame( 3, $result['totals']['would_change'] );
-		$this->assertSame( 'Status will change on 3 products.', $result['summary'] );
-		$notes = array_column( $result['sample'], 'note', 'object_id' );
-		$this->assertSame(
-			[
-				101 => '',
-				102 => 'on',
-				104 => 'on_restores',
-				105 => 'publishes_not_off',
-				106 => 'conflict',
-			],
-			$notes
-		);
-		$this->assertSame(
-			[
-				'saved'    => 'private',
-				'restores' => 'private',
-			],
-			array_column( $result['sample'], 'context', 'object_id' )[104]
-		);
+		$this->assertSame( 'Status will change on 4 products.', $result['summary'] );
+		foreach ( $result['sample'] as $row ) {
+			$this->assertSame( '', $row['note'] );
+			$this->assertArrayNotHasKey( 'restores', $row['context'] );
+		}
 	}
 
-	public function test_a_product_losing_only_its_record_counts_once_under_status(): void {
+	public function test_preview_refuses_explicit_legacy_keep_intent(): void {
 		$this->off_state( 106, 'private', 'publish' );
-		$result = $this->answer(
+		$result = self::preview()->run(
 			Selection::of_ids( [ 106 ] ),
 			self::ops(
 				[
@@ -842,14 +818,12 @@ final class PreviewTest extends TestCase {
 				]
 			)
 		);
-		$this->assertSame( 1, $result['availability']['counts']['conflict_kept'] );
-		$this->assertSame( 1, $result['totals']['would_change'], 'Keep current status changes the record alone: it still counts.' );
-		$this->assertSame( 0, $result['totals']['already'] );
-		$this->assertSame( 'Status will change on 1 product.', $result['summary'] );
-		$this->assertSame( [ [ 106, 'status', 'private', 'private', 'already' ] ], self::rows( $result ) );
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertStringContainsString( 'Reload and review', $result->get_error_message() );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['watched'] ?? [] );
 	}
 
-	public function test_draft_counts_off_already_off_and_already_draft(): void {
+	public function test_draft_preview_counts_native_changes_and_noops_without_off_outcomes(): void {
 		$this->off_state( 101, 'publish' );
 		$this->off_state( 102, 'draft', 'publish' );
 		$this->off_state( 104, 'draft' );
@@ -857,13 +831,15 @@ final class PreviewTest extends TestCase {
 		$result = $this->answer( Selection::of_ids( [ 101, 102, 104, 106 ] ), self::set( 'status', 'draft' ) );
 		$this->assertSame(
 			[
-				'off'           => 1,
-				'off_recapture' => 1,
-				'already_off'   => 1,
-				'already_draft' => 1,
+				[ 101, 'status', 'publish', 'draft', 'changed' ],
+				[ 102, 'status', 'draft', 'draft', 'already' ],
+				[ 104, 'status', 'draft', 'draft', 'already' ],
+				[ 106, 'status', 'pending', 'draft', 'changed' ],
 			],
-			array_filter( $result['availability']['counts'] )
+			self::rows( $result )
 		);
+		$this->assertSame( [ 2, 2 ], [ $result['totals']['would_change'], $result['totals']['already'] ] );
+		$this->assertSame( [], array_filter( $result['availability']['counts'] ) );
 		$this->assertSame( [], $result['availability']['conflicts'] );
 	}
 
@@ -874,7 +850,8 @@ final class PreviewTest extends TestCase {
 		}
 		$estimated = $this->answer( Selection::of_ids( [ 101, 102, 104, 106 ] ), self::set( 'status', 'draft' ), 1000, self::preview( 2 ) );
 		$this->assertTrue( $estimated['totals']['estimated'] );
-		$this->assertSame( 4, $estimated['availability']['counts']['off'], '2 computed, scaled to 4.' );
+		$this->assertSame( 4, $estimated['totals']['would_change'], '2 computed, scaled to 4.' );
+		$this->assertSame( [], array_filter( $estimated['availability']['counts'] ) );
 	}
 
 	public function test_estimated_parts_add_up_to_the_totals_they_split(): void {
@@ -886,27 +863,29 @@ final class PreviewTest extends TestCase {
 		$this->assertSame( 3, $split['totals']['by_type']['product']['would_change'] + $split['totals']['by_type']['variation']['would_change'], 'Products and variations add up to the total shown.' );
 		$this->assertSame( array_sum( $split['totals']['rows'] ), (int) round( 2 * 1.5 ), 'Rows scaled as one.' );
 
-		// Restores to Private and Pending review add up to the restores counted.
+		// New Publish ignores remembered Private/Pending even for estimated totals.
 		$this->off_state( 101, 'draft', 'private' );
 		$this->off_state( 102, 'draft', 'pending' );
 		$this->off_state( 104, 'draft', 'private' );
 		$on = $this->answer( Selection::of_ids( [ 101, 102, 104 ] ), self::set( 'status', 'publish' ), 1000, self::preview( 2 ) );
 		$this->assertTrue( $on['totals']['estimated'] );
-		$this->assertSame( 3, $on['availability']['counts']['on_restores'] );
-		$this->assertSame( 3, array_sum( $on['availability']['restores'] ), 'Private and Pending review add up to the restores.' );
-		$this->assertSame( 3, array_sum( $on['availability']['counts'] ), 'The outcomes add up to the products counted.' );
+		$this->assertSame( 3, $on['totals']['would_change'] );
+		$this->assertSame( 3, $on['totals']['by_type']['product']['would_change'] );
+		$this->assertSame( 0, array_sum( $on['availability']['restores'] ) );
+		$this->assertSame( 0, array_sum( $on['availability']['counts'] ) );
 	}
 
-	public function test_the_conflicts_list_holds_up_to_the_sample_size_in_object_order(): void {
+	public function test_native_changes_keep_sample_size_and_object_order_without_legacy_conflicts(): void {
 		foreach ( [ 101, 102, 104, 106 ] as $id ) {
 			$this->off_state( $id, 'private', 'publish' );
 		}
 		$result = $this->answer( Selection::of_ids( [ 106, 101, 104, 102 ] ), self::set( 'status', 'publish' ), 2 );
-		$this->assertSame( 4, $result['availability']['counts']['conflict'] );
-		$this->assertSame( [ 106, 101 ], array_column( $result['availability']['conflicts'], 'object_id' ), 'In the order the preview computes them, as far as the sample size.' );
+		$this->assertSame( 4, $result['totals']['would_change'] );
+		$this->assertSame( [], $result['availability']['conflicts'] );
+		$this->assertSame( [ 106, 101 ], array_column( $result['sample'], 'object_id' ), 'In computation order, bounded by sample size.' );
 	}
 
-	public function test_variations_kept_back_are_counted(): void {
+	public function test_new_status_cascade_is_not_kept_back_by_a_legacy_parent_record(): void {
 		$this->off_state( 103, 'draft', 'publish', 'variable' );
 		$GLOBALS['wpdb']->responses = [
 			'/^SELECT post_id, meta_value FROM `wp_postmeta`/' => static fn(): array => [
@@ -931,10 +910,11 @@ final class PreviewTest extends TestCase {
 				]
 			)
 		);
-		$this->assertSame( 2, $result['availability']['variations_kept'] );
-		$this->assertSame( 2, $result['selection']['variations_kept'] );
-		$this->assertSame( 0, $result['selection']['variations_added'] );
-		$this->assertSame( 1, $result['availability']['counts']['on'] );
+		$this->assertSame( 0, $result['availability']['variations_kept'] );
+		$this->assertSame( 0, $result['selection']['variations_kept'] );
+		$this->assertSame( 2, $result['selection']['variations_added'] );
+		$this->assertSame( 3, $result['totals']['matched'] );
+		$this->assertSame( 0, $result['availability']['counts']['on'] );
 	}
 
 	public function test_the_summary_names_one_field_and_each_kind_it_changes(): void {

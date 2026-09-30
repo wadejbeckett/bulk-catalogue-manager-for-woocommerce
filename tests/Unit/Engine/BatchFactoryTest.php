@@ -650,25 +650,31 @@ final class BatchFactoryTest extends TestCase {
 	private static function status_step( string $value ): array {
 		return [
 			'action' => 'set_value',
-			'args'   => [
-				'field'               => 'status',
-				'value'               => $value,
-				'apply_to_variations' => true,
-			],
+			'args'   => ( new Actions( new Fields() ) )->get( 'set_value' )->validate(
+				[
+					'field'               => 'status',
+					'value'               => $value,
+					'apply_to_variations' => true,
+				]
+			)->args(),
 		];
 	}
 
 	public function test_published_is_not_pushed_down_to_the_variations_of_an_off_product(): void {
-		// T91 (SPEC §8): On restores only what Off saved, and Off saved nothing for variations.
+		// Accepted legacy T91 (SPEC §8): On restores only what Off saved, and Off saved nothing for variations.
 		$this->switch_off( 103 );
 		$actions = new Actions( new Fields() );
-		$list    = $actions->validate_list( [ self::status_step( 'publish' ) ] );
+		$list    = [ self::status_step( 'publish' ) ];
 		$off     = $this->factory()->expand( [ [ 103, 'product' ], [ 107, 'product' ] ], $list );
 		$this->assertSame( [ [ 103, 'product' ], [ 107, 'product' ] ], $off['objects'], 'No variation of the Off product 103 is added: none has a step left.' );
 		$this->assertSame( [ 0, 0, 2 ], [ $off['added'], $off['left_out'], $off['kept'] ] );
 
 		// With another step reaching variations, they are added with that step only.
-		$two   = $actions->validate_list(
+		$two   = array_map(
+			static fn( array $step ): array => [
+				'action' => $step['action'],
+				'args'   => $actions->get( $step['action'] )->validate( $step['args'] )->args(),
+			],
 			[
 				self::status_step( 'publish' ),
 				[
@@ -690,7 +696,7 @@ final class BatchFactoryTest extends TestCase {
 		$this->db->tables['wp_postmeta'] = [];
 		$this->assertSame( [ [ 103, 'product' ], [ 202, 'variation' ], [ 201, 'variation' ] ], $this->factory()->expand( [ [ 103, 'product' ] ], $list )['objects'] );
 		$this->switch_off( 103 );
-		$draft = $this->factory()->expand( [ [ 103, 'product' ] ], $actions->validate_list( [ self::status_step( 'draft' ) ] ) );
+		$draft = $this->factory()->expand( [ [ 103, 'product' ] ], [ self::status_step( 'draft' ) ] );
 		$this->assertSame( [ [ 103, 'product' ], [ 202, 'variation' ], [ 201, 'variation' ] ], $draft['objects'] );
 		$this->assertSame( 0, $draft['kept'] );
 	}
@@ -703,13 +709,13 @@ final class BatchFactoryTest extends TestCase {
 			'meta_key'   => '_bulkcat_availability_off', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- a test fixture row.
 			'meta_value' => \BulkCatalogueManager\Availability\OffRecord::create( 999, 'publish', '2026-09-01T08:00:00Z', 7 )->to_json(), // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- a test fixture row.
 		];
-		$list                              = ( new Actions( new Fields() ) )->validate_list( [ self::status_step( 'publish' ) ] );
+		$list                              = [ self::status_step( 'publish' ) ];
 		$this->assertSame( 0, $this->factory()->expand( [ [ 103, 'product' ] ], $list )['kept'] );
 	}
 
 	public function test_a_parents_off_state_changing_after_the_preview_changes_the_scope(): void {
 		// The per-variation step lists are signed, so Apply is stale when the parent is switched Off or On since.
-		$list   = ( new Actions( new Fields() ) )->validate_list( [ self::status_step( 'publish' ) ] );
+		$list   = [ self::status_step( 'publish' ) ];
 		$before = \BulkCatalogueManager\Engine\ExactScope::build( Selection::of_ids( [ 103 ] ), $list, $this->factory() );
 		$this->switch_off( 103 );
 		$after = \BulkCatalogueManager\Engine\ExactScope::build( Selection::of_ids( [ 103 ] ), $list, $this->factory() );

@@ -138,40 +138,46 @@ final class ProductWriteRouteTest extends TestCase {
 		$this->assertSame( [], $GLOBALS['bulkcat_test']['scheduled'], 'No as_enqueue_async_action call, nor any other scheduling.' );
 	}
 
-	public function test_status_off_and_keep_current_status_through_the_route(): void {
-		// T89: Draft switches the product Off; the answer never carries the internal record row.
-		$GLOBALS['bulkcat_test']['products'][106] = new StoredProduct(
+	public function test_native_status_and_refused_old_keep_intent_through_the_route(): void {
+		// New Draft changes only Status and never creates a remembered record.
+		$product                                  = new StoredProduct(
 			'simple',
 			[
 				'id'     => 106,
 				'status' => 'publish',
 			]
 		);
+		$GLOBALS['bulkcat_test']['products'][106] = $product;
 		$response                                 = self::patch( 106, [ 'status' => 'draft' ] );
-		$this->assertInstanceOf( \WP_REST_Response::class, $response, $response instanceof \WP_Error ? $response->get_error_message() : '' );
+		$this->assertInstanceOf( \WP_REST_Response::class, $response );
 		$this->assertSame( [ 'status' ], array_column( $response->get_data()['results'], 'field' ) );
-		$this->assertSame( 'off', $response->get_data()['results'][0]['note'] );
-		$this->assertSame( [ 'status', 'availability_off' ], array_column( $this->store->journal(), 1 ), 'Both rows are journalled.' );
+		$this->assertSame( '', $response->get_data()['results'][0]['note'] );
+		$this->assertSame( [ [ 106, 'status', 'publish', 'draft', 'applied' ] ], $this->store->journal() );
+		$this->assertSame( [], $product->meta );
 
-		// Changed elsewhere while Off: Published is refused as a conflict; Keep current status clears the record.
-		$GLOBALS['bulkcat_test']['products'][106]->props['status'] = 'private';
-		$conflict = self::patch( 106, [ 'status' => 'publish' ] );
-		$this->assertInstanceOf( \WP_Error::class, $conflict );
-		$this->assertSame( 'bulkcat_availability_conflict', $conflict->get_error_code() );
-		$this->assertSame( 400, $conflict->get_error_data()['status'] );
-		$this->assertSame( 'status', $conflict->get_error_data()['field'] );
-
-		$kept = self::patch(
+		// A legacy record does not turn a new Publish into a restore or conflict.
+		$product->props['status']                   = 'private';
+		$product->meta['_bulkcat_availability_off'] = \BulkCatalogueManager\Availability\OffRecord::create( 106, 'publish', '2026-09-01T08:00:00Z', 7 )->to_json();
+		$response                                   = self::patch( 106, [ 'status' => 'publish' ] );
+		$this->assertInstanceOf( \WP_REST_Response::class, $response );
+		$this->assertSame( [ 'status' ], array_column( $response->get_data()['results'], 'field' ), 'Internal cleanup is never a public result.' );
+		$this->assertSame( 'publish', $product->props['status'] );
+		$this->assertArrayNotHasKey( '_bulkcat_availability_off', $product->meta );
+		$this->assertSame( [ 'status', 'status', 'availability_off' ], array_column( $this->store->journal(), 1 ) );
+		$writes = $GLOBALS['wpdb']->writes;
+		$saves  = $product->saves;
+		$kept   = self::patch(
 			106,
 			[
 				'status'              => 'publish',
 				'keep_changed_status' => true,
 			]
 		);
-		$this->assertInstanceOf( \WP_REST_Response::class, $kept, $kept instanceof \WP_Error ? $kept->get_error_message() : '' );
-		$this->assertSame( [ [ 'status', 'already', 'conflict_kept' ] ], array_map( static fn( array $r ): array => [ $r['field'], $r['state'], $r['note'] ], $kept->get_data()['results'] ) );
-		$this->assertSame( 'private', $GLOBALS['bulkcat_test']['products'][106]->props['status'] );
-		$this->assertArrayNotHasKey( '_bulkcat_availability_off', $GLOBALS['bulkcat_test']['products'][106]->meta );
+		$this->assertInstanceOf( \WP_Error::class, $kept );
+		$this->assertSame( 400, $kept->get_error_data()['status'] );
+		$this->assertStringContainsString( 'Reload and review', $kept->get_error_message() );
+		$this->assertSame( $saves, $product->saves );
+		$this->assertSame( $writes, $GLOBALS['wpdb']->writes );
 	}
 
 	public function test_fields_chooses_the_columns_and_source_can_say_bulk(): void {

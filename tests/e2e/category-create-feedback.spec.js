@@ -1,7 +1,8 @@
 /**
  * Category creation acceptance on an explicitly owned native fixture.
- * POSTs, stored terms and journals are real. Only category GETs are intercepted
- * in the labelled transport simulations. No lease probe or provider is needed.
+ * POST writes, stored terms and journals are real. Labelled simulations alter
+ * category GETs or omit a returned POST receipt after the native write succeeds.
+ * No lease probe or provider is needed.
  */
 const { test, expect } = require( '@playwright/test' );
 const { randomUUID } = require( 'crypto' );
@@ -826,6 +827,198 @@ for ( const width of [ 1280, 900 ] ) {
 				await page.unroute( '**/*', getHandler );
 				page.off( 'request', countPost );
 				cleanup( [ name ] );
+			}
+		} );
+	}
+}
+
+for ( const width of [ 1280, 900 ] ) {
+	for ( const firstOutcome of [ 'confirmed', 'incomplete' ] ) {
+		test( `established creation region: first ${ firstOutcome }, later read and new creation at ${ width }px`, async ( {
+			page,
+		}, info ) => {
+			const names = [
+				`First notice ${ randomUUID() }`,
+				`Next notice ${ randomUUID() }`,
+			];
+			const incomplete =
+				'The server returned an incomplete save response. Check the category list before creating it again.';
+			const answers = [];
+			const native = [];
+			const expectedMessages = [];
+			let posts = 0;
+			let gate;
+			let release;
+			const handler = async ( route ) => {
+				if ( ! isCategories( route.request().url() ) ) {
+					return route.continue();
+				}
+				if ( route.request().method() === 'POST' ) {
+					posts++;
+					// Execute the actual native write; only the first incomplete
+					// case changes its returned receipt, never the stored term.
+					const response = await route.fetch();
+					expect( response.status() ).toBe( 201 );
+					const answer = await response.json();
+					answers.push( answer );
+					return route.fulfill( {
+						response,
+						json:
+							firstOutcome === 'incomplete' && posts === 1
+								? { ...answer, item: {} }
+								: answer,
+					} );
+				}
+				if ( route.request().method() === 'GET' && posts ) {
+					await gate;
+				}
+				return route.continue();
+			};
+			try {
+				await page.setViewportSize( { width, height: 900 } );
+				await openScreen( page );
+				await openCategories( page, width );
+				const region = page.locator(
+					'.bulkcat-cat-panel__body [role="status"]'
+				);
+				await expect( region ).toHaveCount( 1 );
+				await expect( region ).toHaveText( '' );
+				await expect( region ).toHaveAttribute( 'aria-live', 'polite' );
+				await expect( region ).toHaveAttribute( 'aria-atomic', 'true' );
+				await region.evaluate( ( node ) => {
+					window.bulkcatCreationRegion = node;
+					window.bulkcatCreationMessages = [];
+					window.bulkcatCreationObserver =
+						new window.MutationObserver( () => {
+							window.bulkcatCreationMessages.push(
+								node.querySelector( 'p' )?.textContent || ''
+							);
+						} );
+					window.bulkcatCreationObserver.observe( node, {
+						childList: true,
+						characterData: true,
+						subtree: true,
+					} );
+				} );
+				await page.route( '**/*', handler );
+				for ( const [ index, name ] of names.entries() ) {
+					const unconfirmed =
+						firstOutcome === 'incomplete' && index === 0;
+					gate = new Promise( ( resolve ) => {
+						release = resolve;
+					} );
+					const opener = openerFor( page );
+					await opener.press( 'Enter' );
+					await page
+						.getByRole( 'textbox', { name: 'Name', exact: true } )
+						.fill( name );
+					await page
+						.getByRole( 'button', {
+							name: 'Add category',
+							exact: true,
+						} )
+						.press( 'Enter' );
+					const firstMessage = unconfirmed
+						? incomplete
+						: `Category “${ name }” was created. Refreshing the category list…`;
+					expectedMessages.push( firstMessage );
+					await expect( region.locator( 'p' ) ).toHaveText(
+						firstMessage
+					);
+					await expect( opener ).toBeFocused();
+					expect(
+						await region.evaluate(
+							( node ) => node === window.bulkcatCreationRegion
+						)
+					).toBe( true );
+					if ( unconfirmed ) {
+						const retry = region.getByRole( 'button', {
+							name: 'Refresh category list',
+						} );
+						await retry.press( 'Enter' );
+					}
+					// GET-only delay makes the first outcome independently observable.
+					// The eventual GET payload is unmodified native readback.
+					release();
+					await expect(
+						page.getByRole( 'treeitem', {
+							name: new RegExp( `^${ name },` ),
+						} )
+					).toBeVisible();
+					const finalMessage = unconfirmed
+						? incomplete
+						: `Category “${ name }” was created.`;
+					await expect( region.locator( 'p' ) ).toHaveText(
+						finalMessage
+					);
+					if ( ! unconfirmed ) {
+						expectedMessages.push( finalMessage );
+					}
+					expect( posts ).toBe( index + 1 );
+					native.push( nativeReadback( answers[ index ], name ) );
+					// An ordinary search rerender must not remount/reannounce the notice.
+					const search = page.getByRole( 'searchbox', {
+						name: 'Search categories',
+						exact: true,
+					} );
+					await search.fill( 'Probe' );
+					await expect( search ).toBeFocused();
+					const lifecycle = await region.evaluate(
+						( node, message ) => ( {
+							sameRegion: node === window.bulkcatCreationRegion,
+							messages: window.bulkcatCreationMessages,
+							announcementSources: [
+								...document.querySelectorAll( '[aria-live]' ),
+							].filter( ( live ) =>
+								live.textContent.includes( message )
+							).length,
+						} ),
+						finalMessage
+					);
+					expect( lifecycle ).toEqual( {
+						sameRegion: true,
+						messages: expectedMessages,
+						announcementSources: 1,
+					} );
+					await evidence( page, info, `outcome-${ index }`, {
+						simulation:
+							firstOutcome === 'incomplete'
+								? 'First native POST response item replaced with {}; writes/terms/journals real. GET-only delay, payload unmodified.'
+								: 'GET-only delay; native POST, GET payloads, terms and journals unmodified.',
+						posts,
+						answers,
+						native,
+						lifecycle,
+						axe: await expectAxeClean(
+							page,
+							'established creation region'
+						),
+					} );
+					await search.fill( '' );
+					if ( ! unconfirmed && index === 0 ) {
+						await region
+							.getByRole( 'button', {
+								name: 'Close',
+								exact: true,
+							} )
+							.press( 'Enter' );
+						await expect( region ).toHaveText( '' );
+						expect(
+							await region.evaluate(
+								( node ) =>
+									node === window.bulkcatCreationRegion
+							)
+						).toBe( true );
+						expectedMessages.push( '' );
+					}
+				}
+			} finally {
+				release?.();
+				await page.unrouteAll( { behavior: 'wait' } );
+				await page.evaluate( () =>
+					window.bulkcatCreationObserver?.disconnect()
+				);
+				cleanup( [ ...names ].reverse() );
 			}
 		} );
 	}

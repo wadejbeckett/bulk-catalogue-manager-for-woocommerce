@@ -4,6 +4,16 @@ Ordered; each ticket is independently mergeable and ends with tests green. "Prob
 
 ### Delivery follow-up 12 — category creation feedback (2026-09-30; local native checks complete, review pending)
 
+Final-review I1 follow-up (2026-09-30): the creation status now exists empty
+before either outcome and retains its DOM identity through dismissal and new
+creation. Its visible notice is the single announcement source. Three failing-first
+DOM lifecycle regressions are green; 93 affected JS tests pass, with 18 creation-flow
+tests rechecked after lint corrections. One fresh native run passes all 25 affected
+browser cases (four new lifecycle cases), including keyboard focus, actual native
+term/journal writes and exact cleanup. Lint/build/POT and assets/i18n (20 tests/96 assertions) pass;
+whole PHP was not repeated. This is local source/DOM evidence, not a manual
+screen-reader or membership-repair claim; fresh scoped controller review remains.
+
 Task 3 adds `tests/e2e/category-create-feedback.spec.js` and the disposable-fixture
 procedure in `tests/probe/README.md`. All 21 category browser cases have passing
 results across the combined run and focused reruns on plain WordPress 7.1 /

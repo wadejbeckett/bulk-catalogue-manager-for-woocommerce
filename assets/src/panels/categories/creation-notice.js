@@ -6,13 +6,21 @@ import { __, sprintf } from '@wordpress/i18n';
 /**
  * The confirmed receipt, reconciled by the shared tree owner.
  *
- * @param {Object}   props           Props.
- * @param {Object}   props.creation  Confirmed receipt and readback phase, or null.
- * @param {Function} props.onRetry   Read the tree again; never repeats the write.
- * @param {Function} props.onDismiss Hide the receipt without changing the tree.
- * @return {Element|null} Visible polite notice.
+ * @param {Object}   props            Props.
+ * @param {Object}   props.creation   Confirmed receipt and readback phase, or null.
+ * @param {Function} props.onRetry    Read the tree again; never repeats the write.
+ * @param {Function} props.onDismiss  Hide the receipt without changing the tree.
+ * @param {boolean}  props.incomplete Whether the save response was incomplete.
+ * @param {boolean}  props.loading    Whether the tree read is pending.
+ * @return {Element} Established polite region, empty when there is no outcome.
  */
-export default function CreationNotice( { creation, onRetry, onDismiss } ) {
+export default function CreationNotice( {
+	creation,
+	incomplete = false,
+	loading = false,
+	onRetry,
+	onDismiss,
+} ) {
 	const notice = useRef( null );
 	const retry = useRef( null );
 	const retryRef = useCallback( ( button ) => {
@@ -26,10 +34,7 @@ export default function CreationNotice( { creation, onRetry, onDismiss } ) {
 		}
 		retry.current = button;
 	}, [] );
-	if ( ! creation ) {
-		return null;
-	}
-	const { name, phase } = creation;
+	const { name, phase } = creation || {};
 	const messages = {
 		refreshing: sprintf(
 			/* translators: %s: a category name. */
@@ -74,26 +79,40 @@ export default function CreationNotice( { creation, onRetry, onDismiss } ) {
 			role="status"
 			aria-live="polite"
 			aria-atomic="true"
-			tabIndex={ -1 }
+			tabIndex={ creation || incomplete ? -1 : undefined }
 		>
-			{ /* The visible live region announces once; disable Notice's separate speaker. */ }
-			<Notice status={ status } onRemove={ onDismiss } spokenMessage="">
-				<p>{ messages[ phase ] }</p>
-				{ phase !== 'visible' && (
-					<Button
-						ref={ retryRef }
-						variant="secondary"
-						onClick={ onRetry }
-						disabled={ phase === 'refreshing' }
-						accessibleWhenDisabled
+			{ /* Keep this region empty before an outcome and after dismissal. */ }
+			{ /* It is the one announcement source; disable Notice's separate speaker. */ }
+			{ incomplete ? (
+				<IncompleteCreationNotice
+					onRetry={ onRetry }
+					loading={ loading }
+				/>
+			) : (
+				creation && (
+					<Notice
+						status={ status }
+						onRemove={ onDismiss }
+						spokenMessage=""
 					>
-						{ __(
-							'Refresh category list',
-							'bulk-catalogue-manager-for-woocommerce'
+						<p>{ messages[ phase ] }</p>
+						{ phase !== 'visible' && (
+							<Button
+								ref={ retryRef }
+								variant="secondary"
+								onClick={ onRetry }
+								disabled={ phase === 'refreshing' }
+								accessibleWhenDisabled
+							>
+								{ __(
+									'Refresh category list',
+									'bulk-catalogue-manager-for-woocommerce'
+								) }
+							</Button>
 						) }
-					</Button>
-				) }
-			</Notice>
+					</Notice>
+				)
+			) }
 		</div>
 	);
 }
@@ -106,28 +125,26 @@ export default function CreationNotice( { creation, onRetry, onDismiss } ) {
  * @param {boolean}  props.loading Whether the read is pending.
  * @return {Element} Visible polite warning.
  */
-export function IncompleteCreationNotice( { onRetry, loading } ) {
+function IncompleteCreationNotice( { onRetry, loading } ) {
 	return (
-		<div role="status" aria-live="polite" aria-atomic="true">
-			<Notice status="warning" isDismissible={ false } spokenMessage="">
-				<p>
-					{ __(
-						'The server returned an incomplete save response. Check the category list before creating it again.',
-						'bulk-catalogue-manager-for-woocommerce'
-					) }
-				</p>
-				<Button
-					variant="secondary"
-					onClick={ onRetry }
-					disabled={ loading }
-					accessibleWhenDisabled
-				>
-					{ __(
-						'Refresh category list',
-						'bulk-catalogue-manager-for-woocommerce'
-					) }
-				</Button>
-			</Notice>
-		</div>
+		<Notice status="warning" isDismissible={ false } spokenMessage="">
+			<p>
+				{ __(
+					'The server returned an incomplete save response. Check the category list before creating it again.',
+					'bulk-catalogue-manager-for-woocommerce'
+				) }
+			</p>
+			<Button
+				variant="secondary"
+				onClick={ onRetry }
+				disabled={ loading }
+				accessibleWhenDisabled
+			>
+				{ __(
+					'Refresh category list',
+					'bulk-catalogue-manager-for-woocommerce'
+				) }
+			</Button>
+		</Notice>
 	);
 }

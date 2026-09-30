@@ -193,6 +193,115 @@ const expectVisibleNotice = ( message ) => {
 	).toBeNull();
 };
 
+// A populated region mounted with the outcome cannot provide this lifecycle.
+// Observe actual DOM content, including the native speaker's regions, rather
+// than counting mocked announcements or checking status presence after save.
+const watchCreationRegion = () => {
+	const region = status();
+	expect( region.textContent ).toBe( '' );
+	expect( region.getAttribute( 'aria-live' ) ).toBe( 'polite' );
+	expect( region.getAttribute( 'aria-atomic' ) ).toBe( 'true' );
+	const messages = [];
+	const observer = new window.MutationObserver( () => {
+		messages.push( region.querySelector( 'p' )?.textContent || '' );
+	} );
+	observer.observe( region, {
+		childList: true,
+		characterData: true,
+		subtree: true,
+	} );
+	return { region, messages, observer };
+};
+
+const expectSingleCreationSource = ( region, message ) => {
+	expect( status() ).toBe( region );
+	expect( region.querySelector( 'p' ).textContent ).toBe( message );
+	// Native Notice's independent speaker must remain empty for this outcome.
+	expect(
+		[ ...document.querySelectorAll( '[aria-live]' ) ].filter( ( live ) =>
+			live.textContent.includes( message )
+		)
+	).toEqual( [ region ] );
+};
+
+test( 'established creation region receives the first confirmation and later read once', async () => {
+	const { rerender } = await start();
+	const { region, messages, observer } = watchCreationRegion();
+	try {
+		await submit();
+		expectSingleCreationSource(
+			region,
+			'Category “Caps” was created. Refreshing the category list…'
+		);
+		await settle( 1, [ ...INITIAL, CREATED ] );
+		expectSingleCreationSource( region, 'Category “Caps” was created.' );
+		rerender( <CategoryPanel settings={ SETTINGS } total={ 1 } /> );
+		await act( async () => {} );
+		expect( messages ).toEqual( [
+			'Category “Caps” was created. Refreshing the category list…',
+			'Category “Caps” was created.',
+		] );
+	} finally {
+		observer.disconnect();
+	}
+} );
+
+test( 'established creation region receives the first incomplete warning without repeating it on refresh', async () => {
+	receipt = {};
+	await start();
+	const { region, messages, observer } = watchCreationRegion();
+	try {
+		await submit();
+		expectSingleCreationSource( region, INCOMPLETE );
+		retryRead();
+		await settle( 1 );
+		expectSingleCreationSource( region, INCOMPLETE );
+		expect( messages ).toEqual( [ INCOMPLETE ] );
+		// Switching from an unconfirmed result also preserves the region.
+		receipt = CREATED;
+		await submit();
+		expectSingleCreationSource(
+			region,
+			'Category “Caps” was created. Refreshing the category list…'
+		);
+		await settle( 2, [ ...INITIAL, CREATED ] );
+		expectSingleCreationSource( region, 'Category “Caps” was created.' );
+	} finally {
+		observer.disconnect();
+	}
+} );
+
+test( 'established creation region survives dismissal and receives a new creation', async () => {
+	await start();
+	const { region, messages, observer } = watchCreationRegion();
+	try {
+		await submit();
+		fireEvent.click(
+			within( region ).getByRole( 'button', { name: 'Close' } )
+		);
+		await settle( 1, [ ...INITIAL, CREATED ] );
+		expect( status() ).toBe( region );
+		expect( region.textContent ).toBe( '' );
+		receipt = node( 10, 'Hats' );
+		await submit();
+		expectSingleCreationSource(
+			region,
+			'Category “Hats” was created. Refreshing the category list…'
+		);
+		await settle( 2, [ ...INITIAL, CREATED, receipt ] );
+		expectSingleCreationSource( region, 'Category “Hats” was created.' );
+		expect( messages ).toEqual( [
+			'Category “Caps” was created. Refreshing the category list…',
+			'',
+			'Category “Hats” was created. Refreshing the category list…',
+			'Category “Hats” was created.',
+		] );
+		expect( posts() ).toHaveLength( 2 );
+	} finally {
+		observer.disconnect();
+	}
+} );
+
 test( 'successful create shows a visible receipt while GET waits, then a confirmed tree member', async () => {
 	await start();
 	const opener = await submit();
@@ -333,7 +442,9 @@ test( 'failed POST keeps the form open with no confirmed creation or extra read'
 			'The category could not be saved. Try again in a moment.'
 		)
 	).toBeTruthy();
-	expect( screen.queryByRole( 'status' ) ).toBeNull();
+	expect( document.querySelector( '[role="status"]' ).textContent ).toBe(
+		''
+	);
 	expect( reads ).toHaveLength( 1 );
 	expect( posts() ).toHaveLength( 1 );
 	expectNoRawText();
@@ -442,6 +553,8 @@ test( 'dismissing while refresh waits prevents the completed read from restoring
 		within( status() ).getByRole( 'button', { name: 'Close' } )
 	);
 	await settle( 1, [ ...INITIAL, CREATED ] );
-	expect( screen.queryByRole( 'status' ) ).toBeNull();
+	expect( document.querySelector( '[role="status"]' ).textContent ).toBe(
+		''
+	);
 	expect( screen.getByRole( 'treeitem', { name: /^Caps,/ } ) ).toBeTruthy();
 } );

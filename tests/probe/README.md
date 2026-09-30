@@ -103,7 +103,8 @@ npm run e2e -- category-create-feedback.spec.js category-panel.spec.js
 Keyboard root/child journeys cover 1280×900 and 900×900. The readback fault
 matrix additionally covers 1440×900. A native MutationObserver also records busy
 focus for Save-button activation and Enter in Name, with one POST per journey;
-the POST is never held or altered. Fault interception changes **only GET**:
+the pending-submit POST is never held or altered. Readback fault interception
+changes **only GET**:
 omission removes the newly created ID from a real list response, and failure
 returns a synthetic HTTP 503. A second faulty GET precedes recovery through an
 unmodified GET; no POST is replayed. Empty-state tests simulate empty pre-create
@@ -114,6 +115,17 @@ The failed-GET journeys also check error disclosure contrast in normal, hover an
 keyboard-focus states, then toggle Show/Hide details before retrying. The native
 admin stylesheet replaces the focused link's underline with its focus ring; the
 test preserves that behavior and does not suppress axe rules.
+
+The established-region cases retain the same initially empty DOM status through
+first confirmation, incomplete response, later read, dismissal and new creation
+at 1280px and 900px. A MutationObserver records the exact message transitions;
+an ordinary search rerender must not repeat them, and only one live region may
+contain the outcome. These cases delay GET completion without changing its
+payload. The explicitly labelled incomplete-response case performs a real native
+POST and saves its full answer for term/journal verification, then replaces only
+the response's `item` with `{}` on its way to the browser. Its read-only retry
+must leave the warning unchanged. This is a response simulation, not a native
+server defect or a failed write. All created UUID terms use the same exact cleanup.
 
 Screenshots and JSON readbacks go to the evidence directory (or the test output
 directory when the variable is absent). Save component/browser versions beside

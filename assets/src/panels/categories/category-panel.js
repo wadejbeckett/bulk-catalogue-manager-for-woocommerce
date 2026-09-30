@@ -20,7 +20,7 @@ import { __, sprintf } from '@wordpress/i18n';
 import { announce } from './announce';
 import CategoryManager from './category-manager';
 import CategoryTree, { ALL } from './category-tree';
-import CreationNotice, { IncompleteCreationNotice } from './creation-notice';
+import CreationNotice from './creation-notice';
 import ErrorNotice, { errorMessage } from './error-notice';
 import MoveDialog from './move-dialog';
 import { moveCategory, updateCategory } from './requests';
@@ -393,18 +393,13 @@ export default function CategoryPanel( {
 					onChange={ toggleChildren }
 				/>
 			</div>
-			{ incompleteCreation ? (
-				<IncompleteCreationNotice
-					onRetry={ tree.reload }
-					loading={ tree.loading }
-				/>
-			) : (
-				<CreationNotice
-					creation={ tree.creation }
-					onRetry={ tree.reload }
-					onDismiss={ tree.dismissCreation }
-				/>
-			) }
+			<CreationNotice
+				creation={ tree.creation }
+				incomplete={ incompleteCreation }
+				loading={ tree.loading }
+				onRetry={ tree.reload }
+				onDismiss={ tree.dismissCreation }
+			/>
 			{ failure && (
 				<ErrorNotice
 					error={ failure.error }

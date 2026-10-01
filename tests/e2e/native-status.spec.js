@@ -14,6 +14,7 @@ const {
 	fixtureCheck,
 	screenParts,
 	searchFor,
+	members: selectionMembers,
 } = require( './lifecycle/support' );
 
 test.setTimeout( 90_000 );
@@ -393,15 +394,19 @@ for ( const partial of [ false, true ] ) {
 				.state
 		).toBe( 'failed' );
 		expect( ( await read( page, made[ 1 ] ) ).status ).toBe( 'publish' );
-		await expect( page.locator( '.bulkcat-selection' ) ).toContainText(
-			/selected/
-		);
 		await expect( page.locator( '#bulkcat-app' ) ).toContainText(
-			/not changed|could not|failed/i,
+			'The change did not finish for every product, so your selection is kept. History shows what was not changed.',
 			{ timeout: 30_000 }
 		);
+		await expect( page.locator( '.bulkcat-selection__count' ) ).toHaveText(
+			partial ? '2 products selected' : '1 product selected'
+		);
+		const selectedIds = await selectionMembers( page );
+		expect( selectedIds ).toEqual(
+			( partial ? [ ...made ] : [ made[ 1 ] ] ).sort( ( a, b ) => a - b )
+		);
 		await info.attach( 'native-outcome', {
-			body: JSON.stringify( { accepted, header, items } ),
+			body: JSON.stringify( { accepted, header, items, selectedIds } ),
 			contentType: 'application/json',
 		} );
 	} );

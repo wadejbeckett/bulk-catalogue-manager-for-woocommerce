@@ -16,6 +16,8 @@ use BulkCatalogueManager\Selection\SnapshotRepository;
 use BulkCatalogueManager\Tests\Support\PruningDatabase;
 use PHPUnit\Framework\TestCase;
 
+require_once dirname( __DIR__, 2 ) . '/Support/TransactionConnection.php';
+require_once dirname( __DIR__, 2 ) . '/Support/PruningDatabase.php';
 require_once dirname( __DIR__, 2 ) . '/Support/transaction-connection-stubs.php';
 
 final class PruningRetryTest extends TestCase {

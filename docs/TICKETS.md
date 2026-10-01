@@ -2,7 +2,45 @@
 
 Ordered; each ticket is independently mergeable and ends with tests green. "Probe" means `tests/probe/probe.py` from T10, which every later ticket extends with its own surfaces. Update this file as tickets close.
 
-### Delivery follow-up 18 — individual-save native qualification (2026-10-01; Task 2)
+### Delivery follow-up 18 — receipt qualification (2026-10-01)
+
+The native receipt backend, browser recovery and bounded native verification are
+independently accepted through their task gates. One ordinary Save persists only
+its safe request identity before the synchronous PATCH. Lost responses and reload
+resolve the recorded outcome without repeating the mutation; current row/list
+reads remain separate from that historical outcome. Unclosed work cannot be
+replayed by queue, History, cancel or Undo paths. Native target/current-parent
+cache refresh preserves fresh validation for the original executor.
+
+Verification includes actual process death, same-grant SQL serialization, dropped
+COMMIT acknowledgement, and desktop/narrow HTTP lost-response/reload journeys.
+The final four Apache cases have 52 positively attributed observations: exactly
+one target save on each PATCH and zero on the other observed requests, counted
+through the installed WordPress shutdown dispatcher. A separate lifecycle
+regression proves the counter includes a shutdown hook event. It is not a claim
+about arbitrary later PHP callbacks or every extension side effect.
+
+The runtime gates passed 1,161 PHP tests and a genuine vendor-free run with 1,160
+passes and one expected unavailable-POT-tooling skip. Later probe-only fixes pass
+the affected packaging check (12 tests / 9,349 assertions) and scoped lint.
+The complete unchanged JavaScript suite passes 45 suites / 670 tests with
+process-local `NODE_OPTIONS=--max-old-space-size=512`. Earlier unbudgeted failures
+remain retained: observed paging supports that environment choice but does not
+prove the cause of every historical failure. Tests, assertions and timeouts were
+not weakened. Full JS/PHP lint, whole-file stylelint, build, POT and Assets/I18n
+checks pass; inherited jsdom, three webpack and ten translator-comment diagnostics
+remain disclosed. The three spacing defects described in the historical note
+below are fixed. Generated assets match the final native-tested bytes.
+
+Final ordinary-save medians were 578.6 ms desktop and 597.1 ms narrow, including
+the grant roundtrip, authoritative reconciliation and observed row removal.
+These small local samples are separate from instrumented fault/reload journeys
+and do not establish a speedup or production performance. Owned native baselines,
+configuration, processes and preserved evidence passed cleanup verification.
+Whole-ticket review, final release integration and target-host acceptance remain
+open. The historical Task 2 receipt limitation below is superseded by this work.
+
+### Delivery follow-up 18 — historical pre-receipt native qualification (2026-10-01; Task 2)
 
 All eight native journeys have passing desktop and narrow evidence across scoped
 runs: both listing-filter directions, supported History Undo, exact unrelated

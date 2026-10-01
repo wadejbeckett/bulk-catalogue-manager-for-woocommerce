@@ -72,21 +72,34 @@ const ITEMS = [
 	},
 ];
 
+let storedItems;
 let patch;
 
 beforeEach( () => {
+	storedItems = [ ...ITEMS ];
 	apiFetch.mockReset();
 	patch = jest.fn();
 	apiFetch.mockImplementation( ( { url, method, data } ) => {
 		const path = url.split( '?' )[ 0 ];
 		if ( method === 'PATCH' ) {
-			return patch( path, data, getQueryArgs( url ) );
+			return patch( path, data, getQueryArgs( url ) ).then(
+				( answer ) => {
+					if ( answer?.item ) {
+						storedItems = storedItems.map( ( row ) =>
+							row.id === answer.item.id
+								? { ...row, ...answer.item }
+								: row
+						);
+					}
+					return answer;
+				}
+			);
 		}
 		if ( path === 'fields' ) {
 			return Promise.resolve( REGISTRY );
 		}
 		if ( path === 'products' ) {
-			return Promise.resolve( page( ITEMS ) );
+			return Promise.resolve( page( storedItems ) );
 		}
 		if ( path === 'categories' ) {
 			return Promise.resolve( CATEGORIES );

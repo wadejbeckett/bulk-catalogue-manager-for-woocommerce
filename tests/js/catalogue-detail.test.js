@@ -64,10 +64,12 @@ const VARIATIONS = [
 	},
 ];
 
+let storedItems;
 let patch;
 let fullRow;
 
 beforeEach( () => {
+	storedItems = [ ...ROWS ];
 	apiFetch.mockReset();
 	patch = jest.fn();
 	fullRow = FULL;
@@ -75,13 +77,22 @@ beforeEach( () => {
 		const path = url.split( '?' )[ 0 ];
 		const query = getQueryArgs( url );
 		if ( method === 'PATCH' ) {
-			return patch( path, data, query );
+			return patch( path, data, query ).then( ( answer ) => {
+				if ( answer?.item ) {
+					storedItems = storedItems.map( ( row ) =>
+						row.id === answer.item.id
+							? { ...row, ...answer.item }
+							: row
+					);
+				}
+				return answer;
+			} );
 		}
 		switch ( path ) {
 			case 'fields':
 				return Promise.resolve( REGISTRY );
 			case 'products':
-				return Promise.resolve( page( ROWS ) );
+				return Promise.resolve( page( storedItems ) );
 			// T47 reads the full row through GET /products/{id}.
 			case 'products/11':
 				return Promise.resolve( { item: fullRow } );

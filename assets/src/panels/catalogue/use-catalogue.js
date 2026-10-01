@@ -46,12 +46,13 @@ export function useRegistry() {
  * arguments change. A failed read keeps the rows already on screen (SPEC §4.1
  * Error state); an answer to a superseded request is dropped.
  *
- * @param {Object}        view        DataViews view.
- * @param {Array<Object>} descriptors Registry descriptors.
- * @param {Object}        extra       Further filter arguments (the category panel's).
- * @return {Object} { query, items, pagination, isLoading, hasLoaded, error, refetch, pending, setPending }.
+ * @param {Object}        view         DataViews view.
+ * @param {Array<Object>} descriptors  Registry descriptors.
+ * @param {Object}        extra        Further filter arguments (the category panel's).
+ * @param {Function}      onChangeView Update the current page after it empties.
+ * @return {Object} Current page state, read-only refetch/reconcile and pending-row controls.
  */
-export function useCatalogue( view, descriptors, extra = NONE ) {
+export function useCatalogue( view, descriptors, extra = NONE, onChangeView ) {
 	const query = useMemo(
 		() => viewToQuery( view, descriptors, extra ),
 		[ view, descriptors, extra ]
@@ -65,46 +66,93 @@ export function useCatalogue( view, descriptors, extra = NONE ) {
 	const [ isLoading, setLoading ] = useState( true );
 	const [ hasLoaded, setLoaded ] = useState( false );
 	const [ error, setError ] = useState( null );
-	const [ attempt, setAttempt ] = useState( 0 );
 	const [ pending, setPendingIds ] = useState( () => new Set() );
 	const latest = useRef( 0 );
+	const current = useRef( { key, onChangeView } );
+	const active = useRef( null );
+	// Invalidate at render, before an old response can publish in the gap
+	// between a changed query and its effect. Never capture a write's query.
+	if ( current.current.key !== key ) {
+		latest.current++;
+	}
+	current.current = { key, onChangeView };
 
-	useEffect( () => {
+	const read = useCallback( function startRead( wanted ) {
 		const ticket = ++latest.current;
 		setLoading( true );
-		request( 'products', { query: JSON.parse( key ) } )
-			.then( ( answer ) => {
-				if ( ticket !== latest.current ) {
-					return;
-				}
-				setItems( Array.isArray( answer?.items ) ? answer.items : [] );
-				setPagination( {
-					totalItems: Number( answer?.pagination?.total ) || 0,
-					totalPages: Number( answer?.pagination?.totalPages ) || 0,
-				} );
-				setError( null );
-				setLoaded( true );
-			} )
-			.catch( ( failure ) => {
-				if ( ticket === latest.current ) {
+		const promise = request( 'products', { query: JSON.parse( wanted ) } )
+			.then(
+				( answer ) => {
+					if ( ticket !== latest.current ) {
+						return { status: 'superseded' };
+					}
+					const pages = Number( answer?.pagination?.totalPages ) || 0;
+					const queryPage = JSON.parse( wanted );
+					const last = Math.max( 1, pages );
+					if (
+						queryPage.page > last &&
+						current.current.onChangeView
+					) {
+						const next = JSON.stringify( {
+							...queryPage,
+							page: last,
+						} );
+						current.current.key = next;
+						current.current.onChangeView( ( viewNow ) => ( {
+							...viewNow,
+							page: last,
+						} ) );
+						return startRead( next );
+					}
+					const paginationNow = {
+						totalItems: Number( answer?.pagination?.total ) || 0,
+						totalPages: pages,
+					};
+					setItems(
+						Array.isArray( answer?.items ) ? answer.items : []
+					);
+					setPagination( paginationNow );
+					setError( null );
+					setLoaded( true );
+					return { status: 'read', pagination: paginationNow };
+				},
+				( failure ) => {
+					if ( ticket !== latest.current ) {
+						return { status: 'superseded' };
+					}
 					setError( failure || new Error() );
+					throw failure;
 				}
-			} )
+			)
 			.finally( () => {
 				if ( ticket === latest.current ) {
 					setLoading( false );
 				}
 			} );
-	}, [ key, attempt ] );
+		active.current = { key: wanted, promise };
+		return promise;
+	}, [] );
 
+	const reconcile = useCallback(
+		() => read( current.current.key ),
+		[ read ]
+	);
+	useEffect( () => {
+		// A clamped page has already started its authoritative read.
+		if ( active.current?.key !== key ) {
+			read( key ).catch( () => {} );
+		}
+	}, [ key, read ] );
 	useEffect(
 		() => () => {
 			latest.current++;
+			active.current = null;
 		},
 		[]
 	);
-
-	const refetch = useCallback( () => setAttempt( ( n ) => n + 1 ), [] );
+	const refetch = useCallback( () => {
+		reconcile().catch( () => {} );
+	}, [ reconcile ] );
 
 	/**
 	 * Mark rows pending (a change in flight) or clear them (T46).
@@ -113,8 +161,8 @@ export function useCatalogue( view, descriptors, extra = NONE ) {
 	 * @param {boolean}       on  Pending or not.
 	 */
 	const setPending = useCallback( ( ids, on = true ) => {
-		setPendingIds( ( current ) => {
-			const next = new Set( current );
+		setPendingIds( ( held ) => {
+			const next = new Set( held );
 			ids.forEach( ( id ) =>
 				on ? next.add( id ) : next.delete( id )
 			);
@@ -130,6 +178,7 @@ export function useCatalogue( view, descriptors, extra = NONE ) {
 		hasLoaded,
 		error,
 		refetch,
+		reconcile,
 		pending,
 		setPending,
 	};

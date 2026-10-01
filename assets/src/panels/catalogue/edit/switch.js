@@ -12,6 +12,7 @@ import { Button, Dropdown, Tooltip } from '@wordpress/components';
 import { useContext, useId, useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 
+import { isUncertain } from '../../../requests';
 import { announce } from '../../categories/announce';
 import { CellContext, choiceLabel } from '../cells';
 import { VISIBILITY } from '../defaults';
@@ -106,6 +107,10 @@ export default function VisibleSwitch( { item, descriptor } ) {
 			)
 			.then( () => setShown( null ) )
 			.catch( ( error ) => {
+				if ( error?.data?.answer || isUncertain( error ) ) {
+					setShown( null );
+					return;
+				}
 				setShown( before === positionOf( item ) ? null : before );
 				const message = sprintf(
 					/* translators: 1: a product name, 2: what happened or what to do, as a sentence. */

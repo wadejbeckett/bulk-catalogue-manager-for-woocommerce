@@ -27,6 +27,7 @@ import {
 } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 
+import { isUncertain } from '../../../requests';
 import { panelHref } from '../../../router';
 import { renderCell, formatDate, textOf } from '../cells';
 import { ROW, TERM_ROUTES, VISIBILITY } from '../defaults';
@@ -186,6 +187,8 @@ function usePanelTerms( descriptors ) {
  * @param {Function}      props.commit             Write values (scope.js).
  * @param {Function}      props.onClose            Close the drawer.
  * @param {Function}      props.onExpandVariations Show the variations in the grid, if wired (T67).
+ * @param {boolean}       props.blocked            An earlier save is unconfirmed.
+ * @param {Element}       props.notice             Save and recovery notice.
  * @return {Element} Drawer.
  */
 export default function DetailDrawer( {
@@ -194,6 +197,8 @@ export default function DetailDrawer( {
 	commit,
 	onClose,
 	onExpandVariations,
+	blocked = false,
+	notice,
 } ) {
 	const fields = useMemo(
 		() => panelDescriptors( descriptors ),
@@ -216,25 +221,29 @@ export default function DetailDrawer( {
 	const keepButton = useRef( null );
 	const saveButton = useRef( null );
 	const report = useRef( false );
+	const inFlight = useRef( false );
+	const live = useRef( true );
 	const id = item.id;
 
 	useEffect( () => {
-		let live = true;
+		let active = true;
+		live.current = true;
 		loadProduct(
 			item,
 			descriptors.map( ( field ) => field.key )
 		).then( ( row ) => {
-			if ( live ) {
+			if ( active ) {
 				setSaved( row );
 				setData( row );
 			}
 		} );
 		loadVariations( item ).then(
-			( rows ) => live && setVariations( rows )
+			( rows ) => active && setVariations( rows )
 		);
-		loadRecentChange( id ).then( ( row ) => live && setRecent( row ) );
+		loadRecentChange( id ).then( ( row ) => active && setRecent( row ) );
 		return () => {
-			live = false;
+			active = false;
+			live.current = false;
 		};
 		// Loaded once per product opened.
 		// eslint-disable-next-line react-hooks/exhaustive-deps
@@ -311,7 +320,7 @@ export default function DetailDrawer( {
 
 	const save = ( event ) => {
 		event?.preventDefault();
-		if ( saving || ! dirty ) {
+		if ( inFlight.current || saving || blocked || ! dirty ) {
 			return;
 		}
 		const errors = {};
@@ -344,13 +353,30 @@ export default function DetailDrawer( {
 	 * @param {Object} status The Status descriptor when Status changed.
 	 */
 	const write = ( values, status ) => {
+		inFlight.current = true;
+		const submitted = { ...data };
 		setSaving( true );
 		setFailure( null );
 		commit( item, values, Object.keys( saved ), {} )
 			.then( ( answer ) => {
+				if ( ! live.current ) {
+					return;
+				}
 				const row = { ...saved, ...( answer?.item || {} ) };
 				setSaved( row );
-				setData( row );
+				setData( ( current ) => {
+					const next = { ...row };
+					// Rebase unchanged submitted values and untouched fields only.
+					fields.forEach( ( field ) => {
+						if (
+							comparable( field, current[ field.key ] ) !==
+							comparable( field, submitted[ field.key ] )
+						) {
+							next[ field.key ] = current[ field.key ];
+						}
+					} );
+					return next;
+				} );
 				setValidity( {} );
 
 				const labels = changed
@@ -382,6 +408,18 @@ export default function DetailDrawer( {
 				);
 			} )
 			.catch( ( error ) => {
+				if ( ! live.current ) {
+					return;
+				}
+				if ( error?.data?.answer || isUncertain( error ) ) {
+					if ( error?.data?.answer?.item ) {
+						setSaved( ( current ) => ( {
+							...current,
+							...error.data.answer.item,
+						} ) );
+					}
+					return;
+				}
 				const refusals = fieldErrors( error, changed );
 				if ( Object.keys( refusals ).length ) {
 					refuse( refusals );
@@ -407,7 +445,12 @@ export default function DetailDrawer( {
 					data: error?.data,
 				} );
 			} )
-			.finally( () => setSaving( false ) );
+			.finally( () => {
+				inFlight.current = false;
+				if ( live.current ) {
+					setSaving( false );
+				}
+			} );
 	};
 
 	const onKeyDown = ( event ) => {
@@ -564,6 +607,7 @@ export default function DetailDrawer( {
 							<p>{ failure.message }</p>
 						</Notice>
 					) }
+					{ notice }
 					{ ! data && (
 						<p className="bulkcat-drawer__loading">
 							<Spinner />
@@ -593,7 +637,9 @@ export default function DetailDrawer( {
 									variant="primary"
 									type="submit"
 									isBusy={ saving }
-									aria-disabled={ ! dirty || saving }
+									aria-disabled={
+										! dirty || saving || blocked
+									}
 								>
 									{ __(
 										'Save',

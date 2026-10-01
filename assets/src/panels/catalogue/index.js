@@ -275,7 +275,7 @@ export function CatalogueGrid( {
 	);
 	const [ reviewing, setReviewing ] = useState( false );
 	const extra = useMemo( () => categoryArgs( category ), [ category ] );
-	const catalogue = useCatalogue( view, descriptors, extra );
+	const catalogue = useCatalogue( view, descriptors, extra, setView );
 	const treeQuery = useMemo(
 		() => ( view.search ? { search: view.search } : {} ),
 		[ view.search ]
@@ -617,6 +617,7 @@ export function CatalogueGrid( {
 					/>
 				) }
 				<CatalogueLayout
+					onCommitted={ catalogue.reconcile }
 					renderSwitch={ renderSwitch }
 					fields={ filterFields }
 					view={ view }

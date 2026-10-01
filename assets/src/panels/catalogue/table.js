@@ -82,16 +82,16 @@ export function describeTable( wrapper, caption, sortable = [] ) {
  * @param {Object}        props.pagination        { totalItems, totalPages }.
  * @param {boolean}       props.isLoading         A read is in flight.
  * @param {boolean}       props.hasLoaded         A page (or a failure) has arrived at least once.
- * @param {Array<Object>} props.actions           Row actions.
  * @param {Element}       props.empty             What to show when a loaded page has no rows.
  * @param {Object}        props.termNames         source => Map( id => name ).
- * @param {Set}           props.pending           Row ids with a change in flight.
  * @param {Array<string>} props.selection         Selected row ids, as strings.
  * @param {Function}      props.onChangeSelection Selection change.
  * @param {Function}      props.onDrawn           Receives the ids of every row drawn (the page and opened variations), T84.
+ * @param {Object}        props.edit              Shared editing scope.
+ * @param {Object}        props.expand            Reference to variation expansion.
  * @return {Element} Table.
  */
-export default function CatalogueTable( {
+function Table( {
 	fields,
 	view,
 	onChangeView,
@@ -99,30 +99,14 @@ export default function CatalogueTable( {
 	pagination,
 	isLoading,
 	hasLoaded,
-	actions,
 	empty,
 	termNames,
-	pending,
 	selection,
 	onChangeSelection,
 	onDrawn = null,
+	edit,
+	expand,
 } ) {
-	// T46's editing scope first (its rows as last written and its row
-	// actions), then T67's row tree over them: the tree wraps each cell's
-	// renderer, so cellState() decides before the editor does (a locked cell
-	// never reaches renderEditable()'s editor; see variations/README.md).
-	const expand = useRef( null );
-	const onExpandVariations = useCallback(
-		( item ) => expand.current?.( item ),
-		[]
-	);
-	const edit = useEditScope( {
-		items,
-		fields,
-		actions,
-		pending,
-		onExpandVariations,
-	} );
 	const tree = useVariationRows( {
 		items: edit.items,
 		fields,
@@ -212,4 +196,29 @@ export default function CatalogueTable( {
 			</div>
 		</CellContext.Provider>
 	);
+}
+
+/**
+ * Standalone tables own their edit scope; the catalogue supplies its shared
+ * scope so switching layout cannot discard an unconfirmed write.
+ *
+ * @param {Object} props Table properties.
+ * @return {Element} Table with an editing scope.
+ */
+export default function CatalogueTable( props ) {
+	return props.edit ? <Table { ...props } /> : <EditingTable { ...props } />;
+}
+
+/**
+ * @param {Object} props Table properties.
+ * @return {Element} Independently scoped table.
+ */
+function EditingTable( props ) {
+	const expand = useRef( null );
+	const onExpandVariations = useCallback(
+		( item ) => expand.current?.( item ),
+		[]
+	);
+	const edit = useEditScope( { ...props, onExpandVariations } );
+	return <Table { ...props } edit={ edit } expand={ expand } />;
 }

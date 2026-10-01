@@ -40,6 +40,16 @@ export function patchProduct( id, values, fields = [], options = {} ) {
 		data: options.keep ? { ...values, keep_changed_status: true } : values,
 		query: fields.length ? { fields } : {},
 	} ).then( ( answer ) => {
+		if (
+			! [ COMPLETE, 'partial', 'failed' ].includes( answer?.status ) ||
+			Number( answer?.item?.id ) !== Number( id ) ||
+			! Number( answer?.batch_id ) ||
+			! Array.isArray( answer?.results )
+		) {
+			const error = new Error();
+			error.code = 'invalid_json';
+			throw error;
+		}
 		if ( answer?.status && answer.status !== COMPLETE ) {
 			const refused =
 				( answer.results || [] ).find( ( result ) =>

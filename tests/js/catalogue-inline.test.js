@@ -101,21 +101,34 @@ const ITEMS = [
 	},
 ];
 
+let storedItems;
 let patch;
 
 beforeEach( () => {
+	storedItems = [ ...ITEMS ];
 	apiFetch.mockReset();
 	patch = jest.fn();
 	apiFetch.mockImplementation( ( { url, method, data } ) => {
 		const path = url.split( '?' )[ 0 ];
 		if ( method === 'PATCH' ) {
-			return patch( path, data, getQueryArgs( url ) );
+			return patch( path, data, getQueryArgs( url ) ).then(
+				( answer ) => {
+					if ( answer?.item ) {
+						storedItems = storedItems.map( ( row ) =>
+							row.id === answer.item.id
+								? { ...row, ...answer.item }
+								: row
+						);
+					}
+					return answer;
+				}
+			);
 		}
 		if ( path === 'fields' ) {
 			return Promise.resolve( REGISTRY );
 		}
 		if ( path === 'products' ) {
-			return Promise.resolve( page( ITEMS ) );
+			return Promise.resolve( page( storedItems ) );
 		}
 		if ( path === 'categories' ) {
 			return Promise.resolve( CATEGORIES );
@@ -241,7 +254,7 @@ describe( 'inline cell editing', () => {
 		expect( editor( 'SKU' ).value ).toBe( 'GLF-120' );
 	} );
 
-	it( 'keeps the row pending until the answer and the edit open on failure', async () => {
+	it( 'keeps a transport-uncertain row locked without suggesting a blind retry', async () => {
 		let fail;
 		patch.mockReturnValue(
 			new Promise( ( resolve, reject ) => {
@@ -267,12 +280,16 @@ describe( 'inline cell editing', () => {
 			} );
 		} );
 		expect(
-			screen.getByText(
-				`We could not save SKU for ${ TEE }. Try again in a moment.`
-			)
+			screen.getAllByText( /outcome.*unconfirmed/i ).length
+		).toBeGreaterThan( 0 );
+		expect(
+			row.querySelector( '.bulkcat-cell.is-pending' )
+		).not.toBeNull();
+		fireEvent.click( trigger( 'SKU' ) );
+		expect( patches() ).toHaveLength( 1 );
+		expect(
+			screen.getByRole( 'button', { name: 'Read current product' } )
 		).toBeTruthy();
-		expect( editor( 'SKU' ).value ).toBe( 'TSH-200' );
-		expect( row.querySelector( '.bulkcat-cell.is-pending' ) ).toBeNull();
 	} );
 
 	it( 'says a failure that is not the plugin’s own refusal in plain words, never its text (T114)', async () => {
@@ -406,6 +423,7 @@ describe( 'native Status in the cell', () => {
 	it( 'saves Draft once without an Off confirmation', async () => {
 		patch.mockResolvedValue( {
 			item: { ...ITEMS[ 0 ], status: 'draft' },
+			batch_id: 32,
 			status: 'complete',
 			results: [],
 		} );

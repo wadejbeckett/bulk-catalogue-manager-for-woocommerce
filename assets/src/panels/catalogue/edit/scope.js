@@ -4,8 +4,8 @@
  * with a write in flight, the notice for a write that failed outside a cell,
  * and the detail panel with the control that opened it.
  *
- * table.js calls useEditScope() and wraps the table in its `wrap()`; the
- * cells reach the scope through EditContext.
+ * The catalogue layout owns this scope across table/cards changes; standalone
+ * tables/cards own one themselves. Cells reach it through EditContext.
  */
 import {
 	createContext,
@@ -16,6 +16,10 @@ import {
 	useState,
 } from '@wordpress/element';
 
+import { __ } from '@wordpress/i18n';
+import { request } from '../../../api';
+import { isUncertain } from '../../../requests';
+import { SaveNotice } from './reconciliation';
 import ErrorNotice from '../../history/error-notice';
 import DetailDrawer from './drawer';
 import { patchProduct } from './requests';
@@ -51,6 +55,7 @@ export function rowFields( item, descriptors, extra = [] ) {
  * @param {Array<Object>} props.actions            Row actions.
  * @param {Set}           props.pending            Rows the catalogue already holds pending.
  * @param {Function}      props.onExpandVariations Show a product's variations in the grid (T67), if wired.
+ * @param {Function}      props.onCommitted        Reconcile the current query after a write.
  * @return {Object} { items, actions, pending, wrap }.
  */
 export function useEditScope( {
@@ -59,11 +64,21 @@ export function useEditScope( {
 	actions,
 	pending,
 	onExpandVariations,
+	onCommitted,
 } ) {
 	const [ written, setWritten ] = useState( () => new Map() );
 	const [ busy, setBusy ] = useState( () => new Set() );
 	const [ failure, setFailure ] = useState( null );
 	const [ drawer, setDrawer ] = useState( null );
+	const [ outcomes, setOutcomes ] = useState( () => new Map() );
+	const inflight = useRef( new Map() );
+	const uncertain = useRef( new Map() );
+	const recovery = useRef( new Set() );
+	const generations = useRef( new Map() );
+	const committed = useRef( onCommitted );
+	committed.current = onCommitted;
+	const wrapper = useRef( null );
+	const lostFocus = useRef( null );
 	const opener = useRef( null );
 	const returnFocus = useRef( null );
 
@@ -126,34 +141,202 @@ export function useEditScope( {
 		} );
 	}, [] );
 
+	// A read recovery for an older save cannot replace a newer outcome.
+	const record = useCallback( ( id, outcome ) => {
+		setOutcomes( ( current ) => {
+			if (
+				outcome &&
+				outcome.generation !== generations.current.get( id )
+			) {
+				return current;
+			}
+			const next = new Map( current );
+			if ( outcome ) {
+				next.set( id, outcome );
+			} else {
+				next.delete( id );
+			}
+			return next;
+		} );
+	}, [] );
+
+	const refresh = useCallback( async ( answer ) => {
+		try {
+			await committed.current?.( answer );
+			return { state: 'complete' };
+		} catch {
+			return {
+				state: 'failed',
+				message: __(
+					'The results could not be refreshed.',
+					'bulk-catalogue-manager-for-woocommerce'
+				),
+			};
+		}
+	}, [] );
+
 	/**
-	 * Write values to a row: pending until the answer, whose item replaces
-	 * the row. Rejects with the refusal, leaving the row as it was.
+	 * Write once, then reconcile separately. Partial answers retain their
+	 * refusal; an unconfirmed transport answer keeps the object locked.
 	 *
 	 * @param {Object}        item         Row.
 	 * @param {Object}        values       Field key => value.
 	 * @param {Array<string>} extra        Further fields the answer should carry.
 	 * @param {Object}        options      Options.
 	 * @param {boolean}       options.keep Legacy intent only; current controls never send it.
-	 * @return {Promise<Object>} The answer.
+	 * @return {Promise<Object>} Mutation answer with a separate refresh outcome.
 	 */
 	const commit = useCallback(
 		( item, values, extra = [], options = {} ) => {
-			mark( item.id, true );
-			return patchProduct(
-				item.id,
-				values,
+			const id = item.id;
+			const held = uncertain.current.get( id );
+			if ( held ) {
+				return Promise.reject( held.error );
+			}
+			const intent = JSON.stringify( [
+				Object.keys( values )
+					.sort()
+					.map( ( key ) => [ key, values[ key ] ] ),
+				!! options.keep,
+			] );
+			const existing = inflight.current.get( id );
+			if ( existing ) {
+				return existing.intent === intent
+					? existing.promise
+					: Promise.reject( {
+							code: 'edit_in_flight',
+							message: __(
+								'This product is already saving. Wait for its outcome before saving another edit.',
+								'bulk-catalogue-manager-for-woocommerce'
+							),
+							data: { status: 409 },
+						} );
+			}
+			const generation = ( generations.current.get( id ) || 0 ) + 1;
+			generations.current.set( id, generation );
+			setFailure( null );
+			const submitted = JSON.parse( JSON.stringify( values ) );
+			const doc = wrapper.current?.ownerDocument;
+			const focused = doc?.activeElement;
+			if ( focused && wrapper.current?.contains( focused ) ) {
+				lostFocus.current = focused;
+			}
+			mark( id, true );
+			record( id, null );
+			// Store the promise synchronously before another event can dispatch.
+			const promise = patchProduct(
+				id,
+				submitted,
 				rowFields( item, descriptors, extra ),
 				options
 			)
-				.then( ( answer ) => {
-					replace( answer?.item );
-					return answer;
-				} )
-				.finally( () => mark( item.id, false ) );
+				.then(
+					async ( answer ) => {
+						replace( answer?.item );
+						const readback = await refresh( answer );
+						const result = { ...answer, refresh: readback };
+						record( id, {
+							state: 'saved',
+							generation,
+							item,
+							values: submitted,
+							answer: result,
+							refresh: readback,
+						} );
+						return result;
+					},
+					async ( error ) => {
+						if ( error?.data?.answer ) {
+							const answer = error.data.answer;
+							replace( answer.item );
+							answer.refresh = await refresh( answer );
+							record( id, {
+								state: answer.status,
+								generation,
+								item,
+								values: submitted,
+								answer,
+								refresh: answer.refresh,
+							} );
+						} else if ( isUncertain( error ) ) {
+							const outcome = {
+								state: 'uncertain',
+								generation,
+								item,
+								values: submitted,
+								error,
+							};
+							uncertain.current.set( id, outcome );
+							record( id, outcome );
+						}
+						throw error;
+					}
+				)
+				.finally( () => {
+					inflight.current.delete( id );
+					if ( ! uncertain.current.has( id ) ) {
+						mark( id, false );
+					}
+				} );
+			inflight.current.set( id, { intent, promise } );
+			return promise;
 		},
-		[ descriptors, mark, replace ]
+		[ descriptors, mark, replace, record, refresh ]
 	);
+
+	const recover = async ( outcome ) => {
+		const id = outcome.item.id;
+		if ( recovery.current.has( id ) ) {
+			return;
+		}
+		recovery.current.add( id );
+		record( id, { ...outcome, reading: true, readFailed: false } );
+		let current;
+		try {
+			if ( outcome.state === 'uncertain' ) {
+				const answer = await request( `products/${ Number( id ) }`, {
+					query: {
+						fields: rowFields(
+							outcome.item,
+							descriptors,
+							Object.keys( outcome.values )
+						),
+					},
+				} );
+				if ( Number( answer?.item?.id ) !== Number( id ) ) {
+					throw new Error();
+				}
+				current = answer.item;
+				replace( current );
+			}
+			const readback = await refresh( outcome.answer );
+			record( id, {
+				...outcome,
+				current,
+				refresh: readback,
+				readFailed: readback.state === 'failed',
+			} );
+		} catch {
+			record( id, { ...outcome, readFailed: true } );
+		} finally {
+			recovery.current.delete( id );
+		}
+	};
+
+	// A removed row must not strand keyboard focus. Never steal focus after
+	// the user moves elsewhere, or from a drawer that is still open.
+	useEffect( () => {
+		const element = lostFocus.current;
+		const doc = wrapper.current?.ownerDocument;
+		if ( element && ! element.isConnected ) {
+			lostFocus.current = null;
+			if ( doc?.activeElement === doc.body && ! drawer ) {
+				wrapper.current
+					?.querySelector( 'input[type="search"]' )
+					?.focus();
+			}
+		}
+	} );
 
 	const openDrawer = useCallback( ( item ) => {
 		const doc = typeof document !== 'undefined' ? document : null;
@@ -188,7 +371,10 @@ export function useEditScope( {
 		const buttons = cell
 			?.closest( 'tr' )
 			?.querySelectorAll( 'button[aria-haspopup]' );
-		buttons?.[ buttons.length - 1 ]?.focus();
+		const target =
+			buttons?.[ buttons.length - 1 ] ||
+			wrapper.current?.querySelector( 'input[type="search"]' );
+		target?.focus();
 	}, [ drawer ] );
 
 	const withDrawer = useMemo(
@@ -225,27 +411,49 @@ export function useEditScope( {
 			? null
 			: rows.find( ( item ) => item.id === drawer.id ) || drawer;
 
+	const notices = ( id ) =>
+		[ ...outcomes.values() ]
+			.filter( ( outcome ) =>
+				id === undefined
+					? outcome.item.id !== drawer?.id
+					: outcome.item.id === id
+			)
+			.map( ( outcome ) => (
+				<SaveNotice
+					key={ outcome.item.id }
+					outcome={ outcome }
+					descriptors={ descriptors }
+					onRefresh={ () => recover( outcome ) }
+					onRemove={ () => record( outcome.item.id, null ) }
+				/>
+			) );
 	const wrap = ( children ) => (
 		<EditContext.Provider value={ context }>
-			{ failure && (
-				<div className="bulkcat-edit__notice">
-					<ErrorNotice
-						error={ failure.error }
-						fallback={ failure.message }
-						onRemove={ () => setFailure( null ) }
+			<div ref={ wrapper }>
+				{ notices() }
+				{ failure && (
+					<div className="bulkcat-edit__notice">
+						<ErrorNotice
+							error={ failure.error }
+							fallback={ failure.message }
+							onRemove={ () => setFailure( null ) }
+						/>
+					</div>
+				) }
+				{ children }
+				{ drawerItem && (
+					<DetailDrawer
+						item={ drawerItem }
+						key={ drawerItem.id }
+						blocked={ uncertain.current.has( drawerItem.id ) }
+						notice={ notices( drawerItem.id ) }
+						descriptors={ descriptors }
+						commit={ commit }
+						onClose={ closeDrawer }
+						onExpandVariations={ onExpandVariations }
 					/>
-				</div>
-			) }
-			{ children }
-			{ drawerItem && (
-				<DetailDrawer
-					item={ drawerItem }
-					descriptors={ descriptors }
-					commit={ commit }
-					onClose={ closeDrawer }
-					onExpandVariations={ onExpandVariations }
-				/>
-			) }
+				) }
+			</div>
 		</EditContext.Provider>
 	);
 

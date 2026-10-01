@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-09-30T23:10:46+00:00\n"
+"POT-Creation-Date: 2026-10-01T08:02:52+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -3345,6 +3345,49 @@ msgstr ""
 msgid "%s: not on the site until it is published."
 msgstr ""
 
+#. translators: %s: a product name.
+#, js-format
+msgid "The save outcome for %s is unconfirmed. Read the current product and review History before making another change. This page will not resend it."
+msgstr ""
+
+#. translators: %s: a product name.
+#, js-format
+msgid "Only part of the change to %s was saved. Review the change in History before continuing."
+msgstr ""
+
+#. translators: %s: a product name.
+#, js-format
+msgid "The change to %s did not complete. Review the change in History before continuing."
+msgstr ""
+
+#. translators: %s: a product name.
+#, js-format
+msgid "Saved changes to %s, but could not refresh the results."
+msgstr ""
+
+#. translators: %s: a product name.
+#, js-format
+msgid "Saved changes to %s."
+msgstr ""
+
+msgid "Current values were read. This does not confirm the outcome of the earlier save."
+msgstr ""
+
+msgid "The current product or results could not be read. You can try this read again."
+msgstr ""
+
+msgid "Read current product"
+msgstr ""
+
+msgid "Refresh results"
+msgstr ""
+
+msgid "View change in History"
+msgstr ""
+
+msgid "Review product History"
+msgstr ""
+
 msgid "No changes recorded yet."
 msgstr ""
 
@@ -3396,6 +3439,12 @@ msgid "Recent changes"
 msgstr ""
 
 msgid "See history"
+msgstr ""
+
+msgid "The results could not be refreshed."
+msgstr ""
+
+msgid "This product is already saving. Wait for its outcome before saving another edit."
 msgstr ""
 
 #. translators: 1: a field's name, 2: a product name, 3: what the change did, such as "Scheduled".

@@ -18,6 +18,7 @@ import {
 } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 
+import { isUncertain } from '../../../requests';
 import { announce } from '../../categories/announce';
 import { CellContext } from '../cells';
 import {
@@ -166,7 +167,7 @@ export default function InlineCell( { item, descriptor, display } ) {
 	};
 
 	const commit = ( focusTrigger ) => {
-		if ( saving || closing.current ) {
+		if ( saving || closing.current || isPending ) {
 			return;
 		}
 		const value = typedValue( descriptor, text );
@@ -254,6 +255,10 @@ export default function InlineCell( { item, descriptor, display } ) {
 				}
 				setSaving( false );
 				closing.current = false;
+				if ( failure?.data?.answer || isUncertain( failure ) ) {
+					close( false );
+					return;
+				}
 				const sentence =
 					fieldError( failure, descriptor.key ) ||
 					sprintf(

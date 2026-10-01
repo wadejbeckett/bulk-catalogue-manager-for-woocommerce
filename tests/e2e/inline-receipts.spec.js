@@ -780,7 +780,7 @@ async function heldStorage( page ) {
 	} );
 }
 
-function apacheObservations( target ) {
+function apacheObservations( target, file = 'observations.jsonl' ) {
 	const output = execFileSync(
 		'docker',
 		[
@@ -791,7 +791,7 @@ function apacheObservations( target ) {
 			'php',
 			'-r',
 			'echo file_get_contents($argv[1]);',
-			`${ process.env.BULKCAT_RECEIPT_OBSERVER_DIR }/observations.jsonl`,
+			`${ process.env.BULKCAT_RECEIPT_OBSERVER_DIR }/${ file }`,
 		],
 		{ encoding: 'utf8', timeout: 10_000 }
 	);
@@ -802,6 +802,87 @@ function apacheObservations( target ) {
 		.map( JSON.parse )
 		.filter( ( row ) => row.run === run && row.target === target );
 }
+
+test( 'native Apache observer includes shutdown hook before final count and lease release', async ( {
+	page,
+}, info ) => {
+	expect( process.env.BULKCAT_RECEIPT_OBSERVER_CONTAINER ).toMatch(
+		/^[a-f0-9]{64}$/
+	);
+	await openOwned( page );
+	const product = state.products[ 0 ];
+	const request = randomUUID();
+	const response = await page.evaluate(
+		async ( args ) => {
+			const settings = window.bulkcatSettings;
+			const reply = await window.fetch(
+				settings.root +
+					'products?search=' +
+					encodeURIComponent( args.name ),
+				{
+					credentials: 'same-origin',
+					headers: {
+						'X-WP-Nonce': settings.nonce,
+						'X-Bulkcat-Observer': args.command,
+						'X-Bulkcat-Receipt-Run': args.run,
+						'X-Bulkcat-Receipt-Target': String( args.target ),
+						'X-Bulkcat-Receipt-Request': args.request,
+						'X-Bulkcat-Receipt-Lifecycle': 'shutdown',
+					},
+				}
+			);
+			return { status: reply.status, json: await reply.json() };
+		},
+		{
+			run,
+			request,
+			target: product.id,
+			name: product.name,
+			command: process.env.BULKCAT_RECEIPT_OBSERVER_COMMAND,
+		}
+	);
+	expect( response.status ).toBe( 200 );
+	expect( response.json.items.some( ( row ) => row.id === product.id ) ).toBe(
+		true
+	);
+	let witness;
+	await expect
+		.poll( () => {
+			witness = apacheObservations( product.id, 'lifecycle.jsonl' );
+			return witness.length;
+		} )
+		.toBe( 1 );
+	const apache = apacheObservations( product.id );
+	state.journeys.push( {
+		label: info.title,
+		request,
+		witness,
+		apache,
+		boundary:
+			'synthetic native save-hook event during actual WordPress shutdown; no CRUD save',
+	} );
+	record();
+	expect( witness[ 0 ] ).toMatchObject( {
+		run,
+		request,
+		target: product.id,
+		saves: 1,
+		shutdown_actions: 1,
+		shutdown_running: 1,
+	} );
+	expect( apache ).toHaveLength( 1 );
+	expect( apache[ 0 ] ).toMatchObject( {
+		run,
+		request,
+		target: product.id,
+		observer_loaded: 1,
+		target_verified: 1,
+		saves: 1,
+		shutdown_actions: 1,
+		shutdown_running: 0,
+	} );
+	expect( witness[ 0 ].lease_held ).toBe( 1 );
+} );
 
 for ( const recovery of [ 'automatic', 'reload-denied' ] ) {
 	test( `real HTTP completed response dropped: ${ recovery } preserves exact selection`, async ( {
@@ -1010,6 +1091,8 @@ for ( const recovery of [ 'automatic', 'reload-denied' ] ) {
 		for ( const row of apache ) {
 			expect( row.observer_loaded ).toBe( 1 );
 			expect( row.target_verified ).toBe( 1 );
+			expect( row.shutdown_actions ).toBe( 1 );
+			expect( row.shutdown_running ).toBe( 0 );
 			expect( row.saves ).toBe(
 				row.request === patch[ 0 ].request ? 1 : 0
 			);

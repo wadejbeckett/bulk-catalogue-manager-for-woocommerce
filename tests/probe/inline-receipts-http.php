@@ -38,33 +38,65 @@ declare( strict_types = 1 );
 		},
 		'accepted_args' => 1,
 	];
-	$GLOBALS['wp_filter']['init'][ PHP_INT_MAX ][]                                  = [
-		'function'      => static function () use ( $target, $run, &$owned ): void {
+	$finalize                                      = static function () use ( $run, $rid, $target, &$count, &$owned, $lease ): void {
+		if ( ! $owned ) {
+			fclose( $lease );
+			return;
+		}
+		file_put_contents(
+			__DIR__ . '/observations.jsonl',
+			json_encode(
+				[
+					'run'              => $run,
+					'request'          => $rid,
+					'target'           => $target,
+					'observer_loaded'  => 1,
+					'target_verified'  => 1,
+					'saves'            => $count,
+					'shutdown_actions' => did_action( 'shutdown' ),
+					'shutdown_running' => (int) doing_action( 'shutdown' ),
+				]
+			) . "\n",
+			FILE_APPEND | LOCK_EX
+		);
+		fclose( $lease );
+	};
+	$GLOBALS['wp_filter']['init'][ PHP_INT_MAX ][] = [
+		'function'      => static function () use ( $target, $run, $rid, $config, $lease, $finalize, &$count, &$owned ): void {
 			$owned = get_post_meta( $target, '_bulkcat_native_probe', true ) === $run;
+			// Native WordPress/WooCommerce shutdown callbacks were registered before init.
+			// Keep the counter and lease alive until that dispatcher (including cache close) returns.
+			// This does not include arbitrary PHP shutdown callbacks registered after this one.
+			register_shutdown_function( $finalize );
+			if ( $owned && ( $config['lifecycle_probe'] ?? false ) && 'shutdown' === ( $_SERVER['HTTP_X_BULKCAT_RECEIPT_LIFECYCLE'] ?? '' ) ) {
+				// Lifecycle regression only: dispatch a native hook event, not a CRUD save.
+				add_action(
+					'shutdown',
+					static function () use ( $target, $run, $rid, $lease, &$count ): void {
+						if ( get_post_meta( $target, '_bulkcat_native_probe', true ) !== $run ) {
+							return;
+						}
+						do_action( 'woocommerce_after_product_object_save', wc_get_product( $target ) );
+						file_put_contents(
+							__DIR__ . '/lifecycle.jsonl',
+							json_encode(
+								[
+									'run'              => $run,
+									'request'          => $rid,
+									'target'           => $target,
+									'saves'            => $count,
+									'shutdown_actions' => did_action( 'shutdown' ),
+									'shutdown_running' => (int) doing_action( 'shutdown' ),
+									'lease_held'       => (int) is_resource( $lease ),
+								]
+							) . "\n",
+							FILE_APPEND | LOCK_EX
+						);
+					},
+					PHP_INT_MAX
+				);
+			}
 		},
 		'accepted_args' => 0,
 	];
-	register_shutdown_function(
-		static function () use ( $run, $rid, $target, &$count, &$owned, $lease ): void {
-			if ( ! $owned ) {
-				fclose( $lease );
-				return;
-			}
-			file_put_contents(
-				__DIR__ . '/observations.jsonl',
-				json_encode(
-					[
-						'run'             => $run,
-						'request'         => $rid,
-						'target'          => $target,
-						'observer_loaded' => 1,
-						'target_verified' => 1,
-						'saves'           => $count,
-					]
-				) . "\n",
-				FILE_APPEND | LOCK_EX
-			);
-			fclose( $lease );
-		}
-	);
 } )();

@@ -195,7 +195,7 @@ plus narrow 720×900. No fixture setup, plugin installation or queue drain:
 BULKCAT_E2E_FIXTURE=1 BULKCAT_E2E_BASE_URL="$ASSIGNED_URL" \
 WP_CMD="$ASSIGNED_WP_CMD" BULKCAT_E2E_OWNED_EVIDENCE="$RECEIPT_EVIDENCE/run-1" \
 node_modules/.bin/playwright test -c "$RECEIPT_PRIVATE_CONFIG" \
-  tests/e2e/inline-receipts.spec.js --grep-invert 'real HTTP completed response dropped'
+  tests/e2e/inline-receipts.spec.js --grep-invert 'real HTTP completed response dropped|native Apache observer'
 ```
 
 Give **every invocation a fresh evidence subdirectory**, including failed runs,
@@ -224,7 +224,7 @@ Save activation and include grant issuance, PATCH, recovery and current reads.
 The browser-loaded WordPress api-fetch test uses a genuinely invalid nonce with
 an ordinary concurrent request. No production latency is inferred.
 
-The two dropped-response cases additionally require **explicit controller
+The two dropped-response cases and focused lifecycle regression require **explicit controller
 authorization for temporary Apache observation**. They fail without the bounded
 `inline-receipts-http.py` runner. This is a separate invocation from the CLI and
 other browser cases; run all native/browser work separately from heavy Jest.
@@ -249,17 +249,40 @@ It never edits WordPress configuration/core/vendor/plugin source or installs a
 plugin, MU plugin or route. The observer uses native preinitialized hooks; only
 the exact private command header, run/request UUIDs, host, unexpired lifetime,
 REST path and natively verified target marker can produce a record. Records
-contain run/request/target IDs, positive loaded/target-verified flags and the
-target's `woocommerce_after_product_object_save` count, without request payload
+contain run/request/target IDs, positive loaded/target-verified flags, shutdown
+phase flags and the target's `woocommerce_after_product_object_save` count, without request payload
 or authentication. Every forwarded request must have a record: exactly one
 target save in the original PATCH, zero in all grant/read/recovery requests.
 An absent observer therefore cannot pass as zero saves. Separate CLI hook
 counts remain separately attributed.
 
+The counter is active from prepend time. Its PHP finalizer is registered at
+`init`, after the installed WordPress `shutdown_action_hook` registration and
+WooCommerce bootstrap callbacks. It records and releases the lifetime guard
+after that native dispatcher returns, including its `shutdown` actions (such
+as WooCommerce deferred product synchronization) and synchronous cache close.
+Each final row must report one completed shutdown action and no active shutdown
+action. This boundary does not promise to observe arbitrary PHP shutdown
+callbacks registered later than the finalizer. Earlier prepend-registered
+finalizer evidence is an early count, not a count through native shutdown.
+
+To test this ordering independently, run the same bounded command with a fresh
+evidence directory and `--lifecycle-only`. It selects one desktop regression and
+enables a private, exact-header/UUID/target-guarded probe. During the real native
+WordPress shutdown action, the probe dispatches one **synthetic save-hook event**
+for the owned product; it does not call CRUD save or change business data. A
+separate `lifecycle.jsonl` witness must show the event counted while shutdown is
+active and the lease remains held. The final observation must include that
+event after shutdown returns. This proves lifecycle ordering, not an additional
+actual product save. The normal four HTTP journeys (two cases at two widths)
+disable this injection and count actual native saves. Preserve pre-fix RED and
+post-fix GREEN alongside their observer source identities.
+
 The test command has a 540-second outer bound, private matching expires after
 600 seconds, and signal/finally cleanup restores and verifies the original
 configuration, waits boundedly for matched observer requests to release their
-file-lifetime guards, and removes only its exact temporary files. That file
+file-lifetime guards, and captures/removes only its exact temporary files,
+including both observation and lifecycle JSONL files. That file
 guard protects observer cleanup only; it is not a product/receipt lock. Normal
 unmatched login HTTP is checked before, during and after. Retain the lifecycle,
 backup, observations and all failures privately. Verify actual CLI/browser

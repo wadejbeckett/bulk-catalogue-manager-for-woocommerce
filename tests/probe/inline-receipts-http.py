@@ -19,6 +19,8 @@ parser.add_argument('--url', required=True)
 parser.add_argument('--settings-snapshot', required=True)
 parser.add_argument('--evidence', required=True)
 parser.add_argument('--config', required=True)
+parser.add_argument('--lifecycle-only', action='store_true',
+                    help='Run only the owned shutdown-hook regression, with explicit test injection.')
 args = parser.parse_args()
 root = Path(__file__).resolve().parents[2]
 out = Path(args.evidence).resolve()
@@ -93,11 +95,12 @@ $s=stat($p);echo json_encode(['bytes'=>base64_encode(file_get_contents($p)),'sha
     report['before'] = {k: v for k, v in original.items() if k != 'bytes'}
     report['http_before'] = health()
     observer = Path(__file__).with_suffix('.php').read_bytes()
-    settings = {'host': url.netloc, 'command': command, 'expires': int(time.time()) + 600}
+    settings = {'host': url.netloc, 'command': command, 'expires': int(time.time()) + 600,
+                'lifecycle_probe': args.lifecycle_only}
     php("$d=json_decode(stream_get_contents(STDIN),true);if(file_exists($d['dir']))exit(2);", {'dir': private}, user)
     created = True  # Finally also handles an interrupted or partial setup.
     php(r'''$d=json_decode(stream_get_contents(STDIN),true);if(file_exists($d['dir'])||!mkdir($d['dir'],0700))exit(2);
-foreach(['observer.php'=>$d['source'],'config.json'=>base64_encode(json_encode($d['settings'])),'observations.jsonl'=>'','active.lock'=>''] as $f=>$bytes){$v=base64_decode($bytes);if(file_put_contents($d['dir'].'/'.$f,$v)!==strlen($v)||!chmod($d['dir'].'/'.$f,0600))exit(3);}''',
+foreach(['observer.php'=>$d['source'],'config.json'=>base64_encode(json_encode($d['settings'])),'observations.jsonl'=>'','lifecycle.jsonl'=>'','active.lock'=>''] as $f=>$bytes){$v=base64_decode($bytes);if(file_put_contents($d['dir'].'/'.$f,$v)!==strlen($v)||!chmod($d['dir'].'/'.$f,0600))exit(3);}''',
         {'dir': private, 'source': base64.b64encode(observer).decode(), 'settings': settings}, user)
     deployed = original_bytes + f'\n# Owned receipt observation {command}\n<IfModule php_module>\nphp_value auto_prepend_file {private}/observer.php\n</IfModule>\n'.encode()
     report['observer_sha256'] = hashlib.sha256(observer).hexdigest()
@@ -112,7 +115,10 @@ foreach(['observer.php'=>$d['source'],'config.json'=>base64_encode(json_encode($
                BULKCAT_RECEIPT_OBSERVER_CONTAINER=cid, BULKCAT_RECEIPT_OBSERVER_DIR=private,
                BULKCAT_RECEIPT_OBSERVER_COMMAND=command)
     argv = ['node_modules/.bin/playwright', 'test', '-c', args.config,
-            'tests/e2e/inline-receipts.spec.js', '--grep', 'real HTTP completed response dropped']
+            'tests/e2e/inline-receipts.spec.js', '--grep',
+            'native Apache observer includes shutdown hook' if args.lifecycle_only else 'real HTTP completed response dropped']
+    if args.lifecycle_only:
+        argv += ['--project=desktop']
     report['test_command'] = argv
     child = subprocess.Popen(argv, cwd=root, env=env, start_new_session=True)
     report['test_exit'] = child.wait(timeout=540)
@@ -145,13 +151,14 @@ finally:
     if created and (not installed or report['restored']):
         try:
             observations = php(r'''$d=json_decode(stream_get_contents(STDIN),true);$dir=$d['dir'];
-if(!is_dir($dir)){echo json_encode('');return;}
+if(!is_dir($dir)){echo json_encode(['observations.jsonl'=>'','lifecycle.jsonl'=>'']);return;}
 $lease=null;if(is_file($dir.'/active.lock')){$lease=fopen($dir.'/active.lock','r');if(false===$lease)exit(2);
 $end=hrtime(true)+20000000000;while(!flock($lease,LOCK_EX|LOCK_NB)){if(hrtime(true)>=$end)exit(3);usleep(20000);}}
-$rows=is_file($dir.'/observations.jsonl')?file_get_contents($dir.'/observations.jsonl'):'';
-foreach(['observer.php','config.json','observations.jsonl','active.lock'] as $f){if(file_exists($dir.'/'.$f)&&!unlink($dir.'/'.$f))exit(4);}
+$rows=[];foreach(['observations.jsonl','lifecycle.jsonl'] as $f)$rows[$f]=is_file($dir.'/'.$f)?file_get_contents($dir.'/'.$f):'';
+foreach(['observer.php','config.json','observations.jsonl','lifecycle.jsonl','active.lock'] as $f){if(file_exists($dir.'/'.$f)&&!unlink($dir.'/'.$f))exit(4);}
 if(!rmdir($dir))exit(5);if(null!==$lease)fclose($lease);echo json_encode($rows);''', {'dir': private}, user)
-            (out / 'apache-observations.jsonl').write_text(observations)
+            for name, rows in observations.items():
+                (out / ('apache-' + name)).write_text(rows)
             report['observer_removed'] = True
             report['matched_requests_released'] = True
         except Exception as error:

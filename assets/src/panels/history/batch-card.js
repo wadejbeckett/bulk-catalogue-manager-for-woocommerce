@@ -29,7 +29,7 @@ import {
 	statusLabel,
 } from './describe';
 import ErrorNotice from './error-notice';
-import { BatchProgress } from './stalled-notice';
+import { BatchProgress, isUnclosedInline } from './stalled-notice';
 import { userName } from './users';
 import {
 	applyUndo,
@@ -264,7 +264,9 @@ export default function BatchCard( {
 	onNotice,
 	linked = null,
 } ) {
-	const state = batch.reversibility?.state || STATES.REVERSIBLE;
+	const state = isUnclosedInline( batch )
+		? STATES.IN_PROGRESS
+		: batch.reversibility?.state || STATES.REVERSIBLE;
 	const isRedo = batch.source === 'undo';
 	const [ open, setOpen ] = useState( false );
 	const [ plan, setPlan ] = useState( null );

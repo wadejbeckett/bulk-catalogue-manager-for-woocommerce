@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-10-01T09:02:55+00:00\n"
+"POT-Creation-Date: 2026-10-01T09:40:28+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -3321,6 +3321,12 @@ msgid_plural "Opened %d products with options."
 msgstr[0] ""
 msgstr[1] ""
 
+msgid "This tab could not safely keep the save identity. No new save can be sent. Allow session storage, then check the save outcome again."
+msgstr ""
+
+msgid "This product is already saving or its save outcome is unconfirmed. Check its outcome before saving another edit."
+msgstr ""
+
 #. translators: 1: the switch's name, "Shown in shop and search", 2: a product name.
 #. translators: 1: a field's name, such as "SKU", 2: a product name.
 #, js-format
@@ -3353,7 +3359,12 @@ msgstr ""
 
 #. translators: %s: a product name.
 #, js-format
-msgid "The save outcome for %s is unconfirmed. Read the current product and review History before making another change. This page will not resend it."
+msgid "The save outcome for %s is unconfirmed. Check the save outcome or review History before making another change. This page will not resend it."
+msgstr ""
+
+#. translators: %s: a product name.
+#, js-format
+msgid "The change to %s was not saved. Review your input before saving again."
 msgstr ""
 
 #. translators: %s: a product name.
@@ -3376,13 +3387,13 @@ msgstr ""
 msgid "Saved changes to %s."
 msgstr ""
 
-msgid "Current values were read. This does not confirm the outcome of the earlier save."
+msgid "The save outcome is known, but this tab could not release its saved identity. Check the save outcome again before another edit."
 msgstr ""
 
-msgid "The current product or results could not be read. You can try this read again."
+msgid "The save outcome or current results could not be read. You can try this read again."
 msgstr ""
 
-msgid "Read current product"
+msgid "Check save outcome"
 msgstr ""
 
 msgid "Refresh results"
@@ -3445,6 +3456,9 @@ msgid "Recent changes"
 msgstr ""
 
 msgid "See history"
+msgstr ""
+
+msgid "The save did not start. Check your connection and try saving again."
 msgstr ""
 
 msgid "The results could not be refreshed."
@@ -3685,6 +3699,9 @@ msgid "The audit log could not be loaded. Try again in a moment."
 msgstr ""
 
 msgid "No field changes match these filters."
+msgstr ""
+
+msgid "The save outcome is unconfirmed. This was an individual save, so background tasks cannot resume it. Check the save outcome in the catalogue or review the recorded changes here. Do not resend, cancel or undo it while its outcome is unconfirmed."
 msgstr ""
 
 msgid "The background queue has not run."

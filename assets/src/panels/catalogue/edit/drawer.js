@@ -362,9 +362,14 @@ export default function DetailDrawer( {
 				if ( ! live.current ) {
 					return;
 				}
+				// A recovered receipt proves the save, not a current row. Keep the
+				// draft intact until a strict read succeeds (including newer input).
 				const row = { ...saved, ...( answer?.item || {} ) };
 				setSaved( row );
 				setData( ( current ) => {
+					if ( ! answer?.item ) {
+						return current;
+					}
 					const next = { ...row };
 					// Rebase unchanged submitted values and untouched fields only.
 					fields.forEach( ( field ) => {

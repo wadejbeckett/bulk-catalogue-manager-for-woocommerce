@@ -17,12 +17,11 @@ import {
 } from '@wordpress/element';
 
 import { __ } from '@wordpress/i18n';
-import { request } from '../../../api';
-import { isUncertain } from '../../../requests';
+import { createInlineReceipts } from './receipts';
 import { SaveNotice } from './reconciliation';
 import ErrorNotice from '../../history/error-notice';
 import DetailDrawer from './drawer';
-import { patchProduct } from './requests';
+import { readProduct } from './requests';
 
 /** The row action that opens the detail panel (actions.js). */
 const EDIT_DETAILS = 'edit-details';
@@ -55,6 +54,7 @@ export function rowFields( item, descriptors, extra = [] ) {
  * @param {Array<Object>} props.actions            Row actions.
  * @param {Set}           props.pending            Rows the catalogue already holds pending.
  * @param {Function}      props.onExpandVariations Show a product's variations in the grid (T67), if wired.
+ * @param {Object}        props.settings           Localised site/user storage scope.
  * @param {Function}      props.onCommitted        Reconcile the current query after a write.
  * @return {Object} { items, actions, pending, wrap }.
  */
@@ -65,14 +65,20 @@ export function useEditScope( {
 	pending,
 	onExpandVariations,
 	onCommitted,
+	settings,
 } ) {
+	const root = settings?.root || '';
+	const userId = Number( settings?.user?.id ) || 0;
+	const receipts = useMemo(
+		() => createInlineReceipts( { root, user: { id: userId } } ),
+		[ root, userId ]
+	);
 	const [ written, setWritten ] = useState( () => new Map() );
-	const [ busy, setBusy ] = useState( () => new Set() );
+	const [ busy, setBusy ] = useState( () => new Set( receipts.heldIds() ) );
 	const [ failure, setFailure ] = useState( null );
 	const [ drawer, setDrawer ] = useState( null );
 	const [ outcomes, setOutcomes ] = useState( () => new Map() );
 	const inflight = useRef( new Map() );
-	const uncertain = useRef( new Map() );
 	const recovery = useRef( new Set() );
 	const generations = useRef( new Map() );
 	const committed = useRef( onCommitted );
@@ -175,24 +181,141 @@ export function useEditScope( {
 		}
 	}, [] );
 
+	// Adopt immutable evidence first; a current row is an independent strict read.
+	const adopt = useCallback(
+		async ( receipt, outcome ) => {
+			const id = outcome.item.id;
+			const currentGeneration = () =>
+				generations.current.get( id ) === outcome.generation;
+			if ( ! [ 'closed', 'refused' ].includes( receipt.receipt_state ) ) {
+				const unconfirmed = {
+					...outcome,
+					state: 'uncertain',
+					answer: receipt,
+					readFailed: receipt.readFailed,
+					reading: false,
+					held: true,
+				};
+				record( id, unconfirmed );
+				return unconfirmed;
+			}
+			let item = receipt.recovered ? undefined : receipt.item;
+			let rowFailed = false;
+			if ( receipt.recovered && receipt.receipt_state === 'closed' ) {
+				try {
+					item = await readProduct(
+						id,
+						rowFields(
+							outcome.item,
+							descriptors,
+							Object.keys( outcome.values || {} )
+						)
+					);
+				} catch {
+					rowFailed = true;
+				}
+			}
+			if ( currentGeneration() && item ) {
+				replace( item );
+			}
+			const answer = {
+				...receipt,
+				status: receipt.write_status,
+				...( item ? { item } : {} ),
+			};
+			if ( receipt.recovered ) {
+				delete answer.item;
+				delete answer.results;
+				if ( item ) {
+					answer.item = item;
+				}
+			}
+			const readback =
+				receipt.receipt_state === 'closed'
+					? await refresh( answer )
+					: { state: 'complete' };
+			if ( rowFailed ) {
+				readback.state = 'failed';
+			}
+			answer.refresh = readback;
+			const state =
+				receipt.write_status === 'complete'
+					? 'saved'
+					: receipt.write_status;
+			const result = {
+				...outcome,
+				state: receipt.receipt_state === 'refused' ? 'refused' : state,
+				answer,
+				refresh: readback,
+				reading: false,
+				rowFailed,
+				readFailed: readback.state === 'failed',
+				held: receipt.held,
+				clearFailed: receipt.clearFailed,
+			};
+			record( id, result );
+			if ( currentGeneration() ) {
+				mark( id, receipts.isHeld( id ) );
+			}
+			return result;
+		},
+		[ descriptors, mark, receipts, record, refresh, replace ]
+	);
+
+	// The constructor has already locked restored objects. Mount makes one
+	// read-only pass; StrictMode effect replay shares that same pass.
+	const latest = useRef();
+	latest.current = { items, adopt };
+	useEffect( () => {
+		let live = true;
+		const ids = receipts.heldIds();
+		ids.forEach( ( id ) => {
+			generations.current.set(
+				id,
+				( generations.current.get( id ) || 0 ) + 1
+			);
+			mark( id, true );
+		} );
+		const versions = new Map( generations.current );
+		receipts
+			.restore()
+			.then( async ( answers ) => {
+				for ( const answer of answers ) {
+					if ( ! live ) {
+						return;
+					}
+					const id = answer.object_id;
+					await latest.current.adopt( answer, {
+						item: latest.current.items?.find(
+							( row ) => row.id === id
+						) || { id },
+						generation: versions.get( id ),
+					} );
+				}
+			} )
+			.catch( ( error ) => {
+				if ( live ) {
+					setFailure( { error, message: error.message } );
+				}
+			} );
+		return () => {
+			live = false;
+		};
+	}, [ receipts, mark ] );
+
 	/**
-	 * Write once, then reconcile separately. Partial answers retain their
-	 * refusal; an unconfirmed transport answer keeps the object locked.
+	 * One Save: issue, strictly keep identity, PATCH once, adopt, reconcile.
+	 * The public answer/error contracts remain usable by cells and drawers.
 	 *
-	 * @param {Object}        item         Row.
-	 * @param {Object}        values       Field key => value.
-	 * @param {Array<string>} extra        Further fields the answer should carry.
-	 * @param {Object}        options      Options.
-	 * @param {boolean}       options.keep Legacy intent only; current controls never send it.
-	 * @return {Promise<Object>} Mutation answer with a separate refresh outcome.
+	 * @param {Object} item    Current row.
+	 * @param {Object} values  Typed field values.
+	 * @param {Array}  extra   Further read fields.
+	 * @param {Object} options Legacy keep flag.
+	 * @return {Promise<Object>} Answer with a separate refresh outcome.
 	 */
 	const commit = useCallback(
 		( item, values, extra = [], options = {} ) => {
 			const id = item.id;
-			const held = uncertain.current.get( id );
-			if ( held ) {
-				return Promise.reject( held.error );
-			}
 			const intent = JSON.stringify( [
 				Object.keys( values )
 					.sort()
@@ -212,6 +335,9 @@ export function useEditScope( {
 							data: { status: 409 },
 						} );
 			}
+			if ( receipts.isHeld( id ) ) {
+				return Promise.reject( { code: 'invalid_json' } );
+			}
 			const generation = ( generations.current.get( id ) || 0 ) + 1;
 			generations.current.set( id, generation );
 			setFailure( null );
@@ -223,65 +349,65 @@ export function useEditScope( {
 			}
 			mark( id, true );
 			record( id, null );
-			// Store the promise synchronously before another event can dispatch.
-			const promise = patchProduct(
-				id,
-				submitted,
-				rowFields( item, descriptors, extra ),
-				options
-			)
+			const outcome = { generation, item, values: submitted };
+			const promise = receipts
+				.save(
+					id,
+					submitted,
+					rowFields( item, descriptors, extra ),
+					options
+				)
 				.then(
-					async ( answer ) => {
-						replace( answer?.item );
-						const readback = await refresh( answer );
-						const result = { ...answer, refresh: readback };
-						record( id, {
-							state: 'saved',
-							generation,
-							item,
-							values: submitted,
-							answer: result,
-							refresh: readback,
-						} );
-						return result;
-					},
-					async ( error ) => {
-						if ( error?.data?.answer ) {
-							const answer = error.data.answer;
-							replace( answer.item );
-							answer.refresh = await refresh( answer );
-							record( id, {
-								state: answer.status,
-								generation,
-								item,
-								values: submitted,
-								answer,
-								refresh: answer.refresh,
-							} );
-						} else if ( isUncertain( error ) ) {
-							const outcome = {
-								state: 'uncertain',
-								generation,
-								item,
-								values: submitted,
-								error,
+					async ( receipt ) => {
+						const result = await adopt( receipt, outcome );
+						if ( result.state === 'uncertain' ) {
+							throw { code: 'invalid_json', data: { receipt } };
+						}
+						if ( result.state === 'refused' && receipt.refusal ) {
+							throw receipt.refusal;
+						}
+						if ( result.state !== 'saved' ) {
+							const refusal =
+								receipt.refusal ||
+								result.answer.results?.find( ( step ) =>
+									[ 'skipped', 'failed' ].includes(
+										step.state
+									)
+								);
+							throw {
+								code: refusal?.code || result.state,
+								message:
+									refusal?.message || refusal?.reason || '',
+								data: {
+									...refusal?.data,
+									field:
+										refusal?.field || refusal?.data?.field,
+									answer: result.answer,
+								},
 							};
-							uncertain.current.set( id, outcome );
-							record( id, outcome );
+						}
+						return result.answer;
+					},
+					( error ) => {
+						if ( receipts.isHeld( id ) ) {
+							record( id, {
+								...outcome,
+								state: 'uncertain',
+								held: true,
+								readFailed: true,
+							} );
 						}
 						throw error;
 					}
 				)
 				.finally( () => {
 					inflight.current.delete( id );
-					if ( ! uncertain.current.has( id ) ) {
-						mark( id, false );
-					}
+					mark( id, receipts.isHeld( id ) );
 				} );
 			inflight.current.set( id, { intent, promise } );
 			return promise;
 		},
-		[ descriptors, mark, replace, record, refresh ]
+		[ adopt, descriptors, mark, receipts, record ]
 	);
 
 	const recover = async ( outcome ) => {
@@ -291,33 +417,21 @@ export function useEditScope( {
 		}
 		recovery.current.add( id );
 		record( id, { ...outcome, reading: true, readFailed: false } );
-		let current;
 		try {
-			if ( outcome.state === 'uncertain' ) {
-				const answer = await request( `products/${ Number( id ) }`, {
-					query: {
-						fields: rowFields(
-							outcome.item,
-							descriptors,
-							Object.keys( outcome.values )
-						),
+			if ( receipts.isHeld( id ) ) {
+				await adopt( await receipts.resolve( id ), outcome );
+			} else {
+				// Retry a failed current read without reinterpreting the closure.
+				await adopt(
+					{
+						...outcome.answer,
+						recovered: true,
 					},
-				} );
-				if ( Number( answer?.item?.id ) !== Number( id ) ) {
-					throw new Error();
-				}
-				current = answer.item;
-				replace( current );
+					outcome
+				);
 			}
-			const readback = await refresh( outcome.answer );
-			record( id, {
-				...outcome,
-				current,
-				refresh: readback,
-				readFailed: readback.state === 'failed',
-			} );
 		} catch {
-			record( id, { ...outcome, readFailed: true } );
+			record( id, { ...outcome, reading: false, readFailed: true } );
 		} finally {
 			recovery.current.delete( id );
 		}
@@ -445,7 +559,7 @@ export function useEditScope( {
 					<DetailDrawer
 						item={ drawerItem }
 						key={ drawerItem.id }
-						blocked={ uncertain.current.has( drawerItem.id ) }
+						blocked={ receipts.isHeld( drawerItem.id ) }
 						notice={ notices( drawerItem.id ) }
 						descriptors={ descriptors }
 						commit={ commit }

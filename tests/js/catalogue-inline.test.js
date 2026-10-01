@@ -1,3 +1,4 @@
+import { withInlineReceipts } from './inline-transport';
 /**
  * T46: inline cell editing. A cell the registry marks inline-editable opens
  * on click or Enter, commits on Enter or blur and reverts on Escape; a value
@@ -135,6 +136,7 @@ beforeEach( () => {
 		}
 		return new Promise( () => {} );
 	} );
+	withInlineReceipts( apiFetch );
 } );
 
 const patches = () =>
@@ -171,7 +173,7 @@ describe( 'inline cell editing', () => {
 		await waitFor( () => expect( patches() ).toHaveLength( 1 ) );
 		expect( patch ).toHaveBeenCalledWith(
 			'products/11',
-			{ sku: 'TSH-101' },
+			expect.objectContaining( { sku: 'TSH-101' } ),
 			expect.objectContaining( {
 				fields: expect.arrayContaining( [ 'sku', 'id' ] ),
 			} )
@@ -193,7 +195,9 @@ describe( 'inline cell editing', () => {
 		fireEvent.change( input, { target: { value: '14' } } );
 		fireEvent.blur( input );
 		await waitFor( () => expect( patches() ).toHaveLength( 1 ) );
-		expect( patch.mock.calls[ 0 ][ 1 ] ).toEqual( { regular_price: '14' } );
+		expect( patch.mock.calls[ 0 ][ 1 ] ).toMatchObject( {
+			regular_price: '14',
+		} );
 		expect( await screen.findByText( '14.00' ) ).toBeTruthy();
 	} );
 
@@ -237,6 +241,8 @@ describe( 'inline cell editing', () => {
 			message: 'Invalid parameter(s): sku',
 			data: {
 				status: 400,
+				receipt_state: 'refused',
+				replayed: false,
 				params: {
 					sku: 'A product with the SKU GLF-120 already exists, so this SKU was not applied.',
 				},
@@ -280,7 +286,7 @@ describe( 'inline cell editing', () => {
 			} );
 		} );
 		expect(
-			screen.getAllByText( /outcome.*unconfirmed/i ).length
+			( await screen.findAllByText( /outcome.*unconfirmed/i ) ).length
 		).toBeGreaterThan( 0 );
 		expect(
 			row.querySelector( '.bulkcat-cell.is-pending' )
@@ -288,7 +294,7 @@ describe( 'inline cell editing', () => {
 		fireEvent.click( trigger( 'SKU' ) );
 		expect( patches() ).toHaveLength( 1 );
 		expect(
-			screen.getByRole( 'button', { name: 'Read current product' } )
+			screen.getByRole( 'button', { name: 'Check save outcome' } )
 		).toBeTruthy();
 	} );
 
@@ -312,40 +318,18 @@ describe( 'inline cell editing', () => {
 		fireEvent.click( trigger( 'SKU' ) );
 		fireEvent.change( editor( 'SKU' ), { target: { value: 'TSH-300' } } );
 		fireEvent.keyDown( editor( 'SKU' ), { key: 'Enter' } );
-		const sentence = await screen.findByText(
-			`We could not save SKU for ${ TEE }. Try again in a moment.`
-		);
-		expectPlain( sentence, 'Try again in a moment.' );
+		const sentence = await screen.findByRole( 'button', {
+			name: 'Check save outcome',
+		} );
+		expectPlain( sentence, 'Check save outcome' );
 		expect( document.body.textContent ).not.toContain( 'critical error' );
-
-		// Core's own JSON refusal is not shown in its words either; a plugin refusal is.
-		patch.mockRejectedValue( {
-			code: 'rest_forbidden',
-			message: 'Sorry, you are not allowed to do that.',
-			data: { status: 403 },
-		} );
-		fireEvent.keyDown( editor( 'SKU' ), { key: 'Enter' } );
-		await waitFor( () => expect( patches() ).toHaveLength( 2 ) );
-		// The request has started; wait for its rejection to finish before
-		// submitting again, as the editor ignores Enter while it is saving.
-		await waitFor( () =>
-			expect( editor( 'SKU' ).getAttribute( 'aria-busy' ) ).toBeNull()
-		);
-		expect( document.body.textContent ).not.toContain(
-			'not allowed to do that'
-		);
-		patch.mockRejectedValue( {
-			code: 'bulkcat_cannot_edit',
-			message:
-				'You do not have permission to change this product. Ask an administrator for access to it.',
-			data: { status: 403 },
-		} );
-		fireEvent.keyDown( editor( 'SKU' ), { key: 'Enter' } );
 		expect(
-			await screen.findByText(
-				`We could not save SKU for ${ TEE }. You do not have permission to change this product. Ask an administrator for access to it.`
-			)
+			document.querySelector(
+				'[data-bulkcat-row="11"] .bulkcat-cell.is-pending'
+			) || document.querySelector( '.bulkcat-cell.is-pending' )
 		).toBeTruthy();
+		expect( patches() ).toHaveLength( 1 );
+		// A generic 403 is not a committed no-effect fence and cannot free a retry.
 	} );
 
 	it( 'says why a field does not apply instead of opening', async () => {
@@ -412,7 +396,9 @@ describe( 'native Status in the cell', () => {
 			)
 		);
 		expect( patches() ).toHaveLength( 1 );
-		expect( patch.mock.calls[ 0 ][ 1 ] ).toEqual( { status: 'publish' } );
+		expect( patch.mock.calls[ 0 ][ 1 ] ).toMatchObject( {
+			status: 'publish',
+		} );
 		expect(
 			screen.queryByRole( 'button', {
 				name: /Switch On|Keep current status/,
@@ -433,7 +419,9 @@ describe( 'native Status in the cell', () => {
 			expect( trigger( 'Status' ).textContent ).toBe( 'Draft' )
 		);
 		expect( patches() ).toHaveLength( 1 );
-		expect( patch.mock.calls[ 0 ][ 1 ] ).toEqual( { status: 'draft' } );
+		expect( patch.mock.calls[ 0 ][ 1 ] ).toMatchObject( {
+			status: 'draft',
+		} );
 		expect(
 			document.querySelector( '.bulkcat-status-confirm' )
 		).toBeNull();
@@ -461,7 +449,12 @@ describe( 'native Status in the cell', () => {
 			code: 'bulkcat_variation_password_unsupported',
 			message:
 				'This change was left alone to protect the stored password.',
-			data: { status: 400, field: 'status' },
+			data: {
+				status: 400,
+				receipt_state: 'refused',
+				replayed: false,
+				field: 'status',
+			},
 		} );
 		await renderLoaded();
 		choose( 'Wool Beanie', 'publish' );

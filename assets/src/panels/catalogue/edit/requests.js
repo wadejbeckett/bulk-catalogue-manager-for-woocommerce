@@ -5,63 +5,49 @@
  * variations and its most recent recorded change.
  */
 import { request } from '../../../api';
+import { envelope } from '../../../requests';
 import { ROW } from '../defaults';
 import { isVariation } from './rules';
 
-/** The batch status of a write that changed everything it was asked to. */
-const COMPLETE = 'complete';
-
-/** Step states that mean a field was not written (Operations\\Result). */
-const REFUSED = [ 'skipped', 'failed' ];
-
 /**
- * Write field values to one product or variation.
+ * The synchronous transport. Receipt adoption belongs to receipts.js; a
+ * duplicate answer intentionally has no item/results.
  *
- * Resolves with `{ item, batch_id, status, results }` when the batch is
- * complete. A partial or failed batch rejects with the first refused step
- * as the error (its reason as the message, its field in `data.field`) and
- * the answer in `data.answer`, so a caller treats it like a refusal.
- *
- * `options.keep` sends Keep current status (`keep_changed_status`, T92):
- * retained for callers with explicit legacy intent. New requests carrying it
- * are refused by the server with refresh/review guidance; current controls
- * never send it.
- *
- * @param {number}        id           Product or variation id.
- * @param {Object}        values       Field key => value.
- * @param {Array<string>} fields       Fields the returned row should carry; all when empty.
- * @param {Object}        options      Options.
- * @param {boolean}       options.keep Keep current status.
- * @return {Promise<Object>} The answer.
+ * @param {number} id      Product identity.
+ * @param {Object} values  Original typed values.
+ * @param {Array}  fields  Current row projection.
+ * @param {Object} options Grant and optional legacy keep flag.
+ * @return {Promise<Object>} Immediate response or safe receipt.
  */
 export function patchProduct( id, values, fields = [], options = {} ) {
 	return request( `products/${ Number( id ) }`, {
 		method: 'PATCH',
-		data: options.keep ? { ...values, keep_changed_status: true } : values,
+		bulkcatNoRetry: true,
+		data: {
+			...values,
+			source: options.grant.intent.source,
+			...( options.keep ? { keep_changed_status: true } : {} ),
+			...envelope( options.grant ),
+		},
 		query: fields.length ? { fields } : {},
-	} ).then( ( answer ) => {
-		if (
-			! [ COMPLETE, 'partial', 'failed' ].includes( answer?.status ) ||
-			Number( answer?.item?.id ) !== Number( id ) ||
-			! Number( answer?.batch_id ) ||
-			! Array.isArray( answer?.results )
-		) {
-			const error = new Error();
-			error.code = 'invalid_json';
-			throw error;
-		}
-		if ( answer?.status && answer.status !== COMPLETE ) {
-			const refused =
-				( answer.results || [] ).find( ( result ) =>
-					REFUSED.includes( result.state )
-				) || {};
-			const error = new Error( refused.reason || '' );
-			error.code = refused.code || answer.status;
-			error.data = { status: 200, field: refused.field, answer };
-			throw error;
-		}
-		return answer;
 	} );
+}
+
+/**
+ * Strict current-row read. Never substitute a stale drawer row for a failure.
+ *
+ * @param {number} id     Product identity.
+ * @param {Array}  fields Current projection.
+ * @return {Promise<Object>} Current item; rejects on failure or malformed data.
+ */
+export async function readProduct( id, fields = [] ) {
+	const answer = await request( `products/${ Number( id ) }`, {
+		query: fields.length ? { fields } : {},
+	} );
+	if ( Number( answer?.item?.id ) !== Number( id ) ) {
+		throw new Error( 'Invalid product response' );
+	}
+	return answer.item;
 }
 
 /**

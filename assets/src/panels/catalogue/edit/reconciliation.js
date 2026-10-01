@@ -2,7 +2,6 @@
 import { Button, Notice } from '@wordpress/components';
 import { __, sprintf } from '@wordpress/i18n';
 import { panelHref } from '../../../router';
-import { renderCell } from '../cells';
 import { productName } from './switch';
 
 /**
@@ -31,7 +30,17 @@ export function outcomeText( outcome, descriptors ) {
 		return sprintf(
 			/* translators: %s: a product name. */
 			__(
-				'The save outcome for %s is unconfirmed. Read the current product and review History before making another change. This page will not resend it.',
+				'The save outcome for %s is unconfirmed. Check the save outcome or review History before making another change. This page will not resend it.',
+				'bulk-catalogue-manager-for-woocommerce'
+			),
+			name
+		);
+	}
+	if ( outcome.state === 'refused' ) {
+		return sprintf(
+			/* translators: %s: a product name. */
+			__(
+				'The change to %s was not saved. Review your input before saving again.',
 				'bulk-catalogue-manager-for-woocommerce'
 			),
 			name
@@ -88,47 +97,30 @@ export function outcomeText( outcome, descriptors ) {
  */
 export function SaveNotice( { outcome, descriptors, onRefresh, onRemove } ) {
 	const uncertain = outcome.state === 'uncertain';
-	const needsRead = uncertain || outcome.refresh?.state === 'failed';
+	const needsRead =
+		uncertain || outcome.clearFailed || outcome.refresh?.state === 'failed';
 	return (
 		<Notice
 			spokenMessage={ outcomeText( outcome, descriptors ) }
 			status={
 				outcome.state === 'saved' && ! needsRead ? 'success' : 'warning'
 			}
-			isDismissible={ ! uncertain }
+			isDismissible={ ! uncertain && ! outcome.held }
 			onRemove={ onRemove }
 		>
 			<p>{ outcomeText( outcome, descriptors ) }</p>
-			{ outcome.current && (
-				<>
-					<p>
-						{ __(
-							'Current values were read. This does not confirm the outcome of the earlier save.',
-							'bulk-catalogue-manager-for-woocommerce'
-						) }
-					</p>
-					<dl>
-						{ descriptors
-							.filter( ( field ) => field.key in outcome.values )
-							.map( ( field ) => (
-								<div key={ field.key }>
-									<dt>{ field.label }</dt>
-									<dd>
-										{ renderCell( {
-											item: outcome.current,
-											descriptor: field,
-											role: '',
-										} ) }
-									</dd>
-								</div>
-							) ) }
-					</dl>
-				</>
+			{ outcome.clearFailed && (
+				<p>
+					{ __(
+						'The save outcome is known, but this tab could not release its saved identity. Check the save outcome again before another edit.',
+						'bulk-catalogue-manager-for-woocommerce'
+					) }
+				</p>
 			) }
 			{ outcome.readFailed && (
 				<p>
 					{ __(
-						'The current product or results could not be read. You can try this read again.',
+						'The save outcome or current results could not be read. You can try this read again.',
 						'bulk-catalogue-manager-for-woocommerce'
 					) }
 				</p>
@@ -140,9 +132,9 @@ export function SaveNotice( { outcome, descriptors, onRefresh, onRemove } ) {
 					aria-disabled={ outcome.reading || undefined }
 					onClick={ onRefresh }
 				>
-					{ uncertain
+					{ uncertain || outcome.clearFailed
 						? __(
-								'Read current product',
+								'Check save outcome',
 								'bulk-catalogue-manager-for-woocommerce'
 							)
 						: __(

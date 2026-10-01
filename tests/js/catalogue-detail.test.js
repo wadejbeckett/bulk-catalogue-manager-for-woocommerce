@@ -1,3 +1,4 @@
+import { withInlineReceipts } from './inline-transport';
 /**
  * T47: the detail panel. Edit details opens a DataForm drawer holding every
  * editable registry field for the product (the four-way catalogue visibility
@@ -115,6 +116,7 @@ beforeEach( () => {
 				return new Promise( () => {} );
 		}
 	} );
+	withInlineReceipts( apiFetch );
 } );
 
 const patches = () =>
@@ -208,7 +210,7 @@ describe( 'detail panel', () => {
 		);
 		await waitFor( () => expect( patches() ).toHaveLength( 1 ) );
 		expect( patch.mock.calls[ 0 ][ 0 ] ).toBe( 'products/11' );
-		expect( patch.mock.calls[ 0 ][ 1 ] ).toEqual( {
+		expect( patch.mock.calls[ 0 ][ 1 ] ).toMatchObject( {
 			regular_price: '15',
 			sku: 'TSH-900',
 		} );
@@ -245,7 +247,12 @@ describe( 'detail panel', () => {
 			code: 'bulkcat_invalid_value',
 			message:
 				'A product with the SKU GLF-120 already exists, so this SKU was not applied.',
-			data: { status: 400, field: 'sku' },
+			data: {
+				status: 400,
+				receipt_state: 'refused',
+				replayed: false,
+				field: 'sku',
+			},
 		} );
 		const { dialog } = await openDrawer();
 		fireEvent.change(
@@ -367,7 +374,9 @@ describe( 'native Status in the drawer', () => {
 			await within( dialog ).findByText( 'Saved: Status. Scheduled.' )
 		).toBeTruthy();
 		expect( patches() ).toHaveLength( 1 );
-		expect( patch.mock.calls[ 0 ][ 1 ] ).toEqual( { status: 'publish' } );
+		expect( patch.mock.calls[ 0 ][ 1 ] ).toMatchObject( {
+			status: 'publish',
+		} );
 		expect( status.selectedOptions[ 0 ].textContent ).toBe( 'Scheduled' );
 		expect( status.selectedOptions[ 0 ].disabled ).toBe( true );
 		expect( dialog.textContent ).not.toMatch(
@@ -382,7 +391,9 @@ describe( 'native Status in the drawer', () => {
 			within( dialog ).getByRole( 'button', { name: 'Save' } )
 		);
 		await waitFor( () => expect( patches() ).toHaveLength( 2 ) );
-		expect( patch.mock.calls[ 1 ][ 1 ] ).toEqual( { sku: 'NEW-SKU' } );
+		expect( patch.mock.calls[ 1 ][ 1 ] ).toMatchObject( {
+			sku: 'NEW-SKU',
+		} );
 	} );
 
 	it( 'shows a safe refusal beside Status with no new confirmation or second request', async () => {
@@ -390,7 +401,12 @@ describe( 'native Status in the drawer', () => {
 			code: 'bulkcat_variation_password_unsupported',
 			message:
 				'This change was left alone to protect the stored password.',
-			data: { status: 400, field: 'status' },
+			data: {
+				status: 400,
+				receipt_state: 'refused',
+				replayed: false,
+				field: 'status',
+			},
 		} );
 		const { dialog } = await openDrawer();
 		fireEvent.change(

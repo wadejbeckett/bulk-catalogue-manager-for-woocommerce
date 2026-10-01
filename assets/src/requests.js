@@ -52,6 +52,9 @@ export function issueGrant( operation, intent ) {
 export function resolveGrant( grant ) {
 	return request( 'requests/resolve', {
 		method: 'POST',
+		...( grant.operation === 'product.inline'
+			? { bulkcatNoRetry: true }
+			: {} ),
 		data: {
 			uuid: grant.uuid,
 			request_proof: grant.request_proof,

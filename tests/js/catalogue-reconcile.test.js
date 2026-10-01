@@ -55,7 +55,7 @@ const base = {
 		{ field: 'catalog_visibility', operator: 'isAny', value: [ 'hidden' ] },
 	],
 };
-let saved, read, patch, server;
+let saved, read, patch, server, receiptRead, rowRead;
 function deferred() {
 	let resolve, reject;
 	const promise = new Promise( ( yes, no ) => {
@@ -121,6 +121,14 @@ beforeEach( () => {
 		catalog_visibility: 'hidden',
 		visible_on_site: 'off',
 	} ) );
+	receiptRead = jest.fn( () => ( {
+		receipt_state: 'unclosed',
+		batch_id: 11,
+		replayed: true,
+	} ) );
+	rowRead = jest.fn( ( id ) => ( {
+		item: saved.find( ( row ) => row.id === id ),
+	} ) );
 	server = createSelectionServer();
 	server.setMatches( () => saved.map( ( row ) => row.id ) );
 	read = jest.fn( ( query ) => listed( query ) );
@@ -131,12 +139,52 @@ beforeEach( () => {
 		categories: () => CATEGORIES,
 		products: ( query ) => read( query ),
 		'products/11': ( query, { method, data } ) =>
-			method === 'PATCH' ? patch( 11, data ) : { item: saved[ 0 ] },
+			method === 'PATCH' ? patch( 11, data ) : rowRead( 11 ),
 		'products/12': ( query, { method, data } ) =>
-			method === 'PATCH' ? patch( 12, data ) : { item: saved[ 1 ] },
+			method === 'PATCH' ? patch( 12, data ) : rowRead( 12 ),
 		'products/11/variations': () => page( [], 0 ),
 		audit: () => ( { items: [] } ),
 		...server.routes(),
+	} );
+	const transport = apiFetch.getMockImplementation();
+	let sequence = 0;
+	apiFetch.mockImplementation( async ( options ) => {
+		if (
+			options.url === 'requests' &&
+			options.data.operation === 'product.inline'
+		) {
+			sequence++;
+			return {
+				uuid: `00000000-0000-4000-8000-${ String( sequence ).padStart( 12, '0' ) }`,
+				request_proof: 'opaque-proof',
+				accept_until: 1800000000,
+				operation: 'product.inline',
+				intent: {
+					version: 1,
+					payload_version: 1,
+					registry_revision: 'a'.repeat( 64 ),
+					commitment: 'b'.repeat( 64 ),
+					object_id: options.data.intent.object_id,
+					source: 'inline',
+				},
+			};
+		}
+		if (
+			options.url === 'requests/resolve' &&
+			options.data.operation === 'product.inline'
+		) {
+			return receiptRead( options.data );
+		}
+		const result = await transport( options );
+		return options.method === 'PATCH' && result?.status
+			? {
+					...result,
+					receipt_state: 'closed',
+					write_status: result.status,
+					steps: [],
+					replayed: false,
+				}
+			: result;
 	} );
 } );
 jest.setTimeout( 20000 );
@@ -295,7 +343,7 @@ it( 'same-turn duplicate intent shares one write; a conflicting in-flight edit i
 			.commit( saved[ 0 ], { sku: 'different' } )
 			.catch( ( e ) => e );
 	} );
-	expect( patches() ).toHaveLength( 1 );
+	await waitFor( () => expect( patches() ).toHaveLength( 1 ) );
 	expect( two ).toBe( one );
 	expect( ( await conflict ).message ).toMatch( /already.*saving/i );
 	await act( async () => held.resolve( answer( 11, { sku: 'new' } ) ) );
@@ -339,9 +387,11 @@ it( 'transport uncertainty blocks blind resend and readback does not claim the l
 	fireEvent.click( toggle() );
 	expect( patches() ).toHaveLength( 1 );
 	fireEvent.click(
-		screen.getByRole( 'button', { name: 'Read current product' } )
+		screen.getByRole( 'button', { name: 'Check save outcome' } )
 	);
-	await screen.findAllByText( /current.*read.*does not confirm/i );
+	await waitFor( () =>
+		expect( receiptRead.mock.calls.length ).toBeGreaterThan( 1 )
+	);
 	expect( screen.queryByText( /could not change whether/i ) ).toBeNull();
 	expect( screen.queryByText( /^Saved/ ) ).toBeNull();
 	fireEvent.click( toggle() );
@@ -353,11 +403,11 @@ it( 'confirmed validation refusal leaves a corrected ordinary retry available', 
 	patch.mockRejectedValueOnce( {
 		code: 'bulkcat_forbidden',
 		message: 'Permission refused.',
-		data: { status: 403 },
+		data: { status: 403, receipt_state: 'refused', replayed: false },
 	} );
 	await loaded();
 	fireEvent.click( toggle() );
-	await screen.findAllByText( /could not change whether/i );
+	await screen.findAllByText( /was not saved/i );
 	fireEvent.click( toggle() );
 	await waitFor( () =>
 		expect(
@@ -458,8 +508,12 @@ it( 'layout changes retain unconfirmed intent and keep the object read-only', as
 	expect( patches() ).toHaveLength( 1 );
 	expect( toggle().getAttribute( 'aria-disabled' ) ).toBe( 'true' );
 	expect(
-		screen.getByRole( 'link', { name: 'Review product History' } ).href
-	).toContain( 'product=11' );
+		(
+			await screen.findByRole( 'link', {
+				name: 'View change in History',
+			} )
+		).href
+	).toContain( 'batch=11' );
 } );
 
 it( 'an older refresh recovery cannot replace the notice for a newer completed save', async () => {
@@ -514,7 +568,7 @@ it( 'drawer double-submit in one turn sends once and keeps a newer edit to an un
 		fireEvent.submit( form );
 		fireEvent.submit( form );
 	} );
-	expect( patches() ).toHaveLength( 1 );
+	await waitFor( () => expect( patches() ).toHaveLength( 1 ) );
 	const price = within( dialog ).getByRole( 'spinbutton', {
 		name: 'Regular price',
 	} );
@@ -606,6 +660,10 @@ it( 'an expanded variation saves once through the shared callback and reads the 
 			return Promise.resolve( {
 				item: child,
 				status: 'complete',
+				receipt_state: 'closed',
+				write_status: 'complete',
+				steps: [],
+				replayed: false,
 				batch_id: 31,
 				results: [],
 			} );
@@ -721,4 +779,282 @@ it( 'a failed clamped-page read remains a failed reconciliation and can recover 
 	expect( result.current.items ).toHaveLength( 25 );
 	expect( result.current.error ).toBeNull();
 	expect( patches() ).toHaveLength( 0 );
+} );
+
+it( 'lost completion automatically adopts its receipt and preserves exact selection', async () => {
+	patch.mockImplementationOnce( ( id, values ) => {
+		answer( id, values );
+		throw new TypeError( 'lost' );
+	} );
+	receiptRead.mockReturnValue( {
+		receipt_state: 'closed',
+		write_status: 'complete',
+		batch_id: 11,
+		steps: [],
+		replayed: true,
+	} );
+	await loaded();
+	fireEvent.click(
+		screen.getByRole( 'checkbox', {
+			name: 'Ladies Golf Shirt',
+			exact: true,
+		} )
+	);
+	await waitFor( () =>
+		expect( getSelectionSession().getState().current ).toBeTruthy()
+	);
+	const selected = getSelectionSession().getState().current;
+	fireEvent.click( toggle() );
+	await screen.findAllByText( /Saved changes to/ );
+	await waitFor( () =>
+		expect(
+			screen.queryByRole( 'switch', { name: /Classic Cotton/ } )
+		).toBeNull()
+	);
+	expect( getSelectionSession().getState().current ).toEqual( selected );
+	expect( patches() ).toHaveLength( 1 );
+} );
+
+it( 'recovered success survives a failed strict row read and later Undo is shown only as current state', async () => {
+	patch.mockImplementationOnce( ( id, values ) => {
+		answer( id, values );
+		throw new TypeError( 'lost' );
+	} );
+	receiptRead.mockReturnValue( {
+		receipt_state: 'closed',
+		write_status: 'complete',
+		batch_id: 11,
+		steps: [],
+		replayed: true,
+	} );
+	rowRead.mockRejectedValueOnce( new TypeError( 'row unavailable' ) );
+	await loaded( { ...base, filters: [] } );
+	fireEvent.click( toggle() );
+	await screen.findAllByText( /saved.*could not.*refresh/i );
+	expect( screen.queryByText( /could not change whether/i ) ).toBeNull();
+	// A later Undo changes the current row, never the recorded original write outcome.
+	answer( 11, { catalog_visibility: 'hidden' } );
+	fireEvent.click(
+		screen.getByRole( 'button', { name: 'Refresh results' } )
+	);
+	await waitFor( () =>
+		expect( toggle().getAttribute( 'aria-checked' ) ).toBe( 'false' )
+	);
+	expect( screen.getAllByText( /Saved changes to/ ).length ).toBeGreaterThan(
+		0
+	);
+	expect( patches() ).toHaveLength( 1 );
+} );
+
+it( 'recovery adopts a closed receipt and a failed strict row read leaves newer drawer text intact', async () => {
+	const held = deferred();
+	patch.mockImplementationOnce( async ( id, values ) => {
+		await held.promise;
+		answer( id, values );
+		throw new TypeError( 'lost' );
+	} );
+	receiptRead.mockReturnValue( {
+		receipt_state: 'closed',
+		write_status: 'complete',
+		batch_id: 11,
+		steps: [],
+		replayed: true,
+	} );
+	await loaded( { ...base, filters: [] } );
+	const row = screen
+		.getByRole( 'link', { name: 'Classic Cotton T-Shirt' } )
+		.closest( 'tr' );
+	fireEvent.click( within( row ).getByRole( 'button', { name: 'Actions' } ) );
+	fireEvent.click(
+		await screen.findByRole( 'menuitem', { name: 'Edit details' } )
+	);
+	const dialog = await screen.findByRole( 'dialog', { name: 'Details' } );
+	const sku = await within( dialog ).findByRole( 'textbox', { name: 'SKU' } );
+	fireEvent.change( sku, { target: { value: 'submitted' } } );
+	fireEvent.click( within( dialog ).getByRole( 'button', { name: 'Save' } ) );
+	await waitFor( () => expect( patches() ).toHaveLength( 1 ) );
+	fireEvent.change( sku, { target: { value: 'newer draft' } } );
+	rowRead.mockRejectedValueOnce( new Error( 'strict current read failed' ) );
+	await act( async () => held.resolve() );
+	await within( dialog ).findByText( /saved.*could not.*refresh/i );
+	expect( sku.value ).toBe( 'newer draft' );
+	expect( patches() ).toHaveLength( 1 );
+} );
+
+it.each( [ 'table', 'cards', 'catalogue', 'catalogue recovered' ] )(
+	'the %s caller restores the localized identity before permitting an edit',
+	async ( layout ) => {
+		const { tabScope } = require( '../../assets/src/tab-store' );
+		const settings = { root: '', user: { id: 79 } };
+		const key = tabScope( settings, 'inline-writes' );
+		sessionStorage.setItem(
+			key,
+			JSON.stringify( [
+				{
+					object_id: 11,
+					grant: {
+						uuid: '00000000-0000-4000-8000-000000000079',
+						request_proof: 'opaque-proof',
+						accept_until: 1800000000,
+						operation: 'product.inline',
+						intent: {
+							version: 1,
+							payload_version: 1,
+							registry_revision: 'a'.repeat( 64 ),
+							commitment: 'b'.repeat( 64 ),
+							object_id: 11,
+							source: 'inline',
+						},
+					},
+				},
+			] )
+		);
+		const Standalone =
+			layout === 'table'
+				? require( '../../assets/src/panels/catalogue/table' ).default
+				: require( '../../assets/src/panels/catalogue/views/cards' )
+						.CatalogueCards;
+		const recovered = layout === 'catalogue recovered';
+		if ( recovered ) {
+			receiptRead.mockReturnValue( {
+				receipt_state: 'closed',
+				write_status: 'complete',
+				batch_id: 11,
+				steps: [],
+				replayed: true,
+			} );
+		}
+		render(
+			layout.startsWith( 'catalogue' ) ? (
+				<Catalogue settings={ settings } initialView={ base } />
+			) : (
+				<Standalone
+					settings={ settings }
+					fields={ fields }
+					items={ saved }
+					actions={ [] }
+					view={ {
+						...base,
+						type: layout === 'cards' ? 'grid' : 'table',
+					} }
+					onChangeView={ () => {} }
+					pagination={ { totalItems: 2, totalPages: 1 } }
+					hasLoaded
+				/>
+			)
+		);
+		await screen.findByRole( 'link', { name: 'View change in History' } );
+		await screen.findAllByText(
+			recovered ? /Saved changes to/ : /outcome.*unconfirmed/i
+		);
+		expect( receiptRead ).toHaveBeenCalledTimes( 1 );
+		expect( patches() ).toHaveLength( 0 );
+		expect( sessionStorage.getItem( key ) === null ).toBe( recovered );
+		expect(
+			apiFetch.mock.calls.filter(
+				( [ c ] ) =>
+					c.url === 'requests' &&
+					c.data.operation === 'product.inline'
+			)
+		).toHaveLength( 0 );
+	}
+);
+
+it( 'does not describe a later current Status as the historical recovered save result', () => {
+	const {
+		savedOutcome,
+	} = require( '../../assets/src/panels/catalogue/edit/status' );
+	const status = descriptors.find( ( d ) => d.nativeStatus );
+	expect(
+		savedOutcome( status, {
+			recovered: true,
+			receipt_state: 'closed',
+			write_status: 'complete',
+			item: { [ status.key ]: 'private' },
+		} )
+	).toBe( '' );
+} );
+
+it( 'a failed later recovery read never reinstates an older current row after Undo', async () => {
+	let editContext, drawn;
+	function Inside() {
+		editContext = useContext( EditContext );
+		return null;
+	}
+	const onCommitted = jest
+		.fn()
+		.mockRejectedValue( new Error( 'list unavailable' ) );
+	function Harness( { items } ) {
+		const edit = useEditScope( {
+			items,
+			fields,
+			actions: [],
+			onCommitted,
+		} );
+		drawn = edit.items;
+		return edit.wrap( <Inside /> );
+	}
+	patch.mockImplementationOnce( ( id, values ) => {
+		answer( id, values );
+		throw new TypeError( 'lost' );
+	} );
+	receiptRead.mockReturnValue( {
+		receipt_state: 'closed',
+		write_status: 'complete',
+		batch_id: 11,
+		steps: [],
+		replayed: true,
+	} );
+	const { rerender } = render( <Harness items={ saved } /> );
+	await act( async () => {
+		await editContext.commit( saved[ 0 ], { sku: 'saved once' } );
+	} );
+	expect( drawn[ 0 ].sku ).toBe( 'saved once' );
+	answer( 11, { sku: 'after Undo' } );
+	rerender( <Harness items={ saved } /> );
+	expect( drawn[ 0 ].sku ).toBe( 'after Undo' );
+	rowRead.mockRejectedValueOnce( new Error( 'row unavailable' ) );
+	fireEvent.click(
+		screen.getByRole( 'button', { name: 'Refresh results' } )
+	);
+	await waitFor( () => expect( onCommitted ).toHaveBeenCalledTimes( 2 ) );
+	expect( drawn[ 0 ].sku ).toBe( 'after Undo' );
+	expect( patches() ).toHaveLength( 1 );
+	expect( screen.getAllByText( /Saved changes to/ ).length ).toBeGreaterThan(
+		0
+	);
+} );
+
+it( 'a recovered partial outcome preserves unrelated exact selection and leaves corrected editing available', async () => {
+	patch.mockImplementationOnce( ( id, values ) => {
+		answer( id, values );
+		throw new TypeError( 'lost' );
+	} );
+	receiptRead.mockReturnValue( {
+		receipt_state: 'closed',
+		write_status: 'partial',
+		batch_id: 11,
+		steps: [ { field: 'sku', state: 'failed', code: '' } ],
+		replayed: true,
+	} );
+	await loaded( { ...base, filters: [] } );
+	fireEvent.click(
+		screen.getByRole( 'checkbox', {
+			name: 'Ladies Golf Shirt',
+			exact: true,
+		} )
+	);
+	await waitFor( () =>
+		expect( getSelectionSession().getState().current ).toBeTruthy()
+	);
+	const selected = getSelectionSession().getState().current;
+	fireEvent.click( toggle() );
+	await screen.findAllByText( /only part.*saved/i );
+	await waitFor( () =>
+		expect( toggle().getAttribute( 'aria-disabled' ) ).not.toBe( 'true' )
+	);
+	expect( getSelectionSession().getState().current ).toEqual( selected );
+	expect( patches() ).toHaveLength( 1 );
+	fireEvent.click( toggle() );
+	await waitFor( () => expect( patches() ).toHaveLength( 2 ) );
 } );

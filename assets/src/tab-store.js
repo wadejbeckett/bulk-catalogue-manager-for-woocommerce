@@ -66,3 +66,54 @@ export function tabStore(
 		},
 	};
 }
+
+/**
+ * Required storage for mutation identities. Unlike selection's best-effort
+ * copy, failure must stop a write. Readback checks cover silent browser loss.
+ *
+ * @param {string} key Storage key.
+ * @param {Window} win Window.
+ * @return {Object} Strict read, write and clear operations (which may throw).
+ */
+export function requiredTabStore(
+	key,
+	win = typeof window === 'undefined' ? null : window
+) {
+	let selected;
+	const storage = () => {
+		if ( selected ) {
+			return selected;
+		}
+		if ( ! win?.sessionStorage ) {
+			throw new Error( 'Storage unavailable' );
+		}
+		selected = win.sessionStorage;
+		return selected;
+	};
+	return {
+		read() {
+			const raw = storage().getItem( key );
+			if ( raw === null ) {
+				return null;
+			}
+			const value = JSON.parse( raw );
+			if ( value === null ) {
+				throw new Error( 'Invalid stored identity' );
+			}
+			return value;
+		},
+		write( value ) {
+			const raw = JSON.stringify( value );
+			storage().setItem( key, raw );
+			if ( storage().getItem( key ) !== raw ) {
+				throw new Error( 'Storage write unconfirmed' );
+			}
+		},
+		clear() {
+			storage().removeItem( key );
+			if ( storage().getItem( key ) !== null ) {
+				throw new Error( 'Storage removal unconfirmed' );
+			}
+		},
+	};
+}

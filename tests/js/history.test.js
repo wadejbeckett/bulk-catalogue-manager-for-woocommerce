@@ -1421,3 +1421,69 @@ it( 'distinguishes native Status requests from accepted legacy Status actions', 
 	);
 	expect( formatValue( 'Password protected' ) ).toBe( 'Password protected' );
 } );
+
+it.each( [
+	{ source: 'inline', status: 'running', finished_gmt: null },
+	{
+		source: 'bulk',
+		status: 'failed',
+		inline_receipt: {
+			receipt_state: 'unclosed',
+			batch_id: 80,
+			replayed: true,
+		},
+	},
+] )(
+	'unclosed inline History suppresses queue advice and Undo even with stale reversibility: %j',
+	async ( extra ) => {
+		const BatchCard =
+			require( '../../assets/src/panels/history/batch-card' ).default;
+		render(
+			<BatchCard
+				batch={ base( 80, { ...extra, stalled: true } ) }
+				what="Change"
+				who="Mia"
+				byKey={ {} }
+				onChanged={ () => {} }
+				onNotice={ () => {} }
+			/>
+		);
+		expect( screen.getByText( /save outcome.*unconfirmed/i ) ).toBeTruthy();
+		expect(
+			screen.queryByRole( 'button', { name: /undo|replay|cancel/i } )
+		).toBeNull();
+		expect(
+			screen.queryByRole( 'link', { name: /Scheduled Actions/i } )
+		).toBeNull();
+		expect( screen.queryByRole( 'progressbar' ) ).toBeNull();
+	}
+);
+
+it( 'a closed inline History receipt retains supported Undo', () => {
+	const BatchCard =
+		require( '../../assets/src/panels/history/batch-card' ).default;
+	render(
+		<BatchCard
+			batch={ base( 80, {
+				source: 'inline',
+				inline_receipt: {
+					receipt_state: 'closed',
+					write_status: 'complete',
+					steps: [],
+					batch_id: 80,
+					replayed: true,
+				},
+			} ) }
+			what="Change"
+			who="Mia"
+			byKey={ {} }
+			onChanged={ () => {} }
+			onNotice={ () => {} }
+		/>
+	);
+	expect(
+		screen
+			.getByRole( 'button', { name: 'Undo', exact: true } )
+			.getAttribute( 'aria-disabled' )
+	).not.toBe( 'true' );
+} );

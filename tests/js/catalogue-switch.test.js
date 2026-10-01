@@ -1,3 +1,4 @@
+import { withInlineReceipts } from './inline-transport';
 /**
  * T45: the "Shown in shop and search" switch column (named "Visible on site"
  * before T93; not a default column since, so these tests show it as an owner
@@ -106,6 +107,7 @@ beforeEach( () => {
 		}
 		return new Promise( () => {} );
 	} );
+	withInlineReceipts( apiFetch );
 } );
 
 const patches = () =>
@@ -195,7 +197,7 @@ describe( 'Shown in shop and search switch', () => {
 		await waitFor( () => expect( patches() ).toHaveLength( 1 ) );
 		expect( patch ).toHaveBeenCalledWith(
 			'products/13',
-			{ catalog_visibility: 'hidden' },
+			expect.objectContaining( { catalog_visibility: 'hidden' } ),
 			expect.anything()
 		);
 		const off = await screen.findByRole( 'switch', {
@@ -225,7 +227,7 @@ describe( 'Shown in shop and search switch', () => {
 		expect( badge.className ).toContain( 'is-neutral' );
 		fireEvent.click( off );
 		await waitFor( () => expect( patches() ).toHaveLength( 1 ) );
-		expect( patch.mock.calls[ 0 ][ 1 ] ).toEqual( {
+		expect( patch.mock.calls[ 0 ][ 1 ] ).toMatchObject( {
 			catalog_visibility: 'visible',
 		} );
 		const on = await screen.findByRole( 'switch', {
@@ -250,7 +252,9 @@ describe( 'Shown in shop and search switch', () => {
 		await waitFor( () => expect( patches() ).toHaveLength( 1 ) );
 		const [ [ options ] ] = patches();
 		expect( options.url.split( '?' )[ 0 ] ).toBe( 'products/11' );
-		expect( options.data ).toEqual( { catalog_visibility: 'hidden' } );
+		expect( options.data ).toMatchObject( {
+			catalog_visibility: 'hidden',
+		} );
 		expect( getQueryArgs( options.url ).fields ).toEqual(
 			expect.arrayContaining( [
 				'visible_on_site',
@@ -289,7 +293,7 @@ describe( 'Shown in shop and search switch', () => {
 		patch.mockRejectedValue( {
 			code: 'bulkcat_cannot_edit',
 			message: 'You are not allowed to edit this product.',
-			data: { status: 403 },
+			data: { status: 403, receipt_state: 'refused', replayed: false },
 		} );
 		await renderLoaded();
 		fireEvent.click(

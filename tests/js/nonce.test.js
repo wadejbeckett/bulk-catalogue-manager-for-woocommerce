@@ -127,6 +127,100 @@ describe( 'nonce refresh and retry', () => {
 		delete global.fetch;
 	} );
 
+	it( 'never automatically resends an inline PATCH after invalid nonce, including api-fetch recovery', async () => {
+		answers = [
+			json( 403, INVALID ),
+			text( 'fresh12345' ),
+			json( 200, {} ),
+		];
+		setUp();
+		const {
+			patchProduct,
+		} = require( '../../assets/src/panels/catalogue/edit/requests' );
+		await expect(
+			patchProduct( 11, { sku: 'new' }, [], {
+				grant: {
+					uuid: 'safe-id',
+					request_proof: 'proof',
+					intent: { source: 'inline' },
+				},
+			} )
+		).rejects.toMatchObject( { code: 'bulkcat_nonce_expired' } );
+		expect(
+			fetch.mock.calls.filter(
+				( [ url ] ) => url.split( '?' )[ 0 ] === ROOT + 'products/11'
+			)
+		).toHaveLength( 1 );
+		expect( fetch ).toHaveBeenCalledTimes( 1 );
+	} );
+
+	it( 'does not multiply the bounded inline receipt reads through nonce retries', async () => {
+		answers = [
+			json( 403, INVALID ),
+			text( 'fresh12345' ),
+			json( 200, {} ),
+		];
+		setUp();
+		const { resolveGrant } = require( '../../assets/src/requests' );
+		await expect(
+			resolveGrant( {
+				uuid: 'safe-id',
+				request_proof: 'proof',
+				operation: 'product.inline',
+				intent: {},
+			} )
+		).rejects.toMatchObject( { code: 'bulkcat_nonce_expired' } );
+		expect( fetch ).toHaveBeenCalledTimes( 1 );
+	} );
+
+	it( 'an inline opt-out does not disable nonce recovery for a concurrent ordinary request', async () => {
+		answers = [];
+		setUp();
+		let reads = 0;
+		fetch.mockImplementation( async ( url ) => {
+			if ( url === ENDPOINT ) {
+				return text( 'fresh12345' );
+			}
+			if ( url.split( '?' )[ 0 ] === ROOT + 'products/11' ) {
+				return json( 403, INVALID );
+			}
+			reads++;
+			return reads === 1
+				? json( 403, INVALID )
+				: json( 200, { item: { id: 12 } } );
+		} );
+		const {
+			patchProduct,
+		} = require( '../../assets/src/panels/catalogue/edit/requests' );
+		const results = await Promise.allSettled( [
+			patchProduct( 11, { sku: 'new' }, [], {
+				grant: {
+					uuid: 'safe-id',
+					request_proof: 'proof',
+					intent: { source: 'inline' },
+				},
+			} ),
+			api.request( 'products/12' ),
+		] );
+		expect( results[ 0 ] ).toMatchObject( {
+			status: 'rejected',
+			reason: { code: 'bulkcat_nonce_expired' },
+		} );
+		expect( results[ 1 ] ).toMatchObject( {
+			status: 'fulfilled',
+			value: { item: { id: 12 } },
+		} );
+		expect(
+			fetch.mock.calls.filter(
+				( [ url ] ) => url.split( '?' )[ 0 ] === ROOT + 'products/11'
+			)
+		).toHaveLength( 1 );
+		expect( reads ).toBe( 2 );
+		expect(
+			fetch.mock.calls.filter( ( [ url ] ) => url === ENDPOINT )
+		).toHaveLength( 1 );
+	} );
+
 	it( 'refreshes once, retries once with the same body and succeeds', async () => {
 		answers = [
 			json( 403, INVALID ),

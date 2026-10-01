@@ -247,3 +247,29 @@ describe( 'resolving a grant restored after a reload', () => {
 		expect( stored() ).toBeNull();
 	} );
 } );
+
+describe( 'required tab storage beside permissive selection storage', () => {
+	const { requiredTabStore } = require( '../../assets/src/tab-store' );
+	it( 'does not treat inaccessible or corrupt storage as an empty receipt store', () => {
+		expect( () => requiredTabStore( KEY, null ).read() ).toThrow();
+		sessionStorage.setItem( KEY, '{bad' );
+		expect( () => requiredTabStore( KEY ).read() ).toThrow();
+		expect( tabStore( KEY ).read() ).toBeNull();
+	} );
+	it( 'verifies both persistence and removal instead of trusting silent storage failures', () => {
+		const store = requiredTabStore( KEY );
+		const write = jest
+			.spyOn( Storage.prototype, 'setItem' )
+			.mockImplementation( () => {} );
+		expect( () => store.write( [ { object_id: 11 } ] ) ).toThrow();
+		write.mockRestore();
+		store.write( [ { object_id: 11 } ] );
+		const clear = jest
+			.spyOn( Storage.prototype, 'removeItem' )
+			.mockImplementation( () => {} );
+		expect( () => store.clear() ).toThrow();
+		clear.mockRestore();
+		store.clear();
+		expect( store.read() ).toBeNull();
+	} );
+} );

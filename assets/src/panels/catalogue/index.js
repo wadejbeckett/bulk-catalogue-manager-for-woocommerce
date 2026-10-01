@@ -617,6 +617,7 @@ export function CatalogueGrid( {
 					/>
 				) }
 				<CatalogueLayout
+					settings={ settings }
 					onCommitted={ catalogue.reconcile }
 					renderSwitch={ renderSwitch }
 					fields={ filterFields }

@@ -39,6 +39,10 @@ export function editChoices( descriptor, item ) {
  * @return {string} Saved status or retained legacy outcome.
  */
 export function savedOutcome( descriptor, answer ) {
+	// A recovery row describes now, possibly after Undo, not the saved snapshot.
+	if ( answer?.recovered ) {
+		return '';
+	}
 	const step = ( answer?.results || [] ).find(
 		( result ) => result.field === descriptor?.key
 	);

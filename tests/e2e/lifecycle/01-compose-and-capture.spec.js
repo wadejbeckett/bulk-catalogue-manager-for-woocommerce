@@ -9,6 +9,9 @@
  * signed-deadline half of group 1 needs an eight-day clock and is proved
  * natively (tests/probe/exact-selection.php).
  */
+const { randomUUID } = require( 'crypto' );
+const { writeFileSync } = require( 'fs' );
+const { join } = require( 'path' );
 const { test, expect } = require( '@playwright/test' );
 const { SEED, openScreen } = require( '../helpers' );
 const {
@@ -30,6 +33,45 @@ const {
 } = require( './support' );
 
 test.skip( !! fixtureCheck(), fixtureCheck() );
+
+// Own the paging fixture instead of relying on an unrelated performance seed.
+const run = randomUUID();
+const prefix = `Lifecycle selection ${ run } `;
+let scaleIds = [];
+let cleaned = false;
+/** Record the UUID before creation so an interrupted setup can be recovered. */
+function recordFixture() {
+	if ( process.env.BULKCAT_E2E_OWNED_EVIDENCE ) {
+		writeFileSync(
+			join(
+				process.env.BULKCAT_E2E_OWNED_EVIDENCE,
+				run + '.paging.json'
+			),
+			JSON.stringify( { run, prefix, ids: scaleIds, cleaned }, null, 2 ),
+			{ mode: 0o600 }
+		);
+	}
+}
+test.beforeAll( () => {
+	recordFixture();
+	scaleIds = makeProducts(
+		Array.from(
+			{ length: 99 },
+			( _, i ) => prefix + String( i + 1 ).padStart( 5, '0' )
+		)
+	);
+	recordFixture();
+} );
+test.afterAll( () => {
+	deleteProducts( scaleIds );
+	expect(
+		rows( 'SELECT ID FROM {p}posts WHERE post_title LIKE %s', [
+			prefix + '%',
+		] )
+	).toEqual( [] );
+	cleaned = true;
+	recordFixture();
+} );
 
 // The safety net: a spec that stops before its own undo leaves nothing.
 let mark = 0;
@@ -62,7 +104,8 @@ test( 'a selection composed across searches and pages, subtracted on and off the
 	const { bar, box } = screenParts( page );
 	const [ one, two ] = idsByName( [ SEED.simple( 1 ), SEED.simple( 2 ) ] );
 	const scale = rows(
-		"SELECT ID FROM {p}posts WHERE post_type = 'product' AND post_status = 'publish' AND post_title LIKE 'Scale Product 000%' ORDER BY ID"
+		"SELECT ID FROM {p}posts WHERE post_type = 'product' AND post_status = 'publish' AND post_title LIKE %s ORDER BY ID",
+		[ prefix + '000%' ]
 	).map( ( row ) => Number( row.ID ) );
 	expect( scale ).toHaveLength( 99 );
 
@@ -75,9 +118,9 @@ test( 'a selection composed across searches and pages, subtracted on and off the
 	await expect( bar ).toContainText( '2 products selected' );
 
 	// A third search over four pages: a tick on page 1 and on page 2.
-	await searchFor( page, 'Scale Product 000' );
+	await searchFor( page, prefix + '000' );
 	await expect(
-		box( 'Scale Product 00099' ).or( box( 'Scale Product 00001' ) )
+		box( prefix + '00099' ).or( box( prefix + '00001' ) )
 	).toBeVisible();
 	const first = ( await rowNames( page ) )[ 0 ];
 	await box( first ).check();
@@ -148,11 +191,12 @@ test( 'a lost Select all matching answer is retried with the same grant: the set
 		await openScreen( page );
 		const { bar, box } = screenParts( page );
 		const matches = rows(
-			"SELECT ID FROM {p}posts WHERE post_type = 'product' AND post_status = 'publish' AND post_title LIKE 'Scale Product 0001%' ORDER BY ID"
+			"SELECT ID FROM {p}posts WHERE post_type = 'product' AND post_status = 'publish' AND post_title LIKE %s ORDER BY ID",
+			[ prefix + '0001%' ]
 		).map( ( row ) => Number( row.ID ) );
 		expect( matches ).toHaveLength( 10 );
-		await searchFor( page, 'Scale Product 0001', 'Scale Product 00010' );
-		await box( 'Scale Product 00010' ).check();
+		await searchFor( page, prefix + '0001', prefix + '00010' );
+		await box( prefix + '00010' ).check();
 		await expect( bar ).toContainText( '1 product selected' );
 
 		// The capture reaches the server; its answer does not come back.
@@ -171,7 +215,7 @@ test( 'a lost Select all matching answer is retried with the same grant: the set
 		await expect( bar ).toContainText( '1 product selected' );
 
 		// Meanwhile a new product starts to match the search.
-		late.push( ...makeProducts( [ 'Scale Product 0001 late' ] ) );
+		late.push( ...makeProducts( [ prefix + '0001 late' ] ) );
 
 		// Try again: the same grant, the set captured before the new match.
 		await page
@@ -195,7 +239,7 @@ test( 'a lost Select all matching answer is retried with the same grant: the set
 
 		// Again, but the captured payload is pruned before the retry.
 		await bar.getByRole( 'button', { name: 'Clear selection' } ).click();
-		await box( 'Scale Product 00011' ).check();
+		await box( prefix + '00011' ).check();
 		await expect( bar ).toContainText( '1 product selected' );
 		const base = await currentToken( page );
 		const lostAgain = loseNextAnswer( page, 'selection' );

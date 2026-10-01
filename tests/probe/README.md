@@ -113,8 +113,8 @@ readback, including moving focus to search before completion. These are transpor
 simulations, not evidence of repairing an installation's membership restriction.
 The failed-GET journeys also check error disclosure contrast in normal, hover and
 keyboard-focus states, then toggle Show/Hide details before retrying. The native
-admin stylesheet replaces the focused link's underline with its focus ring; the
-test preserves that behavior and does not suppress axe rules.
+admin stylesheet keeps the focused underline on WordPress7.0 and removes it on7.1;
+the test requires the focus ring in either case and does not suppress axe rules.
 
 The established-region cases retain the same initially empty DOM status through
 first confirmation, incomplete response, later read, dismissal and new creation
@@ -336,10 +336,14 @@ await cleanup); `exact-selection-cleanup.php` and
 `exact-selection-capacity.php` still call the cleanup once, since they check
 its bound.
 
-## Global Off/On (ticket 04, T89–T94)
+## Historical `offon` chapter (tickets 04 and 14)
 
-`probe.py --chapters offon` proves Status as the global Off/On switch
-(SPEC §5.5) through the manager's own routes. Its checks live in
+`probe.py --chapters offon` retains its stable row identifiers while checking
+current native Status writes through the manager’s own routes. New Draft does
+not capture a record; new Publish does not restore a remembered status. Explicit
+Undo, native scheduling, buyer reachability, foreign/malformed records, and exact
+legacy predicates remain covered. Rows that need a legacy record create labelled
+synthetic metadata; they do not claim to prove an archive upgrade. Its checks live in
 `tests/probe/offon.py`; its fixtures are products it upserts through WP-CLI
 (SKUs `bulkcat-offon-*`, category "Bulkcat Offon"), so it runs on the stack
 above after `seed.sh`, before the destructive lifecycle chapter. One row waits
@@ -364,7 +368,8 @@ below: Off, the undo of that Off, Off again and On over about 5,000 simple
 products through the durable routes, each against the write budget, and the
 grid with the Status column and the Off filter while they are Off.
 
-`tests/probe/offon-upgrade.sh` proves an upgrade from the 1.0.0 archive to
+**Historical procedure, not the native Status14 release gate:**
+`tests/probe/offon-upgrade.sh` was written to prove an upgrade from the 1.0.0 archive to
 this branch and a downgrade back on a throwaway stack of its own (default
 port 8911, every docker name suffixed `-offon`), whose plugin directory is
 part of the WordPress volume rather than a read-only bind mount so that
@@ -533,3 +538,93 @@ variation datastore’s omitted password load/update, then proves safe refusal o
 password-bearing Private changes, internal restoration and pending replay. Empty
 password variation edits remain supported; no variation password writer is added.
 The Status chapter includes future-dated variation Preview/Apply/native readback.
+
+
+## Native archive qualification and full publication binding (plan 14, Task 5)
+
+Use `native-status-upgrade.sh` with explicit immutable release and candidate ZIPs.
+It never builds a package, creates/resets a stack, or uninstalls the plugin. Read
+the assigned fixture's ownership/runbook first. Its web container must have no
+source bind mount; every installed archive file is hashed before and after the
+native installer upgrade. Version labels alone are insufficient.
+
+Supply every argument in every phase (values below come from the owning fixture):
+
+```sh
+bash tests/probe/native-status-upgrade.sh seed \
+  --base-url "$BULKCAT_FIXTURE_URL" --wp-cmd "$WP_CMD" --seed "$SEED_JSON" \
+  --evidence "$PRIVATE_UPGRADE_EVIDENCE" --container "$OWNED_WEB_CONTAINER" \
+  --released "$RELEASED_ZIP" --released-sha256 "$RELEASED_SHA256" \
+  --candidate "$CANDIDATE_ZIP" --candidate-sha256 "$CANDIDATE_SHA256" \
+  --candidate-install-path "$CANDIDATE_PATH_INSIDE_CLI"
+```
+
+Run `seed` while the actual released archive is installed, then `upgrade`,
+`verify`, and `cleanup` with the same arguments. Released RequestService creates
+accepted pending work, work interrupted after its native save but before journal
+completion, an unaccepted signed grant, completed Draft and restore history,
+and saved legacy views. UUID product/account IDs, fingerprints, mapped permissions,
+and exact CRUD/native-post save counts are recorded before upgrading. Revocation
+removes the capability that actually maps to the owned object's `edit_post`, and
+asserts denial before executing the release-created batch. A permission skip is
+a truthful partial outcome, with no save; receipt lookup still obeys route access.
+
+Never reseed over a failure. Each phase writes a new immutable observation file;
+state remains the ownership/reversal record. `verify-history` is a scoped
+continuation for history/new-write checks after a preserved worker failure.
+`verify-denied` checks a preserved denied-worker observation and its unchanged
+snapshot, then covers replay under denied/restored permissions. Neither phase
+substitutes candidate-created work for release-created work or converts a failed
+run into a full-green run. Report the original failure and covering evidence.
+Cleanup deletes only the recorded UUID's products, users, sessions and auto-drafts,
+and compares the exact original baseline. Audit history/receipts remain evidence.
+Signed grants and fixture state belong outside Git in a private evidence folder.
+
+`tests/e2e/native-status.spec.js` adds native keyboard/one-Save, narrow-screen,
+Scheduled GET/refresh, exact mixed parent/direct-variation selection, threshold
+confirmation, and real failed/partial outcomes. Supply a UUID-owned native login
+via `BULKCAT_E2E_USER`/`BULKCAT_E2E_PASSWORD` on retained fixtures.
+The normal disposable CI job opts into the same local fixture guard and runs
+the complete browser suite with its fixture administrator. The paging lifecycle cases create and remove their own99 UUID-named products through WooCommerce. `status-off-on.spec.js` opens the saved legacy views in the actual grid, checks their labels and exact membership, and checks
+new native normalization, including explicit obsolete-intent refusal. Optional
+provider/browser contract checks still run separately on a disposable fixture.
+
+The scale probe requires a separate explicitly disposable fixture. Inventory its
+resources, ownership and reversal before setup; do not enlarge a retained native
+fixture as incidental preparation. It creates 22,223 products and 77,777 variations
+through WooCommerce CRUD and records resumable UUID-owned chunks. Setup uses
+WooCommerce's native transaction API per bounded chunk, defers term counting and
+product transient cleanup, then flushes those and parent synchronization before
+commit. It never wraps the measured publication operations in a setup transaction.
+No business-data SQL seeding or database configuration changes are involved.
+Each chunk records the native setup mode and exact newly created IDs; existing
+UUID SKUs are checked for ownership and reused on resume. Preserve the private
+state and inspect UUID inventory after any uncertain commit before resuming:
+
+```sh
+python3 tests/probe/publication-scale.py seed --disposable \
+  --base-url "$BULKCAT_FIXTURE_URL" --wp-cmd "$WP_CMD" --seed "$SEED_JSON" \
+  --evidence "$PRIVATE_SCALE_EVIDENCE"
+# Then qualify, then cleanup, with identical arguments.
+```
+
+Qualification captures all 100,000 identities, previews a native Status change,
+changes the last unsampled object's date, and requires stale-preview refusal.
+Fresh acceptance must materialize exactly those identities without saving them;
+a later date change must still replay the original receipt. Only this batch is
+cancelled before execution: this is functional full-selection CLI proof, not a
+100,000-product write-throughput run. Measured CLI time/query/peak-memory results are evidence, not inferred
+HTTP budgets: PHP 8.1 cannot reset its process peak. Installed runtime and harness
+hashes bracket the run. Read the reported effective `memory_limit`; a CLI wrapper
+startup setting does not prove that WordPress/WP-CLI kept that setting. Cleanup
+records descending chunks of at most500 owned IDs, checks each ownership marker,
+and uses WooCommerce deletion with the same native setup deferrals. It verifies
+zero remaining UUID products before deleting the exact UUID account. Audit
+batches/receipts remain as evidence; do not run unrelated pruning to remove them.
+The 1,001-object native-publication measurement remains a
+smaller lifecycle check and cannot substitute for this complete-selection gate.
+
+Run destructive uninstall/data-removal chapters only on the separately disposable
+fixture, after the upgrade and browser evidence is preserved. Never file-downgrade
+queued `set_status` work to 1.1.0: drain or explicitly handle it first, and follow
+`docs/RELEASE.md` for data/history compatibility and controller release gates.

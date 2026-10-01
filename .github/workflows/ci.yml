@@ -113,6 +113,8 @@ jobs:
     env:
       WP_CMD: npx wp-env run cli wp
       BULKCAT_E2E_BASE_URL: http://localhost:8888
+      # This job creates its own disposable wp-env fixture; run guarded native/lifecycle checks.
+      BULKCAT_E2E_FIXTURE: '1'
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5

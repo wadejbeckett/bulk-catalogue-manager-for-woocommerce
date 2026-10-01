@@ -1,5 +1,7 @@
-"""The probe's ``offon`` chapter (T89-T94): Status as the global Off/On switch
-(SPEC §5.5), proved through the manager's own routes on plain WordPress and
+"""The retained ``offon`` regression chapter, updated for native Status14.
+Historical row IDs stay stable; ordinary new requests now use native semantics.
+Genuine released receipts/recovery are qualified by native-status-upgrade.sh.
+These current requests are proved through the manager routes on WordPress and
 WooCommerce, never a real shop.
 
 Its fixtures are upserted through WP-CLI inside the chapter (SKUs
@@ -55,6 +57,7 @@ foreach ( $specs as $spec ) {
 	if ( ! $p || ! is_a( $p, $class ) ) { $p = new $class(); $p->set_sku( $sku ); }
 	$cat = empty( $spec['cat'] ) ? $shared : $term( 'product_cat', 'bulkcat-offon-' . $spec['cat'], 'Bulkcat Offon ' . $spec['cat'] );
 	$p->set_name( 'Bulkcat Offon ' . $spec['key'] );
+	$p->set_slug( 'bulkcat-offon-' . $spec['key'] );
 	$p->set_catalog_visibility( $spec['visibility'] ?? 'visible' );
 	$p->set_featured( false );
 	$p->set_category_ids( array( $cat ) );
@@ -152,7 +155,10 @@ def php_ids(ids: list[int]) -> str:
 def upsert(p: Any, specs: list[dict]) -> dict[str, dict]:
     """Create or reset fixture products (no Off record) and answer their ids by key."""
     blob = base64.b64encode(json.dumps(specs).encode()).decode()
-    return p.wp_eval(UPSERT_PHP % blob)
+    # Pin a valid native slug even for Pending/Draft fixtures. A first Publish
+    # legitimately generates a missing slug; that is not a Status/Undo defect.
+    actor = int(p.seed['users']['admin']['id'])
+    return p.wp_eval(f"wp_set_current_user( {actor} );" + UPSERT_PHP % blob)
 
 
 def simple(key: str, status: str = "publish", **extra: Any) -> dict:
@@ -263,13 +269,14 @@ def check_engine(p: Any) -> None:
         off = switch(p, chosen, "draft")
         mid = snap(p, chosen)
         saved = {pid: (own_record(mid[str(pid)]["record"], pid) or {}).get("status") for pid in chosen}
-        want_saved = {fx[k]["id"]: s for k, s in (("publish", "publish"), ("hidden", "publish"), ("search", "publish"), ("draft", None),
-                                                   ("private", "private"), ("pending", "pending"), ("future", "future"), ("variable", "publish"))}
+        want_saved = {pid: None for pid in chosen}
         all_draft = all(mid[str(pid)]["status"] == "draft" for pid in chosen)
-        # On for what Off switched: the genuine draft saved nothing, and Published on it would publish it (D2).
+        # A genuine Draft no-op is left out; a new Publish is native for every selected state.
         switched = [pid for pid in chosen if pid != fx["draft"]["id"]]
         on = switch(p, switched, "publish")
         after = snap(p, chosen + unrelated)
+        for pid in switched:
+            before[str(pid)]["status"] = "future" if pid == fx["future"]["id"] else "publish"
         diffs = [f"{pid}.{k}: {before[str(pid)].get(k)!r} -> {after[str(pid)].get(k)!r}" for pid in chosen + unrelated
                  for k in set(before[str(pid)]) | set(after[str(pid)]) if before[str(pid)].get(k) != after[str(pid)].get(k)]
         ok = all_draft and saved == want_saved and not diffs and off["report"].get("status") == "complete" and on["report"].get("status") == "complete"
@@ -281,7 +288,7 @@ def check_engine(p: Any) -> None:
         before = snap(p, [pid])
         done = switch(p, [pid], "draft")
         after = snap(p, [pid])
-        ok = (notes(done["preview"]).get(pid) == "already_draft" and done["report"].get("changed_items") == 0
+        ok = (notes(done["preview"]).get(pid) == "" and done["report"].get("changed_items") == 0
               and before == after and after[str(pid)]["record"] == "" and journal(p, done["batch"]) == [])
         row(p, "d2-already-draft", ok, f"note {notes(done['preview']).get(pid)} changed {done['report'].get('changed_items')} record {after[str(pid)]['record']!r}")
 
@@ -293,7 +300,7 @@ def check_engine(p: Any) -> None:
         got = {pid: after[str(pid)]["status"] for pid in ids}
         want = {ids[0]: "publish", ids[1]: "publish", ids[2]: "future"}
         codes = notes(done["preview"])
-        ok = got == want and all(codes.get(pid) == "publishes_not_off" for pid in ids) and all(after[str(pid)]["record"] == "" for pid in ids)
+        ok = got == want and all(codes.get(pid) == "" for pid in ids) and all(after[str(pid)]["record"] == "" for pid in ids)
         row(p, "d2-not-off-publishes", ok, f"statuses {got} (the scheduled one stays scheduled) notes {codes} no record written")
 
     def repeat_off_on() -> None:
@@ -302,7 +309,7 @@ def check_engine(p: Any) -> None:
         switch(p, [pid], "draft")
         first = record(p, pid)
         again = switch(p, [pid], "draft")
-        ok = notes(again["preview"]).get(pid) == "already_off" and again["report"].get("changed_items") == 0 and record(p, pid) == first
+        ok = notes(again["preview"]).get(pid) == "" and again["report"].get("changed_items") == 0 and record(p, pid) == first
         row(p, "d3-repeat-off", ok, f"note {notes(again['preview']).get(pid)} changed {again['report'].get('changed_items')} record kept {record(p, pid) == first}")
         switch(p, [pid], "publish")
         on_again = switch(p, [pid], "publish")
@@ -317,9 +324,9 @@ def check_engine(p: Any) -> None:
         restored = statuses(p, [pid])[str(pid)]
         again = switch(p, [pid], "publish")
         final = statuses(p, [pid])[str(pid)]
-        ok = (notes(on["preview"]).get(pid) == "on_restores" and restored == "private" and record(p, pid) == ""
-              and notes(again["preview"]).get(pid) == "publishes_not_off" and final == "publish")
-        row(p, "d3-second-published", ok, f"On restored {restored} ({notes(on['preview']).get(pid)}); Published again: {notes(again['preview']).get(pid)} -> {final}")
+        ok = (notes(on["preview"]).get(pid) == "" and restored == "publish" and record(p, pid) == ""
+              and notes(again["preview"]).get(pid) == "" and final == "publish")
+        row(p, "d3-second-published", ok, f"New Publish stored {restored} ({notes(on['preview']).get(pid)}); Published again: {notes(again['preview']).get(pid)} -> {final}")
 
     def edits_survive() -> None:
         fx = upsert(p, [simple("edits")])
@@ -341,21 +348,17 @@ def check_engine(p: Any) -> None:
     def conflicts() -> None:
         fx = upsert(p, [simple("conflict")])
         pid = fx["conflict"]["id"]
-        switch(p, [pid], "draft")
-        saved = record(p, pid)
+        put_record(p, pid, "publish")
         set_status_outside(p, pid, "private")
-        refused = switch(p, [pid], "publish")
-        ok = (notes(refused["preview"]).get(pid) == "conflict" and refused["report"].get("changed_items") == 0
-              and statuses(p, [pid])[str(pid)] == "private" and record(p, pid) == saved)
-        row(p, "d5-conflict", ok, f"note {notes(refused['preview']).get(pid)} status {statuses(p, [pid])[str(pid)]} record kept {record(p, pid) == saved}")
+        published = switch(p, [pid], "publish")
+        row(p, "d5-conflict", statuses(p, [pid])[str(pid)] == "publish" and record(p, pid) == "",
+            "New Publish ignores the remembered target, journals its cleanup and publishes natively.")
         again = switch(p, [pid], "draft")
-        rec = own_record(record(p, pid), pid) or {}
-        ok = notes(again["preview"]).get(pid) == "off_recapture" and statuses(p, [pid])[str(pid)] == "draft" and rec.get("status") == "private"
-        row(p, "d5-recapture", ok, f"note {notes(again['preview']).get(pid)} status {statuses(p, [pid])[str(pid)]} saved {rec.get('status')}")
-        set_status_outside(p, pid, "pending")
-        kept = switch(p, [pid], "publish", keep=True)
-        ok = notes(kept["preview"]).get(pid) == "conflict_kept" and statuses(p, [pid])[str(pid)] == "pending" and record(p, pid) == ""
-        row(p, "d5-keep", ok, f"note {notes(kept['preview']).get(pid)} status {statuses(p, [pid])[str(pid)]} record {record(p, pid)!r}")
+        row(p, "d5-recapture", statuses(p, [pid])[str(pid)] == "draft" and record(p, pid) == "",
+            "New Draft does not recapture a status.")
+        refused = p.http("manager", "POST", "/preview", body={"ids":[pid], "operations":status_step("publish", keep=True)})
+        row(p, "d5-keep", refused.status == 400 and (refused.json() or {}).get("code") == "bulkcat_invalid_operation" and statuses(p,[pid])[str(pid)] == "draft",
+            f"Explicit obsolete keep intent refuses with refresh guidance: {refused.brief()}")
 
     def slug_reserved() -> None:
         fx = upsert(p, [simple("slug")])
@@ -384,13 +387,13 @@ def check_engine(p: Any) -> None:
         records = [record(p, vid) for vid in (v["small"], v["medium"], v["large"])]
         ok = (status.get("variationChoices") == ["publish", "private"] and len(var_rows) == 3 and all(r.get("state") == "skipped" for r in var_rows)
               and chosen.status == 400 and var_status == {v["small"]: "publish", v["medium"]: "publish", v["large"]: "private"}
-              and records == ["", "", ""] and after["status"] == "draft" and own_record(after["record"], v["id"]) is not None)
+              and records == ["", "", ""] and after["status"] == "draft" and after["record"] == "")
         row(p, "d7-variation-choices", ok, f"variation choices {status.get('variationChoices')}; Draft pushed down: {[r.get('state') for r in var_rows]} ({items.get('status')}); Draft chosen on a variation: {chosen.brief()}; variations {var_status}")
 
     def duplicate() -> None:
         fx = upsert(p, [simple("original"), simple("copy-target", "draft")])
         pid = fx["original"]["id"]
-        switch(p, [pid], "draft")
+        put_record(p, pid, "publish")
         copy = int(p.wp_eval(f"$d = new WC_Admin_Duplicate_Product(); $c = $d->product_duplicate( wc_get_product( {pid} ) ); bulkcat_out( $c->get_id() );"))
         copied = record(p, copy)
         # A record copied by hand (an import, a meta copy) onto another draft names the original.
@@ -399,7 +402,7 @@ def check_engine(p: Any) -> None:
         on = switch(p, [target], "publish")
         final = statuses(p, [target])[str(target)]
         p.wp("post", "delete", str(copy), "--force", check=False)
-        ok = copied == "" and notes(on["preview"]).get(target) == "publishes_not_off" and final == "publish" and own_record(record(p, pid), pid) is not None
+        ok = copied == "" and notes(on["preview"]).get(target) == "" and final == "publish" and own_record(record(p, pid), pid) is not None
         row(p, "d8-duplicate", ok, f"Duplicate copied record {copied!r}; a hand-copied foreign record: {notes(on['preview']).get(target)} -> {final}")
 
     def bin_restore() -> None:
@@ -410,7 +413,7 @@ def check_engine(p: Any) -> None:
         back = statuses(p, [pid])[str(pid)]
         on = switch(p, [pid], "publish")
         final = statuses(p, [pid])[str(pid)]
-        ok = back == "draft" and notes(on["preview"]).get(pid) == "on_restores" and final == "pending" and record(p, pid) == ""
+        ok = back == "draft" and notes(on["preview"]).get(pid) == "" and final == "publish" and record(p, pid) == ""
         row(p, "d9-bin", ok, f"restored from the bin as {back}; Published: {notes(on['preview']).get(pid)} -> {final}")
 
     def scheduled() -> None:
@@ -425,7 +428,7 @@ def check_engine(p: Any) -> None:
         status_row = next((r for r in rows if r[1] == "status"), [])
         undo = p.http("manager", "POST", f"/batches/{on['batch']}/undo", body={"preview": True}).json() or {}
         conflicted = (undo.get("counts") or {}).get("conflicted")
-        ok = (when > 0 and gone == 0 and back == when and statuses(p, [pid])[str(pid)] == "future" and notes(on["preview"]).get(pid) == "on_scheduled"
+        ok = (when > 0 and gone == 0 and back == when and statuses(p, [pid])[str(pid)] == "future" and notes(on["preview"]).get(pid) == ""
               and status_row[2:5] == ["draft", "future", "applied"] and conflicted == 0 and off["report"].get("status") == "complete")
         row(p, "d10-scheduled", ok, f"event {when} -> Off {gone} -> On {back}; status {statuses(p, [pid])[str(pid)]}; journal {status_row}; undo preview conflicted {conflicted}")
         state["d10"] = {"id": pid, "on": on["batch"], "when": when}
@@ -440,7 +443,7 @@ def check_engine(p: Any) -> None:
         still = statuses(p, [pid])[str(pid)]
         on = switch(p, [pid], "publish")
         final = statuses(p, [pid])[str(pid)]
-        ok = still == "draft" and notes(on["preview"]).get(pid) == "on_schedule_passed" and final == "publish" and record(p, pid) == ""
+        ok = still == "draft" and notes(on["preview"]).get(pid) == "" and final == "publish" and record(p, pid) == ""
         row(p, "d10-schedule-passed", ok, f"while Off after its time: {still}; Published: {notes(on['preview']).get(pid)} -> {final}")
 
     def never_off_scheduled() -> None:
@@ -451,10 +454,10 @@ def check_engine(p: Any) -> None:
         sample = next((r for r in done["preview"].get("sample", []) if r.get("object_id") == pid and r.get("field") == "status"), {})
         rows = journal(p, done["batch"])
         undo = p.http("manager", "POST", f"/batches/{done['batch']}/undo", body={"preview": True}).json() or {}
-        ok = (statuses(p, [pid])[str(pid)] == "future" and event(p, pid) == when and when > 0 and sample.get("note") == "publishes_not_off"
-              and bool((sample.get("context") or {}).get("scheduled_gmt")) and rows == [[pid, "status", "future", "future", "applied"]]
-              and (undo.get("counts") or {}).get("conflicted") == 0)
-        row(p, "scheduled-never-off", ok, f"status {statuses(p, [pid])[str(pid)]} event kept {event(p, pid) == when}; preview {sample.get('note')} {sample.get('context')}; journal {rows}; undo conflicted {(undo.get('counts') or {}).get('conflicted')}")
+        ok = (statuses(p, [pid])[str(pid)] == "future" and event(p, pid) == when and when > 0 and sample.get("note") == ""
+              and bool((sample.get("context") or {}).get("scheduled_gmt")) and rows == [] and done["report"].get("changed_items") == 0
+              and undo.get("code") == "bulkcat_not_reversible" and (undo.get("data") or {}).get("reason") == "pruned")
+        row(p, "scheduled-never-off", ok, f"status {statuses(p, [pid])[str(pid)]} event kept {event(p, pid) == when}; preview {sample.get('note')} {sample.get('context')}; journal {rows}; empty-journal Undo response {undo}")
 
     def scheduled_reads() -> None:
         # T114: a scheduled product (post status future) reads, validates and filters as Scheduled,
@@ -486,7 +489,7 @@ def check_engine(p: Any) -> None:
         to_pending = switch(p, [b], "pending")
         got = statuses(p, [a, b])
         ok = (got == {str(a): "private", str(b): "pending"} and record(p, a) == "" and record(p, b) == ""
-              and notes(to_private["preview"]).get(a) == "record_dropped" and notes(to_pending["preview"]).get(b) == "record_dropped")
+              and notes(to_private["preview"]).get(a) == "" and notes(to_pending["preview"]).get(b) == "")
         row(p, "e10-single-control", ok, f"statuses {got}; records cleared; notes {notes(to_private['preview']).get(a)}, {notes(to_pending['preview']).get(b)}")
 
     state: dict[str, Any] = {}
@@ -525,8 +528,8 @@ def check_undo(p: Any) -> None:
         after = snap(p, [pid])
         feed = p.http("manager", "GET", f"/batches/{off['batch']}/changes", [("per_page", "100")]).json() or {}
         labels = [(r.get("field_label"), r.get("old_value")) for r in feed.get("items", [])]
-        ok = ([r[1] for r in rows] == ["status", "availability_off"] and (back["preview"].get("counts") or {}).get("revertible") == 1
-              and back["report"].get("status") == "complete" and after == before and ("Status before Off", "—") in labels)
+        ok = ([r[1] for r in rows] == ["status"] and (back["preview"].get("counts") or {}).get("revertible") == 1
+              and back["report"].get("status") == "complete" and after == before and ("Status", "private") in labels)
         row(p, "e2-undo-off", ok, f"journal {[r[1] for r in rows]}; undo {back['report'].get('status')}; snapshot identical {after == before}; History {labels}")
 
     def undo_on() -> None:
@@ -537,8 +540,8 @@ def check_undo(p: Any) -> None:
         on = switch(p, [pid], "publish")
         back = undo(p, on["batch"])
         after = snap(p, [pid])
-        ok = back["report"].get("status") == "complete" and after == saved and own_record(after[str(pid)]["record"], pid) is not None
-        row(p, "e2-undo-on", ok, f"undo {back['report'].get('status')}; draft with the original record byte for byte: {after == saved} ({after[str(pid)]['record']})")
+        ok = back["report"].get("status") == "complete" and after == saved and after[str(pid)]["record"] == ""
+        row(p, "e2-undo-on", ok, f"undo {back['report'].get('status')}; original Draft snapshot with no new record: {after == saved} ({after[str(pid)]['record']})")
 
     def undo_conflict() -> None:
         fx = upsert(p, [simple("undo-conflict")])
@@ -566,8 +569,8 @@ def check_undo(p: Any) -> None:
         item = (guarded.get("items") or [{}])[0]
         forced = undo(p, first["batch"], force=True)
         final = statuses(p, [pid])[str(pid)]
-        ok = (rows == [[pid, "status", "publish", "pending", "applied"]] and saved.get("status") == "pending" and item.get("state") == "conflicted"
-              and [c.get("field") for c in item.get("conflicts", [])] == ["status", "availability_off"]
+        ok = (rows == [[pid, "status", "publish", "pending", "applied"]] and saved == {} and item.get("state") == "conflicted"
+              and [c.get("field") for c in item.get("conflicts", [])] == ["status"]
               and final == "publish" and record(p, pid) == "")
         row(p, "undo-status-only", ok, f"journal {rows}; Off saved {saved.get('status')}; undo preview {item.get('state')} {[(c.get('field'), c.get('current')) for c in item.get('conflicts', [])]}; forced -> {final} (never the saved pending), record {record(p, pid)!r}")
 
@@ -581,11 +584,11 @@ def check_undo(p: Any) -> None:
         back = undo(p, d10["on"])
         rec = own_record(record(p, pid), pid)
         ok = ((back["preview"].get("counts") or {}).get("conflicted") == 0 and back["report"].get("status") == "complete"
-              and statuses(p, [pid])[str(pid)] == "draft" and rec is not None and rec.get("status") == "future" and event(p, pid) == 0 and before == "")
+              and statuses(p, [pid])[str(pid)] == "draft" and rec is None and event(p, pid) == 0 and before == "")
         row(p, "d10-undo-exact", ok, f"undo of the scheduled On: conflicted {(back['preview'].get('counts') or {}).get('conflicted')}, {back['report'].get('status')}; now {statuses(p, [pid])[str(pid)]} with its record {rec}; event {event(p, pid)}")
 
     def chain() -> None:
-        # E2: Off -> On -> undo -> undo returns every snapshot field byte for byte.
+        # Native Draft/Publish differs from restoration; two explicit Undos restore both snapshots.
         fx = upsert(p, [simple("chain", "private"), {"key": "chain-variable", "type": "variable", "status": "publish"}])
         ids = [fx["chain"]["id"], fx["chain-variable"]["id"]]
         s0 = snap(p, ids)
@@ -597,7 +600,7 @@ def check_undo(p: Any) -> None:
         s3 = snap(p, ids)
         u2 = undo(p, off["batch"])
         s4 = snap(p, ids)
-        ok = s2 == s0 and s3 == s1 and s4 == s0 and u1["report"].get("status") == "complete" and u2["report"].get("status") == "complete"
+        ok = all(v["status"] == "publish" for v in s2.values()) and s3 == s1 and s4 == s0 and u1["report"].get("status") == "complete" and u2["report"].get("status") == "complete"
         row(p, "e2-chain", ok, f"after On == before {s2 == s0}; undo On == after Off {s3 == s1}; undo Off == before {s4 == s0}")
 
     def changed_after_apply() -> None:
@@ -626,10 +629,10 @@ def check_undo(p: Any) -> None:
         states = {int(i["object_id"]): i["state"] for i in items}
         sentence = "This product was changed since this batch ran, so it is left alone unless you choose Revert anyway."
         ok = (pre.get("counts", {}).get("revertible") == 4 and on["status"] == 200 and re_off["status"] == 200
-              and states == {again: "skipped", outside: "skipped", cleared: "skipped", control: "done"}
-              and all(i["message"] == sentence for i in items if int(i["object_id"]) != control)
-              and end == {str(again): "draft", str(outside): "private", str(cleared): "draft", str(control): "publish"}
-              and record(p, again) == newer and own_record(newer, again) is not None and record(p, cleared) == "" and not report.get("failed_items"))
+              and states == {again: "done", outside: "skipped", cleared: "done", control: "done"}
+              and all(i["message"] == sentence for i in items if int(i["object_id"]) == outside)
+              and end == {str(again): "publish", str(outside): "private", str(cleared): "publish", str(control): "publish"}
+              and record(p, again) == newer and newer == "" and record(p, cleared) == "" and not report.get("failed_items"))
         row(p, "e2-undo-changed-after-apply", ok, f"undo applied with 4 revertible, then: switched On and Off again (newer record), changed outside, record removed; queue run {report.get('status')}, items {states}, statuses {end}; newer record kept {record(p, again) == newer}")
 
     for name, fn in [("e2-undo-off", undo_off), ("e2-undo-on", undo_on), ("e2-undo-conflict", undo_conflict),
@@ -653,7 +656,7 @@ bulkcat_out( md5( wp_json_encode( array( $posts, $meta ) ) ) );
 
 
 def put_record(p: Any, pid: int, status: str, date: int | None = None) -> None:
-    """A record as the switch writes it, for a state a preview only reads (a saved schedule whose time has passed)."""
+    """Labelled synthetic legacy metadata; never evidence of release-created work."""
     extra = f"$x->set_date_created( time() + ({int(date)}) );" if date is not None else ""
     p.wp_eval(
         f"$x = wc_get_product( {pid} ); {extra} $x->set_status( 'draft' ); "
@@ -663,31 +666,17 @@ def put_record(p: Any, pid: int, status: str, date: int | None = None) -> None:
 
 def check_preview(p: Any) -> None:
     def e1() -> None:
-        fx = upsert(p, [simple("e1-publish"), simple("e1-outside"), simple("e1-off"), simple("e1-draft", "draft"),
-                        simple("e1-on"), simple("e1-private", "private"), simple("e1-sched", "future", date=7 * 86400),
-                        simple("e1-passed"), simple("e1-never", "draft"), simple("e1-conflict"), simple("e1-kept"), simple("e1-drop")])
-        pid = {k[3:]: v["id"] for k, v in fx.items()}
-        switch(p, [pid["outside"], pid["off"], pid["on"], pid["private"], pid["sched"], pid["conflict"], pid["kept"], pid["drop"]], "draft")
-        put_record(p, pid["passed"], "future", date=-3600)
-        for key, status in (("outside", "private"), ("conflict", "private"), ("kept", "pending")):
-            set_status_outside(p, pid[key], status)
-        ids = list(pid.values())
+        fx = upsert(p, [simple("e1-private", "private"), simple("e1-sched", "draft", date=7*86400), simple("e1-legacy", "draft")])
+        ids = [r["id"] for r in fx.values()]
+        put_record(p, ids[2], "pending")
         before = p.wp_eval(CHECKSUM_PHP % php_ids(ids))
-        draft = preview(p, [pid["publish"], pid["outside"], pid["off"], pid["draft"]], status_step("draft"))
-        on = preview(p, [pid["on"], pid["private"], pid["sched"], pid["passed"], pid["never"], pid["conflict"]], status_step("publish"))
-        kept = preview(p, [pid["kept"]], status_step("publish", keep=True))
-        dropped = preview(p, [pid["drop"]], status_step("pending"))
+        pre = preview(p, ids, status_step("publish"))
         after = p.wp_eval(CHECKSUM_PHP % php_ids(ids))
-        counts: dict[str, int] = {}
-        for pre in (draft, on, kept, dropped):
-            for code, n in ((pre.get("availability") or {}).get("counts") or {}).items():
-                counts[code] = counts.get(code, 0) + n
-        every = all(n == 1 for n in counts.values()) and len(counts) == 12
-        order = [r.get("object_id") for r in (on.get("availability") or {}).get("conflicts", [])]
-        plain = preview(p, [pid["publish"]], [{"action": "set_value", "args": {"field": "regular_price", "value": "11"}}])
-        ok = (every and before == after and order == [pid["conflict"]] and (on.get("availability") or {}).get("restores") == {"private": 1, "pending": 0}
-              and plain.get("availability") is None and all(r.get("field") == "status" for pre in (draft, on, kept, dropped) for r in pre.get("sample", [])))
-        row(p, "e1-preview", ok, f"counts {counts}; conflicts {order}; restores {(on.get('availability') or {}).get('restores')}; nothing saved (status and meta checksum unchanged): {before == after}; no block without a Status step: {plain.get('availability') is None}")
+        samples = {r["object_id"]:r for r in pre.get("sample",[]) if r.get("field")=="status"}
+        ok = (before == after and pre["operations"][0]["action"] == "set_status" and not any((pre.get("availability") or {}).get("counts", {}).values())
+              and samples[ids[0]]["new"] == "publish" and samples[ids[1]]["new"] == "future" and samples[ids[2]]["new"] == "publish"
+              and all(r["context"]["requested_status"] == "publish" for r in samples.values()))
+        row(p, "e1-preview", ok, f"Native requested/effective preview, no writes, legacy target ignored: {samples}")
 
     def on_not_pushed() -> None:
         fx = upsert(p, [{"key": "d7-push", "type": "variable", "status": "publish"}])
@@ -699,9 +688,9 @@ def check_preview(p: Any) -> None:
         after = snap(p, [v["id"]])[str(v["id"])]
         report = p.http("manager", "GET", f"/batches/{on['batch']}").json() or {}
         kept = (on["preview"].get("availability") or {}).get("variations_kept")
-        ok = (after["status"] == "publish" and after["variations"] == before and after["variations"][str(v["large"])]["status"] == "private"
-              and kept == 3 and report.get("total_items") == 1 and all(record(p, x) == "" for x in variations))
-        row(p, "d7-on-not-pushed", ok, f"Published with Also apply to variations: variations_kept {kept}, batch items {report.get('total_items')}; the disabled variation stays {after['variations'][str(v['large'])]['status']}; variations unchanged {after['variations'] == before}")
+        ok = (after["status"] == "publish" and all(row["status"] == "publish" for row in after["variations"].values())
+              and kept == 0 and report.get("total_items") == 4 and all(record(p, x) == "" for x in variations))
+        row(p, "d7-on-not-pushed", ok, f"Published with Also apply to variations: variations_kept {kept}, batch items {report.get('total_items')}; the explicitly included variation becomes {after['variations'][str(v['large'])]['status']}; variations unchanged {after['variations'] == before}")
 
     for name, fn in [("e1-preview", e1), ("d7-on-not-pushed", on_not_pushed)]:
         guard(p, name, fn)
@@ -753,16 +742,17 @@ def check_grid(p: Any) -> None:
             if inline["status"] != 200 or drawer["status"] != 200:
                 raise AssertionError(f"PATCH {inline['status']}/{drawer['status']}: {inline['json']} {drawer['json']}")
             out[step] = [generic(journal(p, inline["json"]["batch_id"]), a), generic(journal(p, drawer["json"]["batch_id"]), b), generic(journal(p, bulk["batch"]), c)]
-        same = all(rows[0] == rows[1] == rows[2] and len(rows[0]) == 2 for rows in out.values())
+        same = all(rows[0] == rows[1] == rows[2] and len(rows[0]) == 1 for rows in out.values())
         fields = [r[0] for r in out["draft"][0]]
         end = statuses(p, [a, b, c])
-        ok = same and fields == ["status", "availability_off"] and set(end.values()) == {"publish"} and all(record(p, x) == "" for x in (a, b, c))
+        ok = same and fields == ["status"] and set(end.values()) == {"publish"} and all(record(p, x) == "" for x in (a, b, c))
         row(p, "e3-paths-identical", ok, f"inline PATCH, drawer PATCH and bulk batch: Off rows identical {out['draft'][0] == out['draft'][1] == out['draft'][2]}, On rows identical {out['publish'][0] == out['publish'][1] == out['publish'][2]} (fields {fields}); all back to {sorted(set(end.values()))} with no record")
 
     def filter_and_display() -> None:
         fx = upsert(p, [simple("e4-off"), simple("e4-outside"), simple("e4-draft", "draft"), simple("e4-plain")])
         off, outside, draft, plain = (fx[k]["id"] for k in ("e4-off", "e4-outside", "e4-draft", "e4-plain"))
-        switch(p, [off, outside], "draft")
+        put_record(p, off, "publish")
+        put_record(p, outside, "publish")
         set_status_outside(p, outside, "private")
         found = {v: set(listed(p, [v])["ids"]) for v in ("off", "changed_outside", "draft", "publish", "private")}
         none_off = set(listed(p, ["off"], "isNone")["ids"])
@@ -791,14 +781,14 @@ def check_grid(p: Any) -> None:
     def count_cache() -> None:
         fx = upsert(p, [simple("cc-one"), simple("cc-two")])
         one, two = fx["cc-one"]["id"], fx["cc-two"]["id"]
-        before = listed(p, ["off"])["total"]
-        again = listed(p, ["off"])["total"]
+        before = listed(p, ["draft"])["total"]
+        again = listed(p, ["draft"])["total"]
         made = patch(p, one, {"status": "draft"}, ["status"])
-        after = listed(p, ["off"])["total"]
+        after = listed(p, ["draft"])["total"]
         back = patch(p, one, {"status": "publish"}, ["status"])
-        final = listed(p, ["off"])["total"]
+        final = listed(p, ["draft"])["total"]
         ok = (made["status"] == 200 and back["status"] == 200 and isinstance(before, int) and before == again and after == before + 1 and final == before and two)
-        row(p, "count-cache", ok, f"Off filter count {before} (cached read {again}), right after an inline Off {after}, after On {final}")
+        row(p, "count-cache", ok, f"Draft filter count {before} (cached read {again}), right after an inline Off {after}, after On {final}")
 
     def inline_variable() -> None:
         # The grid's cell and drawer write the one product: an inline Off of a variable product is
@@ -1281,12 +1271,12 @@ def check_outside(p: Any) -> None:
         ok = (set(wrote.values()) == {200} and all(stored.values()) and exposed
               and rows.get(foreign) is None and rows.get(tampered) is None and (rows.get(own) or {}).get("state") == "off"
               and foreign not in found_off and own in found_off
-              and codes == {foreign: "publishes_not_off", tampered: "publishes_not_off", own: "on_restores"}
-              and on["report"].get("status") == "complete" and end == {str(foreign): "publish", str(tampered): "publish", str(own): "private"})
+              and codes == {foreign: "", tampered: "", own: ""}
+              and on["report"].get("status") == "complete" and end == {str(foreign): "publish", str(tampered): "publish", str(own): "publish"})
         row(p, "record-written-from-outside", ok,
             f"WooCommerce REST v3 accepted meta_data writes {sorted(set(wrote.values()))} and returns the key in meta_data: {exposed}; "
             f"another product's id and a status outside the four read as no record (off_state {rows.get(foreign)}, {rows.get(tampered)}; Published {codes.get(foreign)}, {codes.get(tampered)}); "
-            f"a well-formed record for the product's own id reads as Off and On restores its status ({codes.get(own)} -> {end.get(str(own))}); "
+            f"a well-formed owned legacy record reads as Off; new Publish ignores its remembered target ({codes.get(own)} -> {end.get(str(own))}); "
             f"the Off filter's SQL prefix match lists the tampered value with its own id: {tampered in found_off} (the documented, accepted case; the row, the switch and undo read it as no record)")
 
     guard(p, "record-written-from-outside", written_from_outside)

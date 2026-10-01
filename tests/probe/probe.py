@@ -62,11 +62,10 @@ Chapters (``--chapters``, comma separated, default all except native-status, run
              and the prices and lookup row compared with the snapshot; the
              variations list, preview and batches refuse anonymous 401 and a
              subscriber 403.
-  offon      Ticket 04 (tests/probe/offon.py): Status as the global Off/On
-             switch through the manager's own routes on fixtures the chapter
-             upserts (SKUs bulkcat-offon-*): the capture and restore table
-             (D1-D10, E10), the status WordPress stores read back into the
-             journal, and the later slices' rows.
+  offon      Historical chapter name (tests/probe/offon.py): ordinary native
+             Status writes, buyer reachability, explicit Undo and preserved
+             legacy records/filters. Old accepted-work semantics are separately
+             qualified by native-status-upgrade.py against actual archives.
   native-status  Guarded native editor/variation comparison against the installed
              archive (tests/probe/native-status.py); private evidence path required.
   lifecycle  Activation created the three tables with every documented
@@ -1878,10 +1877,15 @@ def check_read_export_roundtrip(p: Probe) -> None:
         category = state["fx"]["categories"]["roundtrip"]
         fixture = state["fx"]["ids"]
         off, off_vars = fixture["rt-off"], [fixture["rt-off-s"], fixture["rt-off-m"]]
-        # Ticket 04: switched Off through the manager (preview, grant, Apply, the queue), Status to Draft on the
-        # product alone, as the offon chapter does. (Until ticket 04's T94 the inline PATCH also sent Status to a
-        # variable product's variations, which refuse Draft.)
+        # Ordinary native Draft does not create a legacy record. Then seed a
+        # labelled synthetic old record so the existing import/export exclusion
+        # checks still prove legacy compatibility. Actual released work is in
+        # native-status-upgrade.py; this fixture does not substitute for it.
         switched = offon.switch(p, [off], "draft")
+        native_draft = export_native(p, "snapshot", {"ids": [off]})["rows"][str(off)]
+        p.row("read", "read:export:native-draft-no-record", native_draft["post_status"] == "draft" and native_draft["off_record"] == "",
+              "New native Draft made no legacy record before the explicit legacy export fixture was seeded")
+        offon.put_record(p, off, "publish")
         start = export_native(p, "snapshot", {"ids": [off, *off_vars]})["rows"]
         record = own_off_record(start[str(off)]["off_record"], off)
         state["off"] = {"switched": f"batch {switched['batch']} {switched['report'].get('status')}", "status": start[str(off)]["post_status"], "record": record,
@@ -1916,7 +1920,7 @@ def check_read_export_roundtrip(p: Probe) -> None:
         off_ok = (o["status"] == "draft" and o["record"] is not None and o["record"].get("status") == "publish" and o["variations"] == ["publish", "publish"]
                   and len(o["legs"]) == 4 and all(leg.split(": ", 1)[1].startswith("draft -> draft, record kept True, variations ['publish', 'publish']") for leg in o["legs"]))
         p.row("read", "read:export:native-import-roundtrip:off-product", ok and off_ok,
-              f"variable product {off} switched Off through the manager ({o['switched']}): status {o['status']}, its own Off record saving {(o['record'] or {}).get('status')}, "
+              f"variable product {off} set to native Draft ({o['switched']}), then explicit synthetic legacy record: status {o['status']}, its own Off record saving {(o['record'] or {}).get('status')}, "
               f"variations left {o['variations']}; through each import: {'; '.join(o['legs'])}; nothing published")
         # T103 (ticket 04's review): the saved status never reaches the catalogue CSV, whatever columns are chosen.
         keys = [f["key"] for f in (p.http("manager", "GET", "/fields").json() or {}).get("fields", [])]

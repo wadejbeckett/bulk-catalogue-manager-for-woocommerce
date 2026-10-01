@@ -60,7 +60,7 @@ Only the product fields you choose to change: name, status, catalogue visibility
 
 = What does it store? =
 
-Three database tables holding the history of changes made through the screen, with each field's old and new value so they can be undone; one settings option; each user's saved views; the order of categories on its own screen; a few short-lived caches; and, on each product switched Off, the status it had, in one product meta value (`_bulkcat_availability_off`).
+Five database tables hold change history, exact selections and request receipts; settings, saved views, category order and short-lived caches support the screen. Change history records old and new values for Undo. Existing legacy status records (`_bulkcat_availability_off`) are retained for old work and history; new native Draft edits do not create them.
 
 = How do I undo a change? =
 
@@ -77,6 +77,10 @@ Setting a product's Status to Draft takes it off sale through native WordPress a
 = What happens to old Off/On history and filters? =
 
 Accepted legacy changes retain their original interpretation, receipts and Undo behavior. History labels legacy Status requests separately from new native Status changes. Saved Off and Changed outside this screen filters still match their exact original conditions and are labelled as legacy status filters; they are not offered for new filters. New Status edits ignore remembered targets.
+
+= Can I install an older version again? =
+
+Before downgrading to 1.1.0, stop new changes and finish or explicitly handle every queued native Status change and its recovery work. Version 1.1.0 cannot interpret the new `set_status` action. Replacing plugin files alone does not make pending work compatible. Preserve a backup and the matching history; do not uninstall or delete records as an upgrade step.
 
 = How do I export products as CSV? =
 

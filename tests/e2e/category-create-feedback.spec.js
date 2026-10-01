@@ -630,10 +630,15 @@ for ( const width of [ 1440, 1280, 900 ] ) {
 								border: error.borderLeft,
 							};
 						} );
-						// Native admin CSS replaces the underline with a focus ring.
-						expect( appearance.underline ).toBe(
-							state === 'focused' ? 'none' : 'underline'
-						);
+						// WordPress 7.0 keeps the focused underline; 7.1 removes it.
+						// Both native variants must retain the visible focus ring below.
+						if ( state === 'focused' ) {
+							expect( [ 'none', 'underline' ] ).toContain(
+								appearance.underline
+							);
+						} else {
+							expect( appearance.underline ).toBe( 'underline' );
+						}
 						expect( appearance.border ).toMatch( /^4px solid / );
 						if ( state === 'focused' ) {
 							expect( appearance.focusRing ).not.toBe( 'none' );

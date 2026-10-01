@@ -60,7 +60,9 @@ function optionJson( name ) {
  * @return {string} Password.
  */
 function seedPassword() {
-	const file = path.join( __dirname, '..', 'probe', 'seed.json' );
+	const file =
+		process.env.SEED_JSON ||
+		path.join( __dirname, '..', 'probe', 'seed.json' );
 	return JSON.parse( fs.readFileSync( file, 'utf8' ) ).password;
 }
 

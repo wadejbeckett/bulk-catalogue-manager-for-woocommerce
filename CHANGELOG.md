@@ -7,8 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- New Status edits follow native publication rules: Draft does not remember a target; Published requests publication and can become Scheduled from its stored date. One ordinary Save is enough. Bulk changes use Preview → Apply, with count confirmation at the configured threshold.
+- Accepted 1.1.0 batches, receipts, historical labels, explicit Undo and legacy saved filters retain their original meaning. Unaccepted old grants and explicit old Keep current status intent require a fresh review. Password effects are journalled and redacted; unsupported password-bearing variation transitions refuse before saving.
+- Downgrading to 1.1.0 requires draining or explicitly handling queued `set_status` work; a file replacement alone is insufficient.
+
 ### Fixed
 
+- Selection cleanup retries one supported database conflict after confirmed rollback; unknown errors and uncertain commits remain failures.
 - Category creation now keeps a visible confirmation after the dialog closes, distinguishing successful list readback, a missing entry and a failed refresh. Refresh retries only read the list and never create another category. An incomplete save response asks the user to check the list without claiming success.
 - Category saves keep native dialog focus restoration working while busy and refuse repeated form submission until the response. Notices preserve a focus target when the empty-state opener or refresh button disappears, without taking focus from a user who has moved elsewhere.
 - The narrow category sheet remains open beneath its create dialog, keeping confirmation and retry controls available after saving. Category error details retain native disclosure behavior with readable contrast.

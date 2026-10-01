@@ -2,6 +2,55 @@
 
 Ordered; each ticket is independently mergeable and ends with tests green. "Probe" means `tests/probe/probe.py` from T10, which every later ticket extends with its own surfaces. Update this file as tickets close.
 
+### Delivery follow-up 14 — native archive and release qualification (2026-10-01; Task 5)
+
+Tasks 1–4 and their integrated native Status runtime/build are independently
+accepted. Task 5 adds archive upgrade/history probes, native browser qualification,
+full publication-binding scale coverage and operator procedures. A native
+MariaDB1020 race exposed inherited pruning contention; the separately approved
+bounded repair retries selection cleanup once only after confirmed same-connection
+rollback. It does not retry arbitrary storage, product or provider callbacks. Real release-created pending/interrupted work, grants,
+receipts and historical Undo are qualified through the native archive installer,
+including effective mapped permission revocation before a retained batch runs.
+
+The historical `offon` chapter keeps its applicable buyer, scheduling, Undo,
+foreign-record and exact saved-filter checks. Only superseded ordinary new-write
+expectations change to native Draft/Publish semantics; actual old-work recovery is
+proved separately against the released archive. The readme storage FAQ now states
+that old records are retained legacy data. RELEASE documents receipt/history
+compatibility, safe variation-password refusal and why queued `set_status` work
+requires handling before any binary downgrade to 1.1.0.
+
+After the bounded repair, integrated PHPUnit on PHP 8.3.6: 1,125 tests / 24,836 assertions;
+genuine vendor-free fallback: 1,124 pass / zero fail / one expected missing
+i18n-tooling skip, covered by the Composer run and regenerated POT. The first
+new fallback run exposed ten missing test-support imports; explicit imports fix
+that tests-only defect, with its failed evidence retained. JavaScript: 43 suites / 597 tests. Build and
+PHP lint pass (348 files); rebuilt assets are unchanged. The installed repaired
+archive passes all eight affected native probes and seven concurrency scenarios
+on PHP8.1/WP7.0/WC11.1. The supplementary receipt trace proves1020, rollback,
+one fresh attempt and COMMIT on the same guarded connection, with renewal and
+receipt identity intact. Native floor browser qualification passed all five new
+Status cases; the full run recorded 82 pass with five narrowly repaired legacy
+fixture/floor assumptions, then the six affected checks passed with exact
+baseline restoration. Provider native/browser and destructive lifecycle gates
+pass on the repaired archive; Plugin Check reports zero errors and 13 existing
+allowed DirectDB warnings.
+
+Full publication binding on the preserved accepted archive passes all six
+assertions at 100,000 exact members (22,223 products / 77,777 variations), including
+an unsampled date invalidating acceptance, all-member materialization without
+saves, and receipt-first replay after another date change. The accepted batch was
+cancelled before execution; this does not claim 100,000 executed product writes. Native CLI preview
+took 40.82 seconds, acceptance 36.69 seconds, replay 0.0024 seconds, with a
+267.11 MiB cumulative process peak. Effective CLI memory was unlimited; these
+figures do not establish an HTTP budget. Runtime and harness identities match.
+The task report records all original failures, covering repairs and source/archive
+attribution. At the review freeze, exact cleanup of the 100,000-object fixture is
+still running; its final baseline comparison is a separate acceptance gate. Inherited POT, jsdom and webpack warnings remain
+disclosed; no new runtime scope was added to remove them.
+Controller independent review and final archive integration remain separate gates.
+
 ### Delivery follow-up 14 — native Status identity (2026-09-30; Task 2 only, review pending)
 
 New Status requests and inline writes use `set_status`; raw Status `set_value`

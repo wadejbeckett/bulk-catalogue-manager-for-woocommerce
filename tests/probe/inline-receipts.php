@@ -182,9 +182,48 @@ function bulkcat_receipt_barrier( string $boundary ): void {
 		]
 	);
 	$stdin = fopen( 'php://stdin', 'r' );
-	stream_set_timeout( $stdin, 45 );
-	if ( "release\n" !== fgets( $stdin ) ) {
-		throw new RuntimeException( 'Owned barrier not released within 45 seconds.' );
+	if ( ! is_resource( $stdin ) ) {
+		throw new RuntimeException( 'Cannot open owned barrier input.' );
+	}
+	try {
+		if ( ! stream_set_blocking( $stdin, false ) ) {
+			throw new RuntimeException( 'Cannot make owned barrier input nonblocking.' );
+		}
+		$deadline = hrtime( true ) + 45 * 1000000000;
+		$token    = "release\n";
+		$buffer   = '';
+		while ( true ) {
+			$left = $deadline - hrtime( true );
+			if ( $left <= 0 ) {
+				throw new RuntimeException( 'Owned barrier not released within 45 seconds.' );
+			}
+			$read   = [ $stdin ];
+			$write  = null;
+			$except = null;
+			$ready  = stream_select( $read, $write, $except, intdiv( $left, 1000000000 ), intdiv( $left % 1000000000, 1000 ) );
+			if ( false === $ready ) {
+				throw new RuntimeException( 'Cannot select owned barrier input.' );
+			}
+			if ( 0 === $ready ) {
+				continue;
+			}
+			if ( hrtime( true ) >= $deadline ) {
+				throw new RuntimeException( 'Owned barrier not released within 45 seconds.' );
+			}
+			$part = fread( $stdin, strlen( $token ) + 1 - strlen( $buffer ) );
+			if ( false === $part || ( '' === $part && feof( $stdin ) ) ) {
+				throw new RuntimeException( 'Owned barrier input closed before release.' );
+			}
+			$buffer .= $part;
+			if ( ! str_starts_with( $token, $buffer ) ) {
+				throw new RuntimeException( 'Invalid owned barrier release token.' );
+			}
+			if ( $buffer === $token ) {
+				return;
+			}
+		}
+	} finally {
+		fclose( $stdin );
 	}
 }
 
@@ -312,6 +351,17 @@ if ( 'cleanup' === $a['phase'] ) {
 	);
 	return;
 }
+if ( 'barrier_check' === ( $a['action'] ?? '' ) ) {
+	bulkcat_receipt_barrier( 'deadline_qualification' );
+	bulkcat_receipt_event(
+		[
+			'event' => 'result',
+			'data'  => true,
+		]
+	);
+	return;
+}
+
 $hooks        = 0;
 $post_updates = 0;
 add_action(

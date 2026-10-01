@@ -195,7 +195,7 @@ plus narrow 720×900. No fixture setup, plugin installation or queue drain:
 BULKCAT_E2E_FIXTURE=1 BULKCAT_E2E_BASE_URL="$ASSIGNED_URL" \
 WP_CMD="$ASSIGNED_WP_CMD" BULKCAT_E2E_OWNED_EVIDENCE="$RECEIPT_EVIDENCE/run-1" \
 node_modules/.bin/playwright test -c "$RECEIPT_PRIVATE_CONFIG" \
-  tests/e2e/inline-receipts.spec.js
+  tests/e2e/inline-receipts.spec.js --grep-invert 'real HTTP completed response dropped'
 ```
 
 Give **every invocation a fresh evidence subdirectory**, including failed runs,
@@ -224,6 +224,49 @@ Save activation and include grant issuance, PATCH, recovery and current reads.
 The browser-loaded WordPress api-fetch test uses a genuinely invalid nonce with
 an ordinary concurrent request. No production latency is inferred.
 
+The two dropped-response cases additionally require **explicit controller
+authorization for temporary Apache observation**. They fail without the bounded
+`inline-receipts-http.py` runner. This is a separate invocation from the CLI and
+other browser cases; run all native/browser work separately from heavy Jest.
+Inspect the existing Apache/PHP settings first: loaded mod_php, enabled
+`AllowOverride`, no conflicting prepend, and exact active-file hashes/owner/mode.
+The runner accepts that reviewed JSON snapshot (`files` keyed by absolute paths,
+with sha256/uid/gid/octal mode or exists=false) and refuses configuration drift.
+Record the exact authorized fixture and reversal in its existing private README.
+
+```sh
+BULKCAT_E2E_FIXTURE=1 BULKCAT_E2E_BASE_URL="$ASSIGNED_URL" \
+WP_CMD="$ASSIGNED_WP_CMD" python3 tests/probe/inline-receipts-http.py \
+  --container "$ASSIGNED_APACHE_CONTAINER" --url "$ASSIGNED_URL" \
+  --settings-snapshot "$REVIEWED_PRIVATE_SETTINGS_JSON" \
+  --evidence "$RECEIPT_EVIDENCE/http-1" --config "$RECEIPT_PRIVATE_CONFIG"
+```
+
+The runner backs up the existing root `.htaccess` bytes/ownership/mode/mtime,
+copies `inline-receipts-http.php` into an exclusive temporary directory **outside
+the webroot**, and adds only a temporary native `php_value auto_prepend_file`.
+It never edits WordPress configuration/core/vendor/plugin source or installs a
+plugin, MU plugin or route. The observer uses native preinitialized hooks; only
+the exact private command header, run/request UUIDs, host, unexpired lifetime,
+REST path and natively verified target marker can produce a record. Records
+contain run/request/target IDs, positive loaded/target-verified flags and the
+target's `woocommerce_after_product_object_save` count, without request payload
+or authentication. Every forwarded request must have a record: exactly one
+target save in the original PATCH, zero in all grant/read/recovery requests.
+An absent observer therefore cannot pass as zero saves. Separate CLI hook
+counts remain separately attributed.
+
+The test command has a 540-second outer bound, private matching expires after
+600 seconds, and signal/finally cleanup restores and verifies the original
+configuration, waits boundedly for matched observer requests to release their
+file-lifetime guards, and removes only its exact temporary files. That file
+guard protects observer cleanup only; it is not a product/receipt lock. Normal
+unmatched login HTTP is checked before, during and after. Retain the lifecycle,
+backup, observations and all failures privately. Verify actual CLI/browser
+children, exact UUID cleanup and protected baselines afterward; parent exit
+alone does not prove cleanup. Failed restoration is an explicit failure with
+retained recovery evidence, never permission to restart a shared service.
+
 Separate instrumented WP-CLI processes call actual registered REST controllers,
 repositories, SQL and WooCommerce hooks. They are **not Apache HTTP requests**.
 They count `woocommerce_after_product_object_save` and `post_updated` for exact
@@ -234,11 +277,15 @@ The partial regression lowers regular price through a second native CRUD process
 after acceptance; the variation regression changes only its current parent tax
 status. They qualify per-object pre-Writer cache refresh, not serializable edits
 or protection against a later concurrent write. No global cache flush is used.
-The browser HTTP batch/journal evidence must not be relabelled as an HTTP hook
-counter: hook counts belong to these explicitly identified native processes.
+The CLI evidence must not be relabelled as an HTTP hook counter; the temporary
+Apache observer above supplies that separate native proof.
 
-Barriers emit process/container/connection IDs and wait at most 45 seconds for
-`release\n` on STDIN. A death case sends SIGKILL only after inspecting the exact
+Barriers emit process/container/connection IDs and use checked nonblocking
+STDIN, `stream_select` and a monotonic 45-second deadline. Only the bounded
+`release\n` token releases execution; EOF, invalid/oversized input and timeout
+fail closed. A native `barrier_check` assertion qualifies unreleased and partial
+input deadlines, ordinary release and an oversized token, without replacing the
+separate actual-death evidence. A death case sends SIGKILL only after inspecting the exact
 auto-removing CLI container created by the assigned wrapper; shared WordPress
 and database services are never killed. Same-user `SHOW PROCESSLIST` is projected
 to the two owned IDs, command, state, seconds and observation time, without SQL.

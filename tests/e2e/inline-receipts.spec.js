@@ -44,6 +44,8 @@ function identity() {
 			'assets/build',
 			'tests/e2e/inline-receipts.spec.js',
 			'tests/probe/inline-receipts.php',
+			'tests/probe/inline-receipts-http.php',
+			'tests/probe/inline-receipts-http.py',
 			'tests/probe/native-status.php',
 			'tests/probe/fixture.php',
 		],
@@ -309,6 +311,58 @@ test.afterAll( async () => {
 	state.identityAfter = identity();
 	record();
 	expect( state.identityAfter ).toEqual( state.identityBefore );
+} );
+
+test( 'native pipe barrier bounds unreleased and partial tokens and accepts ordinary release', async ( {}, info ) => {
+	test.skip(
+		info.project.name !== 'desktop',
+		'Native pipe checks run once.'
+	);
+	test.setTimeout( 180_000 );
+	for ( const token of [ '', 'rel' ] ) {
+		const held = start( 'assert', { action: 'barrier_check' } );
+		await barrier( held, 'deadline_qualification' );
+		const entered = held.entry.events.find(
+			( e ) => e.event === 'barrier'
+		).at;
+		if ( token ) {
+			held.child.stdin.write( token );
+		}
+		await expect.poll( () => held.done, { timeout: 50_000 } ).toBe( true );
+		const entry = await held.finished;
+		expect( entry.exit ).toBe( 255 );
+		expect( entry.stderr ).toContain(
+			'Owned barrier not released within 45 seconds.'
+		);
+		expect(
+			entry.started + entry.elapsedMs - entered * 1000
+		).toBeGreaterThanOrEqual( 44_000 );
+		expect( entry.started + entry.elapsedMs - entered * 1000 ).toBeLessThan(
+			50_000
+		);
+		expect( entry.events.some( ( e ) => e.event === 'result' ) ).toBe(
+			false
+		);
+	}
+	const released = start( 'assert', { action: 'barrier_check' } );
+	await barrier( released, 'deadline_qualification' );
+	releaseOriginal( released );
+	expect( ( await result( released ) ).data ).toBe( true );
+	const invalid = start( 'assert', { action: 'barrier_check' } );
+	await barrier( invalid, 'deadline_qualification' );
+	invalid.child.stdin.write( 'release\nextra' );
+	await expect.poll( () => invalid.done ).toBe( true );
+	expect( ( await invalid.finished ).exit ).toBe( 255 );
+	expect( invalid.entry.stderr ).toContain(
+		'Invalid owned barrier release token.'
+	);
+	state.journeys.push( {
+		label: info.title,
+		deadlines: [ 'unreleased', 'partial' ],
+		release: true,
+		oversizedRefused: true,
+	} );
+	record();
 } );
 
 test( 'real SQL unique-claim contention executes one native save', async ( {}, info ) => {
@@ -726,11 +780,41 @@ async function heldStorage( page ) {
 	} );
 }
 
+function apacheObservations( target ) {
+	const output = execFileSync(
+		'docker',
+		[
+			'exec',
+			'--user',
+			'33:33',
+			process.env.BULKCAT_RECEIPT_OBSERVER_CONTAINER,
+			'php',
+			'-r',
+			'echo file_get_contents($argv[1]);',
+			`${ process.env.BULKCAT_RECEIPT_OBSERVER_DIR }/observations.jsonl`,
+		],
+		{ encoding: 'utf8', timeout: 10_000 }
+	);
+	return output
+		.trim()
+		.split( '\n' )
+		.filter( Boolean )
+		.map( JSON.parse )
+		.filter( ( row ) => row.run === run && row.target === target );
+}
+
 for ( const recovery of [ 'automatic', 'reload-denied' ] ) {
 	test( `real HTTP completed response dropped: ${ recovery } preserves exact selection`, async ( {
 		page,
 	}, info ) => {
 		test.setTimeout( 180_000 );
+		expect(
+			process.env.BULKCAT_RECEIPT_OBSERVER_CONTAINER,
+			'Use the bounded Apache observer wrapper for HTTP hook qualification.'
+		).toMatch( /^[a-f0-9]{64}$/ );
+		expect( process.env.BULKCAT_RECEIPT_OBSERVER_DIR ).toMatch(
+			/^\/tmp\/bulkcat-receipt-observer-[a-f0-9-]{36}$/
+		);
 		const viewName = await openOwned( page );
 		const product = state.products[ recovery === 'automatic' ? 5 : 6 ];
 		const other = state.products[ 11 ];
@@ -741,6 +825,7 @@ for ( const recovery of [ 'automatic', 'reload-denied' ] ) {
 			.poll( () => members( page ).catch( () => [] ) )
 			.toEqual( [ other.id ] );
 		const requests = [];
+		const observedRequests = [];
 		const started = new Map();
 		let click = 0;
 		let completed;
@@ -776,12 +861,26 @@ for ( const recovery of [ 'automatic', 'reload-denied' ] ) {
 				decodeURIComponent( url.toString() ).includes( 'bulkcat/v1/' ),
 			async ( route ) => {
 				const request = route.request();
+				const observed = {
+					request: randomUUID(),
+					method: methodOf( request ),
+					route: pathOf( request ),
+				};
+				const headers = {
+					...request.headers(),
+					'X-Bulkcat-Observer':
+						process.env.BULKCAT_RECEIPT_OBSERVER_COMMAND,
+					'X-Bulkcat-Receipt-Run': run,
+					'X-Bulkcat-Receipt-Target': String( product.id ),
+					'X-Bulkcat-Receipt-Request': observed.request,
+				};
 				if (
 					methodOf( request ) === 'PATCH' &&
 					pathOf( request ) === `products/${ product.id }`
 				) {
 					held = request.postDataJSON();
-					const response = await route.fetch();
+					observedRequests.push( observed );
+					const response = await route.fetch( { headers } );
 					completed = {
 						status: response.status(),
 						json: await response.json(),
@@ -797,7 +896,8 @@ for ( const recovery of [ 'automatic', 'reload-denied' ] ) {
 					await route.abort( 'connectionreset' );
 					return;
 				}
-				await route.continue();
+				observedRequests.push( observed );
+				await route.continue( { headers } );
 			}
 		);
 		const control = page.getByRole( 'switch', {
@@ -895,11 +995,33 @@ for ( const recovery of [ 'automatic', 'reload-denied' ] ) {
 			path: info.outputPath( 'receipt-recovery.png' ),
 			fullPage: true,
 		} );
+		await page.unrouteAll( { behavior: 'wait' } );
+		let apache;
+		await expect
+			.poll( () => {
+				apache = apacheObservations( product.id );
+				return apache.map( ( row ) => row.request ).sort();
+			} )
+			.toEqual( observedRequests.map( ( row ) => row.request ).sort() );
+		const patch = observedRequests.filter(
+			( row ) => row.method === 'PATCH'
+		);
+		expect( patch ).toHaveLength( 1 );
+		for ( const row of apache ) {
+			expect( row.observer_loaded ).toBe( 1 );
+			expect( row.target_verified ).toBe( 1 );
+			expect( row.saves ).toBe(
+				row.request === patch[ 0 ].request ? 1 : 0
+			);
+		}
+		expect( apache.reduce( ( sum, row ) => sum + row.saves, 0 ) ).toBe( 1 );
 		state.journeys.push( {
 			label: info.title,
 			boundary:
-				'actual Apache HTTP PATCH completed; Playwright drops only reply; hook counts belong to separate CLI cases',
+				'actual Apache HTTP PATCH completed; Playwright drops only reply; temporary native Apache hook observer verifies one target save and zero recovery saves',
 			requests,
+			observedRequests,
+			apache,
 			displayedMs,
 			completed,
 			batch: nativeIdentity.batch,

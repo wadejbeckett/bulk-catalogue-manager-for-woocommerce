@@ -37,7 +37,7 @@ final class RequestService {
 	/**
 	 * Every operation kind a grant can be issued for.
 	 */
-	public const OPERATIONS = [ 'selection.capture', 'selection.compose', 'batch.apply', 'batch.undo' ];
+	public const OPERATIONS = [ 'selection.capture', 'selection.compose', 'batch.apply', 'batch.undo', 'product.inline' ];
 
 	/** Clock injection keeps retention tests deterministic without test hooks. */
 	private \Closure $clock;
@@ -46,8 +46,9 @@ final class RequestService {
 	 * Construct without database writes or implicit migration.
 	 *
 	 * @param \Closure|null $clock Current Unix time.
+	 * @param \BulkCatalogueManager\Engine\InlineWrite|null $inline Native writer over the caller's registry.
 	 */
-	public function __construct( ?\Closure $clock = null ) {
+	public function __construct( ?\Closure $clock = null, private readonly ?\BulkCatalogueManager\Engine\InlineWrite $inline = null ) {
 		$this->clock = $clock ?? static fn(): int => time();
 	}
 
@@ -64,7 +65,17 @@ final class RequestService {
 				if ( ! in_array( $operation, self::OPERATIONS, true ) ) {
 						return Refusal::invalid( 'bulkcat_invalid_operation', __( 'This operation is not available. Choose a supported catalogue action and try again.', 'bulk-catalogue-manager-for-woocommerce' ) );
 				}
-				$intent = $this->normalize( $operation, $input );
+				if ( 'product.inline' === $operation ) {
+					$payload = InlineIntent::normalize_payload( $input, 1 );
+					if ( is_wp_error( $payload ) ) {
+						return $payload; }
+					$access = $this->inline_disclosure( $payload['object_id'] );
+					if ( is_wp_error( $access ) ) {
+						return $access; }
+					$intent = InlineIntent::bind( $payload, get_current_user_id(), 1, InlineIntent::registry_revision() );
+				} else {
+					$intent = $this->normalize( $operation, $input );
+				}
 				if ( is_wp_error( $intent ) ) {
 					return $intent; }
 				return $this->signer()->issue( $operation, CaptureIntent::fingerprint( $intent ), get_current_user_id(), ( $this->clock )() ) + [
@@ -176,7 +187,184 @@ final class RequestService {
 	 * @return array<string,mixed>|\WP_Error
 	 */
 	public function resolve( array $request ): array|\WP_Error {
-		return $this->run( $request, false, $request['operation'] ?? 'selection.capture' );
+		return 'product.inline' === ( $request['operation'] ?? null )
+			? $this->inline_request( $request )
+			: $this->run( $request, false, $request['operation'] ?? 'selection.capture' );
+	}
+
+	/**
+	 * Accept one synchronous change. Only this confirmed accepting invocation may execute.
+	 *
+	 * @param array $envelope Original grant.
+	 * @param int $id Requested object.
+	 * @param array $values Original unsanitised values.
+	 * @param string $source Display source.
+	 * @param bool $keep Obsolete explicit intent, still bound.
+	 * @return array|\WP_Error
+	 */
+	public function inline( array $envelope, int $id, array $values, string $source, bool $keep = false ): array|\WP_Error {
+		return $this->inline_request(
+			$envelope,
+			[
+				'object_id'           => $id,
+				'source'              => $source,
+				'values'              => $values,
+				'keep_changed_status' => $keep,
+			]
+		);
+	}
+
+	/**
+	 * Parse/signature/disclosure, pure binding, receipt, unique claim, then live prepare.
+	 * No retry wrapper can recreate the internal new_acceptor decision.
+	 *
+	 * @param array $request Signed envelope.
+	 * @param array|null $input Raw PATCH payload; null for resolution.
+	 * @return array|\WP_Error
+	 */
+	private function inline_request( array $request, ?array $input = null ): array|\WP_Error {
+		return $this->guard(
+			function () use ( $request, $input ): array|\WP_Error {
+				if ( ! is_array( $request['intent'] ?? null ) || ! is_string( $request['uuid'] ?? null ) || ! is_string( $request['request_proof'] ?? null ) ) {
+						return Refusal::create( 'bulkcat_invalid_request', __( 'Reload the catalogue before saving so this change can be tracked safely.', 'bulk-catalogue-manager-for-woocommerce' ), 409 );
+				}
+				if ( 'product.inline' !== ( $request['operation'] ?? 'product.inline' ) ) {
+					return InlineIntent::conflict(); }
+				$intent = InlineIntent::normalize_envelope( $request['intent'] );
+				if ( is_wp_error( $intent ) ) {
+					return $intent; }
+				$claims = $this->signer()->verify( $request['uuid'], $request['request_proof'], 'product.inline', CaptureIntent::fingerprint( $intent ), get_current_user_id() );
+				if ( is_wp_error( $claims ) ) {
+					return $claims; }
+				if ( null !== $input && ( $input['object_id'] !== $intent['object_id'] || $input['source'] !== $intent['source'] ) ) {
+					return InlineIntent::conflict(); }
+				$disclosure = $this->inline_disclosure( $intent['object_id'] );
+				if ( is_wp_error( $disclosure ) ) {
+					return $disclosure; }
+				if ( null !== $input ) {
+					if ( 1 !== $intent['payload_version'] || ! hash_equals( InlineIntent::registry_revision(), $intent['registry_revision'] ) ) {
+						return InlineIntent::unsupported(); }
+					$payload = InlineIntent::normalize_payload( $input, $intent['payload_version'] );
+					if ( is_wp_error( $payload ) || ! InlineIntent::matches( $payload, $intent, $claims['owner'] ) ) {
+						return InlineIntent::conflict(); }
+				}
+				$receipts = new RequestRepository();
+				$row      = $receipts->read( $claims['owner'], $claims['uuid'] );
+				if ( null !== $row ) {
+					return $this->inline_outcome( $row, $claims, $intent ); }
+				if ( null === $input ) {
+					return $claims['accept_until'] <= ( $this->clock )() ? self::expired() : [
+						'receipt_state' => 'not_accepted',
+						'replayed'      => false,
+					];
+				}
+				$inline   = $this->inline ?? new \BulkCatalogueManager\Engine\InlineWrite();
+				$prepared = null;
+				$accepted = FoundationStorage::atomic(
+					function () use ( $receipts, $claims, $intent, $input, $inline, &$prepared ): array|\WP_Error {
+						$row = $receipts->claim( $claims );
+						if ( $row['operation'] !== $claims['operation'] || $row['fingerprint'] !== $claims['fingerprint'] ) {
+							return InlineIntent::conflict(); }
+						if ( '' !== $row['result_id'] ) {
+							$receipt = $this->inline_outcome( $row, $claims, $intent );
+							return is_wp_error( $receipt ) ? $receipt : [
+								'new_acceptor' => false,
+								'receipt'      => $receipt,
+							];
+						}
+						$factory = new \BulkCatalogueManager\Engine\BatchFactory();
+						$earlier = $factory->earlier( $claims['uuid'], $claims['owner'], static fn(): bool => false );
+						if ( null !== $earlier ) {
+							return $earlier; }
+						if ( $claims['accept_until'] <= ( $this->clock )() ) {
+							return self::expired(); }
+						$access   = Access::can_write();
+						$prepared = is_wp_error( $access ) ? $access : $inline->prepare( $input['object_id'], $input['values'], $input['source'], $claims['owner'], $input['keep_changed_status'] );
+						if ( is_wp_error( $prepared ) ) {
+							$status = (int) ( $prepared->get_error_data()['status'] ?? 500 );
+							if ( $status < 400 || $status >= 500 ) {
+								return $prepared; }
+							$receipts->refused_inline( $claims, 403 === $status || in_array( $prepared->get_error_code(), [ 'bulkcat_cannot_edit', 'bulkcat_cannot_publish', 'bulkcat_forbidden' ], true ) ? 'permission' : 'validation' );
+							// Wrapping avoids FoundationStorage rolling back the committed refusal.
+							return [
+								'new_acceptor' => false,
+								'refusal'      => $prepared,
+							];
+						}
+						$id = $factory->record_inline( $claims, $prepared );
+						$receipts->accepted_batch( $claims, $id );
+						if ( $claims['accept_until'] <= ( $this->clock )() ) {
+							return self::expired(); }
+						return [
+							'new_acceptor' => true,
+							'batch_id'     => $id,
+						];
+					}
+				);
+				if ( is_wp_error( $accepted ) ) {
+					return $accepted; }
+				if ( isset( $accepted['refusal'] ) ) {
+						$error = $accepted['refusal'];
+						return new \WP_Error(
+							$error->get_error_code(),
+							$error->get_error_message(),
+							$error->get_error_data() + [
+								'receipt_state' => 'refused',
+								'replayed'      => false,
+							]
+						);
+				}
+				if ( ! $accepted['new_acceptor'] ) {
+					return $accepted['receipt']; }
+				// Reached solely after a definite acceptance COMMIT; never recover execution rights by reading.
+				return $inline->run_accepted( $accepted['batch_id'], $prepared );
+			},
+			true,
+			true
+		);
+	}
+
+	/**
+	 * Disclosure checks object and parent rights, never the old action's applicability.
+	 *
+	 * @param int $id Object identity.
+	 * @return bool|\WP_Error
+	 */
+	private function inline_disclosure( int $id ): bool|\WP_Error {
+		$post = get_post( $id );
+		return Access::can_edit_object( $id, is_object( $post ) && 'product_variation' === $post->post_type ? (int) $post->post_parent : 0 );
+	}
+
+	/**
+	 * Only explicit accepted/refused evidence can release client uncertainty.
+	 *
+	 * @param array $row Stored receipt.
+	 * @param array $claims Verified claims.
+	 * @param array $intent Verified envelope.
+	 * @return array|\WP_Error
+	 */
+	private function inline_outcome( array $row, array $claims, array $intent ): array|\WP_Error {
+		if ( $row['operation'] !== $claims['operation'] || $row['fingerprint'] !== $claims['fingerprint'] ) {
+			return InlineIntent::conflict(); }
+		if ( 'gone' === $row['state'] ) {
+			return BatchRecovery::gone(); }
+		if ( 'refused' === $row['state'] && 'inline_refusal' === $row['result_kind'] && in_array( $row['result_id'], [ 'validation', 'permission' ], true ) ) {
+			return [
+				'receipt_state' => 'refused',
+				'replayed'      => true,
+			];
+		}
+		if ( 'batch' !== $row['result_kind'] || (int) $row['result_id'] < 1 ) {
+			throw new \RuntimeException( 'Incomplete inline receipt.' ); }
+		$batch = ( new BatchRepository() )->find_strict( (int) $row['result_id'] );
+		if ( null === $batch ) {
+			( new RequestRepository() )->batch_gone( $claims );
+			return BatchRecovery::gone();
+		}
+		if ( $batch['user_id'] !== $claims['owner'] || $batch['uuid'] !== $claims['uuid'] || $batch['source'] !== $intent['source'] || ( $batch['selection']['inline_receipt']['object_id'] ?? null ) !== $intent['object_id'] ) {
+			throw new \RuntimeException( 'Inline receipt does not match its batch.' );
+		}
+		return InlineReceipt::read( $batch );
 	}
 
 	/**
@@ -311,8 +499,8 @@ final class RequestService {
 	 * @param bool     $change    Whether it concerns an Apply or undo, whose malformed input is refused in those words.
 	 * @return array<string,mixed>|\WP_Error
 	 */
-	private function guard( callable $operation, bool $change = false ): array|\WP_Error {
-		$access = Access::can_write();
+	private function guard( callable $operation, bool $change = false, bool $disclosure = false ): array|\WP_Error {
+		$access = $disclosure ? Access::can_read() : Access::can_write();
 		if ( is_wp_error( $access ) ) {
 			return $access;
 		}
@@ -328,6 +516,10 @@ final class RequestService {
 				? Refusal::invalid( 'bulkcat_invalid_value', __( 'This change could not be read. Reload the page, preview the change again, then apply it.', 'bulk-catalogue-manager-for-woocommerce' ) )
 				: Refusal::invalid( 'bulkcat_invalid_value', __( 'These products or filters could not be selected. Check your selection and try again.', 'bulk-catalogue-manager-for-woocommerce' ) );
 		} catch ( \Throwable $error ) {
+			if ( $disclosure ) {
+				// Native hooks can throw user content or credentials. Inline recovery logs no payload.
+				return Refusal::create( 'bulkcat_request_storage', __( 'The save result could not be confirmed. Check the original save result before making another change.', 'bulk-catalogue-manager-for-woocommerce' ), 503 );
+			}
 			return Refusal::unexpected( 'bulkcat_request_storage', __( 'The request could not be resolved safely. Retry the same request; if this continues, ask an administrator to check catalogue storage.', 'bulk-catalogue-manager-for-woocommerce' ), 503, $error );
 		}
 	}

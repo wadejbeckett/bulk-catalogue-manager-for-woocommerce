@@ -693,20 +693,21 @@ final class ChunkRunnerTest extends TestCase {
 		$this->assertSame(
 			[
 				"Categories/Writer.php: 'running' -> \$status",
+				"Data/BatchRepository.php: 'running' -> \$closure['write_status']",
 				"Engine/BatchFactory.php: \$previous -> 'undoing'",
+				"Engine/BatchFactory.php: 'queued' -> 'running'",
 				"Engine/BatchFactory.php: 'queued' -> 'running'",
 				"Engine/ChunkRunner.php: 'queued' -> 'running'",
 				"Engine/ChunkRunner.php: 'running' -> \$status",
 				"Engine/InlineWrite.php: 'running' -> \$status",
 				"Engine/Progress.php: 'queued' -> 'cancelled'",
 				"Engine/Progress.php: 'running' -> 'cancelled'",
-				"Engine/Progress.php: 'running' -> 'failed'",
 				"Requests/BatchAcceptance.php: \$previous -> 'undoing'",
 				"Undo/Original.php: 'undoing' -> \$previous",
 				"Undo/Original.php: 'undoing' -> 'undone'",
 			],
 			$calls,
-			'The engine writes queued -> running -> complete, partial, failed or cancelled (and a stale inline batch running -> failed), a category write finishes its batch of one, an undo moves the batch it undoes to undoing and then to undone or back, and nothing else.'
+			'The engine writes queued -> running -> complete, partial, failed or cancelled (with inline closure committed atomically), a category write finishes its batch of one, an undo moves the batch it undoes to undoing and then to undone or back, and nothing else.'
 		);
 
 		// The batch an undo starts on came from a finished status (the planner refuses any other), and goes back only to one.
@@ -800,5 +801,14 @@ final class ChunkRunnerTest extends TestCase {
 		$this->assertStringContainsString( 'as_enqueue_async_action(', $runner );
 		// The scan would catch a reference.
 		$this->assertSame( 1, preg_match( '/Automattic\\\\WooCommerce\\\\Internal\\\\BatchProcessing/', 'use Automattic\\WooCommerce\\Internal\\BatchProcessing\\BatchProcessingController;' ) );
+	}
+	public function test_a_legacy_unclosed_inline_batch_is_never_claimed_or_queued(): void {
+		$store                  = new RunnerStore( self::BATCH, [ 101 ], [], self::USER );
+		$store->batch['source'] = 'inline';
+		$store->batch['status'] = 'running';
+		$this->assertFalse( ChunkRunner::ensure_queued( self::BATCH ) );
+		$this->assertSame( 'stopped', $this->runner()->run( self::BATCH ) );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['scheduled'] );
+		$this->assertSame( [], array_filter( $GLOBALS['wpdb']->queries, static fn( string $sql ): bool => str_starts_with( $sql, 'UPDATE' ) ) );
 	}
 }

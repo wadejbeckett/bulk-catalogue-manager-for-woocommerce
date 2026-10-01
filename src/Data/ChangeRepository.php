@@ -78,8 +78,9 @@ final class ChangeRepository {
 	 * Build a repository.
 	 *
 	 * @param Registry|null $registry Registry holding the table; the plugin's own by default.
+	 * @param bool $strict Require exact affected-row acknowledgements for a new inline invocation.
 	 */
-	public function __construct( ?Registry $registry = null ) {
+	public function __construct( ?Registry $registry = null, private readonly bool $strict = false ) {
 		$this->registry = $registry ?? Registry::plugin();
 	}
 
@@ -130,7 +131,8 @@ final class ChangeRepository {
 			'message'      => mb_substr( $message, 0, self::MESSAGE_LENGTH ),
 		];
 		// insert() prepares the statement from the formats.
-		if ( false === $wpdb->insert( $this->registry->table( Schema::CHANGES ), $data, [ '%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' ] ) ) {
+		$inserted = $wpdb->insert( $this->registry->table( Schema::CHANGES ), $data, [ '%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' ] );
+		if ( false === $inserted || ( $this->strict && ( 1 !== $inserted || $wpdb->insert_id < 1 ) ) ) {
 			throw new \RuntimeException( 'The change could not be journalled.' );
 		}
 		return (int) $wpdb->insert_id;
@@ -230,7 +232,7 @@ final class ChangeRepository {
 			[ '%s', '%s', '%s', '%s' ],
 			[ '%d', '%d', '%s', '%s' ]
 		);
-		if ( false === $updated ) {
+		if ( false === $updated || ( $this->strict && 1 !== $updated ) ) {
 			throw new \RuntimeException( 'The change could not be journalled.' );
 		}
 		return (int) $updated;

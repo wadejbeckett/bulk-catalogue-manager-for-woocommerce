@@ -78,6 +78,9 @@ if ( ! class_exists( WpdbStub::class ) ) {
 		 */
 		public array $failing = [];
 
+		/** Explicit affected-row acknowledgements for strict receipt fault tests. */
+		public array $write_results = [];
+
 		/**
 		 * Existing tables, full name => true.
 		 *
@@ -161,12 +164,12 @@ if ( ! class_exists( WpdbStub::class ) ) {
 				return false;
 			}
 			++$this->insert_id;
-			return 1;
+			return $this->write_results[ 'insert:' . $table ] ?? 1;
 		}
 
 		public function update( string $table, array $data, array $where, array|string|null $format = null, array|string|null $where_format = null ): int|false {
 			$this->writes[] = [ 'update', $table, $data, $format, $where, $where_format ];
-			return $this->update_fails( $table, $data ) ? false : 1;
+			return $this->update_fails( $table, $data ) ? false : ( $this->write_results[ 'update:' . $table ] ?? 1 );
 		}
 
 		/**

@@ -12,6 +12,7 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Engine;
 
+use BulkCatalogueManager\Requests\InlineReceipt;
 use BulkCatalogueManager\Data\BatchRepository;
 use BulkCatalogueManager\Data\ChangeRepository;
 use BulkCatalogueManager\Data\Registry as Data;
@@ -296,6 +297,9 @@ final class ChunkRunner {
 		if ( $batch_id < 1 || ! function_exists( 'as_enqueue_async_action' ) ) {
 			return false;
 		}
+		$batch = ( new BatchRepository() )->find_strict( $batch_id );
+		if ( null !== $batch && InlineReceipt::is_inline( $batch ) ) {
+			return false; }
 		// Checked and enqueued under the batch's scheduling lock: two requests answering one batch queue one chunk.
 		$queued = ( new BatchRepository() )->with_schedule_lock(
 			$batch_id,
@@ -353,6 +357,8 @@ final class ChunkRunner {
 		if ( null === $batch || ! in_array( $batch['status'], self::ACTIVE, true ) ) {
 			return null === $batch ? 'missing' : 'stopped';
 		}
+		if ( InlineReceipt::is_inline( $batch ) ) {
+			return 'stopped'; }
 		if ( 'queued' === $batch['status'] && ! $this->batches->transition( $batch_id, 'queued', 'running' ) ) {
 			$batch = $this->batches->find( $batch_id );
 			if ( null === $batch || 'running' !== $batch['status'] ) {

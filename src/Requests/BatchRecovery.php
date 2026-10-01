@@ -40,6 +40,8 @@ final class BatchRecovery {
 		// A failed read throws (retry the same request); it is never taken for a batch with nothing to schedule.
 		$batch  = ( new BatchRepository() )->find_strict( $batch_id );
 		$status = null === $batch ? null : $batch['status'];
+		if ( null !== $batch && InlineReceipt::is_inline( $batch ) ) {
+			return InlineReceipt::read( $batch ); }
 		if ( in_array( $status, [ 'queued', 'running' ], true ) && ! ChunkRunner::ensure_queued( $batch_id ) ) {
 			throw new \RuntimeException( 'Scheduling was interrupted; resolve the same request.' );
 		}

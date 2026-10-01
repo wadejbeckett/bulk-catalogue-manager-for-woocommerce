@@ -159,10 +159,42 @@ final class BatchRepository {
 			$format[]           = '%s';
 		}
 		// insert() prepares the statement from $format.
-		if ( false === $wpdb->insert( $this->registry->table( Schema::BATCHES ), $data, $format ) ) {
+		if ( 1 !== $wpdb->insert( $this->registry->table( Schema::BATCHES ), $data, $format ) ) {
 			throw new \RuntimeException( 'The batch could not be recorded.' );
 		}
 		return (int) $wpdb->insert_id;
+	}
+
+	/**
+	 * Strict atomic bookkeeping and immutable closure after a definite native outcome.
+	 *
+	 * @param int $batch_id Accepted batch.
+	 * @param array $closure Confirmed item outcome and safe receipt projection.
+	 */
+	public function close_inline( int $batch_id, array $closure ): void {
+		FoundationStorage::atomic(
+			function () use ( $batch_id, $closure ): void {
+				global $wpdb;
+				$this->lock( $batch_id );
+				$batch = $this->find_strict( $batch_id );
+				if ( null === $batch || 'running' !== $batch['status'] || 1 !== ( $batch['selection']['inline_receipt']['version'] ?? null ) || isset( $batch['selection']['inline_receipt']['closure'] ) ) {
+						throw new \RuntimeException( 'Inline closure cannot be replaced.' );
+				}
+				if ( 1 !== $this->mark_items( $batch_id, [ $closure['item_id'] ], $closure['state'], $closure['message'] )
+				|| ! $this->increment_counters( $batch_id, 1, $closure['saved'] ? 1 : 0, 'failed' === $closure['state'] ? 1 : 0 )
+				|| ! $this->transition( $batch_id, 'running', $closure['write_status'] ) ) {
+					throw new \RuntimeException( 'Inline bookkeeping could not be confirmed.' );
+				}
+				$selection                              = $batch['selection'];
+				$selection['inline_receipt']['closure'] = [
+					'write_status' => $closure['write_status'],
+					'steps'        => $closure['steps'],
+				];
+				if ( 1 !== $wpdb->update( $this->registry->table( Schema::BATCHES ), [ 'selection' => self::json( $selection ) ], [ 'batch_id' => $batch_id ], [ '%s' ], [ '%d' ] ) ) {
+					throw new \RuntimeException( 'Inline closure could not be confirmed.' );
+				}
+			}
+		);
 	}
 
 	/**

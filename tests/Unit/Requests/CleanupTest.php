@@ -20,4 +20,12 @@ final class CleanupTest extends TestCase {
 		$this->assertSame( $once, $GLOBALS['bulkcat_test']['scheduled'] );
 		$this->assertCount( 2, $once );
 	}
+	public function test_pruning_includes_only_bounded_inline_refusals_not_accepted_batches(): void {
+		bulkcat_test_reset();
+		( new \BulkCatalogueManager\Requests\RequestRepository() )->prune( 1000 );
+		$sql = end( $GLOBALS['wpdb']->queries );
+		$this->assertStringContainsString( "(result_kind = 'inline_refusal' AND state = 'refused')", $sql );
+		$this->assertStringContainsString( "(result_kind = 'batch' AND state = 'gone')", $sql );
+		$this->assertStringContainsString( 'retain_until <=', $sql );
+	}
 }

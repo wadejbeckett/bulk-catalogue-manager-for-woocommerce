@@ -78,6 +78,12 @@ final class FoundationStorage {
 		return true;
 	}
 
+	/** Require participation, never silently open or commit a nested transaction. */
+	public static function require_transaction(): void {
+		if ( ! self::$active ) {
+			throw new \RuntimeException( 'A foundation transaction is required.' ); }
+	}
+
 	/**
 	 * Own one transaction; no scheduling, hooks or product writes inside it.
 	 *

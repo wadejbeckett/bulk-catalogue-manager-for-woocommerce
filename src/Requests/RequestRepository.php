@@ -84,6 +84,21 @@ final class RequestRepository {
 	}
 
 	/**
+	 * Committed pre-effect refusal, with no values/reasons beyond this bounded classification.
+	 *
+	 * @param array $claims Verified grant, already uniquely claimed in the caller's transaction.
+	 * @param string $reason validation or permission.
+	 */
+	public function refused_inline( array $claims, string $reason ): void {
+		global $wpdb;
+		if ( ! in_array( $reason, [ 'validation', 'permission' ], true ) ) {
+			throw new \InvalidArgumentException( 'Unknown inline refusal.' ); }
+		if ( 1 !== $wpdb->query( $wpdb->prepare( "UPDATE %i SET result_kind = 'inline_refusal', result_id = %s, state = 'refused' WHERE user_id = %d AND uuid = %s AND result_id = ''", Registry::plugin()->table( Schema::REQUESTS ), $reason, $claims['owner'], $claims['uuid'] ) ) ) {
+			throw new \RuntimeException( 'Cannot record inline refusal.' );
+		}
+	}
+
+	/**
 	 * Preserve a missing header's tombstone; an expired grant cannot recreate it.
 	 *
 	 * @param array $claims Verified original grant.
@@ -117,7 +132,7 @@ final class RequestRepository {
 	 */
 	public function prune( int $now ): int {
 		global $wpdb;
-		$result = $wpdb->query( $wpdb->prepare( "DELETE FROM %i WHERE (result_kind = 'snapshot' OR (result_kind = 'batch' AND state = 'gone')) AND retain_until <= %s ORDER BY retain_until LIMIT 100", Registry::plugin()->table( Schema::REQUESTS ), gmdate( 'Y-m-d H:i:s', $now ) ) );
+		$result = $wpdb->query( $wpdb->prepare( "DELETE FROM %i WHERE (result_kind = 'snapshot' OR (result_kind = 'inline_refusal' AND state = 'refused') OR (result_kind = 'batch' AND state = 'gone')) AND retain_until <= %s ORDER BY retain_until LIMIT 100", Registry::plugin()->table( Schema::REQUESTS ), gmdate( 'Y-m-d H:i:s', $now ) ) );
 		return false === $result ? throw new \RuntimeException( 'Request cleanup failed.' ) : (int) $result;
 	}
 }

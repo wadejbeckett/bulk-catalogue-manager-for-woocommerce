@@ -48,7 +48,7 @@ final class RequestsController implements Controller {
 					[
 						'methods'             => 'POST',
 						'callback'            => [ $this, $method ],
-						'permission_callback' => [ Access::class, 'can_write' ],
+						'permission_callback' => [ $this, 'permission' ],
 						'args'                => $this->schema->request_args( 'issue' === $method ) + ( 'resolve' === $method ? [
 							'operation' => [
 								'type' => 'string',
@@ -59,6 +59,16 @@ final class RequestsController implements Controller {
 				]
 			);
 		}
+	}
+
+	/**
+	 * Inline resolution uses disclosure rights; new issuance still requires write rights.
+	 *
+	 * @param \WP_REST_Request $request Transport request.
+	 * @return bool|\WP_Error
+	 */
+	public function permission( \WP_REST_Request $request ): bool|\WP_Error {
+		return 'product.inline' === $request->get_param( 'operation' ) && str_ends_with( $request->get_route(), '/resolve' ) ? Access::can_read() : Access::can_write();
 	}
 
 	/**

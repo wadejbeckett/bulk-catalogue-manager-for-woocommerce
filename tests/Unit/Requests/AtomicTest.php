@@ -28,4 +28,9 @@ final class AtomicTest extends TestCase {
 		$this->assertSame( 5, $GLOBALS['wpdb']->reconnect_retries );
 		$this->assertSame( [ 'START TRANSACTION', 'ROLLBACK' ], $GLOBALS['wpdb']->queries );
 	}
+	public function test_inline_recording_cannot_run_without_its_foundation_transaction(): void {
+		bulkcat_test_reset();
+		$this->expectException( \RuntimeException::class );
+		( new \BulkCatalogueManager\Engine\BatchFactory() )->record_inline( [], [] );
+	}
 }

@@ -142,6 +142,58 @@ final class InlineWrite {
 	 * @throws \InvalidArgumentException On a source outside SOURCES: a programming error.
 	 */
 	public function write( int $id, array $values, string $source, int $user_id, bool $keep_changed_status = false ): array|\WP_Error {
+		$prepared = $this->preflight( $id, $values, $source, $user_id, $keep_changed_status );
+		if ( is_wp_error( $prepared ) ) {
+			return $prepared; }
+		$batch_id = $this->factory->open( $user_id, $prepared['operations'], $prepared['objects'], $source );
+		return is_wp_error( $batch_id ) ? $batch_id : $this->run( $batch_id, $id, $prepared['operations'] );
+	}
+
+	/**
+	 * Live native preflight; receipt transport calls this only after the unique new claim.
+	 *
+	 * @param int $id Object id.
+	 * @param array $values Submitted native values.
+	 * @param string $source Display source.
+	 * @param int $user_id Current owner.
+	 * @param bool $keep_changed_status Obsolete explicit intent.
+	 * @return array|\WP_Error
+	 */
+	public function prepare( int $id, array $values, string $source, int $user_id, bool $keep_changed_status = false ): array|\WP_Error {
+		$editable = $this->actions->fields()->editable();
+		foreach ( $values as $key => $value ) {
+			if ( \BulkCatalogueManager\External\Providers::is_external( (string) $key ) ) {
+				return \BulkCatalogueManager\External\Refusals::not_inline(); }
+			if ( ! isset( $editable[ $key ] ) ) {
+				return \BulkCatalogueManager\Rest\RequestsController::unknown(); }
+			$valid = $editable[ $key ]->validate( $value );
+			if ( is_wp_error( $valid ) ) {
+				return new \WP_Error(
+					'rest_invalid_param',
+					$valid->get_error_message(),
+					[
+						'status' => 400,
+						'params' => [ $key => $valid->get_error_message() ],
+						'field'  => $key,
+					]
+				);
+			}
+			$values[ $key ] = $editable[ $key ]->sanitise( $value );
+		}
+		return $this->preflight( $id, $values, $source, $user_id, $keep_changed_status );
+	}
+
+	/**
+	 * Shared engine preflight, preserving the internal write API's validation contract.
+	 *
+	 * @param int $id Object id.
+	 * @param array $values Native values.
+	 * @param string $source Display source.
+	 * @param int $user_id Current owner.
+	 * @param bool $keep_changed_status Obsolete explicit intent.
+	 * @return array|\WP_Error
+	 */
+	private function preflight( int $id, array $values, string $source, int $user_id, bool $keep_changed_status ): array|\WP_Error {
 		if ( ! in_array( $source, self::SOURCES, true ) ) {
 			throw new \InvalidArgumentException( 'A single-object write is recorded as inline or bulk.' );
 		}
@@ -166,11 +218,72 @@ final class InlineWrite {
 			return $refused;
 		}
 
-		$batch_id = $this->factory->open( $user_id, $operations, $objects, $source );
-		if ( $batch_id instanceof \WP_Error ) {
-			return $batch_id;
+		return [
+			'object_id'  => $id,
+			'source'     => $source,
+			'owner'      => $user_id,
+			'objects'    => $objects,
+			'operations' => $operations,
+		];
+	}
+
+	/**
+	 * Execute only in the original invocation after confirmed acceptance. No replay entry point.
+	 *
+	 * @param int $batch_id Committed batch.
+	 * @param array $prepared Live preflight held only in this invocation.
+	 * @return array|\WP_Error
+	 */
+	public function run_accepted( int $batch_id, array $prepared ): array|\WP_Error {
+		if ( true !== Access::can_write() ) {
+			throw new \RuntimeException( 'Current inline execution rights cannot be confirmed.' );
 		}
-		return $this->run( $batch_id, $id, $operations );
+		$batch = $this->batches->find_strict( $batch_id );
+		if ( null === $batch || get_current_user_id() !== $batch['user_id'] || $batch['user_id'] !== $prepared['owner'] || 'running' !== $batch['status']
+			|| $batch['source'] !== $prepared['source'] || $batch['operations'] !== $prepared['operations'] || [ $prepared['object_id'] ] !== $batch['selection']['ids'] || 1 !== $batch['total_items'] || ( $batch['selection']['inline_receipt']['object_id'] ?? null ) !== $prepared['object_id']
+			|| ! \BulkCatalogueManager\Requests\InlineReceipt::unclosed( $batch ) ) {
+			throw new \RuntimeException( 'Accepted inline identity cannot be confirmed.' );
+		}
+		$receipt = ( new \BulkCatalogueManager\Requests\RequestRepository() )->read( $batch['user_id'], $batch['uuid'] );
+		if ( null === $receipt || 'product.inline' !== $receipt['operation'] || 'accepted' !== $receipt['state'] || 'batch' !== $receipt['result_kind'] || (int) $receipt['result_id'] !== $batch_id ) {
+			throw new \RuntimeException( 'Accepted inline receipt cannot be confirmed.' );
+		}
+		$now   = time();
+		$items = $this->batches->claim_chunk( $batch_id, 1, bin2hex( random_bytes( 16 ) ), gmdate( 'Y-m-d H:i:s', $now ), gmdate( 'Y-m-d H:i:s', $now - BatchRepository::LEASE_SECONDS ) );
+		global $wpdb;
+		if ( '' !== $wpdb->last_error || 1 !== count( $items ) || $items[0]['object_id'] !== $prepared['object_id'] || $items[0]['object_type'] !== $prepared['objects'][0][1] || 1 !== $items[0]['attempts'] || $items[0]['item_id'] < 1 ) {
+			throw new \RuntimeException( 'Exact inline item claim cannot be confirmed.' );
+		}
+		$writer  = Writer::for_batch( $this->actions, Journal::from_settings( $this->actions->fields(), $this->settings(), new ChangeRepository( strict: true ) ), $batch_id );
+		$outcome = $writer->run( static fn( Writer $w ): WriteOutcome => $w->write( $prepared['object_id'], $prepared['operations'], $items[0]['object_type'] ) );
+		foreach ( $outcome->results() as $result ) {
+			// Writer catches save Exceptions: they cannot prove that a save hook had no effects.
+			if ( Writer::SAVE_FAILED === $result->code() ) {
+				throw new \RuntimeException( 'Inline save outcome is uncertain.' ); }
+		}
+		[ $state, $message ] = ChunkRunner::item_state( $outcome );
+		$failed              = 'failed' === $state ? 1 : 0;
+		$status              = ChunkRunner::final_status( 'done' !== $state || '' !== $message ? 1 : 0, $failed, $outcome->saved() ? 1 : 0 );
+		$this->batches->close_inline(
+			$batch_id,
+			[
+				'item_id'      => $items[0]['item_id'],
+				'state'        => $state,
+				'message'      => $message,
+				'saved'        => $outcome->saved(),
+				'write_status' => $status,
+				'steps'        => \BulkCatalogueManager\Requests\InlineReceipt::safe_steps( $outcome ),
+			]
+		);
+		return [
+			'receipt_state' => 'closed',
+			'batch_id'      => $batch_id,
+			'write_status'  => $status,
+			'steps'         => \BulkCatalogueManager\Requests\InlineReceipt::safe_steps( $outcome ),
+			'replayed'      => false,
+			'status'        => $status,
+			'outcome'       => $outcome,
+		];
 	}
 
 	/**

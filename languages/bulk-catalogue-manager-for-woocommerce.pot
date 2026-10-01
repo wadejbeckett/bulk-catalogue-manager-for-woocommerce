@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-10-01T08:02:52+00:00\n"
+"POT-Creation-Date: 2026-10-01T09:02:55+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -265,10 +265,7 @@ msgid_plural "%1$s products: %2$s"
 msgstr[0] ""
 msgstr[1] ""
 
-msgid "This edit stopped before it was saved. Check the product and make the edit again."
-msgstr ""
-
-msgid "This edit stopped before it finished and nothing happened for ten minutes, so it was marked as failed. Check the product and make the edit again if it is not right."
+msgid "This save has no confirmed result yet. Check its result again; it cannot be retried, cancelled or undone while its outcome is uncertain."
 msgstr ""
 
 #. translators: 1: number of products the preview showed; 2: number the change included; 3: the difference.
@@ -1450,10 +1447,16 @@ msgstr ""
 msgid "This request belongs to a different change. Resolve the original change before starting another."
 msgstr ""
 
+msgid "These save instructions are no longer supported. Check the original save result before making another change."
+msgstr ""
+
 msgid "This request cannot be verified. Reload the catalogue before starting a new change."
 msgstr ""
 
 msgid "This operation is not available. Choose a supported catalogue action and try again."
+msgstr ""
+
+msgid "Reload the catalogue before saving so this change can be tracked safely."
 msgstr ""
 
 msgid "This selection is too large. Add a filter to narrow it and try again."
@@ -1463,6 +1466,9 @@ msgid "This change could not be read. Reload the page, preview the change again,
 msgstr ""
 
 msgid "These products or filters could not be selected. Check your selection and try again."
+msgstr ""
+
+msgid "The save result could not be confirmed. Check the original save result before making another change."
 msgstr ""
 
 msgid "The request could not be resolved safely. Retry the same request; if this continues, ask an administrator to check catalogue storage."

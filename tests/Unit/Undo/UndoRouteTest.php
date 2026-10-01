@@ -966,4 +966,31 @@ final class UndoRouteTest extends TestCase {
 		$this->assertNotSame( [], $GLOBALS['bulkcat_test']['products_loaded'] );
 		$this->assertNotSame( [], $journal() );
 	}
+	public function test_closed_inline_receipt_survives_real_undo_execution_unchanged(): void {
+		$closure                         = [
+			'write_status' => 'complete',
+			'steps'        => [
+				[
+					'field' => 'regular_price',
+					'state' => 'changed',
+					'code'  => '',
+				],
+			],
+		];
+		$this->store->batch['selection'] = wp_json_encode(
+			[
+				'inline_receipt' => [
+					'version'   => 1,
+					'object_id' => 1001,
+					'closure'   => $closure,
+				],
+			]
+		);
+		$before                          = \BulkCatalogueManager\Requests\InlineReceipt::read( ( new BatchRepository() )->find( self::BATCH ) );
+		$created                         = $this->undo();
+		$this->assertSame( 'complete', $this->run_batch( $created['batch_id'] ) );
+		$batch = ( new BatchRepository() )->find( self::BATCH );
+		$this->assertSame( 'undone', $batch['status'] );
+		$this->assertSame( $before, \BulkCatalogueManager\Requests\InlineReceipt::read( $batch ) );
+	}
 }

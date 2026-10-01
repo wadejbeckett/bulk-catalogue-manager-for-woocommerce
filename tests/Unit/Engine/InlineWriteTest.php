@@ -429,4 +429,11 @@ final class InlineWriteTest extends TestCase {
 		$this->assertSame( [], $this->store->journal(), 'An unchanged value is not journalled.' );
 		$this->assertSame( [ 1, 0, 0 ], [ $this->store->batch( $result['batch_id'] )['done_items'], $this->store->batch( $result['batch_id'] )['changed_items'], $this->store->batch( $result['batch_id'] )['failed_items'] ] );
 	}
+	public function test_live_prepare_has_no_effects_or_batch_and_retains_exact_scope(): void {
+		$prepared = $this->writes()->prepare( 101, [ 'regular_price' => '21' ], 'bulk', self::USER );
+		$this->assertSame( [ [ 101, 'product' ] ], $prepared['objects'] );
+		$this->assertSame( 'bulk', $prepared['source'] );
+		$this->assertSame( [], $GLOBALS['wpdb']->writes );
+		$this->assertSame( 0, $GLOBALS['bulkcat_test']['products'][101]->saves );
+	}
 }

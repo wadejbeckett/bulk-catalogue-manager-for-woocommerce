@@ -26,6 +26,7 @@ final class RegistryTest extends TestCase {
 		'bulkcat_selection_renew_required'       => 'Selection authorization refusal.',
 		'bulkcat_export_confirm_all'             => 'refusal for a whole-catalogue export without its confirmation; nothing is streamed (CSV export, ticket 10)',
 		'bulkcat_export_unavailable'             => 'refusal when a catalogue export cannot be prepared (a database error before any byte); nothing is streamed',
+		'bulkcat_inline_version'                 => 'refusal of a resend whose signed native payload/write semantics are no longer supported; resolution remains available',
 		'bulkcat_request_conflict'               => 'refusal for an identity bound to different intent',
 		'bulkcat_invalid_request'                => 'refusal for a forged or foreign request proof',
 		'bulkcat_selection_expired'              => 'refusal for a removed membership payload',

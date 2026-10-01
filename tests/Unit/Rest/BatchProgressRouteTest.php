@@ -572,35 +572,25 @@ final class BatchProgressRouteTest extends TestCase {
 		return $store;
 	}
 
-	public function test_a_stale_inline_batch_is_swept_to_failed_on_read(): void {
-		$store = $this->dead_inline_edit();
-
-		$this->now = self::CREATED + 5 + Progress::INLINE_STALE_SECONDS;
+	public function test_a_stale_inline_batch_is_observed_without_timeout_takeover(): void {
+		$store     = $this->dead_inline_edit();
+		$this->now = self::CREATED + 86400;
+		$before    = $store->batch();
 		$report    = $this->ok( self::dispatch( 'GET', '/batches/12' ) );
-		$this->assertSame( 'running', $report['status'], 'Ten minutes exactly is not yet stale.' );
-		$this->assertSame( 'pending', $store->item( 1001 )['state'] );
-
-		$this->now = self::CREATED + 5 + Progress::INLINE_STALE_SECONDS + 1;
-		$report    = $this->ok( self::dispatch( 'GET', '/batches/12' ) );
-		$this->assertSame( 'failed', $report['status'] );
+		$this->assertSame( 'running', $report['status'] );
 		$this->assertFalse( $report['cancellable'] );
-		$this->assertNotNull( $report['finished_gmt'] );
-		$this->assertSame( [ 1, 0, 1, 0 ], [ $report['done_items'], $report['changed_items'], $report['failed_items'], $report['pending_items'] ] );
-		$this->assertStringContainsString( 'marked as failed', $report['note'] );
-		$this->assertStringNotContainsString( 'bulkcat_', $report['note'] );
-		$this->assertSame( 'failed', $store->item( 1001 )['state'] );
-		$this->assertStringContainsString( 'stopped before it was saved', $store->item( 1001 )['message'] );
-		$this->assertSame( [ '1 product: This edit stopped before it was saved. Check the product and make the edit again.' ], array_column( $report['summary'], 'sentence' ) );
-		$this->assertSame( '10.00', number_format( (float) self::price( 1001 ), 2 ), 'Nothing was written to the product.' );
-
-		// A second read changes nothing more.
-		$writes = count( $GLOBALS['wpdb']->writes );
-		$this->ok( self::dispatch( 'GET', '/batches/12' ) );
-		$this->assertCount( $writes, $GLOBALS['wpdb']->writes );
-		$this->assertSame( 1, $store->batch()['failed_items'] );
+		$this->assertFalse( $report['stalled'] );
+		$this->assertSame( 'unclosed', $report['inline_receipt']['receipt_state'] );
+		$this->assertNull( $report['finished_gmt'] );
+		$this->assertSame( 'pending', $store->item( 1001 )['state'] );
+		$this->assertSame( $before, $store->batch() );
+		$cancel = self::dispatch( 'POST', '/batches/12/cancel' );
+		$this->assertInstanceOf( \WP_Error::class, $cancel );
+		$this->assertSame( 'bulkcat_not_cancellable', $cancel->get_error_code() );
+		$this->assertSame( $before, $store->batch() );
 	}
 
-	public function test_only_a_running_inline_batch_is_swept(): void {
+	public function test_history_reads_preserve_every_batch_status(): void {
 		foreach ( [ [ 'running', 'bulk' ], [ 'queued', 'inline' ], [ 'complete', 'inline' ] ] as [ $status, $source ] ) {
 			$store                  = $this->dead_inline_edit();
 			$store->batch['status'] = $status;

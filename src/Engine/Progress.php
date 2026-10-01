@@ -12,6 +12,7 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Engine;
 
+use BulkCatalogueManager\Requests\InlineReceipt;
 use BulkCatalogueManager\Data\BatchRepository;
 use BulkCatalogueManager\Data\ChangeRepository;
 use BulkCatalogueManager\External\Disclosure;
@@ -45,16 +46,13 @@ defined( 'ABSPATH' ) || exit;
  *   "Also apply to variations" added: the snapshot's `selected`), one §4.8 sentence stating both numbers and
  *   the difference; '' otherwise. The history list carries both too.
  *
- * Stale inline batches (T38, from T37): an inline batch is written in the
- * request that opened it, with no runner behind it, so one whose request
- * died stays `running`. Reading it (the progress read or the history list)
- * with no activity for INLINE_STALE_SECONDS (ten minutes) sweeps it: it moves
- * running -> failed, its pending items are marked failed with a plain
- * reason and counted, and its note says why. Nothing else is written.
+ * Inline batches have no background executor. Unclosed receipts (and legacy
+ * unfinished inline batches) stay uncertain regardless of age: reads cannot
+ * fail, cancel, queue or undo them. Only the original invocation may finish.
  *
  * - `reversibility` (T54, §4.6): `{ state, conflicts, reason }` from
- *   Reversibility, computed after the sweep so a swept batch reads as
- *   finished; reports() answers a page of the history list with one grouped
+ *   Reversibility, overridden to in_progress for unclosed inline work;
+ *   reports() answers a page of history with one grouped
  *   pair of reads for every row's state and no plan (`conflicts: null`,
  *   T56), and report() counts the one batch's conflicts with the planner.
  *   `actions` lists the action ids the batch's operations use, for the
@@ -171,8 +169,7 @@ final class Progress {
 	 * @return list<array<string, mixed>>
 	 */
 	public function reports( array $batches ): array {
-		$batches = array_map( [ $this, 'sweep' ], $batches );
-		$states  = $this->reversibility->for_page( $batches );
+		$states = $this->reversibility->for_page( $batches );
 		return array_map( fn( array $batch ): array => $this->report_for( $batch, false, $states[ $batch['batch_id'] ] ), $batches );
 	}
 
@@ -186,12 +183,12 @@ final class Progress {
 	 * @return array<string, mixed>
 	 */
 	public function report_for( array $batch, bool $summary = true, ?array $reversibility = null, bool $count = false ): array {
-		$batch   = $this->sweep( $batch );
-		$active  = in_array( $batch['status'], self::ACTIVE, true );
-		$pending = $active ? $this->batches->count_items( $batch['batch_id'], 'pending' ) : 0;
-		$last    = $active ? $this->last_activity( $batch ) : null;
-		$stalled = $active && $pending > 0 && null !== $last && self::seconds( $last ) < (int) ( $this->clock )() - self::STALL_SECONDS;
-		$report  = [
+		$unclosed = InlineReceipt::unclosed( $batch );
+		$active   = in_array( $batch['status'], self::ACTIVE, true );
+		$pending  = $active ? $this->batches->count_items( $batch['batch_id'], 'pending' ) : 0;
+		$last     = $active ? $this->last_activity( $batch ) : null;
+		$stalled  = ! $unclosed && $active && $pending > 0 && null !== $last && self::seconds( $last ) < (int) ( $this->clock )() - self::STALL_SECONDS;
+		$report   = [
 			'batch_id'             => $batch['batch_id'],
 			'status'               => $batch['status'],
 			'source'               => $batch['source'],
@@ -208,7 +205,7 @@ final class Progress {
 			'note'                 => $batch['note'],
 			// An add-on's own argument values only for a reader holding the step's capability (EXTENSIONS §18.20).
 			'operations'           => Disclosure::operations( $batch['operations'], get_current_user_id(), $this->providers ??= Actions::instance()->providers() ),
-			'cancellable'          => $active,
+			'cancellable'          => $active && ! InlineReceipt::is_inline( $batch ),
 			'stalled'              => $stalled,
 			'stalled_message'      => $stalled ? self::stalled_message() : '',
 			'last_activity_gmt'    => $last,
@@ -216,9 +213,29 @@ final class Progress {
 			// The selection's own objects, before any variations "Also apply to variations" added (T69).
 			'selection_difference' => self::difference( $batch['previewed_items'] ?? null, (int) ( $batch['selection']['selected'] ?? $batch['total_items'] ) ),
 			'actions'              => $batch['actions'] ?? [],
-			'reversibility'        => $reversibility ?? ( $count ? $this->reversibility->of( $batch ) : $this->reversibility->for_page( [ $batch ] )[ $batch['batch_id'] ] ),
+			'reversibility'        => $unclosed ? [
+				'state'     => 'in_progress',
+				'conflicts' => null,
+				'reason'    => null,
+			] : ( $reversibility ?? ( $count ? $this->reversibility->of( $batch ) : $this->reversibility->for_page( [ $batch ] )[ $batch['batch_id'] ] ) ),
 			'undo'                 => self::undo_summary( $batch ),
 		];
+		if ( array_key_exists( 'inline_receipt', $batch['selection'] ) || $unclosed ) {
+			$id     = (int) ( $batch['selection']['inline_receipt']['object_id'] ?? $batch['selection']['ids'][0] ?? 0 );
+			$post   = $id > 0 ? get_post( $id ) : null;
+			$parent = is_object( $post ) && 'product_variation' === $post->post_type ? (int) $post->post_parent : 0;
+			if ( ! isset( $batch['selection']['inline_receipt'] ) || ( get_current_user_id() === $batch['user_id'] && true === \BulkCatalogueManager\Rest\Access::can_read() && true === \BulkCatalogueManager\Rest\Access::can_edit_object( $id, $parent ) ) ) {
+				$report['inline_receipt'] = InlineReceipt::read( $batch );
+			}
+		}
+		if ( $unclosed ) {
+			$report['reversibility'] = [
+				'state'     => 'in_progress',
+				'conflicts' => null,
+				'reason'    => null,
+			];
+			$report['note']          = self::uncertain_message();
+		}
 		if ( is_array( $batch['extensions'] ?? null ) ) {
 			// T108: an external change's add-on and labels, from its manifest; absent for a native change.
 			$report['external'] = \BulkCatalogueManager\External\Manifest::client( $batch['extensions'] );
@@ -361,6 +378,8 @@ final class Progress {
 		if ( null === $batch ) {
 			return 'missing';
 		}
+		if ( InlineReceipt::unclosed( $batch ) ) {
+			return 'unclosed'; }
 		// Each move is conditional on the status read; a batch that started meanwhile is caught by the second.
 		if ( 'queued' === $batch['status'] ) {
 			$this->batches->transition( $batch_id, 'queued', 'cancelled' );
@@ -377,33 +396,9 @@ final class Progress {
 		return 'cancelled' === $batch['status'] ? $this->report_for( $batch ) : 'finished';
 	}
 
-	/**
-	 * A running inline batch with no activity for INLINE_STALE_SECONDS, given
-	 * up on: moved to failed (only if still running), its pending items
-	 * failed with a plain reason and counted, and a note saying why. Any other
-	 * batch is answered as it is.
-	 *
-	 * @param array<string, mixed> $batch Typed batch row.
-	 * @return array<string, mixed> The row as it stands after the sweep.
-	 */
-	private function sweep( array $batch ): array {
-		if ( 'running' !== $batch['status'] || 'inline' !== $batch['source'] ) {
-			return $batch;
-		}
-		$last = $this->last_activity( $batch );
-		if ( null === $last || self::seconds( $last ) >= (int) ( $this->clock )() - self::INLINE_STALE_SECONDS ) {
-			return $batch;
-		}
-		$batch_id = $batch['batch_id'];
-		if ( ! $this->batches->transition( $batch_id, 'running', 'failed' ) ) {
-			return $this->batches->find( $batch_id ) ?? $batch;
-		}
-		$failed = $this->batches->fail_pending( $batch_id, __( 'This edit stopped before it was saved. Check the product and make the edit again.', 'bulk-catalogue-manager-for-woocommerce' ) );
-		if ( $failed > 0 ) {
-			$this->batches->increment_counters( $batch_id, $failed, 0, $failed );
-		}
-		$this->batches->record_note( $batch_id, __( 'This edit stopped before it finished and nothing happened for ten minutes, so it was marked as failed. Check the product and make the edit again if it is not right.', 'bulk-catalogue-manager-for-woocommerce' ) );
-		return $this->batches->find( $batch_id ) ?? $batch;
+	/** A timeout cannot establish that a synchronous invocation has stopped. */
+	public static function uncertain_message(): string {
+		return __( 'This save has no confirmed result yet. Check its result again; it cannot be retried, cancelled or undone while its outcome is uncertain.', 'bulk-catalogue-manager-for-woocommerce' );
 	}
 
 	/**

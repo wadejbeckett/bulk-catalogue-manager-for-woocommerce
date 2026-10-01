@@ -307,6 +307,7 @@ final class BatchesController implements ReadController {
 				'created_gmt'  => $text,
 				'finished_gmt' => $time,
 			] + $counters + [
+				'inline_receipt'       => \BulkCatalogueManager\Requests\InlineReceipt::schema(),
 				'note'                 => $text,
 				'operations'           => [
 					'type'  => 'array',
@@ -637,6 +638,9 @@ final class BatchesController implements ReadController {
 		$result = $this->progress->cancel( (int) $request->get_param( 'id' ) );
 		if ( 'missing' === $result ) {
 			return self::not_found();
+		}
+		if ( 'unclosed' === $result ) {
+			return Refusal::create( self::NOT_CANCELLABLE, Progress::uncertain_message(), 409 );
 		}
 		if ( 'finished' === $result ) {
 			return Refusal::create(

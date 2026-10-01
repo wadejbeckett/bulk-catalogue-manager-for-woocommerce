@@ -643,6 +643,35 @@ final class BatchFactory {
 	}
 
 	/**
+	 * Record a prepared native one-item identity in the caller's foundation transaction.
+	 * No product writes, validation, scheduling or hooks occur here.
+	 *
+	 * @param array $claims Verified uniquely claimed grant.
+	 * @param array $prepared Live prepared scope.
+	 */
+	public function record_inline( array $claims, array $prepared ): int {
+		\BulkCatalogueManager\Data\FoundationStorage::require_transaction();
+		if ( count( $prepared['objects'] ) !== 1 || $prepared['objects'][0][0] !== $prepared['object_id'] || $prepared['owner'] !== $claims['owner'] ) {
+			throw new \InvalidArgumentException( 'Inline acceptance needs exactly one owned object.' );
+		}
+		$selection = [
+			'kind'           => 'ids',
+			'ids'            => [ $prepared['object_id'] ],
+			'count'          => 1,
+			'materialised'   => 1,
+			'inline_receipt' => [
+				'version'   => 1,
+				'object_id' => $prepared['object_id'],
+			],
+		];
+		$id        = $this->batches->create( $claims['uuid'], $claims['owner'], $prepared['source'], $prepared['operations'], $selection, 1 );
+		if ( $id < 1 || 1 !== $this->batches->materialise_items( $id, $prepared['objects'] ) || ! $this->batches->transition( $id, 'queued', 'running' ) ) {
+			throw new \RuntimeException( 'Cannot record exact inline acceptance.' );
+		}
+		return $id;
+	}
+
+	/**
 	 * A tree batch's steps as given: a non-empty list of `{ action, args }`
 	 * steps over term items only.
 	 *

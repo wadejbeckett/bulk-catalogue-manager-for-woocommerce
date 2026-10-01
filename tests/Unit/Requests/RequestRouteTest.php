@@ -19,7 +19,8 @@ final class RequestRouteTest extends TestCase {
 		$this->assertNotEmpty( $registered );
 		foreach ( [ '/bulkcat/v1/requests', '/bulkcat/v1/requests/resolve' ] as $route ) {
 			$this->assertArrayHasKey( $route, $registered );
-			$this->assertSame( [ Access::class, 'can_write' ], $registered[ $route ][0]['permission_callback'] );
+			$this->assertInstanceOf( \WP_Error::class, call_user_func( $registered[ $route ][0]['permission_callback'], new \WP_REST_Request( 'POST', $route ) ) );
+			$this->assertContains( 'product.inline', $registered[ $route ][0]['args']['operation']['enum'] );
 		}
 		$this->assertInstanceOf( \WP_Error::class, Access::can_write() );
 	}

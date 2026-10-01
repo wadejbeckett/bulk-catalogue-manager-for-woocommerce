@@ -11,6 +11,7 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Undo;
 
+use BulkCatalogueManager\Requests\InlineReceipt;
 use BulkCatalogueManager\Availability\OffRecord;
 use BulkCatalogueManager\Availability\StatusSwitch;
 use BulkCatalogueManager\Data\BatchRepository;
@@ -430,6 +431,9 @@ final class Planner {
 	 * @param array<string, mixed> $batch The batch row.
 	 */
 	private function refusal( array $batch ): ?\WP_Error {
+		if ( InlineReceipt::unclosed( $batch ) ) {
+			return self::not_reversible( self::IN_PROGRESS, \BulkCatalogueManager\Engine\Progress::uncertain_message() );
+		}
 		if ( 'undoing' === $batch['status'] ) {
 			return self::not_reversible( self::UNDO_IN_PROGRESS, self::undoing_sentence() );
 		}

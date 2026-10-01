@@ -109,6 +109,32 @@ Site: WordPress <x.y.z>, WooCommerce <x.y.z>, PHP <x.y>, <MySQL or MariaDB x.y>
 
 ## Releases
 
+### 1.1.1 — 1 October 2026 — private category-feedback update
+
+This scoped update packages accepted category-feedback source/assets at
+`2ce4f314af4952ede303d798d139c5208a337a94`, with release metadata only.
+It changes category creation/readback notices, read-only refresh retries,
+keyboard focus and announcement lifecycle. Backend visibility restrictions
+remain outside this patch. Schema 8, server write behavior and extension
+contract 1 are unchanged; optional providers keep their existing integration.
+
+Retained accepted qualification: 25 native browser cases, 93 affected JS tests,
+18 post-lint creation-flow checks and independent scoped review with no open
+findings. Those are prior results on the identical shipped functional assets,
+not newly repeated suites. Fresh release Plugin/Assets/I18n checks passed
+29 tests / 499 assertions; Composer validation passes with only its existing
+explicit-version advisory. The native-tested build is preserved through the
+supported `BULKCAT_SKIP_BUILD=1` archive path. No new hosted CI matrix, broad
+lifecycle suite or live category-write test is claimed for this private patch.
+
+The operator records final ZIP identity, current-install backup, native upgrade,
+installed-file/owner/version/schema checks and site smoke results separately.
+File rollback restores the freshly backed-up 1.1.0 plugin after checking for
+active manager work; retain the database and later product edits. No new
+Status/receipt format or unfinished SDK implementation is included.
+No public release, directory submission or main-branch merge is performed.
+
+
 ### 1.1.0 — 30 September 2026 — private installation candidate
 
 Performed by: Codex. Functional runtime: `a7291ac`; integration fixture fixes:

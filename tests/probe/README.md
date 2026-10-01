@@ -135,6 +135,51 @@ terms in `finally`, child before parent, and checks no matching terms remain.
 The native audit journal is retained in the disposable fixture. Preserve failure
 traces privately: they may contain the synthetic fixture's login cookies.
 
+## Individual save reconciliation (delivery 18)
+
+`tests/e2e/single-save-refresh.spec.js` qualifies ordinary native PATCH,
+current-query reads and History Undo on an explicitly assigned local fixture.
+Use a Playwright configuration with **no global setup, stored login state or
+reseed**, one worker and zero automatic retries. Set `BULKCAT_E2E_FIXTURE=1`,
+`BULKCAT_E2E_BASE_URL`, matching `WP_CMD`, and a fresh private
+`BULKCAT_E2E_OWNED_EVIDENCE` directory. Run the spec at desktop 1440×900 and
+narrow 720×900. Do not run the default suite's setup against a retained fixture.
+
+The harness creates a UUID administrator, WC CRUD products/variations and
+per-user saved views. It freezes source/build hashes and native versions,
+records three Hidden-to-shown saves with exact unrelated selection, then runs
+the inverse filter, keyboard/focus, Shop/Search partial display, boolean
+Featured, variation applicability, native Undo and bulk-one Preview → Apply.
+Each response delay or transport failure is labelled separately: query change
+while a native PATCH response is held; aborted list GET after confirmed PATCH;
+and a native accepted PATCH whose response is discarded. Permission refusal
+uses a temporary denied capability on the UUID user only. No installed test
+helper, global queue drain or site settings change is needed.
+
+Timing starts immediately before Playwright clicks, records PATCH and list GET
+request/response events and the assertion-observed draw, then observes another
+1000 ms for extra requests. `BULKCAT_SINGLE_SAVE_BASELINE=1` is only for the
+prechange characterization (select the three-save test with `--grep`); it
+expects the stale row. Response intervals include transport/server work and
+are not server profiling. Compare the same journey on the same fixture; do not
+infer real-host latency or a speed improvement from corrected list membership.
+
+Cleanup reads exact owned IDs, checks UUID ownership before deletion, removes
+only their products/user and that user's auto-drafts, and compares the retained
+product/metadata/terms/relationships/users/configuration baseline. Saved views
+are owned user metadata. Audit/request/selection records and counters remain
+as evidence, so this is not whole-database equality. Preserve every failure,
+JSON manifest, screenshot and cleanup comparison in its original directory.
+
+Ordinary PATCH has no durable receipt. A matching current value cannot attribute
+a lost mutation. The open catalogue blocks blind retry and offers read-only
+recovery; navigation/reload does not provide durable mutation recovery. The
+controller owns whole-ticket acceptance and final review. The lost-response
+case preserves raw axe and computed-style evidence. If the original result has
+a contrast violation, a browser-only opacity counterfactual is recorded, every
+original inline style is restored, and the test still asserts the original
+result. This diagnostic cannot turn a failing native assertion into a pass.
+
 ## Performance (T76)
 
 `perf.py` measures SPEC §12.5 on the scale catalogue and exits 1 when a

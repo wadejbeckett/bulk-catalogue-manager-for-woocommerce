@@ -2,6 +2,39 @@
 
 Ordered; each ticket is independently mergeable and ends with tests green. "Probe" means `tests/probe/probe.py` from T10, which every later ticket extends with its own surfaces. Update this file as tickets close.
 
+### Delivery follow-up 18 — individual-save native qualification (2026-10-01; Task 2)
+
+All eight native journeys have passing desktop and narrow evidence across scoped
+runs: both listing-filter directions, supported History Undo, exact unrelated
+selection, Shop/Search partial state and boolean Featured, variation applicability,
+changed query during save, confirmed-save read failure and GET-only recovery,
+unconfirmed transport outcome with no blind retry, bulk-one Preview → Apply and
+native capability refusal. Earlier failures and each source/cleanup manifest are
+retained; this is not a claim of a repeated full final suite.
+
+Native axe exposed a persistent held-row name-link contrast failure. An
+opacity-only browser counterfactual proved the cause while retaining the original
+failing assertion. The authorised source correction removes opacity from
+`.bulkcat-cell.is-pending`, retaining its interaction guard and disabled controls.
+The original axe check now passes at both widths with the uncertainty lock intact.
+Covering checks: 31 JS tests, Assets/I18n 20 tests / 96 assertions, JS lint and build
+pass. The changed style rule passes; the whole stylesheet retains three identical
+pre-existing spacing errors. Generated assets remain controller-owned.
+
+On the local fixture, three final-build saves each sent one PATCH and one list
+GET, removed the row and retained exact selection. Median observed completion was
+429.4 ms, including median PATCH and GET waits of 169.3 and 129.6 ms. The prechange
+median was 218.7 ms for switch feedback while the row incorrectly remained, with
+no list GET. These different correctness endpoints establish the missing refresh
+and its repair, not a speed improvement or real-host latency. UUID cleanup
+restored the retained baseline after every run.
+
+Ordinary PATCH still has no durable receipt: matching readback cannot attribute a
+lost mutation, and navigation/reload is not durable recovery. Controller criterion
+ruling, receipt follow-up, real-host acceptance and final review remain separate.
+Task 2 does not mark all delivery ticket 18 accepted. Reproduction and limits are
+documented in `tests/probe/README.md` and SPEC §4.1.
+
 ### Delivery follow-up 14 — native archive and release qualification (2026-10-01; Task 5)
 
 Tasks 1–4 and their integrated native Status runtime/build are independently

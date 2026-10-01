@@ -158,7 +158,7 @@
 }
 
 .bulkcat-cell.is-pending {
-	opacity: 0.55;
+	// Keep text readable while saving or holding an unconfirmed outcome.
 	pointer-events: none;
 }
 

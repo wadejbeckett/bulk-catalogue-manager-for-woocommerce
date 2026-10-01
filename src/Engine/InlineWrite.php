@@ -168,14 +168,10 @@ final class InlineWrite {
 				return \BulkCatalogueManager\Rest\RequestsController::unknown(); }
 			$valid = $editable[ $key ]->validate( $value );
 			if ( is_wp_error( $valid ) ) {
-				return new \WP_Error(
-					'rest_invalid_param',
+				return Refusal::native_validation(
 					$valid->get_error_message(),
-					[
-						'status' => 400,
-						'params' => [ $key => $valid->get_error_message() ],
-						'field'  => $key,
-					]
+					[ $key => $valid->get_error_message() ],
+					$key
 				);
 			}
 			$values[ $key ] = $editable[ $key ]->sanitise( $value );
@@ -253,6 +249,14 @@ final class InlineWrite {
 		global $wpdb;
 		if ( '' !== $wpdb->last_error || 1 !== count( $items ) || $items[0]['object_id'] !== $prepared['object_id'] || $items[0]['object_type'] !== $prepared['objects'][0][1] || 1 !== $items[0]['attempts'] || $items[0]['item_id'] < 1 ) {
 			throw new \RuntimeException( 'Exact inline item claim cannot be confirmed.' );
+		}
+		// Preflight may have primed this PHP process before acceptance waited.
+		// Only the confirmed original executor may reload current native state.
+		clean_post_cache( $prepared['object_id'] );
+		$post = get_post( $prepared['object_id'] );
+		if ( $post && 'product_variation' === $post->post_type && $post->post_parent > 0 ) {
+			// Native variation reads also consume the current parent's post/meta/terms.
+			clean_post_cache( (int) $post->post_parent );
 		}
 		$writer  = Writer::for_batch( $this->actions, Journal::from_settings( $this->actions->fields(), $this->settings(), new ChangeRepository( strict: true ) ), $batch_id );
 		$outcome = $writer->run( static fn( Writer $w ): WriteOutcome => $w->write( $prepared['object_id'], $prepared['operations'], $items[0]['object_type'] ) );

@@ -52,7 +52,7 @@ final class InlineReceiptTest extends TestCase {
 				'values'    => $values,
 			]
 		);
-		$this->assertIsArray( $grant, is_wp_error( $grant ) ? $grant->get_error_message() : '' );
+		$this->assertTrue( is_array( $grant ), is_wp_error( $grant ) ? $grant->get_error_message() : '' );
 		return $grant;
 	}
 
@@ -70,7 +70,7 @@ final class InlineReceiptTest extends TestCase {
 		$values = [ 'sale_price' => '15' ];
 		$grant  = $this->grant( $values );
 		$first  = $this->save( $grant, $values );
-		$this->assertIsArray( $first );
+		$this->assertTrue( is_array( $first ) );
 		$this->assertSame( 'closed', $first['receipt_state'] );
 		$queries                                = count( $GLOBALS['wpdb']->queries );
 		$native->stored->props['regular_price'] = '10';

@@ -171,14 +171,113 @@ are owned user metadata. Audit/request/selection records and counters remain
 as evidence, so this is not whole-database equality. Preserve every failure,
 JSON manifest, screenshot and cleanup comparison in its original directory.
 
-Ordinary PATCH has no durable receipt. A matching current value cannot attribute
-a lost mutation. The open catalogue blocks blind retry and offers read-only
-recovery; navigation/reload does not provide durable mutation recovery. The
+Historical boundary at native18 Task2 (`1beb2bc`, before the receipt follow-up):
+ordinary PATCH had no durable receipt. The open catalogue blocked blind retry
+and offered read-only recovery; navigation/reload did not recover mutation
+identity. This limitation is superseded by the `product.inline` receipt protocol
+at `8115314`/`d2e570b` and the qualification below. A matching current value alone
+still cannot attribute a lost mutation. The
 controller owns whole-ticket acceptance and final review. The lost-response
 case preserves raw axe and computed-style evidence. If the original result has
 a contrast violation, a browser-only opacity counterfactual is recorded, every
 original inline style is restored, and the test still asserts the original
 result. This diagnostic cannot turn a failing native assertion into a pass.
+
+## Native single-save receipts (delivery 18, receipt Task 3)
+
+Run `tests/e2e/inline-receipts.spec.js` only after an exclusive controller
+allocation of an existing local fixture, its WP-CLI wrapper and a new private
+evidence/configuration directory. Read Ops safeguards and that fixture's README.
+Use one worker, zero retries, no global setup/storageState, and desktop 1440×900
+plus narrow 720×900. No fixture setup, plugin installation or queue drain:
+
+```sh
+BULKCAT_E2E_FIXTURE=1 BULKCAT_E2E_BASE_URL="$ASSIGNED_URL" \
+WP_CMD="$ASSIGNED_WP_CMD" BULKCAT_E2E_OWNED_EVIDENCE="$RECEIPT_EVIDENCE/run-1" \
+node_modules/.bin/playwright test -c "$RECEIPT_PRIVATE_CONFIG" \
+  tests/e2e/inline-receipts.spec.js
+```
+
+Give **every invocation a fresh evidence subdirectory**, including failed runs,
+and derive the private Playwright `outputDir` from that directory. Preserve the
+original controller configuration before editing it. Run the accepted
+`single-save-refresh.spec.js` separately with the same guards/configuration;
+its receipt-aware transport assertions do not replace its earlier acceptance.
+
+`inline-receipts.php` is loaded through the existing wrapper's `wp eval`. Input
+is `$bulkcat_receipt_args = {run: UUID-v4, siteurl: exact assigned URL, phase}`.
+The only phases are `inspect`, `before`, `assert`, `cleanup`. `before` accepts an
+in-memory random password and emits the original `bulkcat_native_baseline`, then
+each owned user/product ID immediately after creation. `assert` and `cleanup`
+require that exact `user` and `ids` list; UUID markers are rechecked before work.
+`assert` selects bounded actions: owned REST dispatch, observation, capability
+revocation/restoration, one owned competing CRUD write, exact queue delivery and
+History/Undo refusal checks, same-user process observation, or exact owned
+receipt removal. The last action simulates missing retention data; it does not
+exercise the global pruning scheduler. All product changes use native CRUD.
+
+The browser cases send real authenticated Apache HTTP requests and discard only
+a completed PATCH reply. They verify read-only automatic/reload recovery, safe
+sessionStorage, native controls/keyboard/axe, exact unrelated selection, one
+request/grant/batch/item and no inline queue actions. Timings begin before the
+Save activation and include grant issuance, PATCH, recovery and current reads.
+The browser-loaded WordPress api-fetch test uses a genuinely invalid nonce with
+an ordinary concurrent request. No production latency is inferred.
+
+Separate instrumented WP-CLI processes call actual registered REST controllers,
+repositories, SQL and WooCommerce hooks. They are **not Apache HTTP requests**.
+They count `woocommerce_after_product_object_save` and `post_updated` for exact
+owned IDs and qualify concurrent unique claims, committed acceptance before
+execution, mid-write death after native save/before journal settlement, delayed
+completion, partial/pre-effect outcomes and receipt/capability/payload fences.
+The partial regression lowers regular price through a second native CRUD process
+after acceptance; the variation regression changes only its current parent tax
+status. They qualify per-object pre-Writer cache refresh, not serializable edits
+or protection against a later concurrent write. No global cache flush is used.
+The browser HTTP batch/journal evidence must not be relabelled as an HTTP hook
+counter: hook counts belong to these explicitly identified native processes.
+
+Barriers emit process/container/connection IDs and wait at most 45 seconds for
+`release\n` on STDIN. A death case sends SIGKILL only after inspecting the exact
+auto-removing CLI container created by the assigned wrapper; shared WordPress
+and database services are never killed. Same-user `SHOW PROCESSLIST` is projected
+to the two owned IDs, command, state, seconds and observation time, without SQL.
+Keep its actual server state (for example `Update`); do not translate elapsed
+time into an unobserved `LOCK WAIT`. The separate claim statement timing and
+barriers establish additional ordering, not extra database privileges.
+
+The COMMIT fault uses a single-client TCP proxy child inside that same ephemeral
+CLI container, listening only on its private loopback with an OS-assigned port.
+Only the original process's database connection is redirected. It forwards the
+real MySQL protocol, observes the server's COMMIT OK packet, then closes both
+sockets **without forwarding that acknowledgement to mysqli**. It records only
+packet size/sequence/time through an inherited observation descriptor, never
+wire/SQL/credential payloads. Native wpdb can exit before later PHP shutdown
+handlers execute: record that original exit (observed 1), do not invent a child
+exit status, and prove the exact auto-removing container is gone.
+No invalid SQL, substituted database return or thrown save exception stands in
+for this boundary. Failure to observe the real packet leaves that gate unproved.
+No new retained service, host listener or database setting is needed.
+
+Private JSON is the ownership and reversal record: source/build/native hashes,
+versions, UUID IDs, phase events, command/process exits, outcomes, timings and
+cleanup. Signed grants may occur there; no private JSON, login material or
+browser artifacts belong in Git or a public report. Credentials remain in test
+memory. Cleanup waits for/reaps or terminates every exact owned process before
+removing products and the account/sessions/views/auto-drafts. It compares the
+original protected baseline and source identity; plugin audit/receipt records
+remain evidence, so this is not whole-database equality. On interrupted cleanup,
+use the recorded UUID and exact IDs, preserve its failed record, then save the
+recovered comparison separately. Do not repair a mismatch by resetting the site.
+
+Finish all native/browser processes and cleanup **before** a genuine no-vendor
+run. Check actual owned CLI/proxy children through their exact host cgroups and
+owned browser descendants through the inherited evidence-directory marker; a
+Docker/Playwright parent exit alone is not the cleanup proof. Preserve the
+process audit, UUID cleanup and protected baseline comparison before isolation. `composer test:standalone` otherwise delegates to installed PHPUnit. Use an
+external dependency backup, a restoration trap and a before/after file manifest;
+never place dependency copies in an unignored repository directory. Preserve the
+expected unavailable-POT-tooling skip separately from passing assertions.
 
 ## Performance (T76)
 

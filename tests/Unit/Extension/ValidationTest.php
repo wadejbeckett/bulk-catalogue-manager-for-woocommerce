@@ -37,6 +37,7 @@ use BulkCatalogueManager\Tests\Support\Extension\SampleStoreField;
 use PHPUnit\Framework\TestCase;
 
 require_once dirname( __DIR__, 2 ) . '/Support/Extension/load.php';
+require_once dirname( __DIR__ ) . '/Engine/InlineStore.php';
 
 final class ValidationTest extends TestCase {
 	private const USER = 7;
@@ -400,13 +401,44 @@ final class ValidationTest extends TestCase {
 			'edit_products'      => true,
 			'edit_post'          => true,
 		];
-		$request                         = new \WP_REST_Request( 'PATCH', '/bulkcat/v1/products/101' );
+		$store                           = new \BulkCatalogueManager\Tests\Unit\Engine\InlineStore();
+		$store->enable_receipts();
+		$product                                  = new \BulkCatalogueManager\Tests\Unit\Engine\StoredProduct(
+			'simple',
+			[
+				'id'            => 101,
+				'regular_price' => '20',
+			]
+		);
+		$GLOBALS['bulkcat_test']['products'][101] = $product;
+		$external                                 = new MemoryStore();
+		$actions                                  = new Actions( new Fields(), null, Providers::of( [ new SampleProvider( $external ) ] ) );
+		$grant                                    = ( new \BulkCatalogueManager\Requests\RequestService() )->issue(
+			'product.inline',
+			[
+				'object_id' => 101,
+				'source'    => 'inline',
+				'values'    => [ 'x_sample_labels' => [ 'red' ] ],
+			]
+		);
+		$this->assertTrue( is_array( $grant ), 'Issue the signed original payload before testing its native refusal.' );
+		$request = new \WP_REST_Request( 'PATCH', '/bulkcat/v1/products/101' );
+		foreach ( [ 'uuid', 'request_proof', 'intent' ] as $key ) {
+			$request->set_param( $key, $grant[ $key ] );
+		}
 		$request->set_param( 'id', 101 );
 		$request->set_param( 'x_sample_labels', [ 'red' ] );
-		$answer = ( new ProductWriteController( new Fields(), self::actions() ) )->update_item( $request );
+		$answer = ( new ProductWriteController( new Fields(), $actions ) )->update_item( $request );
 		$this->assertInstanceOf( \WP_Error::class, $answer );
 		$this->assertSame( 'bulkcat_external_not_inline', $answer->get_error_code() );
 		$this->assertSame( 400, $answer->get_error_data()['status'] );
+		$this->assertSame( 0, $product->saves );
+		$this->assertSame( [], $external->writes );
+		$this->assertSame( [], SampleProvider::$computed );
+		$this->assertSame( [], SampleProvider::$flushed );
+		$this->assertSame( [], $store->batches );
+		$this->assertSame( [], $store->items );
+		$this->assertSame( [], $store->changes );
 	}
 
 	public function test_a_canonical_intent_with_external_steps_is_checked_for_shape_only(): void {

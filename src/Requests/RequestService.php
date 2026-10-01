@@ -304,15 +304,7 @@ final class RequestService {
 				if ( is_wp_error( $accepted ) ) {
 					return $accepted; }
 				if ( isset( $accepted['refusal'] ) ) {
-						$error = $accepted['refusal'];
-						return new \WP_Error(
-							$error->get_error_code(),
-							$error->get_error_message(),
-							$error->get_error_data() + [
-								'receipt_state' => 'refused',
-								'replayed'      => false,
-							]
-						);
+					return Refusal::committed_inline( $accepted['refusal'] );
 				}
 				if ( ! $accepted['new_acceptor'] ) {
 					return $accepted['receipt']; }

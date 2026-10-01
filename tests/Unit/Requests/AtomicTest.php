@@ -30,7 +30,11 @@ final class AtomicTest extends TestCase {
 	}
 	public function test_inline_recording_cannot_run_without_its_foundation_transaction(): void {
 		bulkcat_test_reset();
-		$this->expectException( \RuntimeException::class );
-		( new \BulkCatalogueManager\Engine\BatchFactory() )->record_inline( [], [] );
+		try {
+			( new \BulkCatalogueManager\Engine\BatchFactory() )->record_inline( [], [] );
+			$this->fail( 'Inline recording without a transaction was accepted.' );
+		} catch ( \RuntimeException $error ) {
+			$this->assertSame( 'A foundation transaction is required.', $error->getMessage() );
+		}
 	}
 }

@@ -274,6 +274,7 @@
 }
 
 @keyframes bulkcat-shimmer {
+
 	0% {
 		background-position: 100% 50%;
 	}
@@ -330,6 +331,7 @@
 }
 
 @media (min-width: 961px) {
+
 	.folded .bulkcat-catalogue {
 		--bulkcat-slide-over: clamp(480px, calc(100vw - 36px - 380px), 860px);
 	}
@@ -340,6 +342,7 @@
 // the selection line's Select all link under the panel's edge), and the rows
 // the change is for stay in view (SPEC §4.3).
 @media (min-width: 783px) {
+
 	.bulkcat-catalogue__body.has-slide-over {
 		flex-direction: column;
 		align-items: stretch;

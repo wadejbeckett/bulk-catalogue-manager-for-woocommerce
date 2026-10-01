@@ -775,13 +775,27 @@ test( 'confirmed native PATCH then failed list read recovers with GET only', asy
 	} );
 } );
 
-test( 'lost native PATCH response remains unconfirmed after matching readback, no blind retry', async ( {
+test( 'lost native PATCH response adopts its durable receipt without blind retry', async ( {
 	page,
 }, info ) => {
 	const product = makeOwned();
 	await openOwned( page );
 	const requests = [];
 	let native;
+	let holdResolution = true;
+	await page.route(
+		( url ) =>
+			decodeURIComponent( url.toString() ).includes(
+				'bulkcat/v1/requests/resolve'
+			),
+		async ( route ) => {
+			if ( holdResolution ) {
+				await route.abort( 'connectionreset' );
+			} else {
+				await route.continue();
+			}
+		}
+	);
 	await page.route( productRoute, async ( route ) => {
 		requests.push( {
 			method: methodOf( route.request() ),
@@ -804,15 +818,11 @@ test( 'lost native PATCH response remains unconfirmed after matching readback, n
 	);
 	expect( native.status ).toBe( 200 );
 	const recovery = page.getByRole( 'button', {
-		name: 'Read current product',
+		name: 'Check save outcome',
 		exact: true,
 	} );
-	// Run the unchanged accessibility assertion after collecting recovery evidence.
-	await tabTo( page, recovery, { max: 500 } );
-	await page.keyboard.press( 'Enter' );
-	await expect( page.locator( '#bulkcat-app' ) ).toContainText(
-		'Current values were read. This does not confirm the outcome of the earlier save.'
-	);
+	// Preserve the held-row accessibility and blocked-control assertions.
+	await page.waitForTimeout( 1300 );
 	await expect( switchOf( page, product ) ).toHaveAttribute(
 		'aria-disabled',
 		'true'
@@ -821,23 +831,39 @@ test( 'lost native PATCH response remains unconfirmed after matching readback, n
 	expect(
 		requests.filter( ( request ) => request.method === 'PATCH' )
 	).toHaveLength( 1 );
+	await qualifyHeldRow( page, product, info );
+	holdResolution = false;
+	await tabTo( page, recovery, { max: 500 } );
+	await page.keyboard.press( 'Enter' );
+	await expect( page.locator( '#bulkcat-app' ) ).toContainText(
+		`Saved changes to ${ product.name }.`
+	);
+	await expect( switchOf( page, product ) ).not.toHaveAttribute(
+		'aria-disabled',
+		'true'
+	);
+	expect(
+		requests.filter( ( request ) => request.method === 'PATCH' )
+	).toHaveLength( 1 );
 	expect(
 		( await rest( page, `products/${ product.id }` ) ).json.item
 			.catalog_visibility
 	).toBe( 'visible' );
-	await expect(
-		page.getByRole( 'link', {
-			name: 'Review product History',
-			exact: true,
-		} )
-	).toBeVisible();
+	const history = page.getByRole( 'link', {
+		name: 'View change in History',
+		exact: true,
+	} );
+	await expect( history ).toBeVisible();
+	await expect( history ).toHaveAttribute(
+		'href',
+		new RegExp( `[?&]batch=${ native.answer.batch_id }(?:&|$)` )
+	);
 	saveJourney( info.title, {
 		native,
 		requests,
 		simulation:
-			'real native PATCH accepted, transport response discarded; matching read does not attribute mutation',
+			'real native PATCH completed; transport reply and first bounded receipt reads discarded; explicit read-only resolution adopts durable closure',
 	} );
-	await qualifyHeldRow( page, product, info );
 } );
 
 test( 'native bulk-one still requires Preview then Apply', async ( {
@@ -912,11 +938,22 @@ test( 'native permission revocation denies edit without changing the product', a
 		{ run, user: state.user }
 	);
 	try {
-		const patch = nextNativePatch( page, product.id );
+		const patches = [];
+		page.on( 'request', ( request ) => {
+			if ( methodOf( request ) === 'PATCH' ) {
+				patches.push( request );
+			}
+		} );
+		const deniedGrant = page.waitForResponse(
+			( response ) =>
+				methodOf( response.request() ) === 'POST' &&
+				/^requests(?:[?&]|$)/.test( routeOf( response.request() ) )
+		);
 		await switchOf( page, product ).click();
-		const response = await patch;
+		const response = await deniedGrant;
 		const refusal = await response.json();
 		expect( response.status() ).toBe( 403 );
+		expect( patches ).toHaveLength( 0 );
 		await expect( page.locator( '#bulkcat-app' ) ).toContainText(
 			`We could not change whether ${ product.name } is shown in the shop and search, so it is as it was.`
 		);

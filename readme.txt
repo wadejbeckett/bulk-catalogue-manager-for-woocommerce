@@ -6,7 +6,7 @@ Tested up to: 7.1
 Requires PHP: 8.1
 WC requires at least: 11.1
 WC tested up to: 11.1
-Stable tag: 1.1.0
+Stable tag: 1.1.1
 License: GPL-3.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -135,6 +135,11 @@ Yes. Each site keeps its own history and settings, and deleting the plugin with 
 
 == Changelog ==
 
+= 1.1.1 =
+* Confirm category creation separately from list refresh; retry a failed refresh without creating duplicates.
+* Preserve keyboard focus and announce category-save results on desktop and narrow screens.
+* This update improves feedback; it does not change category access or visibility rules.
+
 = 1.1.0 =
 * Keep an exact selection across searches and pages; preview and apply it safely, with truthful progress and undo.
 * Status switches products Off and restores their previous status when switched On.
@@ -154,6 +159,9 @@ Yes. Each site keeps its own history and settings, and deleting the plugin with 
 * Settings for access, page size, confirmation, variation defaults, background batch sizes, history and data removal.
 
 == Upgrade Notice ==
+
+= 1.1.1 =
+Category-save feedback and accessibility improvements. No database migration or product/access changes.
 
 = 1.1.0 =
 Needs WooCommerce 11.1 or later. Status becomes the Off/On switch: Draft saves a product's status, Published restores it. Before going back to 1.0.0, let every change finish and switch Off products On: 1.0.0's Published ignores the saved status.

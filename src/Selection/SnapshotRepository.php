@@ -10,6 +10,7 @@ namespace BulkCatalogueManager\Selection;
 
 use BulkCatalogueManager\Data\Registry;
 use BulkCatalogueManager\Data\Schema;
+use BulkCatalogueManager\Data\TransactionAbort;
 use BulkCatalogueManager\Requests\RequestRepository;
 defined( 'ABSPATH' ) || exit;
 // phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Immutable membership and retention locks belong in plugin storage, never a transient.
@@ -115,7 +116,7 @@ final class SnapshotRepository {
 		foreach ( $ids as $id ) {
 			$retained = $wpdb->get_var( $wpdb->prepare( 'SELECT retained_until FROM %i WHERE id = %s LIMIT 1 FOR UPDATE', $table, $id ) );
 			if ( '' !== $wpdb->last_error ) {
-				throw new \RuntimeException( 'Cannot lock expired payload.' );
+				throw TransactionAbort::capture( 'Cannot lock expired payload.' );
 			}
 			if ( null === $retained || $retained > $deadline ) {
 				continue;

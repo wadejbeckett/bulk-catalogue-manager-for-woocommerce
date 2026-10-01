@@ -38,6 +38,9 @@ if ( ! class_exists( WpdbStub::class ) ) {
 
 		public int $reconnect_retries = 5;
 
+		/** Native connection metadata is supplied only by transaction fault tests. */
+		public mixed $dbh = null;
+
 		/**
 		 * Every statement run, in order.
 		 *

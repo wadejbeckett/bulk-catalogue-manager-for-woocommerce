@@ -10,6 +10,7 @@ namespace BulkCatalogueManager\Requests;
 
 use BulkCatalogueManager\Data\BatchRepository;
 use BulkCatalogueManager\Data\FoundationStorage;
+use BulkCatalogueManager\Data\TransactionAbort;
 use BulkCatalogueManager\Engine\Preview;
 use BulkCatalogueManager\Rest\Access;
 use BulkCatalogueManager\Rest\Refusal;
@@ -341,7 +342,17 @@ final class RequestService {
 		if ( ! FoundationStorage::ready() ) {
 			return 0;
 		}
-		return FoundationStorage::atomic( fn(): int => ( new SnapshotRepository() )->prune( ( $this->clock )(), new RequestRepository() ) );
+		$cutoff = ( $this->clock )();
+		$prune  = static fn(): int => ( new SnapshotRepository() )->prune( $cutoff, new RequestRepository() );
+		try {
+			return FoundationStorage::atomic( $prune );
+		} catch ( TransactionAbort $error ) {
+			if ( ! $error->rollback_confirmed() ) {
+				throw $error;
+			}
+		}
+		// One fresh attempt only: rediscover at the same cutoff after a confirmed rollback.
+		return FoundationStorage::atomic( $prune );
 	}
 
 	/** Prune only eligible selection receipts; never accepted batch receipts. */

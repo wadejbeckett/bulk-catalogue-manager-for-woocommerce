@@ -96,21 +96,39 @@ final class FoundationStorage {
 		$retries                 = $wpdb->reconnect_retries;
 		$wpdb->reconnect_retries = 0;
 		self::$active            = true;
+		$connection              = TransactionAbort::connection();
+		$started                 = false;
+		$committing              = false;
 		try {
 			if ( false === $wpdb->query( 'START TRANSACTION' ) ) {
 				throw new \RuntimeException( 'Cannot start storage transaction.' );
 			}
-			$result = $operation();
+			$started = true;
+			$result  = $operation();
 			if ( is_wp_error( $result ) ) {
 				$wpdb->query( 'ROLLBACK' );
 				return $result;
 			}
+			$committing = true;
 			if ( false === $wpdb->query( 'COMMIT' ) ) {
 				throw new \RuntimeException( 'Uncertain transaction outcome; resolve the same request.' );
 			}
 			return $result;
 		} catch ( \Throwable $error ) {
-			$wpdb->query( 'ROLLBACK' );
+			$confirmable = $error instanceof TransactionAbort && $started && ! $committing
+				&& null !== $connection && TransactionAbort::connection() === $connection
+				&& 0 === $wpdb->reconnect_retries;
+			if ( $error instanceof TransactionAbort ) {
+				$error->acknowledge_rollback( false, null );
+			}
+			$rolled_back = $wpdb->query( 'ROLLBACK' );
+			if ( $error instanceof TransactionAbort ) {
+				$error->acknowledge_rollback(
+					$confirmable && false !== $rolled_back && 0 === $wpdb->reconnect_retries
+						&& TransactionAbort::connection() === $connection,
+					$connection
+				);
+			}
 			throw $error;
 		} finally {
 			$wpdb->reconnect_retries = $retries;

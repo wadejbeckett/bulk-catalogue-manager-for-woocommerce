@@ -6,7 +6,7 @@ Tested up to: 7.1
 Requires PHP: 8.1
 WC requires at least: 11.1
 WC tested up to: 11.1
-Stable tag: 1.2.0
+Stable tag: 1.3.0
 License: GPL-3.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -56,7 +56,7 @@ Shop managers and administrators can use the screen. To limit it to administrato
 
 = What does the plugin change on my site? =
 
-Only the product fields you choose to change: name, status, catalogue visibility, featured, categories, tags, regular and sale price, stock status, manage stock, stock quantity, SKU, weight and dimensions, shipping class, tax status and class, sold individually and reviews. It saves them the way WooCommerce's own product editor does. It never changes a product's slug and never creates or deletes products.
+Only the product fields you choose to change: name, status, catalogue visibility, featured, categories, tags, regular and sale price, stock status, manage stock, stock quantity, SKU, weight and dimensions, shipping class, tax status and class, sold individually and reviews. It saves them the way WooCommerce's own product editor does. Field edits leave a product's slug unchanged. The row menu also offers native **Duplicate** and **Move to Trash** actions: WooCommerce creates the copy, and WordPress moves the original to Trash. These actions use the site's native permissions and do not permanently delete products.
 
 = What does it store? =
 
@@ -65,6 +65,8 @@ Five database tables hold change history, exact selections and request receipts;
 = How do I undo a change? =
 
 Open the History tab, find the change and choose **Undo this change**. You will see a preview first. Any product changed again since the original change is listed and left alone unless you choose **Revert anyway**; so is a product changed after you confirm the undo, before its turn comes. An undo can itself be undone. Undo works for a change of any size, up to 100,000 products and variations; for the largest, preparing the preview takes a couple of minutes.
+
+Duplicate and Move to Trash are native admin actions and do not create entries in this plugin's History. Use WordPress's **Undo** link after moving a product to Trash, or restore it from Products → Trash. A duplicate is a separate product managed through the native product editor. Variations use **Edit details**; the native product actions apply to the parent.
 
 = How long is history kept? =
 
@@ -139,6 +141,11 @@ Yes. Each site keeps its own history and settings, and deleting the plugin with 
 
 == Changelog ==
 
+= 1.3.0 =
+* Open the native product editor, view a product in a separate tab, Duplicate or Move to Trash from its row menu.
+* Keep exact selection through native navigation; report unavailable selected products honestly in CSV exports.
+* Use native permissions, warnings, handlers and Trash recovery. Show a read-only retry if selection refresh fails.
+
 = 1.2.0 =
 * Native Status controls replace Off/On for new changes; existing accepted work and history retain their recorded meaning.
 * Ordinary edits use one Save and reconcile the current list. Lost responses can recover recorded results without repeating the change.
@@ -166,6 +173,9 @@ Yes. Each site keeps its own history and settings, and deleting the plugin with 
 * Settings for access, page size, confirmation, variation defaults, background batch sizes, history and data removal.
 
 == Upgrade Notice ==
+
+= 1.3.0 =
+Adds native product row actions without a database schema or history-format change. Duplicate and Trash use WooCommerce/WordPress recovery, not this plugin's History. Back up files and data before updating.
 
 = 1.2.0 =
 Back up files and data. Drain new-format Status and recovery/Undo work before any binary downgrade to 1.1.x; replacing files alone is insufficient. Category access restrictions are not repaired by this release.

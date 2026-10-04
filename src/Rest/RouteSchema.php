@@ -163,11 +163,35 @@ final class RouteSchema {
 	 * @return array<string, array<string, mixed>>
 	 */
 	public static function row_extras(): array {
-		$read_only = [
+		$read_only                           = [
 			'context'  => [ 'view', 'edit' ],
 			'readonly' => true,
 		];
+		$native_link                         = [
+			'type'                 => [ 'object', 'null' ],
+			'properties'           => [
+				'url' => [
+					'type'   => 'string',
+					'format' => 'uri',
+				],
+			],
+			'additionalProperties' => false,
+		] + $read_only;
+		$trash_link                          = $native_link;
+		$trash_link['properties']['confirm'] = [ 'type' => 'string' ];
 		return [
+			'native_actions'            => [
+				'type'                 => 'object',
+				'additionalProperties' => false,
+				'properties'           => [
+					'details'     => [ 'type' => 'boolean' ],
+					'editor'      => $native_link,
+					'view'        => $native_link,
+					'duplicate'   => $native_link,
+					'trash'       => $trash_link,
+					'unavailable' => [ 'type' => 'string' ],
+				],
+			] + $read_only,
 			Hydrator::PARENT_ID         => [
 				'description' => __( 'The product a variation belongs to; 0 for a product.', 'bulk-catalogue-manager-for-woocommerce' ),
 				'type'        => 'integer',

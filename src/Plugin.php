@@ -21,7 +21,7 @@ final class Plugin {
 	/**
 	 * Must equal the `Version:` header of the main plugin file.
 	 */
-	public const VERSION = '1.2.0';
+	public const VERSION = '1.3.0';
 
 	/**
 	 * Lowest WooCommerce version the plugin runs on. Must equal the
@@ -113,6 +113,8 @@ final class Plugin {
 		}
 		return [
 			[ 'before_woocommerce_init', [ $this, 'declare_compatibility' ], 10, 0 ],
+			[ 'admin_action_duplicate_product', [ Admin\ProductRowActionGuard::class, 'duplicate' ], 0, 0 ],
+			[ 'load-post.php', [ Admin\ProductRowActionGuard::class, 'trash' ], 0, 0 ],
 			[ 'init', [ $this, 'register_settings' ], 10, 0 ],
 			[ 'init', [ Categories\Cache::class, 'register_hooks' ], 10, 0 ],
 			[ 'init', [ Query\CountCache::class, 'register_hooks' ], 10, 0 ],

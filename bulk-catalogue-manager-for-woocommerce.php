@@ -3,7 +3,7 @@
  * Plugin Name:       Bulk Catalogue Manager for WooCommerce
  * Plugin URI:        https://github.com/wadejbeckett/bulk-catalogue-manager-for-woocommerce
  * Description:       Manage many WooCommerce products at once from one simple screen. Every bulk change is previewed first, recorded and reversible.
- * Version:           1.2.0
+ * Version:           1.3.0
  * Requires at least: 7.0
  * Requires PHP:      8.1
  * Requires Plugins:  woocommerce

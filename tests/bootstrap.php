@@ -37,4 +37,5 @@ require_once __DIR__ . '/Support/wc-product-sentinel.php';
 require_once __DIR__ . '/Support/fake-product.php';
 require_once __DIR__ . '/Support/features-util-stub.php';
 require_once __DIR__ . '/Support/admin-stubs.php';
+require_once __DIR__ . '/Support/row-action-stubs.php';
 bulkcat_test_reset();

@@ -2,14 +2,14 @@
 # This file is distributed under the GPL-3.0-or-later.
 msgid ""
 msgstr ""
-"Project-Id-Version: Bulk Catalogue Manager for WooCommerce 1.2.0\n"
+"Project-Id-Version: Bulk Catalogue Manager for WooCommerce 1.3.0\n"
 "Report-Msgid-Bugs-To: https://wordpress.org/support/plugin/bulk-catalogue-manager-for-woocommerce\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-10-01T10:55:12+00:00\n"
+"POT-Creation-Date: 2026-10-04T10:19:52+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -28,6 +28,48 @@ msgstr ""
 
 #. Author of the plugin
 msgid "Wade Beckett"
+msgstr ""
+
+msgid "Native product duplication is unavailable. Return to the product list and try again after WooCommerce is available."
+msgstr ""
+
+msgid "This product action has expired or changed. Reload the list and try again."
+msgstr ""
+
+msgid "This product now has sales. Reload the list and review the warning before moving it to Trash."
+msgstr ""
+
+msgid "This product action does not match its link. Reload the list and try again."
+msgstr ""
+
+msgid "This product link has no valid product. Reload the list."
+msgstr ""
+
+msgid "That product is no longer available. Reload the product list."
+msgstr ""
+
+msgid "This action is not available for this row. Use Edit details for a variation."
+msgstr ""
+
+msgid "This product has no live page you can open. Use the product editor."
+msgstr ""
+
+msgid "Trash is disabled on this site. This action will not permanently delete products."
+msgstr ""
+
+msgid "Your account cannot move this product to Trash."
+msgstr ""
+
+msgid "Someone is editing this product. Reload the list when they have finished."
+msgstr ""
+
+msgid "Your account cannot duplicate this product."
+msgstr ""
+
+msgid "Use Edit details for variations. These native product actions apply to the parent product."
+msgstr ""
+
+msgid "This product has produced sales and may be linked to existing orders. Are you sure you want to delete it?"
 msgstr ""
 
 msgid "Bulk Catalogue Manager"
@@ -3985,6 +4027,18 @@ msgstr ""
 msgid "Only changes made through this screen are recorded here. Edits made elsewhere in WordPress, such as on the product edit page, are not."
 msgstr ""
 
+msgid "Open product editor"
+msgstr ""
+
+msgid "View product (new tab)"
+msgstr ""
+
+msgid "Duplicate"
+msgstr ""
+
+msgid "Move to Trash"
+msgstr ""
+
 #. translators: %s: several category names, such as "Shoes or Hats".
 #, js-format
 msgid "Category is not %s, or their sub-categories"
@@ -4283,9 +4337,6 @@ msgstr ""
 msgid "Update with what is on screen"
 msgstr ""
 
-msgid "Duplicate"
-msgstr ""
-
 msgid "Move earlier"
 msgstr ""
 
@@ -4361,15 +4412,15 @@ msgstr ""
 msgid "Edit details"
 msgstr ""
 
-msgid "Open in product editor"
-msgstr ""
-
 msgid "Search"
 msgstr ""
 
 #. translators: %s: the text searched for.
 #, js-format
 msgid "Name or SKU contains “%s”"
+msgstr ""
+
+msgid "Selected products could not be refreshed. Your selection has been kept."
 msgstr ""
 
 msgid "The products could not be loaded."

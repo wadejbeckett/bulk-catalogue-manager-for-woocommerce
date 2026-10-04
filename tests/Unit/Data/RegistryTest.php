@@ -21,6 +21,11 @@ final class RegistryTest extends TestCase {
 	 * Add a new hook name or code here only if it is never a storage key.
 	 */
 	private const NOT_STORAGE = [
+		'bulkcat_row_action'                     => 'native admin link marker; not stored',
+		'bulkcat_row_action_unavailable'         => 'native row action refusal code; not stored',
+		'bulkcat_row_sales'                      => 'signed native Trash warning-state link parameter; not stored',
+		'bulkcat_row_nonce'                      => 'native warning-state nonce query parameter; not stored',
+		'bulkcat_row_trash_'                     => 'native warning-state nonce action prefix; not stored',
 		'bulkcat_variation_password_unsupported' => 'Refusal code for unsupported variation password changes or restoration; nothing is stored under it.',
 		'bulkcat_cannot_publish'                 => 'Publication permission refusal, not storage.',
 		'bulkcat_selection_renew_required'       => 'Selection authorization refusal.',

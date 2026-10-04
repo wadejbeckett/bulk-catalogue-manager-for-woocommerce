@@ -113,7 +113,7 @@ final class VariationsRouteTest extends TestCase {
 		$this->assertSame( [ 202, 201 ], array_column( $data['items'], 'id' ), 'Menu order, then id; the trashed variation is left out.' );
 
 		[ $green, $blue ] = $data['items'];
-		$this->assertSame( array_merge( [ 'id', 'parent_id' ], array_diff( Registry::instance()->keys(), [ 'id' ] ), [ Hydrator::THUMBNAIL_URL, Hydrator::PARENT_NAME, Hydrator::ATTRIBUTE_SUMMARY, Hydrator::ATTRIBUTES ] ), array_keys( $blue ), 'Every registry field, then the extras.' );
+		$this->assertSame( array_merge( [ 'id', 'parent_id' ], array_diff( Registry::instance()->keys(), [ 'id' ] ), [ Hydrator::THUMBNAIL_URL, Hydrator::PARENT_NAME, Hydrator::ATTRIBUTE_SUMMARY, Hydrator::ATTRIBUTES, 'native_actions' ] ), array_keys( $blue ), 'Every registry field, then the extras.' );
 		$expected = [
 			'parent_id'         => 103,
 			'parent_name'       => 'Rain Jacket',
@@ -198,7 +198,18 @@ final class VariationsRouteTest extends TestCase {
 					],
 				],
 			],
-			$items[1]
+			array_diff_key( $items[1], [ 'native_actions' => true ] )
+		);
+		$this->assertSame(
+			[
+				'details'     => false,
+				'editor'      => null,
+				'view'        => null,
+				'duplicate'   => null,
+				'trash'       => null,
+				'unavailable' => 'Use Edit details for variations. These native product actions apply to the parent product.',
+			],
+			$items[1]['native_actions']
 		);
 	}
 

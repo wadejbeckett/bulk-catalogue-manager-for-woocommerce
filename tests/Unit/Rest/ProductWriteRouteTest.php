@@ -205,7 +205,7 @@ final class ProductWriteRouteTest extends TestCase {
 			]
 		);
 		$this->assertSame( 200, $response->get_status() );
-		$this->assertSame( [ 'id', Hydrator::PARENT_ID, 'sku' ], array_keys( $response->get_data()['item'] ) );
+		$this->assertSame( [ 'id', Hydrator::PARENT_ID, 'sku', 'native_actions' ], array_keys( $response->get_data()['item'] ) );
 		$this->assertSame( 'bulk', $this->store->batch( 1 )['source'] );
 	}
 

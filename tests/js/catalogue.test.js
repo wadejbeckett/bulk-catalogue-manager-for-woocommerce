@@ -145,8 +145,30 @@ describe( 'catalogue table', () => {
 		).toBeNull();
 	} );
 
-	it( 'carries a row menu with Edit details and Open in product editor', async () => {
+	it( 'carries a row menu with Edit details and the server-authorised product editor', async () => {
 		const onEditDetails = jest.fn();
+		const item = {
+			...ROWS[ 0 ],
+			native_actions: {
+				details: true,
+				editor: {
+					url: 'https://example.test/wp-admin/post.php?post=11&action=edit',
+				},
+				view: null,
+				duplicate: null,
+				trash: null,
+				unavailable: '',
+			},
+		};
+		route( apiFetch, {
+			fields: () => REGISTRY,
+			products: () => ( {
+				...page(),
+				items: [ item, ...ROWS.slice( 1 ) ],
+			} ),
+			'products/11': () => ( { item } ),
+			categories: () => CATEGORIES,
+		} );
 		await renderLoaded( { onEditDetails } );
 		const row = screen
 			.getByRole( 'link', { name: 'Classic Cotton T-Shirt' } )
@@ -156,13 +178,13 @@ describe( 'catalogue table', () => {
 		);
 		expect(
 			await screen.findByRole( 'menuitem', {
-				name: 'Open in product editor',
+				name: 'Open product editor',
 			} )
 		).toBeTruthy();
 		fireEvent.click(
 			screen.getByRole( 'menuitem', { name: 'Edit details' } )
 		);
-		expect( onEditDetails ).toHaveBeenCalledWith( ROWS[ 0 ] );
+		expect( onEditDetails ).toHaveBeenCalledWith( item );
 		// The detail panel opens and settles its reads (T47).
 		expect( await screen.findByRole( 'dialog' ) ).toBeTruthy();
 		await screen.findByRole( 'button', { name: 'Save' } );

@@ -15,6 +15,7 @@ import {
 
 import Catalogue, { AppliedProgress } from '../../assets/src/panels/catalogue';
 import { setSettings } from '../../assets/src/panels/settings/store';
+import { getSelectionSession } from '../../assets/src/panels/catalogue/selection/session';
 
 jest.mock( '@wordpress/api-fetch', () => {
 	const apiFetch = jest.fn();
@@ -56,6 +57,38 @@ async function renderLoaded() {
 }
 
 describe( 'catalogue wiring', () => {
+	it( 'shows a failed native-return selection read and offers only a read retry', async () => {
+		await renderLoaded();
+		const session = getSelectionSession();
+		const probe = jest
+			.spyOn( session, 'probe' )
+			.mockRejectedValue( new Error( 'Read failed' ) );
+		const retry = jest.spyOn( session, 'retry' );
+		await act( async () => window.dispatchEvent( new Event( 'focus' ) ) );
+		expect( probe ).toHaveBeenCalled();
+		const message = await screen.findByText(
+			'Selected products could not be refreshed. Your selection has been kept.',
+			{ selector: 'p' }
+		);
+		probe.mockRestore();
+		fireEvent.click(
+			within( message.closest( '.components-notice' ) ).getByRole(
+				'button',
+				{ name: 'Try again' }
+			)
+		);
+		await waitFor( () =>
+			expect(
+				screen.queryByText(
+					'Selected products could not be refreshed. Your selection has been kept.',
+					{ selector: 'p' }
+				)
+			).toBeNull()
+		);
+		expect( retry ).not.toHaveBeenCalled();
+		retry.mockRestore();
+	} );
+
 	it( 'filters the rows by the category chosen in the panel left of the table', async () => {
 		await renderLoaded();
 		const tree = await screen.findByRole( 'tree' );

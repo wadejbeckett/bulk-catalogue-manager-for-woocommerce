@@ -45,6 +45,7 @@ import { categorySentence } from '../categories/tree-model';
 import { BatchProgress, StalledNotice } from '../history';
 import { useSettings } from '../settings/store';
 import { rowActions } from './actions';
+import { useNativeReturn } from './use-native-return';
 import { descriptorsOf, defaultView, fieldsFromRegistry } from './fields';
 import { onCatalogueFocus } from './focus-visibility';
 import { categoryArgs, clearFilters, isFiltered } from './query';
@@ -436,6 +437,11 @@ export function CatalogueGrid( {
 	// it finishes (SPEC §4.1): the ids, or the selected rows on screen.
 	const { setPending } = catalogue;
 	const { session, tableSelection } = selection;
+	const nativeReturn = useNativeReturn( {
+		reconcile: catalogue.reconcile,
+		session,
+		drawn,
+	} );
 	const covered = useRef( [] );
 	const done = useRef( new Set() );
 	const onApplied = useCallback(
@@ -517,6 +523,7 @@ export function CatalogueGrid( {
 		catalogue.hasLoaded &&
 		! catalogue.isLoading &&
 		! catalogue.error &&
+		! nativeReturn.error &&
 		! filtered &&
 		! variationsMode &&
 		catalogue.pagination.totalItems === 0
@@ -559,6 +566,16 @@ export function CatalogueGrid( {
 							: exportControl }
 					</div>
 				</div>
+				{ nativeReturn.error && (
+					<ErrorNotice
+						message={ __(
+							'Selected products could not be refreshed. Your selection has been kept.',
+							'bulk-catalogue-manager-for-woocommerce'
+						) }
+						error={ nativeReturn.error }
+						onRetry={ nativeReturn.retry }
+					/>
+				) }
 				{ catalogue.error && (
 					<ErrorNotice
 						message={ __(

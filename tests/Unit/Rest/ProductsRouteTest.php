@@ -165,11 +165,19 @@ final class ProductsRouteTest extends TestCase {
 			[
 				'items'      => [
 					[
-						'id'        => 41,
-						'parent_id' => 0,
-						'name'      => 'Blue shirt',
-						'status'    => 'draft',
-						'off_state' => null,
+						'id'             => 41,
+						'parent_id'      => 0,
+						'name'           => 'Blue shirt',
+						'status'         => 'draft',
+						'off_state'      => null,
+						'native_actions' => [
+							'details'     => false,
+							'editor'      => null,
+							'view'        => null,
+							'duplicate'   => null,
+							'trash'       => null,
+							'unavailable' => 'Your account cannot move this product to Trash.',
+						],
 					],
 				],
 				'pagination' => [

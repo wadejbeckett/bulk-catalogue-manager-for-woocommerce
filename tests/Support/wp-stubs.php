@@ -957,6 +957,7 @@ if ( ! function_exists( 'get_post_type_object' ) ) {
 		return (object) [
 			'name' => $post_type,
 			'cap'  => (object) [
+				'create_posts'  => 'edit_products',
 				'publish_posts' => 'publish_products',
 				'edit_post'     => 'edit_product',
 			],

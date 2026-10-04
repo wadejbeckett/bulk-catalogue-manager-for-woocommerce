@@ -132,7 +132,7 @@ if ( ! function_exists( 'wp_cache_get' ) ) {
 			$GLOBALS['bulkcat_test']['primed_posts'][ $id ] = true;
 		}
 		$post = $GLOBALS['bulkcat_test']['posts'][ $id ] ?? null;
-		return null === $post ? null : (object) ( [ 'ID' => $id ] + $post );
+		return null === $post ? null : new WP_Post( (object) ( [ 'ID' => $id ] + $post ) );
 	}
 
 	/**

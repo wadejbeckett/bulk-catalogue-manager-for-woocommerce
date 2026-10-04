@@ -74,6 +74,7 @@ export const TONES = {
 
 /** Properties every row carries besides its fields (RouteSchema::row_extras()). */
 export const ROW = {
+	nativeActions: 'native_actions',
 	thumbnailUrl: 'thumbnail_url',
 	parentId: 'parent_id',
 	parentName: 'parent_name',

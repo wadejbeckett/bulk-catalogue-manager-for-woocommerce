@@ -474,8 +474,10 @@ final class ProductsCatalogueTest extends TestCase {
 					],
 				],
 			],
-			$by_id[201]
+			array_diff_key( $by_id[201], [ 'native_actions' => true ] )
 		);
+		$this->assertNull( $by_id[201]['native_actions']['duplicate'] );
+		$this->assertNull( $by_id[201]['native_actions']['trash'] );
 		$this->assertArrayNotHasKey( 'parent_name', $by_id[103], 'A product row carries none of them.' );
 		$this->assertArrayNotHasKey( 'attribute_summary', $by_id[103] );
 		$this->assertArrayNotHasKey( 'attributes', $by_id[103] );
@@ -523,7 +525,7 @@ final class ProductsCatalogueTest extends TestCase {
 			],
 			$page['pagination']
 		);
-		$this->assertSame( [ 'id', 'parent_id', 'sku', 'parent_name', 'attribute_summary', 'attributes' ], array_keys( $page['items'][0] ) );
+		$this->assertSame( [ 'id', 'parent_id', 'sku', 'parent_name', 'attribute_summary', 'attributes', 'native_actions' ], array_keys( $page['items'][0] ) );
 		$this->assertSame( 103, $page['items'][0]['parent_id'] );
 
 		$this->assertSame(

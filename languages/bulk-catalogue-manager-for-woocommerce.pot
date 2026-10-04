@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-10-04T07:46:21+00:00\n"
+"POT-Creation-Date: 2026-10-04T09:32:24+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -28,6 +28,48 @@ msgstr ""
 
 #. Author of the plugin
 msgid "Wade Beckett"
+msgstr ""
+
+msgid "Native product duplication is unavailable. Return to the product list and try again after WooCommerce is available."
+msgstr ""
+
+msgid "This product action has expired or changed. Reload the list and try again."
+msgstr ""
+
+msgid "This product now has sales. Reload the list and review the warning before moving it to Trash."
+msgstr ""
+
+msgid "This product action does not match its link. Reload the list and try again."
+msgstr ""
+
+msgid "This product link has no valid product. Reload the list."
+msgstr ""
+
+msgid "That product is no longer available. Reload the product list."
+msgstr ""
+
+msgid "This action is not available for this row. Use Edit details for a variation."
+msgstr ""
+
+msgid "This product has no live page you can open. Use the product editor."
+msgstr ""
+
+msgid "Trash is disabled on this site. This action will not permanently delete products."
+msgstr ""
+
+msgid "Your account cannot move this product to Trash."
+msgstr ""
+
+msgid "Someone is editing this product. Reload the list when they have finished."
+msgstr ""
+
+msgid "Your account cannot duplicate this product."
+msgstr ""
+
+msgid "Use Edit details for variations. These native product actions apply to the parent product."
+msgstr ""
+
+msgid "This product has produced sales and may be linked to existing orders. Are you sure you want to delete it?"
 msgstr ""
 
 msgid "Bulk Catalogue Manager"
@@ -4481,6 +4523,15 @@ msgid "Sample size"
 msgstr ""
 
 msgid "All"
+msgstr ""
+
+msgid "Open product editor"
+msgstr ""
+
+msgid "View product (new tab)"
+msgstr ""
+
+msgid "Move to Trash"
 msgstr ""
 
 msgid "No matches."

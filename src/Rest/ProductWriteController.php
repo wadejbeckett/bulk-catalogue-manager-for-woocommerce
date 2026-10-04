@@ -219,7 +219,7 @@ final class ProductWriteController implements ReadController {
 				404
 			);
 		}
-		return new \WP_REST_Response( [ 'item' => $item ], 200 );
+		return new \WP_REST_Response( [ 'item' => \BulkCatalogueManager\Admin\ProductRowActions::decorate( [ $item ] )[0] ], 200 );
 	}
 
 	/**
@@ -244,9 +244,10 @@ final class ProductWriteController implements ReadController {
 			return new \WP_REST_Response( $written, 200 ); }
 		clean_post_cache( $id );
 		$fields = $request->get_param( 'fields' );
+		$item   = $this->catalogue->row( $id, is_array( $fields ) ? array_values( array_filter( $fields, 'is_string' ) ) : [] );
 		return new \WP_REST_Response(
 			[
-				'item'     => $this->catalogue->row( $id, is_array( $fields ) ? array_values( array_filter( $fields, 'is_string' ) ) : [] ),
+				'item'     => null === $item ? null : \BulkCatalogueManager\Admin\ProductRowActions::decorate( [ $item ] )[0],
 				'batch_id' => $written['batch_id'],
 				'status'   => $written['status'],
 				'results'  => array_values(

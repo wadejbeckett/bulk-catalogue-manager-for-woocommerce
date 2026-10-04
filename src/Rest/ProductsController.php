@@ -133,7 +133,7 @@ final class ProductsController implements ReadController {
 		$total = $page['total'];
 		return new \WP_REST_Response(
 			[
-				'items'      => $page['items'],
+				'items'      => \BulkCatalogueManager\Admin\ProductRowActions::decorate( $page['items'] ),
 				'pagination' => [
 					'page'       => $criteria->page,
 					'perPage'    => $criteria->per_page,

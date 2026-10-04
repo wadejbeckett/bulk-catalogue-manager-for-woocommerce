@@ -318,8 +318,10 @@ final class RouteSchema {
 	public function request_args( bool $issue, bool $required = true ): array {
 		$args = [
 			'intent' => [
-				'type'     => 'object',
-				'required' => $required,
+				'type'              => 'object',
+				'required'          => $required,
+				// Canonical fingerprints use the exact nested intent, including serializer2 identity.
+				'sanitize_callback' => static fn( mixed $value ): mixed => $value,
 			],
 		];
 		if ( $issue ) {

@@ -180,7 +180,7 @@ final class BatchProgressRouteTest extends TestCase {
 		$this->assertSame( [ Access::class, 'can_read' ], $routes[ '/bulkcat/v1' . BatchChangesController::ROUTE ][0]['permission_callback'] );
 		$this->assertSame( [ 'id', 'page', 'per_page', 'result' ], array_keys( $routes[ '/bulkcat/v1' . BatchChangesController::ROUTE ][0]['args'] ) );
 		$this->assertSame( 'POST', $routes[ '/bulkcat/v1' . BatchesController::CANCEL_ROUTE ][0]['methods'] );
-		$this->assertSame( [ Access::class, 'can_write' ], $routes[ '/bulkcat/v1' . BatchesController::CANCEL_ROUTE ][0]['permission_callback'] );
+		$this->assertSame( [ Access::class, 'can_family_request' ], $routes[ '/bulkcat/v1' . BatchesController::CANCEL_ROUTE ][0]['permission_callback'] );
 		$this->assertSame( 'bulkcat-batch', call_user_func( $routes[ '/bulkcat/v1' . BatchesController::ITEM_ROUTE ]['schema'] )['title'] );
 		$this->assertSame( 'bulkcat-batch-change', call_user_func( $routes[ '/bulkcat/v1' . BatchChangesController::ROUTE ]['schema'] )['title'] );
 	}

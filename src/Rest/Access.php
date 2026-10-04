@@ -126,6 +126,54 @@ final class Access {
 	}
 
 	/**
+	 * Passed-actor family base rights; user_can rejects a removed actor natively.
+	 * @param int $actor Recorded actor.
+	 * @param string $family Verified product or category family.
+	 * @return bool|\WP_Error
+	 */
+	public static function user_can_family( int $actor, string $family ): bool|\WP_Error {
+		$allowed = $actor > 0 && user_can( $actor, self::capability() );
+		if ( 'product' === $family ) {
+			$allowed = $allowed && user_can( $actor, self::WRITE_CAPABILITY );
+		} elseif ( 'category' === $family ) {
+			$taxonomy = get_taxonomy( self::TERMS_TAXONOMY );
+			$allowed  = $allowed && user_can( $actor, self::TERMS_CAPABILITY ) && is_object( $taxonomy ) && isset( $taxonomy->cap->edit_terms ) && user_can( $actor, $taxonomy->cap->edit_terms );
+		} else {
+			$allowed = false;}
+		return $allowed ? true : \BulkCatalogueManager\External\Refusals::forbidden();
+	}
+
+	/**
+	 * Screen-only typed preflight; every handler must independently authorize family.
+	 * @param mixed $request REST request.
+	 * @return bool|\WP_Error
+	 */
+	public static function can_family_request( mixed $request = null ): bool|\WP_Error {
+		$access = self::can_read( $request );
+		if ( true !== $access ) {
+			return $access;}
+		$params = $request instanceof \WP_REST_Request ? $request->get_params() : [];
+		$input  = is_array( $params['intent'] ?? null ) ? $params['intent'] : $params;
+		if ( TypedPreviewInput::present( $input ) ) {
+			if ( 2 !== ( $input['serializer'] ?? null ) || ! in_array( $input['family'] ?? 'product', [ 'product','category' ], true ) ) {
+				return RequestsController::unknown();}
+			return true;
+		}
+		if ( in_array( $params['operation'] ?? null, [ 'selection.capture_typed','selection.compose_typed' ], true ) || ( is_string( $params['typed_token'] ?? null ) && str_starts_with( $params['typed_token'], 'v3.' ) ) ) {
+			return true;}
+		if ( isset( $params['id'] ) ) {
+			$batch = ( new \BulkCatalogueManager\Data\BatchRepository() )->find_strict( (int) $params['id'] );
+			if ( null === $batch || ! isset( $batch['extensions']['serializer'] ) ) {
+				return self::can_write( $request );}
+			$family = \BulkCatalogueManager\Requests\RequestFamily::from_batch( (int) $params['id'], get_current_user_id() );
+			if ( is_string( $family ) ) {
+				return self::user_can_family( get_current_user_id(), $family );}
+			return $family;
+		}
+		return self::can_write( $request );
+	}
+
+	/**
 	 * Permission callback for the category write routes: the read capability
 	 * and `manage_product_terms`, then the per-term capabilities core checks:
 	 * with an `id` (an edit or a move) `edit_term` on that category, when it

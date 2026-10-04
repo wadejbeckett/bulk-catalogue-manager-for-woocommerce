@@ -141,4 +141,21 @@ final class FoundationStorage {
 			self::$active            = false;
 		}
 	}
+	/** Verify the additive typed identity seam without changing v1 storage checks. */
+	public static function typed_ready(): bool {
+		global $wpdb;
+		foreach ( [ Schema::ITEMS, Schema::CHANGES ] as $name ) {
+			$table  = Registry::plugin()->table( $name );
+			$column = $wpdb->get_row( $wpdb->prepare( 'SHOW COLUMNS FROM %i LIKE %s', $table, 'target_taxonomy' ), ARRAY_A );
+			if ( ! is_array( $column ) || '' !== $wpdb->last_error || 'varchar(32)' !== strtolower( $column['Type'] ?? '' ) || 'NO' !== ( $column['Null'] ?? null ) || '' !== ( $column['Default'] ?? null ) ) {
+				return false; }
+			$index = $wpdb->get_results( $wpdb->prepare( "SHOW INDEX FROM %i WHERE Key_name = 'target'", $table ), ARRAY_A );
+			if ( ! is_array( $index ) || '' !== $wpdb->last_error ) {
+				return false; }
+			usort( $index, static fn( array $a, array $b ): int => (int) $a['Seq_in_index'] <=> (int) $b['Seq_in_index'] );
+			if ( array_column( $index, 'Column_name' ) !== [ 'batch_id', 'object_type', 'target_taxonomy', 'object_id' ] || array_filter( $index, static fn( array $entry ): bool => null !== $entry['Sub_part'] ) ) {
+				return false; }
+		}
+		return true;
+	}
 }

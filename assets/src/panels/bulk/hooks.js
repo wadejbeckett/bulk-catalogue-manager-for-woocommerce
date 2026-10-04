@@ -42,6 +42,15 @@ export const FINISHED = [
  * @return {Object} `{ token }` or `{ ids }`.
  */
 export function selectionArgs( selection ) {
+	if ( selection?.targets ) {
+		return { targets: selection.targets };
+	}
+	if ( selection?.typed_token ) {
+		return { typed_token: selection.typed_token };
+	}
+	if ( selection?.token ) {
+		return { token: String( selection.token ) };
+	}
 	if ( selection?.kind === 'snapshot' ) {
 		return { token: String( selection.token || '' ) };
 	}
@@ -60,10 +69,12 @@ export function selectionArgs( selection ) {
  *
  * @param {Object} selection Panel selection.
  * @param {Object} preview   The preview answer.
+ * @param {Object} entry     Entry.
  * @return {string} Key.
  */
-export function applyKey( selection, preview ) {
+export function applyKey( selection, preview, entry = null ) {
 	return JSON.stringify( {
+		...( entry ? typedMetadata( preview, entry ) : {} ),
 		operations: preview?.operations || null,
 		scope: preview?.scope_hash || null,
 		selection:
@@ -71,6 +82,20 @@ export function applyKey( selection, preview ) {
 				? { snapshot: selection.key || selection.token }
 				: selectionArgs( selection ),
 	} );
+}
+
+/**
+ * Typed metadata comes from scoped server discovery or the actual Preview response.
+ * @param {Object} descriptor Descriptor.
+ * @param {Object} entry      Entry.
+ */
+export function typedMetadata( descriptor, entry ) {
+	return {
+		serializer: 2,
+		family: descriptor.family,
+		external: descriptor.external,
+		entry: entry.location,
+	};
 }
 
 /**
@@ -108,7 +133,13 @@ export function usePreview() {
 	} );
 
 	const run = useCallback(
-		async ( { operations, selection, sampleSize = 25, signature } ) => {
+		async ( {
+			operations,
+			selection,
+			sampleSize = 25,
+			signature,
+			entry = null,
+		} ) => {
 			const id = ++sequence.current;
 			setState( ( previous ) => ( {
 				...previous,
@@ -120,6 +151,7 @@ export function usePreview() {
 				const response = await request( 'preview', {
 					method: 'POST',
 					data: {
+						...( entry ? typedMetadata( entry, entry ) : {} ),
 						operations,
 						...selectionArgs( selection ),
 						sample_size: sampleSize,
@@ -171,13 +203,35 @@ export function usePreview() {
  * such as "increase by 10 per cent" can then never be made twice.
  */
 let applyHolder = null;
+const typedHolders = new Map();
 
 /**
  * The screen's Apply holder, read from the tab's copy on first use.
  *
+ * @param {Object} entry Entry.
  * @return {Object} `{ current, store }`.
  */
-function applyGrant() {
+function applyGrant( entry = null ) {
+	if ( entry ) {
+		const key = JSON.stringify( {
+			family: entry.family,
+			external: entry.external,
+			entry: entry.location,
+			selectionKey: entry.selectionKey,
+			targets: entry.selection?.targets || null,
+		} );
+		if ( ! typedHolders.has( key ) ) {
+			typedHolders.set(
+				key,
+				keptHolder(
+					tabStore(
+						tabScope( readSettings(), 'provider-apply:' + key )
+					)
+				)
+			);
+		}
+		return typedHolders.get( key );
+	}
 	if ( ! applyHolder ) {
 		applyHolder = keptHolder(
 			tabStore( tabScope( readSettings(), 'apply' ) )
@@ -191,6 +245,7 @@ function applyGrant() {
  */
 export function resetApplyGrant() {
 	applyHolder = null;
+	typedHolders.clear();
 }
 
 /**
@@ -201,10 +256,11 @@ export function resetApplyGrant() {
  * (`selectionKey`); otherwise null, and the grant is kept for the same change
  * or resolved again before a different one.
  *
+ * @param {Object} entry Entry.
  * @return {Promise<Object|null>} The earlier change, or null.
  */
-export async function resumeApply() {
-	const holder = applyGrant();
+export async function resumeApply( entry = null ) {
+	const holder = applyGrant( entry );
 	const held = holder.current;
 	if ( ! held?.restored ) {
 		return null;
@@ -233,35 +289,55 @@ export function useApply() {
 	const [ state, setState ] = useState( { status: 'idle' } );
 
 	const apply = useCallback(
-		async ( { selection, preview } ) => {
+		async ( { selection, preview, entry = null } ) => {
 			const args = selectionArgs( selection );
+			const selectionKey = entry
+				? entry.selectionKey
+				: ( selection?.kind === 'snapshot' && selection.key ) || '';
 			setState( { status: 'applying' } );
 			try {
-				const batch = await sendWithGrant( applyGrant(), {
-					key: applyKey( selection, preview ),
-					meta: {
-						selectionKey:
-							selection?.kind === 'snapshot'
-								? selection.key || ''
-								: '',
-					},
-					operation: 'batch.apply',
-					intent: {
-						source: 'bulk',
-						operations: preview?.operations,
-						scope_hash: preview?.scope_hash,
-						...args,
-					},
-					send: ( grant ) =>
-						request( 'batches', {
-							method: 'POST',
-							data: {
-								...envelope( grant ),
-								preview_hash: preview?.hash || '',
-								...( args.token ? { token: args.token } : {} ),
-							},
-						} ),
-				} );
+				const batch = await sendWithGrant(
+					applyGrant(
+						entry
+							? { ...entry, ...typedMetadata( preview, entry ) }
+							: null
+					),
+					{
+						key: applyKey( selection, preview, entry ),
+						meta: {
+							...( entry
+								? {
+										...typedMetadata( preview, entry ),
+										selection: args,
+										clearSubmitted: entry.clearSubmitted,
+									}
+								: {} ),
+							selectionKey,
+						},
+						operation: 'batch.apply',
+						intent: {
+							...( entry ? typedMetadata( preview, entry ) : {} ),
+							source: 'bulk',
+							operations: preview?.operations,
+							scope_hash: preview?.scope_hash,
+							...( entry ? { selection: args } : args ),
+						},
+						send: ( grant ) =>
+							request( 'batches', {
+								method: 'POST',
+								data: {
+									...envelope( grant ),
+									preview_hash: preview?.hash || '',
+									...( args.token
+										? { token: args.token }
+										: {} ),
+									...( entry && args.typed_token
+										? { typed_token: args.typed_token }
+										: {} ),
+								},
+							} ),
+					}
+				);
 				if ( mounted.current ) {
 					setState( { status: 'applied', batch } );
 				}

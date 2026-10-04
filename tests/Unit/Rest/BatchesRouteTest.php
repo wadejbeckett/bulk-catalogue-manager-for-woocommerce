@@ -113,9 +113,9 @@ final class BatchesRouteTest extends TestCase {
 	public function test_the_route_needs_the_write_capability(): void {
 		$route = $GLOBALS['bulkcat_test']['routes']['/bulkcat/v1/batches'] ?? null;
 		$this->assertTrue( is_array( $route ), 'The route is registered.' );
-		$this->assertSame( [ Access::class, 'can_write' ], $route[0]['permission_callback'] );
+		$this->assertSame( [ Access::class, 'can_family_request' ], $route[0]['permission_callback'] );
 		$this->assertSame( 'POST', $route[0]['methods'] );
-		$this->assertSame( [ 'request_proof', 'intent', 'uuid', 'operations', 'ids', 'token', 'source', 'preview_hash', 'preview_count', 'confirm_changed' ], array_keys( $route[0]['args'] ) );
+		$this->assertSame( [ 'request_proof', 'intent', 'uuid', 'operations', 'ids', 'typed_token', 'token', 'source', 'preview_hash', 'preview_count', 'confirm_changed' ], array_keys( $route[0]['args'] ) );
 		$this->assertTrue( $route[0]['args']['uuid']['required'] );
 		$this->assertFalse( $route[0]['args']['operations']['required'] ?? false, 'A durable change carries its operations in its intent.' );
 		$this->assertSame( BatchesController::SOURCES, $route[0]['args']['source']['enum'] );

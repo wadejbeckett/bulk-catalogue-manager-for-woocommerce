@@ -1010,4 +1010,199 @@ final class Preview {
 			]
 		);
 	}
+	/**
+	 * Prepare a typed request through the same authoritative services at preview and acceptance.
+	 * @param array $input Flat typed Preview input.
+	 * @param int $actor Recorded actor.
+	 * @return array|\WP_Error Server-only scope, provider and binding.
+	 */
+	public function prepare_typed( array $input, int $actor ): array|\WP_Error {
+		$input = \BulkCatalogueManager\Rest\TypedPreviewInput::normalize( $input, $actor );
+		if ( is_wp_error( $input ) ) {
+			return $input; }
+		$access = \BulkCatalogueManager\Rest\Access::user_can_family( $actor, $input['family'] );
+		if ( true !== $access ) {
+			return $access; }
+		$scope = \BulkCatalogueManager\External\V2\TypedScope::from_request( array_intersect_key( $input, array_flip( [ 'targets', 'token', 'typed_token' ] ) ), $actor );
+		if ( is_wp_error( $scope ) ) {
+			return $scope; }
+		$family = $this->actions->providers()->typed()->family( $input['external']['provider'] );
+		if ( null === $family ) {
+			return Refusals::incompatible( \BulkCatalogueManager\External\V2\Inspector::unavailable() ); }
+		if ( $family['identity'] !== $input['external']['identity'] ) {
+			return \BulkCatalogueManager\Requests\BatchAcceptance::stale( 'provider_changed' ); }
+		$operations = [];
+		foreach ( $input['operations'] as $step ) {
+			$descriptor = $family['typed']['described'][ $step['action'] ]['descriptor'] ?? null;
+			if ( null === $descriptor || ! isset( $family['typed']['actions'][ $step['action'] ] ) || ! in_array( $input['entry'], $descriptor->locations, true ) ) {
+				return Refusals::incompatible( \BulkCatalogueManager\External\V2\Inspector::unavailable() ); }
+			if ( ! user_can( $actor, $descriptor->capability ) ) {
+				return Refusals::forbidden(); }
+			$args = \BulkCatalogueManager\External\V2\Arguments::normalize( $descriptor, $step['args'] );
+			if ( is_wp_error( $args ) ) {
+				return $args; }
+			$operations[] = [
+				'action' => $step['action'],
+				'args'   => $args,
+			];
+		}
+		$expanded    = $this->factory->expand_typed( $scope, $operations, $family['typed']['field_meta'] );
+		$scope       = $expanded['scope'];
+		$allowed     = [];
+		$unavailable = [];
+		foreach ( $scope->chunks( 500 ) as $chunk ) {
+			foreach ( $chunk as $ref ) {
+				$subject  = \BulkCatalogueManager\External\V2\SubjectLoader::load( $ref, $actor );
+				$eligible = ! is_wp_error( $subject );
+				foreach ( $expanded['steps'][ $ref->key() ] as $index ) {
+					$eligible = $eligible && in_array( $ref->kind, $family['typed']['described'][ $operations[ $index ]['action'] ]['descriptor']->target_kinds, true );
+				}
+				if ( $eligible ) {
+					$eligible = true === Guard::run( $family['id'], 'authorise', fn() => $family['provider']->authorise( $actor, $subject ) ); }
+				if ( ! $eligible ) {
+					if ( ! $scope->captured ) {
+						return is_wp_error( $subject ) ? $subject : Refusals::forbidden(); }
+					$unavailable[] = $ref->to_array();
+				} else {
+					$allowed[] = $ref->to_array(); }
+			}
+		}
+		$context    = new \BulkCatalogueManager\External\V2\RunContext( 'preview', $actor, 0 );
+		$applicable = [];
+		foreach ( $allowed as $wire ) {
+			$key                = \BulkCatalogueManager\Extension\V2\TargetRef::from_array( $wire )->key();
+			$applicable[ $key ] = $expanded['steps'][ $key ];
+		}
+		$binding = \BulkCatalogueManager\External\V2\Binding::of( $family['provider'], new \BulkCatalogueManager\External\V2\TypedScope( $allowed, false, $applicable ), $operations, $context );
+		if ( is_wp_error( $binding ) ) {
+			return $binding; }
+		$operations = array_map(
+			static fn( array $step ): array => [
+				'action' => $step['action'],
+				'args'   => $step['args'],
+			],
+			$binding['steps']
+		);
+		$selection  = array_intersect_key( $input, array_flip( [ 'targets', 'token', 'typed_token' ] ) );
+		$hash       = self::hash(
+			$selection,
+			$operations,
+			Settings::load(),
+			$scope->signature(),
+			[
+				'binding'     => $binding,
+				'entry'       => $input['entry'],
+				'family'      => $input['family'],
+				'steps'       => $expanded['steps'],
+				'unavailable' => $unavailable,
+			]
+		);
+		return [
+			'input'        => $input,
+			'scope'        => $scope,
+			'operations'   => $operations,
+			'binding'      => $binding,
+			'provider'     => $family['provider'],
+			'fields'       => $family['typed']['fields'],
+			'hash'         => $hash,
+			'unavailable'  => $unavailable,
+			'allowed'      => $allowed,
+			'step_indices' => $expanded['steps'],
+			'added'        => $expanded['added'],
+		];
+	}
+
+	/**
+	 * Compute a typed preview without exposing opaque field values or snapshots.
+	 * @param array $input Flat transport input.
+	 * @param int $actor Current actor.
+	 * @return array|\WP_Error Safe preview envelope.
+	 */
+	public function run_typed( array $input, int $actor ): array|\WP_Error {
+		$p = $this->prepare_typed( $input, $actor );
+		if ( is_wp_error( $p ) ) {
+			return $p; }
+		$steps    = \BulkCatalogueManager\External\V2\Binding::validated( $p['binding'] );
+		$context  = new \BulkCatalogueManager\External\V2\RunContext( 'preview', $actor, 0 );
+		$computer = new \BulkCatalogueManager\External\V2\Computer( $p['provider'] );
+		$sample   = [];
+		$changed  = 0;
+		$already  = 0;
+		$computed = 0;
+		$failures = [];
+		$rows     = array_fill_keys( [ Result::CHANGED, Result::ALREADY, Result::SKIPPED, Result::FAILED ], 0 );
+		$by_type  = [];
+		foreach ( $p['scope']->chunks( 500 ) as $chunk ) {
+			foreach ( $chunk as $ref ) {
+				$by_type[ $ref->kind ] ??= [
+					'matched'      => 0,
+					'would_change' => 0,
+				];
+				++$by_type[ $ref->kind ]['matched']; }
+		}
+		if ( [] !== $p['unavailable'] ) {
+			$failures[ BatchFactory::unavailable_reason() ] = count( $p['unavailable'] );
+			$rows[ Result::FAILED ]                        += count( $p['unavailable'] ); }
+		foreach ( array_slice( $p['allowed'], 0, $this->cap ) as $wire ) {
+			$ref     = \BulkCatalogueManager\Extension\V2\TargetRef::from_array( $wire );
+			$subject = \BulkCatalogueManager\External\V2\SubjectLoader::load( $ref, $actor );
+			if ( is_wp_error( $subject ) ) {
+				$failures[ BatchFactory::unavailable_reason() ] = 1 + ( $failures[ BatchFactory::unavailable_reason() ] ?? 0 );
+				continue; }
+			$own       = array_values( array_intersect_key( $steps, array_flip( $p['step_indices'][ $ref->key() ] ) ) );
+			$aggregate = $computer->run( $subject, $own, $context );
+			++$computed;
+			$changes = false;
+			$failed  = false;
+			foreach ( $aggregate as $key => $field ) {
+				$changes = $changes || ! $p['fields'][ $key ]->same( $field['before'], $field['after'] );
+				foreach ( $field['results'] as $result ) {
+					++$rows[ $result->state() ];
+					if ( in_array( $result->state(), [ Result::FAILED, Result::SKIPPED ], true ) ) {
+						$failed                        = true;
+						$failures[ $result->reason() ] = 1 + ( $failures[ $result->reason() ] ?? 0 ); }
+					if ( count( $sample ) < $p['input']['sample_size'] ) {
+						$sample[] = [
+							'target' => $wire,
+							'field'  => $key,
+							'state'  => $result->state(),
+							'reason' => $result->reason(),
+						]; }
+				}
+			}
+			if ( $changes ) {
+				++$changed;
+				++$by_type[ $ref->kind ]['would_change'];
+			} elseif ( ! $failed ) {
+				++$already; }
+		}
+		$selection = array_intersect_key( $p['input'], array_flip( [ 'targets', 'token', 'typed_token' ] ) );
+		return [
+			'serializer'        => 2,
+			'family'            => $p['input']['family'],
+			'external'          => $p['input']['external'],
+			'entry'             => $p['input']['entry'],
+			'operations'        => $p['operations'],
+			'scope_hash'        => $p['scope']->signature(),
+			'hash'              => $p['hash'],
+			'selection'         => $selection + [
+				'count'            => $p['scope']->count(),
+				'variations_added' => $p['added'],
+			],
+			'totals'            => [
+				'matched'      => $p['scope']->count(),
+				'computed'     => $computed,
+				'estimated'    => count( $p['allowed'] ) > $computed,
+				'would_change' => $changed,
+				'already'      => $already,
+				'would_fail'   => $failures,
+				'rows'         => $rows,
+				'by_type'      => $by_type,
+			],
+			'sample'            => $sample,
+			'summary'           => self::summary( array_column( $p['binding']['fields'], 'label' ), $by_type['product']['would_change'] ?? 0, $by_type['variation']['would_change'] ?? 0 ),
+			'warnings'          => [],
+			'unavailable_count' => count( $p['unavailable'] ),
+		];
+	}
 }

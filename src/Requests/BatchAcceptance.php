@@ -83,6 +83,21 @@ final class BatchAcceptance {
 		if ( null !== $earlier ) {
 			return $earlier;
 		}
+		if ( 2 === ( $intent['serializer'] ?? null ) ) {
+			if ( 'batch.undo' === $claims['operation'] ) {
+				return Refusals::incompatible( \BulkCatalogueManager\External\V2\Inspector::unavailable() ); }
+			$prepared = BatchIntent::prepare_typed( $intent, $claims['owner'], $credentials );
+			if ( is_wp_error( $prepared ) ) {
+				return $prepared; }
+			if ( Preview::canonical( $prepared['operations'] ) !== Preview::canonical( $intent['operations'] ) || ! is_string( $credentials['preview_hash'] ?? null ) || ! hash_equals( $prepared['hash'], $credentials['preview_hash'] ) ) {
+				return self::stale( 'provider_changed' ); }
+			// Validate the credential again after provider validation, still in the same transaction.
+			$selection = array_intersect_key( $prepared['input'], array_flip( [ 'targets', 'token', 'typed_token' ] ) );
+			$live      = \BulkCatalogueManager\External\V2\TypedScope::from_request( $selection, $claims['owner'] );
+			if ( is_wp_error( $live ) ) {
+				return $live; }
+			return $factory->record_typed( $claims, $prepared );
+		}
 		return 'batch.undo' === $claims['operation']
 			? self::undo( $claims, $intent, $batches, $factory )
 			: self::apply( $claims, $intent, $credentials, $clock, $factory );

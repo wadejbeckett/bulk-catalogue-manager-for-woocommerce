@@ -37,7 +37,7 @@ final class RequestService {
 	/**
 	 * Every operation kind a grant can be issued for.
 	 */
-	public const OPERATIONS = [ 'selection.capture', 'selection.compose', 'batch.apply', 'batch.undo', 'product.inline' ];
+	public const OPERATIONS = [ 'selection.capture', 'selection.compose', 'selection.capture_typed', 'selection.compose_typed', 'batch.apply', 'batch.undo', 'product.inline' ];
 
 	/** Clock injection keeps retention tests deterministic without test hooks. */
 	private \Closure $clock;
@@ -78,12 +78,24 @@ final class RequestService {
 				}
 				if ( is_wp_error( $intent ) ) {
 					return $intent; }
+				if ( 2 === ( $intent['serializer'] ?? null ) ) {
+					if ( str_starts_with( $operation, 'selection.' ) ) {
+						$authorized = ( new SnapshotService( $this->clock ) )->prepare_typed( $operation, $intent, get_current_user_id() ); } elseif ( 'batch.undo' === $operation ) {
+						$family = RequestFamily::from_batch( $intent['batch_id'], get_current_user_id() );
+						return is_wp_error( $family ) ? $family : \BulkCatalogueManager\External\Refusals::incompatible( \BulkCatalogueManager\External\V2\Inspector::unavailable() );
+						} else {
+							$authorized = BatchIntent::prepare_typed( $intent, get_current_user_id() ); }
+						if ( is_wp_error( $authorized ) ) {
+							return $authorized; }
+				}
 				return $this->signer()->issue( $operation, CaptureIntent::fingerprint( $intent ), get_current_user_id(), ( $this->clock )() ) + [
 					'operation' => $operation,
 					'intent'    => $intent,
 				];
 			},
-			str_starts_with( $operation, 'batch.' )
+			str_starts_with( $operation, 'batch.' ),
+			false,
+			self::typed( $input ) || str_ends_with( $operation, '_typed' )
 		);
 	}
 
@@ -94,7 +106,8 @@ final class RequestService {
 	 * @return array<string,mixed>|\WP_Error
 	 */
 	public function capture( array $request ): array|\WP_Error {
-		return $this->run( $request, true, 'selection.capture' );
+		$serializer = $request['intent']['serializer'] ?? null;
+		return $this->run( $request, true, 2 === $serializer ? 'selection.capture_typed' : 'selection.capture' );
 	}
 
 	/**
@@ -104,7 +117,8 @@ final class RequestService {
 	 * @return array<string,mixed>|\WP_Error
 	 */
 	public function compose( array $request ): array|\WP_Error {
-		return $this->run( $request, true, 'selection.compose' );
+		$serializer = $request['intent']['serializer'] ?? null;
+		return $this->run( $request, true, 2 === $serializer ? 'selection.compose_typed' : 'selection.compose' );
 	}
 
 	/**
@@ -139,6 +153,8 @@ final class RequestService {
 	public function preview( array $input ): array|\WP_Error {
 		return $this->guard(
 			function () use ( $input ): array|\WP_Error {
+				if ( self::typed( $input ) ) {
+					return ( new Preview( clock: $this->clock ) )->run_typed( $input, get_current_user_id() ); }
 				if ( array_key_exists( 'token', $input ) === array_key_exists( 'ids', $input ) ) {
 					throw new \InvalidArgumentException( 'Exactly one selection is required.' );
 				}
@@ -150,7 +166,10 @@ final class RequestService {
 					return $selection;
 				}
 				return ( new Preview( clock: $this->clock ) )->run( $selection, $input['operations'] ?? null, (int) ( $input['sample_size'] ?? Preview::DEFAULT_SAMPLE ), $token, null, true );
-			}
+			},
+			false,
+			false,
+			self::typed( $input )
 		);
 	}
 
@@ -162,6 +181,8 @@ final class RequestService {
 	 * @return array|\WP_Error
 	 */
 	private function normalize( string $operation, array $input ): array|\WP_Error {
+		if ( str_ends_with( $operation, '_typed' ) ) {
+			return ( new SnapshotService( $this->clock ) )->typed_intent( $operation, $input, get_current_user_id() ); }
 		return match ( $operation ) {
 			'selection.capture' => CaptureIntent::normalize( $input ),
 			'selection.compose' => ComposeIntent::normalize( $input, get_current_user_id() ),
@@ -177,7 +198,13 @@ final class RequestService {
 	 * @return array<string,mixed>|\WP_Error
 	 */
 	public function handle( string $operation, array $input ): array|\WP_Error {
-		return $this->guard( fn(): array|\WP_Error => ( new SnapshotService( $this->clock ) )->handle( $operation, $input, get_current_user_id() ) );
+				$typed = isset( $input['typed_token'] ) || str_starts_with( (string) ( $input['token'] ?? '' ), 'v3.' ) || [] !== array_filter( is_array( $input['tokens'] ?? null ) ? $input['tokens'] : [], static fn( mixed $token ): bool => is_string( $token ) && str_starts_with( $token, 'v3.' ) );
+		if ( isset( $input['typed_token'] ) ) {
+			if ( isset( $input['token'] ) ) {
+				return \BulkCatalogueManager\Rest\RequestsController::unknown();
+			} $input['token'] = $input['typed_token'];
+			unset( $input['typed_token'] ); }
+		return $this->guard( fn(): array|\WP_Error => ( new SnapshotService( $this->clock ) )->handle( $operation, $input, get_current_user_id() ), false, false, $typed );
 	}
 
 	/**
@@ -368,6 +395,7 @@ final class RequestService {
 	 * @return array<string,mixed>|\WP_Error
 	 */
 	private function run( array $request, bool $accept, string $operation ): array|\WP_Error {
+		$typed  = self::typed( is_array( $request['intent'] ?? null ) ? $request['intent'] : [] ) || str_ends_with( $operation, '_typed' );
 		$result = $this->guard(
 			function () use ( $request, $accept, $operation ): array|\WP_Error {
 				if ( ! is_array( $request['intent'] ?? null ) || 1 !== ( $request['intent']['version'] ?? null ) || ! is_string( $request['uuid'] ?? null ) || ! is_string( $request['request_proof'] ?? null ) || ! in_array( $operation, self::OPERATIONS, true ) || ( $request['operation'] ?? $operation ) !== $operation ) {
@@ -380,10 +408,16 @@ final class RequestService {
 				if ( is_wp_error( $claims ) ) {
 					return $claims;
 				}
+				if ( 2 === ( $intent['serializer'] ?? null ) ) {
+					$family = RequestFamily::from_verified_intent( $intent, $claims, get_current_user_id() );
+					$access = is_wp_error( $family ) ? $family : Access::user_can_family( get_current_user_id(), $family );
+					if ( true !== $access ) {
+						return $access; }
+				}
 				$receipts = new RequestRepository();
 				$row      = $receipts->read( $claims['owner'], $claims['uuid'] );
 				if ( null !== $row ) {
-					return $this->outcome( $row, $claims );
+					return $this->outcome( $row, $claims, $intent );
 				}
 				if ( $claims['accept_until'] <= ( $this->clock )() ) {
 					return self::expired();
@@ -395,7 +429,7 @@ final class RequestService {
 					function () use ( $receipts, $claims, $intent, $request, $operation ): array|\WP_Error {
 						$row = $receipts->claim( $claims );
 						if ( '' !== $row['result_id'] ) {
-								return $this->outcome( $row, $claims );
+								return $this->outcome( $row, $claims, $intent );
 						}
 						if ( $claims['accept_until'] <= ( $this->clock )() ) {
 							return self::expired();
@@ -413,7 +447,7 @@ final class RequestService {
 							return $result;
 						}
 						$service  = new SnapshotService( $this->clock );
-						$snapshot = 'selection.capture' === $operation ? $service->capture( $intent, $claims['owner'], ( $this->clock )() ) : $service->compose( $intent, $request, $claims['owner'] );
+						$snapshot = str_ends_with( $operation, '_typed' ) ? $service->accept_typed( $operation, $intent, $request, $claims['owner'] ) : ( 'selection.capture' === $operation ? $service->capture( $intent, $claims['owner'], ( $this->clock )() ) : $service->compose( $intent, $request, $claims['owner'] ) );
 						if ( is_wp_error( $snapshot ) ) {
 							return $snapshot; }
 						$receipts->accepted_snapshot( $claims, $snapshot['id'] );
@@ -424,13 +458,21 @@ final class RequestService {
 					}
 				);
 			},
-			str_starts_with( $operation, 'batch.' )
+			str_starts_with( $operation, 'batch.' ),
+			false,
+			$typed
 		);
 		if ( is_wp_error( $result ) || ! isset( $result['batch_id'] ) ) {
 			return $result;
 		}
 		return $this->guard(
-			static function () use ( $result ): array {
+			static function () use ( $result, $typed ): array|\WP_Error {
+				// Replayed outcomes were authorized against their verified receipt, including pruning.
+				if ( $typed && ! $result['replayed'] ) {
+					$family = RequestFamily::from_batch( (int) $result['batch_id'], get_current_user_id() );
+					if ( is_wp_error( $family ) ) {
+						return $family; }
+				}
 				// Scheduled first, so a listener that fails cannot hold the batch back.
 				$finished = BatchRecovery::finish( $result );
 				if ( false === $result['replayed'] ) {
@@ -438,7 +480,10 @@ final class RequestService {
 					do_action( 'bulkcat_batch_created', (int) $result['batch_id'] );
 				}
 				return $finished;
-			}
+			},
+			false,
+			false,
+			$typed
 		);
 	}
 
@@ -449,7 +494,7 @@ final class RequestService {
 	 * @param array<string,mixed> $claims Authenticated intent.
 	 * @return array<string,mixed>|\WP_Error
 	 */
-	private function outcome( array $row, array $claims ): array|\WP_Error {
+	private function outcome( array $row, array $claims, ?array $intent = null ): array|\WP_Error {
 		if ( $row['operation'] !== $claims['operation'] || $row['fingerprint'] !== $claims['fingerprint'] ) {
 			return Refusal::create( 'bulkcat_request_conflict', __( 'This request belongs to a different change. Resolve the original change before starting another.', 'bulk-catalogue-manager-for-woocommerce' ), 409 );
 		}
@@ -465,6 +510,11 @@ final class RequestService {
 			}
 			if ( $batch['user_id'] !== $claims['owner'] || $batch['uuid'] !== $claims['uuid'] ) {
 				throw new \RuntimeException( 'Receipt does not match its batch.' );
+			}
+			if ( 2 === ( $intent['serializer'] ?? null ) ) {
+				$family = RequestFamily::from_receipt( $batch, $intent, $claims, $claims['owner'] );
+				if ( is_wp_error( $family ) || $family !== $intent['family'] ) {
+					return \BulkCatalogueManager\External\Refusals::forbidden(); }
 			}
 			return [
 				'batch_id'    => $batch['batch_id'],
@@ -491,13 +541,13 @@ final class RequestService {
 	 * @param bool     $change    Whether it concerns an Apply or undo, whose malformed input is refused in those words.
 	 * @return array<string,mixed>|\WP_Error
 	 */
-	private function guard( callable $operation, bool $change = false, bool $disclosure = false ): array|\WP_Error {
-		$access = $disclosure ? Access::can_read() : Access::can_write();
+	private function guard( callable $operation, bool $change = false, bool $disclosure = false, bool $typed = false ): array|\WP_Error {
+		$access = $disclosure || $typed ? Access::can_read() : Access::can_write();
 		if ( is_wp_error( $access ) ) {
 			return $access;
 		}
 		try {
-			if ( ! FoundationStorage::ready() ) {
+			if ( ! FoundationStorage::ready() || ( $typed && ! FoundationStorage::typed_ready() ) ) {
 				throw new \RuntimeException( 'Storage needs a complete migration and transactional tables.' );
 			}
 			return $operation();
@@ -545,5 +595,12 @@ final class RequestService {
 			return 0;
 		}
 		return FoundationStorage::atomic( fn(): int => ( new RequestRepository() )->prune( ( $this->clock )() ) );
+	}
+	/**
+	 * Typed markers must never silently fall through to the product-v1 parser.
+	 * @param array $input Untrusted input.
+	 */
+	private static function typed( array $input ): bool {
+		return \BulkCatalogueManager\Rest\TypedPreviewInput::present( $input );
 	}
 }

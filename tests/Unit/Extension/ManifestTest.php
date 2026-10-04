@@ -50,11 +50,11 @@ final class ManifestTest extends TestCase {
 		];
 	}
 
-	public function test_migration_7_to_8_adds_the_column_once(): void {
+	public function test_migration_7_to_current_preserves_the_extension_column(): void {
 		$GLOBALS['bulkcat_test']['options'][ Migrator::VERSION_OPTION ] = '7';
 		$this->assertStringContainsString( "\nextensions longtext NULL,\n", Schema::BATCHES_BODY );
 		$this->assertTrue( ( new Migrator( Registry::plugin() ) )->run() );
-		$this->assertSame( '8', get_option( Migrator::VERSION_OPTION ) );
+		$this->assertSame( '9', get_option( Migrator::VERSION_OPTION ) );
 		$this->assertCount( 1, $GLOBALS['bulkcat_test']['dbdelta'] );
 		$this->assertStringContainsString( 'extensions longtext NULL', $GLOBALS['bulkcat_test']['dbdelta'][0][0] );
 		$this->assertTrue( ( new Migrator( Registry::plugin() ) )->run() );

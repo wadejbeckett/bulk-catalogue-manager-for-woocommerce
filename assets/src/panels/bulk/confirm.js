@@ -58,10 +58,26 @@ function hidesAs( field, value ) {
  * @param {Object}        registry   The `/fields` payload.
  * @param {Array<Object>} operations Operations `[ { action, args } ]`.
  * @param {number}        count      Products it applies to.
+ * @param {boolean}       typed      Typed.
  * @return {Array<string>} Sentences; empty when none always confirms.
  */
-export function alwaysConfirmReasons( registry, operations, count ) {
-	const products = productsPhrase( count );
+export function alwaysConfirmReasons(
+	registry,
+	operations,
+	count,
+	typed = false
+) {
+	const products = typed
+		? sprintf(
+				/* translators: %d: number of selected records. */ _n(
+					'%d item',
+					'%d items',
+					count,
+					'bulk-catalogue-manager-for-woocommerce'
+				),
+				count
+			)
+		: productsPhrase( count );
 	const reasons = [];
 	( operations || [] ).forEach( ( operation ) => {
 		const action = actionById( registry, operation.action );
@@ -222,9 +238,11 @@ export function useConfirmApply( { count, threshold, reasons = [], onApply } ) {
  * @param {boolean}       props.disabled       Whether Apply is disabled.
  * @param {string}        props.disabledReason Its one-line reason.
  * @param {boolean}       props.busy           Whether an apply is running.
+ * @param {boolean}       props.typed          Typed.
  * @return {Element} Apply control.
  */
 export function ConfirmApply( {
+	typed = false,
 	count,
 	byType = null,
 	threshold,
@@ -253,9 +271,18 @@ export function ConfirmApply( {
 	const words = formatNumber( count );
 	// Products and variations apart when the change reaches variations (ticket 11).
 	const mixed = Number( byType?.variations ) > 0;
-	const phrase = mixed
-		? countPhrase( count, byType )
-		: productsPhrase( count );
+	let phrase = mixed ? countPhrase( count, byType ) : productsPhrase( count );
+	if ( typed ) {
+		phrase = sprintf(
+			/* translators: %d: number of selected records. */ _n(
+				'%d item',
+				'%d items',
+				count,
+				'bulk-catalogue-manager-for-woocommerce'
+			),
+			count
+		);
+	}
 	// Escape on the second click dismisses it (and not the panel around it).
 	const onEscape = ( event ) => {
 		if ( event.key === 'Escape' ) {
@@ -310,7 +337,7 @@ export function ConfirmApply( {
 						id="bulkcat-confirm-title"
 						className="bulkcat-confirm__title"
 					>
-						{ mixed
+						{ mixed || typed
 							? sprintf(
 									/* translators: %s: a number of products and variations, such as "1,200 products and 50 variations". */
 									__(

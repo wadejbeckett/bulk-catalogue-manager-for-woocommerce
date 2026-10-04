@@ -962,4 +962,84 @@ final class BatchFactory {
 			]
 		);
 	}
+	/**
+	 * Expand only eligible variation steps, retaining full reference identity.
+	 * @param \BulkCatalogueManager\External\V2\TypedScope $scope Original exact selection.
+	 * @param array $operations Normalized operations.
+	 * @param array $fields Qualified field metadata.
+	 * @return array Expanded scope and per-reference step indices.
+	 */
+	public function expand_typed( \BulkCatalogueManager\External\V2\TypedScope $scope, array $operations, array $fields ): array {
+		$targets  = $scope->targets();
+		$indices  = [];
+		$parents  = [];
+		$reaching = [];
+		foreach ( $operations as $i => $step ) {
+			if ( $step['args']['apply_to_variations'] && 'per_variation' === ( $fields[ $step['args']['field'] ]['rule'] ?? null ) ) {
+				$reaching[] = $i; }
+		}
+		foreach ( $scope->chunks( self::PAGE ) as $chunk ) {
+			foreach ( $chunk as $ref ) {
+				$indices[ $ref->key() ] = array_keys( $operations );
+				if ( 'product' === $ref->kind ) {
+					$parents[] = $ref->id; }
+			}
+		}
+		$added = 0;
+		if ( [] !== $reaching ) {
+			foreach ( array_chunk( $parents, self::PAGE ) as $chunk ) {
+				foreach ( self::children( $chunk, Selection::MAX_OBJECTS + 1 ) as [ $child ] ) {
+					$ref = new \BulkCatalogueManager\Extension\V2\TargetRef( 'variation', null, $child );
+					if ( isset( $indices[ $ref->key() ] ) ) {
+						continue; }
+					$indices[ $ref->key() ] = $reaching;
+					$targets[]              = $ref->to_array();
+					++$added;
+					if ( count( $targets ) > Selection::MAX_OBJECTS ) {
+						throw new \LengthException( 'Expanded selection is too large.' ); }
+				}
+			}
+		}
+		ksort( $indices );
+		return [
+			'scope' => new \BulkCatalogueManager\External\V2\TypedScope( $targets, $scope->captured ),
+			'steps' => $indices,
+			'added' => $added,
+		];
+	}
+
+	/**
+	 * Atomically record typed acceptance; never call a product writer for a term.
+	 * @param array $claims Verified receipt claims.
+	 * @param array $prepared Server-owned preparation.
+	 * @return array Safe accepted result.
+	 */
+	public function record_typed( array $claims, array $prepared ): array {
+		\BulkCatalogueManager\Data\FoundationStorage::require_transaction();
+		$manifest = \BulkCatalogueManager\External\V2\Manifest::build( $prepared['binding'], $prepared['input']['family'], $prepared['input']['entry'] );
+		$summary  = [
+			'serializer'       => 2,
+			'family'           => $prepared['input']['family'],
+			'scope_hash'       => $prepared['scope']->signature(),
+			'count'            => $prepared['scope']->count(),
+			'unavailable'      => count( $prepared['unavailable'] ),
+			'variations_added' => $prepared['added'],
+		];
+		$id       = $this->batches->create( $claims['uuid'], $claims['owner'], 'bulk', $prepared['operations'], $summary, $prepared['scope']->count(), null, null, $manifest );
+		$written  = $this->batches->materialise_typed( $id, $prepared['scope']->targets(), $prepared['step_indices'], $prepared['operations'] );
+		if ( $prepared['scope']->count() !== $written ) {
+			throw new \RuntimeException( 'Incomplete typed materialization.' ); }
+		if ( [] !== $prepared['unavailable'] ) {
+			$failed = $this->batches->fail_targets( $id, $prepared['unavailable'], self::unavailable_reason() );
+			if ( count( $prepared['unavailable'] ) !== $failed ) {
+				throw new \RuntimeException( 'Incomplete unavailable materialization.' ); }
+			$this->batches->increment_counters( $id, $failed, 0, $failed );
+		}
+		return [
+			'batch_id'    => $id,
+			'status'      => 'queued',
+			'total_items' => $written,
+			'replayed'    => false,
+		];
+	}
 }

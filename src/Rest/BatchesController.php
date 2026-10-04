@@ -131,7 +131,7 @@ final class BatchesController implements ReadController {
 	/**
 	 * The only parameters a durable change may carry (T83).
 	 */
-	private const DURABLE = [ 'uuid', 'request_proof', 'intent', 'token', 'preview_hash' ];
+	private const DURABLE = [ 'uuid', 'request_proof', 'intent', 'token', 'typed_token', 'preview_hash' ];
 
 	/**
 	 * A request id: a UUID in its 8-4-4-4-12 hexadecimal form.
@@ -227,7 +227,7 @@ final class BatchesController implements ReadController {
 				[
 					'methods'             => 'POST',
 					'callback'            => [ $this, 'create_item' ],
-					'permission_callback' => [ Access::class, 'can_write' ],
+					'permission_callback' => [ Access::class, 'can_family_request' ],
 					'args'                => self::args(),
 				],
 				[
@@ -269,7 +269,7 @@ final class BatchesController implements ReadController {
 				[
 					'methods'             => 'POST',
 					'callback'            => [ $this, 'cancel_item' ],
-					'permission_callback' => [ Access::class, 'can_write' ],
+					'permission_callback' => [ Access::class, 'can_family_request' ],
 					'args'                => self::id_arg(),
 				],
 			]
@@ -561,7 +561,7 @@ final class BatchesController implements ReadController {
 		foreach ( $items as $index => $item ) {
 			$undo = $by[ (int) $item['batch_id'] ] ?? null;
 			// The list's own properties sit after the report's, before its undo summary.
-			$items[ $index ] = $item + [
+			$items[ $index ] = $this->typed_report( $item ) + [
 				'user_name'           => $names[ (int) $item['user_id'] ] ?? '',
 				'variations_included' => isset( $with[ (int) $item['batch_id'] ] ),
 				'undone_by'           => null === $undo ? null : $undo + [ 'user_name' => $names[ $undo['user_id'] ] ?? '' ],
@@ -626,7 +626,7 @@ final class BatchesController implements ReadController {
 			UndoController::lift_time_limit();
 		}
 		$report = $this->progress->report( (int) $request->get_param( 'id' ), $count );
-		return null === $report ? self::not_found() : new \WP_REST_Response( $report, 200 );
+		return null === $report ? self::not_found() : new \WP_REST_Response( $this->typed_report( $report ), 200 );
 	}
 
 	/**
@@ -635,6 +635,10 @@ final class BatchesController implements ReadController {
 	 * @param \WP_REST_Request $request The validated, sanitised request.
 	 */
 	public function cancel_item( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
+		$stored = $this->batches->find_strict( (int) $request->get_param( 'id' ) );
+		$family = isset( $stored['extensions']['serializer'] ) ? \BulkCatalogueManager\Requests\RequestFamily::from_batch( (int) $request->get_param( 'id' ), get_current_user_id() ) : Access::can_write( $request );
+		if ( is_wp_error( $family ) ) {
+			return $family; }
 		$result = $this->progress->cancel( (int) $request->get_param( 'id' ) );
 		if ( 'missing' === $result ) {
 			return self::not_found();
@@ -649,7 +653,7 @@ final class BatchesController implements ReadController {
 				409
 			);
 		}
-		return new \WP_REST_Response( $result, 200 );
+		return new \WP_REST_Response( $this->typed_report( $result ), 200 );
 	}
 
 	/**
@@ -752,6 +756,10 @@ final class BatchesController implements ReadController {
 				],
 				[ self::class, 'ids' ]
 			),
+			'typed_token'     => [
+				'type'      => 'string',
+				'minLength' => 1,
+			],
 			'token'           => self::arg(
 				[
 					'description' => __( 'The selection token from the selection route, instead of ids.', 'bulk-catalogue-manager-for-woocommerce' ),
@@ -914,5 +922,46 @@ final class BatchesController implements ReadController {
 		};
 		$schema['sanitize_callback'] = static fn( mixed $value ): mixed => $sanitise( $value );
 		return $schema;
+	}
+	/**
+	 * Typed history is projected from the stored serializer and current typed capability.
+	 * @param array $report Existing safe native report.
+	 * @return array Report without opaque validation/state or unauthorized arguments.
+	 */
+	private function typed_report( array $report ): array {
+		$batch    = $this->batches->find_strict( (int) $report['batch_id'] );
+		$manifest = $batch['extensions'] ?? null;
+		if ( ! is_array( $manifest ) || ! array_key_exists( 'serializer', $manifest ) ) {
+			return $report; }
+		$providers            = ( $this->actions ?? Actions::instance() )->providers()->typed();
+		$family               = $providers->family( $manifest['provider'] ?? '' );
+		$identity             = $manifest['identity'] ?? null;
+		$allowed              = 2 === $manifest['serializer'] && null !== $family && $family['identity'] === $identity && true === Access::user_can_family( get_current_user_id(), $manifest['family'] ?? '' );
+		$report['operations'] = [];
+		foreach ( $batch['operations'] as $step ) {
+			$d                      = $family['typed']['described'][ $step['action'] ]['descriptor'] ?? null;
+			$can_read               = $allowed && null !== $d && user_can( get_current_user_id(), $d->capability );
+			$report['operations'][] = [
+				'action' => $step['action'],
+				'args'   => $can_read ? $step['args'] : array_intersect_key( $step['args'], array_flip( \BulkCatalogueManager\External\Disclosure::CORE_KEYS ) ),
+			];
+		}
+		$report['external'] = [
+			'serializer' => $manifest['serializer'],
+			'providers'  => [],
+			'actions'    => [],
+			'fields'     => [],
+		];
+		if ( 2 === $manifest['serializer'] ) {
+			$report['external']['providers'][] = [
+				'id'    => $manifest['provider'],
+				'label' => \BulkCatalogueManager\External\Text::plain( $manifest['provider_label'] ?? '', 80 ),
+			];
+			foreach ( $manifest['actions'] ?? [] as $id => $action ) {
+				$report['external']['actions'][ $id ] = \BulkCatalogueManager\External\Text::plain( $action['label'] ?? '', 80 ); }
+			foreach ( $manifest['fields'] ?? [] as $id => $field ) {
+				$report['external']['fields'][ $id ] = \BulkCatalogueManager\External\Text::plain( $field['label'] ?? '', 80 ); }
+		}
+		return $report;
 	}
 }

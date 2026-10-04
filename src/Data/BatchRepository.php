@@ -1390,4 +1390,87 @@ final class BatchRepository {
 		}
 		return $found;
 	}
+	/**
+	 * Materialize exact tuples; keep step subsets on the existing item operation column.
+	 * @param int $batch_id Batch header.
+	 * @param array $targets Canonical full references.
+	 * @param array $indices Applicable step indices by full reference key.
+	 * @param array $operations Accepted normalized operations.
+	 */
+	public function materialise_typed( int $batch_id, array $targets, array $indices = [], array $operations = [] ): int {
+		global $wpdb;
+		self::assert_ids( [ $batch_id ], 'batch id' );
+		$targets = \BulkCatalogueManager\Selection\TypedMembers::normalize( $targets );
+		$written = 0;
+		foreach ( array_chunk( $targets, self::INSERT_CHUNK ) as $chunk ) {
+			$args = [ $this->registry->table( Schema::ITEMS ) ];
+			foreach ( $chunk as $wire ) {
+				$ref = \BulkCatalogueManager\Extension\V2\TargetRef::from_array( $wire );
+				$own = isset( $indices[ $ref->key() ] ) ? array_values( array_intersect_key( $operations, array_flip( $indices[ $ref->key() ] ) ) ) : $operations;
+				array_push( $args, $batch_id, $ref->id, $ref->kind, $ref->taxonomy ?? '', self::json( $own ) );
+			}
+			$rows = implode( ', ', array_fill( 0, count( $chunk ), "(%d, %d, %s, %s, 'pending', 0, %s)" ) );
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Only repeated placeholders; every value is prepared.
+			$count = $wpdb->query( $wpdb->prepare( "INSERT INTO %i (batch_id, object_id, object_type, target_taxonomy, state, attempts, operations) VALUES {$rows}", $args ) );
+			if ( false === $count ) {
+				throw new \RuntimeException( 'Typed items were not recorded.' ); }
+			$written += $count;
+		}
+		return $written;
+	}
+
+	/**
+	 * Read complete native references, never joining on a numeric ID alone.
+	 * @param int $batch_id Batch identity.
+	 * @return array Wire references.
+	 */
+	public function typed_targets( int $batch_id ): array {
+		global $wpdb;
+		$rows = $wpdb->get_results( $wpdb->prepare( 'SELECT object_type, target_taxonomy, object_id FROM %i WHERE batch_id = %d ORDER BY object_type, target_taxonomy, object_id LIMIT %d', $this->registry->table( Schema::ITEMS ), $batch_id, \BulkCatalogueManager\Selection\Selection::MAX_OBJECTS + 1 ), ARRAY_A );
+		if ( ! is_array( $rows ) || '' !== $wpdb->last_error ) {
+			throw new \RuntimeException( 'Cannot read typed identity.' ); }
+		return \BulkCatalogueManager\Selection\TypedMembers::normalize(
+			array_map(
+				static fn( array $row ): array => [
+					'kind'     => $row['object_type'],
+					'taxonomy' => '' === $row['target_taxonomy'] ? null : $row['target_taxonomy'],
+					'id'       => (int) $row['object_id'],
+				],
+				$rows
+			)
+		);
+	}
+
+	/**
+	 * Preserve denied captured slots as failures under their full identity.
+	 * @param int $batch_id Batch identity.
+	 * @param array $targets Denied references.
+	 * @param string $message Sanitized reason.
+	 */
+	public function fail_targets( int $batch_id, array $targets, string $message ): int {
+		global $wpdb;
+		$count = 0;
+		foreach ( $targets as $wire ) {
+			$ref    = \BulkCatalogueManager\Extension\V2\TargetRef::from_array( $wire );
+			$result = $wpdb->update(
+				$this->registry->table( Schema::ITEMS ),
+				[
+					'state'   => 'failed',
+					'message' => self::cut( $message ),
+				],
+				[
+					'batch_id'        => $batch_id,
+					'object_type'     => $ref->kind,
+					'target_taxonomy' => $ref->taxonomy ?? '',
+					'object_id'       => $ref->id,
+				],
+				[ '%s', '%s' ],
+				[ '%d', '%s', '%s', '%d' ]
+			);
+			if ( false === $result ) {
+				throw new \RuntimeException( 'Cannot fail typed item.' );
+			} $count += $result;
+		}
+		return $count;
+	}
 }

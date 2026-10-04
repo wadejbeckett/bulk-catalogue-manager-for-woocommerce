@@ -89,7 +89,7 @@ final class PreviewController implements ReadController {
 				[
 					'methods'             => 'POST',
 					'callback'            => [ $this, 'create_item' ],
-					'permission_callback' => [ Access::class, 'can_write' ],
+					'permission_callback' => [ Access::class, 'can_family_request' ],
 					'args'                => self::args(),
 				],
 				'schema' => [ $this, 'get_item_schema' ],
@@ -116,6 +116,16 @@ final class PreviewController implements ReadController {
 			'title'      => self::TITLE,
 			'type'       => 'object',
 			'properties' => [
+				'serializer'        => [
+					'type' => 'integer',
+					'enum' => [ 2 ],
+				],
+				'family'            => [
+					'type' => 'string',
+					'enum' => [ 'product', 'category' ],
+				],
+				'external'          => $object,
+				'entry'             => [ 'type' => 'string' ],
 				'totals'            => $object,
 				'summary'           => [ 'type' => 'string' ],
 				'sample'            => $objects,
@@ -168,7 +178,7 @@ final class PreviewController implements ReadController {
 
 		$args                           = array_intersect_key( BatchesController::args(), array_flip( [ 'operations', 'ids', 'token' ] ) );
 		$args['operations']['required'] = true;
-		return $args + [ 'sample_size' => $schema ];
+		return $args + [ 'sample_size' => $schema ] + TypedPreviewInput::args();
 	}
 
 	/**
@@ -177,6 +187,12 @@ final class PreviewController implements ReadController {
 	 * @param \WP_REST_Request $request The request, its arguments validated and sanitised by core.
 	 */
 	public function create_item( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
+		if ( TypedPreviewInput::present( $request->get_params() ) ) {
+			$input  = TypedPreviewInput::normalize( $request->get_params(), get_current_user_id() );
+			$result = is_wp_error( $input ) ? $input : ( new RequestService() )->preview( $input );
+			return is_wp_error( $result ) ? $result : self::respond( $result );
+		}
+
 		$ids   = $request->get_param( 'ids' );
 		$token = $request->get_param( 'token' );
 		if ( ( null === $ids ) === ( null === $token ) ) {

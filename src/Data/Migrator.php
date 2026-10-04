@@ -28,7 +28,7 @@ final class Migrator {
 	 * pruned time (T54); 6: the item's own operations (T56); 7: immutable selections and durable request receipts (T81);
 	 * 8: the batch's provider manifest, `extensions` (T107).
 	 */
-	public const SCHEMA_VERSION = '8';
+	public const SCHEMA_VERSION = '9';
 
 	/**
 	 * The option holding the schema version the database was last migrated to.

@@ -188,3 +188,43 @@ The core's own acceptance tests use a neutral provider, "Sample labels", in `tes
 ## 9. Testing your provider
 
 Test against the lowest supported and the newest core release. Assert in your own suite that `read()` and `compute()` issue no per-object queries after `prime()`, that `state_token()` stays within budget at 20,000 products, and that `write()` refuses a stale `$expected` and is a no-op when repeated.
+
+
+## 10. Opt into typed declarations without claiming runtime readiness
+
+The v1 examples above remain unchanged. SDK 2 lives in `Extension\V2` and uses the separate `bulkcat_register_typed_providers` hook. Read [contract section 19](EXTENSIONS.md#19-opt-in-typed-declarations-sdk-2-s1) for exact limits, immutable types and qualification boundaries. Its production capability map is currently empty; do not present declaration support as permission to dispatch typed work.
+
+Choose one registration hook at plugin load. A typed provider supplies its legacy facet through `legacy()` and controls only its old chooser visibility with `legacy_discovery()`; keep supported v1 IDs and formats intact. The example classes below belong to the provider:
+
+```php
+if ( defined( 'BULKCAT_TYPED_EXTENSION_CONTRACT' )
+    && class_exists( \BulkCatalogueManager\Extension\V2\Registrar::class ) ) {
+    add_action( 'bulkcat_register_typed_providers', static function ( $registrar ): void {
+        if ( $registrar->supports( 2 ) ) {
+            $registrar->register( new SampleTypedProvider() );
+        }
+    } );
+} elseif ( defined( 'BULKCAT_EXTENSION_CONTRACT' ) ) {
+    add_action( 'bulkcat_register_providers', static function ( $registrar ): void {
+        if ( $registrar->supports( 1 ) ) {
+            $registrar->register( new SampleLegacyProvider() );
+        }
+    } );
+}
+```
+
+Use `supports_capability('typed-product-subjects', 1)` and the other exact named capabilities before supplying supported runtime actions. Test category support independently; its absence must not remove a supported product descriptor. The collector also disables unsupported descriptors defensively. No public filter can qualify capabilities.
+
+Keep `identity()` stable across label/version changes. Compute from `Subject::value()` only and return `Computation(Result, Snapshot)` even for unchanged outcomes. Storage keys and native policy belong entirely to the provider. `finalise()` accepts the complete immutable group, performs per-target hygiene once per distinct tuple, then calls the shared native clear once and acknowledges only proven success. An unacknowledged or ambiguous native callback must not become `callback(); return true`. The neutral fixture demonstrates only its controlled clear, not arbitrary native provider behavior.
+
+The S1 unit tests establish declarations, bounds, registration and pure computation. Future Scenario lifecycle methods deliberately refuse until their owning task connects the real service. Native runtime, queue, panel and row/category qualification remain later gates.
+
+## 11. Supply bounded choices and consume the shared panel
+
+For an authorized lookup action, implement `ChoiceSource::search(Lookup, Scope, Context)` and `resolve(argument, values, dependencies, Scope, Context)`. Search must return at most the requested limit in a `ChoicePage` of `Choice` values; use an opaque provider continuation and a stable token for the relevant choice state. Resolution returns exactly one `ResolvedChoice` for each requested identity. Never return names or existence details for an inaccessible value. The core wraps continuations in a short-lived signed cursor and rechecks authorization on every call.
+
+Declare `type:lookup`, `source`, `multiple`, `min_items`, `max_items`, `depends_on` and, optionally, the scalar-choice/boolean `active_when` predicate. Keep IDs opaque and stable: rename updates labels and Preview binding, never identity. Continue to validate selected values at Preview and acceptance; a successful display lookup is not authority to write. Search and resolve receive an authorized exact native scope, not arbitrary filters. See [section 21](EXTENSIONS.md#21-scoped-choice-discovery-and-shared-controls-sdk-2-s3) for wire shapes, refusals and exact limits.
+
+Hosts use `rowEntry(ref, actionId)` or `bulkEntry(selection, selectionKey, kind)` from `assets/src/provider-actions/entry.js` and mount `ProviderActionPanel({entry,onClose,onCompleted})`. The shell discovers descriptors for that exact location and delegates to BulkChangePanel. A row entry has one explicit tuple, no automatic variation expansion and `clearSubmitted:false`; a bulk entry rejects empty selection and has `clearSubmitted:true`. Product and category selection keys are separate. The completion callback carries the original entry; subtract only that submitted bulk selection after genuine full completion, never clear a row entry's unrelated bulk selection. Host mounting and native category loading are later owned tasks.
+
+ChoiceControl is the default export from `choice-control.js`; required props are `{schema,value,onChange,provider,action,argument,selection,dependencies}`. The internal optional `onInvalidate` connects selected-label refresh to the existing Preview state. Providers supply no scripts, styles or markup. Capabilities remain unadvertised until their native gates pass.

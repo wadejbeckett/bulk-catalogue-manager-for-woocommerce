@@ -112,6 +112,10 @@ if ( ! class_exists( 'WP_Error' ) ) {
 			$this->body = $body;
 		}
 
+		public function get_body(): string {
+			return $this->body;
+		}
+
 		public function get_json_params(): ?array {
 			if ( ! str_starts_with( (string) $this->get_header( 'content-type' ), 'application/json' ) ) {
 				return null;

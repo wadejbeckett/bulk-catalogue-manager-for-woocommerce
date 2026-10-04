@@ -101,15 +101,15 @@ final class PreviewRouteTest extends TestCase {
 	public function test_the_route_needs_the_write_capability(): void {
 		$route = $GLOBALS['bulkcat_test']['routes']['/bulkcat/v1/preview'] ?? null;
 		$this->assertTrue( is_array( $route ), 'The route is registered.' );
-		$this->assertSame( [ Access::class, 'can_write' ], $route[0]['permission_callback'] );
+		$this->assertSame( [ Access::class, 'can_family_request' ], $route[0]['permission_callback'] );
 		$this->assertSame( 'POST', $route[0]['methods'] );
-		$this->assertSame( [ 'operations', 'ids', 'token', 'sample_size' ], array_keys( $route[0]['args'] ) );
+		$this->assertSame( [ 'operations', 'ids', 'token', 'sample_size', 'serializer', 'family', 'external', 'entry', 'targets', 'typed_token' ], array_keys( $route[0]['args'] ) );
 		$this->assertTrue( $route[0]['args']['operations']['required'] );
 		$this->assertSame( [ 25, 100, 'all' ], $route[0]['args']['sample_size']['enum'] );
 		$this->assertSame( 25, $route[0]['args']['sample_size']['default'] );
 		$schema = call_user_func( $GLOBALS['bulkcat_test']['routes']['/bulkcat/v1/preview']['schema'] );
 		$this->assertSame( 'bulkcat-preview', $schema['title'] );
-		$this->assertSame( [ 'totals', 'summary', 'sample', 'warnings', 'unreadable', 'selection', 'hash', 'unavailable_count', 'scope_hash', 'operations' ], array_keys( $schema['properties'] ), 'The published schema names every key the preview answers, in order.' );
+		$this->assertSame( [ 'serializer', 'family', 'external', 'entry', 'totals', 'summary', 'sample', 'warnings', 'unreadable', 'selection', 'hash', 'unavailable_count', 'scope_hash', 'operations' ], array_keys( $schema['properties'] ), 'The published schema names every key the preview answers, in order.' );
 	}
 
 	public function test_an_id_list_answers_the_preview(): void {

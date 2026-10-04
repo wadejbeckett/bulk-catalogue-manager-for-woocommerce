@@ -68,7 +68,7 @@ final class RequestsController implements Controller {
 	 * @return bool|\WP_Error
 	 */
 	public function permission( \WP_REST_Request $request ): bool|\WP_Error {
-		return 'product.inline' === $request->get_param( 'operation' ) && str_ends_with( $request->get_route(), '/resolve' ) ? Access::can_read() : Access::can_write();
+		return 'product.inline' === $request->get_param( 'operation' ) && str_ends_with( $request->get_route(), '/resolve' ) ? Access::can_read() : Access::can_family_request( $request );
 	}
 
 	/**

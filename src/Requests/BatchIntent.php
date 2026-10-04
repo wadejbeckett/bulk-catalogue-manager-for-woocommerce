@@ -56,6 +56,14 @@ final class BatchIntent {
 	 * @throws \InvalidArgumentException On a malformed intent.
 	 */
 	public static function normalize( string $operation, array $input, int $owner ): array|\WP_Error {
+		if ( \BulkCatalogueManager\Rest\TypedPreviewInput::present( $input ) ) {
+			if ( array_key_exists( 'version', $input ) ) {
+				return \BulkCatalogueManager\External\V2\IntentCodec::canonical( $operation, $input, $owner ); }
+			if ( 'batch.undo' === $operation ) {
+				return \BulkCatalogueManager\External\V2\IntentCodec::canonical( $operation, [ 'version' => 1 ] + $input, $owner ); }
+			$prepared = self::prepare_typed( $input, $owner );
+			return is_wp_error( $prepared ) ? $prepared : \BulkCatalogueManager\External\V2\IntentCodec::from_prepared( $prepared );
+		}
 		$undo = 'batch.undo' === $operation;
 		if ( ! $undo && 'batch.apply' !== $operation ) {
 			throw new \InvalidArgumentException( 'Not a batch operation.' );
@@ -245,5 +253,34 @@ final class BatchIntent {
 			}
 		}
 		return true;
+	}
+	/**
+	 * Resolve fresh typed work only, never used during receipt fingerprinting.
+	 * @param array $intent Raw or canonical intent.
+	 * @param int $actor Actor.
+	 * @param array $credentials Optional renewed credentials.
+	 * @return array|\WP_Error Server preparation.
+	 */
+	public static function prepare_typed( array $intent, int $actor, array $credentials = [] ): array|\WP_Error {
+		$allowed = [ 'version', 'serializer', 'family', 'source', 'entry', 'external', 'selection', 'operations', 'scope_hash' ];
+		if ( [] !== array_diff( array_keys( $intent ), $allowed ) || 'bulk' !== ( $intent['source'] ?? 'bulk' ) || ! is_array( $intent['selection'] ?? null ) || ! self::digest( $intent['scope_hash'] ?? null ) ) {
+			return \BulkCatalogueManager\Rest\RequestsController::unknown(); }
+		$selection = $intent['selection'];
+		foreach ( [ 'token', 'typed_token' ] as $key ) {
+			if ( isset( $credentials[ $key ] ) ) {
+				$original = SnapshotToken::identify( is_string( $selection[ $key ] ?? null ) ? $selection[ $key ] : '', $actor );
+				$current  = SnapshotToken::identify( is_string( $credentials[ $key ] ) ? $credentials[ $key ] : '', $actor );
+				if ( is_wp_error( $original ) || is_wp_error( $current ) || $original['id'] !== $current['id'] ) {
+					return SnapshotToken::invalid(); }
+				$selection[ $key ] = $credentials[ $key ];
+			}
+		}
+		$flat     = array_intersect_key( $intent, array_flip( [ 'serializer', 'family', 'external', 'entry', 'operations' ] ) ) + $selection;
+		$prepared = ( new Preview() )->prepare_typed( $flat, $actor );
+		if ( is_wp_error( $prepared ) ) {
+			return $prepared; }
+		if ( ! hash_equals( $intent['scope_hash'], $prepared['scope']->signature() ) ) {
+			return BatchAcceptance::stale( 'scope_changed' ); }
+		return $prepared;
 	}
 }

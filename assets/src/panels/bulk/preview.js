@@ -3,6 +3,7 @@
  * order: the summary sentence, the counts, retained legacy outcomes when present, the sample table, the warnings; then the sample
  * controls. Nothing here writes.
  */
+import { useId } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 
 import { termOptions } from './controls';
@@ -455,6 +456,19 @@ export function PreviewResult( {
 	onDownload = null,
 	busy = false,
 } ) {
+	if ( response?.serializer === 2 ) {
+		return (
+			<TypedPreview
+				response={ response }
+				registry={ registry }
+				sampleSize={ sampleSize }
+				onSampleSize={ onSampleSize }
+				changedOnly={ changedOnly }
+				onChangedOnly={ onChangedOnly }
+				busy={ busy }
+			/>
+		);
+	}
 	const totals = response?.totals || {};
 	const byType = totals.by_type || {};
 	const variationRows = Number( byType.variation?.matched ) || 0;
@@ -829,6 +843,189 @@ export function PreviewResult( {
 					</p>
 				</div>
 			) }
+		</div>
+	);
+}
+
+/**
+ * Render the accepted S2 typed sample envelope without inventing product fields or value snapshots.
+ * @param {Object}   root0               Root0.
+ * @param {Object}   root0.response      Response.
+ * @param {Object}   root0.registry      Registry.
+ * @param {*}        root0.sampleSize    SampleSize.
+ * @param {Function} root0.onSampleSize  OnSampleSize.
+ * @param {boolean}  root0.changedOnly   ChangedOnly.
+ * @param {Function} root0.onChangedOnly OnChangedOnly.
+ * @param {boolean}  root0.busy          Busy.
+ */
+function TypedPreview( {
+	response,
+	registry,
+	sampleSize,
+	onSampleSize,
+	changedOnly,
+	onChangedOnly,
+	busy,
+} ) {
+	const totals = response.totals || {};
+	const rows = ( response.sample || [] ).filter(
+		( row ) => ! changedOnly || row.state === 'changed'
+	);
+	const controlId = useId();
+	const kindLabel = ( kind ) =>
+		( {
+			term: __( 'Category', 'bulk-catalogue-manager-for-woocommerce' ),
+			variation: __(
+				'Variation',
+				'bulk-catalogue-manager-for-woocommerce'
+			),
+			product: __( 'Product', 'bulk-catalogue-manager-for-woocommerce' ),
+		} )[ kind ] || '';
+	const stateLabel = ( state ) =>
+		( {
+			changed: __(
+				'Will change',
+				'bulk-catalogue-manager-for-woocommerce'
+			),
+			already: __(
+				'Already at the target value',
+				'bulk-catalogue-manager-for-woocommerce'
+			),
+			failed: __(
+				'Cannot change',
+				'bulk-catalogue-manager-for-woocommerce'
+			),
+			skipped: __( 'Skipped', 'bulk-catalogue-manager-for-woocommerce' ),
+		} )[ state ] || '';
+	return (
+		<div className="bulkcat-bulk__preview" aria-busy={ busy }>
+			<p>
+				{ sprintf(
+					/* translators: %d: number of selected records that would change. */ _n(
+						'%d selected item would change.',
+						'%d selected items would change.',
+						totals.would_change || 0,
+						'bulk-catalogue-manager-for-woocommerce'
+					),
+					totals.would_change || 0
+				) }
+			</p>
+			{ totals.estimated && (
+				<p>
+					{ __(
+						'This preview covers a sample of the selection.',
+						'bulk-catalogue-manager-for-woocommerce'
+					) }
+				</p>
+			) }
+			<dl>
+				<dt>
+					{ __(
+						'Already at the target value',
+						'bulk-catalogue-manager-for-woocommerce'
+					) }
+				</dt>
+				<dd>{ totals.already || 0 }</dd>
+				{ Object.entries( totals.would_fail || {} ).map(
+					( [ reason, count ] ) => (
+						<div key={ reason }>
+							<dt>{ reason }</dt>
+							<dd>{ count }</dd>
+						</div>
+					)
+				) }
+			</dl>
+			<label htmlFor={ controlId + '-changed' }>
+				{ __(
+					'Changed items only',
+					'bulk-catalogue-manager-for-woocommerce'
+				) }
+				<input
+					id={ controlId + '-changed' }
+					type="checkbox"
+					checked={ changedOnly }
+					onChange={ ( event ) =>
+						onChangedOnly( event.target.checked )
+					}
+				/>
+			</label>
+			<table>
+				<thead>
+					<tr>
+						<th>
+							{ __(
+								'Item',
+								'bulk-catalogue-manager-for-woocommerce'
+							) }
+						</th>
+						<th>
+							{ __(
+								'Field',
+								'bulk-catalogue-manager-for-woocommerce'
+							) }
+						</th>
+						<th>
+							{ __(
+								'Result',
+								'bulk-catalogue-manager-for-woocommerce'
+							) }
+						</th>
+					</tr>
+				</thead>
+				<tbody>
+					{ rows.map( ( row, index ) => (
+						<tr
+							key={ JSON.stringify( [
+								row.target,
+								row.field,
+								index,
+							] ) }
+						>
+							<td>
+								{ kindLabel( row.target.kind ) } #
+								{ row.target.id }
+							</td>
+							<td>
+								{ fieldByKey( registry, row.field )?.label ||
+									'' }
+							</td>
+							<td>
+								{ stateLabel( row.state ) }
+								{ row.reason && <p>{ row.reason }</p> }
+							</td>
+						</tr>
+					) ) }
+				</tbody>
+			</table>
+			<label htmlFor={ controlId + '-sample' }>
+				{ __(
+					'Sample size',
+					'bulk-catalogue-manager-for-woocommerce'
+				) }
+				<select
+					id={ controlId + '-sample' }
+					value={ sampleSize }
+					disabled={ busy }
+					onChange={ ( event ) =>
+						onSampleSize(
+							event.target.value === 'all'
+								? 'all'
+								: Number( event.target.value )
+						)
+					}
+				>
+					{ SAMPLE_SIZES.map( ( size ) => (
+						<option key={ size } value={ size }>
+							{ size === 'all'
+								? __(
+										'All',
+										'bulk-catalogue-manager-for-woocommerce'
+									)
+								: size }
+						</option>
+					) ) }
+				</select>
+			</label>
 		</div>
 	);
 }

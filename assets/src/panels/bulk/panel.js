@@ -35,6 +35,7 @@ import {
 	PREVIEW_STALE,
 	RENEW_REQUIRED,
 	selectionArgs,
+	typedMetadata,
 	useApply,
 	usePreview,
 } from './hooks';
@@ -45,6 +46,7 @@ import {
 	chooseAction,
 	emptyOperation,
 } from './operations';
+import { argumentActive } from '../../provider-actions/arguments';
 import { plainMessage } from '../../errors';
 import { PreviewResult } from './preview';
 import { DoneStep } from './progress';
@@ -63,7 +65,13 @@ const FOCUSABLE =
  * @return {number} Count.
  */
 export function selectionCount( selection ) {
-	return Number( selection?.count ?? selection?.ids?.length ) || 0;
+	return (
+		Number(
+			selection?.count ??
+				selection?.targets?.length ??
+				selection?.ids?.length
+		) || 0
+	);
 }
 
 /**
@@ -72,9 +80,21 @@ export function selectionCount( selection ) {
  * both. A combined selection is never called all matches of a filter.
  *
  * @param {Object} selection Panel selection.
+ * @param {Object} entry     Entry.
  * @return {string} Line.
  */
-export function scopeLine( selection ) {
+export function scopeLine( selection, entry = null ) {
+	if ( entry ) {
+		return sprintf(
+			/* translators: %d: number of selected native records. */ _n(
+				'%d selected item',
+				'%d selected items',
+				selectionCount( selection ),
+				'bulk-catalogue-manager-for-woocommerce'
+			),
+			selectionCount( selection )
+		);
+	}
 	const count = selectionCount( selection );
 	const byType = selection?.byType || {};
 	if ( Number( byType.variations ) > 0 ) {
@@ -146,6 +166,28 @@ export function blockedReason( registry, operations, count, waiting = '' ) {
 				index + 1,
 				unavailable
 			);
+		}
+		const descriptor = actionById( registry, operation.action );
+		for ( const [ name, spec ] of Object.entries(
+			descriptor?.arguments || {}
+		) ) {
+			if (
+				spec.type === 'lookup' &&
+				argumentActive( spec, operation.args )
+			) {
+				let selected = operation.args[ name ] || [];
+				if ( ! spec.multiple ) {
+					selected = operation.args[ name ]
+						? [ operation.args[ name ] ]
+						: [];
+				}
+				if (
+					selected.length < spec.min_items ||
+					selected.length > spec.max_items
+				) {
+					return spec.rule;
+				}
+			}
 		}
 		const problem = operationProblem( registry, operation );
 		if ( problem ) {
@@ -219,9 +261,11 @@ export function panelState( facts ) {
  * @param {Function}      props.onFinished        Receives the finished batch's report (T84).
  * @param {Function}      props.onReview          Open Review selected products, or null.
  * @param {Function}      props.onRenewSelection  Restore a selection whose lease lapsed, or null.
+ * @param {Object}        props.entry             Entry.
  * @return {Element} Panel.
  */
 export default function BulkChangePanel( {
+	entry = null,
 	selection,
 	registry,
 	settings,
@@ -279,7 +323,27 @@ export default function BulkChangePanel( {
 		() => toRequestOperations( registry, operations ),
 		[ registry, operations ]
 	);
+	const descriptor = actionById(
+		registry,
+		operations.find( ( operation ) => operation.action )?.action
+	);
+	const typedEntry = useMemo(
+		() =>
+			entry
+				? {
+						...entry,
+						family: registry.family,
+						external: {
+							contract: 2,
+							provider: descriptor?.provider,
+							identity: descriptor?.identity,
+						},
+					}
+				: null,
+		[ entry, registry.family, descriptor?.provider, descriptor?.identity ]
+	);
 	const signature = JSON.stringify( {
+		...( typedEntry ? typedMetadata( typedEntry, typedEntry ) : {} ),
 		operations: requestOperations,
 		selection: selectionArgs( selection ),
 		settings: values,
@@ -348,6 +412,7 @@ export default function BulkChangePanel( {
 				selection,
 				sampleSize: size,
 				signature,
+				entry: typedEntry,
 			} );
 		},
 		[
@@ -357,6 +422,7 @@ export default function BulkChangePanel( {
 			selection,
 			sampleSize,
 			signature,
+			typedEntry,
 		]
 	);
 
@@ -381,18 +447,20 @@ export default function BulkChangePanel( {
 
 	// T84: a durable request; a retry of the same change sends the same grant.
 	const apply = () =>
-		applier.apply( { selection, preview: response } ).then( ( created ) => {
-			if ( created?.batch_id ) {
-				setApplied( selection );
-				setBatch( created );
-				// An earlier attempt that turned out to have gone through
-				// belongs to whatever it was applied to, not this selection.
-				onApplied( created.batch_id, {
-					selection: created.earlier ? null : selection,
-					replayed: !! created.replayed,
-				} );
-			}
-		} );
+		applier
+			.apply( { selection, preview: response, entry: typedEntry } )
+			.then( ( created ) => {
+				if ( created?.batch_id ) {
+					setApplied( selection );
+					setBatch( created );
+					// An earlier attempt that turned out to have gone through
+					// belongs to whatever it was applied to, not this selection.
+					onApplied( created.batch_id, {
+						selection: created.earlier ? null : selection,
+						replayed: !! created.replayed,
+					} );
+				}
+			} );
 
 	const update = ( index, change ) =>
 		setOperations( ( list ) =>
@@ -486,7 +554,8 @@ export default function BulkChangePanel( {
 					...alwaysConfirmReasons(
 						registry,
 						requestOperations,
-						changes
+						changes,
+						!! entry
 					),
 					// An add-on's change that always confirms, or a warning asking for it (T106).
 					...( response?.external?.confirm
@@ -682,6 +751,12 @@ export default function BulkChangePanel( {
 											) }
 											{ index === active && (
 												<ActionChooser
+													selection={ selectionArgs(
+														selection
+													) }
+													onInvalidate={
+														preview.reset
+													}
 													registry={ registry }
 													operation={ operation }
 													operations={ operations }
@@ -919,6 +994,7 @@ export default function BulkChangePanel( {
 			<footer className="bulkcat-bulk__foot">
 				{ ! batch && (
 					<FooterAction
+						typed={ !! entry }
 						state={ state }
 						reason={ reason }
 						check={ () => check() }
@@ -934,7 +1010,7 @@ export default function BulkChangePanel( {
 					/>
 				) }
 				<button type="button" className="button" onClick={ onClose }>
-					{ batch
+					{ batch && ! entry
 						? __(
 								'Back to products',
 								'bulk-catalogue-manager-for-woocommerce'
@@ -974,9 +1050,11 @@ export default function BulkChangePanel( {
  * @param {Array<string>} props.reasons   Always-confirm sentences.
  * @param {boolean}       props.busy      Whether an apply is running.
  * @param {boolean}       props.changed   Whether the last Apply was refused in a way only a new preview or a reload can fix.
+ * @param {boolean}       props.typed     Typed.
  * @return {Element} Control.
  */
 function FooterAction( {
+	typed = false,
 	state,
 	reason,
 	check,
@@ -991,6 +1069,7 @@ function FooterAction( {
 	if ( state === 'ready' || state === 'empty' || state === 'applying' ) {
 		return (
 			<ConfirmApply
+				typed={ typed }
 				count={ count }
 				byType={ byType }
 				threshold={ threshold }

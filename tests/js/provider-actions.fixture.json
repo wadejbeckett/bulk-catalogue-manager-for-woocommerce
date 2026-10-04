@@ -1,0 +1,236 @@
+{
+    "family": "product",
+    "count": 1,
+    "actions": [
+        {
+            "id": "x_sample_assign",
+            "label": "Assign sample parts",
+            "description": "Changes the selected part.",
+            "group": "organisation",
+            "groups": [
+                "organisation"
+            ],
+            "fields": [
+                "x_sample_composite"
+            ],
+            "editKinds": [
+                "set"
+            ],
+            "provider": "sample",
+            "identity": "org.example.sample",
+            "contract": 2,
+            "family": "product",
+            "arguments": {
+                "part": {
+                    "type": "choice",
+                    "label": "Part",
+                    "rule": "Choose a part.",
+                    "choices": {
+                        "a": "Part A",
+                        "b": "Part B"
+                    },
+                    "default": "a"
+                },
+                "operation": {
+                    "type": "choice",
+                    "label": "Action",
+                    "rule": "Choose an action.",
+                    "choices": {
+                        "add": "Add",
+                        "remove": "Remove",
+                        "replace": "Replace",
+                        "clear": "Clear"
+                    },
+                    "default": "add"
+                },
+                "values": {
+                    "type": "lookup",
+                    "label": "Values",
+                    "rule": "Choose available values.",
+                    "source": "values",
+                    "multiple": true,
+                    "min_items": 1,
+                    "max_items": 100,
+                    "depends_on": [
+                        "part",
+                        "operation"
+                    ],
+                    "active_when": {
+                        "argument": "operation",
+                        "op": "in",
+                        "values": [
+                            "add",
+                            "remove",
+                            "replace"
+                        ]
+                    }
+                },
+                "mode": {
+                    "type": "choice",
+                    "label": "Mode",
+                    "rule": "Choose a mode.",
+                    "choices": {
+                        "keep": "Keep",
+                        "open": "Open",
+                        "closed": "Closed"
+                    },
+                    "default": "keep"
+                }
+            },
+            "args": {
+                "type": "object",
+                "properties": {
+                    "field": {
+                        "title": "Field",
+                        "description": "Choose the field Assign sample parts should change, then try again.",
+                        "type": "string",
+                        "enum": [
+                            "x_sample_composite"
+                        ],
+                        "choices": [
+                            {
+                                "value": "x_sample_composite",
+                                "label": "Sample parts"
+                            }
+                        ],
+                        "required": true
+                    },
+                    "part": {
+                        "title": "Part",
+                        "description": "Choose a part.",
+                        "type": "string",
+                        "enum": [
+                            "a",
+                            "b"
+                        ],
+                        "choices": [
+                            {
+                                "value": "a",
+                                "label": "Part A"
+                            },
+                            {
+                                "value": "b",
+                                "label": "Part B"
+                            }
+                        ],
+                        "default": "a"
+                    },
+                    "operation": {
+                        "title": "Action",
+                        "description": "Choose an action.",
+                        "type": "string",
+                        "enum": [
+                            "add",
+                            "remove",
+                            "replace",
+                            "clear"
+                        ],
+                        "choices": [
+                            {
+                                "value": "add",
+                                "label": "Add"
+                            },
+                            {
+                                "value": "remove",
+                                "label": "Remove"
+                            },
+                            {
+                                "value": "replace",
+                                "label": "Replace"
+                            },
+                            {
+                                "value": "clear",
+                                "label": "Clear"
+                            }
+                        ],
+                        "default": "add"
+                    },
+                    "values": {
+                        "type": "lookup",
+                        "title": "Values",
+                        "description": "Choose available values.",
+                        "default": [],
+                        "label": "Values",
+                        "rule": "Choose available values.",
+                        "source": "values",
+                        "multiple": true,
+                        "min_items": 1,
+                        "max_items": 100,
+                        "depends_on": [
+                            "part",
+                            "operation"
+                        ],
+                        "active_when": {
+                            "argument": "operation",
+                            "op": "in",
+                            "values": [
+                                "add",
+                                "remove",
+                                "replace"
+                            ]
+                        }
+                    },
+                    "mode": {
+                        "title": "Mode",
+                        "description": "Choose a mode.",
+                        "type": "string",
+                        "enum": [
+                            "keep",
+                            "open",
+                            "closed"
+                        ],
+                        "choices": [
+                            {
+                                "value": "keep",
+                                "label": "Keep"
+                            },
+                            {
+                                "value": "open",
+                                "label": "Open"
+                            },
+                            {
+                                "value": "closed",
+                                "label": "Closed"
+                            }
+                        ],
+                        "default": "keep"
+                    },
+                    "apply_to_variations": {
+                        "title": "Also apply to variations",
+                        "description": "Also apply to variations has to be on or off.",
+                        "type": "boolean"
+                    },
+                    "skip_already": {
+                        "title": "Skip rows where the value is already correct",
+                        "description": "Skip rows where the value is already correct has to be on or off.",
+                        "type": "boolean",
+                        "default": true
+                    }
+                },
+                "additionalProperties": false
+            },
+            "available": true,
+            "alwaysConfirm": false,
+            "confirmReason": ""
+        }
+    ],
+    "fields": [
+        {
+            "key": "x_sample_composite",
+            "label": "Sample parts",
+            "provider": "sample",
+            "group": "organisation",
+            "editKinds": [
+                "set"
+            ],
+            "variations": "parent_only",
+            "type": "external"
+        }
+    ],
+    "groups": [
+        {
+            "id": "organisation",
+            "label": "Organisation"
+        }
+    ]
+}

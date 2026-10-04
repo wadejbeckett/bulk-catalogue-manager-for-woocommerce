@@ -32,7 +32,7 @@ final class SnapshotRepository {
 			'id'                       => bin2hex( random_bytes( 16 ) ),
 			'user_id'                  => $owner,
 			'members'                  => wp_json_encode( $members ),
-			'object_count'             => count( $members['products'] ) + count( $members['variations'] ),
+			'object_count'             => isset( $members['version'] ) ? count( TypedMembers::decode( $members ) ) : count( $members['products'] ) + count( $members['variations'] ),
 			'created_at'               => gmdate( 'Y-m-d H:i:s', $now ),
 			'authorization_epoch'      => 1,
 			'authorization_expires_at' => gmdate( 'Y-m-d H:i:s', $now + SelectionToken::ttl() ),

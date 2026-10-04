@@ -135,7 +135,7 @@ final class Registry {
 			}
 			$this->operations[ $id ] = $operation;
 		}
-		foreach ( $this->providers->all() as $provider ) {
+		foreach ( $this->providers->resolvable() as $provider ) {
 			foreach ( array_keys( $provider->all_described() ) as $id ) {
 				$this->external[ $id ] = new ExternalOperation( $provider, $id );
 			}

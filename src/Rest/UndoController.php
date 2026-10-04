@@ -146,7 +146,7 @@ final class UndoController implements Controller {
 				[
 					'methods'             => 'POST',
 					'callback'            => [ $this, 'undo' ],
-					'permission_callback' => [ Access::class, 'can_write' ],
+					'permission_callback' => [ Access::class, 'can_family_request' ],
 					'args'                => $this->args(),
 				],
 			]
@@ -185,6 +185,14 @@ final class UndoController implements Controller {
 	 */
 	public function undo( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
 		$batch_id = (int) $request->get_param( 'id' );
+		$stored   = ( new \BulkCatalogueManager\Data\BatchRepository() )->find_strict( $batch_id );
+		if ( isset( $stored['extensions']['serializer'] ) ) {
+			$family = \BulkCatalogueManager\Requests\RequestFamily::from_batch( $batch_id, get_current_user_id() );
+			if ( is_wp_error( $family ) ) {
+				return $family; }
+			if ( true === $request->get_param( 'preview' ) || null === $request->get_param( 'request_proof' ) ) {
+				return \BulkCatalogueManager\External\Refusals::incompatible( \BulkCatalogueManager\External\V2\Inspector::unavailable() ); }
+		}
 		self::lift_time_limit();
 		if ( true === $request->get_param( 'preview' ) ) {
 			return $this->preview( $batch_id, (int) ( $request->get_param( 'page' ) ?? 1 ), (int) ( $request->get_param( 'per_page' ) ?? 25 ) );

@@ -19,6 +19,19 @@ defined( 'ABSPATH' ) || exit;
  * Codes and sentences.
  */
 final class Refusals {
+	/** A malformed bounded discovery or choice request. */
+	public static function invalid_lookup(): \WP_Error {
+		return Refusal::create( 'bulkcat_invalid_lookup', __( 'The choices request is invalid. Check the selection and try again.', 'bulk-catalogue-manager-for-woocommerce' ), 400 ); }
+	/** A continuation no longer belongs to the current choice state. */
+	public static function choice_refresh(): \WP_Error {
+		return Refusal::create( 'bulkcat_choice_refresh_required', __( 'The available choices changed. Refresh the choices and preview again.', 'bulk-catalogue-manager-for-woocommerce' ), 409 ); }
+	/** Provider errors are diagnostics, never browser text. */
+	public static function invalid_provider_response(): \WP_Error {
+		return Refusal::create( 'bulkcat_provider_response_invalid', __( 'The add-on could not load valid choices. Try again or ask its author.', 'bulk-catalogue-manager-for-woocommerce' ), 502 ); }
+	/** The same nonrevealing reason covers deletion and loss of access. */
+	public static function choice_unavailable(): string {
+		return __( 'This choice is unavailable. Choose again and preview the change.', 'bulk-catalogue-manager-for-woocommerce' ); }
+
 	/**
 	 * A provider refused at registration; the reason names the first problem.
 	 */

@@ -23,7 +23,8 @@ require_once __DIR__ . '/bootstrap.php';
 
 $top    = glob( __DIR__ . '/Unit/*Test.php' );
 $nested = glob( __DIR__ . '/Unit/*/*Test.php' );
-$files  = array_merge( false === $top ? [] : $top, false === $nested ? [] : $nested );
+$typed  = glob( __DIR__ . '/Unit/Extension/V2/*Test.php' );
+$files  = array_merge( false === $top ? [] : $top, false === $nested ? [] : $nested, false === $typed ? [] : $typed );
 sort( $files );
 
 $passed  = 0;

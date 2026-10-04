@@ -597,4 +597,17 @@ final class ChangeRepository {
 		usort( $out, static fn( array $a, array $b ): int => $b['change_id'] <=> $a['change_id'] );
 		return $out;
 	}
+	/**
+	 * Read a typed target's journal without colliding with another native kind.
+	 * @param int $batch_id Batch identity.
+	 * @param \BulkCatalogueManager\Extension\V2\TargetRef $target Exact native identity.
+	 * @return array Typed journal rows.
+	 */
+	public function for_target( int $batch_id, \BulkCatalogueManager\Extension\V2\TargetRef $target ): array {
+		global $wpdb;
+		$rows = $wpdb->get_results( $wpdb->prepare( 'SELECT * FROM %i WHERE batch_id = %d AND object_type = %s AND target_taxonomy = %s AND object_id = %d ORDER BY change_id ASC', $this->registry->table( Schema::CHANGES ), $batch_id, $target->kind, $target->taxonomy ?? '', $target->id ), ARRAY_A );
+		if ( ! is_array( $rows ) || '' !== $wpdb->last_error ) {
+			throw new \RuntimeException( 'Cannot read typed changes.' ); }
+		return array_map( [ self::class, 'row' ], $rows );
+	}
 }

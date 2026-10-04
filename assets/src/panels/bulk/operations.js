@@ -6,6 +6,12 @@
  */
 import { __, sprintf } from '@wordpress/i18n';
 
+import {
+	changeArguments,
+	argumentDependencies,
+	argumentActive,
+} from '../../provider-actions/arguments';
+
 import { ArgControl } from './controls';
 import {
 	SPECIAL_ARGS,
@@ -71,7 +77,10 @@ export function chooseAction( registry, settings, operation, actionId, group ) {
  * @return {Object} Operation.
  */
 export function changeArg( registry, settings, operation, name, value ) {
-	const args = { ...operation.args, [ name ]: value };
+	const schema = actionById( registry, operation.action )?.arguments;
+	const args = schema
+		? changeArguments( schema, operation.args, name, value )
+		: { ...operation.args, [ name ]: value };
 	if ( name !== 'field' ) {
 		return { ...operation, args };
 	}
@@ -126,9 +135,13 @@ export function operationTitle( registry, operation ) {
  * @param {Object}   props.terms        Term options by source.
  * @param {Function} props.onArg        Receives ( name, value ).
  * @param {Function} props.onVariations Receives the switch position.
+ * @param {Object}   props.selection    Selection.
+ * @param {Function} props.onInvalidate OnInvalidate.
  * @return {Element} Controls.
  */
 function OperationControls( {
+	selection,
+	onInvalidate,
 	registry,
 	operation,
 	idBase,
@@ -174,10 +187,24 @@ function OperationControls( {
 				.filter(
 					( [ name ] ) =>
 						! SPECIAL_ARGS.includes( name ) &&
+						argumentActive( properties[ name ], operation.args ) &&
 						isArgShown( name, action.args, operation.args )
 				)
 				.map( ( [ name, property ] ) => (
 					<ArgControl
+						provider={ action.provider }
+						action={ action.id }
+						selection={ selection }
+						onInvalidate={ onInvalidate }
+						dependencies={ Object.fromEntries(
+							argumentDependencies(
+								action.arguments || {},
+								name
+							).map( ( dependency ) => [
+								dependency,
+								operation.args[ dependency ],
+							] )
+						) }
 						key={ name }
 						id={ idBase + '-' + name }
 						name={ name }
@@ -264,9 +291,13 @@ function OperationControls( {
  * @param {Function}      props.onArg        Receives ( name, value ).
  * @param {Function}      props.onVariations Receives the switch position.
  * @param {Array<Object>} props.operations   Every step of the change, to say in place when kinds are mixed (T105).
+ * @param {Object}        props.selection    Selection.
+ * @param {Function}      props.onInvalidate OnInvalidate.
  * @return {Element} Chooser.
  */
 export function ActionChooser( {
+	selection,
+	onInvalidate,
 	registry,
 	operation,
 	index,
@@ -361,6 +392,8 @@ export function ActionChooser( {
 								) }
 								{ on && (
 									<OperationControls
+										selection={ selection }
+										onInvalidate={ onInvalidate }
 										registry={ registry }
 										operation={ operation }
 										idBase={ idBase }

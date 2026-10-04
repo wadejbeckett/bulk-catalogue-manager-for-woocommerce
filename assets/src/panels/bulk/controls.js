@@ -7,6 +7,8 @@
 import { useMemo, useState } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 
+import ChoiceControl from '../../provider-actions/choice-control';
+
 import { propertyKind, writableChoices } from './descriptors';
 
 /**
@@ -323,18 +325,28 @@ export function ValueControl( {
 /**
  * The control for one argument of an action.
  *
- * @param {Object}   props          Props.
- * @param {string}   props.id       Control id.
- * @param {string}   props.name     Argument name.
- * @param {Object}   props.property JSON Schema property.
- * @param {*}        props.value    Value.
- * @param {Function} props.onChange Receives the new value.
- * @param {Object}   props.field    The chosen field's descriptor.
- * @param {Object}   props.terms    Term options by source.
- * @param {string}   props.reason   Reason it is blocked, or ''.
+ * @param {Object}   props              Props.
+ * @param {string}   props.id           Control id.
+ * @param {string}   props.name         Argument name.
+ * @param {Object}   props.property     JSON Schema property.
+ * @param {*}        props.value        Value.
+ * @param {Function} props.onChange     Receives the new value.
+ * @param {Object}   props.field        The chosen field's descriptor.
+ * @param {Object}   props.terms        Term options by source.
+ * @param {string}   props.reason       Reason it is blocked, or ''.
+ * @param {string}   props.provider     Provider.
+ * @param {string}   props.action       Action.
+ * @param {Object}   props.selection    Selection.
+ * @param {Object}   props.dependencies Dependencies.
+ * @param {Function} props.onInvalidate OnInvalidate.
  * @return {Element} Control.
  */
 export function ArgControl( {
+	provider,
+	action,
+	selection,
+	dependencies,
+	onInvalidate,
 	id,
 	name,
 	property,
@@ -344,6 +356,21 @@ export function ArgControl( {
 	terms,
 	reason,
 } ) {
+	if ( property.type === 'lookup' ) {
+		return (
+			<ChoiceControl
+				schema={ property }
+				value={ value }
+				onChange={ onChange }
+				provider={ provider }
+				action={ action }
+				argument={ name }
+				selection={ selection }
+				dependencies={ dependencies }
+				onInvalidate={ onInvalidate }
+			/>
+		);
+	}
 	const kind = propertyKind( name, property );
 	const label = property.title || name;
 

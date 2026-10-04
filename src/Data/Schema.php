@@ -143,6 +143,7 @@ KEY user_id (user_id)';
 batch_id bigint(20) unsigned NOT NULL,
 object_id bigint(20) unsigned NOT NULL,
 object_type varchar(16) NOT NULL,
+target_taxonomy varchar(32) NOT NULL DEFAULT '',
 state varchar(12) NOT NULL DEFAULT 'pending',
 attempts tinyint(3) unsigned NOT NULL DEFAULT 0,
 claim_token char(32) NULL,
@@ -151,7 +152,8 @@ message varchar(255) NOT NULL DEFAULT '',
 operations longtext NULL,
 PRIMARY KEY  (item_id),
 KEY batch_state (batch_id,state),
-KEY object (object_id)";
+KEY object (object_id),
+KEY target (batch_id,object_type,target_taxonomy,object_id)";
 
 	/**
 	 * `{prefix}bulkcat_changes`.
@@ -160,6 +162,7 @@ KEY object (object_id)";
 batch_id bigint(20) unsigned NOT NULL,
 object_id bigint(20) unsigned NOT NULL,
 object_type varchar(16) NOT NULL,
+target_taxonomy varchar(32) NOT NULL DEFAULT \'\',
 prop varchar(64) NOT NULL,
 old_value longtext NOT NULL,
 new_value longtext NOT NULL,
@@ -170,6 +173,7 @@ message varchar(255) NOT NULL DEFAULT \'\',
 PRIMARY KEY  (change_id),
 KEY batch_id (batch_id),
 KEY object_prop (object_id,prop),
+KEY target (batch_id,object_type,target_taxonomy,object_id),
 KEY applied_gmt (applied_gmt)';
 
 	/** Immutable selection payload storage. */

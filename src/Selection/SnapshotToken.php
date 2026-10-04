@@ -20,7 +20,8 @@ final class SnapshotToken {
 	 * @param array<string,mixed> $row Snapshot.
 	 */
 	public static function issue( array $row ): string {
-		$body    = 'v2.' . $row['id'] . '.' . $row['authorization_epoch'];
+		$typed   = 3 === ( json_decode( (string) ( $row['members'] ?? '' ), true )['version'] ?? null );
+		$body    = ( $typed ? 'v3.' : 'v2.' ) . $row['id'] . '.' . $row['authorization_epoch'];
 		$context = implode( '/', [ 'bulk-catalogue-manager-for-woocommerce/snapshot', get_current_blog_id(), FoundationStorage::epoch(), $row['user_id'], $body ] );
 		return $body . '.' . hash_hmac( 'sha256', $context, wp_salt( 'auth' ) );
 	}
@@ -33,7 +34,7 @@ final class SnapshotToken {
 	 * @return array{id:string,epoch:int}|\WP_Error
 	 */
 	public static function identify( string $token, int $owner ): array|\WP_Error {
-		if ( 1 !== preg_match( '/^v2\.([a-f0-9]{32})\.([1-9][0-9]{0,9})\.([a-f0-9]{64})$/D', $token, $parts ) || (int) $parts[2] > 4294967295 || $owner < 1 ) {
+		if ( 1 !== preg_match( '/^v[23]\.([a-f0-9]{32})\.([1-9][0-9]{0,9})\.([a-f0-9]{64})$/D', $token, $parts ) || (int) $parts[2] > 4294967295 || $owner < 1 ) {
 			return self::invalid();
 		}
 		$expected = self::issue(
@@ -41,6 +42,7 @@ final class SnapshotToken {
 				'id'                  => $parts[1],
 				'authorization_epoch' => (int) $parts[2],
 				'user_id'             => $owner,
+				'members'             => str_starts_with( $token, 'v3.' ) ? '{"version":3,"targets":[]}' : '',
 			]
 		);
 		return hash_equals( $expected, $token ) ? [

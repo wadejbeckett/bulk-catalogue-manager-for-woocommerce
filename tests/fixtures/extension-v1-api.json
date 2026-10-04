@@ -1,0 +1,1098 @@
+{
+    "BulkCatalogueManager\\Extension\\AbstractProvider": {
+        "final": false,
+        "interface": false,
+        "constants": [],
+        "methods": {
+            "actions": {
+                "parameters": [],
+                "return": "array",
+                "static": false,
+                "final": false,
+                "abstract": true
+            },
+            "authorise": {
+                "parameters": [
+                    {
+                        "name": "user_id",
+                        "type": "int",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    },
+                    {
+                        "name": "subject",
+                        "type": "BulkCatalogueManager\\Extension\\Subject",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    }
+                ],
+                "return": "WP_Error|bool",
+                "static": false,
+                "final": false,
+                "abstract": false
+            },
+            "availability": {
+                "parameters": [],
+                "return": "WP_Error|bool",
+                "static": false,
+                "final": false,
+                "abstract": true
+            },
+            "contract": {
+                "parameters": [],
+                "return": "int",
+                "static": false,
+                "final": false,
+                "abstract": true
+            },
+            "fields": {
+                "parameters": [],
+                "return": "array",
+                "static": false,
+                "final": false,
+                "abstract": true
+            },
+            "flush": {
+                "parameters": [
+                    {
+                        "name": "object_ids",
+                        "type": "array",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    },
+                    {
+                        "name": "context",
+                        "type": "BulkCatalogueManager\\Extension\\Context",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    }
+                ],
+                "return": "void",
+                "static": false,
+                "final": false,
+                "abstract": false
+            },
+            "groups": {
+                "parameters": [],
+                "return": "array",
+                "static": false,
+                "final": false,
+                "abstract": false
+            },
+            "id": {
+                "parameters": [],
+                "return": "string",
+                "static": false,
+                "final": false,
+                "abstract": true
+            },
+            "label": {
+                "parameters": [],
+                "return": "string",
+                "static": false,
+                "final": false,
+                "abstract": true
+            },
+            "prime": {
+                "parameters": [
+                    {
+                        "name": "object_ids",
+                        "type": "array",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    }
+                ],
+                "return": "void",
+                "static": false,
+                "final": false,
+                "abstract": false
+            },
+            "state_token": {
+                "parameters": [
+                    {
+                        "name": "scope",
+                        "type": "BulkCatalogueManager\\Extension\\Scope",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    },
+                    {
+                        "name": "steps",
+                        "type": "array",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    },
+                    {
+                        "name": "context",
+                        "type": "BulkCatalogueManager\\Extension\\Context",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    }
+                ],
+                "return": "string",
+                "static": false,
+                "final": false,
+                "abstract": true
+            },
+            "version": {
+                "parameters": [],
+                "return": "string",
+                "static": false,
+                "final": false,
+                "abstract": true
+            }
+        },
+        "sha256": "3dbc604effe3ae6bc10a221cbd0b301a7b067c126a7fd8249257145025203b29"
+    },
+    "BulkCatalogueManager\\Extension\\ActionDescriptor": {
+        "final": true,
+        "interface": false,
+        "constants": [],
+        "methods": {
+            "__construct": {
+                "parameters": [
+                    {
+                        "name": "id",
+                        "type": "string",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    },
+                    {
+                        "name": "field",
+                        "type": "string",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    },
+                    {
+                        "name": "group",
+                        "type": "string",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    },
+                    {
+                        "name": "label",
+                        "type": "string",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    },
+                    {
+                        "name": "description",
+                        "type": "string",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    },
+                    {
+                        "name": "edit_kind",
+                        "type": "string",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    },
+                    {
+                        "name": "arguments",
+                        "type": "array",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    },
+                    {
+                        "name": "capability",
+                        "type": "string",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    },
+                    {
+                        "name": "always_confirm",
+                        "type": "bool",
+                        "optional": true,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": true,
+                        "default": false
+                    },
+                    {
+                        "name": "confirm_reason",
+                        "type": "string",
+                        "optional": true,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": true,
+                        "default": ""
+                    }
+                ],
+                "return": "",
+                "static": false,
+                "final": false,
+                "abstract": false
+            },
+            "always_confirm": {
+                "parameters": [],
+                "return": "bool",
+                "static": false,
+                "final": false,
+                "abstract": false
+            },
+            "arguments": {
+                "parameters": [],
+                "return": "array",
+                "static": false,
+                "final": false,
+                "abstract": false
+            },
+            "capability": {
+                "parameters": [],
+                "return": "string",
+                "static": false,
+                "final": false,
+                "abstract": false
+            },
+            "confirm_reason": {
+                "parameters": [],
+                "return": "string",
+                "static": false,
+                "final": false,
+                "abstract": false
+            },
+            "description": {
+                "parameters": [],
+                "return": "string",
+                "static": false,
+                "final": false,
+                "abstract": false
+            },
+            "edit_kind": {
+                "parameters": [],
+                "return": "string",
+                "static": false,
+                "final": false,
+                "abstract": false
+            },
+            "field": {
+                "parameters": [],
+                "return": "string",
+                "static": false,
+                "final": false,
+                "abstract": false
+            },
+            "group": {
+                "parameters": [],
+                "return": "string",
+                "static": false,
+                "final": false,
+                "abstract": false
+            },
+            "id": {
+                "parameters": [],
+                "return": "string",
+                "static": false,
+                "final": false,
+                "abstract": false
+            },
+            "label": {
+                "parameters": [],
+                "return": "string",
+                "static": false,
+                "final": false,
+                "abstract": false
+            }
+        },
+        "sha256": "853d387fedf57b49b68f90f34439b1efa66cba8e6e14eeeae8aa08725fc24c82"
+    },
+    "BulkCatalogueManager\\Extension\\ChooserGroup": {
+        "final": true,
+        "interface": false,
+        "constants": [],
+        "methods": {
+            "__construct": {
+                "parameters": [
+                    {
+                        "name": "id",
+                        "type": "string",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    },
+                    {
+                        "name": "label",
+                        "type": "string",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    }
+                ],
+                "return": "",
+                "static": false,
+                "final": false,
+                "abstract": false
+            },
+            "id": {
+                "parameters": [],
+                "return": "string",
+                "static": false,
+                "final": false,
+                "abstract": false
+            },
+            "label": {
+                "parameters": [],
+                "return": "string",
+                "static": false,
+                "final": false,
+                "abstract": false
+            }
+        },
+        "sha256": "2b83bc6e7eddbf6ad7a3ec116065f6eca752bd465d52c7867759604506de3fee"
+    },
+    "BulkCatalogueManager\\Extension\\Context": {
+        "final": false,
+        "interface": true,
+        "constants": {
+            "PREVIEW": "preview",
+            "APPLY": "apply",
+            "REPLAY": "replay",
+            "UNDO": "undo"
+        },
+        "methods": {
+            "batch_id": {
+                "parameters": [],
+                "return": "int",
+                "static": false,
+                "final": false,
+                "abstract": true
+            },
+            "mode": {
+                "parameters": [],
+                "return": "string",
+                "static": false,
+                "final": false,
+                "abstract": true
+            },
+            "user_id": {
+                "parameters": [],
+                "return": "int",
+                "static": false,
+                "final": false,
+                "abstract": true
+            }
+        },
+        "sha256": "4411a5d9f3b4144693430a00a869c9c50fae9ad0a3f3ed531820be1e22f5a4c2"
+    },
+    "BulkCatalogueManager\\Extension\\Contract": {
+        "final": true,
+        "interface": false,
+        "constants": {
+            "VERSION": 1,
+            "SUPPORTED": [
+                1
+            ],
+            "HOOK": "bulkcat_register_providers"
+        },
+        "methods": [],
+        "sha256": "0d9f2c9bbf9d4231158c330abc68aa8b76a7f1576405d2393fbe584cbe0c8cd6"
+    },
+    "BulkCatalogueManager\\Extension\\ExternalAction": {
+        "final": false,
+        "interface": true,
+        "constants": [],
+        "methods": {
+            "compute": {
+                "parameters": [
+                    {
+                        "name": "subject",
+                        "type": "BulkCatalogueManager\\Extension\\Subject",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    },
+                    {
+                        "name": "args",
+                        "type": "array",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    },
+                    {
+                        "name": "context",
+                        "type": "BulkCatalogueManager\\Extension\\Context",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    }
+                ],
+                "return": "BulkCatalogueManager\\Operations\\Result",
+                "static": false,
+                "final": false,
+                "abstract": true
+            },
+            "describe": {
+                "parameters": [],
+                "return": "BulkCatalogueManager\\Extension\\ActionDescriptor",
+                "static": false,
+                "final": false,
+                "abstract": true
+            },
+            "validate": {
+                "parameters": [
+                    {
+                        "name": "args",
+                        "type": "array",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    },
+                    {
+                        "name": "context",
+                        "type": "BulkCatalogueManager\\Extension\\Context",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    }
+                ],
+                "return": "BulkCatalogueManager\\Operations\\Validation",
+                "static": false,
+                "final": false,
+                "abstract": true
+            }
+        },
+        "sha256": "1b6c151d24a43b1df9785286617b28970564db9d7f9d781441b6cd8aef340e87"
+    },
+    "BulkCatalogueManager\\Extension\\ExternalField": {
+        "final": false,
+        "interface": true,
+        "constants": {
+            "PARENT_ONLY": "parent_only",
+            "PER_VARIATION": "per_variation",
+            "CONFLICT": "bulkcat_changed_during_write"
+        },
+        "methods": {
+            "describe": {
+                "parameters": [
+                    {
+                        "name": "value",
+                        "type": "mixed",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    },
+                    {
+                        "name": "subject",
+                        "type": "BulkCatalogueManager\\Extension\\Subject",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    }
+                ],
+                "return": "string",
+                "static": false,
+                "final": false,
+                "abstract": true
+            },
+            "describe_change": {
+                "parameters": [
+                    {
+                        "name": "old",
+                        "type": "mixed",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    },
+                    {
+                        "name": "new_value",
+                        "type": "mixed",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    },
+                    {
+                        "name": "subject",
+                        "type": "BulkCatalogueManager\\Extension\\Subject",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    }
+                ],
+                "return": "string",
+                "static": false,
+                "final": false,
+                "abstract": true
+            },
+            "format": {
+                "parameters": [],
+                "return": "int",
+                "static": false,
+                "final": false,
+                "abstract": true
+            },
+            "key": {
+                "parameters": [],
+                "return": "string",
+                "static": false,
+                "final": false,
+                "abstract": true
+            },
+            "label": {
+                "parameters": [],
+                "return": "string",
+                "static": false,
+                "final": false,
+                "abstract": true
+            },
+            "read": {
+                "parameters": [
+                    {
+                        "name": "subject",
+                        "type": "BulkCatalogueManager\\Extension\\Subject",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    }
+                ],
+                "return": "mixed",
+                "static": false,
+                "final": false,
+                "abstract": true
+            },
+            "same": {
+                "parameters": [
+                    {
+                        "name": "a",
+                        "type": "mixed",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    },
+                    {
+                        "name": "b",
+                        "type": "mixed",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    }
+                ],
+                "return": "bool",
+                "static": false,
+                "final": false,
+                "abstract": true
+            },
+            "upgrade": {
+                "parameters": [
+                    {
+                        "name": "value",
+                        "type": "mixed",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    },
+                    {
+                        "name": "from_format",
+                        "type": "int",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    }
+                ],
+                "return": "mixed",
+                "static": false,
+                "final": false,
+                "abstract": true
+            },
+            "variation_rule": {
+                "parameters": [],
+                "return": "string",
+                "static": false,
+                "final": false,
+                "abstract": true
+            },
+            "write": {
+                "parameters": [
+                    {
+                        "name": "subject",
+                        "type": "BulkCatalogueManager\\Extension\\Subject",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    },
+                    {
+                        "name": "target",
+                        "type": "mixed",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    },
+                    {
+                        "name": "expected",
+                        "type": "mixed",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    },
+                    {
+                        "name": "context",
+                        "type": "BulkCatalogueManager\\Extension\\Context",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    }
+                ],
+                "return": "WP_Error|bool",
+                "static": false,
+                "final": false,
+                "abstract": true
+            }
+        },
+        "sha256": "d588b10a04c7a81673be6e9fee1fa4ea50d21f0e054810de42bb4d73d82980eb"
+    },
+    "BulkCatalogueManager\\Extension\\Provider": {
+        "final": false,
+        "interface": true,
+        "constants": [],
+        "methods": {
+            "actions": {
+                "parameters": [],
+                "return": "array",
+                "static": false,
+                "final": false,
+                "abstract": true
+            },
+            "authorise": {
+                "parameters": [
+                    {
+                        "name": "user_id",
+                        "type": "int",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    },
+                    {
+                        "name": "subject",
+                        "type": "BulkCatalogueManager\\Extension\\Subject",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    }
+                ],
+                "return": "WP_Error|bool",
+                "static": false,
+                "final": false,
+                "abstract": true
+            },
+            "availability": {
+                "parameters": [],
+                "return": "WP_Error|bool",
+                "static": false,
+                "final": false,
+                "abstract": true
+            },
+            "contract": {
+                "parameters": [],
+                "return": "int",
+                "static": false,
+                "final": false,
+                "abstract": true
+            },
+            "fields": {
+                "parameters": [],
+                "return": "array",
+                "static": false,
+                "final": false,
+                "abstract": true
+            },
+            "flush": {
+                "parameters": [
+                    {
+                        "name": "object_ids",
+                        "type": "array",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    },
+                    {
+                        "name": "context",
+                        "type": "BulkCatalogueManager\\Extension\\Context",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    }
+                ],
+                "return": "void",
+                "static": false,
+                "final": false,
+                "abstract": true
+            },
+            "groups": {
+                "parameters": [],
+                "return": "array",
+                "static": false,
+                "final": false,
+                "abstract": true
+            },
+            "id": {
+                "parameters": [],
+                "return": "string",
+                "static": false,
+                "final": false,
+                "abstract": true
+            },
+            "label": {
+                "parameters": [],
+                "return": "string",
+                "static": false,
+                "final": false,
+                "abstract": true
+            },
+            "prime": {
+                "parameters": [
+                    {
+                        "name": "object_ids",
+                        "type": "array",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    }
+                ],
+                "return": "void",
+                "static": false,
+                "final": false,
+                "abstract": true
+            },
+            "state_token": {
+                "parameters": [
+                    {
+                        "name": "scope",
+                        "type": "BulkCatalogueManager\\Extension\\Scope",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    },
+                    {
+                        "name": "steps",
+                        "type": "array",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    },
+                    {
+                        "name": "context",
+                        "type": "BulkCatalogueManager\\Extension\\Context",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    }
+                ],
+                "return": "string",
+                "static": false,
+                "final": false,
+                "abstract": true
+            },
+            "version": {
+                "parameters": [],
+                "return": "string",
+                "static": false,
+                "final": false,
+                "abstract": true
+            }
+        },
+        "sha256": "1dd017cf3f9ae2a141e52da0660bc27aa6a9a4cb1881f56850b76753618be2ef"
+    },
+    "BulkCatalogueManager\\Extension\\Registrar": {
+        "final": true,
+        "interface": false,
+        "constants": [],
+        "methods": {
+            "__construct": {
+                "parameters": [
+                    {
+                        "name": "collector",
+                        "type": "BulkCatalogueManager\\External\\Collector",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    }
+                ],
+                "return": "",
+                "static": false,
+                "final": false,
+                "abstract": false
+            },
+            "contract": {
+                "parameters": [],
+                "return": "int",
+                "static": false,
+                "final": false,
+                "abstract": false
+            },
+            "register": {
+                "parameters": [
+                    {
+                        "name": "provider",
+                        "type": "BulkCatalogueManager\\Extension\\Provider",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    }
+                ],
+                "return": "WP_Error|bool",
+                "static": false,
+                "final": false,
+                "abstract": false
+            },
+            "supports": {
+                "parameters": [
+                    {
+                        "name": "version",
+                        "type": "int",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    }
+                ],
+                "return": "bool",
+                "static": false,
+                "final": false,
+                "abstract": false
+            }
+        },
+        "sha256": "738216afb04cd74fe69b6a128d178a04b5f21f6c591463cefd2b7506831606dc"
+    },
+    "BulkCatalogueManager\\Extension\\Scope": {
+        "final": false,
+        "interface": true,
+        "constants": [],
+        "methods": {
+            "chunks": {
+                "parameters": [
+                    {
+                        "name": "size",
+                        "type": "int",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    }
+                ],
+                "return": "iterable",
+                "static": false,
+                "final": false,
+                "abstract": true
+            },
+            "count": {
+                "parameters": [],
+                "return": "int",
+                "static": false,
+                "final": false,
+                "abstract": true
+            }
+        },
+        "sha256": "d2aa95b47ba9a8702695c53d82c9c43c84ec8392f8a6c48d1f2291881219d3d1"
+    },
+    "BulkCatalogueManager\\Extension\\Subject": {
+        "final": false,
+        "interface": true,
+        "constants": [],
+        "methods": {
+            "id": {
+                "parameters": [],
+                "return": "int",
+                "static": false,
+                "final": false,
+                "abstract": true
+            },
+            "parent_id": {
+                "parameters": [],
+                "return": "int",
+                "static": false,
+                "final": false,
+                "abstract": true
+            },
+            "product": {
+                "parameters": [],
+                "return": "WC_Product",
+                "static": false,
+                "final": false,
+                "abstract": true
+            },
+            "type": {
+                "parameters": [],
+                "return": "string",
+                "static": false,
+                "final": false,
+                "abstract": true
+            },
+            "value": {
+                "parameters": [
+                    {
+                        "name": "field",
+                        "type": "string",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    }
+                ],
+                "return": "mixed",
+                "static": false,
+                "final": false,
+                "abstract": true
+            }
+        },
+        "sha256": "005135d35d3ecee30b6d31bcd97ba376a64f7a4f598a1b83cd8b48894c5f56ee"
+    },
+    "BulkCatalogueManager\\Extension\\Unknown": {
+        "final": true,
+        "interface": false,
+        "constants": [],
+        "methods": {
+            "because": {
+                "parameters": [
+                    {
+                        "name": "reason",
+                        "type": "string",
+                        "optional": false,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": false,
+                        "default": null
+                    },
+                    {
+                        "name": "code",
+                        "type": "string",
+                        "optional": true,
+                        "variadic": false,
+                        "reference": false,
+                        "has_default": true,
+                        "default": "bulkcat_unknown_state"
+                    }
+                ],
+                "return": "self",
+                "static": true,
+                "final": false,
+                "abstract": false
+            },
+            "code": {
+                "parameters": [],
+                "return": "string",
+                "static": false,
+                "final": false,
+                "abstract": false
+            },
+            "reason": {
+                "parameters": [],
+                "return": "string",
+                "static": false,
+                "final": false,
+                "abstract": false
+            }
+        },
+        "sha256": "40cf88e319256656ec504a3f916a6fc3185d8698429a87777ec2495e83377c97"
+    }
+}

@@ -6,7 +6,7 @@ Tested up to: 7.1
 Requires PHP: 8.1
 WC requires at least: 11.1
 WC tested up to: 11.1
-Stable tag: 1.1.0
+Stable tag: 1.2.0
 License: GPL-3.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -139,6 +139,14 @@ Yes. Each site keeps its own history and settings, and deleting the plugin with 
 
 == Changelog ==
 
+= 1.2.0 =
+* Native Status controls replace Off/On for new changes; existing accepted work and history retain their recorded meaning.
+* Ordinary edits use one Save and reconcile the current list. Lost responses can recover recorded results without repeating the change.
+* An uncertain interrupted save remains held pending verified reconciliation. No automatic takeover or retry is introduced.
+
+= 1.1.1 =
+* Clear category-save feedback, read-only refresh retry and improved focus and narrow-layout controls.
+
 = 1.1.0 =
 * Keep an exact selection across searches and pages; preview and apply it safely, with truthful progress and undo.
 * Status switches products Off and restores their previous status when switched On.
@@ -158,6 +166,9 @@ Yes. Each site keeps its own history and settings, and deleting the plugin with 
 * Settings for access, page size, confirmation, variation defaults, background batch sizes, history and data removal.
 
 == Upgrade Notice ==
+
+= 1.2.0 =
+Back up files and data. Drain new-format Status and recovery/Undo work before any binary downgrade to 1.1.x; replacing files alone is insufficient. Category access restrictions are not repaired by this release.
 
 = 1.1.0 =
 Needs WooCommerce 11.1 or later. Status becomes the Off/On switch: Draft saves a product's status, Published restores it. Before going back to 1.0.0, let every change finish and switch Off products On: 1.0.0's Published ignores the saved status.

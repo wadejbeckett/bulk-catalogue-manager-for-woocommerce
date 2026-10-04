@@ -156,6 +156,34 @@ Site: WordPress <x.y.z>, WooCommerce <x.y.z>, PHP <x.y>, <MySQL or MariaDB x.y>
 
 ## Releases
 
+### 1.2.0 — 4 October 2026 — prepared private candidate, not deployed
+
+Functional base: `6540093f0122b84f60b8b98bbdc3019a76d6fe03`, containing
+accepted native Status and ordinary single-save reconciliation/receipt work.
+The unfinished provider SDK is excluded. Schema 8 and provider contract 1 remain.
+Release-only edits align version metadata, lock content hash and operator notes;
+the four committed compiled assets and functional source are preserved.
+
+Fresh metadata/asset/translation checks: 29 tests / 524 assertions pass.
+Composer validates with the existing explicit-version advisory; no dependency
+versions changed. Retained functional qualification and its limitations are
+recorded in the native Status and receipt ticket notes. No repeated full suite,
+new hosted CI run, target-host latency measurement or new native archive upgrade
+is claimed by this preparation.
+
+Open before installation: exact candidate archive/manifest verification,
+Plugin Check as applicable to the changed package, upgrade from the installed
+1.1.1 archive, current target inspection, fresh private backup, pending-work-aware
+rollback and target-host functional acceptance. Source acceptance alone does not
+close these gates. Preserve the installed binary and current data; after new-format
+Status or receipt work is accepted, a blind return to 1.1.x is unsafe.
+
+Known limits: category access restrictions are not repaired; uncertain interrupted
+ordinary saves require verified reconciliation and are not automatically replayed.
+Existing translation, jsdom and webpack diagnostics remain documented maintenance
+items, not newly passing checks. This is not a public release, tag or main merge.
+
+
 ### 1.1.0 — 30 September 2026 — private installation candidate
 
 Performed by: Codex. Functional runtime: `a7291ac`; integration fixture fixes:

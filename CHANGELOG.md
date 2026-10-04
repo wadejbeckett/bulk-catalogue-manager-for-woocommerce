@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-04
+
+Private installation candidate; target-host acceptance is pending.
+
+### Fixed
+
+- Ordinary product edits reconcile the current list after one Save. A failed list refresh can be retried without repeating the edit.
+- Safe request identities and durable outcomes let a lost reply or reload recover an ordinary save result without automatically repeating the mutation. Uncertain interrupted saves remain held pending verified reconciliation; automatic recovery is not included.
+
 ### Changed
 
 - New Status edits follow native publication rules: Draft does not remember a target; Published requests publication and can become Scheduled from its stored date. One ordinary Save is enough. Bulk changes use Preview → Apply, with count confirmation at the configured threshold.
@@ -21,6 +30,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The narrow category sheet remains open beneath its create dialog, keeping confirmation and retry controls available after saving. Category error details retain native disclosure behavior with readable contrast.
 
 These changes report creation and readback outcomes; they do not repair category membership restrictions on an affected installation.
+
+## [1.1.1] - 2026-10-01
+
+### Fixed
+
+- Category-save confirmation distinguishes missing entries and failed list refreshes, with read-only retry and improved dialog focus and narrow-layout feedback.
 
 ## [1.1.0] - 2026-09-30
 

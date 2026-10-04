@@ -271,6 +271,9 @@ final class Planner {
 			return $refusal;
 		}
 
+		if ( 2 === ( $batch['extensions']['serializer'] ?? null ) ) {
+			return $this->typed_walk( $batch, $user_id, $each );
+		}
 		$order = $this->order( $batch_id );
 		if ( [] === $order && $batch['total_items'] > 0 && $batch['done_items'] > 0 ) {
 			return self::not_reversible( self::PRUNED, self::pruned_sentence() );
@@ -339,8 +342,16 @@ final class Planner {
 	 */
 	public function checker( int $batch_id, array $object_ids, ?int $user_id = null ): \Closure {
 		$user_id ??= get_current_user_id();
-		$ids       = self::ids( $object_ids );
-		$journals  = $this->journals( $batch_id, $ids );
+		// Numeric product-only readers must never flatten typed target identities.
+		$batch = $this->batches->find( $batch_id );
+		if ( 2 === ( $batch['extensions']['serializer'] ?? null ) ) {
+			return static function ( int $id, ?object $subject = null ): ?array {
+				unset( $id, $subject );
+				return null;
+			};
+		}
+		$ids      = self::ids( $object_ids );
+		$journals = $this->journals( $batch_id, $ids );
 		Memory::next_page( $ids, false );
 		return function ( int $object_id, ?object $subject = null ) use ( $journals, $user_id, $batch_id ): ?array {
 			return isset( $journals[ $object_id ] ) ? $this->item( $object_id, $journals[ $object_id ], $user_id, $batch_id, $subject ) : null;
@@ -456,7 +467,13 @@ final class Planner {
 			return self::not_reversible( self::PRUNED, self::pruned_sentence() );
 		}
 		$manifest = $batch['extensions'] ?? null;
-		$blocked  = is_array( $manifest ) ? External\Manifest::blocked( $manifest, $this->actions->providers(), false ) : null;
+		$typed    = 2 === ( $manifest['serializer'] ?? null );
+		if ( $typed ) {
+			$supported = External\V2\Manifest::supported( $manifest, $this->actions->providers()->typed(), true );
+			if ( true !== $supported ) {
+				return $supported; }
+		}
+		$blocked = is_array( $manifest ) && ! $typed ? External\Manifest::blocked( $manifest, $this->actions->providers(), false ) : null;
 		if ( null !== $blocked ) {
 			return self::not_reversible( $blocked->kind, $blocked->undo_sentence() );
 		}
@@ -474,6 +491,118 @@ final class Planner {
 			);
 		}
 		return null;
+	}
+
+	/**
+	 * Typed storage has one aggregate record per field and full target tuples.
+	 * Preview markers deliberately have no executable values; S5 owns acceptance.
+	 * @param array $batch Source batch.
+	 * @param int $actor Person undoing.
+	 * @param callable|null $each Item consumer.
+	 * @return PlanSummary|\WP_Error
+	 */
+	private function typed_walk( array $batch, int $actor, ?callable $each ): PlanSummary|\WP_Error {
+		try {
+			$targets = $this->batches->typed_targets( $batch['batch_id'] );
+			if ( [] === $targets && $batch['done_items'] > 0 ) {
+				return self::not_reversible( self::PRUNED, self::pruned_sentence() ); }
+			$hash   = $this->hash_start( $batch['batch_id'] );
+			$counts = array_fill_keys( Plan::STATES, 0 );
+			$first  = true;
+			$mark   = Memory::mark();
+			foreach ( $targets as $position => $wire ) {
+				if ( 0 === $position % self::PAGE && $position > 0 ) {
+					Memory::release( $mark ); }
+				$ref  = \BulkCatalogueManager\Extension\V2\TargetRef::from_array( $wire );
+				$item = $this->typed_item( $batch, $ref, $actor );
+				self::hash_item( $hash, $item, $first );
+				$first = false;
+				++$counts[ $item['state'] ];
+				if ( null !== $each ) {
+					$each( $item ); }
+			}
+			return new PlanSummary( $batch['batch_id'], $counts, $this->hash_end( $hash ) );
+		} catch ( \Throwable $error ) {
+			return External\Refusals::incompatible( External\V2\Inspector::unavailable() ); }
+	}
+
+	/**
+	 * Pure typed recovery adapter. No opaque values or origins leave the planner.
+	 * @param array $batch Source batch with original manifest.
+	 * @param \BulkCatalogueManager\Extension\V2\TargetRef $ref Exact object identity.
+	 * @param int $actor Person undoing.
+	 * @return array Preview item; marker cannot pass the legacy operation registry.
+	 */
+	private function typed_item( array $batch, \BulkCatalogueManager\Extension\V2\TargetRef $ref, int $actor ): array {
+		$skip = self::skipped( $ref->id, $ref->kind, self::CANNOT_RESTORE, __( 'This change cannot be undone here, so it was left alone.', 'bulk-catalogue-manager-for-woocommerce' ) ) + [ 'target' => $ref->to_array() ];
+		try {
+			$subject = External\V2\SubjectLoader::load( $ref, $actor );
+			if ( is_wp_error( $subject ) ) {
+				return $skip; }
+			$operations = [];
+			$conflicts  = [];
+			$hashes     = [];
+			$seen       = [];
+			$manifest   = $batch['extensions'];
+			$family     = $this->actions->providers()->typed()->family( $manifest['provider'] );
+			foreach ( $this->changes->for_target( $batch['batch_id'], $ref ) as $row ) {
+				if ( in_array( $row['result'], [ 'failed', 'skipped', 'already' ], true ) ) {
+					continue; }
+				// Never infer completion from an intent or from current == intended value.
+				if ( 'applied' !== $row['result'] || isset( $seen[ $row['prop'] ] ) || ! is_array( $row['new_value'] ) ) {
+					return $skip; }
+				$seen[ $row['prop'] ] = true;
+				$context              = External\V2\HistoryCodec::reversal( $row['new_value'], false, $actor, 0 );
+				if ( is_wp_error( $context ) ) {
+					return $skip; }
+				$history = $context->original();
+				if ( $history->target->key() !== $ref->key() || $history->field !== $row['prop'] || ! External\V2\Manifest::owns( $manifest, $history ) ) {
+					return $skip; }
+				$field = $family['typed']['fields'][ $history->field ] ?? null;
+				if ( null === $field || true !== External\V2\Recovery::authorize( $field, $subject, $context ) ) {
+					return $skip; }
+				$current  = External\Guard::run( $history->provider, 'read', fn()=> $field->read( $subject ) );
+				$decision = External\V2\Recovery::plan( $field, $subject, $current, $context );
+				if ( is_wp_error( $decision ) ) {
+					return $skip; }
+				$hashes[ $history->field ] = hash( 'sha256', wp_json_encode( Preview::canonical( [ $row['new_value'], $current, $decision->target, $decision->conflicts ] ) ) );
+				if ( [] === $decision->conflicts && true === External\Guard::run( $history->provider, 'same', fn()=> $field->same( $current, $decision->target ) ) ) {
+					continue; }
+				$operations[] = [
+					'action' => 'restore_external_v2',
+					'args'   => [ 'field' => $history->field ],
+				];
+				foreach ( $decision->conflicts as $conflict ) {
+					$conflicts[] = [
+						'field'    => $history->field,
+						'domain'   => $conflict['domain'],
+						'reason'   => $conflict['reason'],
+						'expected' => '',
+						'current'  => '',
+					];
+				}
+			}
+			if ( [] === $operations ) {
+				return array_replace(
+					$skip,
+					[
+						'code'            => self::NOT_APPLIED,
+						'recovery_hashes' => $hashes,
+					]
+				); }
+			return array_replace(
+				$skip,
+				[
+					'operations'      => $operations,
+					'conflicts'       => $conflicts,
+					'state'           => [] === $conflicts ? Plan::REVERTIBLE : Plan::CONFLICTED,
+					'code'            => [] === $conflicts ? '' : self::CHANGED_SINCE,
+					'reason'          => '',
+					'recovery_hashes' => $hashes,
+				]
+			);
+		} catch ( \Throwable $error ) {
+			return $skip; }
 	}
 
 	/**

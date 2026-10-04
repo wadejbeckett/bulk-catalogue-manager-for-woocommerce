@@ -86,10 +86,36 @@ final class Scenario {
 				);
 	}
 	public function compute( array $targets, array $steps ): array {
-		throw new \LogicException( 'The owning SDK runtime task has not implemented compute.' );
+		if ( 1 !== count( $targets ) ) {
+			throw new \LogicException( 'Pure fixture requires one target.' ); }
+		$family   = \BulkCatalogueManager\Operations\Registry::instance()->providers()->typed()->family( 'sample' );
+		$provider = $family['provider'];
+		$scope    = \BulkCatalogueManager\External\V2\TypedScope::from_request( [ 'targets' => $targets ], 3 );
+		$context  = new \BulkCatalogueManager\External\V2\RunContext( 'preview', 3, 0 );
+		$binding  = \BulkCatalogueManager\External\V2\Binding::of( $provider, $scope, $steps, $context );
+		if ( is_wp_error( $binding ) ) {
+			throw new \LogicException( $binding->get_error_message() ); }
+		$ref              = API\TargetRef::from_array( $targets[0] );
+		$subject          = \BulkCatalogueManager\External\V2\SubjectLoader::load( $ref, 3 );
+		$rows             = ( new \BulkCatalogueManager\External\V2\Computer( $provider ) )->run( $subject, \BulkCatalogueManager\External\V2\Binding::validated( $binding ), $context );
+		$key              = array_key_first( $rows );
+		$row              = $rows[ $key ];
+		$row['history']   = new API\FieldHistory( $provider->id(), $provider->identity(), 2, $key, $family['typed']['fields'][ $key ]->format(), $ref, $row['before'], $row['after'], $row['contributions'] );
+		$row['reference'] = $ref;
+		return $row;
 	}
 	public function restore_plan( array $computed, array $current, bool $force = false, string $direction = 'undo' ): API\RestoreDecision|\WP_Error {
-		throw new \LogicException( 'The owning SDK runtime task has not implemented restore_plan.' );
+		$history = $computed['history'];
+		$family  = \BulkCatalogueManager\Operations\Registry::instance()->providers()->typed()->family( $history->provider );
+		$field   = $family['typed']['fields'][ $history->field ] ?? null;
+		if ( null === $field ) {
+			return \BulkCatalogueManager\External\Refusals::missing(); }
+		$subject = \BulkCatalogueManager\External\V2\SubjectLoader::load( $computed['reference'], 3 );
+		if ( is_wp_error( $subject ) ) {
+			return $subject; }
+		$redo    = 'redo' === $direction;
+		$context = new \BulkCatalogueManager\External\V2\RecoveryState( $history, $redo ? $history->before : $history->after, $redo ? $history->after : $history->before, $force, $direction, 3, 0 );
+		return \BulkCatalogueManager\External\V2\Recovery::plan( $field, $subject, $current, $context );
 	}
 	public function accept( array $preview ): array|\WP_Error {
 				$key = $preview['hash'];

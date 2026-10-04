@@ -246,7 +246,11 @@ final class UndoRouteTest extends TestCase {
 	public function test_the_route_registers_behind_the_write_capability(): void {
 		$route = $GLOBALS['bulkcat_test']['routes']['/bulkcat/v1/batches/(?P<id>[\d]+)/undo'];
 		$this->assertSame( 'POST', $route[0]['methods'] );
-		$this->assertSame( [ Access::class, 'can_write' ], $route[0]['permission_callback'] );
+		$this->assertSame( [ Access::class, 'can_family_request' ], $route[0]['permission_callback'] );
+		// Native requests still require write access after the typed preflight adapter.
+		$this->assertTrue( call_user_func( $route[0]['permission_callback'] ) );
+		$GLOBALS['bulkcat_test']['caps']['edit_products'] = false;
+		$this->assertInstanceOf( \WP_Error::class, call_user_func( $route[0]['permission_callback'] ) );
 		$this->assertSame( [ 'id', 'page', 'per_page', 'request_proof', 'intent', 'uuid', 'preview', 'force', 'plan_hash' ], array_keys( $route[0]['args'] ) );
 		$this->assertSame( [], $GLOBALS['bulkcat_test']['wrong'] ?? [] );
 	}

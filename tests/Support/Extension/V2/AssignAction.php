@@ -93,13 +93,18 @@ final class AssignAction implements API\Action, API\ChoiceSource {
 		);
 	}
 	public function compute( API\Subject $subject, API\ValidatedStep $step, API\Context $context ): API\Computation {
-		$before         = $subject->value( $step->field );
-		$after          = $before;
-		$part           = $step->args['part'];
-		$values         = $step->args['values'];
+		$before = $subject->value( $step->field );
+		$after  = $before;
+		$part   = $step->args['part'];
+		$values = $step->args['values'];
+		if ( 'keep' !== ( $step->args['mode'] ?? 'keep' ) ) {
+			$after['a']    = [];
+			$after['b']    = [];
+			$after['mode'] = $step->args['mode'];
+		}
 		$after[ $part ] = match ( $step->args['operation'] ) {
-			'add' => array_values( array_unique( [ ...$before[ $part ], ...$values ] ) ),
-			'remove' => array_values( array_diff( $before[ $part ], $values ) ),
+			'add' => array_values( array_unique( [ ...$after[ $part ], ...$values ] ) ),
+			'remove' => array_values( array_diff( $after[ $part ], $values ) ),
 			'replace' => array_values( array_unique( $values ) ),
 			'clear' => [],
 		};
@@ -116,6 +121,10 @@ final class AssignAction implements API\Action, API\ChoiceSource {
 				'mode'      => $step->args['mode'] ?? 'keep',
 			]
 		);
+		$state  = $this->store->faults['compute_states'][ $step->index ] ?? null;
+		if ( in_array( $state, [ 'failed', 'skipped' ], true ) ) {
+			return new API\Computation( Result::$state( $step->field, $before, 'Fixture outcome.' ), $origin );
+		}
 		return new API\Computation( $before === $after ? Result::already( $step->field, $before ) : Result::changed( $step->field, $before, $after ), $origin );
 	}
 }

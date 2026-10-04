@@ -55,6 +55,37 @@ final class CompositeField implements API\Field {
 		throw new \LogicException( 'S5 reconciliation is not implemented.' );
 	}
 	public function restore( API\Subject $subject, mixed $current, API\RecoveryContext $context ): API\RestoreDecision|\WP_Error {
-		throw new \LogicException( 'S5 restoration is not implemented.' );
+		$history = $context->original();
+		$domains = [];
+		foreach ( $history->contributions as $contribution ) {
+			$origin = $contribution->origin;
+			if ( 1 !== $origin->version || ! in_array( $origin->data['part'] ?? null, [ 'a', 'b' ], true ) || ! in_array( $origin->data['mode'] ?? null, [ 'keep', 'open', 'closed' ], true ) ) {
+				return new \WP_Error( 'x_sample_origin', 'Unsupported sample origin.' );
+			}
+			if ( ! in_array( $contribution->state, [ 'changed', 'already' ], true ) ) {
+				continue; }
+			$domains[] = $origin->data['part'];
+			if ( 'keep' !== $origin->data['mode'] ) {
+				$domains = [ ...$domains, 'a', 'b', 'mode' ]; }
+		}
+		$target    = $current;
+		$conflicts = [];
+		foreach ( array_unique( $domains ) as $domain ) {
+			foreach ( [ $history->before, $history->after, $current, $context->expected(), $context->target() ] as $value ) {
+				if ( ! is_array( $value ) || ! array_key_exists( $domain, $value ) ) {
+					return new \WP_Error( 'x_sample_value', 'Unsupported sample value.' ); }
+			}
+			if ( $history->before[ $domain ] === $history->after[ $domain ] ) {
+				continue; }
+			if ( $current[ $domain ] !== $context->expected()[ $domain ] && ! $context->force() ) {
+				$conflicts[] = [
+					'domain' => $domain,
+					'reason' => 'This part changed after the batch.',
+				];
+				continue;
+			}
+			$target[ $domain ] = $context->target()[ $domain ];
+		}
+		return new API\RestoreDecision( $target, $conflicts );
 	}
 }

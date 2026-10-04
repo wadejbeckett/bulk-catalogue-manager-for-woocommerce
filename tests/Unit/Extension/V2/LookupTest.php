@@ -35,7 +35,7 @@ final class LookupTest extends TestCase {
 		$discovery = new Discovery( $registry );
 		$scope     = TypedScope::from_request( self::request()['selection'], 3 );
 		$result    = $discovery->for_scope( 'product.row', $scope, [], 3 );
-		$this->assertIsArray( $result );
+		$this->assertTrue( is_array( $result ) );
 		$this->assertSame( [ 'x_sample_assign', 'x_sample_assign_note' ], array_column( $result['actions'], 'id' ) );
 		$this->assertTrue( $result['actions'][1]['available'] );
 		$this->assertTrue( $result['actions'][1]['arguments']['note']['required'] );
@@ -47,7 +47,7 @@ final class LookupTest extends TestCase {
 			'values'    => [ 'v1' ],
 		];
 		$this->assertInstanceOf( \WP_Error::class, Arguments::normalize( $descriptor, $args ) );
-		$this->assertIsArray( Arguments::normalize( $descriptor, $args + [ 'note' => 'Review' ] ) );
+		$this->assertTrue( is_array( Arguments::normalize( $descriptor, $args + [ 'note' => 'Review' ] ) ) );
 	}
 
 	public function test_lookup_ignores_unrelated_required_scalar_but_rejects_extra_dependencies(): void {
@@ -56,10 +56,10 @@ final class LookupTest extends TestCase {
 		$r           = self::request();
 		$r['action'] = 'x_sample_assign_note';
 		$page        = $service->search( $r, 3 );
-		$this->assertIsArray( $page );
+		$this->assertTrue( is_array( $page ) );
 		$this->assertCount( 50, $page['items'] );
 		$resolved = $service->resolve( array_diff_key( $r, array_flip( [ 'query','cursor','limit' ] ) ) + [ 'values' => [ 'v1' ] ], 3 );
-		$this->assertIsArray( $resolved );
+		$this->assertTrue( is_array( $resolved ) );
 		$this->assertSame( 'Value 1', $resolved['items'][0]['label'] );
 		$r['dependencies']['note'] = 'Review';
 		$this->error( $service->search( $r, 3 ), 'bulkcat_invalid_lookup', 400 );
@@ -89,7 +89,7 @@ final class LookupTest extends TestCase {
 		$this->error( $service->search( $r, 3 ), 'bulkcat_invalid_lookup', 400 );
 		$r['dependencies']['note'] = 'Review';
 		$page                      = $service->search( $r, 3 );
-		$this->assertIsArray( $page );
+		$this->assertTrue( is_array( $page ) );
 		$this->assertCount( 50, $page['items'] );
 		$r['dependencies']['note'] = 42;
 		$this->error( $service->search( $r, 3 ), 'bulkcat_invalid_lookup', 400 );

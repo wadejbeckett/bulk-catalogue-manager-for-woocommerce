@@ -44,9 +44,10 @@ final class Manifest {
 	 * Refuse unsupported identities and versions, preserving the stored original.
 	 * @param array $manifest Stored manifest.
 	 * @param Registry $registry Current qualified providers.
+	 * @param bool $recovery Allow older readable field formats for recovery only.
 	 * @return bool|\WP_Error
 	 */
-	public static function supported( array $manifest, Registry $registry ): bool|\WP_Error {
+	public static function supported( array $manifest, Registry $registry, bool $recovery = false ): bool|\WP_Error {
 		$refusal = \BulkCatalogueManager\External\Refusals::incompatible( Inspector::unavailable() );
 		try {
 			Rules::immutable( $manifest );
@@ -63,7 +64,7 @@ final class Manifest {
 			foreach ( Binding::validated( $manifest ) as $step ) {
 				$field      = $family['typed']['fields'][ $step->field ] ?? null;
 				$descriptor = $family['typed']['described'][ $step->action ]['descriptor'] ?? null;
-				if ( null === $field || null === $descriptor || ! isset( $family['typed']['actions'][ $step->action ] ) || $descriptor->field !== $step->field || ! in_array( $manifest['entry'], $descriptor->locations, true ) || $field->format() !== ( $manifest['fields'][ $step->field ]['format'] ?? null ) ) {
+				if ( null === $field || null === $descriptor || ! isset( $family['typed']['actions'][ $step->action ] ) || $descriptor->field !== $step->field || ! in_array( $manifest['entry'], $descriptor->locations, true ) || ! is_int( $manifest['fields'][ $step->field ]['format'] ?? null ) || $manifest['fields'][ $step->field ]['format'] < 1 || ( $recovery ? $field->format() < $manifest['fields'][ $step->field ]['format'] : $field->format() !== $manifest['fields'][ $step->field ]['format'] ) ) {
 					return $refusal;}
 				$context = \BulkCatalogueManager\External\Guard::run( $family['id'], 'upgrade_context', fn()=> $field->upgrade_context( $step->validation ) );
 				if ( ! $context instanceof \BulkCatalogueManager\Extension\V2\Snapshot ) {
@@ -72,5 +73,37 @@ final class Manifest {
 			return true;
 		} catch ( \Throwable $error ) {
 			return $refusal;}
+	}
+	/**
+	 * Bind immutable original contributions to the accepted server-side request.
+	 * @param array $manifest Original binding, retained across reversals.
+	 * @param \BulkCatalogueManager\Extension\V2\FieldHistory $history Original field history.
+	 * @return bool
+	 */
+	public static function owns( array $manifest, \BulkCatalogueManager\Extension\V2\FieldHistory $history ): bool {
+		try {
+			if ( 2 !== ( $manifest['serializer'] ?? null ) || ( $manifest['provider'] ?? null ) !== $history->provider || ( $manifest['identity'] ?? null ) !== $history->identity || ( $manifest['fields'][ $history->field ]['format'] ?? null ) !== $history->format ) {
+				return false; }
+			$indices = $manifest['step_indices'][ $history->target->key() ] ?? [];
+			$steps   = Binding::validated( $manifest );
+			foreach ( $history->contributions as $contribution ) {
+				$index = $contribution->step->index;
+				if ( ! in_array( $index, $indices, true ) || ! isset( $steps[ $index ] ) || self::step_wire( $steps[ $index ] ) !== self::step_wire( $contribution->step ) ) {
+					return false; }
+			}
+			return true;
+		} catch ( \Throwable $error ) {
+			return false; }
+	}
+
+	/**
+	 * Exact typed snapshots, independent of JSON map insertion order.
+	 * @param \BulkCatalogueManager\Extension\V2\ValidatedStep $step Bound step.
+	 * @return array
+	 */
+	private static function step_wire( \BulkCatalogueManager\Extension\V2\ValidatedStep $step ): array {
+		$wire               = get_object_vars( $step );
+		$wire['validation'] = get_object_vars( $step->validation );
+		return \BulkCatalogueManager\Engine\Preview::canonical( $wire );
 	}
 }

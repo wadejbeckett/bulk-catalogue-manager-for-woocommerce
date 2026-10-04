@@ -22,7 +22,7 @@ SLUG = 'bulk-catalogue-manager-for-woocommerce'
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('phase', choices=['inspect', 'seed', 'upgrade', 'verify', 'verify-history', 'verify-denied', 'cleanup'])
+    parser.add_argument('phase', choices=['inspect', 'seed', 'upgrade', 'verify', 'verify-history', 'verify-native', 'verify-denied', 'cleanup'])
     for key in ['base-url', 'wp-cmd', 'seed', 'evidence', 'released', 'released-sha256',
                 'candidate', 'candidate-sha256', 'candidate-install-path', 'container']:
         parser.add_argument('--' + key, required=True)
@@ -100,6 +100,20 @@ def main():
     def work(case, batch, **extra):
         return run(case, 'worker', batch=batch, **extra)
 
+    def inline(case, values):
+        issued = run(case, 'route', method='POST', route='requests', data={
+            'operation': 'product.inline',
+            'intent': {'object_id': case['id'], 'source': 'inline', 'values': values},
+        })
+        check('inline_grant_issued_without_save_' + str(len(output['observations'].get('inline_grants', []))),
+              issued['status'] == 200 and issued['counts'][str(case['id'])] == {'crud': 0, 'post': 0})
+        held = issued['data']
+        output['observations'].setdefault('inline_grants', []).append(issued)
+        save()
+        body = dict(values, source='inline', uuid=held['uuid'],
+                    request_proof=held['request_proof'], intent=held['intent'])
+        return run(case, 'route', method='PATCH', route=f"products/{case['id']}", data=body)
+
     try:
         if args.phase == 'inspect':
             check('actual_release_has_no_native_status_class', not before['native'])
@@ -158,9 +172,29 @@ def main():
             check('upgrade_preserves_all_existing_data', before['baseline'] == after['baseline'])
             state['upgraded'] = True
             save()
-        elif args.phase in ['verify', 'verify-history']:
+        elif args.phase in ['verify', 'verify-history', 'verify-native']:
             check('archive_upgrade_recorded', state.get('upgraded') is True)
             check('plain_woocommerce_no_companion', len(before['plugins']) == 2 and before['mu'] == [])
+            if args.phase == 'verify-native':
+                # Continue only the exact old-harness refusal, retaining the passed legacy work.
+                prior_paths = sorted(folder.glob('*-verify.json'))
+                prior_path = prior_paths[-1]
+                previous = json.loads(prior_path.read_text())
+                refused = previous['observations']['new_edits']
+                check('prior_failure_is_grant_free_zero_write',
+                      previous['run'] == state['run'] and previous['candidate'] == output['candidate']
+                      and {k for k, v in previous['checks'].items() if not v} == {'new_1_draft'}
+                      and len(refused) == 1 and refused[0]['status'] == 409
+                      and refused[0]['data']['code'] == 'bulkcat_invalid_request'
+                      and refused[0]['counts'][str(state['cases']['native']['id'])] == {'crud': 0, 'post': 0})
+                output['prior_legacy_evidence'] = {'path': str(prior_path), 'sha256': hashlib.sha256(prior_path.read_bytes()).hexdigest()}
+                for name, key in [('completed', 'batch'), ('restored', 'restore_batch')]:
+                    case = state['cases'][name]
+                    observed = previous['observations'][name + '_undo']['worker']
+                    current = run(case, 'snapshot', batch=case[key])
+                    check(name + '_prior_undo_still_exact',
+                          previous['checks'][name + '_historical_undo_exact']
+                          and current['objects'] == observed['snapshot']['objects'])
             for name in (['pending', 'crashed', 'revoked'] if args.phase == 'verify' else []):
                 case = state['cases'][name]
                 if name == 'revoked':
@@ -191,7 +225,7 @@ def main():
             check('old_unaccepted_grant_refused_without_save', refused.get('error') == 'bulkcat_preview_stale' and refused['counts'][str(case['id'])] == {'crud': 0, 'post': 0})
             new = grant(case, 'draft')
             check('old_client_fresh_preview_normalizes_native_action', new['preview']['operations'][0]['action'] == 'set_status')
-            for name, key in [('completed', 'batch'), ('restored', 'restore_batch')]:
+            for name, key in ([] if args.phase == 'verify-native' else [('completed', 'batch'), ('restored', 'restore_batch')]):
                 case = state['cases'][name]
                 undone = run(case, 'undo', batch=case[key])
                 result = work(case, undone['result']['batch_id'])
@@ -199,15 +233,17 @@ def main():
                 check(name + '_historical_undo_exact', result['result'] == 'complete' and result['snapshot']['objects'][0]['status'] == ('private' if name == 'completed' else 'draft'))
             case = state['cases']['native']
             for target in ['draft', 'publish', 'pending', 'draft', 'publish']:
-                result = run(case, 'route', method='PATCH', route=f"products/{case['id']}", data={'status': target})
+                result = inline(case, {'status': target})
                 output['observations'].setdefault('new_edits', []).append(result)
-                check('new_' + str(len(output['observations']['new_edits'])) + '_' + target, result['status'] == 200 and result['data']['item']['status'] == target and result['counts'][str(case['id'])] == {'crud': 1, 'post': 1} and not result['data']['item'].get('off_state'))
+                check('new_' + str(len(output['observations']['new_edits'])) + '_' + target, result['status'] == 200 and result['data']['receipt_state'] == 'closed' and result['data']['item']['status'] == target and result['counts'][str(case['id'])] == {'crud': 1, 'post': 1} and not result['data']['item'].get('off_state'))
             last = result['data']['batch_id']
             undone = run(case, 'undo', batch=last)
             result = work(case, undone['result']['batch_id'])
             output['observations']['native_undo'] = result
             check('new_undo_restores_draft', result['result'] == 'complete' and result['snapshot']['objects'][0]['status'] == 'draft')
-            changed = run(case, 'route', method='PATCH', route=f"products/{case['id']}", data={'status': 'private'})
+            changed = inline(case, {'status': 'private'})
+            output['observations']['conflict_edit'] = changed
+            check('conflict_edit_one_closed_save', changed['status'] == 200 and changed['data']['receipt_state'] == 'closed' and changed['data']['item']['status'] == 'private' and changed['counts'][str(case['id'])] == {'crud': 1, 'post': 1})
             conflicts = run(case, 'route', method='POST', route=f"batches/{undone['result']['batch_id']}/undo", data={'preview': True})
             output['observations']['conflicts'] = conflicts
             check('explicit_undo_conflict_detected', conflicts['status'] == 200 and conflicts['data']['counts']['conflicted'] > 0)
@@ -217,7 +253,7 @@ def main():
             untouched = state['cases']['untouched']
             snap = run(untouched, 'snapshot', batch=untouched['batch'])
             check('no_legacy_metadata_sweep', snap['objects'] == untouched['worked']['snapshot']['objects'])
-            state['verified' if args.phase == 'verify' else 'history_verified'] = True
+            state[{'verify': 'verified', 'verify-history': 'history_verified', 'verify-native': 'native_verified'}[args.phase]] = True
             save()
         elif args.phase == 'verify-denied':
             # Cover a corrected outcome assertion without rerunning already completed work.

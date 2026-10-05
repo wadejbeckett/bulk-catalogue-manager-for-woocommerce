@@ -303,6 +303,106 @@ final class WritePathTest extends TestCase {
 	}
 
 	/**
+	 * Intent rows a killed run left: each object's labels before, and those plus "red".
+	 *
+	 * @param RunnerStore                                $runner The batch.
+	 * @param array<int, array{0: list<string>, 1: string}> $olds   Object id => [ labels before, their text ].
+	 */
+	private static function intents( RunnerStore $runner, array $olds ): void {
+		foreach ( $olds as $id => [ $old, $text ] ) {
+			$runner->changes[] = [
+				'batch_id'     => self::BATCH,
+				'object_id'    => $id,
+				'object_type'  => 'product',
+				'prop'         => 'x_sample_labels',
+				'old_value'    => self::envelope( $old, $text ),
+				'new_value'    => self::envelope( [ ...$old, 'red' ], 'x' ),
+				'modified_gmt' => '2026-09-20 10:00:00',
+				'applied_gmt'  => '2026-09-29 10:00:00',
+				'result'       => Schema::CHANGE_INTENT,
+				'message'      => '',
+			];
+		}
+	}
+
+	public function test_a_replay_runs_the_forward_checks_before_a_still_pending_write(): void {
+		// C1 / EXT-1: the run died before the provider wrote; before the retry one product lost the
+		// user's edit right, one went to the bin and the add-on now refuses the third.
+		$runner = $this->batch( $this->steps( [ self::add( 'red' ) ] ) );
+		self::intents(
+			$runner,
+			[
+				1001 => [ [ 'blue' ], 'Blue' ],
+				1002 => [ [], 'No labels' ],
+				1003 => [ [], 'No labels' ],
+			]
+		);
+		$GLOBALS['bulkcat_test']['user_caps'][ self::USER ]['edit_post:1001'] = false;
+		$GLOBALS['bulkcat_test']['products'][1002]->props['status']           = 'trash';
+		update_option( 'sample_provider_faults', [ 'refuse' => [ 1003 ] ] );
+
+		$this->run_chunk();
+
+		$this->assertSame( [], $this->store->writes, 'Nothing is written on a replay the forward path would refuse.' );
+		$this->assertSame( [ 'blue' ], $this->labels( 1001 ) );
+		$this->assertSame( 'skipped', self::row( $runner, 1001 )['result'] );
+		$this->assertSame( 'skipped', self::row( $runner, 1002 )['result'] );
+		$this->assertSame( BatchFactory::unavailable_reason(), self::row( $runner, 1002 )['message'] );
+		$this->assertSame( 'skipped', $runner->states()[1002], 'A binned product is skipped as unavailable, as the native writer leaves it.' );
+		$this->assertSame( 'skipped', self::row( $runner, 1003 )['result'] );
+		$this->assertSame( 'The sample add-on does not allow changes to this product.', self::row( $runner, 1003 )['message'] );
+		$this->assertCount( 3, $runner->journal(), 'No second row for any object.' );
+	}
+
+	public function test_a_replay_rechecks_the_action_capability_and_the_kind(): void {
+		$runner = $this->batch( $this->steps( [ self::add( 'red' ) ] ), [ 1001, 1002 ] );
+		self::intents(
+			$runner,
+			[
+				1001 => [ [ 'blue' ], 'Blue' ],
+				1002 => [ [], 'No labels' ],
+			]
+		);
+		$GLOBALS['bulkcat_test']['products'][1002] = new SavedProduct(
+			'variation',
+			[
+				'id'        => 1002,
+				'parent_id' => 1001,
+			]
+		);
+		unset( $GLOBALS['bulkcat_test']['user_caps'][ self::USER ]['edit_products'] );
+
+		$this->run_chunk();
+
+		$this->assertSame( [], $this->store->writes );
+		$this->assertSame( 'skipped', self::row( $runner, 1001 )['result'], 'The action capability was revoked.' );
+		$this->assertSame( 'failed', self::row( $runner, 1002 )['result'] );
+		$this->assertSame( 'failed', $runner->states()[1002], 'Now a variation: never written under the kind it was chosen as.' );
+		$GLOBALS['bulkcat_test']['products'][1002] = new SavedProduct( 'simple', [ 'id' => 1002 ] );
+	}
+
+	public function test_a_replay_still_settles_a_landed_value_and_writes_in_replay_mode(): void {
+		$runner                  = $this->batch( $this->steps( [ self::add( 'red' ) ] ), [ 1001, 1002 ] );
+		$this->store->data[1001] = [ '_sample_labels' => '["blue","red"]' ];
+		self::intents(
+			$runner,
+			[
+				1001 => [ [ 'blue' ], 'Blue' ],
+				1002 => [ [], 'No labels' ],
+			]
+		);
+		// Rights to 1001 were revoked after its write landed: observing the fact needs no new grant.
+		$GLOBALS['bulkcat_test']['user_caps'][ self::USER ]['edit_post:1001'] = false;
+
+		$this->run_chunk();
+
+		$this->assertSame( 'applied', self::row( $runner, 1001 )['result'] );
+		$this->assertSame( 'applied', self::row( $runner, 1002 )['result'] );
+		$this->assertSame( [ 'red' ], $this->labels( 1002 ) );
+		$this->assertSame( [ [ 1002, 'replay' ] ], SampleProvider::$written, 'The add-on is told the write is a replay.' );
+	}
+
+	/**
 	 * A chunk run after its provider went away in one way, and what it left.
 	 *
 	 * @param bool                 $registered Whether the provider is registered for the run.
@@ -359,11 +459,13 @@ final class WritePathTest extends TestCase {
 	public function test_a_product_binned_after_apply_is_never_written(): void {
 		// Coordinator's point (a): Apply refuses a member binned since the
 		// preview (scope_changed, the journey's E6), and a member binned
-		// after Apply fails at the chunk, unwritten, as an unavailable member does.
+		// after Apply is skipped at the chunk, unwritten, as an unavailable member is, and as the
+		// native writer leaves it (DESIGN-4).
 		$runner = $this->batch( $this->steps( [ self::add( 'red' ) ] ) );
 		$GLOBALS['bulkcat_test']['products'][1002]->props['status'] = 'trash';
 		$this->run_chunk();
-		$this->assertSame( 'failed', $runner->states()[1002] );
+		$this->assertSame( 'skipped', $runner->states()[1002] );
+		$this->assertSame( 'skipped', self::row( $runner, 1002 )['result'] );
 		$this->assertSame( BatchFactory::unavailable_reason(), $runner->item( 1002 )['message'] );
 		$this->assertSame( [], $this->labels( 1002 ), 'Nothing written to the binned product.' );
 		$this->assertSame( [ 'blue', 'red' ], $this->labels( 1001 ), 'The others are written.' );

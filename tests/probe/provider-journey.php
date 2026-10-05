@@ -847,7 +847,7 @@ try {
 	wp_cache_flush();
 	$drain( $bin );
 	$bin_item = $wpdb->get_row( $wpdb->prepare( 'SELECT state, message FROM %i WHERE batch_id = %d AND object_id = %d', $wpdb->prefix . 'bulkcat_batch_items', $bin, $a[4] ), ARRAY_A );
-	$check( 'failed' === $bin_item['state'] && BulkCatalogueManager\Engine\BatchFactory::unavailable_reason() === $bin_item['message'] && $before4 === $sample_meta( [ $a[4] ] ), '(a): a member binned after Apply fails unwritten, as an unavailable member.' );
+	$check( 'skipped' === $bin_item['state'] && BulkCatalogueManager\Engine\BatchFactory::unavailable_reason() === $bin_item['message'] && $before4 === $sample_meta( [ $a[4] ] ), '(a): a member binned after Apply is skipped unwritten, as an unavailable member.' );
 	$check( in_array( 'sale', $labels( $a[3] ), true ), '(a): … and the rest of the batch is written.' );
 	wp_untrash_post( $a[4] );
 	wp_publish_post( $a[4] );

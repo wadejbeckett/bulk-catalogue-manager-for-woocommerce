@@ -29,8 +29,10 @@ defined( 'ABSPATH' ) || exit;
  * at a time, journalling from inside, as it does for native changes.
  *
  * For one object, with the run's user:
- * 1. load it (a missing one fails every step with `bulkcat_not_found`) and
- *    check it is still the kind it was chosen as;
+ * 1. load it (a missing one fails every step with `bulkcat_not_found`),
+ *    check it is still the kind it was chosen as and, in an apply run, still
+ *    in the catalogue (a binned one is skipped as unavailable,
+ *    `bulkcat_unavailable`, as the native writer leaves it);
  * 2. the core's own edit check (Rest\Access::user_can_edit_object(), the
  *    variation's product too), then External\Computer: the action's
  *    capability, the provider's authorise(), the variation rule, the reads
@@ -54,8 +56,9 @@ defined( 'ABSPATH' ) || exit;
  * A retry that finds intent rows (the run died between write and settle)
  * computes nothing: per field, a value already at the recorded new value is
  * settled applied; one still at the recorded old value is written once and
- * settled; anything else fails `bulkcat_changed_during_write`. So a
- * relative action cannot apply twice.
+ * settled, after the same per-object checks as step 1 and 2 pass again and
+ * in a Context::REPLAY run; anything else fails
+ * `bulkcat_changed_during_write`. So a relative action cannot apply twice.
  *
 
  */
@@ -124,22 +127,12 @@ final class ExternalWriter {
 		if ( null === $product ) {
 			return $this->refuse_all( $id, $operations, static fn( string $key ): Result => Result::failed( $key, null, __( 'That product could not be found. It may have been deleted; reload the list and try again.', 'bulk-catalogue-manager-for-woocommerce' ), Writer::NOT_FOUND ) );
 		}
-		if ( null !== $type && Journal::object_type( $product ) !== $type ) {
-			return $this->refuse_all( $id, $operations, static fn( string $key ): Result => Result::failed( $key, null, __( 'This item has changed between a product and a variation since it was chosen, so it was left unchanged. Choose it again to change it.', 'bulk-catalogue-manager-for-woocommerce' ), Writer::CHANGED_KIND ), $product );
-		}
-		if ( Context::APPLY === $this->context->mode() && ( ! self::listed( $id ) || ( 'variation' === Journal::object_type( $product ) && ! self::listed( (int) $product->get_parent_id() ) ) ) ) {
-			// Moved to the bin (or out of the catalogue) since Apply: never written, as an unavailable member at acceptance.
-			// An undo still puts the old value back, so a product restored from the bin reads as before (EXTENSIONS §18.22).
-			return $this->refuse_all( $id, $operations, static fn( string $key ): Result => Result::failed( $key, null, BatchFactory::unavailable_reason(), Writer::NOT_FOUND ), $product );
+		$subject = ProductSubject::of( $product, $this->provider );
+		$refusal = $this->object_refusal( $id, $product, $subject, $type );
+		if ( null !== $refusal ) {
+			return $this->refuse_all( $id, $operations, $refusal, $product );
 		}
 		$modified = null === $this->journal ? '' : $this->journal->modified_gmt( $product );
-		$subject  = ProductSubject::of( $product, $this->provider );
-		$allowed  = Access::user_can_edit_object( $this->context->user_id(), $id, $subject->parent_id() );
-		if ( true !== $allowed ) {
-			$reason = $allowed instanceof \WP_Error ? $allowed->get_error_message() : __( 'You can no longer edit this product, so it was left alone.', 'bulk-catalogue-manager-for-woocommerce' );
-			$code   = $allowed instanceof \WP_Error ? (string) $allowed->get_error_code() : Access::CANNOT_EDIT;
-			return $this->refuse_all( $id, $operations, static fn( string $key ): Result => Result::skipped( $key, null, $reason, $code ), $product, $modified );
-		}
 
 		$reason = null === $guard ? null : $guard( $id, $product );
 		if ( is_string( $reason ) && '' !== $reason ) {
@@ -199,27 +192,39 @@ final class ExternalWriter {
 
 	/**
 	 * Finish an object a stopped run left with intent rows (§8.5): nothing is
-	 * computed again.
+	 * computed again. Per field: a value already at the recorded new value is
+	 * settled applied (observing what landed needs no new grant); anything
+	 * neither old nor new fails as changed during the write; a value still at
+	 * the recorded old value is written only after the forward path's checks
+	 * pass again (C1): the kind, the catalogue (in an apply run), the user's
+	 * edit right, each step's capability, the provider's authorise() and the
+	 * variation rule. A refusal settles the row with the forward path's
+	 * Result and writes nothing. The provider sees the write, and its
+	 * authorise() call, in a Context::REPLAY run.
 	 *
-	 * @param int                                          $id      Object id.
-	 * @param array<string, array{old: mixed, new: mixed}> $intents Field key => the envelopes the stopped run recorded.
+	 * @param int                                                     $id         Object id.
+	 * @param array<string, array{old: mixed, new: mixed}>            $intents    Field key => the envelopes the stopped run recorded.
+	 * @param list<array{action: string, args: array<string, mixed>}> $operations The batch's normalised steps.
+	 * @param string|null                                             $type       The kind it was chosen as, or null not to check.
 	 */
-	public function replay( int $id, array $intents ): WriteOutcome {
+	public function replay( int $id, array $intents, array $operations = [], ?string $type = null ): WriteOutcome {
 		$product = self::load( $id );
 		$subject = null === $product ? null : ProductSubject::of( $product, $this->provider );
 		$results = [];
 		$before  = [];
+		$pending = [];
 		foreach ( $intents as $key => [ 'old' => $old, 'new' => $new ] ) {
-			$field = $this->provider->field( (string) $key );
-			$old_v = $this->current_format( (string) $key, $old );
-			$new_v = $this->current_format( (string) $key, $new );
+			$key   = (string) $key;
+			$field = $this->provider->field( $key );
+			$old_v = $this->current_format( $key, $old );
+			$new_v = $this->current_format( $key, $new );
 			if ( null === $subject || null === $field || $old_v instanceof \WP_Error || $new_v instanceof \WP_Error ) {
 				$reason = null === $subject ? __( 'That product could not be found. It may have been deleted; reload the list and try again.', 'bulk-catalogue-manager-for-woocommerce' ) : Refusals::error_sentence();
-				$this->settle_failed( $id, (string) $key, $old, $reason );
-				$results[] = Result::failed( (string) $key, null, $reason, null === $subject ? Writer::NOT_FOUND : Refusals::ERROR );
+				$this->settle_failed( $id, $key, $old, $reason );
+				$results[ $key ] = Result::failed( $key, null, $reason, null === $subject ? Writer::NOT_FOUND : Refusals::ERROR );
 				continue;
 			}
-			$current = $subject->fresh( (string) $key );
+			$current = $subject->fresh( $key );
 			if ( $current instanceof Unknown ) {
 				$own = 1 === preg_match( '/^(bulkcat|x_' . preg_quote( $this->provider->id, '/' ) . ')_[a-z0-9_]+$/', $current->code() );
 				$put = self::failure( Text::plain( $current->reason(), Text::REASON ), $own ? $current->code() : Refusals::UNKNOWN_STATE );
@@ -231,27 +236,93 @@ final class ExternalWriter {
 					'code'   => '',
 				];
 			} elseif ( self::same( $field, $current, $old_v ) ) {
-				$put = $this->put( $subject, (string) $key, $new_v, $old_v );
+				$pending[ $key ] = [ $field, $old, $old_v, $new_v ];
+				$results[ $key ] = null;
+				continue;
 			} else {
 				$put = self::failure( Refusals::conflict_sentence(), ExternalField::CONFLICT );
 			}
-			if ( ! $put['ok'] ) {
-				$this->settle_failed( $id, (string) $key, $old, $put['reason'] );
-				$results[] = Result::failed( (string) $key, $old_v, $put['reason'], $put['code'] );
-				continue;
-			}
-			if ( null !== $this->journal ) {
-				$this->journal->settle_one( $this->batch_id, $id, (string) $key, 'applied', $this->provider->envelope( $subject, (string) $key, $put['value'] ) );
-			}
-			if ( self::same( $field, $old_v, $new_v ) ) {
-				$results[] = Result::already( (string) $key, $new_v );
-			} else {
-				$results[]               = Result::changed( (string) $key, $old_v, $new_v );
-				$before[ (string) $key ] = $old_v;
+			$results[ $key ] = $this->settle_replayed( $id, $subject, $key, $field, $old, $old_v, $new_v, $put, $before );
+		}
+		if ( [] !== $pending && null !== $product && null !== $subject ) {
+			$context  = new RunContext( Context::REPLAY, $this->context->user_id(), $this->context->batch_id() );
+			$computer = new Computer( $this->provider, $context );
+			$refusal  = $this->object_refusal( $id, $product, $subject, $type ) ?? $computer->refusal( $subject, $operations );
+			foreach ( $pending as $key => [ $field, $old, $old_v, $new_v ] ) {
+				$refused = null === $refusal ? $computer->parent_only( $subject, $key ) : $refusal( $key );
+				if ( null !== $refused ) {
+					$skipped = Result::SKIPPED === $refused->state();
+					if ( null !== $this->journal ) {
+						$this->journal->settle_one( $this->batch_id, $id, $key, $skipped ? 'skipped' : 'failed', $old, $refused->reason() );
+					}
+					$results[ $key ] = $skipped ? Result::skipped( $key, $old_v, $refused->reason(), $refused->code() ) : Result::failed( $key, $old_v, $refused->reason(), $refused->code() );
+					continue;
+				}
+				$results[ $key ] = $this->settle_replayed( $id, $subject, $key, $field, $old, $old_v, $new_v, $this->put( $subject, $key, $new_v, $old_v, $context ), $before );
 			}
 		}
-		$saved = [] !== array_filter( $results, static fn( Result $result ): bool => $result->is_changed() );
+		$results = array_values( $results );
+		$saved   = [] !== array_filter( $results, static fn( Result $result ): bool => $result->is_changed() );
 		return new WriteOutcome( $id, $results, $saved, 0, $before );
+	}
+
+	/**
+	 * Settle one replayed field from what put() (or the landed check) answered.
+	 *
+	 * @param int                                                       $id      Object id.
+	 * @param ProductSubject                                            $subject The object.
+	 * @param string                                                    $key     Field key.
+	 * @param ExternalField                                             $field   The field.
+	 * @param mixed                                                     $old     The recorded old envelope.
+	 * @param mixed                                                     $old_v   The old value, in the current format.
+	 * @param mixed                                                     $new_v   The new value, in the current format.
+	 * @param array{ok: bool, value: mixed, reason: string, code: string} $put     The answer.
+	 * @param array<string, mixed>                                      $before  Each changed field's value before, added to.
+	 */
+	private function settle_replayed( int $id, ProductSubject $subject, string $key, ExternalField $field, mixed $old, mixed $old_v, mixed $new_v, array $put, array &$before ): Result {
+		if ( ! $put['ok'] ) {
+			$this->settle_failed( $id, $key, $old, $put['reason'] );
+			return Result::failed( $key, $old_v, $put['reason'], $put['code'] );
+		}
+		if ( null !== $this->journal ) {
+			$this->journal->settle_one( $this->batch_id, $id, $key, 'applied', $this->provider->envelope( $subject, $key, $put['value'] ) );
+		}
+		if ( self::same( $field, $old_v, $new_v ) ) {
+			return Result::already( $key, $new_v );
+		}
+		$before[ $key ] = $old_v;
+		return Result::changed( $key, $old_v, $new_v );
+	}
+
+	/**
+	 * The core's per-object checks, before the provider is asked anything:
+	 * the object is still the kind it was chosen as (failed, CHANGED_KIND);
+	 * in an apply run, it and a variation's parent are still in the catalogue
+	 * (skipped as unavailable, as the native writer leaves a binned product);
+	 * the user may still edit it (skipped). Null when all pass.
+	 *
+	 * @param int            $id      Object id.
+	 * @param object         $product The loaded object.
+	 * @param ProductSubject $subject It, as the provider sees it.
+	 * @param string|null    $type    The kind it was chosen as, or null not to check.
+	 * @return \Closure(string): Result|null
+	 */
+	private function object_refusal( int $id, object $product, ProductSubject $subject, ?string $type ): ?\Closure {
+		if ( null !== $type && Journal::object_type( $product ) !== $type ) {
+			return static fn( string $key ): Result => Result::failed( $key, null, __( 'This item has changed between a product and a variation since it was chosen, so it was left unchanged. Choose it again to change it.', 'bulk-catalogue-manager-for-woocommerce' ), Writer::CHANGED_KIND );
+		}
+		if ( Context::APPLY === $this->context->mode() && ( ! self::listed( $id ) || ( 'variation' === Journal::object_type( $product ) && ! self::listed( (int) $product->get_parent_id() ) ) ) ) {
+			// Moved to the bin (or out of the catalogue) since Apply: never written, as an unavailable member at acceptance.
+			// An undo still puts the old value back, so a product restored from the bin reads as before (EXTENSIONS §18.22).
+			return static fn( string $key ): Result => Result::skipped( $key, null, BatchFactory::unavailable_reason(), Writer::UNAVAILABLE );
+		}
+		$allowed = Access::user_can_edit_object( $this->context->user_id(), $id, $subject->parent_id() );
+		if ( true !== $allowed ) {
+			$reason = $allowed instanceof \WP_Error ? $allowed->get_error_message() : __( 'You can no longer edit this product, so it was left alone.', 'bulk-catalogue-manager-for-woocommerce' );
+			$code   = $allowed instanceof \WP_Error ? (string) $allowed->get_error_code() : Access::CANNOT_EDIT;
+			return static fn( string $key ): Result => Result::skipped( $key, null, $reason, $code );
+		}
+		return null;
 	}
 
 	/**
@@ -261,15 +332,16 @@ final class ExternalWriter {
 	 * @param string         $key      Field key.
 	 * @param mixed          $target   The value to set.
 	 * @param mixed          $expected The value it should hold now.
+	 * @param Context|null   $context  The run the provider sees, when not this writer's own (a replay).
 	 * @return array{ok: bool, value: mixed, reason: string, code: string} The value read back, or why it failed.
 	 */
-	private function put( ProductSubject $subject, string $key, mixed $target, mixed $expected ): array {
+	private function put( ProductSubject $subject, string $key, mixed $target, mixed $expected, ?Context $context = null ): array {
 		$field = $this->provider->field( $key );
 		if ( null === $field ) {
 			return self::failure( Refusals::error_sentence(), Refusals::ERROR );
 		}
 		try {
-			$answer = Guard::run( $this->provider->id, 'write', fn(): mixed => $field->write( $subject, $target, $expected, $this->context ) );
+			$answer = Guard::run( $this->provider->id, 'write', fn(): mixed => $field->write( $subject, $target, $expected, $context ?? $this->context ) );
 		} catch ( ProviderFailure $e ) {
 			return self::failure( Refusals::error_sentence(), Refusals::ERROR );
 		}

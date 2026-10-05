@@ -52,13 +52,7 @@ final class Computer {
 	 * @param list<array{action: string, args: array<string, mixed>}> $steps   The normalised steps.
 	 */
 	public function run( ProductSubject $subject, array $steps ): Computation {
-		$user = $this->context->user_id();
-		foreach ( $steps as $step ) {
-			if ( ! $this->may( $user, $step ) ) {
-				return new Computation( self::all( $steps, static fn( string $key ): Result => Result::skipped( $key, null, Refusals::no_permission(), Refusal::FORBIDDEN ) ), [], [] );
-			}
-		}
-		$refusal = $this->authorise( $subject );
+		$refusal = $this->refusal( $subject, $steps );
 		if ( null !== $refusal ) {
 			return new Computation( self::all( $steps, $refusal ), [], [] );
 		}
@@ -73,8 +67,9 @@ final class Computer {
 				$results[ $index ] = Result::failed( $key, null, Refusals::error_sentence(), Refusals::ERROR );
 				continue;
 			}
-			if ( 'variation' === $subject->type() && ExternalField::PARENT_ONLY === $meta['rule'] ) {
-				$results[ $index ] = Result::skipped( $key, null, Advertiser::parent_only( $meta['label'] ), 'bulkcat_not_available' );
+			$parent_only = $this->parent_only( $subject, $key );
+			if ( null !== $parent_only ) {
+				$results[ $index ] = $parent_only;
 				continue;
 			}
 			$current = $subject->value( $key );
@@ -94,6 +89,41 @@ final class Computer {
 		}
 		ksort( $results );
 		return new Computation( array_values( $results ), $before, $finals );
+	}
+
+	/**
+	 * The refusal every step of an object takes before anything is read, or
+	 * null: each step's capability for the run's user (skipped, forbidden),
+	 * then the provider's authorise(). The forward write and a replay of an
+	 * interrupted one (ExternalWriter::replay()) both ask here.
+	 *
+	 * @param ProductSubject                                          $subject The object.
+	 * @param list<array{action: string, args: array<string, mixed>}> $steps   The normalised steps.
+	 * @return \Closure(string): Result|null
+	 */
+	public function refusal( ProductSubject $subject, array $steps ): ?\Closure {
+		$user = $this->context->user_id();
+		foreach ( $steps as $step ) {
+			if ( ! $this->may( $user, $step ) ) {
+				return static fn( string $key ): Result => Result::skipped( $key, null, Refusals::no_permission(), Refusal::FORBIDDEN );
+			}
+		}
+		return $this->authorise( $subject );
+	}
+
+	/**
+	 * The variation rule: a parent-only field on a variation is skipped with
+	 * the core's sentence; null when the field applies to the object.
+	 *
+	 * @param ProductSubject $subject The object.
+	 * @param string         $key     The field.
+	 */
+	public function parent_only( ProductSubject $subject, string $key ): ?Result {
+		$meta = $this->provider->field_meta( $key );
+		if ( null !== $meta && 'variation' === $subject->type() && ExternalField::PARENT_ONLY === $meta['rule'] ) {
+			return Result::skipped( $key, null, Advertiser::parent_only( $meta['label'] ), 'bulkcat_not_available' );
+		}
+		return null;
 	}
 
 	/**

@@ -125,9 +125,9 @@ final class LabelsField implements ExternalField {
 	 * @param Context $context  The run.
 	 */
 	public function write( Subject $subject, mixed $target, mixed $expected, Context $context ): bool|\WP_Error {
-		unset( $context );
-		$id    = $subject->id();
-		$delay = (int) SampleFaults::get( 'slow_write', 0 );
+		$id                        = $subject->id();
+		SampleProvider::$written[] = [ $id, $context->mode() ];
+		$delay                     = (int) SampleFaults::get( 'slow_write', 0 );
 		if ( $delay > 0 ) {
 			usleep( $delay );
 		}

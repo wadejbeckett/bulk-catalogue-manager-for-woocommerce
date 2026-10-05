@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-05
+
+- Add-ons can now offer searchable, paged choices (for example people or groups from a long list), checked again on the server at preview and Apply.
+- Add-ons can act on product categories: one category or several, with Include subcategories, from the Categories tab, with per-category results in History and Undo.
+- Add-on actions can be run on a single product from its row menu, without touching the current selection.
+- History names the choices an add-on change used.
+- Extension contract version 2 (docs/EXTENSIONS-v2.md); version 1 add-ons keep working unchanged.
+
 ## [1.3.4] - 2026-10-05
 
 - A change whose only problems were rows skipped as the preview said (not applicable, already at the value) now reads "Done, some rows skipped" in History, the Done step, the progress banner and the history export, not "Done with errors".

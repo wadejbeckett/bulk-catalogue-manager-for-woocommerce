@@ -6,7 +6,7 @@ Tested up to: 7.1
 Requires PHP: 8.1
 WC requires at least: 11.1
 WC tested up to: 11.1
-Stable tag: 1.3.4
+Stable tag: 1.4.0
 License: GPL-3.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -145,6 +145,13 @@ Yes. Each site keeps its own history and settings, and deleting the plugin with 
 
 == Changelog ==
 
+= 1.4.0 =
+* Add-ons can now offer searchable, paged choices (for example people or groups from a long list), checked again on the server at preview and Apply.
+* Add-ons can act on product categories: one category or several, with Include subcategories, from the Categories tab, with per-category results in History and Undo.
+* Add-on actions can be run on a single product from its row menu, without touching the current selection.
+* History names the choices an add-on change used.
+* Extension contract version 2 (docs/EXTENSIONS-v2.md); version 1 add-ons keep working unchanged.
+
 = 1.3.4 =
 * A change whose only problems were rows skipped as the preview said (not applicable, already at the value) now reads "Done, some rows skipped" in History, the Done step, the progress banner and the history export, not "Done with errors".
 * Export CSV opened straight after ticking rows waits for the selection to be saved, then chooses Selected from it, so it no longer opens one selection behind.
@@ -219,6 +226,9 @@ Yes. Each site keeps its own history and settings, and deleting the plugin with 
 * Settings for access, page size, confirmation, variation defaults, background batch sizes, history and data removal.
 
 == Upgrade Notice ==
+
+= 1.4.0 =
+Adds extension contract version 2: searchable choices, actions on categories and single-row actions for add-ons. Existing add-ons keep working. No database change.
 
 = 1.3.4 =
 Category undo puts every category back; saves through WordPress's category form are in History, with a warning before a first save; the tab orders by name as WooCommerce does; skipped rows are not errors; Export CSV and wording fixes. No database change.

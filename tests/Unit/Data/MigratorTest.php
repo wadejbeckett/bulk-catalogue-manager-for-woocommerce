@@ -40,8 +40,8 @@ final class MigratorTest extends TestCase {
 	private static function expected_statements(): array {
 		$collate = 'DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci';
 		return [
-			"CREATE TABLE wp_bulkcat_alpha (\n" . self::BODY_A . "\n) $collate;",
-			"CREATE TABLE wp_bulkcat_beta (\n" . self::BODY_B . "\n) $collate;",
+			"CREATE TABLE wp_bulkcat_alpha (\n" . self::BODY_A . "\n) $collate ENGINE=InnoDB;",
+			"CREATE TABLE wp_bulkcat_beta (\n" . self::BODY_B . "\n) $collate ENGINE=InnoDB;",
 		];
 	}
 
@@ -123,5 +123,28 @@ final class MigratorTest extends TestCase {
 
 	public function test_the_version_option_is_registered_for_cleanup(): void {
 		$this->assertContains( Migrator::VERSION_OPTION, Registry::plugin()->options() );
+	}
+	private static function engine_query( string $table ): string {
+		return "SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '{$table}'";
+	}
+
+	public function test_an_existing_plugin_table_on_another_engine_is_converted_to_innodb(): void {
+		$GLOBALS['wpdb']->tables = [ 'wp_bulkcat_alpha' => true ];
+		$GLOBALS['wpdb']->responses[ self::engine_query( 'wp_bulkcat_alpha' ) ] = 'MyISAM';
+		$GLOBALS['wpdb']->responses[ self::engine_query( 'wp_bulkcat_beta' ) ]  = 'InnoDB';
+
+		$this->assertTrue( ( new Migrator( self::fixture() ) )->run() );
+
+		$altered = array_values( array_filter( $GLOBALS['wpdb']->queries, static fn( string $sql ): bool => str_starts_with( $sql, 'ALTER TABLE' ) ) );
+		$this->assertSame( [ 'ALTER TABLE `wp_bulkcat_alpha` ENGINE=InnoDB' ], $altered, 'Only the plugin\'s own table not on InnoDB is converted.' );
+		$this->assertSame( Migrator::SCHEMA_VERSION, get_option( Migrator::VERSION_OPTION ) );
+	}
+
+	public function test_a_failed_conversion_leaves_the_version_unset_so_it_is_retried(): void {
+		$GLOBALS['wpdb']->responses[ self::engine_query( 'wp_bulkcat_alpha' ) ]     = 'MyISAM';
+		$GLOBALS['wpdb']->responses['ALTER TABLE `wp_bulkcat_alpha` ENGINE=InnoDB'] = false;
+
+		$this->assertFalse( ( new Migrator( self::fixture() ) )->run() );
+		$this->assertFalse( get_option( Migrator::VERSION_OPTION ) );
 	}
 }

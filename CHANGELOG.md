@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-10-05
+
+- An add-on action chosen from a product's row menu opens Bulk change at that action's settings, with the first one ready to fill in; the full list of changes is folded behind "Choose a different change". The same applies to the selection bar's quick actions.
+- In the Categories tab, an add-on's actions now sit in one menu per group beside Rename and Move, instead of one button each. The tree row menu and the product row menu group them the same way.
+
 ## [1.4.0] - 2026-10-05
 
 - Add-ons can now offer searchable, paged choices (for example people or groups from a long list), checked again on the server at preview and Apply.

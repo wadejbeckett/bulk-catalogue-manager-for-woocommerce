@@ -6,7 +6,7 @@ Tested up to: 7.1
 Requires PHP: 8.1
 WC requires at least: 11.1
 WC tested up to: 11.1
-Stable tag: 1.4.0
+Stable tag: 1.4.1
 License: GPL-3.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -145,6 +145,10 @@ Yes. Each site keeps its own history and settings, and deleting the plugin with 
 
 == Changelog ==
 
+= 1.4.1 =
+* An add-on action chosen from a product's row menu opens Bulk change at that action's settings, with the first one ready to fill in; the full list of changes is folded behind "Choose a different change". The same applies to the selection bar's quick actions.
+* In the Categories tab, an add-on's actions now sit in one menu per group beside Rename and Move, instead of one button each. The tree row menu and the product row menu group them the same way.
+
 = 1.4.0 =
 * Add-ons can now offer searchable, paged choices (for example people or groups from a long list), checked again on the server at preview and Apply.
 * Add-ons can act on product categories: one category or several, with Include subcategories, from the Categories tab, with per-category results in History and Undo.
@@ -226,6 +230,9 @@ Yes. Each site keeps its own history and settings, and deleting the plugin with 
 * Settings for access, page size, confirmation, variation defaults, background batch sizes, history and data removal.
 
 == Upgrade Notice ==
+
+= 1.4.1 =
+Add-on actions from a row menu open at their settings, and an add-on's actions are grouped into one menu per group in the Categories tab and the row menus. No database change.
 
 = 1.4.0 =
 Adds extension contract version 2: searchable choices, actions on categories and single-row actions for add-ons. Existing add-ons keep working. No database change.

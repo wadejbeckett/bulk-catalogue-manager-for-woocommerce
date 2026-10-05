@@ -809,6 +809,57 @@ final class ChunkRunnerTest extends TestCase {
 		$this->assertSame( [ 'unschedule', 'bulkcat_run_chunk', [ self::BATCH, 'retry' ], 'bulk-catalogue-manager-for-woocommerce', null ], $GLOBALS['bulkcat_test']['scheduled'][1] );
 	}
 
+	/**
+	 * Make the reads matching a pattern fail as the database fails them: no value, and the error recorded.
+	 */
+	private static function failing_read( string $pattern ): void {
+		global $wpdb;
+		$wpdb->responses = [
+			$pattern => static function () use ( $wpdb ): ?string {
+				$wpdb->last_error = 'Lock wait timeout exceeded';
+				return null;
+			},
+		] + $wpdb->responses;
+	}
+
+	public function test_a_count_that_cannot_be_read_never_finalises_the_batch(): void {
+		// SILENT-FAILURES-5: the pending count fails after the first chunk while ten items are still pending.
+		$store = new RunnerStore( self::BATCH, self::products( 60 ), $this->increase(), self::USER );
+		self::failing_read( "/^SELECT COUNT\\(\\*\\) FROM `wp_bulkcat_batch_items` WHERE batch_id = \\d+ AND state IN \\('pending', 'working'\\)$/" );
+
+		$error = null;
+		try {
+			$this->runner()->run( self::BATCH );
+		} catch ( \RuntimeException $e ) {
+			$error = $e;
+		}
+		$this->assertStringContainsString( 'could not be counted', null === $error ? 'A count that cannot be read is an error, never zero.' : $error->getMessage() );
+		$this->assertSame( 'running', $store->batch()['status'], 'Not finalised with items pending.' );
+		$this->assertSame( 10, array_count_values( $store->states() )['pending'] );
+		$this->assertSame( [ 'single', 'bulkcat_run_chunk', [ self::BATCH, 'retry' ] ], array_slice( end( $GLOBALS['bulkcat_test']['scheduled'] ), 0, 3 ), 'A retry settles it once the database answers.' );
+
+		// The database answers again: the retry finishes the batch.
+		global $wpdb;
+		$wpdb->last_error = '';
+		array_shift( $wpdb->responses );
+		$this->assertSame( 'complete', $this->runner()->run( self::BATCH ) );
+		$this->assertSame( [ 'done' => 60 ], array_count_values( $store->states() ) );
+
+		// A failed applied count is an error too, never a batch that put nothing back.
+		$wpdb->writes = [];
+		$store        = new RunnerStore( self::BATCH, self::products( 1, 2001 ), $this->increase(), self::USER );
+		self::failing_read( "/^SELECT COUNT\\(\\*\\) FROM `wp_bulkcat_changes` WHERE batch_id = \\d+ AND result = 'applied'$/" );
+		$error = null;
+		try {
+			$this->runner()->run( self::BATCH );
+		} catch ( \RuntimeException $e ) {
+			$error = $e;
+		}
+		$wpdb->last_error = '';
+		$this->assertNotNull( $error );
+		$this->assertSame( 'running', $store->batch()['status'] );
+	}
+
 	public function test_a_batch_that_is_not_queued_or_running_is_left_alone(): void {
 		foreach ( [ 'cancelled', 'complete', 'partial', 'failed', 'undone' ] as $status ) {
 			bulkcat_test_reset();

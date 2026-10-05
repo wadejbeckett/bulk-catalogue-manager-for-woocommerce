@@ -538,11 +538,31 @@ final class BatchRepository {
 	 *
 	 * @param int    $batch_id Batch.
 	 * @param string $state    One of Schema::ITEM_STATES.
+	 * @param bool   $strict   Whether a failed read throws instead of counting 0 (SILENT-FAILURES-5).
+	 * @throws \RuntimeException When $strict and the read fails.
 	 */
-	public function count_items( int $batch_id, string $state ): int {
+	public function count_items( int $batch_id, string $state, bool $strict = false ): int {
 		global $wpdb;
 		self::assert_in( $state, Schema::ITEM_STATES, 'item state' );
-		return (int) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM %i WHERE batch_id = %d AND state = %s', $this->registry->table( Schema::ITEMS ), $batch_id, $state ) );
+		return self::counted( $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM %i WHERE batch_id = %d AND state = %s', $this->registry->table( Schema::ITEMS ), $batch_id, $state ) ), $strict );
+	}
+
+	/**
+	 * A COUNT(*) read as a number. A failed read answers no value and
+	 * records the error; strict, it throws rather than count 0, so a batch
+	 * is never finalised on a count the database did not give
+	 * (SILENT-FAILURES-5).
+	 *
+	 * @param mixed $value  What get_var() returned.
+	 * @param bool  $strict Whether a failed read throws.
+	 * @throws \RuntimeException When $strict and the read failed.
+	 */
+	public static function counted( mixed $value, bool $strict ): int {
+		global $wpdb;
+		if ( $strict && ( null === $value || '' !== $wpdb->last_error ) ) {
+			throw new \RuntimeException( 'The batch items could not be counted.' );
+		}
+		return (int) $value;
 	}
 
 	/**
@@ -662,11 +682,13 @@ final class BatchRepository {
 	/**
 	 * Number of a batch's items not yet finished: pending, or working under a run.
 	 *
-	 * @param int $batch_id Batch.
+	 * @param int  $batch_id Batch.
+	 * @param bool $strict   Whether a failed read throws instead of counting 0 (SILENT-FAILURES-5).
+	 * @throws \RuntimeException When $strict and the read fails.
 	 */
-	public function count_open( int $batch_id ): int {
+	public function count_open( int $batch_id, bool $strict = false ): int {
 		global $wpdb;
-		return (int) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM %i WHERE batch_id = %d AND state IN (%s, %s)', $this->registry->table( Schema::ITEMS ), $batch_id, 'pending', Schema::ITEM_WORKING ) );
+		return self::counted( $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM %i WHERE batch_id = %d AND state IN (%s, %s)', $this->registry->table( Schema::ITEMS ), $batch_id, 'pending', Schema::ITEM_WORKING ) ), $strict );
 	}
 
 	/**
@@ -692,11 +714,13 @@ final class BatchRepository {
 	 * skipped, or done with a message (a step refused on an object whose other
 	 * changes were applied). Zero means the batch is complete (§12.6).
 	 *
-	 * @param int $batch_id Batch.
+	 * @param int  $batch_id Batch.
+	 * @param bool $strict   Whether a failed read throws instead of counting 0 (SILENT-FAILURES-5).
+	 * @throws \RuntimeException When $strict and the read fails.
 	 */
-	public function count_reported( int $batch_id ): int {
+	public function count_reported( int $batch_id, bool $strict = false ): int {
 		global $wpdb;
-		return (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM %i WHERE batch_id = %d AND state <> 'pending' AND (state <> 'done' OR message <> '')", $this->registry->table( Schema::ITEMS ), $batch_id ) );
+		return self::counted( $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM %i WHERE batch_id = %d AND state <> 'pending' AND (state <> 'done' OR message <> '')", $this->registry->table( Schema::ITEMS ), $batch_id ) ), $strict );
 	}
 
 	/**

@@ -563,7 +563,19 @@ final class ChunkRunner {
 		if ( 'running' !== $this->batches->status( $batch_id ) ) {
 			return 'stopped';
 		}
-		if ( $this->batches->count_open( $batch_id ) > 0 ) {
+		// A count the database fails to give is never taken as 0 (SILENT-FAILURES-5): a retry settles the batch once it answers.
+		try {
+			$open = $this->batches->count_open( $batch_id, true );
+			if ( 0 === $open ) {
+				$applied  = $this->changes->count_for_batch( $batch_id, 'applied', true );
+				$reported = $this->batches->count_reported( $batch_id, true );
+				$failed   = $this->batches->count_items( $batch_id, 'failed', true );
+			}
+		} catch ( \RuntimeException $e ) {
+			self::schedule_retry( (int) ( $this->clock )() + self::RETRY_DELAY, $batch_id );
+			throw $e;
+		}
+		if ( $open > 0 ) {
 			if ( $claimed ) {
 				as_enqueue_async_action( self::HOOK, [ $batch_id ], Data::ACTION_GROUP );
 				return 'continued';
@@ -571,12 +583,7 @@ final class ChunkRunner {
 			self::schedule_retry( (int) ( $this->clock )() + BatchRepository::LEASE_SECONDS, $batch_id );
 			return 'waiting';
 		}
-		$applied = $this->changes->count_for_batch( $batch_id, 'applied' );
-		$status  = self::final_status(
-			$this->batches->count_reported( $batch_id ),
-			$this->batches->count_items( $batch_id, 'failed' ),
-			$applied
-		);
+		$status = self::final_status( $reported, $failed, $applied );
 		if ( $this->batches->transition( $batch_id, 'running', $status ) ) {
 			Original::settle( $this->batches, $batch, $status, $applied );
 		}

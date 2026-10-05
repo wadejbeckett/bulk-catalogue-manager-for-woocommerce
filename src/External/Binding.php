@@ -28,7 +28,7 @@ final class Binding {
 	 *
 	 * @param Registered                                            $provider   The change's provider.
 	 * @param list<array{action: string, args: array<string, mixed>}> $operations The normalised steps.
-	 * @param list<int>                                             $members    The change's available members, in any order.
+	 * @param list<int>                                             $members    The change's available members, in any order: products and variations, or term ids for a category change.
 	 * @param Context|null                                          $context    The run; the current one by default.
 	 * @return array{provider: string, version: string, contract: int, formats: array<string, int>, state: string}
 	 * @throws ProviderFailure When state_token() throws.
@@ -42,7 +42,8 @@ final class Binding {
 				$formats[ $key ] = $meta['format'];
 			}
 		}
-		$scope     = new ScopeView( $members );
+		// A category change's state token sees a CategoryScope of term ids (docs/EXTENSIONS-v2.md §5.3).
+		$scope     = $provider->category_change( $operations ) ? new CategoryScopeView( $members ) : new ScopeView( $members );
 		$context ??= RunContext::current();
 		$state     = Guard::run( $provider->id, 'state_token', static fn(): mixed => $provider->provider->state_token( $scope, $operations, $context ) );
 		$binding   = [

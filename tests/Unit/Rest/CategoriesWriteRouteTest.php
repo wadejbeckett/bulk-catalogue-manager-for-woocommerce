@@ -181,7 +181,8 @@ final class CategoriesWriteRouteTest extends TestCase {
 			}
 		}
 		sort( $methods );
-		$this->assertSame( [ 'GET', 'GET', 'PATCH', 'POST', 'POST', 'POST', 'POST', 'POST' ], $methods );
+		// The last POST is the add-on category action preview (contract version 2, CategoryActionsController).
+		$this->assertSame( [ 'GET', 'GET', 'PATCH', 'POST', 'POST', 'POST', 'POST', 'POST', 'POST' ], $methods );
 		$this->assertNotContains( 'DELETE', $methods, 'Deleting is previewed first, so it is a POST with a preview token (ticket 24).' );
 		foreach ( [ CategoriesWriteController::DELETE_ROUTE, CategoriesWriteController::MERGE_ROUTE ] as $route ) {
 			$endpoint = $routes[ '/bulkcat/v1' . $route ][0];

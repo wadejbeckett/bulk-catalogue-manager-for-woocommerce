@@ -247,13 +247,7 @@ final class ExternalWriter {
 	 * @param list<array{action: string, args: array<string, mixed>}> $operations The normalised steps.
 	 */
 	public function targets_categories( array $operations ): bool {
-		foreach ( $operations as $step ) {
-			$meta = $this->provider->field_meta( (string) ( $step['args']['field'] ?? '' ) );
-			if ( ActionDescriptor::TARGET_CATEGORY === ( $meta['target'] ?? ActionDescriptor::TARGET_PRODUCT ) ) {
-				return true;
-			}
-		}
-		return false;
+		return $this->provider->category_change( $operations );
 	}
 
 	/**

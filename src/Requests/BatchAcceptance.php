@@ -109,6 +109,14 @@ final class BatchAcceptance {
 	 * @return array<string,mixed>|\WP_Error
 	 */
 	private static function apply( array $claims, array $intent, array $credentials, \Closure $clock, BatchFactory $factory ): array|\WP_Error {
+		if ( isset( $intent['categories'] ) ) {
+			// Contract version 2: a category change records exactly its captured categories (CategoryAcceptance).
+			$checked = CategoryAcceptance::check( $intent, $credentials, $claims['owner'] );
+			if ( is_wp_error( $checked ) ) {
+				return $checked;
+			}
+			return $factory->record_scope( $claims, $checked['operations'], $checked['objects'], $checked['summary'], $checked['unavailable'], $checked['manifest'] );
+		}
 		$operations = BatchIntent::current_operations( $intent );
 		if ( ! is_array( $operations ) ) {
 			return false === $operations ? self::stale() : $operations;

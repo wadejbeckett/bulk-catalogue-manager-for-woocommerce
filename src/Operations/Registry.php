@@ -351,7 +351,8 @@ final class Registry {
 			return Refusals::missing();
 		}
 
-		$valid = [];
+		$valid   = [];
+		$targets = null;
 		foreach ( $operations as $index => $entry ) {
 			$step = $index + 1;
 			if ( ! is_array( $entry ) || ! is_string( $entry['action'] ?? null ) || ! is_array( $entry['args'] ?? [] ) || [] !== array_diff_key(
@@ -382,6 +383,12 @@ final class Registry {
 					'action' => $entry['action'],
 					'args'   => $validation->args(),
 				];
+				$target  = $this->providers->get( $external )?->category_change( [ end( $valid ) ] ) ? 'product_cat' : 'product';
+				if ( null !== $targets && $targets !== $target ) {
+					// Contract version 2: one change acts on products or on categories, never both (docs/EXTENSIONS-v2.md §5.3).
+					return Refusals::mixed();
+				}
+				$targets = $target;
 				continue;
 			}
 			$resolved = is_string( $field ) ? $this->fields->get( $field ) : null;

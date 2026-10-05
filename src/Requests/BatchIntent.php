@@ -10,7 +10,10 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Requests;
 
+use BulkCatalogueManager\Engine\CategoryPreview;
+use BulkCatalogueManager\Engine\CategorySelection;
 use BulkCatalogueManager\Engine\Preview;
+use BulkCatalogueManager\External\Refusals;
 use BulkCatalogueManager\Operations\Registry as Actions;
 use BulkCatalogueManager\Selection\Selection;
 use BulkCatalogueManager\Selection\SnapshotToken;
@@ -35,7 +38,11 @@ defined( 'ABSPATH' ) || exit;
  * difference means the preview is stale, and the registry's own list is
  * what is then recorded.
  *
- * Apply: `{ version, source: bulk, operations, scope_hash, snapshot | ids }`.
+ * Apply: `{ version, source: bulk, operations, scope_hash, snapshot | ids |
+ * categories }`; `categories` (contract version 2, a category change) is
+ * `{ chosen, subcategories, ids }`: the term ids chosen, whether
+ * subcategories were included, and the exact set the preview captured, each
+ * list sorted and distinct.
  * Undo: `{ version, source: undo, batch_id, plan_hash, force }`. Transport
  * values — the current snapshot token, the preview's hash, the nonce — are
  * never part of an intent.
@@ -118,18 +125,24 @@ final class BatchIntent {
 	 * @throws \InvalidArgumentException On a malformed intent.
 	 */
 	private static function apply( array $input, int $owner ): array|\WP_Error {
-		if ( [] !== array_diff( array_keys( $input ), [ 'source', 'operations', 'scope_hash', 'ids', 'token' ] ) || 'bulk' !== ( $input['source'] ?? 'bulk' ) ) {
+		if ( [] !== array_diff( array_keys( $input ), [ 'source', 'operations', 'scope_hash', 'ids', 'token', 'categories' ] ) || 'bulk' !== ( $input['source'] ?? 'bulk' ) ) {
 			throw new \InvalidArgumentException( 'Unknown or invalid Apply intent.' );
 		}
 		if ( ! self::digest( $input['scope_hash'] ?? null ) ) {
 			throw new \InvalidArgumentException( 'An exact preview is required.' );
 		}
-		if ( array_key_exists( 'ids', $input ) === array_key_exists( 'token', $input ) ) {
+		if ( 1 !== count( array_intersect( array_keys( $input ), [ 'ids', 'token', 'categories' ] ) ) ) {
 			throw new \InvalidArgumentException( 'Exactly one selection is required.' );
 		}
 		$operations = Actions::instance()->validate_list( $input['operations'] ?? null );
 		if ( is_wp_error( $operations ) ) {
 			return $operations;
+		}
+		// Contract version 2: a category change goes with categories only, and products with product changes only.
+		$category = true === Actions::instance()->external_provider( $operations )?->category_change( $operations );
+		$chosen   = array_key_exists( 'categories', $input );
+		if ( $chosen !== $category ) {
+			return $category ? CategoryPreview::not_categories() : Refusals::mixed();
 		}
 		$intent = [
 			'version'    => 1,
@@ -139,6 +152,18 @@ final class BatchIntent {
 		];
 		if ( array_key_exists( 'ids', $input ) ) {
 			$intent['ids'] = self::ids( $input['ids'] );
+			return $intent;
+		}
+		if ( array_key_exists( 'categories', $input ) ) {
+			$categories = is_array( $input['categories'] ) ? $input['categories'] : [];
+			if ( [] !== array_diff( array_keys( $categories ), [ 'chosen', 'subcategories', 'ids' ] ) || ! is_bool( $categories['subcategories'] ?? false ) ) {
+				throw new \InvalidArgumentException( 'Unknown or invalid category selection.' );
+			}
+			$intent['categories'] = [
+				'chosen'        => CategorySelection::ids( $categories['chosen'] ?? null ),
+				'subcategories' => (bool) ( $categories['subcategories'] ?? false ),
+				'ids'           => CategorySelection::ids( $categories['ids'] ?? null ),
+			];
 			return $intent;
 		}
 		$identity = SnapshotToken::identify( is_string( $input['token'] ) ? $input['token'] : '', $owner );
@@ -179,7 +204,7 @@ final class BatchIntent {
 	 * @throws \InvalidArgumentException When it is not exactly a canonical Apply intent.
 	 */
 	private static function canonical_apply( array $input ): array {
-		$selection = array_key_exists( 'ids', $input ) ? 'ids' : 'snapshot';
+		$selection = array_key_exists( 'ids', $input ) ? 'ids' : ( array_key_exists( 'categories', $input ) ? 'categories' : 'snapshot' );
 		$keys      = array_keys( $input );
 		sort( $keys );
 		$expected = [ 'operations', 'scope_hash', $selection, 'source', 'version' ];
@@ -188,6 +213,8 @@ final class BatchIntent {
 		if ( $valid && 'ids' === $selection ) {
 			$valid = is_array( $input['ids'] ) && [] !== $input['ids'] && array_is_list( $input['ids'] ) && count( $input['ids'] ) <= Selection::MAX_OBJECTS;
 			$valid = $valid && [] === array_filter( $input['ids'], static fn( mixed $id ): bool => ! is_int( $id ) || $id < 1 ) && self::ids( $input['ids'] ) === $input['ids'];
+		} elseif ( $valid && 'categories' === $selection ) {
+			$valid = self::category_shape( $input['categories'] );
 		} elseif ( $valid ) {
 			$valid = is_string( $input['snapshot'] ) && 1 === preg_match( '/^[a-f0-9]{32}$/D', $input['snapshot'] );
 		}
@@ -201,6 +228,38 @@ final class BatchIntent {
 			'scope_hash' => $input['scope_hash'],
 			$selection   => $input[ $selection ],
 		];
+	}
+
+	/**
+	 * Whether a canonical intent's category selection has its exact shape:
+	 * `chosen`, `subcategories` and `ids`, each list sorted, distinct,
+	 * positive and at most CategorySelection::MAX long.
+	 *
+	 * @param mixed $categories The selection.
+	 */
+	private static function category_shape( mixed $categories ): bool {
+		if ( ! is_array( $categories ) ) {
+			return false;
+		}
+		$keys = array_keys( $categories );
+		sort( $keys );
+		if ( [ 'chosen', 'ids', 'subcategories' ] !== $keys || ! is_bool( $categories['subcategories'] ) ) {
+			return false;
+		}
+		foreach ( [ 'chosen', 'ids' ] as $list ) {
+			$ids = $categories[ $list ];
+			if ( ! is_array( $ids ) || [] === $ids || ! array_is_list( $ids ) || [] !== array_filter( $ids, static fn( mixed $id ): bool => ! is_int( $id ) || $id < 1 ) ) {
+				return false;
+			}
+			try {
+				if ( CategorySelection::ids( $ids ) !== $ids ) {
+					return false;
+				}
+			} catch ( \InvalidArgumentException | \LengthException $e ) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/**

@@ -73,6 +73,28 @@ final class TermSubject implements CategorySubject {
 	}
 
 	/**
+	 * Several categories as the term tables hold them now, unfiltered, in
+	 * one read, by id; ids that are not product categories are left out.
+	 *
+	 * @param list<int> $ids Term ids.
+	 * @return array<int, \WP_Term>
+	 */
+	public static function load_many( array $ids ): array {
+		$wanted = array_flip( $ids );
+		$terms  = [];
+		foreach ( [] === $wanted ? [] : CategoryTree::stored_terms() as $row ) {
+			$id = (int) $row->term_id;
+			if ( isset( $wanted[ $id ] ) ) {
+				$row->term_id  = $id;
+				$row->parent   = (int) ( $row->parent ?? 0 );
+				$row->taxonomy = self::TAXONOMY;
+				$terms[ $id ]  = new \WP_Term( $row );
+			}
+		}
+		return $terms;
+	}
+
+	/**
 	 * The term id.
 	 */
 	public function id(): int {

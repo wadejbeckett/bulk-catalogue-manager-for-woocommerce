@@ -70,6 +70,7 @@ final class Routes {
 				new ViewsController( Registry::instance() ),
 				new DisplayPreferencesController(),
 				new LookupController(),
+				new CategoryActionsController(),
 			]
 		);
 	}

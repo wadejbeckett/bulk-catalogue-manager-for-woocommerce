@@ -207,4 +207,21 @@ final class Registered {
 		$availability = $this->availability();
 		return true === $availability ? '' : $availability->get_error_message();
 	}
+
+	/**
+	 * Whether a change's steps act on categories (docs/EXTENSIONS-v2.md
+	 * §5.1): a step's field belongs to this provider's category actions. A
+	 * restore step names its field only, so the field decides.
+	 *
+	 * @param array<mixed> $operations The normalised steps.
+	 */
+	public function category_change( array $operations ): bool {
+		foreach ( $operations as $step ) {
+			$meta = is_array( $step ) ? $this->field_meta( (string) ( $step['args']['field'] ?? '' ) ) : null;
+			if ( \BulkCatalogueManager\Extension\ActionDescriptor::TARGET_CATEGORY === ( $meta['target'] ?? '' ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
 }

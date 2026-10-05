@@ -222,6 +222,10 @@ final class Preview {
 		}
 		$now      = null === $this->clock ? Stamp::now() : (int) ( $this->clock )();
 		$provider = $this->actions->external_provider( $operations );
+		if ( null !== $provider && $provider->category_change( $operations ) ) {
+			// A category change acts on categories only (Engine\CategoryPreview), never on products of the same number.
+			return Refusals::mixed();
+		}
 		if ( $selection->too_large() ) {
 			return self::too_large( $selection->count );
 		}

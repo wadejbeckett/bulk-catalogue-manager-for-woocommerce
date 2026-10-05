@@ -65,6 +65,7 @@ final class Contract {
 	 */
 	public const FEATURES = [
 		self::FEATURE_LOOKUP,
+		self::FEATURE_ROW_ENTRY,
 		self::FEATURE_CATEGORY_TARGET,
 	];
 }

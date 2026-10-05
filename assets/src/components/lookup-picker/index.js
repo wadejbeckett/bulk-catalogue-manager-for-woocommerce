@@ -196,7 +196,9 @@ export function LookupPicker( {
 				return;
 			case 'Escape':
 				if ( open ) {
+					// Close the list only, not the panel or dialog around it.
 					event.preventDefault();
+					event.stopPropagation();
 					setOpen( false );
 				}
 		}

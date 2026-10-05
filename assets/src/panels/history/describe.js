@@ -423,7 +423,24 @@ export function describeBatch( batch, byKey = {}, actions = {} ) {
 				);
 	}
 	return operations
-		.map( ( operation ) => describeOperation( operation, keys, known ) )
+		.map( ( operation ) => {
+			// Contract version 2: an add-on's chosen items by the labels its manifest kept (EXTENSIONS-v2 §4.5).
+			const chosen = Object.values(
+				kept.choices?.[ operation?.action ] || {}
+			).flatMap( ( labels ) => Object.values( labels || {} ) );
+			const action = known[ operation?.action ];
+			return chosen.length && action?.label
+				? sprintf(
+						/* translators: 1: an action, such as "Round prices"; 2: a field, such as "regular price". */
+						__(
+							'%1$s: %2$s',
+							'bulk-catalogue-manager-for-woocommerce'
+						),
+						action.label,
+						chosen.join( ', ' )
+					)
+				: describeOperation( operation, keys, known );
+		} )
 		.join( ' · ' );
 }
 

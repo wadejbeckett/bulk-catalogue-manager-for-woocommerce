@@ -2685,7 +2685,8 @@
             "available": true,
             "unavailableReason": "",
             "alwaysConfirm": false,
-            "confirmReason": ""
+            "confirmReason": "",
+            "row": true
         },
         {
             "id": "x_picks_remove",
@@ -2748,7 +2749,8 @@
             "available": true,
             "unavailableReason": "",
             "alwaysConfirm": false,
-            "confirmReason": ""
+            "confirmReason": "",
+            "row": true
         },
         {
             "id": "x_picks_only",
@@ -2880,7 +2882,8 @@
             "unavailableReason": "You do not have permission to use this action.",
             "alwaysConfirm": false,
             "confirmReason": "",
-            "target": "product_cat"
+            "target": "product_cat",
+            "row": true
         },
         {
             "id": "x_picks_category_remove",
@@ -2907,7 +2910,8 @@
             "unavailableReason": "You do not have permission to use this action.",
             "alwaysConfirm": false,
             "confirmReason": "",
-            "target": "product_cat"
+            "target": "product_cat",
+            "row": true
         }
     ],
     "groups": [

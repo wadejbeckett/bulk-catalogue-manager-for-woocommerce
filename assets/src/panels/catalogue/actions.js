@@ -1,7 +1,91 @@
 /** Native single-row actions and the existing bulk-change entry. */
-import { __ } from '@wordpress/i18n';
+import { __, sprintf } from '@wordpress/i18n';
 
 import { ROW } from './defaults';
+import { chooseAction, emptyOperation } from '../bulk/operations';
+
+/**
+ * Add-on actions offered on one row (contract version 2 row entry,
+ * docs/EXTENSIONS-v2.md §6): each `/fields` action marked `row`, on a
+ * product row, or on a variation row only for a per-variation value. One
+ * that cannot be used now is listed disabled with its reason.
+ *
+ * @param {Object}   registry The `/fields` payload.
+ * @param {Function} onChoose Receives ( action, row ).
+ * @return {Array<Object>} DataViews actions.
+ */
+export function providerRowActions( registry, onChoose ) {
+	return ( registry?.actions || [] )
+		.filter(
+			( action ) =>
+				action.provider &&
+				action.row === true &&
+				( action.target || 'product' ) === 'product'
+		)
+		.map( ( action ) => {
+			const usable = action.available !== false;
+			return {
+				id: `provider-${ action.id }`,
+				label: usable
+					? sprintf(
+							/* translators: %s: an add-on action, such as "Add recipients". */
+							__(
+								'%s…',
+								'bulk-catalogue-manager-for-woocommerce'
+							),
+							action.label
+						)
+					: sprintf(
+							/* translators: 1: an add-on action, such as "Add recipients"; 2: why it cannot be used now. */
+							__(
+								'%1$s (%2$s)',
+								'bulk-catalogue-manager-for-woocommerce'
+							),
+							action.label,
+							action.unavailableReason || ''
+						),
+				isPrimary: false,
+				supportsBulk: false,
+				disabled: ! usable,
+				isEligible: ( item ) =>
+					! item?.[ ROW.parentId ] ||
+					action.variations === 'per_variation',
+				callback: ( items ) => {
+					if ( usable && items.length === 1 ) {
+						onChoose( action, items[ 0 ] );
+					}
+				},
+			};
+		} );
+}
+
+/**
+ * The change panel's opening for an add-on action on one row: that row's
+ * id only (never the retained selection), the action chosen at its starting
+ * arguments, and the row's object for its lookups.
+ *
+ * @param {Object} registry The `/fields` payload.
+ * @param {Object} settings Settings.
+ * @param {Object} action   The `/fields` action.
+ * @param {Object} row      The row.
+ * @return {Object} `{ selection, initialOperations, object }` for the panel.
+ */
+export function providerRowChange( registry, settings, action, row ) {
+	const id = Number( row.id );
+	return {
+		selection: { kind: 'ids', ids: [ id ] },
+		initialOperations: [
+			chooseAction(
+				registry,
+				settings,
+				emptyOperation( 1 ),
+				action.id,
+				action.group
+			),
+		],
+		object: `${ row?.[ ROW.parentId ] ? 'variation' : 'product' }:${ id }`,
+	};
+}
 
 /**
  * Native destinations come only from the current actor's uncached row response.
@@ -81,12 +165,13 @@ export function nativeRowActions( {
 /**
  * DataViews actions for a row.
  *
- * @param {Object}   handlers               Handlers.
- * @param {Function} handlers.onEditDetails Open the detail panel for a row.
- * @param {Function} handlers.navigate      Go to a URL.
- * @param {Function} handlers.onMakeChange  Open the bulk change panel for the selected rows' ids.
- * @param {Function} handlers.openNewTab    Open the live page in an isolated tab.
- * @param {Function} handlers.confirmNative Show the native sold-product warning.
+ * @param {Object}   handlers                 Handlers.
+ * @param {Function} handlers.onEditDetails   Open the detail panel for a row.
+ * @param {Function} handlers.navigate        Go to a URL.
+ * @param {Function} handlers.onMakeChange    Open the bulk change panel for the selected rows' ids.
+ * @param {Function} handlers.openNewTab      Open the live page in an isolated tab.
+ * @param {Function} handlers.confirmNative   Show the native sold-product warning.
+ * @param {Array}    handlers.providerActions Add-on row entries (providerRowActions()).
  * @return {Array<Object>} Actions.
  */
 export function rowActions( {
@@ -95,6 +180,7 @@ export function rowActions( {
 	onMakeChange = null,
 	openNewTab,
 	confirmNative,
+	providerActions = [],
 } = {} ) {
 	const bulk = onMakeChange
 		? [
@@ -133,7 +219,8 @@ export function rowActions( {
 			},
 		},
 		...nativeRowActions( { navigate, openNewTab, confirmNative } ),
-		// Qualified provider row entries belong here only after their separate runtime gate.
+		// Add-on row entries (contract version 2), after the native ones.
+		...providerActions,
 		{
 			id: 'native-actions-unavailable',
 			label: ( items ) =>

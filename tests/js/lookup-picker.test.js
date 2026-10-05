@@ -222,3 +222,21 @@ test( 'a row passes its object to the server', async () => {
 		'product:42'
 	);
 } );
+
+test( 'Escape closes the open list without closing what surrounds it', async () => {
+	const outer = jest.fn();
+	render(
+		// eslint-disable-next-line jsx-a11y/no-static-element-interactions -- A stand-in for the panel's own key handler.
+		<div onKeyDown={ ( event ) => outer( event.key ) }>
+			<Held />
+		</div>
+	);
+	const box = screen.getByRole( 'combobox', { name: 'Recipients' } );
+	fireEvent.focus( box );
+	await screen.findByText( 'Recipient 0001' );
+	fireEvent.keyDown( box, { key: 'Escape' } );
+	expect( box.getAttribute( 'aria-expanded' ) ).toBe( 'false' );
+	expect( outer ).not.toHaveBeenCalled();
+	fireEvent.keyDown( box, { key: 'Escape' } );
+	expect( outer ).toHaveBeenCalledWith( 'Escape' );
+} );

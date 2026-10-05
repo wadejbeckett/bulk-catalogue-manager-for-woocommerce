@@ -497,6 +497,9 @@ describe( 'bulk panel: chooser and controls', () => {
 	} );
 } );
 
+/** What the default preview reached, passed on for the banner's words (FRONTEND-6). */
+const REACHED = { products: 24, variations: 0 };
+
 describe( 'bulk panel: preview, apply and done', () => {
 	beforeEach( () => {
 		apiFetch.mockReset();
@@ -814,6 +817,7 @@ describe( 'bulk panel: preview, apply and done', () => {
 			expect( onApplied ).toHaveBeenCalledWith( 7, {
 				selection: { kind: 'ids', ids: IDS },
 				replayed: false,
+				byType: REACHED,
 			} )
 		);
 		expect( panel() ).toHaveAttribute( 'data-state', 'done' );
@@ -943,6 +947,7 @@ describe( 'bulk panel: preview, apply and done', () => {
 			expect( onApplied ).toHaveBeenCalledWith( 9, {
 				selection: SNAPSHOT,
 				replayed: false,
+				byType: REACHED,
 			} )
 		);
 		await screen.findByText( 'Applying the change' );
@@ -1149,6 +1154,7 @@ describe( 'bulk panel: preview, apply and done', () => {
 			expect( onApplied ).toHaveBeenCalledWith( 12, {
 				selection: { kind: 'ids', ids: IDS },
 				replayed: true,
+				byType: REACHED,
 			} )
 		);
 		const [ first, second ] = callsTo( apiFetch, 'POST batches' );
@@ -1253,6 +1259,7 @@ describe( 'bulk panel: preview, apply and done', () => {
 			expect( onApplied ).toHaveBeenCalledWith( 16, {
 				selection: SNAPSHOT,
 				replayed: true,
+				byType: REACHED,
 			} )
 		);
 		const [ lost, again ] = callsTo( apiFetch, 'POST batches' );
@@ -1312,6 +1319,7 @@ describe( 'bulk panel: preview, apply and done', () => {
 			expect( onApplied ).toHaveBeenCalledWith( 14, {
 				selection: null,
 				replayed: true,
+				byType: null,
 			} )
 		);
 		expect( batches ).toBe( 1 );

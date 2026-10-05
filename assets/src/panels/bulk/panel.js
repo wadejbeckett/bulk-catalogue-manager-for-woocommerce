@@ -394,6 +394,8 @@ export default function BulkChangePanel( {
 				onApplied( created.batch_id, {
 					selection: created.earlier ? null : selection,
 					replayed: !! created.replayed,
+					// What the preview reached, for the banner's words (FRONTEND-6).
+					byType: created.earlier ? null : reachTypes,
 				} );
 			}
 		} );

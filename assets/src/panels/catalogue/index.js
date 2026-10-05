@@ -117,6 +117,7 @@ function useCurrentSettings( settings ) {
  * @param {Function} props.onViewHistory Open History at this batch, or null.
  * @param {boolean}  props.replayed      The apply answered a change already accepted (T84).
  * @param {boolean}  props.hidden        Follow the change without showing it, while the bulk panel covers the banner (FRONTEND-3).
+ * @param {Object}   props.byType        `{ products, variations }` the preview reached, or null (FRONTEND-6).
  * @return {Element|null} Progress.
  */
 export function AppliedProgress( {
@@ -125,6 +126,7 @@ export function AppliedProgress( {
 	onViewHistory = null,
 	replayed = false,
 	hidden = false,
+	byType = null,
 } ) {
 	const [ cancelling, setCancelling ] = useState( false );
 	// FRONTEND-13: stopping a running change is asked about first.
@@ -156,10 +158,10 @@ export function AppliedProgress( {
 	useEffect( () => {
 		if ( finished && ! told.current ) {
 			told.current = true;
-			announce( doneSentence( report ), 'polite' );
+			announce( doneSentence( report, byType ), 'polite' );
 			tell.current( report );
 		}
-	}, [ finished, report ] );
+	}, [ finished, report, byType ] );
 	if ( ( ! report && ! stopped ) || finished || hidden ) {
 		return null;
 	}
@@ -495,7 +497,11 @@ export function CatalogueGrid( {
 					? scope.ids.map( Number )
 					: ( scope ? tableSelection : [] ).map( Number );
 			setPending( covered.current, true );
-			setApplied( { id, replayed: !! answer.replayed } );
+			setApplied( {
+				id,
+				replayed: !! answer.replayed,
+				byType: answer.byType || null,
+			} );
 			// FRONTEND-3: the panel open now follows this change itself.
 			setBulk( ( open ) => ( open ? { ...open, appliedId: id } : open ) );
 			// T84: the snapshot applied is kept until the change finishes.
@@ -694,6 +700,7 @@ export function CatalogueGrid( {
 					<AppliedProgress
 						batchId={ applied.id }
 						replayed={ applied.replayed }
+						byType={ applied.byType }
 						onFinished={ finished }
 						onViewHistory={ toHistory }
 						hidden={ !! bulk }

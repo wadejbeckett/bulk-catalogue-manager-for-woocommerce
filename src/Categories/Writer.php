@@ -536,7 +536,7 @@ final class Writer {
 				}
 			}
 			$sorted = $joined;
-			usort( $sorted, Tree::comparator( $nodes, $ranked ) );
+			usort( $sorted, Tree::comparator( $nodes, $ranked, $tree->ranks() ) );
 			if ( $sorted === $joined ) {
 				return [ $id => $candidate ];
 			}

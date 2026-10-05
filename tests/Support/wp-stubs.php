@@ -600,7 +600,19 @@ if ( ! function_exists( 'get_terms' ) ) {
 		$GLOBALS['bulkcat_test']['get_terms_calls'][] = $args;
 		// 'hidden_terms' (ids): what another plugin's filtering of term queries hides from the viewer.
 		$hidden = $GLOBALS['bulkcat_test']['hidden_terms'] ?? [];
-		return array_values( array_filter( $GLOBALS['bulkcat_test']['term_list'] ?? [], static fn( object $term ): bool => ! in_array( (int) $term->term_id, $hidden, true ) ) );
+		$terms  = array_values( array_filter( $GLOBALS['bulkcat_test']['term_list'] ?? [], static fn( object $term ): bool => ! in_array( (int) $term->term_id, $hidden, true ) ) );
+		return 'name' === ( ( (array) $args )['orderby'] ?? '' ) ? bulkcat_test_by_name( $terms ) : $terms;
+	}
+
+	/**
+	 * Terms as ORDER BY t.name puts them under a case-insensitive collation: by character, without case, then id.
+	 *
+	 * @param list<object> $terms Terms.
+	 * @return list<object>
+	 */
+	function bulkcat_test_by_name( array $terms ): array {
+		usort( $terms, static fn( object $a, object $b ): int => [ strcmp( mb_strtolower( (string) $a->name ), mb_strtolower( (string) $b->name ) ), (int) $a->term_id ] <=> [ 0, (int) $b->term_id ] );
+		return $terms;
 	}
 
 	function get_term_meta( int $term_id, string $key = '', bool $single = false ): mixed {

@@ -122,7 +122,7 @@ final class CategoryTree {
 	 */
 	public static function stored_terms(): array {
 		global $wpdb;
-		$rows = $wpdb->get_results( $wpdb->prepare( 'SELECT t.term_id, t.name, t.slug, tt.taxonomy, tt.description, tt.parent FROM %i AS t INNER JOIN %i AS tt ON tt.term_id = t.term_id WHERE tt.taxonomy = %s', $wpdb->terms, $wpdb->term_taxonomy, Counts::TAXONOMY ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- An unfiltered read on purpose: term queries are filtered for the viewer.
+		$rows = $wpdb->get_results( $wpdb->prepare( 'SELECT t.term_id, t.name, t.slug, tt.taxonomy, tt.description, tt.parent FROM %i AS t INNER JOIN %i AS tt ON tt.term_id = t.term_id WHERE tt.taxonomy = %s ORDER BY t.name ASC, t.term_id ASC', $wpdb->terms, $wpdb->term_taxonomy, Counts::TAXONOMY ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- An unfiltered read on purpose: term queries are filtered for the viewer.
 		$rows = is_array( $rows ) ? array_values( array_filter( $rows, 'is_object' ) ) : [];
 		if ( [] !== $rows ) {
 			update_meta_cache( 'term', array_map( static fn( object $row ): int => (int) $row->term_id, $rows ) );
@@ -153,6 +153,9 @@ final class CategoryTree {
 			[
 				'taxonomy'               => Counts::TAXONOMY,
 				'hide_empty'             => false,
+				// The names in the database's order (ORDER BY t.name), which WooCommerce's own order falls back to (1.3.4).
+				'orderby'                => 'name',
+				'order'                  => 'ASC',
 				'update_term_meta_cache' => true,
 			]
 		);
@@ -162,16 +165,18 @@ final class CategoryTree {
 	/**
 	 * The tree of a term list, in WooCommerce's order, with its default category marked.
 	 *
-	 * @param list<object> $terms Terms from terms().
+	 * @param list<object> $terms Terms from terms() or stored_terms(), in the database's name order.
 	 */
 	public static function tree_of( array $terms ): Tree {
 		$orders = [];
+		$ranks  = [];
 		foreach ( $terms as $term ) {
 			if ( isset( $term->term_id ) ) {
-				$orders[ (int) $term->term_id ] = get_term_meta( (int) $term->term_id, self::ORDER_META, true );
+				$orders[ (int) $term->term_id ]  = get_term_meta( (int) $term->term_id, self::ORDER_META, true );
+				$ranks[ (int) $term->term_id ] ??= count( $ranks );
 			}
 		}
-		return Tree::from_terms( $terms, $orders, self::default_id() );
+		return Tree::from_terms( $terms, $orders, self::default_id(), $ranks );
 	}
 
 	/**

@@ -6,7 +6,12 @@
  * in the pane; Rename edits the name in place; All fields shows WordPress's
  * own form for the category, with the fields other plugins add to it.
  */
-import { Button, ExternalLink, TextControl } from '@wordpress/components';
+import {
+	Button,
+	ExternalLink,
+	Notice,
+	TextControl,
+} from '@wordpress/components';
 import { useEffect, useState } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 
@@ -224,7 +229,12 @@ export default function CategoryDetails( {
 	const entry = tree.byId.get( id );
 	const [ renaming, setRenaming ] = useState( false );
 	const details = useNativeDetails( id, canManage, tree.nodes );
-	useEffect( () => setRenaming( false ), [ id ] );
+	// 1.3.4: the name of the category whose details were just saved, said on screen as well as aloud.
+	const [ saved, setSaved ] = useState( '' );
+	useEffect( () => {
+		setRenaming( false );
+		setSaved( '' );
+	}, [ id ] );
 
 	if ( ! entry ) {
 		return null;
@@ -547,6 +557,24 @@ export default function CategoryDetails( {
 					onClose={ () => onMode( 'view' ) }
 				/>
 			) }
+			{ saved && mode !== 'edit' && (
+				<Notice
+					status="success"
+					// Said aloud once already, by the editor that saved it.
+					spokenMessage=""
+					onRemove={ () => setSaved( '' ) }
+					className="bulkcat-cat-pane__saved"
+				>
+					{ sprintf(
+						/* translators: %s: a category name. */
+						__(
+							'Category "%s" saved.',
+							'bulk-catalogue-manager-for-woocommerce'
+						),
+						saved
+					) }
+				</Notice>
+			) }
 			{ mode === 'edit' && canManage ? (
 				<div className="bulkcat-cat-pane__card">
 					<CategoryManager
@@ -554,7 +582,10 @@ export default function CategoryDetails( {
 						tree={ tree }
 						categoryId={ id }
 						canManage={ canManage }
-						onSaved={ () => onMode( 'view' ) }
+						onSaved={ ( item ) => {
+							setSaved( item?.name || node.name );
+							onMode( 'view' );
+						} }
 						onCancel={ () => onMode( 'view' ) }
 					/>
 				</div>

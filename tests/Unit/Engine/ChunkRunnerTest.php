@@ -576,6 +576,56 @@ final class ChunkRunnerTest extends TestCase {
 			],
 			$store->states()
 		);
+		$batch = $store->batch();
+		$this->assertSame( [ 3, 3, 0 ], [ $batch['done_items'], $batch['changed_items'], $batch['failed_items'] ], 'SILENT-FAILURES-3: the product the killed run wrote counts as changed.' );
+	}
+
+	public function test_a_rerun_counts_as_changed_only_what_the_journal_holds_as_applied(): void {
+		// SILENT-FAILURES-3 / ENGINE-8: a killed run journalled one product as applied and one as skipped.
+		$ids   = self::products( 3 );
+		$list  = $this->increase();
+		$store = new RunnerStore( self::BATCH, $ids, $list, self::USER );
+		$GLOBALS['bulkcat_test']['products'][1002]->props['status'] = 'trash';
+		( new BatchRepository() )->claim_chunk( self::BATCH, 50, str_repeat( 'e', 32 ), gmdate( 'Y-m-d H:i:s', (int) $this->now ), gmdate( 'Y-m-d H:i:s', (int) $this->now - 300 ) );
+		$writer = Writer::for_batch( new Registry( new Fields() ), Journal::from_settings( new Fields(), new Settings( [] ) ), self::BATCH, self::USER );
+		$writer->write( 1001, $list );
+		$writer->write( 1002, $list );
+
+		$this->now += BatchRepository::LEASE_SECONDS + 1;
+		$this->runner()->run( self::BATCH );
+
+		$batch = $store->batch();
+		$this->assertSame( [ 3, 2, 0 ], [ $batch['done_items'], $batch['changed_items'], $batch['failed_items'] ], 'The binned product, journalled as skipped, is not counted as changed.' );
+	}
+
+	public function test_an_undo_whose_writes_all_landed_in_a_killed_run_does_not_say_nothing_was_put_back(): void {
+		// SILENT-FAILURES-3: every value of an undo was put back by a run killed before marking.
+		$ids                       = self::products( 2 );
+		$list                      = $this->increase();
+		$store                     = new RunnerStore( self::BATCH, $ids, $list, self::USER );
+		$store->batch['source']    = 'undo';
+		$store->batch['undo_of']   = 7;
+		$store->batch['selection'] = \BulkCatalogueManager\Data\ValueCodec::encode(
+			[
+				'kind'  => 'undo',
+				'force' => true,
+			]
+		);
+		( new BatchRepository() )->claim_chunk( self::BATCH, 50, str_repeat( 'e', 32 ), gmdate( 'Y-m-d H:i:s', (int) $this->now ), gmdate( 'Y-m-d H:i:s', (int) $this->now - 300 ) );
+		$writer = Writer::for_batch( new Registry( new Fields() ), Journal::from_settings( new Fields(), new Settings( [] ) ), self::BATCH, self::USER );
+		foreach ( $ids as $id ) {
+			$writer->write( $id, $list );
+		}
+		foreach ( $store->items as $item_id => $item ) {
+			$store->items[ $item_id ]['operations'] = (string) wp_json_encode( $list );
+		}
+
+		$this->now += BatchRepository::LEASE_SECONDS + 1;
+		$this->runner()->run( self::BATCH );
+
+		$batch = ( new BatchRepository() )->find( self::BATCH );
+		$this->assertSame( 2, $batch['changed_items'] );
+		$this->assertStringNotContainsString( 'Nothing was put back', (string) \BulkCatalogueManager\Engine\Progress::undo_summary( $batch )['sentence'] );
 	}
 
 	public function test_a_member_moved_to_the_bin_after_apply_is_unavailable_and_never_written(): void {

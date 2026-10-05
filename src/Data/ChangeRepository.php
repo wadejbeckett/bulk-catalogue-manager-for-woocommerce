@@ -173,6 +173,18 @@ final class ChangeRepository {
 	}
 
 	/**
+	 * Whether the batch journalled an applied change to an object: a run
+	 * that wrote it may have died before counting it (SILENT-FAILURES-3).
+	 *
+	 * @param int $batch_id  Batch.
+	 * @param int $object_id Product, variation or term id.
+	 */
+	public function has_applied( int $batch_id, int $object_id ): bool {
+		global $wpdb;
+		return 0 < (int) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM %i WHERE batch_id = %d AND object_id = %d AND result = %s', $this->registry->table( Schema::CHANGES ), $batch_id, $object_id, 'applied' ) );
+	}
+
+	/**
 	 * A batch's intent rows for one object (§12.3): each field whose write
 	 * was about to be saved when the run that wrote them stopped, with the
 	 * value before and the value it was writing, in the order written.

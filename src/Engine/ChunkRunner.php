@@ -462,6 +462,7 @@ final class ChunkRunner {
 		$error    = null;
 		$stopped  = false;
 		$batches  = $this->batches;
+		$changes  = $this->changes;
 		$batch_id = $batch['batch_id'];
 		$lease    = $this->lease_clock;
 		$deadline = $lease() + self::LEASE_SHARE * BatchRepository::LEASE_SECONDS;
@@ -471,7 +472,7 @@ final class ChunkRunner {
 		wp_defer_term_counting( true );
 		try {
 			$writer->run(
-				static function ( Writer $writer ) use ( $items, $operations, $undo, $own, $batches, $batch_id, $token, $lease, $deadline, &$error, &$stopped ): void {
+				static function ( Writer $writer ) use ( $items, $operations, $undo, $own, $batches, $changes, $batch_id, $token, $lease, $deadline, &$error, &$stopped ): void {
 					$finish = static function ( int $item_id, array $mark, bool $changed ) use ( $batches, $batch_id ): void {
 						$batches->finish_item( $batch_id, $item_id, $mark[0], $mark[1], $changed );
 					};
@@ -499,7 +500,8 @@ final class ChunkRunner {
 							$finish( $item['item_id'], [ 'failed', self::error_reason() ], false );
 							return;
 						}
-						$finish( $item['item_id'], self::item_state( $outcome ), $outcome->saved() );
+						// An object a killed run wrote is skipped as already done, but still counts as changed (SILENT-FAILURES-3).
+						$finish( $item['item_id'], self::item_state( $outcome ), $outcome->saved() || ( self::done_before( $outcome ) && $changes->has_applied( $batch_id, $item['object_id'] ) ) );
 					}
 				}
 			);
@@ -615,6 +617,20 @@ final class ChunkRunner {
 			return [ $outcome->saved() ? 'done' : 'skipped', self::join( $skipped ) ];
 		}
 		return [ 'done', '' ];
+	}
+
+	/**
+	 * Whether a write found its object already done by an earlier run of the batch.
+	 *
+	 * @param WriteOutcome $outcome The write.
+	 */
+	private static function done_before( WriteOutcome $outcome ): bool {
+		foreach ( $outcome->results() as $result ) {
+			if ( Journal::ALREADY_DONE === $result->code() ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**

@@ -49,6 +49,7 @@ import { useNativeReturn } from './use-native-return';
 import { descriptorsOf, defaultView, fieldsFromRegistry } from './fields';
 import { onCatalogueFocus } from './focus-visibility';
 import { categoryArgs, clearFilters, isFiltered } from './query';
+import { forgetLinked, linkedFrom } from './linked-category';
 import { ErrorNotice, LoadingRows, NoMatches, NoProducts } from './states';
 import { useCatalogue, useRegistry, useTermNames } from './use-catalogue';
 // T41, T42: search, filters, chips and the selection.
@@ -286,19 +287,23 @@ export function AppliedProgress( {
 /**
  * The grid once the registry has arrived.
  *
- * @param {Object}   props               Props.
- * @param {Object}   props.registry      GET /fields answer.
- * @param {Object}   props.settings      Localised settings.
- * @param {Object}   props.initialView   View overrides to open with (a saved view, tests).
- * @param {Object}   props.personal      The user's stored display choices, or null (ticket 19).
- * @param {boolean}  props.personalRead  Whether the stored choices have been read.
- * @param {Function} props.onEditDetails Open the detail panel (T47).
+ * @param {Object}   props                 Props.
+ * @param {Object}   props.registry        GET /fields answer.
+ * @param {Object}   props.settings        Localised settings.
+ * @param {Object}   props.initialView     View overrides to open with (a saved view, tests).
+ * @param {Object}   props.personal        The user's stored display choices, or null (ticket 19).
+ * @param {boolean}  props.personalRead    Whether the stored choices have been read.
+ * @param {Function} props.onEditDetails   Open the detail panel (T47).
+ * @param {Object}   props.initialCategory The category filter a link from the Categories tab opened with, or null.
+ * @param {boolean}  props.linked          Opened from such a link: the default saved view is not applied over it.
  * @return {Element} Grid.
  */
 export function CatalogueGrid( {
 	registry,
 	settings: localised,
 	initialView,
+	initialCategory = null,
+	linked = false,
 	personal = null,
 	personalRead = false,
 	onEditDetails,
@@ -356,7 +361,7 @@ export function CatalogueGrid( {
 		},
 		[ touchDisplay ]
 	);
-	const [ category, setCategory ] = useState( null );
+	const [ category, setCategory ] = useState( initialCategory );
 	const [ sentence, setSentence ] = useState( '' );
 	// T41, T42: the bulk panel opens on the selection, with any quick action's step.
 	const [ bulk, setBulk ] = useState( null );
@@ -381,6 +386,16 @@ export function CatalogueGrid( {
 		[ view.search ]
 	);
 	const tree = useCategoryTree( treeQuery );
+	// A category a link opened with is named in the chip once the tree is read.
+	const naming = useRef( !! initialCategory );
+	useEffect( () => {
+		if ( naming.current && tree.loaded ) {
+			naming.current = false;
+			setSentence(
+				( was ) => was || categorySentence( initialCategory, tree.byId )
+			);
+		}
+	}, [ tree.loaded, tree.byId, initialCategory ] );
 	const sources = useMemo(
 		() =>
 			descriptors
@@ -680,6 +695,7 @@ export function CatalogueGrid( {
 						view={ view }
 						category={ category }
 						baseView={ baseView }
+						applyDefault={ ! linked }
 						onApply={ applyView }
 						onReady={ onViewsReady }
 					/>
@@ -867,6 +883,14 @@ export function CatalogueGrid( {
 export default function Catalogue( { settings, initialView, onEditDetails } ) {
 	const { registry, error, retry } = useRegistry();
 	const preferences = useDisplayPreferences();
+	// A link from the Categories tab: its categories and search, read once.
+	const [ link ] = useState( () => linkedFrom( window.location.search ) );
+	useEffect( () => forgetLinked(), [] );
+	const opening = useMemo(
+		() =>
+			link.search ? { ...initialView, search: link.search } : initialView,
+		[ link, initialView ]
+	);
 	return (
 		<div className="bulkcat-catalogue">
 			{ error && (
@@ -883,7 +907,9 @@ export default function Catalogue( { settings, initialView, onEditDetails } ) {
 				<CatalogueGrid
 					registry={ registry }
 					settings={ settings }
-					initialView={ initialView }
+					initialView={ opening }
+					initialCategory={ link.category }
+					linked={ !! ( link.category || link.search ) }
 					personal={ preferences.display }
 					personalRead={ preferences.hasLoaded }
 					onEditDetails={ onEditDetails }

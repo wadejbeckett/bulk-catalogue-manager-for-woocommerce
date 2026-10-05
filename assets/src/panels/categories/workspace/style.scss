@@ -1,0 +1,541 @@
+// Built into style-index.css with the rest of the screen (only files named
+// style.scss are; see webpack.config.js and wp-scripts).
+// The Categories tab as a workspace (SPEC §4.7): a bar across the top, then
+// the tree on the left and the details pane on the right, each scrolling on
+// its own so both stay in view. Colours are the admin's own greys and the
+// admin colour scheme's accent, as in style.scss.
+$ws-rule: #dcdcde;
+$ws-border: #c3c4c7;
+$ws-sunk: #f6f7f7;
+$ws-ink: #1d2327;
+$ws-ink-2: #50575e;
+$ws-ink-3: #646970;
+$ws-accent: var(--wp-admin-theme-color, #2271b1);
+$ws-accent-tint: #f0f6fc;
+$ws-new: #fcf9e8;
+$ws-new-edge: #dba617;
+
+.bulkcat-cat-workspace {
+	// Room under the admin bar and the screen's header.
+	--bulkcat-ws-height: max(480px, calc(100vh - var(--wp-admin--admin-bar--height, 32px) - 196px));
+
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	font-size: 13px;
+	color: $ws-ink;
+
+	&__bar {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 8px 12px;
+		padding: 12px 16px;
+		background: #fff;
+		border: 1px solid $ws-border;
+		border-radius: 4px;
+
+		.components-toggle-control {
+			margin-left: 4px;
+		}
+	}
+
+	&__search {
+		flex: 0 1 320px;
+		min-width: 200px;
+	}
+
+	&__total {
+		color: $ws-ink-3;
+		font-variant-numeric: tabular-nums;
+	}
+
+	&__add.components-button {
+		margin-left: auto;
+	}
+
+	&__body {
+		display: grid;
+		grid-template-columns: minmax(340px, 5fr) minmax(0, 7fr);
+		gap: 16px;
+		align-items: start;
+	}
+
+	&__tree,
+	&__pane {
+		min-width: 0;
+		height: var(--bulkcat-ws-height);
+		overflow: auto;
+		background: #fff;
+		border: 1px solid $ws-border;
+		border-radius: 4px;
+	}
+
+	&__tree {
+		padding: 0 6px 12px;
+
+		.bulkcat-cat-panel__state {
+			padding: 16px 10px;
+		}
+	}
+
+	&__columns {
+		position: sticky;
+		top: 0;
+		z-index: 2;
+		display: flex;
+		justify-content: space-between;
+		margin: 0 -6px 4px;
+		padding: 8px 46px 8px 14px;
+		background: $ws-sunk;
+		border-bottom: 1px solid $ws-rule;
+		color: $ws-ink-2;
+		font-size: 12px;
+		font-weight: 600;
+	}
+}
+
+// The tree in the workspace: taller rows, names that wrap, a checkbox each.
+.bulkcat-cat-workspace .bulkcat-cat-tree {
+
+	.bulkcat-cat-row {
+		min-height: 34px;
+		align-items: center;
+	}
+
+	.bulkcat-cat-count {
+		flex: none;
+		min-width: 56px;
+		font-size: 12px;
+		text-align: right;
+	}
+
+	.bulkcat-cat-row.is-selected {
+		background-color: $ws-accent-tint;
+	}
+
+	.bulkcat-cat-menu {
+		right: 12px;
+		max-width: 240px;
+	}
+}
+
+.bulkcat-cat-tree.is-wrapping .bulkcat-cat-name {
+	padding: 6px 6px 6px 0;
+	overflow: visible;
+	white-space: normal;
+	overflow-wrap: anywhere;
+	line-height: 1.4;
+}
+
+.bulkcat-cat-tree mark {
+	padding: 0 1px;
+	background: #fff2ac;
+	color: inherit;
+	font-weight: 600;
+	border-radius: 2px;
+}
+
+.bulkcat-cat-row.is-context .bulkcat-cat-name {
+	color: $ws-ink-3;
+}
+
+.bulkcat-cat-row.is-new {
+	background-color: $ws-new;
+	box-shadow: inset 3px 0 0 $ws-new-edge;
+	animation: bulkcat-cat-new 2.4s ease-out;
+}
+
+@keyframes bulkcat-cat-new {
+
+	0% {
+		background-color: #f5e6ab;
+	}
+}
+
+.bulkcat-cat-check {
+	flex: none;
+	box-sizing: border-box;
+	width: 16px;
+	height: 16px;
+	margin: 0 4px 0 6px;
+	border: 1px solid #8c8f94;
+	border-radius: 2px;
+	background: #fff;
+	cursor: pointer;
+
+	&.is-checked {
+		border-color: $ws-accent;
+		background: $ws-accent;
+		// A tick drawn with two borders, as core's checkbox has one.
+		background-image: linear-gradient(transparent, transparent);
+		position: relative;
+
+		&::after {
+			content: "";
+			position: absolute;
+			left: 4px;
+			top: 1px;
+			width: 5px;
+			height: 9px;
+			border: solid #fff;
+			border-width: 0 2px 2px 0;
+			transform: rotate(45deg);
+		}
+	}
+}
+
+[role="treeitem"] .bulkcat-cat-row > .bulkcat-cat-check[aria-hidden] {
+	display: block;
+	position: relative;
+}
+
+// The right-hand pane.
+.bulkcat-cat-pane {
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
+	padding: 18px 24px 24px;
+
+	&.is-empty {
+		justify-content: center;
+		align-items: center;
+		min-height: 240px;
+		height: 100%;
+		box-sizing: border-box;
+		color: $ws-ink-2;
+		text-align: center;
+
+		p {
+			margin: 0;
+			max-width: 420px;
+			font-size: 14px;
+		}
+	}
+
+	&__path {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 2px 0;
+		color: $ws-ink-3;
+		font-size: 12px;
+
+		.components-button.is-link {
+			font-size: 12px;
+		}
+	}
+
+	&__sep {
+		margin: 0 6px;
+		color: $ws-ink-3;
+	}
+
+	&__head {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 12px;
+	}
+
+	&__title {
+		flex: 1;
+		min-width: 0;
+		margin: 0;
+		font-size: 20px;
+		font-weight: 600;
+		line-height: 1.3;
+		overflow-wrap: anywhere;
+	}
+
+	&__thumb {
+		flex: none;
+		width: 40px;
+		height: 40px;
+		object-fit: cover;
+		border: 1px solid $ws-rule;
+		border-radius: 3px;
+	}
+
+	&__rename {
+		display: flex;
+		flex: 1;
+		flex-wrap: wrap;
+		align-items: flex-end;
+		gap: 8px;
+
+		.components-base-control {
+			flex: 1 1 240px;
+		}
+	}
+
+	&__actions {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 8px;
+		padding-bottom: 16px;
+		border-bottom: 1px solid $ws-rule;
+
+		> a {
+			margin-left: 4px;
+		}
+	}
+
+	&__hint {
+		margin: 0;
+		color: $ws-ink-3;
+		font-size: 12px;
+	}
+
+	&__facts {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+		gap: 14px 24px;
+		margin: 0;
+	}
+
+	&__fact {
+		min-width: 0;
+
+		dt {
+			margin: 0 0 4px;
+			color: $ws-ink-3;
+			font-size: 11px;
+			font-weight: 600;
+			text-transform: uppercase;
+			letter-spacing: 0.02em;
+		}
+
+		dd {
+			margin: 0;
+			overflow-wrap: anywhere;
+		}
+
+		&:has(.bulkcat-cat-pane__description) {
+			grid-column: 1 / -1;
+		}
+	}
+
+	&__muted {
+		color: $ws-ink-3;
+	}
+
+	&__image {
+		display: block;
+		width: 64px;
+		height: 64px;
+		object-fit: cover;
+		border: 1px solid $ws-rule;
+		border-radius: 3px;
+	}
+
+	&__card {
+		padding: 16px;
+		background: $ws-sunk;
+		border: 1px solid $ws-rule;
+		border-radius: 4px;
+
+		.bulkcat-cat-manager {
+			min-width: 0;
+		}
+	}
+
+	&__subtitle {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		margin: 0;
+		font-size: 14px;
+		font-weight: 600;
+	}
+}
+
+.bulkcat-cat-products {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	padding-top: 16px;
+	border-top: 1px solid $ws-rule;
+
+	&__head {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 8px 20px;
+
+		.components-checkbox-control {
+			margin-left: auto;
+		}
+	}
+
+	&__total {
+		padding: 1px 8px;
+		background: $ws-sunk;
+		border: 1px solid $ws-rule;
+		border-radius: 10px;
+		color: $ws-ink-2;
+		font-size: 12px;
+		font-weight: 400;
+		font-variant-numeric: tabular-nums;
+	}
+
+	&__state {
+		margin: 0;
+		color: $ws-ink-2;
+	}
+
+	&__table {
+
+		&.widefat {
+			border-color: $ws-rule;
+		}
+
+		&.is-loading {
+			opacity: 0.6;
+		}
+
+		th,
+		td {
+			vertical-align: middle;
+		}
+	}
+
+	&__name {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		min-width: 200px;
+
+		.bulkcat-thumb {
+			flex: none;
+			width: 32px;
+			height: 32px;
+			object-fit: cover;
+			border-radius: 2px;
+		}
+
+		a {
+			overflow-wrap: anywhere;
+		}
+	}
+
+	&__pages {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 8px;
+		color: $ws-ink-2;
+	}
+
+	&__count {
+		margin-left: auto;
+	}
+}
+
+.bulkcat-cat-chosen {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	border: 1px solid $ws-rule;
+	border-radius: 4px;
+
+	&__item {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		margin: 0;
+		padding: 6px 8px 6px 12px;
+
+		& + & {
+			border-top: 1px solid $ws-rule;
+		}
+	}
+
+	&__path {
+		flex: 1;
+		min-width: 0;
+		overflow-wrap: anywhere;
+	}
+
+	&__count {
+		color: $ws-ink-3;
+		font-variant-numeric: tabular-nums;
+	}
+}
+
+// Narrow screens: the tree above the pane, each as tall as it needs.
+@media (max-width: 959px) {
+
+	.bulkcat-cat-workspace__body {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.bulkcat-cat-workspace__tree,
+	.bulkcat-cat-workspace__pane {
+		height: auto;
+		max-height: none;
+	}
+
+	.bulkcat-cat-workspace__tree {
+		max-height: 70vh;
+	}
+
+	.bulkcat-cat-workspace__add.components-button {
+		margin-left: 0;
+	}
+
+	.bulkcat-cat-pane {
+		padding: 14px;
+	}
+
+	.bulkcat-cat-workspace__search {
+		flex: 1 1 100%;
+		min-width: 0;
+	}
+
+	.bulkcat-cat-products__table {
+		display: block;
+		overflow-x: auto;
+	}
+}
+
+// All fields: WordPress's own category form, framed in the pane.
+.bulkcat-cat-fields {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+
+	&__head {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 4px 12px;
+
+		.bulkcat-cat-pane__hint {
+			flex: 1 1 260px;
+		}
+	}
+
+	&__status:empty {
+		display: none;
+	}
+
+	&__status .components-notice {
+		margin: 0;
+	}
+
+	&__frame {
+		display: block;
+		width: 100%;
+		min-height: 320px;
+		border: 1px solid $ws-border;
+		border-radius: 4px;
+		background: #fff;
+	}
+}
+
+.bulkcat-cat-pane__native {
+	margin: -8px 0 0;
+	font-size: 12px;
+}

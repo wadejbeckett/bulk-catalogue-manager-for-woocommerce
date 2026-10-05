@@ -221,6 +221,10 @@ final class Screen {
 					array_map( static fn( string $capability ): bool => current_user_can( $capability ), self::CLIENT_CAPABILITIES )
 				),
 			],
+			'categoryEdit'   => [
+				'url'  => TermEmbed::edit_url(),
+				'flag' => TermEmbed::FLAG,
+			],
 			'wpMajor'        => self::host_major(),
 			'dataviews'      => self::DATAVIEWS_VERSION,
 		];

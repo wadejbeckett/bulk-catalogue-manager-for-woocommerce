@@ -927,6 +927,51 @@ final class UndoRouteTest extends TestCase {
 		$this->assertFalse( Original::settle( $repo, [ 'source' => 'bulk' ] + $undo, 'complete' ), 'Only an undo batch settles anything.' );
 	}
 
+	public function test_after_a_cancelled_undo_what_it_put_back_is_not_called_changed_since(): void {
+		// ENGINE-11 / TESTS-5: the undo puts the two products back, then is cancelled before the variation.
+		$undo_id = $this->undo()['batch_id'];
+		$runner  = new ChunkRunner( null, new Registry( new Fields() ), null, new Settings( [] ), fn(): float => $this->run_clock += 1.0, 30 );
+		$this->assertSame( 'continued', $runner->run( $undo_id ) );
+		$this->assertSame( [ '10.00', '20.00', '6.00' ], [ self::prop( 1001, 'regular_price' ), self::prop( 1002, 'regular_price' ), self::prop( 2001, 'regular_price' ) ] );
+		$this->ok( self::dispatch( 'POST', "/batches/$undo_id/cancel" ) );
+		$this->assertSame( 'complete', $this->store->batch()['status'], 'The batch can be undone again.' );
+
+		$preview = $this->preview();
+		$this->assertSame( 0, $preview['counts']['conflicted'], 'Values this tool already put back are not changes made since.' );
+		$this->assertSame( 3, $preview['counts']['revertible'] );
+		$this->assertStringNotContainsString( 'changed again', (string) $preview['sentence'] );
+
+		// Undoing the rest finishes the job without Revert anyway.
+		$this->assertSame( 'complete', $this->run_batch( $this->undo( self::BATCH, false, self::UUID_2 )['batch_id'] ) );
+		$this->assertSame( '5.00', self::prop( 2001, 'regular_price' ) );
+		$this->assertSame( 'undone', $this->store->batch()['status'] );
+	}
+
+	public function test_a_batch_left_being_undone_after_its_undo_finished_is_settled_when_read(): void {
+		// SILENT-FAILURES-4: the undo batch reached its final status, but its run died before moving the batch it undid on.
+		$undo_id = $this->undo()['batch_id'];
+		$this->assertSame( 'undoing', $this->ok( self::dispatch( 'GET', '/batches/12' ) )['status'], 'An undo still queued leaves the batch being undone.' );
+		$this->assertSame( 'undoing', $this->store->batch()['status'] );
+		$this->assertSame( 'complete', $this->run_batch( $undo_id ) );
+		$this->store->sync();
+		$this->store->batch['status'] = 'undoing';
+
+		$report = $this->ok( self::dispatch( 'GET', '/batches/12' ) );
+		$this->assertSame( 'undone', $report['status'] );
+		$this->assertSame( 'already_undone', $report['reversibility']['reason'] );
+		$this->assertSame( 'undone', $this->store->batch()['status'] );
+		$this->assertSame( '2026-09-23 08:05:00', $this->store->batch()['finished_gmt'], 'It keeps the time it finished.' );
+
+		// The history list settles it too, and a failed undo gives the batch back its status.
+		$this->store->batch['status']                     = 'undoing';
+		$this->store->others[ $undo_id ]['status']        = 'failed';
+		$this->store->others[ $undo_id ]['changed_items'] = 0;
+		$this->store->changes                             = array_values( array_filter( $this->store->changes, static fn( array $row ): bool => $undo_id !== $row['batch_id'] ) );
+		$rows = array_column( $this->ok( self::dispatch( 'GET', '/batches' ) )['items'], 'status', 'batch_id' );
+		$this->assertSame( 'complete', $rows[ self::BATCH ] ?? null );
+		$this->assertSame( 'complete', $this->store->batch()['status'] );
+	}
+
 	public function test_visitors_users_without_the_capability_and_missing_batches_are_refused(): void {
 		$this->refused( self::dispatch( 'POST', '/batches/999/undo', [ 'preview' => true ] ), 'bulkcat_not_found', 404 );
 

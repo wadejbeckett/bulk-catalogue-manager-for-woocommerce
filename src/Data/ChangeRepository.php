@@ -173,6 +173,18 @@ final class ChangeRepository {
 	}
 
 	/**
+	 * Whether the batch journalled an applied change to an object: a run
+	 * that wrote it may have died before counting it (SILENT-FAILURES-3).
+	 *
+	 * @param int $batch_id  Batch.
+	 * @param int $object_id Product, variation or term id.
+	 */
+	public function has_applied( int $batch_id, int $object_id ): bool {
+		global $wpdb;
+		return 0 < (int) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM %i WHERE batch_id = %d AND object_id = %d AND result = %s', $this->registry->table( Schema::CHANGES ), $batch_id, $object_id, 'applied' ) );
+	}
+
+	/**
 	 * A batch's intent rows for one object (§12.3): each field whose write
 	 * was about to be saved when the run that wrote them stopped, with the
 	 * value before and the value it was writing, in the order written.
@@ -243,18 +255,20 @@ final class ChangeRepository {
 	 *
 	 * @param int         $batch_id Batch.
 	 * @param string|null $result   One of Schema::CHANGE_RESULTS, or null for all.
+	 * @param bool        $strict   Whether a failed read throws instead of counting 0 (SILENT-FAILURES-5).
 	 * @throws \InvalidArgumentException On an unknown result.
+	 * @throws \RuntimeException When $strict and the read fails.
 	 */
-	public function count_for_batch( int $batch_id, ?string $result = null ): int {
+	public function count_for_batch( int $batch_id, ?string $result = null, bool $strict = false ): int {
 		global $wpdb;
 		$table = $this->registry->table( Schema::CHANGES );
 		if ( null === $result ) {
-			return (int) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM %i WHERE batch_id = %d', $table, $batch_id ) );
+			return BatchRepository::counted( $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM %i WHERE batch_id = %d', $table, $batch_id ) ), $strict );
 		}
 		if ( ! in_array( $result, Schema::CHANGE_RESULTS, true ) ) {
 			throw new \InvalidArgumentException( esc_html( sprintf( 'Unknown result "%s".', $result ) ) );
 		}
-		return (int) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM %i WHERE batch_id = %d AND result = %s', $table, $batch_id, $result ) );
+		return BatchRepository::counted( $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM %i WHERE batch_id = %d AND result = %s', $table, $batch_id, $result ) ), $strict );
 	}
 
 	/**

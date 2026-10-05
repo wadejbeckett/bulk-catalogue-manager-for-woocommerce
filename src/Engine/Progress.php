@@ -26,8 +26,8 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Batch progress, the stalled check, the grouped reasons and cancellation.
  *
- * report() answers a batch's status, counters (updated by the chunk runner at
- * the end of every chunk, so a polling client counts up), its times, and:
+ * report() answers a batch's status, counters (updated by the chunk runner as
+ * each item finishes, so a polling client counts up), its times, and:
  * - `stalled`: the batch is queued or running with items still pending, and
  *   no chunk has claimed anything for STALL_SECONDS (five minutes) — the
  *   latest claimed_gmt of its items, or its creation time when none was
@@ -158,7 +158,7 @@ final class Progress {
 	 */
 	public function report( int $batch_id, bool $count = false ): ?array {
 		$batch = $this->batches->find( $batch_id );
-		return null === $batch ? null : $this->report_for( $batch, true, null, $count );
+		return null === $batch ? null : $this->report_for( $this->repaired( $batch ), true, null, $count );
 	}
 
 	/**
@@ -169,8 +169,24 @@ final class Progress {
 	 * @return list<array<string, mixed>>
 	 */
 	public function reports( array $batches ): array {
-		$states = $this->reversibility->for_page( $batches );
+		$batches = array_map( [ $this, 'repaired' ], $batches );
+		$states  = $this->reversibility->for_page( $batches );
 		return array_map( fn( array $batch ): array => $this->report_for( $batch, false, $states[ $batch['batch_id'] ] ), $batches );
+	}
+
+	/**
+	 * A batch row read as `undoing`, with its status settled when its undo
+	 * has finished but the run died before moving it on (SILENT-FAILURES-4).
+	 *
+	 * @param array<string, mixed> $batch Typed batch row.
+	 * @return array<string, mixed>
+	 */
+	private function repaired( array $batch ): array {
+		if ( 'undoing' !== $batch['status'] || ! Original::repair( $this->batches, $this->changes, (int) $batch['batch_id'] ) ) {
+			return $batch;
+		}
+		$batch['status'] = $this->batches->status( (int) $batch['batch_id'] ) ?? $batch['status'];
+		return $batch;
 	}
 
 	/**

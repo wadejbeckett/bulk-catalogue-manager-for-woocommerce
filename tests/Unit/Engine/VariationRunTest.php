@@ -613,4 +613,37 @@ final class VariationRunTest extends TestCase {
 		$this->assertSame( [ 2002, 701, 702 ], array_column( $skipped, 'object_id' ), 'Each refusal is recorded against the variation.' );
 		$this->assertSame( [ 9000 ], $GLOBALS['bulkcat_test']['variable_syncs'], 'Only a parent with a saved variation is resynchronised.' );
 	}
+
+	public function test_a_parent_whose_resync_throws_does_not_stop_the_others_and_is_reported(): void {
+		// SILENT-FAILURES-6: two parents in one chunk; the first one's resynchronisation throws.
+		foreach ( [ 700, 800 ] as $parent ) {
+			self::object( $parent, 'variable', [] );
+			self::object(
+				$parent + 1,
+				'variation',
+				[
+					'parent_id'     => $parent,
+					'regular_price' => '10',
+				]
+			);
+		}
+		$store                                       = new RunnerStore( self::BATCH, [ [ 701, 'variation' ], [ 801, 'variation' ] ], $this->increase(), self::USER );
+		$GLOBALS['bulkcat_test']['sync_throws'][700] = true;
+
+		$error = null;
+		try {
+			$this->runner()->run( self::BATCH );
+		} catch ( \RuntimeException $e ) {
+			$error = $e;
+		}
+		$this->assertNotNull( $error, 'The failure still reaches the scheduled actions log.' );
+		$this->assertContains( 800, $GLOBALS['bulkcat_test']['variable_syncs'], 'The other parent is resynchronised.' );
+		$this->assertSame( [ '11.00', '11.00' ], [ self::prop( 701, 'regular_price' ), self::prop( 801, 'regular_price' ) ] );
+		$this->assertSame( [ 'done', '' ], [ $store->item( 801 )['state'], $store->item( 801 )['message'] ] );
+		$this->assertSame( 'done', $store->item( 701 )['state'], 'Its variation was written.' );
+		$this->assertStringContainsString( 'could not be refreshed', $store->item( 701 )['message'] );
+
+		$this->now += 120;
+		$this->assertSame( 'partial', $this->runner()->run( self::BATCH ), 'Never complete with a parent left stale.' );
+	}
 }

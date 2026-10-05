@@ -542,11 +542,13 @@ final class PlannerTest extends TestCase {
 
 	public function test_the_plan_compares_what_the_product_holds_now_in_canonical_form(): void {
 		$this->change( 1001, 'regular_price', '10.00', '11.00' );
-		$this->change( 1002, 'sale_price', '', '0.00' );
+		$this->change( 1002, 'sale_price', '5.00', '0.00' );
 		$this->change( 1003, 'stock_quantity', 5, 0 );
 		$this->change( 1004, 'sku', 'A', '0' );
+		$this->change( 1005, 'sale_price', '', '0.00' );
 		self::product( 1001, [ 'regular_price' => '11' ] );
 		self::product( 1002, [ 'sale_price' => '' ] );
+		self::product( 1005, [ 'sale_price' => '' ] );
 		self::product(
 			1003,
 			[
@@ -562,6 +564,7 @@ final class PlannerTest extends TestCase {
 		foreach ( [ 1002, 1003, 1004 ] as $id ) {
 			$this->assertSame( Plan::CONFLICTED, self::item( $plan, $id )['state'], "Object $id: empty, null, 0 and '0.00' are different values." );
 		}
+		$this->assertSame( Plan::REVERTIBLE, self::item( $plan, 1005 )['state'], 'ENGINE-11: a value already back to what the undo restores is not a change made since.' );
 		$this->assertSame(
 			[
 				[

@@ -217,9 +217,15 @@ final class Snapshot {
 	}
 
 	/**
-	 * Stock quantity as a whole number, null when unset.
+	 * Stock quantity as a whole number, null when unset or when stock is not
+	 * managed (SQR-6): WooCommerce clears it then and keeps no quantity in
+	 * its lookup table, which the Stock quantity filter reads, so a quantity
+	 * left behind from when stock was managed is neither shown nor filtered.
 	 */
 	public function get_stock_quantity(): ?int {
+		if ( ! $this->get_manage_stock() ) {
+			return null;
+		}
 		$value = $this->meta( __FUNCTION__ );
 		return is_numeric( $value ) ? (int) (float) $value : null;
 	}

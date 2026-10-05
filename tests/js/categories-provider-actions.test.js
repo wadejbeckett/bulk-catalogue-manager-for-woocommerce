@@ -264,6 +264,18 @@ const item = ( name ) =>
 		);
 const rowOf = ( name ) => item( name ).querySelector( '.bulkcat-cat-row' );
 
+/**
+ * Choose an add-on action from its group's menu in a pane (1.4.1).
+ *
+ * @param {Element} pane   The details or selection pane.
+ * @param {string}  menu   The group's menu button, such as "Sample shelves…".
+ * @param {string}  action The action, such as "Put on shelves".
+ */
+async function chooseFrom( pane, menu, action ) {
+	fireEvent.click( within( pane ).getByRole( 'button', { name: menu } ) );
+	fireEvent.click( await screen.findByRole( 'menuitem', { name: action } ) );
+}
+
 beforeEach( () => {
 	apiFetch.mockReset();
 	window.localStorage.clear();
@@ -337,6 +349,9 @@ describe( 'category actions: the workspace', () => {
 			within( pane ).queryByRole( 'button', { name: 'Put on shelves' } )
 		).toBeNull();
 		expect(
+			within( pane ).queryByRole( 'button', { name: 'Sample shelves…' } )
+		).toBeNull();
+		expect(
 			categoryActions( 1 ).filter( ( a ) =>
 				String( a.key ).startsWith( 'provider:' )
 			)
@@ -347,9 +362,7 @@ describe( 'category actions: the workspace', () => {
 		await renderTab();
 		fireEvent.click( rowOf( 'Kitchen' ) );
 		const pane = await screen.findByRole( 'region', { name: 'Kitchen' } );
-		fireEvent.click(
-			within( pane ).getByRole( 'button', { name: 'Put on shelves' } )
-		);
+		await chooseFrom( pane, 'Sample shelves…', 'Put on shelves' );
 		const dialog = await screen.findByRole( 'dialog', {
 			name: 'Put on shelves',
 		} );
@@ -457,9 +470,7 @@ describe( 'category actions: the workspace', () => {
 		const pane = await screen.findByRole( 'region', {
 			name: '2 categories selected',
 		} );
-		fireEvent.click(
-			within( pane ).getByRole( 'button', { name: 'Put on shelves' } )
-		);
+		await chooseFrom( pane, 'Sample shelves…', 'Put on shelves' );
 		const dialog = await screen.findByRole( 'dialog', {
 			name: 'Put on shelves',
 		} );
@@ -508,9 +519,7 @@ describe( 'category actions: the workspace', () => {
 		await renderTab();
 		fireEvent.click( rowOf( 'Garden' ) );
 		const pane = await screen.findByRole( 'region', { name: 'Garden' } );
-		fireEvent.click(
-			within( pane ).getByRole( 'button', { name: 'Put on shelves' } )
-		);
+		await chooseFrom( pane, 'Sample shelves…', 'Put on shelves' );
 		const dialog = await screen.findByRole( 'dialog', {
 			name: 'Put on shelves',
 		} );
@@ -522,5 +531,154 @@ describe( 'category actions: the workspace', () => {
 		expect(
 			within( dialog ).queryByRole( 'button', { name: 'Preview' } )
 		).toBeNull();
+	} );
+} );
+
+describe( 'category actions: grouped by add-on (1.4.1)', () => {
+	const action = ( id, label, group ) => ( {
+		...SHELVES,
+		id,
+		label,
+		group,
+		groups: [ group ],
+	} );
+	const WITH_GROUPS = () => {
+		const base = WITH_SHELVES();
+		return {
+			...base,
+			actions: [
+				...base.actions,
+				action(
+					'x_shelves_remove',
+					'Take off shelves',
+					'x_shelves_items'
+				),
+				// An add-on action in a native group is grouped by its add-on.
+				action( 'x_shelves_note', 'Set a shelf note', 'publishing' ),
+			],
+			providers: [
+				{
+					id: 'shelves',
+					label: 'Shelving add-on',
+					version: '1.0.0',
+					available: true,
+					reason: '',
+				},
+			],
+		};
+	};
+	const NATIVE = [ 'Rename', 'Move to…', 'Add subcategory', 'Edit details' ];
+
+	beforeEach( () => {
+		registry = WITH_GROUPS();
+	} );
+
+	it( 'offers one menu per group in the details pane, beside the native buttons', async () => {
+		await renderTab();
+		fireEvent.click( rowOf( 'Garden' ) );
+		const pane = await screen.findByRole( 'region', { name: 'Garden' } );
+		NATIVE.forEach( ( name ) =>
+			expect(
+				within( pane ).getByRole( 'button', { name } )
+			).toBeTruthy()
+		);
+		[ 'Put on shelves', 'Take off shelves', 'Set a shelf note' ].forEach(
+			( name ) =>
+				expect(
+					within( pane ).queryByRole( 'button', { name } )
+				).toBeNull()
+		);
+		const menu = within( pane ).getByRole( 'button', {
+			name: 'Sample shelves…',
+		} );
+		expect( menu.getAttribute( 'aria-haspopup' ) ).toBeTruthy();
+		expect( menu.getAttribute( 'aria-expanded' ) ).toBe( 'false' );
+		expect(
+			within( pane ).getByRole( 'button', { name: 'Shelving add-on…' } )
+		).toBeTruthy();
+		fireEvent.click( menu );
+		const list = await screen.findByRole( 'menu', {
+			name: 'Sample shelves…',
+		} );
+		expect(
+			within( list )
+				.getAllByRole( 'menuitem' )
+				.map( ( each ) => each.textContent )
+		).toEqual( [ 'Put on shelves', 'Take off shelves' ] );
+		fireEvent.click(
+			within( list ).getByRole( 'menuitem', { name: 'Take off shelves' } )
+		);
+		expect(
+			await screen.findByRole( 'dialog', { name: 'Take off shelves' } )
+		).toBeTruthy();
+	} );
+
+	it( 'groups them the same way in the selection pane', async () => {
+		await renderTab();
+		fireEvent.click( rowOf( 'Pots' ) );
+		fireEvent.click( rowOf( 'Garden' ), { ctrlKey: true } );
+		const pane = await screen.findByRole( 'region', {
+			name: '2 categories selected',
+		} );
+		expect(
+			within( pane ).queryByRole( 'button', { name: 'Put on shelves' } )
+		).toBeNull();
+		await chooseFrom( pane, 'Shelving add-on…', 'Set a shelf note' );
+		expect(
+			await screen.findByRole( 'dialog', { name: 'Set a shelf note' } )
+		).toBeTruthy();
+	} );
+
+	it( 'groups them in the tree row menu, each group opening its own list', async () => {
+		await renderTab();
+		act( () => item( 'Garden' ).focus() );
+		fireEvent.keyDown( item( 'Garden' ), { key: 'F10', shiftKey: true } );
+		const menu = await screen.findByRole( 'menu', {
+			name: 'Actions for Garden',
+		} );
+		const names = within( menu )
+			.getAllByRole( 'menuitem' )
+			.map( ( each ) => each.textContent );
+		expect( names ).toEqual(
+			expect.arrayContaining( [
+				'Rename',
+				'Move to…',
+				'Sample shelves…',
+				'Shelving add-on…',
+			] )
+		);
+		expect( names ).not.toContain( 'Put on shelves' );
+		const group = within( menu ).getByRole( 'menuitem', {
+			name: 'Sample shelves…',
+		} );
+		expect( group.getAttribute( 'aria-haspopup' ) ).toBe( 'menu' );
+		fireEvent.click( group );
+		const sub = await screen.findByRole( 'menu', {
+			name: 'Sample shelves',
+		} );
+		const subItems = within( sub ).getAllByRole( 'menuitem' );
+		expect( subItems.map( ( each ) => each.textContent ) ).toEqual( [
+			'Back to all actions',
+			'Put on shelves',
+			'Take off shelves',
+		] );
+		expect( document.activeElement ).toBe( subItems[ 1 ] );
+		// Escape goes back one level, to the group's own item.
+		fireEvent.keyDown( document.activeElement, { key: 'Escape' } );
+		const again = await screen.findByRole( 'menu', {
+			name: 'Actions for Garden',
+		} );
+		expect( document.activeElement ).toBe(
+			within( again ).getByRole( 'menuitem', { name: 'Sample shelves…' } )
+		);
+		fireEvent.keyDown( document.activeElement, { key: 'ArrowRight' } );
+		fireEvent.click(
+			within(
+				await screen.findByRole( 'menu', { name: 'Sample shelves' } )
+			).getByRole( 'menuitem', { name: 'Take off shelves' } )
+		);
+		expect(
+			await screen.findByRole( 'dialog', { name: 'Take off shelves' } )
+		).toBeTruthy();
 	} );
 } );

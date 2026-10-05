@@ -1,62 +1,102 @@
 /** Native single-row actions and the existing bulk-change entry. */
 import { __, sprintf } from '@wordpress/i18n';
 
+import {
+	ProviderMenuList,
+	menuLabel,
+	providerMenus,
+} from '../../components/provider-menu';
 import { ROW } from './defaults';
 import { chooseAction, emptyOperation } from '../bulk/operations';
+
+/**
+ * Whether an add-on row entry applies to a row: any product, or a variation
+ * only for a per-variation value.
+ *
+ * @param {Object} action The `/fields` action.
+ * @param {Object} item   The row.
+ * @return {boolean} True when offered on that row.
+ */
+function rowEligible( action, item ) {
+	return ! item?.[ ROW.parentId ] || action.variations === 'per_variation';
+}
 
 /**
  * Add-on actions offered on one row (contract version 2 row entry,
  * docs/EXTENSIONS-v2.md §6): each `/fields` action marked `row`, on a
  * product row, or on a variation row only for a per-variation value. One
- * that cannot be used now is listed disabled with its reason.
+ * that cannot be used now is listed disabled with its reason. When the menu
+ * would list several, they are grouped (1.4.1): one entry per add-on group,
+ * "Sample picks…", opening a menu of that group's actions.
  *
  * @param {Object}   registry The `/fields` payload.
  * @param {Function} onChoose Receives ( action, row ).
  * @return {Array<Object>} DataViews actions.
  */
 export function providerRowActions( registry, onChoose ) {
-	return ( registry?.actions || [] )
-		.filter(
-			( action ) =>
-				action.provider &&
-				action.row === true &&
-				( action.target || 'product' ) === 'product'
-		)
-		.map( ( action ) => {
-			const usable = action.available !== false;
-			return {
-				id: `provider-${ action.id }`,
-				label: usable
-					? sprintf(
-							/* translators: %s: an add-on action, such as "Add recipients". */
-							__(
-								'%s…',
-								'bulk-catalogue-manager-for-woocommerce'
-							),
-							action.label
-						)
-					: sprintf(
-							/* translators: 1: an add-on action, such as "Add recipients"; 2: why it cannot be used now. */
-							__(
-								'%1$s (%2$s)',
-								'bulk-catalogue-manager-for-woocommerce'
-							),
-							action.label,
-							action.unavailableReason || ''
+	const listed = ( registry?.actions || [] ).filter(
+		( action ) =>
+			action.provider &&
+			action.row === true &&
+			( action.target || 'product' ) === 'product'
+	);
+	if ( listed.length > 1 ) {
+		return providerMenus( registry, listed ).map( ( menu ) => ( {
+			id: `provider-${ menu.key }`,
+			label: menuLabel( menu.label ),
+			isPrimary: false,
+			supportsBulk: false,
+			isEligible: ( item ) =>
+				menu.actions.some( ( action ) => rowEligible( action, item ) ),
+			modalHeader: menu.label,
+			modalSize: 'small',
+			modalFocusOnMount: 'firstContentElement',
+			RenderModal: ( { items, closeModal } ) => (
+				<ProviderMenuList
+					label={ menu.label }
+					actions={ menu.actions.filter( ( action ) =>
+						rowEligible( action, items?.[ 0 ] )
+					) }
+					onChoose={ ( action ) => {
+						closeModal?.();
+						if ( items?.length === 1 ) {
+							onChoose( action, items[ 0 ] );
+						}
+					} }
+				/>
+			),
+		} ) );
+	}
+	return listed.map( ( action ) => {
+		const usable = action.available !== false;
+		return {
+			id: `provider-${ action.id }`,
+			label: usable
+				? sprintf(
+						/* translators: %s: an add-on action, such as "Add recipients". */
+						__( '%s…', 'bulk-catalogue-manager-for-woocommerce' ),
+						action.label
+					)
+				: sprintf(
+						/* translators: 1: an add-on action, such as "Add recipients"; 2: why it cannot be used now. */
+						__(
+							'%1$s (%2$s)',
+							'bulk-catalogue-manager-for-woocommerce'
 						),
-				isPrimary: false,
-				supportsBulk: false,
-				disabled: ! usable,
-				isEligible: ( item ) =>
-					! item?.[ ROW.parentId ] ||
-					action.variations === 'per_variation',
-				callback: ( items ) => {
-					if ( usable && items.length === 1 ) {
-						onChoose( action, items[ 0 ] );
-					}
-				},
-			};
-		} );
+						action.label,
+						action.unavailableReason || ''
+					),
+			isPrimary: false,
+			supportsBulk: false,
+			disabled: ! usable,
+			isEligible: ( item ) => rowEligible( action, item ),
+			callback: ( items ) => {
+				if ( usable && items.length === 1 ) {
+					onChoose( action, items[ 0 ] );
+				}
+			},
+		};
+	} );
 }
 
 /**

@@ -40,7 +40,8 @@ import { moveCategory, updateCategory } from './requests';
 import SelectionPane from './selection-pane';
 import { joinPath, pathNames, searchMatches, visibleRows } from './tree-model';
 import useCategoryTree from './use-category-tree';
-import { categoryActions } from './workspace-actions';
+import { menuLabel } from '../../components/provider-menu';
+import { categoryActions, offeredCategoryActions } from './workspace-actions';
 import { syncProviderActions } from './provider-actions';
 import {
 	ancestorsOf,
@@ -298,13 +299,24 @@ export default function CategoriesTab( { settings } ) {
 	const moreActions = ( id ) => {
 		const group =
 			selected.length > 1 && selected.includes( id ) ? selected : [ id ];
-		return categoryActions( 1, { ids: [ id ], tree } ).map(
-			( registered ) => ( {
-				key: registered.key,
-				label: registered.label,
-				run: () =>
-					runAction( registered, registered.many ? group : [ id ] ),
-			} )
+		const item = ( registered ) => ( {
+			key: registered.key,
+			label: registered.label,
+			run: () =>
+				runAction( registered, registered.many ? group : [ id ] ),
+		} );
+		// 1.4.1: an add-on's actions sit in one item per group, opening a list.
+		return offeredCategoryActions(
+			categoryActions( 1, { ids: [ id ], tree } )
+		).map( ( offered ) =>
+			offered.menu
+				? {
+						key: offered.menu.key,
+						label: menuLabel( offered.menu.label ),
+						name: offered.menu.label,
+						items: offered.actions.map( item ),
+					}
+				: item( offered.action )
 		);
 	};
 

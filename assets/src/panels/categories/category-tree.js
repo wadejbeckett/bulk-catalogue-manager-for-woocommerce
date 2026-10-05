@@ -867,10 +867,13 @@ export default function CategoryTree( {
 }
 
 /**
- * A node's menu: a role="menu" list whose first item takes focus.
+ * A node's menu: a role="menu" list whose first item takes focus. An item
+ * with `items` (an add-on's group, 1.4.1) opens its own list in place —
+ * Enter, Space or Arrow Right — with "Back to all actions" first; Escape or
+ * Arrow Left goes back to the group's item.
  *
  * @param {Object}   props           Props.
- * @param {Array}    props.items     { key, label, run }.
+ * @param {Array}    props.items     { key, label, run } or { key, label, name, items }.
  * @param {string}   props.label     Accessible name.
  * @param {Function} props.onKeyDown Key handler.
  * @param {Function} props.onChoose  Called with the chosen item.
@@ -879,20 +882,85 @@ export default function CategoryTree( {
  */
 function MenuList( { items, label, onKeyDown, onChoose, onLeave } ) {
 	const ref = useRef();
+	const [ open, setOpen ] = useState( null );
+	// The group item to focus again after leaving its list.
+	const returnTo = useRef( null );
+	// Switching lists removes the focused item; that is not leaving the menu.
+	const switching = useRef( false );
+	const group = items.find( ( item ) => item.items && item.key === open );
 	useEffect( () => {
-		ref.current?.querySelector( '[role="menuitem"]' )?.focus();
-	}, [] );
+		const buttons = Array.from(
+			ref.current?.querySelectorAll( '[role="menuitem"]' ) || []
+		);
+		const back = returnTo.current;
+		returnTo.current = null;
+		( group
+			? buttons[ 1 ] || buttons[ 0 ]
+			: buttons.find( ( button ) => button.dataset.key === back ) ||
+				buttons[ 0 ]
+		)?.focus();
+		switching.current = false;
+	}, [ group ] );
+	const show = ( key ) => {
+		switching.current = true;
+		returnTo.current = open;
+		setOpen( key );
+	};
+	const shown = group
+		? [
+				{
+					key: 'back',
+					back: true,
+					label: __(
+						'Back to all actions',
+						'bulk-catalogue-manager-for-woocommerce'
+					),
+				},
+				...group.items,
+			]
+		: items;
+	const choose = ( item ) => {
+		if ( item.back ) {
+			show( null );
+		} else if ( item.items ) {
+			show( item.key );
+		} else {
+			onChoose( item );
+		}
+	};
 	return (
 		<div
 			ref={ ref }
 			className="bulkcat-cat-menu"
 			role="menu"
-			aria-label={ label }
+			aria-label={ group ? group.name : label }
 			tabIndex={ -1 }
-			onKeyDown={ onKeyDown }
+			onKeyDown={ ( event ) => {
+				if (
+					group &&
+					( event.key === 'Escape' || event.key === 'ArrowLeft' )
+				) {
+					event.preventDefault();
+					event.stopPropagation();
+					show( null );
+					return;
+				}
+				if (
+					! group &&
+					event.key === 'ArrowRight' &&
+					event.target?.getAttribute?.( 'aria-haspopup' )
+				) {
+					event.preventDefault();
+					event.stopPropagation();
+					show( event.target.dataset.key );
+					return;
+				}
+				onKeyDown( event );
+			} }
 			onBlur={ ( event ) => {
 				const to = event.relatedTarget;
 				if (
+					! switching.current &&
 					! event.currentTarget.contains( to ) &&
 					! to?.classList?.contains( 'bulkcat-cat-kebab' )
 				) {
@@ -900,13 +968,16 @@ function MenuList( { items, label, onKeyDown, onChoose, onLeave } ) {
 				}
 			} }
 		>
-			{ items.map( ( item ) => (
+			{ shown.map( ( item ) => (
 				<button
 					key={ item.key }
 					type="button"
 					role="menuitem"
 					tabIndex={ -1 }
-					onClick={ () => onChoose( item ) }
+					data-key={ item.key }
+					aria-haspopup={ item.items ? 'menu' : undefined }
+					className={ item.back ? 'is-back' : undefined }
+					onClick={ () => choose( item ) }
 				>
 					{ item.label }
 				</button>

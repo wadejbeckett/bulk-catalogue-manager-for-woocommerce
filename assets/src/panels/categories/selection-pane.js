@@ -9,6 +9,7 @@ import { __, _n, sprintf } from '@wordpress/i18n';
 
 import { GridLink } from './category-products';
 import { joinPath, pathNames } from './tree-model';
+import ActionButtons from './action-buttons';
 import { categoryActions } from './workspace-actions';
 import { catalogueParams } from './workspace-model';
 
@@ -86,18 +87,13 @@ export default function SelectionPane( {
 						) }
 					</Button>
 				) }
-				{ canManage &&
-					extra.map( ( action ) => (
-						<Button
-							key={ action.key }
-							variant="secondary"
-							size="compact"
-							isDestructive={ !! action.isDestructive }
-							onClick={ () => onAction( action, ids ) }
-						>
-							{ action.label }
-						</Button>
-					) ) }
+				{ canManage && (
+					<ActionButtons
+						actions={ extra }
+						ids={ ids }
+						onAction={ onAction }
+					/>
+				) }
 				<GridLink
 					params={ catalogueParams( ids ) }
 					navigate={ navigate }

@@ -10,6 +10,9 @@
  * An action is
  * `{ key, label, isDestructive?, many?, available?, Dialog | run, failure? }`:
  * - `label`: the button's text, already translated.
+ * - `menu`: `{ key, label }`, offer it inside that group's menu ("Sample
+ *   picks…") with the other actions of the same menu, not as a button of its
+ *   own (an add-on's actions, 1.4.1).
  * - `isDestructive`: draw it as a destructive action.
  * - `many`: also offer it for several chosen categories (default one only).
  * - `available( ids, tree )`: whether it applies to these categories (for
@@ -85,4 +88,30 @@ export function unregisterCategoryActions( prefix ) {
 			registered.splice( at, 1 );
 		}
 	}
+}
+
+/**
+ * Actions as the workspace offers them: each without a `menu` on its own,
+ * and those sharing a menu together, in the place of the first of them.
+ *
+ * @param {Array<Object>} actions Registered actions, in order.
+ * @return {Array<Object>} `{ action }` or `{ menu: { key, label }, actions }`.
+ */
+export function offeredCategoryActions( actions ) {
+	const offered = [];
+	actions.forEach( ( action ) => {
+		if ( ! action.menu?.key ) {
+			offered.push( { action } );
+			return;
+		}
+		const menu = offered.find(
+			( each ) => each.menu?.key === action.menu.key
+		);
+		if ( menu ) {
+			menu.actions.push( action );
+		} else {
+			offered.push( { menu: action.menu, actions: [ action ] } );
+		}
+	} );
+	return offered;
 }

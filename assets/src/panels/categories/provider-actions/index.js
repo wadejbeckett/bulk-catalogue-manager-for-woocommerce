@@ -3,11 +3,13 @@
  * version 2, category target): each action `/fields` advertises with
  * `target: product_cat` is registered in the workspace's action slot
  * (workspace-actions.js), for one category and for several, so the details
- * pane, the selection pane and the tree row's menu offer it alike. With no
- * such add-on nothing is registered and the workspace is as before.
+ * pane, the selection pane and the tree row's menu offer it alike, inside
+ * one menu per add-on group (1.4.1). With no such add-on nothing is
+ * registered and the workspace is as before.
  */
 import { createElement } from '@wordpress/element';
 
+import { menuOf } from '../../../components/provider-menu';
 import {
 	registerCategoryAction,
 	unregisterCategoryActions,
@@ -34,6 +36,8 @@ export function syncProviderActions( registry, settings ) {
 		registerCategoryAction( {
 			key: KEY_PREFIX + action.id,
 			label: action.label,
+			// 1.4.1: offered in its group's menu, never as a button of its own.
+			menu: menuOf( registry, action ),
 			many: true,
 			Dialog: ( props ) =>
 				createElement( ProviderActionDialog, {

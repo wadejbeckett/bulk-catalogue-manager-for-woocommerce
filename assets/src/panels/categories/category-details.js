@@ -22,6 +22,7 @@ import CategoryProducts from './category-products';
 import ErrorNotice, { errorMessage } from './error-notice';
 import { fetchCategory, updateCategory } from './requests';
 import { joinPath, lineage, pathNames } from './tree-model';
+import ActionButtons from './action-buttons';
 import { categoryActions } from './workspace-actions';
 
 /**
@@ -508,18 +509,12 @@ export default function CategoryDetails( {
 							) }
 						</Button>
 					) }
-					{ /* Actions from their own modules (Delete, Merge into…): workspace-actions.js. */ }
-					{ extra.map( ( action ) => (
-						<Button
-							key={ action.key }
-							variant="secondary"
-							size="compact"
-							isDestructive={ !! action.isDestructive }
-							onClick={ () => onAction( action, [ id ] ) }
-						>
-							{ action.label }
-						</Button>
-					) ) }
+					{ /* Actions from their own modules (Delete, Merge into…, an add-on's group menus): workspace-actions.js. */ }
+					<ActionButtons
+						actions={ extra }
+						ids={ [ id ] }
+						onAction={ onAction }
+					/>
 				</div>
 			) : (
 				<p className="bulkcat-cat-readonly">

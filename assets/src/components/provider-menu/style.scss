@@ -1,0 +1,13 @@
+// An add-on's group of actions as one menu button (1.4.1).
+.bulkcat-provider-menu {
+	display: inline-flex;
+}
+
+.bulkcat-provider-menu__list .components-menu-item__button {
+	height: auto;
+	min-height: 40px;
+}
+
+.bulkcat-provider-menu__list .components-menu-item__info {
+	white-space: normal;
+}

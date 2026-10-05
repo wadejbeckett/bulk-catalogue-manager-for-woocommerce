@@ -345,6 +345,20 @@ $bulkcat-bad: #d63638;
 			outline: 2px solid $bulkcat-accent;
 			outline-offset: -2px;
 		}
+
+		// 1.4.1: an add-on's group opens its own list; Back leads out of it.
+		&[aria-haspopup]::after {
+			content: "›";
+			float: right;
+			margin-left: 8px;
+		}
+
+		&.is-back {
+			margin-bottom: 4px;
+			border-bottom: 1px solid $bulkcat-rule;
+			border-radius: 0;
+			color: $bulkcat-ink-3;
+		}
 	}
 }
 

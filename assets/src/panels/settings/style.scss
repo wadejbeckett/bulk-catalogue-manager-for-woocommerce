@@ -30,8 +30,17 @@
 	line-height: 40px;
 }
 
+// Ticket 19: the days field sits under its choice, aligned with the radio labels.
+.bulkcat-settings__special {
+	display: grid;
+	gap: 8px;
+	align-items: start;
+}
+
 .bulkcat-settings__special .bulkcat-settings__number {
-	margin-top: 8px;
+	margin-top: 0;
+	margin-left: 24px;
+	max-width: calc(100% - 24px);
 }
 
 .bulkcat-settings__error {

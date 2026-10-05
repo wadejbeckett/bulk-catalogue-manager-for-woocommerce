@@ -305,7 +305,9 @@ final class Registry {
 				],
 				variation_note: $per_product( $catalogue_visibility ),
 				filter_operators: [ 'isAny', 'isNone' ],
-				hiding_choices: [ 'hidden' => Field::HIDES_FROM_SHOP ]
+				hiding_choices: [ 'hidden' => Field::HIDES_FROM_SHOP ],
+				// Ticket 19: both listing presentations follow Status in a new layout.
+				default_order: 6
 			),
 			new Field(
 				key: 'visible_on_site',
@@ -328,7 +330,8 @@ final class Registry {
 				write_choices: [ 'on', 'off' ],
 				variation_note: $per_product( $visible_on_site ),
 				adapter: Field::ADAPTER_SWITCH,
-				hiding_choices: [ 'off' => Field::HIDES_FROM_SHOP ]
+				hiding_choices: [ 'off' => Field::HIDES_FROM_SHOP ],
+				default_order: 7
 			),
 			new Field(
 				key: 'featured',

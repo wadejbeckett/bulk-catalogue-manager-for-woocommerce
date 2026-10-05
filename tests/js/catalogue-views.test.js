@@ -713,8 +713,8 @@ describe( 'layouts', () => {
 		).toEqual( [ 'switch 11', 'switch 12' ] );
 
 		const fields = fieldsFromRegistry( REGISTRY );
-		// A view without the switch still gets the slot (T93: the default
-		// view has none), and one with it keeps its own place.
+		// A view without the switch still gets the slot, and one with it
+		// keeps its own place (ticket 19: the default view now has it).
 		const without = {
 			...BASE,
 			fields: BASE.fields.filter( ( key ) => key !== 'visible_on_site' ),
@@ -723,7 +723,7 @@ describe( 'layouts', () => {
 			...BASE,
 			fields: [ ...without.fields, 'visible_on_site' ],
 		};
-		expect( without.fields ).toEqual( BASE.fields );
+		expect( BASE.fields ).toContain( 'visible_on_site' );
 		const { view, added } = gridOf( fields, without, renderSwitch );
 		expect( added ).toBe( 'visible_on_site' );
 		expect( view.fields ).toEqual( [

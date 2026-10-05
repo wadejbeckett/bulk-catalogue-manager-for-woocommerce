@@ -171,12 +171,24 @@ final class BaselineRows {
 	public static function views(): array {
 		$registry = new Registry();
 		$fields   = array_filter( $registry->all(), static fn( Field $field ): bool => Field::IMAGE !== $field->type() );
-		$defaults = array_filter( $registry->to_client(), static fn( array $field ): bool => true === $field['defaultColumn'] && 'image' !== $field['type'] );
-		usort( $defaults, static fn( array $a, array $b ): int => (int) $a['defaultOrder'] <=> (int) $b['defaultOrder'] );
 		return [
 			'all'     => array_keys( $fields ),
-			'default' => array_values( array_unique( [ 'name', ...array_column( $defaults, 'key' ) ] ) ),
+			// The columns the default golden was recorded with (B24): fixed, so the
+			// golden pins the CSV byte format, not the screen's current default columns.
+			'default' => [ 'name', 'sku', 'category_ids', 'regular_price', 'stock_status', 'status' ],
 		];
+	}
+
+	/**
+	 * The screen's default columns today: the product cell, then every
+	 * default column in its order.
+	 *
+	 * @return list<string>
+	 */
+	public static function screen_default(): array {
+		$defaults = array_filter( ( new Registry() )->to_client(), static fn( array $field ): bool => true === $field['defaultColumn'] && 'image' !== $field['type'] );
+		usort( $defaults, static fn( array $a, array $b ): int => (int) $a['defaultOrder'] <=> (int) $b['defaultOrder'] );
+		return array_values( array_unique( [ 'name', ...array_column( $defaults, 'key' ) ] ) );
 	}
 
 	/**

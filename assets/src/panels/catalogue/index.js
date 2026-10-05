@@ -341,7 +341,21 @@ export function CatalogueGrid( {
 				: current
 		);
 	}, [ personal, known ] );
-	const displayMemory = useRememberDisplay( view, personalRead, personal );
+	const displayMemory = useRememberDisplay(
+		view,
+		personalRead,
+		personal,
+		known
+	);
+	// A display change the user makes; the screen's own changes use setView.
+	const { touch: touchDisplay } = displayMemory;
+	const changeView = useCallback(
+		( next ) => {
+			touchDisplay();
+			setView( next );
+		},
+		[ touchDisplay ]
+	);
 	const [ category, setCategory ] = useState( null );
 	const [ sentence, setSentence ] = useState( '' );
 	// T41, T42: the bulk panel opens on the selection, with any quick action's step.
@@ -500,12 +514,15 @@ export function CatalogueGrid( {
 				: next;
 			if ( how.opening ) {
 				ownDisplay.current = displayOf( shown );
+			} else {
+				// An explicitly chosen view: its display becomes the user's own.
+				touchDisplay();
 			}
 			setView( shown );
 			setCategory( value || null );
 			setSentence( value ? categorySentence( value, byId ) : '' );
 		},
-		[ byId, personal, known ]
+		[ byId, personal, known, touchDisplay ]
 	);
 	// T51: the cards' Shown in shop and search slot draws the switch field's own cell.
 	const renderSwitch = useMemo( () => {
@@ -667,10 +684,13 @@ export function CatalogueGrid( {
 						onReady={ onViewsReady }
 					/>
 					<div className="bulkcat-catalogue__toolbar">
-						<LayoutSwitch view={ view } onChangeView={ setView } />
+						<LayoutSwitch
+							view={ view }
+							onChangeView={ changeView }
+						/>
 						<PageSizeControl
 							view={ view }
-							onChangeView={ setView }
+							onChangeView={ changeView }
 						/>
 						{ shell.exportSlot
 							? createPortal( exportControl, shell.exportSlot )
@@ -764,7 +784,7 @@ export function CatalogueGrid( {
 					renderSwitch={ renderSwitch }
 					fields={ filterFields }
 					view={ view }
-					onChangeView={ setView }
+					onChangeView={ changeView }
 					items={ catalogue.items }
 					pagination={ catalogue.pagination }
 					isLoading={ catalogue.isLoading }

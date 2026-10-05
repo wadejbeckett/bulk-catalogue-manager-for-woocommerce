@@ -360,6 +360,38 @@ describe( 'workspace category actions: panes and row menu', () => {
 		expect( posts ).toEqual( [ { ids: [ 6 ], preview: true } ] );
 	} );
 
+	it( 'opens Merge into… with nothing chosen and nothing checked, so no refusal shows before a choice (1.3.4)', async () => {
+		await renderTab();
+		fireEvent.click( rowOf( 'Pots' ) );
+		const pane = await screen.findByRole( 'region', { name: 'Pots' } );
+		fireEvent.click(
+			within( pane ).getByRole( 'button', { name: 'Merge into…' } )
+		);
+		const dialog = await screen.findByRole( 'dialog', {
+			name: 'Merge this category into another',
+		} );
+		const select = within( dialog ).getByLabelText( 'Merge into' );
+		expect( select.value ).toBe( '' );
+		expect(
+			within( dialog ).getByText( 'Choose the category to merge into.' )
+		).toBeTruthy();
+		expect( within( dialog ).queryByRole( 'alert' ) ).toBeNull();
+		expect( dialog.textContent ).not.toContain(
+			'Checking what this would change'
+		);
+		expect( posts ).toEqual( [] );
+		expect(
+			within( dialog )
+				.getByRole( 'button', { name: 'Merge' } )
+				.getAttribute( 'aria-disabled' )
+		).toBe( 'true' );
+		fireEvent.change( select, { target: { value: '3' } } );
+		await within( dialog ).findByText(
+			'3 products move into Kitchen › Pans.'
+		);
+		expect( posts ).toEqual( [ { ids: [ 2 ], into: 3, preview: true } ] );
+	} );
+
 	it( 'merges from the row menu of one of several chosen, keeping the target chosen', async () => {
 		await renderTab();
 		fireEvent.click( rowOf( 'Pots' ) );

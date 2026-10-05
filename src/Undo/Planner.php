@@ -660,7 +660,8 @@ final class Planner {
 				return self::skipped( $object_id, $type, self::CANNOT_RESTORE, __( 'One of the values this batch changed can no longer be changed here, so this product was left alone.', 'bulk-catalogue-manager-for-woocommerce' ) );
 			}
 			$current = $field->read( $subject );
-			if ( ! self::same( $field, $current, $values['expected'] ) ) {
+			// A value already back to what the undo restores (a cancelled undo put it back, ENGINE-11) is not a change made since.
+			if ( ! self::same( $field, $current, $values['expected'] ) && ! self::same( $field, $current, $values['target'] ) ) {
 				$conflicts[] = [
 					'field'    => $key,
 					'expected' => $values['expected'],

@@ -55,9 +55,16 @@ click takes the rows between (`workspace-model.js` `nextSelection()`).
   and counts, each removable), **Move to…** (`move-many-dialog.js`: each
   chosen category not inside another chosen one goes to the end of the new
   parent) and *Show their products in the product grid*.
-- Further actions (deleting, merging) live in their own modules and register
-  through `workspace-actions.js` `registerCategoryAction()`; the panes draw a
-  button for each and the tab opens its dialog.
+- Further actions live in their own modules and register through
+  `workspace-actions.js` `registerCategoryAction()`; the panes draw a button
+  for each, the tree row's menu offers the same ones, and the tab opens its
+  dialog (or runs it at once, for an action with `run`). `category-actions.js`
+  registers **Make default** (one category, not the current default),
+  **Delete…** and **Merge into…** (one or several, never the default, which
+  WooCommerce does not delete; `delete-dialog.js` states the consequences).
+  After a delete the pane clears; after a merge the target is chosen; each is
+  announced and the tree read again. The default category carries a
+  **Default** badge in the tree, the details and the selection.
 - A confirmed creation is revealed, highlighted and chosen when the tree
   read returns it (`tree.creation.phase === 'visible'`).
 

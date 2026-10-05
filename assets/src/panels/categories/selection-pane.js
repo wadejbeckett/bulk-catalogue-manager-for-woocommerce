@@ -46,7 +46,7 @@ export default function SelectionPane( {
 		),
 		ids.length
 	);
-	const extra = categoryActions( ids.length );
+	const extra = categoryActions( ids.length, { ids, tree } );
 	return (
 		<section
 			className="bulkcat-cat-pane is-selection"
@@ -125,6 +125,14 @@ export default function SelectionPane( {
 							<span className="bulkcat-cat-chosen__path">
 								{ joinPath( pathNames( tree.byId, id ) ) }
 							</span>
+							{ entry.node.default && (
+								<span className="bulkcat-cat-default">
+									{ __(
+										'Default',
+										'bulk-catalogue-manager-for-woocommerce'
+									) }
+								</span>
+							) }
 							<span className="bulkcat-cat-chosen__count">
 								{ sprintf(
 									/* translators: %s: how many products a category holds with its subcategories. */

@@ -234,7 +234,7 @@ export default function CategoryDetails( {
 	const headingId = `bulkcat-cat-pane-${ id }`;
 	const labels = displayLabels();
 	const description = tree.descriptions?.get( id ) ?? node.description ?? '';
-	const extra = categoryActions( 1 );
+	const extra = categoryActions( 1, { ids: [ id ], tree } );
 
 	const facts = [
 		{
@@ -407,9 +407,24 @@ export default function CategoryDetails( {
 						/>
 					</>
 				) : (
-					<h2 id={ headingId } className="bulkcat-cat-pane__title">
+					<h2
+						id={ headingId }
+						className={
+							node.default
+								? 'bulkcat-cat-pane__title has-badge'
+								: 'bulkcat-cat-pane__title'
+						}
+					>
 						{ node.name }
 					</h2>
+				) }
+				{ node.default && (
+					<span className="bulkcat-cat-default">
+						{ __(
+							'Default',
+							'bulk-catalogue-manager-for-woocommerce'
+						) }
+					</span>
 				) }
 			</div>
 			{ canManage ? (
@@ -500,6 +515,14 @@ export default function CategoryDetails( {
 				<p className="bulkcat-cat-readonly">
 					{ __(
 						'You can browse categories and their products, but changing them needs permission to manage product categories.',
+						'bulk-catalogue-manager-for-woocommerce'
+					) }
+				</p>
+			) }
+			{ node.default && (
+				<p className="bulkcat-cat-pane__hint">
+					{ __(
+						'This is the shop’s default category: products left without a category are put in it. WooCommerce never deletes it, so it cannot be deleted or merged; make another category the default first.',
 						'bulk-catalogue-manager-for-woocommerce'
 					) }
 				</p>

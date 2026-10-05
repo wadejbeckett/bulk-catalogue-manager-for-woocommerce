@@ -246,6 +246,15 @@ $ws-new-edge: #dba617;
 		font-weight: 600;
 		line-height: 1.3;
 		overflow-wrap: anywhere;
+
+		// The Default badge sits beside the name, not at the far edge.
+		&.has-badge {
+			flex: 0 1 auto;
+
+			+ .bulkcat-cat-default {
+				margin-right: auto;
+			}
+		}
 	}
 
 	&__thumb {

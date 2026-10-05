@@ -1183,7 +1183,7 @@ describe( 'undo flow', () => {
 		expect( within( table ).getByText( 'Out of stock' ) ).toBeTruthy();
 		expect( within( table ).queryByText( 'Plain Tee' ) ).toBeNull();
 		expect(
-			two.getByRole( 'button', { name: 'Undo all 120 anyway' } )
+			two.getByRole( 'button', { name: 'Revert anyway' } )
 		).toBeTruthy();
 
 		// The safe choice: force stays off.
@@ -1219,7 +1219,7 @@ describe( 'undo flow', () => {
 		);
 	} );
 
-	it( 'sends force only when the owner chooses to undo all anyway', async () => {
+	it( 'sends force only when the owner chooses Revert anyway', async () => {
 		const plan = {
 			...PLAN,
 			counts: { revertible: 117, conflicted: 3, skipped: 0 },
@@ -1236,9 +1236,7 @@ describe( 'undo flow', () => {
 		await act( async () =>
 			fireEvent.click( two.getByRole( 'button', { name: 'Undo' } ) )
 		);
-		fireEvent.click(
-			two.getByRole( 'button', { name: 'Undo all 120 anyway' } )
-		);
+		fireEvent.click( two.getByRole( 'button', { name: 'Revert anyway' } ) );
 		const dialog = await screen.findByRole( 'dialog' );
 		expect(
 			within( dialog ).getByText(

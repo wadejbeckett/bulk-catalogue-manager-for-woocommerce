@@ -26,6 +26,8 @@ import { __, _n, sprintf } from '@wordpress/i18n';
 import { ShellContext } from '../../shell';
 import { useRegistry } from '../catalogue/use-catalogue';
 import { announce } from './announce';
+// Registers Make default, Delete… and Merge into… in the action slot.
+import './category-actions';
 import CategoryDetails from './category-details';
 import CategoryManager from './category-manager';
 import { canManageTerms } from './category-panel';
@@ -38,6 +40,7 @@ import { moveCategory, updateCategory } from './requests';
 import SelectionPane from './selection-pane';
 import { joinPath, pathNames, searchMatches, visibleRows } from './tree-model';
 import useCategoryTree from './use-category-tree';
+import { categoryActions } from './workspace-actions';
 import {
 	ancestorsOf,
 	branchIds,
@@ -265,6 +268,40 @@ export default function CategoriesTab( { settings } ) {
 		}
 	};
 
+	// A registered action (workspace-actions.js): its dialog, or at once.
+	const runAction = async ( chosenAction, ids ) => {
+		if ( chosenAction.Dialog ) {
+			setAction( { action: chosenAction, ids } );
+			return;
+		}
+		setFailure( null );
+		try {
+			const sentence = await chosenAction.run( { ids, tree } );
+			tree.reload();
+			if ( sentence ) {
+				announce( sentence );
+			}
+		} catch ( error ) {
+			fail( error, chosenAction.failure );
+		}
+	};
+
+	// The row menu offers what the panes offer: the actions available for
+	// the row's category, on every chosen category when the row is one of
+	// several chosen and the action is offered for many.
+	const moreActions = ( id ) => {
+		const group =
+			selected.length > 1 && selected.includes( id ) ? selected : [ id ];
+		return categoryActions( 1, { ids: [ id ], tree } ).map(
+			( registered ) => ( {
+				key: registered.key,
+				label: registered.label,
+				run: () =>
+					runAction( registered, registered.many ? group : [ id ] ),
+			} )
+		);
+	};
+
 	const added = ( item ) => {
 		const complete = Number.isInteger( item?.id ) && item.id > 0;
 		setIncompleteCreation( ! complete );
@@ -294,9 +331,7 @@ export default function CategoriesTab( { settings } ) {
 				}
 				onClear={ () => setChosen( [] ) }
 				onMove={ () => setMoving( selected ) }
-				onAction={ ( chosenAction, ids ) =>
-					setAction( { action: chosenAction, ids } )
-				}
+				onAction={ runAction }
 			/>
 		);
 	} else if ( selected.length === 1 ) {
@@ -312,9 +347,7 @@ export default function CategoriesTab( { settings } ) {
 				onSelect={ chooseOnly }
 				onMove={ ( id ) => setMoving( [ id ] ) }
 				onAdd={ ( id ) => setAdding( { parentId: id } ) }
-				onAction={ ( chosenAction, ids ) =>
-					setAction( { action: chosenAction, ids } )
-				}
+				onAction={ runAction }
 				edit={ settings?.categoryEdit || null }
 			/>
 		);
@@ -538,6 +571,7 @@ export default function CategoriesTab( { settings } ) {
 								setMode( 'edit' );
 							} }
 							onMoveDialog={ ( id ) => setMoving( [ id ] ) }
+							moreActions={ canManage ? moreActions : undefined }
 						/>
 					) }
 				</section>
@@ -591,7 +625,10 @@ export default function CategoriesTab( { settings } ) {
 					onClose={ () => setAction( null ) }
 					onDone={ ( keep = [] ) => {
 						setAction( null );
+						reveal( keep );
+						anchor.current = keep[ 0 ] ?? null;
 						setChosen( keep );
+						setMode( 'view' );
 						tree.reload();
 					} }
 				/>

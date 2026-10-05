@@ -3,7 +3,7 @@
  * preview first (POST /batches/{id}/undo with `preview: true`), then a plain
  * confirmation sentence, then the durable undo: a `batch.undo` grant from
  * POST /requests over the batch, the preview's `plan_hash` and `force`
- * (**Revert anyway**, off unless the owner chose "Undo all anyway"), sent to
+ * (**Revert anyway**, off unless the owner chose it), sent to
  * POST /batches/{id}/undo. A retry of the same undo sends the same grant, so
  * it can only happen once.
  */

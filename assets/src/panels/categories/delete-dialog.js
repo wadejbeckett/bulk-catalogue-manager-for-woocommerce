@@ -112,11 +112,19 @@ export function consequences( preview, into ) {
  * @param {Object}        props.tree    useCategoryTree() result.
  * @param {Array<number>} props.ids     The categories chosen.
  * @param {boolean}       props.merge   Merge into… rather than Delete….
+ * @param {string}        props.notice  A sentence shown under the list, or null.
  * @param {Function}      props.onDone  Called with ( answer, into ) after it ran.
  * @param {Function}      props.onClose Close it.
  * @return {Element} Dialog.
  */
-export default function DeleteDialog( { tree, ids, merge, onDone, onClose } ) {
+export default function DeleteDialog( {
+	tree,
+	ids,
+	merge,
+	notice = null,
+	onDone,
+	onClose,
+} ) {
 	const options = useMemo(
 		() => ( merge ? targetOptions( tree.byId, ids ) : [] ),
 		[ merge, tree.byId, ids ]
@@ -185,6 +193,7 @@ export default function DeleteDialog( { tree, ids, merge, onDone, onClose } ) {
 					<li key={ ids[ index ] }>{ name }</li>
 				) ) }
 			</ul>
+			{ notice && <p>{ notice }</p> }
 			{ merge && (
 				<SelectControl
 					__next40pxDefaultSize

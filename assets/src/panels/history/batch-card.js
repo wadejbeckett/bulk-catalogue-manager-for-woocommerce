@@ -692,13 +692,10 @@ export default function BatchCard( {
 							size="small"
 							onClick={ () => setConfirm( { force: true } ) }
 						>
-							{ sprintf(
-								/* translators: %s: number of products, such as "120". */
-								__(
-									'Undo all %s anyway',
-									'bulk-catalogue-manager-for-woocommerce'
-								),
-								( revertible + conflicted ).toLocaleString()
+							{ /* The same words as the sentence above it and the guide. */ }
+							{ __(
+								'Revert anyway',
+								'bulk-catalogue-manager-for-woocommerce'
 							) }
 						</Button>
 						<Button variant="link" onClick={ cancelUndo }>

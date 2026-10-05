@@ -31,11 +31,12 @@ final class Manifest {
 	/**
 	 * The manifest of a change's steps, all of one provider.
 	 *
-	 * @param Registered   $provider   The provider.
-	 * @param array<mixed> $operations The normalised steps.
+	 * @param Registered                                          $provider   The provider.
+	 * @param array<mixed>                                        $operations The normalised steps.
+	 * @param array<string, array<string, array<string, string>>> $choices    Resolved lookup labels, action => argument => id => label (the binding's `choices`; docs/EXTENSIONS-v2.md §4.5).
 	 * @return array<string, array<string, mixed>>
 	 */
-	public static function build( Registered $provider, array $operations ): array {
+	public static function build( Registered $provider, array $operations, array $choices = [] ): array {
 		$fields  = [];
 		$actions = [];
 		foreach ( $operations as $step ) {
@@ -52,15 +53,26 @@ final class Manifest {
 				$actions[ $described['id'] ] = $described['label'];
 			}
 		}
-		return [
-			$provider->id => [
-				'label'    => $provider->label,
-				'version'  => $provider->version,
-				'contract' => $provider->contract,
-				'fields'   => $fields,
-				'actions'  => $actions,
-			],
+		$entry = [
+			'label'    => $provider->label,
+			'version'  => $provider->version,
+			'contract' => $provider->contract,
+			'fields'   => $fields,
+			'actions'  => $actions,
 		];
+		unset( $choices['_refused'] );
+		$kept = [];
+		foreach ( $choices as $action => $arguments ) {
+			foreach ( is_array( $arguments ) ? $arguments : [] as $argument => $labels ) {
+				if ( '_refused' !== $argument && is_array( $labels ) ) {
+					$kept[ (string) $action ][ (string) $argument ] = array_map( static fn( mixed $label ): string => Text::plain( $label, Text::LABEL ), $labels );
+				}
+			}
+		}
+		if ( [] !== $kept ) {
+			$entry['choices'] = $kept;
+		}
+		return [ $provider->id => $entry ];
 	}
 
 	/**
@@ -128,15 +140,26 @@ final class Manifest {
 	 * provider's id and label, and the labels of the actions and fields its
 	 * steps used, so History reads them after the add-on has gone.
 	 *
-	 * @param array<string, mixed> $manifest A batch's manifest.
-	 * @return array{providers: list<array{id: string, label: string}>, actions: array<string, string>, fields: array<string, string>}
+	 * Contract version 2: `choices` (action => argument => id => label) when
+	 * the manifest kept lookup labels, holding only the ids the given steps
+	 * show, so a reader who may not see a step's arguments sees none of
+	 * their labels (docs/EXTENSIONS-v2.md §4.5).
+	 *
+	 * @param array<string, mixed>     $manifest   A batch's manifest.
+	 * @param array<mixed>|null        $operations The steps as disclosed to this reader.
+	 * @return array{providers: list<array{id: string, label: string}>, actions: array<string, string>, fields: array<string, string>, choices?: array<string, array<string, array<string, string>>>}
 	 */
-	public static function client( array $manifest ): array {
+	public static function client( array $manifest, ?array $operations = null ): array {
 		$client = [
 			'providers' => [],
 			'actions'   => [],
 			'fields'    => [],
 		];
+		foreach ( $manifest as $entry ) {
+			if ( is_array( $entry ) && is_array( $entry['choices'] ?? null ) ) {
+				$client['choices'] = self::shown( $entry['choices'], $operations ?? [] ) + ( $client['choices'] ?? [] );
+			}
+		}
 		foreach ( $manifest as $id => $entry ) {
 			$client['providers'][] = [
 				'id'    => (string) $id,
@@ -150,6 +173,31 @@ final class Manifest {
 			}
 		}
 		return $client;
+	}
+
+	/**
+	 * The kept labels of the ids the steps show.
+	 *
+	 * @param array<mixed> $choices    action => argument => id => label.
+	 * @param array<mixed> $operations Disclosed steps.
+	 * @return array<string, array<string, array<string, string>>>
+	 */
+	private static function shown( array $choices, array $operations ): array {
+		$shown = [];
+		foreach ( $operations as $step ) {
+			$action = is_array( $step ) ? (string) ( $step['action'] ?? '' ) : '';
+			foreach ( (array) ( $choices[ $action ] ?? [] ) as $argument => $labels ) {
+				if ( ! is_array( $labels ) || ! array_key_exists( $argument, (array) ( $step['args'] ?? [] ) ) ) {
+					continue;
+				}
+				foreach ( (array) $step['args'][ $argument ] as $id ) {
+					if ( is_string( $id ) && isset( $labels[ $id ] ) ) {
+						$shown[ $action ][ (string) $argument ][ $id ] = Text::plain( $labels[ $id ], Text::LABEL );
+					}
+				}
+			}
+		}
+		return $shown;
 	}
 
 	/**

@@ -1,0 +1,2873 @@
+{
+    "fields": [
+        {
+            "key": "name",
+            "label": "Name",
+            "type": "text",
+            "readOnly": false,
+            "nullable": false,
+            "inline": false,
+            "editKinds": [
+                "set",
+                "find_replace"
+            ],
+            "variations": "derived",
+            "variationNote": "A variation takes its name from its product and its attributes, so it cannot be changed here.",
+            "variableParentNote": "",
+            "sortable": true,
+            "defaultColumn": false,
+            "defaultOrder": null,
+            "schema": {
+                "description": "Name",
+                "type": "string",
+                "maxLength": 200,
+                "context": [
+                    "view",
+                    "edit"
+                ],
+                "readonly": false
+            },
+            "dataviews": {
+                "id": "name",
+                "label": "Name",
+                "type": "text",
+                "enableSorting": true,
+                "enableHiding": false,
+                "readOnly": false,
+                "filterBy": false
+            },
+            "group": "organisation",
+            "maxLength": 200
+        },
+        {
+            "key": "status",
+            "label": "Status",
+            "type": "enum",
+            "readOnly": false,
+            "nullable": false,
+            "inline": true,
+            "editKinds": [
+                "set"
+            ],
+            "variations": "conditional",
+            "variationNote": "A variation can only be published or private.",
+            "variableParentNote": "",
+            "sortable": false,
+            "defaultColumn": true,
+            "defaultOrder": 5,
+            "schema": {
+                "description": "Status",
+                "type": "string",
+                "enum": [
+                    "publish",
+                    "future",
+                    "draft",
+                    "pending",
+                    "private"
+                ],
+                "context": [
+                    "view",
+                    "edit"
+                ],
+                "readonly": false
+            },
+            "dataviews": {
+                "id": "status",
+                "label": "Status",
+                "type": "text",
+                "enableSorting": false,
+                "enableHiding": true,
+                "readOnly": false,
+                "filterBy": {
+                    "operators": [
+                        "isAny",
+                        "isNone"
+                    ]
+                },
+                "elements": [
+                    {
+                        "value": "publish",
+                        "label": "Published"
+                    },
+                    {
+                        "value": "future",
+                        "label": "Scheduled"
+                    },
+                    {
+                        "value": "draft",
+                        "label": "Draft"
+                    },
+                    {
+                        "value": "pending",
+                        "label": "Pending Review"
+                    },
+                    {
+                        "value": "private",
+                        "label": "Private"
+                    }
+                ]
+            },
+            "choices": [
+                {
+                    "value": "publish",
+                    "label": "Published",
+                    "hidesProduct": false,
+                    "hidesAs": null
+                },
+                {
+                    "value": "future",
+                    "label": "Scheduled",
+                    "hidesProduct": true,
+                    "hidesAs": "off_site"
+                },
+                {
+                    "value": "draft",
+                    "label": "Draft",
+                    "hidesProduct": true,
+                    "hidesAs": "off_site"
+                },
+                {
+                    "value": "pending",
+                    "label": "Pending Review",
+                    "hidesProduct": true,
+                    "hidesAs": "off_site"
+                },
+                {
+                    "value": "private",
+                    "label": "Private",
+                    "hidesProduct": false,
+                    "hidesAs": null
+                }
+            ],
+            "writableChoices": [
+                "publish",
+                "draft",
+                "pending",
+                "private"
+            ],
+            "variationChoices": [
+                "publish",
+                "private"
+            ],
+            "variationOnlyChoices": [],
+            "group": "publishing",
+            "nativeStatus": true,
+            "legacyFilterChoices": [
+                {
+                    "value": "off",
+                    "label": "Off (legacy status filter)"
+                },
+                {
+                    "value": "changed_outside",
+                    "label": "Changed outside this screen (legacy status filter)"
+                }
+            ]
+        },
+        {
+            "key": "catalog_visibility",
+            "label": "Catalogue visibility",
+            "type": "enum",
+            "readOnly": false,
+            "nullable": false,
+            "inline": false,
+            "editKinds": [
+                "set"
+            ],
+            "variations": "parent_only",
+            "variationNote": "Catalogue visibility belongs to the product, not to each variation.",
+            "variableParentNote": "",
+            "sortable": false,
+            "defaultColumn": true,
+            "defaultOrder": 6,
+            "schema": {
+                "description": "Catalogue visibility",
+                "type": "string",
+                "enum": [
+                    "visible",
+                    "catalog",
+                    "search",
+                    "hidden"
+                ],
+                "context": [
+                    "view",
+                    "edit"
+                ],
+                "readonly": false
+            },
+            "dataviews": {
+                "id": "catalog_visibility",
+                "label": "Catalogue visibility",
+                "type": "text",
+                "enableSorting": false,
+                "enableHiding": true,
+                "readOnly": false,
+                "filterBy": {
+                    "operators": [
+                        "isAny",
+                        "isNone"
+                    ]
+                },
+                "elements": [
+                    {
+                        "value": "visible",
+                        "label": "Shop and search results"
+                    },
+                    {
+                        "value": "catalog",
+                        "label": "Shop only"
+                    },
+                    {
+                        "value": "search",
+                        "label": "Search results only"
+                    },
+                    {
+                        "value": "hidden",
+                        "label": "Hidden"
+                    }
+                ]
+            },
+            "choices": [
+                {
+                    "value": "visible",
+                    "label": "Shop and search results",
+                    "hidesProduct": false,
+                    "hidesAs": null
+                },
+                {
+                    "value": "catalog",
+                    "label": "Shop only",
+                    "hidesProduct": false,
+                    "hidesAs": null
+                },
+                {
+                    "value": "search",
+                    "label": "Search results only",
+                    "hidesProduct": false,
+                    "hidesAs": null
+                },
+                {
+                    "value": "hidden",
+                    "label": "Hidden",
+                    "hidesProduct": true,
+                    "hidesAs": "hidden"
+                }
+            ],
+            "writableChoices": [
+                "visible",
+                "catalog",
+                "search",
+                "hidden"
+            ],
+            "variationChoices": [
+                "visible",
+                "catalog",
+                "search",
+                "hidden"
+            ],
+            "variationOnlyChoices": [],
+            "group": "publishing"
+        },
+        {
+            "key": "visible_on_site",
+            "label": "Shown in shop and search",
+            "type": "enum",
+            "readOnly": false,
+            "nullable": false,
+            "inline": true,
+            "editKinds": [
+                "set"
+            ],
+            "variations": "parent_only",
+            "variationNote": "Shown in shop and search belongs to the product, not to each variation.",
+            "variableParentNote": "",
+            "sortable": false,
+            "defaultColumn": true,
+            "defaultOrder": 7,
+            "schema": {
+                "description": "Shown in shop and search",
+                "type": "string",
+                "enum": [
+                    "on",
+                    "off",
+                    "partly"
+                ],
+                "context": [
+                    "view",
+                    "edit"
+                ],
+                "readonly": false
+            },
+            "dataviews": {
+                "id": "visible_on_site",
+                "label": "Shown in shop and search",
+                "type": "text",
+                "enableSorting": false,
+                "enableHiding": true,
+                "readOnly": false,
+                "filterBy": false,
+                "elements": [
+                    {
+                        "value": "on",
+                        "label": "Shown"
+                    },
+                    {
+                        "value": "off",
+                        "label": "Hidden"
+                    },
+                    {
+                        "value": "partly",
+                        "label": "Partly"
+                    }
+                ]
+            },
+            "choices": [
+                {
+                    "value": "on",
+                    "label": "Shown",
+                    "hidesProduct": false,
+                    "hidesAs": null
+                },
+                {
+                    "value": "off",
+                    "label": "Hidden",
+                    "hidesProduct": true,
+                    "hidesAs": "hidden"
+                },
+                {
+                    "value": "partly",
+                    "label": "Partly",
+                    "hidesProduct": false,
+                    "hidesAs": null
+                }
+            ],
+            "writableChoices": [
+                "on",
+                "off"
+            ],
+            "variationChoices": [
+                "on",
+                "off"
+            ],
+            "variationOnlyChoices": [],
+            "group": "publishing"
+        },
+        {
+            "key": "featured",
+            "label": "Featured",
+            "type": "boolean",
+            "readOnly": false,
+            "nullable": false,
+            "inline": true,
+            "editKinds": [
+                "set"
+            ],
+            "variations": "parent_only",
+            "variationNote": "Featured belongs to the product, not to each variation.",
+            "variableParentNote": "",
+            "sortable": false,
+            "defaultColumn": false,
+            "defaultOrder": null,
+            "schema": {
+                "description": "Featured",
+                "type": "boolean",
+                "context": [
+                    "view",
+                    "edit"
+                ],
+                "readonly": false
+            },
+            "dataviews": {
+                "id": "featured",
+                "label": "Featured",
+                "type": "boolean",
+                "enableSorting": false,
+                "enableHiding": true,
+                "readOnly": false,
+                "filterBy": {
+                    "operators": [
+                        "is"
+                    ]
+                }
+            },
+            "group": "publishing"
+        },
+        {
+            "key": "category_ids",
+            "label": "Categories",
+            "type": "terms",
+            "readOnly": false,
+            "nullable": false,
+            "inline": false,
+            "editKinds": [
+                "set",
+                "add",
+                "remove"
+            ],
+            "variations": "parent_only",
+            "variationNote": "Categories belong to the product, not to each variation.",
+            "variableParentNote": "",
+            "sortable": false,
+            "defaultColumn": true,
+            "defaultOrder": 2,
+            "schema": {
+                "description": "Categories",
+                "type": "array",
+                "items": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "maxItems": 100,
+                "uniqueItems": true,
+                "context": [
+                    "view",
+                    "edit"
+                ],
+                "readonly": false
+            },
+            "dataviews": {
+                "id": "category_ids",
+                "label": "Categories",
+                "type": "array",
+                "enableSorting": false,
+                "enableHiding": true,
+                "readOnly": false,
+                "filterBy": {
+                    "operators": [
+                        "isAny",
+                        "isNone",
+                        "isAll"
+                    ]
+                }
+            },
+            "group": "organisation",
+            "source": "categories"
+        },
+        {
+            "key": "tag_ids",
+            "label": "Tags",
+            "type": "terms",
+            "readOnly": false,
+            "nullable": false,
+            "inline": false,
+            "editKinds": [
+                "set",
+                "add",
+                "remove"
+            ],
+            "variations": "parent_only",
+            "variationNote": "Tags belong to the product, not to each variation.",
+            "variableParentNote": "",
+            "sortable": false,
+            "defaultColumn": false,
+            "defaultOrder": null,
+            "schema": {
+                "description": "Tags",
+                "type": "array",
+                "items": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "maxItems": 100,
+                "uniqueItems": true,
+                "context": [
+                    "view",
+                    "edit"
+                ],
+                "readonly": false
+            },
+            "dataviews": {
+                "id": "tag_ids",
+                "label": "Tags",
+                "type": "array",
+                "enableSorting": false,
+                "enableHiding": true,
+                "readOnly": false,
+                "filterBy": {
+                    "operators": [
+                        "isAny",
+                        "isNone",
+                        "isAll"
+                    ]
+                }
+            },
+            "group": "organisation",
+            "source": "tags"
+        },
+        {
+            "key": "regular_price",
+            "label": "Regular price",
+            "type": "money",
+            "readOnly": false,
+            "nullable": true,
+            "inline": true,
+            "editKinds": [
+                "set",
+                "adjust",
+                "round",
+                "copy_from_sale"
+            ],
+            "variations": "per_variation",
+            "variationNote": "",
+            "variableParentNote": "A variable product takes its price from its variations. Change the variations instead.",
+            "sortable": true,
+            "defaultColumn": true,
+            "defaultOrder": 3,
+            "schema": {
+                "description": "Regular price",
+                "type": "string",
+                "context": [
+                    "view",
+                    "edit"
+                ],
+                "readonly": false
+            },
+            "dataviews": {
+                "id": "regular_price",
+                "label": "Regular price",
+                "type": "number",
+                "enableSorting": true,
+                "enableHiding": true,
+                "readOnly": false,
+                "filterBy": {
+                    "operators": [
+                        "between",
+                        "greaterThanOrEqual",
+                        "lessThanOrEqual"
+                    ]
+                }
+            },
+            "group": "pricing"
+        },
+        {
+            "key": "sale_price",
+            "label": "Sale price",
+            "type": "money",
+            "readOnly": false,
+            "nullable": true,
+            "inline": true,
+            "editKinds": [
+                "set",
+                "clear",
+                "adjust",
+                "round",
+                "copy_from_regular"
+            ],
+            "variations": "per_variation",
+            "variationNote": "",
+            "variableParentNote": "A variable product takes its price from its variations. Change the variations instead.",
+            "sortable": false,
+            "defaultColumn": false,
+            "defaultOrder": null,
+            "schema": {
+                "description": "Sale price",
+                "type": "string",
+                "context": [
+                    "view",
+                    "edit"
+                ],
+                "readonly": false
+            },
+            "dataviews": {
+                "id": "sale_price",
+                "label": "Sale price",
+                "type": "number",
+                "enableSorting": false,
+                "enableHiding": true,
+                "readOnly": false,
+                "filterBy": false
+            },
+            "group": "pricing"
+        },
+        {
+            "key": "stock_status",
+            "label": "Stock status",
+            "type": "enum",
+            "readOnly": false,
+            "nullable": false,
+            "inline": true,
+            "editKinds": [
+                "set"
+            ],
+            "variations": "per_variation",
+            "variationNote": "",
+            "variableParentNote": "",
+            "sortable": true,
+            "defaultColumn": true,
+            "defaultOrder": 4,
+            "schema": {
+                "description": "Stock status",
+                "type": "string",
+                "enum": [
+                    "instock",
+                    "outofstock",
+                    "onbackorder"
+                ],
+                "context": [
+                    "view",
+                    "edit"
+                ],
+                "readonly": false
+            },
+            "dataviews": {
+                "id": "stock_status",
+                "label": "Stock status",
+                "type": "text",
+                "enableSorting": true,
+                "enableHiding": true,
+                "readOnly": false,
+                "filterBy": {
+                    "operators": [
+                        "isAny",
+                        "isNone"
+                    ]
+                },
+                "elements": [
+                    {
+                        "value": "instock",
+                        "label": "In stock"
+                    },
+                    {
+                        "value": "outofstock",
+                        "label": "Out of stock"
+                    },
+                    {
+                        "value": "onbackorder",
+                        "label": "On backorder"
+                    }
+                ]
+            },
+            "choices": [
+                {
+                    "value": "instock",
+                    "label": "In stock",
+                    "hidesProduct": false,
+                    "hidesAs": null
+                },
+                {
+                    "value": "outofstock",
+                    "label": "Out of stock",
+                    "hidesProduct": false,
+                    "hidesAs": null
+                },
+                {
+                    "value": "onbackorder",
+                    "label": "On backorder",
+                    "hidesProduct": false,
+                    "hidesAs": null
+                }
+            ],
+            "writableChoices": [
+                "instock",
+                "outofstock",
+                "onbackorder"
+            ],
+            "variationChoices": [
+                "instock",
+                "outofstock",
+                "onbackorder"
+            ],
+            "variationOnlyChoices": [],
+            "group": "stock"
+        },
+        {
+            "key": "manage_stock",
+            "label": "Manage stock",
+            "type": "boolean",
+            "readOnly": false,
+            "nullable": false,
+            "inline": false,
+            "editKinds": [
+                "set"
+            ],
+            "variations": "per_variation",
+            "variationNote": "",
+            "variableParentNote": "",
+            "sortable": false,
+            "defaultColumn": false,
+            "defaultOrder": null,
+            "schema": {
+                "description": "Manage stock",
+                "type": "boolean",
+                "context": [
+                    "view",
+                    "edit"
+                ],
+                "readonly": false
+            },
+            "dataviews": {
+                "id": "manage_stock",
+                "label": "Manage stock",
+                "type": "boolean",
+                "enableSorting": false,
+                "enableHiding": true,
+                "readOnly": false,
+                "filterBy": {
+                    "operators": [
+                        "is"
+                    ]
+                }
+            },
+            "group": "stock"
+        },
+        {
+            "key": "stock_quantity",
+            "label": "Stock quantity",
+            "type": "integer",
+            "readOnly": false,
+            "nullable": true,
+            "inline": true,
+            "editKinds": [
+                "set",
+                "adjust"
+            ],
+            "variations": "conditional",
+            "variationNote": "Stock quantity only applies where stock is managed, so it was not changed here. Turn on Manage stock first.",
+            "variableParentNote": "",
+            "sortable": true,
+            "defaultColumn": false,
+            "defaultOrder": null,
+            "schema": {
+                "description": "Stock quantity",
+                "type": [
+                    "integer",
+                    "null"
+                ],
+                "context": [
+                    "view",
+                    "edit"
+                ],
+                "readonly": false
+            },
+            "dataviews": {
+                "id": "stock_quantity",
+                "label": "Stock quantity",
+                "type": "integer",
+                "enableSorting": true,
+                "enableHiding": true,
+                "readOnly": false,
+                "filterBy": {
+                    "operators": [
+                        "between",
+                        "greaterThanOrEqual",
+                        "lessThanOrEqual"
+                    ]
+                }
+            },
+            "group": "stock"
+        },
+        {
+            "key": "sku",
+            "label": "SKU",
+            "type": "text",
+            "readOnly": false,
+            "nullable": true,
+            "inline": true,
+            "editKinds": [
+                "set",
+                "find_replace",
+                "prefix",
+                "suffix"
+            ],
+            "variations": "per_variation",
+            "variationNote": "",
+            "variableParentNote": "",
+            "sortable": true,
+            "defaultColumn": true,
+            "defaultOrder": 1,
+            "schema": {
+                "description": "SKU",
+                "type": "string",
+                "maxLength": 100,
+                "context": [
+                    "view",
+                    "edit"
+                ],
+                "readonly": false
+            },
+            "dataviews": {
+                "id": "sku",
+                "label": "SKU",
+                "type": "text",
+                "enableSorting": true,
+                "enableHiding": true,
+                "readOnly": false,
+                "filterBy": false
+            },
+            "group": "organisation",
+            "maxLength": 100
+        },
+        {
+            "key": "weight",
+            "label": "Weight",
+            "type": "decimal",
+            "readOnly": false,
+            "nullable": true,
+            "inline": true,
+            "editKinds": [
+                "set",
+                "adjust",
+                "clear"
+            ],
+            "variations": "per_variation",
+            "variationNote": "",
+            "variableParentNote": "",
+            "sortable": false,
+            "defaultColumn": false,
+            "defaultOrder": null,
+            "schema": {
+                "description": "Weight",
+                "type": "string",
+                "context": [
+                    "view",
+                    "edit"
+                ],
+                "readonly": false
+            },
+            "dataviews": {
+                "id": "weight",
+                "label": "Weight",
+                "type": "number",
+                "enableSorting": false,
+                "enableHiding": true,
+                "readOnly": false,
+                "filterBy": false
+            },
+            "group": "shipping_tax"
+        },
+        {
+            "key": "length",
+            "label": "Length",
+            "type": "decimal",
+            "readOnly": false,
+            "nullable": true,
+            "inline": true,
+            "editKinds": [
+                "set",
+                "clear"
+            ],
+            "variations": "per_variation",
+            "variationNote": "",
+            "variableParentNote": "",
+            "sortable": false,
+            "defaultColumn": false,
+            "defaultOrder": null,
+            "schema": {
+                "description": "Length",
+                "type": "string",
+                "context": [
+                    "view",
+                    "edit"
+                ],
+                "readonly": false
+            },
+            "dataviews": {
+                "id": "length",
+                "label": "Length",
+                "type": "number",
+                "enableSorting": false,
+                "enableHiding": true,
+                "readOnly": false,
+                "filterBy": false
+            },
+            "group": "shipping_tax"
+        },
+        {
+            "key": "width",
+            "label": "Width",
+            "type": "decimal",
+            "readOnly": false,
+            "nullable": true,
+            "inline": true,
+            "editKinds": [
+                "set",
+                "clear"
+            ],
+            "variations": "per_variation",
+            "variationNote": "",
+            "variableParentNote": "",
+            "sortable": false,
+            "defaultColumn": false,
+            "defaultOrder": null,
+            "schema": {
+                "description": "Width",
+                "type": "string",
+                "context": [
+                    "view",
+                    "edit"
+                ],
+                "readonly": false
+            },
+            "dataviews": {
+                "id": "width",
+                "label": "Width",
+                "type": "number",
+                "enableSorting": false,
+                "enableHiding": true,
+                "readOnly": false,
+                "filterBy": false
+            },
+            "group": "shipping_tax"
+        },
+        {
+            "key": "height",
+            "label": "Height",
+            "type": "decimal",
+            "readOnly": false,
+            "nullable": true,
+            "inline": true,
+            "editKinds": [
+                "set",
+                "clear"
+            ],
+            "variations": "per_variation",
+            "variationNote": "",
+            "variableParentNote": "",
+            "sortable": false,
+            "defaultColumn": false,
+            "defaultOrder": null,
+            "schema": {
+                "description": "Height",
+                "type": "string",
+                "context": [
+                    "view",
+                    "edit"
+                ],
+                "readonly": false
+            },
+            "dataviews": {
+                "id": "height",
+                "label": "Height",
+                "type": "number",
+                "enableSorting": false,
+                "enableHiding": true,
+                "readOnly": false,
+                "filterBy": false
+            },
+            "group": "shipping_tax"
+        },
+        {
+            "key": "shipping_class_id",
+            "label": "Shipping class",
+            "type": "term",
+            "readOnly": false,
+            "nullable": false,
+            "inline": false,
+            "editKinds": [
+                "set"
+            ],
+            "variations": "per_variation",
+            "variationNote": "",
+            "variableParentNote": "",
+            "sortable": false,
+            "defaultColumn": false,
+            "defaultOrder": null,
+            "schema": {
+                "description": "Shipping class",
+                "type": "integer",
+                "minimum": 0,
+                "context": [
+                    "view",
+                    "edit"
+                ],
+                "readonly": false
+            },
+            "dataviews": {
+                "id": "shipping_class_id",
+                "label": "Shipping class",
+                "type": "integer",
+                "enableSorting": false,
+                "enableHiding": true,
+                "readOnly": false,
+                "filterBy": {
+                    "operators": [
+                        "isAny",
+                        "isNone"
+                    ]
+                }
+            },
+            "group": "shipping_tax",
+            "source": "shipping_classes"
+        },
+        {
+            "key": "tax_status",
+            "label": "Tax status",
+            "type": "enum",
+            "readOnly": false,
+            "nullable": false,
+            "inline": false,
+            "editKinds": [
+                "set"
+            ],
+            "variations": "per_variation",
+            "variationNote": "",
+            "variableParentNote": "",
+            "sortable": false,
+            "defaultColumn": false,
+            "defaultOrder": null,
+            "schema": {
+                "description": "Tax status",
+                "type": "string",
+                "enum": [
+                    "taxable",
+                    "shipping",
+                    "none"
+                ],
+                "context": [
+                    "view",
+                    "edit"
+                ],
+                "readonly": false
+            },
+            "dataviews": {
+                "id": "tax_status",
+                "label": "Tax status",
+                "type": "text",
+                "enableSorting": false,
+                "enableHiding": true,
+                "readOnly": false,
+                "filterBy": false,
+                "elements": [
+                    {
+                        "value": "taxable",
+                        "label": "Taxable"
+                    },
+                    {
+                        "value": "shipping",
+                        "label": "Shipping only"
+                    },
+                    {
+                        "value": "none",
+                        "label": "None"
+                    }
+                ]
+            },
+            "choices": [
+                {
+                    "value": "taxable",
+                    "label": "Taxable",
+                    "hidesProduct": false,
+                    "hidesAs": null
+                },
+                {
+                    "value": "shipping",
+                    "label": "Shipping only",
+                    "hidesProduct": false,
+                    "hidesAs": null
+                },
+                {
+                    "value": "none",
+                    "label": "None",
+                    "hidesProduct": false,
+                    "hidesAs": null
+                }
+            ],
+            "writableChoices": [
+                "taxable",
+                "shipping",
+                "none"
+            ],
+            "variationChoices": [
+                "taxable",
+                "shipping",
+                "none"
+            ],
+            "variationOnlyChoices": [],
+            "group": "shipping_tax"
+        },
+        {
+            "key": "tax_class",
+            "label": "Tax class",
+            "type": "enum",
+            "readOnly": false,
+            "nullable": false,
+            "inline": false,
+            "editKinds": [
+                "set"
+            ],
+            "variations": "per_variation",
+            "variationNote": "",
+            "variableParentNote": "",
+            "sortable": false,
+            "defaultColumn": false,
+            "defaultOrder": null,
+            "schema": {
+                "description": "Tax class",
+                "type": "string",
+                "enum": [
+                    "",
+                    "parent"
+                ],
+                "context": [
+                    "view",
+                    "edit"
+                ],
+                "readonly": false
+            },
+            "dataviews": {
+                "id": "tax_class",
+                "label": "Tax class",
+                "type": "text",
+                "enableSorting": false,
+                "enableHiding": true,
+                "readOnly": false,
+                "filterBy": {
+                    "operators": [
+                        "isAny",
+                        "isNone"
+                    ]
+                },
+                "elements": [
+                    {
+                        "value": "",
+                        "label": "Standard"
+                    },
+                    {
+                        "value": "parent",
+                        "label": "Same as product"
+                    }
+                ]
+            },
+            "choices": [
+                {
+                    "value": "",
+                    "label": "Standard",
+                    "hidesProduct": false,
+                    "hidesAs": null
+                },
+                {
+                    "value": "parent",
+                    "label": "Same as product",
+                    "hidesProduct": false,
+                    "hidesAs": null
+                }
+            ],
+            "writableChoices": [
+                "",
+                "parent"
+            ],
+            "variationChoices": [
+                "",
+                "parent"
+            ],
+            "variationOnlyChoices": [
+                "parent"
+            ],
+            "group": "shipping_tax"
+        },
+        {
+            "key": "sold_individually",
+            "label": "Sold individually",
+            "type": "boolean",
+            "readOnly": false,
+            "nullable": false,
+            "inline": false,
+            "editKinds": [
+                "set"
+            ],
+            "variations": "parent_only",
+            "variationNote": "Sold individually belongs to the product, not to each variation.",
+            "variableParentNote": "",
+            "sortable": false,
+            "defaultColumn": false,
+            "defaultOrder": null,
+            "schema": {
+                "description": "Sold individually",
+                "type": "boolean",
+                "context": [
+                    "view",
+                    "edit"
+                ],
+                "readonly": false
+            },
+            "dataviews": {
+                "id": "sold_individually",
+                "label": "Sold individually",
+                "type": "boolean",
+                "enableSorting": false,
+                "enableHiding": true,
+                "readOnly": false,
+                "filterBy": false
+            },
+            "group": "stock"
+        },
+        {
+            "key": "reviews_allowed",
+            "label": "Reviews",
+            "type": "boolean",
+            "readOnly": false,
+            "nullable": false,
+            "inline": false,
+            "editKinds": [
+                "set"
+            ],
+            "variations": "parent_only",
+            "variationNote": "Reviews belongs to the product, not to each variation.",
+            "variableParentNote": "",
+            "sortable": false,
+            "defaultColumn": false,
+            "defaultOrder": null,
+            "schema": {
+                "description": "Reviews",
+                "type": "boolean",
+                "context": [
+                    "view",
+                    "edit"
+                ],
+                "readonly": false
+            },
+            "dataviews": {
+                "id": "reviews_allowed",
+                "label": "Reviews",
+                "type": "boolean",
+                "enableSorting": false,
+                "enableHiding": true,
+                "readOnly": false,
+                "filterBy": false
+            },
+            "group": "publishing"
+        },
+        {
+            "key": "id",
+            "label": "ID",
+            "type": "id",
+            "readOnly": true,
+            "nullable": false,
+            "inline": false,
+            "editKinds": [],
+            "variations": "per_variation",
+            "variationNote": "",
+            "variableParentNote": "",
+            "sortable": true,
+            "defaultColumn": false,
+            "defaultOrder": null,
+            "schema": {
+                "description": "ID",
+                "type": "integer",
+                "minimum": 0,
+                "context": [
+                    "view",
+                    "edit"
+                ],
+                "readonly": true
+            },
+            "dataviews": {
+                "id": "id",
+                "label": "ID",
+                "type": "integer",
+                "enableSorting": true,
+                "enableHiding": true,
+                "readOnly": true,
+                "filterBy": false
+            }
+        },
+        {
+            "key": "type",
+            "label": "Type",
+            "type": "enum",
+            "readOnly": true,
+            "nullable": false,
+            "inline": false,
+            "editKinds": [],
+            "variations": "per_variation",
+            "variationNote": "",
+            "variableParentNote": "",
+            "sortable": false,
+            "defaultColumn": false,
+            "defaultOrder": null,
+            "schema": {
+                "description": "Type",
+                "type": "string",
+                "enum": [
+                    "simple",
+                    "grouped",
+                    "external",
+                    "variable",
+                    "variation"
+                ],
+                "context": [
+                    "view",
+                    "edit"
+                ],
+                "readonly": true
+            },
+            "dataviews": {
+                "id": "type",
+                "label": "Type",
+                "type": "text",
+                "enableSorting": false,
+                "enableHiding": true,
+                "readOnly": true,
+                "filterBy": {
+                    "operators": [
+                        "isAny",
+                        "isNone"
+                    ]
+                },
+                "elements": [
+                    {
+                        "value": "simple",
+                        "label": "Simple product"
+                    },
+                    {
+                        "value": "grouped",
+                        "label": "Grouped product"
+                    },
+                    {
+                        "value": "external",
+                        "label": "External/Affiliate product"
+                    },
+                    {
+                        "value": "variable",
+                        "label": "Variable product"
+                    },
+                    {
+                        "value": "variation",
+                        "label": "Variation"
+                    }
+                ]
+            },
+            "choices": [
+                {
+                    "value": "simple",
+                    "label": "Simple product",
+                    "hidesProduct": false,
+                    "hidesAs": null
+                },
+                {
+                    "value": "grouped",
+                    "label": "Grouped product",
+                    "hidesProduct": false,
+                    "hidesAs": null
+                },
+                {
+                    "value": "external",
+                    "label": "External/Affiliate product",
+                    "hidesProduct": false,
+                    "hidesAs": null
+                },
+                {
+                    "value": "variable",
+                    "label": "Variable product",
+                    "hidesProduct": false,
+                    "hidesAs": null
+                },
+                {
+                    "value": "variation",
+                    "label": "Variation",
+                    "hidesProduct": false,
+                    "hidesAs": null
+                }
+            ],
+            "writableChoices": [
+                "simple",
+                "grouped",
+                "external",
+                "variable",
+                "variation"
+            ],
+            "variationChoices": [
+                "simple",
+                "grouped",
+                "external",
+                "variable",
+                "variation"
+            ],
+            "variationOnlyChoices": []
+        },
+        {
+            "key": "thumbnail",
+            "label": "Image",
+            "type": "image",
+            "readOnly": true,
+            "nullable": false,
+            "inline": false,
+            "editKinds": [],
+            "variations": "per_variation",
+            "variationNote": "",
+            "variableParentNote": "",
+            "sortable": false,
+            "defaultColumn": false,
+            "defaultOrder": null,
+            "schema": {
+                "description": "Image",
+                "type": "integer",
+                "minimum": 0,
+                "context": [
+                    "view",
+                    "edit"
+                ],
+                "readonly": true
+            },
+            "dataviews": {
+                "id": "thumbnail",
+                "label": "Image",
+                "type": "integer",
+                "enableSorting": false,
+                "enableHiding": true,
+                "readOnly": true,
+                "filterBy": false
+            }
+        },
+        {
+            "key": "price_html",
+            "label": "Price",
+            "type": "html",
+            "readOnly": true,
+            "nullable": false,
+            "inline": false,
+            "editKinds": [],
+            "variations": "per_variation",
+            "variationNote": "",
+            "variableParentNote": "",
+            "sortable": false,
+            "defaultColumn": false,
+            "defaultOrder": null,
+            "schema": {
+                "description": "Price",
+                "type": "string",
+                "context": [
+                    "view",
+                    "edit"
+                ],
+                "readonly": true
+            },
+            "dataviews": {
+                "id": "price_html",
+                "label": "Price",
+                "type": "text",
+                "enableSorting": false,
+                "enableHiding": true,
+                "readOnly": true,
+                "filterBy": false
+            }
+        },
+        {
+            "key": "date_created",
+            "label": "Date created",
+            "type": "datetime",
+            "readOnly": true,
+            "nullable": false,
+            "inline": false,
+            "editKinds": [],
+            "variations": "per_variation",
+            "variationNote": "",
+            "variableParentNote": "",
+            "sortable": true,
+            "defaultColumn": false,
+            "defaultOrder": null,
+            "schema": {
+                "description": "Date created",
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "format": "date-time",
+                "context": [
+                    "view",
+                    "edit"
+                ],
+                "readonly": true
+            },
+            "dataviews": {
+                "id": "date_created",
+                "label": "Date created",
+                "type": "datetime",
+                "enableSorting": true,
+                "enableHiding": true,
+                "readOnly": true,
+                "filterBy": {
+                    "operators": [
+                        "before",
+                        "after",
+                        "inThePast"
+                    ]
+                }
+            }
+        },
+        {
+            "key": "date_modified",
+            "label": "Last modified",
+            "type": "datetime",
+            "readOnly": true,
+            "nullable": false,
+            "inline": false,
+            "editKinds": [],
+            "variations": "per_variation",
+            "variationNote": "",
+            "variableParentNote": "",
+            "sortable": true,
+            "defaultColumn": false,
+            "defaultOrder": null,
+            "schema": {
+                "description": "Last modified",
+                "type": [
+                    "string",
+                    "null"
+                ],
+                "format": "date-time",
+                "context": [
+                    "view",
+                    "edit"
+                ],
+                "readonly": true
+            },
+            "dataviews": {
+                "id": "date_modified",
+                "label": "Last modified",
+                "type": "datetime",
+                "enableSorting": true,
+                "enableHiding": true,
+                "readOnly": true,
+                "filterBy": {
+                    "operators": [
+                        "before",
+                        "after",
+                        "inThePast"
+                    ]
+                }
+            }
+        },
+        {
+            "key": "units_sold",
+            "label": "Total sales",
+            "type": "integer",
+            "readOnly": true,
+            "nullable": false,
+            "inline": false,
+            "editKinds": [],
+            "variations": "per_variation",
+            "variationNote": "",
+            "variableParentNote": "",
+            "sortable": true,
+            "defaultColumn": false,
+            "defaultOrder": null,
+            "schema": {
+                "description": "Total sales",
+                "type": "integer",
+                "context": [
+                    "view",
+                    "edit"
+                ],
+                "readonly": true
+            },
+            "dataviews": {
+                "id": "units_sold",
+                "label": "Total sales",
+                "type": "integer",
+                "enableSorting": true,
+                "enableHiding": true,
+                "readOnly": true,
+                "filterBy": false
+            }
+        },
+        {
+            "key": "variation_count",
+            "label": "Variations",
+            "type": "integer",
+            "readOnly": true,
+            "nullable": false,
+            "inline": false,
+            "editKinds": [],
+            "variations": "parent_only",
+            "variationNote": "",
+            "variableParentNote": "",
+            "sortable": false,
+            "defaultColumn": false,
+            "defaultOrder": null,
+            "schema": {
+                "description": "Variations",
+                "type": "integer",
+                "context": [
+                    "view",
+                    "edit"
+                ],
+                "readonly": true
+            },
+            "dataviews": {
+                "id": "variation_count",
+                "label": "Variations",
+                "type": "integer",
+                "enableSorting": false,
+                "enableHiding": true,
+                "readOnly": true,
+                "filterBy": false
+            }
+        },
+        {
+            "key": "x_picks_items",
+            "label": "Sample picks",
+            "type": "external",
+            "source": "external",
+            "provider": "picks",
+            "readOnly": false,
+            "nullable": false,
+            "inline": false,
+            "sortable": false,
+            "editKinds": [
+                "add",
+                "remove",
+                "set",
+                "clear"
+            ],
+            "variations": "parent_only",
+            "variationNote": "“Sample picks” is kept on the product, not on each variation.",
+            "group": "x_picks_items",
+            "defaultColumn": false,
+            "defaultOrder": null,
+            "schema": {},
+            "dataviews": null,
+            "choices": []
+        }
+    ],
+    "actions": [
+        {
+            "id": "set_value",
+            "label": "Set a value",
+            "description": "Gives every chosen product the same value for one field, replacing what is there now.",
+            "group": "publishing",
+            "groups": [
+                "pricing",
+                "stock",
+                "organisation",
+                "shipping_tax",
+                "publishing"
+            ],
+            "editKinds": [
+                "set"
+            ],
+            "fields": [
+                "name",
+                "catalog_visibility",
+                "visible_on_site",
+                "featured",
+                "regular_price",
+                "sale_price",
+                "stock_status",
+                "manage_stock",
+                "stock_quantity",
+                "sku",
+                "weight",
+                "length",
+                "width",
+                "height",
+                "shipping_class_id",
+                "tax_status",
+                "tax_class",
+                "sold_individually",
+                "reviews_allowed"
+            ],
+            "args": {
+                "type": "object",
+                "properties": {
+                    "field": {
+                        "title": "Field",
+                        "description": "Choose the field Set a value should change, then try again.",
+                        "type": "string",
+                        "enum": [
+                            "name",
+                            "catalog_visibility",
+                            "visible_on_site",
+                            "featured",
+                            "regular_price",
+                            "sale_price",
+                            "stock_status",
+                            "manage_stock",
+                            "stock_quantity",
+                            "sku",
+                            "weight",
+                            "length",
+                            "width",
+                            "height",
+                            "shipping_class_id",
+                            "tax_status",
+                            "tax_class",
+                            "sold_individually",
+                            "reviews_allowed"
+                        ],
+                        "choices": [
+                            {
+                                "value": "name",
+                                "label": "Name"
+                            },
+                            {
+                                "value": "catalog_visibility",
+                                "label": "Catalogue visibility"
+                            },
+                            {
+                                "value": "visible_on_site",
+                                "label": "Shown in shop and search"
+                            },
+                            {
+                                "value": "featured",
+                                "label": "Featured"
+                            },
+                            {
+                                "value": "regular_price",
+                                "label": "Regular price"
+                            },
+                            {
+                                "value": "sale_price",
+                                "label": "Sale price"
+                            },
+                            {
+                                "value": "stock_status",
+                                "label": "Stock status"
+                            },
+                            {
+                                "value": "manage_stock",
+                                "label": "Manage stock"
+                            },
+                            {
+                                "value": "stock_quantity",
+                                "label": "Stock quantity"
+                            },
+                            {
+                                "value": "sku",
+                                "label": "SKU"
+                            },
+                            {
+                                "value": "weight",
+                                "label": "Weight"
+                            },
+                            {
+                                "value": "length",
+                                "label": "Length"
+                            },
+                            {
+                                "value": "width",
+                                "label": "Width"
+                            },
+                            {
+                                "value": "height",
+                                "label": "Height"
+                            },
+                            {
+                                "value": "shipping_class_id",
+                                "label": "Shipping class"
+                            },
+                            {
+                                "value": "tax_status",
+                                "label": "Tax status"
+                            },
+                            {
+                                "value": "tax_class",
+                                "label": "Tax class"
+                            },
+                            {
+                                "value": "sold_individually",
+                                "label": "Sold individually"
+                            },
+                            {
+                                "value": "reviews_allowed",
+                                "label": "Reviews"
+                            }
+                        ],
+                        "required": true
+                    },
+                    "value": {
+                        "title": "New value",
+                        "description": "Enter the new value, then try again.",
+                        "type": [
+                            "string",
+                            "number",
+                            "boolean",
+                            "null"
+                        ],
+                        "required": true
+                    },
+                    "clear_invalid_sale": {
+                        "title": "Clear the sale price where it is not below the regular price",
+                        "description": "Clear the sale price where it is not below the regular price has to be on or off.",
+                        "type": "boolean",
+                        "default": false
+                    },
+                    "apply_to_variations": {
+                        "title": "Also apply to variations",
+                        "description": "Also apply to variations has to be on or off.",
+                        "type": "boolean"
+                    },
+                    "skip_already": {
+                        "title": "Skip rows where the value is already correct",
+                        "description": "Skip rows where the value is already correct has to be on or off.",
+                        "type": "boolean",
+                        "default": true
+                    }
+                },
+                "additionalProperties": false
+            }
+        },
+        {
+            "id": "set_status",
+            "label": "Set Status",
+            "description": "Sets the native publication status of the chosen products.",
+            "group": "publishing",
+            "groups": [
+                "publishing"
+            ],
+            "editKinds": [
+                "set"
+            ],
+            "fields": [
+                "status"
+            ],
+            "args": {
+                "type": "object",
+                "properties": {
+                    "field": {
+                        "title": "Field",
+                        "description": "Choose the field Set Status should change, then try again.",
+                        "type": "string",
+                        "enum": [
+                            "status"
+                        ],
+                        "choices": [
+                            {
+                                "value": "status",
+                                "label": "Status"
+                            }
+                        ],
+                        "required": true
+                    },
+                    "value": {
+                        "title": "New value",
+                        "description": "Enter the new value, then try again.",
+                        "type": [
+                            "string",
+                            "number",
+                            "boolean",
+                            "null"
+                        ],
+                        "required": true
+                    },
+                    "apply_to_variations": {
+                        "title": "Also apply to variations",
+                        "description": "Also apply to variations has to be on or off.",
+                        "type": "boolean"
+                    },
+                    "skip_already": {
+                        "title": "Skip rows where the value is already correct",
+                        "description": "Skip rows where the value is already correct has to be on or off.",
+                        "type": "boolean",
+                        "default": true
+                    }
+                },
+                "additionalProperties": false
+            }
+        },
+        {
+            "id": "clear",
+            "label": "Clear a value",
+            "description": "Empties one field on every chosen product, such as ending a sale by clearing the sale price. Empty is not the same as zero.",
+            "group": "pricing",
+            "groups": [
+                "pricing",
+                "shipping_tax"
+            ],
+            "editKinds": [
+                "clear"
+            ],
+            "fields": [
+                "sale_price",
+                "weight",
+                "length",
+                "width",
+                "height"
+            ],
+            "args": {
+                "type": "object",
+                "properties": {
+                    "field": {
+                        "title": "Field",
+                        "description": "Choose the field Clear a value should change, then try again.",
+                        "type": "string",
+                        "enum": [
+                            "sale_price",
+                            "weight",
+                            "length",
+                            "width",
+                            "height"
+                        ],
+                        "choices": [
+                            {
+                                "value": "sale_price",
+                                "label": "Sale price"
+                            },
+                            {
+                                "value": "weight",
+                                "label": "Weight"
+                            },
+                            {
+                                "value": "length",
+                                "label": "Length"
+                            },
+                            {
+                                "value": "width",
+                                "label": "Width"
+                            },
+                            {
+                                "value": "height",
+                                "label": "Height"
+                            }
+                        ],
+                        "required": true
+                    },
+                    "apply_to_variations": {
+                        "title": "Also apply to variations",
+                        "description": "Also apply to variations has to be on or off.",
+                        "type": "boolean"
+                    },
+                    "skip_already": {
+                        "title": "Skip rows where the value is already correct",
+                        "description": "Skip rows where the value is already correct has to be on or off.",
+                        "type": "boolean",
+                        "default": true
+                    }
+                },
+                "additionalProperties": false
+            }
+        },
+        {
+            "id": "adjust",
+            "label": "Increase or decrease",
+            "description": "Takes each product's current value and raises or lowers it by an amount or a percentage. Products with no current value are skipped and counted.",
+            "group": "pricing",
+            "groups": [
+                "pricing",
+                "stock",
+                "shipping_tax"
+            ],
+            "editKinds": [
+                "adjust"
+            ],
+            "fields": [
+                "regular_price",
+                "sale_price",
+                "stock_quantity",
+                "weight"
+            ],
+            "args": {
+                "type": "object",
+                "properties": {
+                    "field": {
+                        "title": "Field",
+                        "description": "Choose the field Increase or decrease should change, then try again.",
+                        "type": "string",
+                        "enum": [
+                            "regular_price",
+                            "sale_price",
+                            "stock_quantity",
+                            "weight"
+                        ],
+                        "choices": [
+                            {
+                                "value": "regular_price",
+                                "label": "Regular price"
+                            },
+                            {
+                                "value": "sale_price",
+                                "label": "Sale price"
+                            },
+                            {
+                                "value": "stock_quantity",
+                                "label": "Stock quantity"
+                            },
+                            {
+                                "value": "weight",
+                                "label": "Weight"
+                            }
+                        ],
+                        "required": true
+                    },
+                    "direction": {
+                        "title": "Increase or decrease",
+                        "description": "Choose whether to increase or decrease, then try again.",
+                        "type": "string",
+                        "enum": [
+                            "increase",
+                            "decrease"
+                        ],
+                        "choices": [
+                            {
+                                "value": "increase",
+                                "label": "Increase"
+                            },
+                            {
+                                "value": "decrease",
+                                "label": "Decrease"
+                            }
+                        ],
+                        "required": true
+                    },
+                    "by": {
+                        "title": "By",
+                        "description": "Choose an amount or a percentage, then try again.",
+                        "type": "string",
+                        "enum": [
+                            "amount",
+                            "percent"
+                        ],
+                        "choices": [
+                            {
+                                "value": "amount",
+                                "label": "An amount"
+                            },
+                            {
+                                "value": "percent",
+                                "label": "A percentage"
+                            }
+                        ],
+                        "required": true
+                    },
+                    "amount": {
+                        "title": "How much",
+                        "description": "Enter how much to change it by, as a number above 0 like 10 or 2.5.",
+                        "type": [
+                            "string",
+                            "number"
+                        ],
+                        "minimum": 0,
+                        "exclusiveMinimum": true,
+                        "required": true
+                    },
+                    "apply_to_variations": {
+                        "title": "Also apply to variations",
+                        "description": "Also apply to variations has to be on or off.",
+                        "type": "boolean"
+                    },
+                    "skip_already": {
+                        "title": "Skip rows where the value is already correct",
+                        "description": "Skip rows where the value is already correct has to be on or off.",
+                        "type": "boolean",
+                        "default": true
+                    }
+                },
+                "additionalProperties": false
+            }
+        },
+        {
+            "id": "round",
+            "label": "Round prices",
+            "description": "Rounds each price to a number of decimals, to the nearest step, or to a tidy ending such as .95 or .99, going up, down or to the nearest.",
+            "group": "pricing",
+            "groups": [
+                "pricing"
+            ],
+            "editKinds": [
+                "round"
+            ],
+            "fields": [
+                "regular_price",
+                "sale_price"
+            ],
+            "args": {
+                "type": "object",
+                "properties": {
+                    "field": {
+                        "title": "Field",
+                        "description": "Choose the field Round prices should change, then try again.",
+                        "type": "string",
+                        "enum": [
+                            "regular_price",
+                            "sale_price"
+                        ],
+                        "choices": [
+                            {
+                                "value": "regular_price",
+                                "label": "Regular price"
+                            },
+                            {
+                                "value": "sale_price",
+                                "label": "Sale price"
+                            }
+                        ],
+                        "required": true
+                    },
+                    "to": {
+                        "title": "Round to",
+                        "description": "Choose how to round, then try again.",
+                        "type": "string",
+                        "enum": [
+                            "decimals",
+                            "step",
+                            "ending"
+                        ],
+                        "choices": [
+                            {
+                                "value": "decimals",
+                                "label": "A number of decimals"
+                            },
+                            {
+                                "value": "step",
+                                "label": "The nearest step, such as 5 or 0.50"
+                            },
+                            {
+                                "value": "ending",
+                                "label": "An ending, such as .95 or .99"
+                            }
+                        ],
+                        "required": true
+                    },
+                    "direction": {
+                        "title": "Which way",
+                        "description": "Choose up, down or nearest, then try again.",
+                        "type": "string",
+                        "enum": [
+                            "nearest",
+                            "up",
+                            "down"
+                        ],
+                        "choices": [
+                            {
+                                "value": "nearest",
+                                "label": "To the nearest"
+                            },
+                            {
+                                "value": "up",
+                                "label": "Up"
+                            },
+                            {
+                                "value": "down",
+                                "label": "Down"
+                            }
+                        ],
+                        "default": "nearest"
+                    },
+                    "decimals": {
+                        "title": "Decimals",
+                        "description": "Enter a whole number of decimals from 0 to 2.",
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 2
+                    },
+                    "step": {
+                        "title": "Step",
+                        "description": "Enter the step to round to, as a number above 0 like 5 or 0.50.",
+                        "type": [
+                            "string",
+                            "number"
+                        ],
+                        "minimum": 0,
+                        "exclusiveMinimum": true
+                    },
+                    "ending": {
+                        "title": "Ending",
+                        "description": "Enter the ending as the part after the decimal point, like .95 or .99.",
+                        "type": [
+                            "string",
+                            "number"
+                        ],
+                        "minimum": 0,
+                        "maximum": 1,
+                        "exclusiveMaximum": true
+                    },
+                    "apply_to_variations": {
+                        "title": "Also apply to variations",
+                        "description": "Also apply to variations has to be on or off.",
+                        "type": "boolean"
+                    },
+                    "skip_already": {
+                        "title": "Skip rows where the value is already correct",
+                        "description": "Skip rows where the value is already correct has to be on or off.",
+                        "type": "boolean",
+                        "default": true
+                    }
+                },
+                "additionalProperties": false
+            }
+        },
+        {
+            "id": "copy_price",
+            "label": "Copy between regular and sale price",
+            "description": "Copies the regular price into the sale price, optionally less a percentage discount, or copies the sale price back into the regular price.",
+            "group": "pricing",
+            "groups": [
+                "pricing"
+            ],
+            "editKinds": [
+                "copy_from_regular",
+                "copy_from_sale"
+            ],
+            "fields": [
+                "regular_price",
+                "sale_price"
+            ],
+            "args": {
+                "type": "object",
+                "properties": {
+                    "field": {
+                        "title": "Field",
+                        "description": "Choose the field Copy between regular and sale price should change, then try again.",
+                        "type": "string",
+                        "enum": [
+                            "regular_price",
+                            "sale_price"
+                        ],
+                        "choices": [
+                            {
+                                "value": "regular_price",
+                                "label": "Regular price"
+                            },
+                            {
+                                "value": "sale_price",
+                                "label": "Sale price"
+                            }
+                        ],
+                        "required": true
+                    },
+                    "discount": {
+                        "title": "Discount (per cent)",
+                        "description": "Enter a discount of 0 or more and below 100 per cent, like 20.",
+                        "type": [
+                            "string",
+                            "number"
+                        ],
+                        "minimum": 0,
+                        "maximum": 100,
+                        "exclusiveMaximum": true,
+                        "default": "0"
+                    },
+                    "clear_invalid_sale": {
+                        "title": "Clear the sale price where it is not below the regular price",
+                        "description": "Clear the sale price where it is not below the regular price has to be on or off.",
+                        "type": "boolean",
+                        "default": false
+                    },
+                    "apply_to_variations": {
+                        "title": "Also apply to variations",
+                        "description": "Also apply to variations has to be on or off.",
+                        "type": "boolean"
+                    },
+                    "skip_already": {
+                        "title": "Skip rows where the value is already correct",
+                        "description": "Skip rows where the value is already correct has to be on or off.",
+                        "type": "boolean",
+                        "default": true
+                    }
+                },
+                "additionalProperties": false
+            }
+        },
+        {
+            "id": "find_replace",
+            "label": "Find and replace",
+            "description": "Swaps a word or phrase for another in product names or SKUs. Plain text only, optionally matching whole words or exact capitals.",
+            "group": "organisation",
+            "groups": [
+                "organisation"
+            ],
+            "editKinds": [
+                "find_replace"
+            ],
+            "fields": [
+                "name",
+                "sku"
+            ],
+            "args": {
+                "type": "object",
+                "properties": {
+                    "field": {
+                        "title": "Field",
+                        "description": "Choose the field Find and replace should change, then try again.",
+                        "type": "string",
+                        "enum": [
+                            "name",
+                            "sku"
+                        ],
+                        "choices": [
+                            {
+                                "value": "name",
+                                "label": "Name"
+                            },
+                            {
+                                "value": "sku",
+                                "label": "SKU"
+                            }
+                        ],
+                        "required": true
+                    },
+                    "find": {
+                        "title": "Find",
+                        "description": "Enter the text to find, up to 200 characters.",
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200,
+                        "required": true
+                    },
+                    "replace": {
+                        "title": "Replace with",
+                        "description": "The replacement has to be text of up to 200 characters, or left empty to remove what was found.",
+                        "type": "string",
+                        "maxLength": 200,
+                        "default": ""
+                    },
+                    "whole_word": {
+                        "title": "Match whole words only",
+                        "description": "Match whole words only has to be on or off.",
+                        "type": "boolean",
+                        "default": false
+                    },
+                    "case_sensitive": {
+                        "title": "Match capitals exactly",
+                        "description": "Match capitals exactly has to be on or off.",
+                        "type": "boolean",
+                        "default": false
+                    },
+                    "apply_to_variations": {
+                        "title": "Also apply to variations",
+                        "description": "Also apply to variations has to be on or off.",
+                        "type": "boolean"
+                    },
+                    "skip_already": {
+                        "title": "Skip rows where the value is already correct",
+                        "description": "Skip rows where the value is already correct has to be on or off.",
+                        "type": "boolean",
+                        "default": true
+                    }
+                },
+                "additionalProperties": false
+            }
+        },
+        {
+            "id": "affix_sku",
+            "label": "Add a prefix or suffix",
+            "description": "Adds the same text to the start or the end of each SKU.",
+            "group": "organisation",
+            "groups": [
+                "organisation"
+            ],
+            "editKinds": [
+                "prefix",
+                "suffix"
+            ],
+            "fields": [
+                "sku"
+            ],
+            "args": {
+                "type": "object",
+                "properties": {
+                    "field": {
+                        "title": "Field",
+                        "description": "Choose the field Add a prefix or suffix should change, then try again.",
+                        "type": "string",
+                        "enum": [
+                            "sku"
+                        ],
+                        "choices": [
+                            {
+                                "value": "sku",
+                                "label": "SKU"
+                            }
+                        ],
+                        "required": true
+                    },
+                    "position": {
+                        "title": "Where",
+                        "description": "Choose whether the text goes at the start or the end, then try again.",
+                        "type": "string",
+                        "enum": [
+                            "prefix",
+                            "suffix"
+                        ],
+                        "choices": [
+                            {
+                                "value": "prefix",
+                                "label": "At the start"
+                            },
+                            {
+                                "value": "suffix",
+                                "label": "At the end"
+                            }
+                        ],
+                        "required": true
+                    },
+                    "text": {
+                        "title": "Text to add",
+                        "description": "Enter the text to add, up to 100 characters, with no spaces at either end.",
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100,
+                        "required": true
+                    },
+                    "apply_to_variations": {
+                        "title": "Also apply to variations",
+                        "description": "Also apply to variations has to be on or off.",
+                        "type": "boolean"
+                    },
+                    "skip_already": {
+                        "title": "Skip rows where the value is already correct",
+                        "description": "Skip rows where the value is already correct has to be on or off.",
+                        "type": "boolean",
+                        "default": true
+                    }
+                },
+                "additionalProperties": false
+            }
+        },
+        {
+            "id": "add_terms",
+            "label": "Add categories or tags",
+            "description": "Adds the categories or tags you choose, leaving every other one in place.",
+            "group": "organisation",
+            "groups": [
+                "organisation"
+            ],
+            "editKinds": [
+                "add"
+            ],
+            "fields": [
+                "category_ids",
+                "tag_ids"
+            ],
+            "args": {
+                "type": "object",
+                "properties": {
+                    "field": {
+                        "title": "Field",
+                        "description": "Choose the field Add categories or tags should change, then try again.",
+                        "type": "string",
+                        "enum": [
+                            "category_ids",
+                            "tag_ids"
+                        ],
+                        "choices": [
+                            {
+                                "value": "category_ids",
+                                "label": "Categories"
+                            },
+                            {
+                                "value": "tag_ids",
+                                "label": "Tags"
+                            }
+                        ],
+                        "required": true
+                    },
+                    "terms": {
+                        "title": "Categories or tags",
+                        "description": "Choose between 1 and 100 categories or tags, then try again.",
+                        "type": "array",
+                        "items": {
+                            "type": "integer",
+                            "minimum": 1
+                        },
+                        "minItems": 1,
+                        "maxItems": 100,
+                        "uniqueItems": true,
+                        "required": true
+                    },
+                    "apply_to_variations": {
+                        "title": "Also apply to variations",
+                        "description": "Also apply to variations has to be on or off.",
+                        "type": "boolean"
+                    },
+                    "skip_already": {
+                        "title": "Skip rows where the value is already correct",
+                        "description": "Skip rows where the value is already correct has to be on or off.",
+                        "type": "boolean",
+                        "default": true
+                    }
+                },
+                "additionalProperties": false
+            }
+        },
+        {
+            "id": "remove_terms",
+            "label": "Remove categories or tags",
+            "description": "Takes away the categories or tags you choose, leaving every other one in place.",
+            "group": "organisation",
+            "groups": [
+                "organisation"
+            ],
+            "editKinds": [
+                "remove"
+            ],
+            "fields": [
+                "category_ids",
+                "tag_ids"
+            ],
+            "args": {
+                "type": "object",
+                "properties": {
+                    "field": {
+                        "title": "Field",
+                        "description": "Choose the field Remove categories or tags should change, then try again.",
+                        "type": "string",
+                        "enum": [
+                            "category_ids",
+                            "tag_ids"
+                        ],
+                        "choices": [
+                            {
+                                "value": "category_ids",
+                                "label": "Categories"
+                            },
+                            {
+                                "value": "tag_ids",
+                                "label": "Tags"
+                            }
+                        ],
+                        "required": true
+                    },
+                    "terms": {
+                        "title": "Categories or tags",
+                        "description": "Choose between 1 and 100 categories or tags, then try again.",
+                        "type": "array",
+                        "items": {
+                            "type": "integer",
+                            "minimum": 1
+                        },
+                        "minItems": 1,
+                        "maxItems": 100,
+                        "uniqueItems": true,
+                        "required": true
+                    },
+                    "apply_to_variations": {
+                        "title": "Also apply to variations",
+                        "description": "Also apply to variations has to be on or off.",
+                        "type": "boolean"
+                    },
+                    "skip_already": {
+                        "title": "Skip rows where the value is already correct",
+                        "description": "Skip rows where the value is already correct has to be on or off.",
+                        "type": "boolean",
+                        "default": true
+                    }
+                },
+                "additionalProperties": false
+            }
+        },
+        {
+            "id": "replace_terms",
+            "label": "Replace categories or tags",
+            "description": "Sets exactly the categories or tags you choose, taking away any others.",
+            "group": "organisation",
+            "groups": [
+                "organisation"
+            ],
+            "editKinds": [
+                "set"
+            ],
+            "fields": [
+                "category_ids",
+                "tag_ids"
+            ],
+            "args": {
+                "type": "object",
+                "properties": {
+                    "field": {
+                        "title": "Field",
+                        "description": "Choose the field Replace categories or tags should change, then try again.",
+                        "type": "string",
+                        "enum": [
+                            "category_ids",
+                            "tag_ids"
+                        ],
+                        "choices": [
+                            {
+                                "value": "category_ids",
+                                "label": "Categories"
+                            },
+                            {
+                                "value": "tag_ids",
+                                "label": "Tags"
+                            }
+                        ],
+                        "required": true
+                    },
+                    "terms": {
+                        "title": "Categories or tags",
+                        "description": "Choose between 1 and 100 categories or tags, then try again.",
+                        "type": "array",
+                        "items": {
+                            "type": "integer",
+                            "minimum": 1
+                        },
+                        "minItems": 1,
+                        "maxItems": 100,
+                        "uniqueItems": true,
+                        "required": true
+                    },
+                    "apply_to_variations": {
+                        "title": "Also apply to variations",
+                        "description": "Also apply to variations has to be on or off.",
+                        "type": "boolean"
+                    },
+                    "skip_already": {
+                        "title": "Skip rows where the value is already correct",
+                        "description": "Skip rows where the value is already correct has to be on or off.",
+                        "type": "boolean",
+                        "default": true
+                    }
+                },
+                "additionalProperties": false
+            }
+        },
+        {
+            "id": "x_picks_add",
+            "label": "Add recipients",
+            "description": "Adds the chosen recipients. Others are kept.",
+            "group": "x_picks_items",
+            "groups": [
+                "x_picks_items"
+            ],
+            "editKinds": [
+                "add"
+            ],
+            "fields": [
+                "x_picks_items"
+            ],
+            "args": {
+                "type": "object",
+                "properties": {
+                    "field": {
+                        "title": "Field",
+                        "description": "Choose the field Add recipients should change, then try again.",
+                        "type": "string",
+                        "enum": [
+                            "x_picks_items"
+                        ],
+                        "choices": [
+                            {
+                                "value": "x_picks_items",
+                                "label": "Sample picks"
+                            }
+                        ],
+                        "required": true
+                    },
+                    "recipients": {
+                        "title": "Recipients",
+                        "description": "Choose at least one recipient from the list.",
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "uniqueItems": true,
+                        "minItems": 1,
+                        "maxItems": 20,
+                        "lookup": {
+                            "multiple": true
+                        },
+                        "required": true
+                    },
+                    "skip_already": {
+                        "title": "Skip rows where the value is already correct",
+                        "description": "Skip rows where the value is already correct has to be on or off.",
+                        "type": "boolean",
+                        "default": true
+                    }
+                },
+                "additionalProperties": false
+            },
+            "provider": "picks",
+            "variations": "parent_only",
+            "available": true,
+            "unavailableReason": "",
+            "alwaysConfirm": false,
+            "confirmReason": "",
+            "row": true
+        },
+        {
+            "id": "x_picks_remove",
+            "label": "Remove recipients",
+            "description": "Removes the chosen recipients. Others are kept.",
+            "group": "x_picks_items",
+            "groups": [
+                "x_picks_items"
+            ],
+            "editKinds": [
+                "remove"
+            ],
+            "fields": [
+                "x_picks_items"
+            ],
+            "args": {
+                "type": "object",
+                "properties": {
+                    "field": {
+                        "title": "Field",
+                        "description": "Choose the field Remove recipients should change, then try again.",
+                        "type": "string",
+                        "enum": [
+                            "x_picks_items"
+                        ],
+                        "choices": [
+                            {
+                                "value": "x_picks_items",
+                                "label": "Sample picks"
+                            }
+                        ],
+                        "required": true
+                    },
+                    "recipients": {
+                        "title": "Recipients",
+                        "description": "Choose at least one recipient from the list.",
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "uniqueItems": true,
+                        "minItems": 1,
+                        "maxItems": 20,
+                        "lookup": {
+                            "multiple": true
+                        },
+                        "required": true
+                    },
+                    "skip_already": {
+                        "title": "Skip rows where the value is already correct",
+                        "description": "Skip rows where the value is already correct has to be on or off.",
+                        "type": "boolean",
+                        "default": true
+                    }
+                },
+                "additionalProperties": false
+            },
+            "provider": "picks",
+            "variations": "parent_only",
+            "available": true,
+            "unavailableReason": "",
+            "alwaysConfirm": false,
+            "confirmReason": "",
+            "row": true
+        },
+        {
+            "id": "x_picks_only",
+            "label": "Keep one recipient",
+            "description": "Replaces every recipient with the chosen one.",
+            "group": "x_picks_items",
+            "groups": [
+                "x_picks_items"
+            ],
+            "editKinds": [
+                "set"
+            ],
+            "fields": [
+                "x_picks_items"
+            ],
+            "args": {
+                "type": "object",
+                "properties": {
+                    "field": {
+                        "title": "Field",
+                        "description": "Choose the field Keep one recipient should change, then try again.",
+                        "type": "string",
+                        "enum": [
+                            "x_picks_items"
+                        ],
+                        "choices": [
+                            {
+                                "value": "x_picks_items",
+                                "label": "Sample picks"
+                            }
+                        ],
+                        "required": true
+                    },
+                    "recipient": {
+                        "title": "Recipient",
+                        "description": "Choose one recipient from the list.",
+                        "type": "string",
+                        "lookup": {
+                            "multiple": false
+                        },
+                        "required": true
+                    },
+                    "skip_already": {
+                        "title": "Skip rows where the value is already correct",
+                        "description": "Skip rows where the value is already correct has to be on or off.",
+                        "type": "boolean",
+                        "default": true
+                    }
+                },
+                "additionalProperties": false
+            },
+            "provider": "picks",
+            "variations": "parent_only",
+            "available": true,
+            "unavailableReason": "",
+            "alwaysConfirm": true,
+            "confirmReason": "This replaces every recipient on the chosen products."
+        },
+        {
+            "id": "x_picks_clear",
+            "label": "Clear recipients",
+            "description": "Removes every recipient.",
+            "group": "x_picks_items",
+            "groups": [
+                "x_picks_items"
+            ],
+            "editKinds": [
+                "clear"
+            ],
+            "fields": [
+                "x_picks_items"
+            ],
+            "args": {
+                "type": "object",
+                "properties": {
+                    "field": {
+                        "title": "Field",
+                        "description": "Choose the field Clear recipients should change, then try again.",
+                        "type": "string",
+                        "enum": [
+                            "x_picks_items"
+                        ],
+                        "choices": [
+                            {
+                                "value": "x_picks_items",
+                                "label": "Sample picks"
+                            }
+                        ],
+                        "required": true
+                    },
+                    "skip_already": {
+                        "title": "Skip rows where the value is already correct",
+                        "description": "Skip rows where the value is already correct has to be on or off.",
+                        "type": "boolean",
+                        "default": true
+                    }
+                },
+                "additionalProperties": false
+            },
+            "provider": "picks",
+            "variations": "parent_only",
+            "available": true,
+            "unavailableReason": "",
+            "alwaysConfirm": true,
+            "confirmReason": "This removes every recipient from the chosen products."
+        }
+    ],
+    "groups": [
+        {
+            "id": "pricing",
+            "label": "Pricing"
+        },
+        {
+            "id": "stock",
+            "label": "Stock"
+        },
+        {
+            "id": "organisation",
+            "label": "Organisation"
+        },
+        {
+            "id": "shipping_tax",
+            "label": "Shipping and tax"
+        },
+        {
+            "id": "publishing",
+            "label": "Publishing"
+        },
+        {
+            "id": "x_picks_items",
+            "label": "Sample picks"
+        }
+    ],
+    "providers": [
+        {
+            "id": "picks",
+            "label": "Sample picks",
+            "version": "2.0.0",
+            "available": true,
+            "reason": ""
+        }
+    ]
+}

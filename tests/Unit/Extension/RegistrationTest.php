@@ -166,14 +166,15 @@ final class RegistrationTest extends TestCase {
 		return self::action( new ActionDescriptor( $parts['id'], $parts['field'], $parts['group'], $parts['label'], $parts['description'], $parts['edit_kind'], $parts['arguments'], $parts['capability'] ) );
 	}
 
-	public function test_the_contract_is_version_1_and_the_registrar_says_so(): void {
-		$this->assertSame( 1, Contract::VERSION );
-		$this->assertSame( [ 1 ], Contract::SUPPORTED );
+	public function test_the_contract_is_version_2_and_still_takes_version_1(): void {
+		$this->assertSame( 2, Contract::VERSION );
+		$this->assertSame( [ 1, 2 ], Contract::SUPPORTED );
 		$this->assertSame( 'bulkcat_register_providers', Contract::HOOK );
 		$registrar = new Registrar( new \BulkCatalogueManager\External\Collector() );
-		$this->assertSame( 1, $registrar->contract() );
+		$this->assertSame( 2, $registrar->contract() );
 		$this->assertTrue( $registrar->supports( 1 ) );
-		$this->assertFalse( $registrar->supports( 2 ) );
+		$this->assertTrue( $registrar->supports( 2 ) );
+		$this->assertFalse( $registrar->supports( 3 ) );
 		$this->assertFalse( $registrar->supports( 0 ) );
 		$main = (string) file_get_contents( dirname( __DIR__, 3 ) . '/bulk-catalogue-manager-for-woocommerce.php' );
 		$this->assertSame( 1, preg_match( "/define\\( 'BULKCAT_EXTENSION_CONTRACT', (\\d+) \\);/", $main, $match ), 'The plugin file defines BULKCAT_EXTENSION_CONTRACT.' );
@@ -196,6 +197,7 @@ final class RegistrationTest extends TestCase {
 				'label'  => 'Sample labels',
 				'rule'   => 'parent_only',
 				'format' => 1,
+				'target' => 'product',
 			],
 			$sample->field_meta( LabelsField::KEY )
 		);
@@ -326,7 +328,7 @@ final class RegistrationTest extends TestCase {
 	}
 
 	public function test_an_unsupported_contract_is_refused(): void {
-		update_option( 'sample_provider_faults', [ 'contract' => 2 ] );
+		update_option( 'sample_provider_faults', [ 'contract' => 3 ] );
 		$this->assertStringContainsString( 'a version of the add-on contract this plugin does not support', $this->refusal_of( [ new SampleProvider( new MemoryStore() ) ] ) );
 		$this->assertStringContainsString( 'does not support', $this->refusal_of( [ self::provider( [ 'contract' => 0 ] ) ] ) );
 	}

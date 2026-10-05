@@ -16,10 +16,12 @@ declare( strict_types = 1 );
 namespace BulkCatalogueManager\External;
 
 use BulkCatalogueManager\Extension\ActionDescriptor;
+use BulkCatalogueManager\Extension\CategoryProvider;
 use BulkCatalogueManager\Extension\ChooserGroup;
 use BulkCatalogueManager\Extension\Contract;
 use BulkCatalogueManager\Extension\ExternalAction;
 use BulkCatalogueManager\Extension\ExternalField;
+use BulkCatalogueManager\Extension\LookupSource;
 use BulkCatalogueManager\Extension\Provider;
 use BulkCatalogueManager\Fields\Field;
 use BulkCatalogueManager\Operations\Group;
@@ -68,7 +70,7 @@ final class Inspector {
 	/**
 	 * The argument kinds a provider may declare.
 	 */
-	public const KINDS = [ 'boolean', 'text', 'integer', 'decimal', 'choice', 'multichoice' ];
+	public const KINDS = [ 'boolean', 'text', 'integer', 'decimal', 'choice', 'multichoice', 'lookup' ];
 
 	/**
 	 * Argument names the core adds itself.
@@ -78,16 +80,18 @@ final class Inspector {
 	/**
 	 * The keys an argument spec may carry.
 	 */
-	private const SPEC_KEYS = [ 'type', 'label', 'rule', 'required', 'default', 'choices', 'min', 'max', 'exclusive_min', 'exclusive_max', 'max_length', 'allow_empty', 'min_items', 'max_items' ];
+	private const SPEC_KEYS = [ 'type', 'label', 'rule', 'required', 'default', 'choices', 'min', 'max', 'exclusive_min', 'exclusive_max', 'max_length', 'allow_empty', 'min_items', 'max_items', 'multiple' ];
 
 	/**
 	 * Check a provider: what it registered as, or the refusal naming the first problem.
 	 *
 	 * @param Provider  $provider The provider.
-	 * @param list<string> $taken Provider ids already registered.
+	 * @param list<string>      $taken    Provider ids already registered.
+	 * @param list<string>|null $features The contract version 2 features to accept; Contract::FEATURES when null.
 	 */
-	public static function inspect( Provider $provider, array $taken ): Registered|\WP_Error {
-		$id = '';
+	public static function inspect( Provider $provider, array $taken, ?array $features = null ): Registered|\WP_Error {
+		$features ??= Contract::FEATURES;
+		$id         = '';
 		try {
 			$id       = Guard::run( '', 'id', static fn(): mixed => $provider->id() );
 			$id       = is_string( $id ) ? $id : '';
@@ -121,7 +125,7 @@ final class Inspector {
 			$fields   = Guard::run( $id, 'fields', static fn(): mixed => $provider->fields() );
 			$groups   = Guard::run( $id, 'groups', static fn(): mixed => $provider->groups() );
 			$declared = Guard::run( $id, 'actions', static fn(): mixed => $provider->actions() );
-			return self::check( $provider, $id, $label, $version, $contract, $fields, $groups, $declared );
+			return self::check( $provider, $id, $label, $version, $contract, $fields, $groups, $declared, $features );
 		} catch ( ProviderFailure $e ) {
 			return self::refuse( __( 'one of its methods failed while it was being read. The WooCommerce log has the details.', 'bulk-catalogue-manager-for-woocommerce' ) );
 		}
@@ -140,7 +144,7 @@ final class Inspector {
 	 * @param mixed    $declared What actions() returned.
 	 * @throws ProviderFailure When a method throws.
 	 */
-	private static function check( Provider $provider, string $id, string $label, string $version, int $contract, mixed $fields, mixed $groups, mixed $declared ): Registered|\WP_Error {
+	private static function check( Provider $provider, string $id, string $label, string $version, int $contract, mixed $fields, mixed $groups, mixed $declared, array $features ): Registered|\WP_Error {
 		if ( ! is_array( $fields ) || [] === $fields || ! array_is_list( $fields ) ) {
 			return self::refuse( __( 'it declares no values of its own.', 'bulk-catalogue-manager-for-woocommerce' ) );
 		}
@@ -237,12 +241,21 @@ final class Inspector {
 			if ( is_string( $kept ) ) {
 				return self::refuse( $kept );
 			}
+			$v2 = self::v2( $action, $kept, $contract, $features );
+			if ( is_string( $v2 ) ) {
+				return self::refuse( $v2 );
+			}
 			if ( isset( $described[ $kept['id'] ] ) ) {
 				return self::refuse( self::twice( __( 'action', 'bulk-catalogue-manager-for-woocommerce' ), $kept['id'] ) );
 			}
 			$actions[ $kept['id'] ]   = $action;
 			$described[ $kept['id'] ] = $kept;
 		}
+		$targets = self::targets( $provider, $described, $meta );
+		if ( is_string( $targets ) ) {
+			return self::refuse( $targets );
+		}
+		$meta = $targets;
 		return new Registered( $provider, $id, $label, $version, $contract, $by_key, $meta, $actions, $described, $group_list );
 	}
 
@@ -318,6 +331,8 @@ final class Inspector {
 			'rule'           => $meta[ $descriptor->field() ]['rule'],
 			'always_confirm' => $descriptor->always_confirm(),
 			'confirm_reason' => Text::plain( $descriptor->confirm_reason(), Text::DESCRIPTION ),
+			'target'         => $descriptor->target(),
+			'row_entry'      => $descriptor->row_entry(),
 		];
 	}
 
@@ -384,6 +399,12 @@ final class Inspector {
 				$kept[ $count ] = $spec[ $count ];
 			}
 		}
+		if ( 'lookup' === $type ) {
+			return self::lookup_spec( $kept, $spec, $problem );
+		}
+		if ( array_key_exists( 'multiple', $spec ) ) {
+			return $problem( __( 'says it takes several items without being a lookup.', 'bulk-catalogue-manager-for-woocommerce' ) );
+		}
 		if ( in_array( $type, [ 'choice', 'multichoice' ], true ) ) {
 			$choices = $spec['choices'] ?? null;
 			if ( ! is_array( $choices ) || [] === $choices ) {
@@ -430,6 +451,150 @@ final class Inspector {
 			$kept['default'] = Arguments::normalise( $spec['default'], $kept );
 		}
 		return $kept;
+	}
+
+	/**
+	 * A `lookup` argument spec as kept (docs/EXTENSIONS-v2.md §4.1): no
+	 * choices and no default; `multiple` (default false); for several items,
+	 * `max_items` from 1 to 100 (default 100) and `min_items` (default 1 when
+	 * required, else 0).
+	 *
+	 * @param array<string, mixed>     $kept    The spec kept so far.
+	 * @param array<string, mixed>     $spec    The declared spec.
+	 * @param callable(string): string $problem Builds the refusal.
+	 * @return array<string, mixed>|string The spec, or the problem.
+	 */
+	private static function lookup_spec( array $kept, array $spec, callable $problem ): array|string {
+		if ( array_key_exists( 'choices', $spec ) || array_key_exists( 'default', $spec ) ) {
+			return $problem( __( 'is a lookup, so its choices and default come from the add-on, not its spec.', 'bulk-catalogue-manager-for-woocommerce' ) );
+		}
+		$multiple = $spec['multiple'] ?? false;
+		if ( ! is_bool( $multiple ) ) {
+			return $problem( __( 'has a switch that is not true or false.', 'bulk-catalogue-manager-for-woocommerce' ) );
+		}
+		$kept['multiple'] = $multiple;
+		if ( ! $multiple ) {
+			if ( array_key_exists( 'min_items', $kept ) || array_key_exists( 'max_items', $kept ) ) {
+				return $problem( __( 'takes one item, so it cannot set how many items to choose.', 'bulk-catalogue-manager-for-woocommerce' ) );
+			}
+			return $kept;
+		}
+		$max = $kept['max_items'] ?? self::MAX_ITEMS;
+		if ( $max > self::MAX_ITEMS || $max < 1 || ( $kept['min_items'] ?? 0 ) > $max ) {
+			return $problem(
+				sprintf(
+					/* translators: %d: the most items one argument may choose, 100. */
+					__( 'lets people choose more than %d items, or fewer than it requires.', 'bulk-catalogue-manager-for-woocommerce' ),
+					self::MAX_ITEMS
+				)
+			);
+		}
+		$kept['max_items'] = $max;
+		$kept['min_items'] = $kept['min_items'] ?? ( ! empty( $kept['required'] ) ? 1 : 0 );
+		return $kept;
+	}
+
+	/**
+	 * The contract version 2 checks of one action (docs/EXTENSIONS-v2.md §2):
+	 * each feature it uses must be declared through contract 2 and be one the
+	 * core implements, its target must be known, and a lookup argument needs
+	 * the action to be a LookupSource.
+	 *
+	 * @param ExternalAction       $action   The action.
+	 * @param array<string, mixed> $kept     Its descriptor as kept.
+	 * @param int                  $contract The provider's contract version.
+	 * @param list<string>         $features The features accepted.
+	 * @return bool|string True, or the problem.
+	 */
+	private static function v2( ExternalAction $action, array $kept, int $contract, array $features ): bool|string {
+		if ( ! in_array( $kept['target'], [ ActionDescriptor::TARGET_PRODUCT, ActionDescriptor::TARGET_CATEGORY ], true ) ) {
+			return sprintf(
+				/* translators: %s: an action id, such as "x_example_add". */
+				__( 'its action "%s" acts on a kind of object the core does not know.', 'bulk-catalogue-manager-for-woocommerce' ),
+				$kept['id']
+			);
+		}
+		$lookup = in_array( 'lookup', array_column( $kept['arguments'], 'type' ), true );
+		$uses   = array_keys(
+			array_filter(
+				[
+					Contract::FEATURE_LOOKUP          => $lookup,
+					Contract::FEATURE_ROW_ENTRY       => $kept['row_entry'],
+					Contract::FEATURE_CATEGORY_TARGET => ActionDescriptor::TARGET_CATEGORY === $kept['target'],
+				]
+			)
+		);
+		foreach ( $uses as $feature ) {
+			if ( $contract < 2 ) {
+				return sprintf(
+					/* translators: 1: an action id, such as "x_example_add"; 2: a feature name, such as "lookup". */
+					__( 'its action "%1$s" uses "%2$s", which needs version 2 of the add-on contract, but the add-on says it was written for version 1.', 'bulk-catalogue-manager-for-woocommerce' ),
+					$kept['id'],
+					$feature
+				);
+			}
+			if ( ! in_array( $feature, $features, true ) ) {
+				return sprintf(
+					/* translators: 1: an action id, such as "x_example_add"; 2: a feature name, such as "lookup". */
+					__( 'its action "%1$s" uses "%2$s", which this version of the plugin does not support yet.', 'bulk-catalogue-manager-for-woocommerce' ),
+					$kept['id'],
+					$feature
+				);
+			}
+		}
+		if ( $lookup && ! $action instanceof LookupSource ) {
+			return sprintf(
+				/* translators: %s: an action id, such as "x_example_add". */
+				__( 'its action "%s" has a lookup argument but cannot look choices up.', 'bulk-catalogue-manager-for-woocommerce' ),
+				$kept['id']
+			);
+		}
+		return true;
+	}
+
+	/**
+	 * Each field's target, from the actions that change it
+	 * (docs/EXTENSIONS-v2.md §5.1): every action on one field shares one
+	 * target, a category field belongs to the category (`parent_only`), and
+	 * a provider with category actions implements CategoryProvider.
+	 *
+	 * @param Provider                            $provider  The provider.
+	 * @param array<string, array<string, mixed>> $described Its actions as kept.
+	 * @param array<string, array<string, mixed>> $meta      Its fields as kept.
+	 * @return array<string, array<string, mixed>>|string The fields with `target`, or the problem.
+	 */
+	private static function targets( Provider $provider, array $described, array $meta ): array|string {
+		$targets = [];
+		foreach ( $described as $kept ) {
+			$field = $kept['field'];
+			if ( isset( $targets[ $field ] ) && $targets[ $field ] !== $kept['target'] ) {
+				return sprintf(
+					/* translators: %s: a value's key, such as "x_example_labels". */
+					__( 'its value "%s" is changed by actions on products and by actions on categories; one value belongs to one kind of object.', 'bulk-catalogue-manager-for-woocommerce' ),
+					$field
+				);
+			}
+			$targets[ $field ] = $kept['target'];
+		}
+		$categories = false;
+		foreach ( $meta as $key => $field ) {
+			$target = $targets[ $key ] ?? ActionDescriptor::TARGET_PRODUCT;
+			if ( ActionDescriptor::TARGET_CATEGORY === $target ) {
+				$categories = true;
+				if ( ExternalField::PARENT_ONLY !== $field['rule'] ) {
+					return sprintf(
+						/* translators: %s: a value's key, such as "x_example_labels". */
+						__( 'its value "%s" belongs to categories, so it cannot belong to each variation.', 'bulk-catalogue-manager-for-woocommerce' ),
+						$key
+					);
+				}
+			}
+			$meta[ $key ]['target'] = $target;
+		}
+		if ( $categories && ! $provider instanceof CategoryProvider ) {
+			return __( 'it offers actions on categories but cannot prepare or refresh categories.', 'bulk-catalogue-manager-for-woocommerce' );
+		}
+		return $meta;
 	}
 
 	/**

@@ -1,5 +1,7 @@
 # External action contract
 
+Version 2 (lookups, category targets and row entries) is defined additively in [EXTENSIONS-v2.md](EXTENSIONS-v2.md); everything below still holds for both versions unless that document says otherwise.
+
 Contract version 1. Built in T104–T109 on branch `codex/external-action-contract` (29 September 2026); not merged, not released. [EXTENDING.md](EXTENDING.md) is the short developer guide for writing a provider against it; this document is the normative contract. §18 records the rulings the implementation took where this contract left a choice open.
 
 References are to `docs/SPEC.md` by section, `docs/EXACT-SELECTION.md`, and classes under `src/`. The public interfaces live in `src/Extension/` (namespace `BulkCatalogueManager\Extension`); the core's own implementation lives in `src/External/` and is not part of the contract. The text names no other plugin, product family or site, and its examples use the neutral test provider of §15.1.

@@ -24,7 +24,7 @@ defined( 'ABSPATH' ) || exit;
 define( 'BULKCAT_FILE', __FILE__ );
 define( 'BULKCAT_DIR', __DIR__ . '/' );
 // The newest external action contract this plugin implements (docs/EXTENSIONS.md §12); equals Extension\Contract::VERSION.
-define( 'BULKCAT_EXTENSION_CONTRACT', 1 );
+define( 'BULKCAT_EXTENSION_CONTRACT', 2 );
 
 if ( file_exists( __DIR__ . '/vendor/autoload.php' ) ) {
 	require_once __DIR__ . '/vendor/autoload.php';

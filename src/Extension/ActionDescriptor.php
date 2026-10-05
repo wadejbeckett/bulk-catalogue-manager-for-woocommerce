@@ -12,7 +12,13 @@
  * choice or multichoice), `label`, `rule` (the sentence a refusal shows),
  * and optionally `required`, `default`, `choices` (value => label), `min`,
  * `max`, `exclusive_min`, `exclusive_max`, `max_length`, `allow_empty`,
- * `min_items` and `max_items`.
+ * `min_items` and `max_items`. Contract version 2 adds the `lookup` kind,
+ * with `multiple`, whose choices a LookupSource supplies
+ * (docs/EXTENSIONS-v2.md §4).
+ *
+ * Contract version 2 also adds two immutable options, set with
+ * for_target() and with_row_entry() (docs/EXTENSIONS-v2.md §5, §6). A
+ * version 1 descriptor keeps their defaults: products, bulk only.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -28,6 +34,30 @@ defined( 'ABSPATH' ) || exit;
  * An immutable external action descriptor.
  */
 final class ActionDescriptor {
+	/**
+	 * Target: products and variations (the default, and version 1).
+	 */
+	public const TARGET_PRODUCT = 'product';
+
+	/**
+	 * Target: native product categories (contract version 2).
+	 */
+	public const TARGET_CATEGORY = 'product_cat';
+
+	/**
+	 * The objects the action changes: TARGET_PRODUCT or TARGET_CATEGORY.
+	 *
+	 * @var string
+	 */
+	private string $target = self::TARGET_PRODUCT;
+
+	/**
+	 * Whether the action is also offered on one row.
+	 *
+	 * @var bool
+	 */
+	private bool $row_entry = false;
+
 	/**
 	 * Describe an external action. Nothing is checked here: the core checks
 	 * the whole provider when it registers, and refuses it naming the first problem.
@@ -126,5 +156,46 @@ final class ActionDescriptor {
 	 */
 	public function confirm_reason(): string {
 		return $this->confirm_reason;
+	}
+
+	/**
+	 * A copy acting on another kind of object: TARGET_PRODUCT or
+	 * TARGET_CATEGORY. Contract version 2; the registrar refuses any other
+	 * value, and a category target unless the core supports the
+	 * `category_target` feature.
+	 *
+	 * @param string $target The target.
+	 */
+	public function for_target( string $target ): self {
+		$copy         = clone $this;
+		$copy->target = $target;
+		return $copy;
+	}
+
+	/**
+	 * A copy that is also offered on one row (the row menu of a product, or
+	 * of a category for a category target), scoped to that row only.
+	 * Contract version 2, feature `row_entry`.
+	 *
+	 * @param bool $row_entry Whether to offer it on a row.
+	 */
+	public function with_row_entry( bool $row_entry = true ): self {
+		$copy            = clone $this;
+		$copy->row_entry = $row_entry;
+		return $copy;
+	}
+
+	/**
+	 * The kind of object the action changes.
+	 */
+	public function target(): string {
+		return $this->target;
+	}
+
+	/**
+	 * Whether the action is also offered on one row.
+	 */
+	public function row_entry(): bool {
+		return $this->row_entry;
 	}
 }

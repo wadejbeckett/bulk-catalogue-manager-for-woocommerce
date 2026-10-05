@@ -1,0 +1,112 @@
+// The lookup picker (docs/EXTENSIONS-v2.md §4): fits a narrow panel.
+.bulkcat-lookup {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	width: 100%;
+	min-width: 0;
+	grid-column: 1 / -1;
+
+	&__label {
+		font-weight: 600;
+	}
+
+	&__chosen {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	&__chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		max-width: 100%;
+		margin: 0;
+		padding: 2px 4px 2px 8px;
+		border: 1px solid #c3c4c7;
+		border-radius: 2px;
+		background: #f6f7f7;
+		overflow-wrap: anywhere;
+	}
+
+	&__remove {
+		min-width: 24px;
+		min-height: 24px;
+		border: 0;
+		background: none;
+		cursor: pointer;
+		font-size: 16px;
+		line-height: 1;
+	}
+
+	&__input {
+		width: 100%;
+		max-width: 100%;
+		box-sizing: border-box;
+	}
+
+	&__help,
+	&__status {
+		margin: 0;
+		color: #50575e;
+	}
+
+	&.has-problem &__help {
+		color: #b32d2e;
+	}
+
+	&__status:empty {
+		display: none;
+	}
+
+	&__error {
+		color: #b32d2e;
+	}
+
+	&__list {
+		max-height: 240px;
+		margin: 0;
+		padding: 0;
+		overflow-y: auto;
+		border: 1px solid #c3c4c7;
+		list-style: none;
+	}
+
+	&__option {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: space-between;
+		gap: 4px 12px;
+		margin: 0;
+		padding: 8px;
+		cursor: pointer;
+
+		&.is-active {
+			outline: 2px solid var(--wp-admin-theme-color, #2271b1);
+			outline-offset: -2px;
+		}
+
+		&.is-selected {
+			background: #f0f6fc;
+			font-weight: 600;
+		}
+
+		&[aria-disabled="true"] {
+			color: #8c8f94;
+			cursor: not-allowed;
+		}
+	}
+
+	&__option-detail {
+		color: #50575e;
+		font-weight: 400;
+	}
+
+	&__more {
+		align-self: flex-start;
+	}
+}

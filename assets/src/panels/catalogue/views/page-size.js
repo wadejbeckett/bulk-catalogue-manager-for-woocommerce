@@ -22,6 +22,7 @@ export default function PageSizeControl( { view, onChangeView } ) {
 			__next40pxDefaultSize
 			__nextHasNoMarginBottom
 			className="bulkcat-views__page-size"
+			labelPosition="side"
 			label={ __(
 				'Rows per page',
 				'bulk-catalogue-manager-for-woocommerce'

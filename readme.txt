@@ -6,7 +6,7 @@ Tested up to: 7.1
 Requires PHP: 8.1
 WC requires at least: 11.1
 WC tested up to: 11.1
-Stable tag: 1.3.2
+Stable tag: 1.3.3
 License: GPL-3.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -145,6 +145,16 @@ Yes. Each site keeps its own history and settings, and deleting the plugin with 
 
 == Changelog ==
 
+= 1.3.3 =
+* Categories tab uses the full width: the tree on the left with whole names, expand and collapse all, search that keeps the path, and a details pane on the right with the category's details and its products.
+* All fields shows WordPress's own category form inside the tab, so fields other plugins add to categories appear and save there; Open in WooCommerce links to the native screen.
+* Reordering categories sets WooCommerce's own category order, so the shop and WooCommerce's screen follow, and the other way round.
+* Delete and Merge into… for one or several categories, with WooCommerce's own consequences and counts stated first; the default category can be chosen and is never deleted.
+* Category renames, moves, reordering, descriptions, display type and image can be undone from History.
+* History names categories by their path and describes category changes in words.
+* Undo of a change that added and removed categories no longer reports false conflicts; the preview lists each product once.
+* Catalog visibility and Shown in shop and search are default columns; only display changes you make are remembered.
+
 = 1.3.2 =
 * Category editor: set a category's Display type and choose, replace or remove its image from the media library (WooCommerce's own category settings).
 * History names category changes in plain words instead of internal keys.
@@ -200,6 +210,9 @@ Yes. Each site keeps its own history and settings, and deleting the plugin with 
 * Settings for access, page size, confirmation, variation defaults, background batch sizes, history and data removal.
 
 == Upgrade Notice ==
+
+= 1.3.3 =
+A full-width Categories tab with delete, merge, native order and other plugins' category fields. Category order now uses WooCommerce's own order. No database change.
 
 = 1.3.2 =
 Adds category Display type and image to the category editor. No database or history-format change. Back up files and data before updating.

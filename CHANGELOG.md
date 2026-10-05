@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.3] - 2026-10-05
+
+- Categories tab uses the full width: the tree on the left with whole names, expand and collapse all, search that keeps the path, and a details pane on the right with the category's details and its products.
+- All fields shows WordPress's own category form inside the tab, so fields other plugins add to categories appear and save there; Open in WooCommerce links to the native screen.
+- Reordering categories sets WooCommerce's own category order, so the shop and WooCommerce's screen follow, and the other way round.
+- Delete and Merge into… for one or several categories, with WooCommerce's own consequences and counts stated first; the default category can be chosen and is never deleted.
+- Category renames, moves, reordering, descriptions, display type and image can be undone from History.
+- History names categories by their path and describes category changes in words.
+- Undo of a change that added and removed categories no longer reports false conflicts; the preview lists each product once.
+- Catalog visibility and Shown in shop and search are default columns; only display changes you make are remembered.
+
 ## [1.3.2] - 2026-10-05
 
 - Category editor: set a category's Display type (Default, Products, Subcategories or Both) and choose, replace or remove its image from the media library. Both are WooCommerce's own category settings, so the native category screen shows the same values.

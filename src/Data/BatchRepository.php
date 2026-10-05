@@ -512,10 +512,14 @@ final class BatchRepository {
 	/**
 	 * Mark one item a run claimed for itself (claim_item()) with its outcome
 	 * and count it in the batch's progress, in one statement, so a run killed
-	 * after any item loses neither its mark nor its count (ENGINE-2).
+	 * after any item loses neither its mark nor its count (ENGINE-2). Only
+	 * while the item is still working under this run's claim (ENGINE-5): an
+	 * item another run has taken over is left to that run, and an item is
+	 * counted once, by the one move out of working.
 	 *
 	 * @param int    $batch_id Batch.
 	 * @param int    $item_id  Item.
+	 * @param string $token    The claim token of the run marking it.
 	 * @param string $state    One of Schema::ITEM_STATES other than pending.
 	 * @param string $message  The plain reason stored with the item (cut to MESSAGE_LENGTH).
 	 * @param bool   $changed  Whether the item counts as changed.
@@ -523,10 +527,10 @@ final class BatchRepository {
 	 * @throws \InvalidArgumentException On an invalid state.
 	 * @throws \RuntimeException When the statement fails.
 	 */
-	public function finish_item( int $batch_id, int $item_id, string $state, string $message, bool $changed ): bool {
+	public function finish_item( int $batch_id, int $item_id, string $token, string $state, string $message, bool $changed ): bool {
 		global $wpdb;
 		self::assert_in( $state, [ 'done', 'skipped', 'failed' ], 'item state' );
-		$result = $wpdb->query( $wpdb->prepare( 'UPDATE %i AS i INNER JOIN %i AS b ON b.batch_id = i.batch_id SET i.state = %s, i.message = %s, b.done_items = b.done_items + 1, b.changed_items = b.changed_items + %d, b.failed_items = b.failed_items + %d WHERE i.batch_id = %d AND i.item_id = %d AND i.state = %s', $this->registry->table( Schema::ITEMS ), $this->registry->table( Schema::BATCHES ), $state, self::cut( $message ), $changed ? 1 : 0, 'failed' === $state ? 1 : 0, $batch_id, $item_id, Schema::ITEM_WORKING ) );
+		$result = $wpdb->query( $wpdb->prepare( 'UPDATE %i AS i INNER JOIN %i AS b ON b.batch_id = i.batch_id SET i.state = %s, i.message = %s, b.done_items = b.done_items + 1, b.changed_items = b.changed_items + %d, b.failed_items = b.failed_items + %d WHERE i.batch_id = %d AND i.item_id = %d AND i.claim_token = %s AND i.state = %s', $this->registry->table( Schema::ITEMS ), $this->registry->table( Schema::BATCHES ), $state, self::cut( $message ), $changed ? 1 : 0, 'failed' === $state ? 1 : 0, $batch_id, $item_id, $token, Schema::ITEM_WORKING ) );
 		if ( false === $result ) {
 			throw new \RuntimeException( 'The batch item could not be updated.' );
 		}

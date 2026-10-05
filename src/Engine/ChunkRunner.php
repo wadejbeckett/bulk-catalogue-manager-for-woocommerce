@@ -474,8 +474,8 @@ final class ChunkRunner {
 		try {
 			$writer->run(
 				static function ( Writer $writer ) use ( $items, $operations, $undo, $own, $batches, $changes, $batch_id, $token, $lease, $deadline, &$error, &$stopped, &$written ): void {
-					$finish = static function ( int $item_id, array $mark, bool $changed ) use ( $batches, $batch_id ): void {
-						$batches->finish_item( $batch_id, $item_id, $mark[0], $mark[1], $changed );
+					$finish = static function ( int $item_id, array $mark, bool $changed ) use ( $batches, $batch_id, $token ): void {
+						$batches->finish_item( $batch_id, $item_id, $token, $mark[0], $mark[1], $changed );
 					};
 					foreach ( $items as $item ) {
 						if ( $lease() > $deadline ) {

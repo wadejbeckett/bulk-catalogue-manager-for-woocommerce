@@ -677,6 +677,56 @@ final class ChunkRunnerTest extends TestCase {
 		$this->assertSame( [ 1, 1, 0 ], [ $store->batch()['done_items'], $store->batch()['changed_items'], $store->batch()['failed_items'] ] );
 	}
 
+	public function test_a_run_whose_chunk_another_run_took_over_never_counts_twice(): void {
+		// ENGINE-5: the first product's save hook outlasts the lease, and the delayed retry runs the whole chunk meanwhile.
+		$ids   = self::products( 3 );
+		$store = new RunnerStore( self::BATCH, $ids, $this->increase(), self::USER );
+		$later = null;
+		self::hooked(
+			1001,
+			function () use ( &$later ): void {
+				if ( null === $later ) {
+					$this->now += BatchRepository::LEASE_SECONDS + 1;
+					$later      = $this->runner()->run( self::BATCH );
+				}
+			}
+		);
+
+		$this->runner()->run( self::BATCH );
+
+		$this->assertSame( 'complete', $later );
+		$this->assertSame( [ 'done' => 3 ], array_count_values( $store->states() ) );
+		$batch = $store->batch();
+		$this->assertSame( [ 3, 3, 0 ], [ $batch['done_items'], $batch['changed_items'], $batch['failed_items'] ], 'Each item is counted once, so progress never passes 100%.' );
+	}
+
+	public function test_a_run_never_marks_an_item_another_run_now_holds(): void {
+		// ENGINE-5: while the first run is still saving 1001, another run takes the item over and is writing it.
+		$ids   = self::products( 2 );
+		$store = new RunnerStore( self::BATCH, $ids, $this->increase(), self::USER );
+		self::hooked(
+			1001,
+			static function () use ( $store ): void {
+				$item = $store->item( 1001 );
+				$store->items[ $item['item_id'] ]['claim_token'] = str_repeat( 'f', 32 );
+			}
+		);
+
+		$this->assertSame( 'continued', $this->runner()->run( self::BATCH ), 'The item another run is writing is still open, so the batch is not finalised.' );
+		$this->assertSame(
+			[
+				1001 => 'working',
+				1002 => 'done',
+			],
+			$store->states(),
+			'Left for the run that holds it to mark.'
+		);
+		$this->assertSame( 1, $store->batch()['done_items'] );
+
+		$this->assertTrue( ( new BatchRepository() )->finish_item( self::BATCH, $store->item( 1001 )['item_id'], str_repeat( 'f', 32 ), 'done', '', true ) );
+		$this->assertSame( [ 2, 2, 0 ], [ $store->batch()['done_items'], $store->batch()['changed_items'], $store->batch()['failed_items'] ] );
+	}
+
 	public function test_a_run_stops_claiming_items_past_most_of_the_lease(): void {
 		self::products( 3 );
 		$store = new RunnerStore( self::BATCH, [ 1001, 1002, 1003 ], $this->increase(), self::USER );

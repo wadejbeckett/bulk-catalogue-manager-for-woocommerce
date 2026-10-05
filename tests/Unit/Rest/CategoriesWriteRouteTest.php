@@ -90,7 +90,55 @@ final class CategoriesWriteRouteTest extends TestCase {
 				],
 			],
 			[ 'POST', '/categories/5/default', [] ],
+			[
+				'POST',
+				'/categories/delete',
+				[
+					'ids'     => [ 5 ],
+					'preview' => true,
+				],
+			],
+			[
+				'POST',
+				'/categories/merge',
+				[
+					'ids'     => [ 5 ],
+					'into'    => 6,
+					'preview' => true,
+				],
+			],
 		];
+	}
+
+	public function test_a_delete_is_previewed_then_applied_with_its_token(): void {
+		$GLOBALS['bulkcat_test']['user_caps'][12]['delete_term'] = true;
+		$GLOBALS['bulkcat_test']['object_terms']                 = [];
+		$preview = self::send(
+			'POST',
+			'/categories/delete',
+			[
+				'ids'     => [ 5 ],
+				'preview' => true,
+			]
+		);
+		$this->assertInstanceOf( \WP_REST_Response::class, $preview, $preview instanceof \WP_Error ? $preview->get_error_message() : '' );
+		$this->assertSame( [ 'categories', 'subcategories', 'products', 'fallback', 'into', 'default', 'token' ], array_keys( $preview->get_data() ) );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['deleted_terms'] ?? [] );
+
+		$unconfirmed = self::send( 'POST', '/categories/delete', [ 'ids' => [ 5 ] ] );
+		$this->assertSame( 'bulkcat_preview_required', $unconfirmed->get_error_code() );
+
+		$done = self::send(
+			'POST',
+			'/categories/delete',
+			[
+				'ids'   => [ 5 ],
+				'token' => $preview->get_data()['token'],
+			]
+		);
+		$this->assertInstanceOf( \WP_REST_Response::class, $done, $done instanceof \WP_Error ? $done->get_error_message() : '' );
+		$this->assertSame( [ 'complete', [ 5 ] ], [ $done->get_data()['status'], $done->get_data()['deleted'] ] );
+		$this->assertSame( [ [ 5, 'product_cat' ] ], $GLOBALS['bulkcat_test']['deleted_terms'] );
 	}
 
 	public function test_make_default_answers_the_node_and_sets_woocommerce_default(): void {
@@ -133,8 +181,12 @@ final class CategoriesWriteRouteTest extends TestCase {
 			}
 		}
 		sort( $methods );
-		$this->assertSame( [ 'GET', 'GET', 'PATCH', 'POST', 'POST', 'POST' ], $methods );
-		$this->assertNotContains( 'DELETE', $methods, 'Deleting a category stays on the native screen (SPEC §2).' );
+		$this->assertSame( [ 'GET', 'GET', 'PATCH', 'POST', 'POST', 'POST', 'POST', 'POST' ], $methods );
+		$this->assertNotContains( 'DELETE', $methods, 'Deleting is previewed first, so it is a POST with a preview token (ticket 24).' );
+		foreach ( [ CategoriesWriteController::DELETE_ROUTE, CategoriesWriteController::MERGE_ROUTE ] as $route ) {
+			$endpoint = $routes[ '/bulkcat/v1' . $route ][0];
+			$this->assertSame( [ 'POST', [ Access::class, 'can_manage_terms' ] ], [ $endpoint['methods'], $endpoint['permission_callback'] ] );
+		}
 		$this->assertSame( [], $GLOBALS['bulkcat_test']['wrong'] );
 	}
 

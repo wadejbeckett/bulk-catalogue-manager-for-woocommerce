@@ -457,6 +457,9 @@ final class Planner {
 		if ( null !== ( $batch['pruned_gmt'] ?? null ) ) {
 			return self::not_reversible( self::PRUNED, self::pruned_sentence() );
 		}
+		if ( \BulkCatalogueManager\Engine\Reversibility::permanent( $batch ) ) {
+			return self::not_reversible( \BulkCatalogueManager\Engine\Reversibility::PERMANENT, __( 'A deleted category cannot be brought back, so this change cannot be undone.', 'bulk-catalogue-manager-for-woocommerce' ) );
+		}
 		$manifest = $batch['extensions'] ?? null;
 		$blocked  = is_array( $manifest ) ? External\Manifest::blocked( $manifest, $this->actions->providers(), false ) : null;
 		if ( null !== $blocked ) {

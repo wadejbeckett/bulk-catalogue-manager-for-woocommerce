@@ -17,3 +17,34 @@ export function makeDefaultCategory( id ) {
 		method: 'POST',
 	} );
 }
+
+/**
+ * POST /categories/delete: with `{ preview: true }` what deleting would do
+ * and its token; with `{ token }` the delete itself.
+ *
+ * @param {Array<number>} ids     Category ids.
+ * @param {Object}        options `{ preview: true }` or `{ token }`.
+ * @return {Promise<Object>} The preview, or { batch_id, status, deleted, failed }.
+ */
+export function deleteCategories( ids, options ) {
+	return request( 'categories/delete', {
+		method: 'POST',
+		data: { ids: ids.map( Number ), ...options },
+	} );
+}
+
+/**
+ * POST /categories/merge: as deleteCategories(), moving the products into
+ * `into` first.
+ *
+ * @param {Array<number>} ids     Category ids.
+ * @param {Object}        options `{ preview: true }` or `{ token }`.
+ * @param {number}        into    The category the products move into.
+ * @return {Promise<Object>} The preview, or { batch_id, status, deleted, failed }.
+ */
+export function mergeCategories( ids, options, into ) {
+	return request( 'categories/merge', {
+		method: 'POST',
+		data: { ids: ids.map( Number ), into: Number( into ), ...options },
+	} );
+}

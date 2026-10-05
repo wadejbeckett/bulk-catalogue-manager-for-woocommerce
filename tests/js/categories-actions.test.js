@@ -1,7 +1,8 @@
 /**
  * The category menu's own-category actions (tickets 23 and 24): the shop's
  * default category is marked and Make default sets it through
- * POST /categories/{id}/default.
+ * POST /categories/{id}/default; Delete… and Merge into… state WooCommerce's
+ * consequences, say they cannot be undone and confirm with the preview's token.
  */
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
@@ -121,5 +122,131 @@ describe( 'category actions', () => {
 		expect(
 			apiFetch.mock.calls.filter( ( [ o ] ) => ! o.method ).length
 		).toBe( 2 );
+	} );
+
+	it( 'deletes after stating the consequences and that it cannot be undone', async () => {
+		routes[ 'POST categories/delete' ] = ( options ) =>
+			Promise.resolve(
+				options.data.preview
+					? {
+							categories: [
+								{ id: 6, name: 'Bags', path: 'Bags' },
+							],
+							subcategories: 0,
+							products: 3,
+							fallback: 2,
+							into: null,
+							default: { id: 5, path: 'Uncategorised' },
+							token: 'tok',
+						}
+					: {
+							batch_id: 8,
+							status: 'complete',
+							deleted: [ 6 ],
+							failed: [],
+						}
+			);
+		render( <CategoryPanel settings={ MANAGER } onChange={ jest.fn() } /> );
+		await screen.findByRole( 'tree' );
+		const own = openMenu( 'Uncategorised' );
+		expect(
+			within( own ).queryByRole( 'menuitem', { name: 'Delete…' } )
+		).toBeNull();
+		fireEvent.keyDown( own, { key: 'Escape' } );
+
+		fireEvent.click(
+			within( openMenu( 'Bags' ) ).getByRole( 'menuitem', {
+				name: 'Delete…',
+			} )
+		);
+		const dialog = await screen.findByRole( 'dialog', {
+			name: 'Delete this category',
+		} );
+		expect(
+			await within( dialog ).findByText(
+				'3 products lose these categories. The products themselves are kept.'
+			)
+		).toBeTruthy();
+		expect(
+			within( dialog ).getByText(
+				'2 products have no other category, so they go into the default category, Uncategorised.'
+			)
+		).toBeTruthy();
+		expect(
+			within( dialog ).getByText(
+				'A deleted category cannot be brought back, so this cannot be undone.'
+			)
+		).toBeTruthy();
+		await act( async () => {
+			fireEvent.click(
+				within( dialog ).getByRole( 'button', { name: 'Delete' } )
+			);
+		} );
+		const sent = apiFetch.mock.calls
+			.map( ( [ o ] ) => o )
+			.filter( ( o ) => o.method === 'POST' );
+		expect( sent.map( ( o ) => o.data ) ).toEqual( [
+			{ ids: [ 6 ], preview: true },
+			{ ids: [ 6 ], token: 'tok' },
+		] );
+		expect( speak ).toHaveBeenCalledWith( '1 category deleted.', 'polite' );
+		expect( screen.queryByRole( 'dialog' ) ).toBeNull();
+	} );
+
+	it( 'merges into a chosen category', async () => {
+		routes[ 'POST categories/merge' ] = ( options ) =>
+			Promise.resolve(
+				options.data.preview
+					? {
+							categories: [
+								{ id: 6, name: 'Bags', path: 'Bags' },
+							],
+							subcategories: 0,
+							products: 4,
+							fallback: 0,
+							into: {
+								id: options.data.into,
+								path: 'Clothing › Hats',
+							},
+							default: null,
+							token: 'tok' + options.data.into,
+						}
+					: {
+							batch_id: 9,
+							status: 'complete',
+							deleted: [ 6 ],
+							failed: [],
+						}
+			);
+		render( <CategoryPanel settings={ MANAGER } onChange={ jest.fn() } /> );
+		await screen.findByRole( 'tree' );
+		fireEvent.click(
+			within( openMenu( 'Bags' ) ).getByRole( 'menuitem', {
+				name: 'Merge into…',
+			} )
+		);
+		const dialog = await screen.findByRole( 'dialog' );
+		fireEvent.change( within( dialog ).getByLabelText( 'Merge into' ), {
+			target: { value: '2' },
+		} );
+		expect(
+			await within( dialog ).findByText(
+				'4 products move into Clothing › Hats.'
+			)
+		).toBeTruthy();
+		await act( async () => {
+			fireEvent.click(
+				within( dialog ).getByRole( 'button', { name: 'Merge' } )
+			);
+		} );
+		const last = apiFetch.mock.calls
+			.map( ( [ o ] ) => o )
+			.filter( ( o ) => o.method === 'POST' )
+			.pop();
+		expect( last.data ).toEqual( { ids: [ 6 ], into: 2, token: 'tok2' } );
+		expect( speak ).toHaveBeenCalledWith(
+			'1 category merged into Clothing › Hats.',
+			'polite'
+		);
 	} );
 } );

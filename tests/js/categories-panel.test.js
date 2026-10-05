@@ -441,7 +441,14 @@ describe( 'category panel', () => {
 			within( menu )
 				.getAllByRole( 'menuitem' )
 				.map( ( el ) => el.textContent )
-		).toEqual( [ 'Rename', 'Edit details…', 'Move to…', 'Make default' ] );
+		).toEqual( [
+			'Rename',
+			'Edit details…',
+			'Move to…',
+			'Make default',
+			'Delete…',
+			'Merge into…',
+		] );
 		fireEvent.click(
 			within( menu ).getByRole( 'menuitem', { name: 'Move to…' } )
 		);

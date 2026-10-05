@@ -37,6 +37,8 @@ defined( 'ABSPATH' ) || exit;
  *     an undo of that undo batch, so the undo batch itself stays reversible;
  *   - `outside_retention`: it was created more than *Keep history for* days
  *     ago (Settings::history_days(); never when kept indefinitely);
+ *   - `permanent` (ticket 24): it deleted or merged categories
+ *     (Categories\Deleter::PERMANENT), which cannot be brought back exactly;
  *   - `nothing_applied`: it finished with no `applied` journal row — every
  *     row was already at its target, skipped or failed, or it was
  *     cancelled before its first chunk — so there is nothing to put back;
@@ -84,6 +86,7 @@ final class Reversibility {
 	public const ALREADY_UNDONE    = 'already_undone';
 	public const PRUNED            = 'pruned';
 	public const NOTHING_APPLIED   = 'nothing_applied';
+	public const PERMANENT         = 'permanent';
 
 	/**
 	 * The add-on that made the change is registered but cannot run now (T108).
@@ -98,7 +101,7 @@ final class Reversibility {
 	/**
 	 * Every reason a batch is not reversible, for the route schema.
 	 */
-	public const REASONS = [ self::OUTSIDE_RETENTION, self::ALREADY_UNDONE, self::PRUNED, self::NOTHING_APPLIED, self::PROVIDER_MISSING, self::PROVIDER_UNAVAILABLE ];
+	public const REASONS = [ self::OUTSIDE_RETENTION, self::ALREADY_UNDONE, self::PRUNED, self::NOTHING_APPLIED, self::PROVIDER_MISSING, self::PROVIDER_UNAVAILABLE, self::PERMANENT ];
 
 	/**
 	 * Statuses in which a batch is still working.
@@ -239,6 +242,7 @@ final class Reversibility {
 			return self::answer( self::IN_PROGRESS, $none );
 		}
 		$reason = match ( true ) {
+			self::permanent( $batch )                                 => self::PERMANENT,
 			null !== ( $batch['pruned_gmt'] ?? null )                 => self::PRUNED,
 			$undone || 'undone' === $batch['status']                  => self::ALREADY_UNDONE,
 			null !== $cutoff && (string) $batch['created_gmt'] < $cutoff => self::OUTSIDE_RETENTION,
@@ -258,6 +262,24 @@ final class Reversibility {
 			return self::answer( self::COMPLETED_WITH_ERRORS, $conflicts );
 		}
 		return self::answer( null !== $conflicts && $conflicts > 0 ? self::PARTIALLY_REVERSIBLE : self::REVERSIBLE, $conflicts );
+	}
+
+	/**
+	 * Whether a batch deleted or merged categories (ticket 24): a deleted
+	 * category cannot be brought back exactly, so it is never undone.
+	 *
+	 * @param array<string, mixed> $batch Typed batch row.
+	 */
+	public static function permanent( array $batch ): bool {
+		if ( 'tree' !== ( $batch['source'] ?? '' ) ) {
+			return false;
+		}
+		foreach ( is_array( $batch['operations'] ?? null ) ? $batch['operations'] : [] as $step ) {
+			if ( is_array( $step ) && in_array( $step['action'] ?? null, \BulkCatalogueManager\Categories\Deleter::PERMANENT, true ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**

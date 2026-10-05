@@ -961,6 +961,7 @@ final class ChunkRunnerTest extends TestCase {
 		sort( $calls );
 		$this->assertSame(
 			[
+				"Categories/Deleter.php: 'running' -> \$status",
 				"Categories/Writer.php: 'running' -> \$status",
 				"Data/BatchRepository.php: 'running' -> \$closure['write_status']",
 				"Engine/BatchFactory.php: \$previous -> 'undoing'",
@@ -976,7 +977,7 @@ final class ChunkRunnerTest extends TestCase {
 				"Undo/Original.php: 'undoing' -> 'undone'",
 			],
 			$calls,
-			'The engine writes queued -> running -> complete, partial, failed or cancelled (with inline closure committed atomically), a category write finishes its batch of one, an undo moves the batch it undoes to undoing and then to undone or back, and nothing else.'
+			'The engine writes queued -> running -> complete, partial, failed or cancelled (with inline closure committed atomically), a category write finishes its batch of one, a category delete or merge finishes its batch, an undo moves the batch it undoes to undoing and then to undone or back, and nothing else.'
 		);
 
 		// The batch an undo starts on came from a finished status (the planner refuses any other), and goes back only to one.

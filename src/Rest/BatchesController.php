@@ -573,6 +573,48 @@ final class BatchesController implements ReadController {
 				'undone_by'           => null === $undo ? null : $undo + [ 'user_name' => $names[ $undo['user_id'] ] ?? '' ],
 			];
 		}
+		// Contract version 2: an add-on's row names its chosen items from its manifest, read once for the page and only when the page has one.
+		$external = self::external_ids( $items );
+		return [] === $external ? $items : self::with_manifests( $items, $this->batches->manifests( $external ) );
+	}
+
+	/**
+	 * The page's batches made with an add-on that carry no `external` yet.
+	 *
+	 * @param list<array<string, mixed>> $items Reports.
+	 * @return list<int>
+	 */
+	public static function external_ids( array $items ): array {
+		$ids = [];
+		foreach ( $items as $item ) {
+			if ( isset( $item['external'] ) ) {
+				continue;
+			}
+			foreach ( (array) ( $item['operations'] ?? [] ) as $step ) {
+				if ( is_array( $step ) && str_starts_with( (string) ( $step['action'] ?? '' ), 'x_' ) ) {
+					$ids[] = (int) $item['batch_id'];
+					break;
+				}
+			}
+		}
+		return $ids;
+	}
+
+	/**
+	 * Each external row with its manifest's labels (External\Manifest::client()),
+	 * limited to the items its disclosed steps show (docs/EXTENSIONS-v2.md §4.5).
+	 *
+	 * @param list<array<string, mixed>>        $items     Reports.
+	 * @param array<int, array<string, mixed>> $manifests Manifests by batch id.
+	 * @return list<array<string, mixed>>
+	 */
+	public static function with_manifests( array $items, array $manifests ): array {
+		foreach ( $items as $index => $item ) {
+			$manifest = $manifests[ (int) ( $item['batch_id'] ?? 0 ) ] ?? null;
+			if ( is_array( $manifest ) && ! isset( $item['external'] ) ) {
+				$items[ $index ]['external'] = \BulkCatalogueManager\External\Manifest::client( $manifest, is_array( $item['operations'] ?? null ) ? $item['operations'] : [] );
+			}
+		}
 		return $items;
 	}
 

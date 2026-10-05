@@ -18,13 +18,14 @@ import { useCallback, useMemo, useRef } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 
 import { CellContext } from '../cells';
-import { PER_PAGE_SIZES, hidingChoices } from '../defaults';
+import { hidingChoices } from '../defaults';
 import { useEditScope } from '../edit';
 import { LoadingRows } from '../states';
 import CatalogueTable from '../table';
 
 const LAYOUTS = { grid: {} };
-const CONFIG = { perPageSizes: PER_PAGE_SIZES };
+// Ticket 19: rows per page is the toolbar control, which needs no sort.
+const CONFIG = { perPageSizes: [] };
 const itemId = ( item ) => String( item.id );
 
 /**

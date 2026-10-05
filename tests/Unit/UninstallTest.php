@@ -113,6 +113,8 @@ final class UninstallTest extends TestCase {
 				'deleted'     => [
 					[ 'metadata', 'user', 0, 'wp_bulkcat_views', '', true ],
 					[ 'metadata', 'user', 0, 'bulkcat_views', '', true ],
+					[ 'metadata', 'user', 0, 'wp_bulkcat_display_preferences', '', true ],
+					[ 'metadata', 'user', 0, 'bulkcat_display_preferences', '', true ],
 					[ 'metadata', 'term', 0, 'bulkcat_order', '', true ],
 					[ 'metadata', 'post', 0, '_bulkcat_availability_off', '', true ],
 					[ 'option', 'bulkcat_settings' ],
@@ -239,7 +241,7 @@ final class UninstallTest extends TestCase {
 		$this->assertTrue( is_array( $result ), $text );
 		$this->assertFalse( $result['scheduler'] );
 		$this->assertSame( [], $result['unscheduled'] );
-		$this->assertSame( [ [ 'metadata', 'user', 0, 'wp_bulkcat_views', '', true ], [ 'metadata', 'user', 0, 'bulkcat_views', '', true ], [ 'metadata', 'term', 0, 'bulkcat_order', '', true ], [ 'metadata', 'post', 0, '_bulkcat_availability_off', '', true ], [ 'option', 'bulkcat_settings' ], [ 'option', 'bulkcat_db_version' ], [ 'option', 'bulkcat_request_epoch' ] ], $result['deleted'] );
+		$this->assertSame( [ [ 'metadata', 'user', 0, 'wp_bulkcat_views', '', true ], [ 'metadata', 'user', 0, 'bulkcat_views', '', true ], [ 'metadata', 'user', 0, 'wp_bulkcat_display_preferences', '', true ], [ 'metadata', 'user', 0, 'bulkcat_display_preferences', '', true ], [ 'metadata', 'term', 0, 'bulkcat_order', '', true ], [ 'metadata', 'post', 0, '_bulkcat_availability_off', '', true ], [ 'option', 'bulkcat_settings' ], [ 'option', 'bulkcat_db_version' ], [ 'option', 'bulkcat_request_epoch' ] ], $result['deleted'] );
 	}
 
 	public function test_tables_are_dropped_through_prepare_with_an_identifier_placeholder(): void {
@@ -305,6 +307,6 @@ final class UninstallTest extends TestCase {
 		self::run_uninstall();
 
 		$users = array_values( array_filter( $GLOBALS['bulkcat_test']['deleted'], static fn( array $call ): bool => 'metadata' === $call[0] && 'user' === $call[1] ) );
-		$this->assertSame( [ [ 'metadata', 'user', 0, 'wp_5_bulkcat_views', '', true ] ], $users, 'Only site 5\'s views go; the main site keeps its own and the old network-wide list.' );
+		$this->assertSame( [ [ 'metadata', 'user', 0, 'wp_5_bulkcat_views', '', true ], [ 'metadata', 'user', 0, 'wp_5_bulkcat_display_preferences', '', true ] ], $users, 'Only site 5\'s views and display preferences go; the main site keeps its own and the old network-wide list.' );
 	}
 }

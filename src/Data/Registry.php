@@ -48,10 +48,12 @@ final class Registry {
 	];
 
 	/**
-	 * User meta keys: each user's saved views (T52).
+	 * User meta keys: each user's saved views (T52) and display preferences
+	 * (ticket 19; a per-site user option, so stored under the site's prefix).
 	 */
 	private const USER_META = [
 		\BulkCatalogueManager\Rest\ViewsController::META_KEY,
+		\BulkCatalogueManager\Rest\DisplayPreferencesController::OPTION,
 	];
 
 	/**

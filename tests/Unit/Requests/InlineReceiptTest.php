@@ -441,7 +441,9 @@ final class InlineReceiptTest extends TestCase {
 			'hooks'    => 0,
 		];
 		$GLOBALS['bulkcat_test']['products'][101] = new class( $stored, $hook, $counts ) {
-			public function __construct( public StoredProduct $stored, private \Closure $hook, public object $counts ) {}
+			private StoredProduct $pristine;
+			public function __construct( public StoredProduct $stored, private \Closure $hook, public object $counts ) {
+				$this->pristine = clone $stored; }
 			public function __clone() {
 				$this->stored = clone $this->stored;
 				// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_debug_backtrace -- Test-only counter distinguishes the detached dry-run from Writer's pre-save clone.
@@ -449,7 +451,13 @@ final class InlineReceiptTest extends TestCase {
 					++$this->counts->prepares; } }
 			public function save(): int {
 				++$this->counts->hooks;
-				( $this->hook )();
+				try {
+					( $this->hook )();
+				} catch ( \Throwable $e ) {
+					// The hook threw before anything was stored: a fresh load finds the product as it was.
+					$GLOBALS['bulkcat_test']['products'][101] = $this->pristine;
+					throw $e;
+				}
 				return $this->stored->save(); }
 			public function __call( string $method, array $args ): mixed {
 				return $this->stored->$method( ...$args ); }

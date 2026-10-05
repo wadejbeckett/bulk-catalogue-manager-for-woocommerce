@@ -68,6 +68,7 @@ final class RegistryTest extends TestCase {
 		'bulkcat_batch_not_recorded'             => 'refusal code for a batch the database would not take; nothing is left written',
 		'bulkcat_already_done'                   => 'result code for an object a retried chunk skips because its batch already journalled it',
 		'bulkcat_save_failed'                    => 'result code for changes lost because WooCommerce could not save the object',
+		'bulkcat_save_uncertain'                 => 'result code for a change WooCommerce threw on while saving whose stored value could not be confirmed',
 		'bulkcat_run_chunk'                      => 'one-off Action Scheduler action in the plugin group running one chunk of a batch; not recurring, and uninstall unschedules the whole group',
 		'bulkcat_batch_size'                     => 'filter hook over the configured chunk size of a background batch',
 		'bulkcat_not_cancellable'                => 'REST refusal code for cancelling a batch that has already finished',

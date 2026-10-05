@@ -112,12 +112,17 @@ defined( 'ABSPATH' ) || exit;
  * WordPress kept or made scheduled is then `future` on the object, in the
  * journal and in the outcome, in write() and in replay() alike.
  *
- * An exception from save() does not stop the caller: the object's changes
- * are reported failed with a plain reason (code SAVE_FAILED), nothing is
- * resynchronised, and the journal writes failed rows. Term lists are written
- * by wp_set_object_terms() before save(), so after a failed save a term
- * change may have stuck although it is reported failed. An exception from
- * the before-save hook or from the journal itself is not caught.
+ * An exception from save() does not stop the caller, and does not by itself
+ * mean nothing was stored: WooCommerce fires hooks after it has written the
+ * values. The exception is logged, the object is loaded afresh and each
+ * changed field read back (save_threw()): a field holding the value asked
+ * for is reported changed and journalled applied; one still holding its
+ * value before is reported failed, not made (code SAVE_FAILED); anything
+ * else, or an object that cannot be read, is reported failed as possibly
+ * made (code SAVE_UNCERTAIN), its row holding the value read. Term lists are
+ * written by wp_set_object_terms() before save(), so they read back as
+ * stored. An exception from the before-save hook or from the journal itself
+ * is not caught.
  *
  * External changes (T107, docs/EXTENSIONS.md §7.3): a list whose steps are
  * one provider's is written through External\ExternalWriter, one per
@@ -153,6 +158,13 @@ final class Writer {
 	 * The code for a change lost because WooCommerce could not save the object.
 	 */
 	public const SAVE_FAILED = 'bulkcat_save_failed';
+
+	/**
+	 * The code for a change WooCommerce threw on while saving, whose stored
+	 * value is neither the value before nor the value asked for, or could not
+	 * be read back: it may or may not have been made.
+	 */
+	public const SAVE_UNCERTAIN = 'bulkcat_save_uncertain';
 
 	/**
 	 * Called with ( object, touched field keys, before values ) just before save().
@@ -463,9 +475,7 @@ final class Writer {
 				$product->save();
 			}
 		} catch ( \Exception $e ) {
-			$entries = self::save_failed( $entries );
-			$this->settle( $id, $entries, $before, null, $intended );
-			return new WriteOutcome( $id, array_column( $entries, 0 ), false );
+			return $this->save_threw( $id, $e, $entries, $before, $intended, $changed_before );
 		}
 
 		$status = $this->status_field( $touched );
@@ -485,6 +495,128 @@ final class Writer {
 		// A status WordPress kept, with nothing else changed, is no change to report.
 		$saved = [] !== array_filter( $results, static fn( Result $r ): bool => $r->is_changed() );
 		return new WriteOutcome( $id, $results, $saved, $saved ? $parent_id : 0, $saved ? $changed_before : [] );
+	}
+
+	/**
+	 * Finish an object whose save() threw (SILENT-FAILURES-1). WooCommerce
+	 * fires hooks after it has stored the values (woocommerce_update_product,
+	 * woocommerce_after_product_object_save and others), so a throw does not
+	 * mean nothing was stored. The exception is logged; the object is loaded
+	 * afresh and each changed field read back: a field holding the value
+	 * asked for is reported and journalled applied, so undo sees it and a
+	 * retry does not apply it again; one still holding its value before is
+	 * reported not made; anything else, or a product that cannot be read, is
+	 * reported as possibly made, with the value read on record.
+	 *
+	 * @param int                             $id             Object id.
+	 * @param \Exception                      $error          What save() threw.
+	 * @param list<array{0: Result, 1: bool}> $entries        Every Result with its step's skip switch.
+	 * @param array<string, mixed>            $before         Before values.
+	 * @param list<string>                    $intended       The fields given an intent row.
+	 * @param array<string, mixed>            $changed_before Each changed field's value before the write.
+	 */
+	private function save_threw( int $id, \Exception $error, array $entries, array $before, array $intended, array $changed_before ): WriteOutcome {
+		$targets = [];
+		foreach ( $entries as [ $result ] ) {
+			if ( $result->is_changed() ) {
+				$targets[ $result->field() ] = [
+					'old' => array_key_exists( $result->field(), $before ) ? $before[ $result->field() ] : $result->old(),
+					'new' => $result->new(),
+				];
+			}
+		}
+		[ $stored, $found ] = $this->read_back_after( $id, $error, $targets );
+		$entries            = array_map(
+			static function ( array $entry ) use ( $found ): array {
+				$result = $entry[0];
+				if ( ! $result->is_changed() || 'landed' === $found[ $result->field() ][0] ) {
+					return $entry;
+				}
+				return [ self::save_failure( $result->field(), $result->old(), 'unchanged' === $found[ $result->field() ][0] ), $entry[1] ];
+			},
+			$entries
+		);
+		$landed             = array_keys( array_filter( $found, static fn( array $f ): bool => 'landed' === $f[0] ) );
+		$uncertain          = array_keys( array_filter( $found, static fn( array $f ): bool => 'uncertain' === $f[0] ) );
+		$this->settle( $id, $entries, $before, $stored, array_values( array_diff( $intended, $uncertain ) ) );
+		if ( null !== $this->journal ) {
+			foreach ( array_intersect( $intended, $uncertain ) as $key ) {
+				$by_field = array_values( array_filter( array_column( $entries, 0 ), static fn( Result $r ): bool => $r->field() === $key && Result::FAILED === $r->state() ) );
+				$this->journal->settle_one( $this->batch_id, $id, $key, 'failed', $found[ $key ][1], $by_field[0]->reason() );
+			}
+		}
+		$results = array_column( $entries, 0 );
+		if ( [] === $landed || null === $stored ) {
+			return new WriteOutcome( $id, $results, false );
+		}
+		if ( null !== $this->status_field( $landed ) || in_array( PublicationPassword::FIELD, $landed, true ) ) {
+			$results = $this->stored( $results, $stored );
+		}
+		$parent_id = self::variable_parent( $stored );
+		if ( $parent_id > 0 ) {
+			$this->sync( $parent_id );
+		}
+		return new WriteOutcome( $id, $results, true, $parent_id, array_intersect_key( $changed_before, array_flip( $landed ) ) );
+	}
+
+	/**
+	 * After save() threw: log it, load the object afresh and say, per field,
+	 * whether it holds the value asked for (`landed`), its value before
+	 * (`unchanged`) or anything else or nothing readable (`uncertain`), with
+	 * the value read (the value before, when nothing could be read).
+	 *
+	 * @param int                                          $id      Object id.
+	 * @param \Exception                                   $error   What save() threw.
+	 * @param array<string, array{old: mixed, new: mixed}> $targets Field key => its value before and the value asked for.
+	 * @return array{0: object|null, 1: array<string, array{0: string, 1: mixed}>} The fresh object, or null, and each field's verdict with the value read.
+	 */
+	private function read_back_after( int $id, \Exception $error, array $targets ): array {
+		// Class and place only: a save hook's text may echo the values being saved.
+		\BulkCatalogueManager\Rest\Refusal::log( $error, sprintf( 'Saving product %d threw; reading its stored values back', $id ), false );
+		$stored = null;
+		try {
+			clean_post_cache( $id );
+			$loaded = wc_get_product( $id );
+			$stored = is_object( $loaded ) ? $loaded : null;
+		} catch ( \Exception $reload ) {
+			\BulkCatalogueManager\Rest\Refusal::log( $reload, sprintf( 'Reading product %d back', $id ), false );
+		}
+		$found = [];
+		foreach ( $targets as $key => [ 'old' => $old, 'new' => $target ] ) {
+			$field         = $this->operations->fields()->get( $key );
+			$found[ $key ] = [ 'uncertain', $old ];
+			if ( null === $stored || null === $field ) {
+				continue;
+			}
+			try {
+				$now = $field->read( $stored );
+			} catch ( \Exception $unread ) {
+				continue;
+			}
+			// A Publish WordPress kept as Scheduled stands for the Publish asked for.
+			if ( Planner::same( $field, $now, $target ) || ( StatusSwitch::governs( $field ) && 'publish' === $target && 'future' === $now && 'future' !== $old ) ) {
+				$found[ $key ] = [ 'landed', $now ];
+			} elseif ( Planner::same( $field, $now, $old ) ) {
+				$found[ $key ] = [ 'unchanged', $now ];
+			} else {
+				$found[ $key ] = [ 'uncertain', $now ];
+			}
+		}
+		return [ $stored, $found ];
+	}
+
+	/**
+	 * The failed Result of a change whose save threw: not made when the
+	 * stored value is still the value before, else possibly made.
+	 *
+	 * @param string $key       Field key.
+	 * @param mixed  $old       Its value before.
+	 * @param bool   $unchanged Whether the stored value is still the value before.
+	 */
+	private static function save_failure( string $key, mixed $old, bool $unchanged ): Result {
+		return $unchanged
+			? Result::failed( $key, $old, __( 'WooCommerce could not save this product, so this change was not made. Try again, or open the product to see why.', 'bulk-catalogue-manager-for-woocommerce' ), self::SAVE_FAILED )
+			: Result::failed( $key, $old, __( 'WooCommerce reported an error while saving this product, so this change may not have been made as asked. Open the product to check it before trying again.', 'bulk-catalogue-manager-for-woocommerce' ), self::SAVE_UNCERTAIN );
 	}
 
 	/**
@@ -554,11 +686,12 @@ final class Writer {
 	 * @param array<string, array{old: mixed, new: mixed}> $intents Field key => the values the killed run recorded.
 	 */
 	private function replay( int $id, array $intents, ?string $type = null ): WriteOutcome {
-		$product = wc_get_product( $id );
-		$fields  = $this->operations->fields();
-		$results = [];
-		$pending = [];
-		$written = false;
+		$product   = wc_get_product( $id );
+		$fields    = $this->operations->fields();
+		$results   = [];
+		$pending   = [];
+		$uncertain = [];
+		$written   = false;
 		if ( ! is_object( $product ) ) {
 			$product = null;
 		}
@@ -650,10 +783,33 @@ final class Writer {
 							}PublicationPassword::read_back( $product );
 						}
 					} catch ( \Exception $e ) {
-						foreach ( $pending as $key => $result ) {
-							$results[ $key ] = self::save_failed( [ [ $result,true ] ] )[0][0];
+						// SILENT-FAILURES-1: what WooCommerce stored before the throw stands as stored.
+						$sent               = array_filter( $pending, static fn( Result $r, string $key ): bool => $r->is_changed() && $results[ $key ]->is_changed(), ARRAY_FILTER_USE_BOTH );
+						[ $stored, $found ] = $this->read_back_after(
+							$id,
+							$e,
+							array_map(
+								static fn( Result $r ): array => [
+									'old' => $r->old(),
+									'new' => $r->new(),
+								],
+								$sent
+							)
+						);
+						$written            = false;
+						foreach ( $sent as $key => $result ) {
+							[ $verdict, $now ] = $found[ $key ];
+							if ( 'landed' === $verdict ) {
+								$results[ $key ] = Result::changed( $key, $result->old(), $now );
+								$written         = true;
+								continue;
+							}
+							$results[ $key ] = self::save_failure( $key, $result->old(), 'unchanged' === $verdict );
+							if ( 'uncertain' === $verdict ) {
+								$uncertain[ $key ] = $now;
+							}
 						}
-						$written = false;
+						$product = $written ? $stored : $product;
 					}
 				}
 			}
@@ -664,7 +820,7 @@ final class Writer {
 		$before = [];
 		foreach ( $results as $key => $result ) {
 			$failed = in_array( $result->state(), [ Result::FAILED,Result::SKIPPED ], true );
-			$this->journal->settle_one( $this->batch_id, $id, $key, $failed ? 'failed' : 'applied', $failed ? $intents[ $key ]['old'] : $result->new(), $failed ? $result->reason() : '' );
+			$this->journal->settle_one( $this->batch_id, $id, $key, $failed ? 'failed' : 'applied', $failed ? ( array_key_exists( $key, $uncertain ) ? $uncertain[ $key ] : $intents[ $key ]['old'] ) : $result->new(), $failed ? $result->reason() : '' );
 			if ( $result->is_changed() ) {
 				$before[ $key ] = $result->old();
 			}
@@ -878,20 +1034,6 @@ final class Writer {
 	 */
 	private static function entries( array $results, array $steps ): array {
 		return array_map( static fn( Result $r, array $step ): array => [ $r, (bool) ( $step[1]['skip_already'] ?? true ) ], $results, $steps );
-	}
-
-	/**
-	 * Each change turned into a failure, because save() threw.
-	 *
-	 * @param list<array{0: Result, 1: bool}> $entries Results with their skip switch.
-	 * @return list<array{0: Result, 1: bool}>
-	 */
-	private static function save_failed( array $entries ): array {
-		$reason = __( 'WooCommerce could not save this product, so this change was not made. Try again, or open the product to see why.', 'bulk-catalogue-manager-for-woocommerce' );
-		return array_map(
-			static fn( array $entry ): array => [ $entry[0]->is_changed() ? Result::failed( $entry[0]->field(), $entry[0]->old(), $reason, self::SAVE_FAILED ) : $entry[0], $entry[1] ],
-			$entries
-		);
 	}
 
 	/**

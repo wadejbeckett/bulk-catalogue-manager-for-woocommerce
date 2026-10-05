@@ -262,7 +262,7 @@ final class InlineWrite {
 		$outcome = $writer->run( static fn( Writer $w ): WriteOutcome => $w->write( $prepared['object_id'], $prepared['operations'], $items[0]['object_type'] ) );
 		foreach ( $outcome->results() as $result ) {
 			// Writer catches save Exceptions: they cannot prove that a save hook had no effects.
-			if ( Writer::SAVE_FAILED === $result->code() ) {
+			if ( in_array( $result->code(), [ Writer::SAVE_FAILED, Writer::SAVE_UNCERTAIN ], true ) ) {
 				throw new \RuntimeException( 'Inline save outcome is uncertain.' ); }
 		}
 		[ $state, $message ] = ChunkRunner::item_state( $outcome );

@@ -119,13 +119,28 @@ final class Refusal {
 	 * @param array<string, mixed> $data    Extra data that is safe to send.
 	 */
 	public static function unexpected( string $code, string $message, int $status, \Throwable $error, array $data = [] ): \WP_Error {
+		self::log( $error );
+		return self::create( $code, $message, $status, $data );
+	}
+
+	/**
+	 * Write a throwable to the WooCommerce log under the plugin's source:
+	 * its class, its text unless left out, and where it was thrown, after an
+	 * optional plain prefix (which object it happened to). Never sent to a
+	 * client. Leave the text out where it may carry submitted values (a
+	 * third-party save hook echoing the product it was given).
+	 *
+	 * @param \Throwable $error   What went wrong.
+	 * @param string     $prefix  Plain context, such as "Product 12", or ''.
+	 * @param bool       $message Whether to log the throwable's own text.
+	 */
+	public static function log( \Throwable $error, string $prefix = '', bool $message = true ): void {
 		if ( function_exists( 'wc_get_logger' ) ) {
 			wc_get_logger()->error(
-				sprintf( '%s: %s (%s:%d)', get_class( $error ), $error->getMessage(), $error->getFile(), $error->getLine() ),
+				( '' === $prefix ? '' : $prefix . ': ' ) . sprintf( '%s%s (%s:%d)', get_class( $error ), $message ? ': ' . $error->getMessage() : '', $error->getFile(), $error->getLine() ),
 				[ 'source' => self::LOG_SOURCE ]
 			);
 		}
-		return self::create( $code, $message, $status, $data );
 	}
 
 	/**

@@ -40,7 +40,8 @@ defined( 'ABSPATH' ) || exit;
  *    stock quantity where the object does not manage stock, a value the
  *    field refuses (a price below zero among them), and a SKU another
  *    object holds (wc_product_has_unique_sku(), products and variations
- *    together). The row fails with the field's sentence, except stock
+ *    together). A stock status where stock is managed is skipped first, since
+ *    WooCommerce sets it from the quantity on save. The row fails with the field's sentence, except stock
  *    quantity on unmanaged stock and a value below zero, which are skipped
  *    (SPEC §5.4, §8).
  * 3. The cross-field rules. A SKU another object in this same run has
@@ -162,6 +163,10 @@ final class Validator {
 		}
 		if ( null !== $field && $field->requires_managed_stock() && self::is( $subject, 'variation' ) && true !== $subject->get_manage_stock( 'edit' ) ) {
 			return [ Result::skipped( $result->field(), $result->old(), self::unmanaged_stock_reason(), self::NOT_AVAILABLE ) ];
+		}
+		if ( null !== $field && 'stock_status' === $field->key() && $result->is_changed() && self::manages_stock( $subject ) ) {
+			// WooCommerce works the stock status out from the quantity on save: never reported as a change it reverts.
+			return [ Result::skipped( $result->field(), $result->old(), self::managed_status_reason(), self::NOT_AVAILABLE ) ];
 		}
 		$pushed = true === ( $args[ BaseOperation::APPLY_TO_VARIATIONS ] ?? null );
 		if ( $pushed && Result::FAILED === $result->state() && self::NOT_AVAILABLE === $result->code() && self::is( $subject, 'variable' ) ) {
@@ -341,6 +346,25 @@ final class Validator {
 	 */
 	public static function unmanaged_stock_reason(): string {
 		return __( 'This variation does not manage its own stock, so its stock quantity was not changed. Turn on Manage stock for the variation first.', 'bulk-catalogue-manager-for-woocommerce' );
+	}
+
+	/**
+	 * The reason a stock status is not changed where stock is managed:
+	 * WooCommerce sets it from the stock quantity on save.
+	 */
+	public static function managed_status_reason(): string {
+		return __( 'Stock status is set by the stock quantity when stock is managed, so it was not changed. Change the stock quantity, or turn off Manage stock first.', 'bulk-catalogue-manager-for-woocommerce' );
+	}
+
+	/**
+	 * Whether WooCommerce manages the object's stock as it saves it: its own,
+	 * or, for a variation, its parent's.
+	 *
+	 * @param object $subject A product or variation.
+	 */
+	private static function manages_stock( object $subject ): bool {
+		$managed = $subject->get_manage_stock();
+		return true === $managed || 'parent' === $managed;
 	}
 
 	/**

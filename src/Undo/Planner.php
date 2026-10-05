@@ -25,6 +25,8 @@ use BulkCatalogueManager\Fields\Field;
 use BulkCatalogueManager\Fields\Values;
 use BulkCatalogueManager\Operations\Registry as Actions;
 use BulkCatalogueManager\Operations\RestoreStatus;
+use BulkCatalogueManager\Operations\RestoreStock;
+use BulkCatalogueManager\Operations\StockCoupling;
 use BulkCatalogueManager\Operations\Terms;
 use BulkCatalogueManager\Rest\Access;
 use BulkCatalogueManager\Rest\Refusal;
@@ -639,6 +641,7 @@ final class Planner {
 		$operations = [];
 		$conflicts  = [];
 		$restore    = null;
+		$stock      = null;
 		$external   = false;
 		$checked    = [];
 		foreach ( $journal['fields'] as $key => $values ) {
@@ -681,10 +684,26 @@ final class Planner {
 				$operations[ $restore ][ $status ? 'value' : ( OffRecord::FIELD === $key ? 'record' : 'password' ) ] = $values['target'] ?? '';
 				continue;
 			}
+			if ( isset( $journal['fields'][ StockCoupling::FIELD ] ) && ( StockCoupling::FIELD === $key || in_array( $key, StockCoupling::COUPLED, true ) ) ) {
+				// Manage stock and what WooCommerce changed with it go back together, as one internal step, where the first of them was.
+				if ( null === $stock ) {
+					$stock        = count( $operations );
+					$operations[] = [];
+				}
+				$operations[ $stock ][ StockCoupling::FIELD === $key ? 'value' : $key ] = $values['target'] ?? '';
+				continue;
+			}
 			$operation = self::operation( $field, $values['target'], $values['expected'] );
 			if ( null !== $operation ) {
 				$operations[] = $operation;
 			}
+		}
+		$operations = self::price_order( $fields, $operations, $subject );
+		if ( null !== $stock ) {
+			$operations[ $stock ] = [
+				'action' => RestoreStock::ID,
+				'args'   => [ 'field' => StockCoupling::FIELD ] + $operations[ $stock ] + [ 'apply_to_variations' => false ],
+			];
 		}
 		if ( null !== $restore ) {
 			$operations[ $restore ] = self::restore_step( $fields, $operations[ $restore ], $subject );
@@ -694,7 +713,7 @@ final class Planner {
 			}
 		}
 
-		$normalised = [] === $operations ? [] : $this->actions->validate_list( $operations, null !== $restore || $external );
+		$normalised = [] === $operations ? [] : $this->actions->validate_list( $operations, null !== $restore || null !== $stock || $external );
 		if ( $normalised instanceof \WP_Error ) {
 			return self::skipped( $object_id, $type, self::CANNOT_RESTORE, $normalised->get_error_message() );
 		}
@@ -850,6 +869,49 @@ final class Planner {
 			'expected' => '',
 			'current'  => $record->to_json(),
 		];
+	}
+
+	/**
+	 * The regular and sale price steps in an order where the price pair is
+	 * valid at each step (ENGINE-1): the writer checks each step against the
+	 * price the object holds then, so a sale price put back before a regular
+	 * price still below it would be skipped. Kept as journalled (newest
+	 * first) unless that order fails and the other passes.
+	 *
+	 * @param \BulkCatalogueManager\Fields\Registry           $fields     The field registry.
+	 * @param list<array{action: string, args: array<string, mixed>}> $operations The steps.
+	 * @param object                                           $subject    The object as it is now.
+	 * @return list<array{action: string, args: array<string, mixed>}>
+	 */
+	private static function price_order( \BulkCatalogueManager\Fields\Registry $fields, array $operations, object $subject ): array {
+		$index = [];
+		$value = [];
+		foreach ( $operations as $at => $operation ) {
+			$field = $fields->get( (string) ( $operation['args']['field'] ?? '' ) );
+			if ( null === $field || Field::MONEY !== $field->type() || ! in_array( $operation['action'] ?? '', [ 'set_value', 'clear' ], true ) ) {
+				continue;
+			}
+			$kind = $field->accepts( Field::COPY_FROM_SALE ) ? 'regular' : ( $field->accepts( Field::COPY_FROM_REGULAR ) ? 'sale' : '' );
+			if ( '' !== $kind ) {
+				$index[ $kind ] = $at;
+				$value[ $kind ] = [ $field, (string) ( $operation['args']['value'] ?? '' ) ];
+			}
+		}
+		if ( ! isset( $index['regular'], $index['sale'] ) ) {
+			return $operations;
+		}
+		[ $regular, $regular_target ] = $value['regular'];
+		[ $sale, $sale_target ]       = $value['sale'];
+		$regular_first                = true === \BulkCatalogueManager\Fields\Registry::check_prices( $regular_target, (string) $sale->read( $subject ) );
+		$sale_first                   = true === \BulkCatalogueManager\Fields\Registry::check_prices( (string) $regular->read( $subject ), $sale_target );
+		$journalled_regular_first     = $index['regular'] < $index['sale'];
+		if ( ( $journalled_regular_first ? $regular_first : $sale_first ) || ! ( $journalled_regular_first ? $sale_first : $regular_first ) ) {
+			return $operations;
+		}
+		$swap                            = $operations[ $index['regular'] ];
+		$operations[ $index['regular'] ] = $operations[ $index['sale'] ];
+		$operations[ $index['sale'] ]    = $swap;
+		return $operations;
 	}
 
 	/**

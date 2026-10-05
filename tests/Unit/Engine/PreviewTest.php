@@ -581,6 +581,12 @@ final class PreviewTest extends TestCase {
 
 		$quiet = $this->answer( Selection::of_ids( [ 101, 106 ] ), self::set( 'regular_price', '99' ) );
 		$this->assertSame( $none, $quiet['warnings'] );
+
+		// TESTS-1: turning stock management off clears the quantities WooCommerce holds (still undoable).
+		$off = $this->answer( Selection::of_ids( [ 101, 106, 107 ] ), self::set( 'manage_stock', false ) );
+		$this->assertSame( array_merge( $none, [ 'stock_cleared' => 2 ] ), $off['warnings'], '107 does not manage stock, so nothing of it is cleared.' );
+		$on = $this->answer( Selection::of_ids( [ 107 ] ), self::set( 'manage_stock', true ) );
+		$this->assertSame( $none, $on['warnings'] );
 	}
 
 	public function test_sample_sizes(): void {

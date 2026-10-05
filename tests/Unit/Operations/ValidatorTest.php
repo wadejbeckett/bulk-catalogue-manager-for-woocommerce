@@ -152,6 +152,33 @@ final class ValidatorTest extends TestCase {
 				'bulkcat_not_available',
 				'This variation does not manage its own stock, so its stock quantity was not changed. Turn on Manage stock for the variation first.',
 			],
+			'stock status on managed stock'               => [
+				'simple',
+				[
+					'id'             => 20,
+					'manage_stock'   => true,
+					'stock_quantity' => 12,
+					'stock_status'   => 'instock',
+				],
+				Result::changed( 'stock_status', 'instock', 'outofstock' ),
+				[],
+				Result::SKIPPED,
+				'bulkcat_not_available',
+				'Stock status is set by the stock quantity when stock is managed, so it was not changed. Change the stock quantity, or turn off Manage stock first.',
+			],
+			'stock status on stock managed by the parent' => [
+				'variation',
+				[
+					'id'           => 21,
+					'manage_stock' => 'parent',
+					'stock_status' => 'instock',
+				],
+				Result::changed( 'stock_status', 'instock', 'onbackorder' ),
+				[],
+				Result::SKIPPED,
+				'bulkcat_not_available',
+				'Stock status is set by the stock quantity when stock is managed, so it was not changed. Change the stock quantity, or turn off Manage stock first.',
+			],
 			'categories on a variation'                   => [
 				'variation',
 				[

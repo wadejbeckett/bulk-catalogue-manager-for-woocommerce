@@ -849,6 +849,128 @@ final class UndoRouteTest extends TestCase {
 		$this->assertSame( 'Private, saved 23 Sep 2026 08:01', $item['conflicts'][0]['expected'] );
 	}
 
+	public function test_manage_stock_off_undoes_with_the_quantity_backorders_and_threshold_woocommerce_cleared(): void {
+		// TESTS-1: the batch journalled the values WooCommerce cleared on save; undo puts them back with Manage stock.
+		$this->store->changes = [];
+		$this->change( 1001, 'manage_stock', true, false );
+		$this->change( 1001, 'stock_quantity', 7, null );
+		$this->change( 1001, 'backorders', 'notify', 'no' );
+		$this->change( 1001, 'low_stock_amount', 3, null );
+		$this->change( 2001, 'manage_stock', true, false, 'variation' );
+		$this->change( 2001, 'stock_quantity', 5, null, 'variation' );
+		$product                 = self::product(
+			1001,
+			[
+				'manage_stock'     => false,
+				'stock_quantity'   => null,
+				'backorders'       => 'no',
+				'low_stock_amount' => '',
+				'stock_status'     => 'instock',
+			]
+		);
+		$product->native_stock   = true;
+		$variation               = self::product(
+			2001,
+			[
+				'parent_id'        => 2000,
+				'manage_stock'     => false,
+				'stock_quantity'   => null,
+				'backorders'       => 'no',
+				'low_stock_amount' => '',
+				'stock_status'     => 'instock',
+			],
+			'variation'
+		);
+		$variation->native_stock = true;
+		$this->store->sync();
+
+		$preview = $this->preview();
+		$this->assertSame( 2, $preview['counts']['revertible'] );
+		$undo_id = $this->undo()['batch_id'];
+		$this->assertSame( 'complete', $this->run_batch( $undo_id ) );
+
+		foreach ( [
+			1001 => [ 7, 'notify', 3 ],
+			2001 => [ 5, 'no', '' ],
+		] as $id => [ $quantity, $backorders, $threshold ] ) {
+			$saved = $GLOBALS['bulkcat_test']['products'][ $id ]->saves;
+			$this->assertCount( 1, $saved, "$id is saved once." );
+			$this->assertTrue( $saved[0]['manage_stock'] );
+			$this->assertSame( $quantity, $saved[0]['stock_quantity'] );
+			$this->assertSame( $backorders, $saved[0]['backorders'] );
+			$this->assertSame( $threshold, $saved[0]['low_stock_amount'] );
+			$this->assertSame( 'instock', $saved[0]['stock_status'], "$id is in stock again, not out of stock." );
+		}
+		$this->assertSame( 'undone', $this->store->batch()['status'] );
+	}
+
+	public function test_manage_stock_on_undoes_with_the_stock_status_woocommerce_changed(): void {
+		// TESTS-1, the reverse: turning management on marked the product out of stock; undo makes it in stock again.
+		$this->store->changes = [];
+		$this->change( 1001, 'manage_stock', false, true );
+		$this->change( 1001, 'stock_status', 'instock', 'outofstock' );
+		$product               = self::product(
+			1001,
+			[
+				'manage_stock'     => true,
+				'stock_quantity'   => null,
+				'backorders'       => 'no',
+				'low_stock_amount' => '',
+				'stock_status'     => 'outofstock',
+			]
+		);
+		$product->native_stock = true;
+		$this->store->sync();
+
+		$undo_id = $this->undo()['batch_id'];
+		$this->assertSame( 'complete', $this->run_batch( $undo_id ) );
+		$this->assertFalse( $product->saves[0]['manage_stock'] );
+		$this->assertSame( 'instock', $product->saves[0]['stock_status'] );
+		$this->assertSame( 'undone', $this->store->batch()['status'] );
+	}
+
+	public function test_undo_of_a_regular_price_that_cleared_the_sale_price_puts_both_back(): void {
+		// ENGINE-1: regular 100 -> 60 with "clear the sale price where it is not below" journalled regular, then sale.
+		$this->store->changes = [];
+		$this->change( 1001, 'regular_price', '100.00', '60.00' );
+		$this->change( 1001, 'sale_price', '80.00', '' );
+		self::product(
+			1001,
+			[
+				'regular_price' => '60.00',
+				'sale_price'    => '',
+			]
+		);
+		$this->store->sync();
+
+		$undo_id = $this->undo()['batch_id'];
+		$this->assertSame( 'complete', $this->run_batch( $undo_id ) );
+		$this->assertSame( '100.00', self::prop( 1001, 'regular_price' ) );
+		$this->assertSame( '80.00', self::prop( 1001, 'sale_price' ), 'The original sale price is back.' );
+		$this->assertSame( 'undone', $this->store->batch()['status'] );
+	}
+
+	public function test_an_object_the_undo_put_back_only_in_part_leaves_the_batch_undoable(): void {
+		// ENGINE-1: an undo that saved an object with one of its values not put back never marks the batch undone.
+		$this->store->changes = [];
+		$this->change( 1001, 'regular_price', '10.00', '11.00' );
+		$this->change( 1001, 'stock_quantity', 5, 7 );
+		self::product(
+			1001,
+			[
+				'regular_price'  => '11.00',
+				'manage_stock'   => false,
+				'stock_quantity' => null,
+			]
+		);
+		$this->store->sync();
+
+		$created = $this->undo( self::BATCH, true );
+		$this->assertSame( 'partial', $this->run_batch( $created['batch_id'] ) );
+		$this->assertSame( '10.00', self::prop( 1001, 'regular_price' ), 'What could go back went back.' );
+		$this->assertSame( 'complete', $this->store->batch()['status'], 'The stock quantity did not go back, so the batch is not undone and stays undoable.' );
+	}
+
 	public function test_a_product_changed_after_the_undo_was_applied_is_left_alone_when_its_chunk_runs(): void {
 		// Should-fix (1): the plan's changed-since guard held at Apply; the change lands before the chunk.
 		$record               = \BulkCatalogueManager\Availability\OffRecord::create( 1001, 'publish', '2026-09-23T08:01:00Z', self::BATCH )->to_json();

@@ -375,12 +375,45 @@ final class RegistryTest extends TestCase {
 		$this->assertSame( 'regex_replace', $refusal->get_error_data()['action'] );
 	}
 
+	public function test_restore_stock_is_internal(): void {
+		// TESTS-1: undo's one step for Manage stock and the stock values WooCommerce changed with it.
+		$registry = self::registry();
+		$this->assertNotContains( 'restore_stock', $registry->ids() );
+		$this->assertArrayNotHasKey( 'restore_stock', $registry->descriptors() );
+		$step = [
+			'action' => 'restore_stock',
+			'args'   => [
+				'field'          => 'manage_stock',
+				'value'          => true,
+				'stock_quantity' => 7,
+				'backorders'     => 'notify',
+			],
+		];
+		$this->refused( $registry->validate_list( [ $step ] ), 'bulkcat_unknown_action', 'the internal step from a client' );
+		$internal = $registry->validate_list( [ $step ], true );
+		$this->assertTrue( is_array( $internal ), $internal instanceof \WP_Error ? $internal->get_error_message() : '' );
+		$this->assertSame( [ 'manage_stock', true, 7, 'notify' ], [ $internal[0]['args']['field'], $internal[0]['args']['value'], $internal[0]['args']['stock_quantity'], $internal[0]['args']['backorders'] ] );
+		$this->refused(
+			$registry->validate_list(
+				[
+					[
+						'action' => 'restore_stock',
+						'args'   => [ 'field' => 'manage_stock' ],
+					],
+				],
+				true
+			),
+			'bulkcat_invalid_operation',
+			'without Manage stock to put back'
+		);
+	}
+
 	public function test_restore_status_is_internal(): void {
 		// T90 (SPEC §9.4): undo's one step for a status and its Off record; no client may send it.
 		$registry = self::registry();
 		$this->assertTrue( $registry->has( 'restore_status' ), 'get() resolves it, so the writer runs stored undo items.' );
 		$this->assertInstanceOf( \BulkCatalogueManager\Operations\RestoreStatus::class, $registry->get( 'restore_status' ) );
-		$this->assertSame( [ 'restore_status', 'restore_external' ], $registry->internal_ids(), 'T108 adds the external restore step beside it.' );
+		$this->assertSame( [ 'restore_status', 'restore_stock', 'restore_external' ], $registry->internal_ids(), 'T108 adds the external restore step beside it; TESTS-1 the Manage stock one.' );
 		$this->assertNotContains( 'restore_status', $registry->ids() );
 		$this->assertArrayNotHasKey( 'restore_status', $registry->descriptors() );
 		$this->assertNotContains( 'restore_status', array_column( $registry->to_client(), 'id' ) );

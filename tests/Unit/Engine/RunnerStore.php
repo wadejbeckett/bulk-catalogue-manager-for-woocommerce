@@ -145,6 +145,7 @@ final class RunnerStore {
 			"/^SELECT item_id, operations FROM $items/" => fn( string $sql ): array => $this->item_operations( $sql ),
 			"/^SELECT change_id FROM $changes WHERE batch_id = (\\d+) AND object_id = (\\d+) LIMIT 1$/" => fn( string $sql ): ?string => $this->has_object( $sql ),
 			"/^SELECT COUNT\\(\\*\\) FROM $changes WHERE batch_id = (\\d+) AND result = '(\\w+)'$/" => fn( string $sql ): string => $this->count_changes( $sql ),
+			"/^SELECT COUNT\\(DISTINCT object_id\\) FROM $changes WHERE batch_id = (\\d+) AND result IN \\('skipped', 'failed'\\)/" => fn( string $sql ): string => $this->count_in_part( $sql ),
 		] + $wpdb->responses + [
 			// T35, T36: any other read of the three tables runs through the evaluator over the rows as they stand.
 			"/^SELECT .* FROM ($batches|$items|$changes)/s" => fn( string $sql ): mixed => $this->evaluate( $sql ),
@@ -570,6 +571,23 @@ final class RunnerStore {
 			}
 		}
 		return null;
+	}
+
+	private function count_in_part( string $sql ): string {
+		$this->sync();
+		preg_match( '/batch_id = (\d+)/', $sql, $m );
+		$applied = [];
+		$refused = [];
+		foreach ( $this->changes as $row ) {
+			if ( (int) $m[1] === $row['batch_id'] ) {
+				if ( 'applied' === $row['result'] ) {
+					$applied[ $row['object_id'] ] = true;
+				} elseif ( in_array( $row['result'], [ 'skipped', 'failed' ], true ) ) {
+					$refused[ $row['object_id'] ] = true;
+				}
+			}
+		}
+		return (string) count( array_intersect_key( $applied, $refused ) );
 	}
 
 	private function count_changes( string $sql ): string {

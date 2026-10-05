@@ -793,6 +793,14 @@ final class JournalTest extends TestCase {
 				return $this->stored->is_type( $type );
 			}
 
+			public function __clone() {
+				$this->stored = clone $this->stored;
+			}
+
+			public function validate_props(): void {
+				$this->stored->validate_props();
+			}
+
 			public function save(): int {
 				if ( $this->landed ) {
 					$this->stored->save();
@@ -1043,6 +1051,68 @@ final class JournalTest extends TestCase {
 		$this->assertSame( [ Result::CHANGED, Result::CHANGED ], self::states( $retried ) );
 		$this->assertSame( 'New', $fresh->props['name'] );
 		$this->assertCount( 1, $fresh->saves );
+	}
+
+	public function test_manage_stock_off_journals_the_cleared_stock_values_and_a_retry_settles_them_from_the_save(): void {
+		// TESTS-1: the quantity, backorders and threshold WooCommerce clears on save are on record before it, and
+		// a retry after a kill before the save lets WooCommerce clear them again, settling what it stored.
+		self::answer_intents();
+		$list   = $this->steps(
+			[
+				[
+					'set_value',
+					[
+						'field' => 'manage_stock',
+						'value' => false,
+					],
+				],
+			]
+		);
+		$props  = [
+			'id'               => 93,
+			'manage_stock'     => true,
+			'stock_quantity'   => 7,
+			'backorders'       => 'notify',
+			'low_stock_amount' => 3,
+			'stock_status'     => 'instock',
+		];
+		$stored = new SavedProduct( 'simple', $props );
+
+		$stored->native_stock                    = true;
+		$GLOBALS['bulkcat_test']['products'][93] = self::dying( $stored, false );
+		try {
+			self::writer()->write( 93, $list );
+			$this->fail( 'The request was meant to die in save().' );
+		} catch ( \Error $e ) {
+			$this->assertNotSame( '', $e->getMessage() );
+		}
+		$this->assertSame(
+			[
+				[ 'manage_stock', true, false, 'pending' ],
+				[ 'stock_quantity', 7, null, 'pending' ],
+				[ 'backorders', 'notify', 'no', 'pending' ],
+				[ 'low_stock_amount', 3, null, 'pending' ],
+			],
+			self::summary()
+		);
+		$this->assertSame( 7, $stored->props['stock_quantity'], 'Nothing set the quantity: WooCommerce clears it on save.' );
+
+		$fresh               = self::product( $props );
+		$fresh->native_stock = true;
+		$retried             = self::writer()->write( 93, $list );
+		$this->assertCount( 1, $fresh->saves );
+		$this->assertNull( $fresh->props['stock_quantity'] );
+		$this->assertTrue( $retried->saved() );
+		$this->assertSame(
+			[
+				[ 'manage_stock', true, false, 'applied' ],
+				[ 'stock_quantity', 7, null, 'applied' ],
+				[ 'backorders', 'notify', 'no', 'applied' ],
+				[ 'low_stock_amount', 3, null, 'applied' ],
+			],
+			self::summary(),
+			'Each settled from what the save stored, none failed for a quantity on unmanaged stock.'
+		);
 	}
 
 	public function test_skip_already_crossed_with_record_unchanged_rows(): void {

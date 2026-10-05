@@ -8,8 +8,10 @@
  *   `undoing` -> `undone` (Reversibility and the planner then read it as
  *   already undone; a partial undo left some objects alone, and says so in
  *   its own report);
- * - failed, cancelled, or finished having put nothing back (every item
- *   changed again before the undo reached it, Main Build's F2): it moves
+ * - failed, cancelled, finished having put nothing back (every item
+ *   changed again before the undo reached it, Main Build's F2), or having
+ *   put an object back only in part (some of its values written, another
+ *   skipped or failed; ENGINE-1): it moves
  *   back from `undoing` to the status it had before, kept in the undo
  *   batch's selection snapshot, so the batch stays undoable — Revert anyway
  *   included (§12.6).
@@ -57,14 +59,15 @@ final class Original {
 	 * @param array<string, mixed> $undo    The undo batch's typed row (BatchRepository::find()); its selection holds the status before.
 	 * @param string               $status  The undo batch's final status: complete, partial, failed or cancelled.
 	 * @param int|null             $applied The undo batch's applied journal rows, when known; 0 is an undo that put nothing back.
+	 * @param bool                 $whole   False when the undo put an object back only in part.
 	 * @return bool Whether the batch undone moved.
 	 */
-	public static function settle( BatchRepository $batches, array $undo, string $status, ?int $applied = null ): bool {
+	public static function settle( BatchRepository $batches, array $undo, string $status, ?int $applied = null, bool $whole = true ): bool {
 		$original = (int) ( $undo['undo_of'] ?? 0 );
 		if ( 'undo' !== ( $undo['source'] ?? '' ) || $original < 1 ) {
 			return false;
 		}
-		if ( in_array( $status, self::UNDONE_BY, true ) && 0 !== $applied ) {
+		if ( in_array( $status, self::UNDONE_BY, true ) && 0 !== $applied && $whole ) {
 			return $batches->transition( $original, 'undoing', 'undone' );
 		}
 		$previous = (string) ( $undo['selection']['previous_status'] ?? 'complete' );

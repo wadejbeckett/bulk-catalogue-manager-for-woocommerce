@@ -308,6 +308,7 @@ final class InlineWriteTest extends TestCase {
 			]
 		);
 		$this->assertTrue( $pair[0]['args']['clear_invalid_sale'], 'With both prices, the sale price step decides the pair.' );
+		$this->assertFalse( $pair[1]['args']['clear_invalid_sale'], 'ENGINE-6: a typed sale price is never turned into a clear.' );
 
 		$refused = $this->writes()->operations( [ 'status' => '' ] );
 		$this->assertInstanceOf( \WP_Error::class, $refused );
@@ -337,6 +338,47 @@ final class InlineWriteTest extends TestCase {
 		$error = $this->assert_refused( $this->writes()->write( 101, [ 'stock_quantity' => '1.5' ], 'inline', self::USER ), 'bulkcat_invalid_operation', 400 );
 		$this->assertSame( 'stock_quantity', $error->get_error_data()['field'] );
 		$this->assertSame( ( new Fields() )->get( 'stock_quantity' )->rule_text(), $error->get_error_message() );
+	}
+
+	public function test_both_prices_with_a_sale_price_not_below_the_regular_are_refused_keeping_the_sale_price(): void {
+		// ENGINE-6: a typed sale price at or above the regular price is refused, never written as a clear.
+		$product = self::product(
+			101,
+			'simple',
+			[
+				'regular_price' => '100.00',
+				'sale_price'    => '80.00',
+			]
+		);
+		$error   = $this->assert_refused(
+			$this->writes()->write(
+				101,
+				[
+					'regular_price' => '100.00',
+					'sale_price'    => '120.00',
+				],
+				'inline',
+				self::USER
+			),
+			'bulkcat_invalid_value',
+			400
+		);
+		$this->assertSame( 'sale_price', $error->get_error_data()['field'] );
+		$this->assertSame( '80.00', $product->props['sale_price'] );
+		$this->assertSame( 0, $product->saves, 'Nothing was saved.' );
+
+		// Lowering both together still works: the regular step clears the old sale, the typed one is written.
+		$result = $this->writes()->write(
+			101,
+			[
+				'regular_price' => '60.00',
+				'sale_price'    => '48.00',
+			],
+			'inline',
+			self::USER
+		);
+		$this->assertTrue( is_array( $result ) );
+		$this->assertSame( [ '60.00', '48.00' ], [ $product->props['regular_price'], $product->props['sale_price'] ] );
 	}
 
 	public function test_a_variation_takes_its_own_fields_and_refuses_parent_only_ones_with_their_reason(): void {

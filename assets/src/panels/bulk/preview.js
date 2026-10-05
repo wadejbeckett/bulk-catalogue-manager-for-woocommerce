@@ -139,6 +139,7 @@ export function warningSentences( warnings, byType = null ) {
 		)
 	);
 	add( 'stock_negative', negativeStock( count( 'stock_negative' ), byType ) );
+	add( 'stock_cleared', stockCleared( count( 'stock_cleared' ), byType ) );
 	add(
 		'sku_duplicate',
 		sprintf(
@@ -208,6 +209,54 @@ function negativeStock( count, byType ) {
 		_n(
 			'Stock would go below zero on %s product.',
 			'Stock would go below zero on %s products.',
+			count,
+			'bulk-catalogue-manager-for-woocommerce'
+		),
+		formatNumber( count )
+	);
+}
+
+/**
+ * "Turning off Manage stock clears the stock quantity, backorders and low
+ * stock threshold on 3 products. Undo puts them back." — or variations, or
+ * items when the change reaches both.
+ *
+ * @param {number}      count  How many.
+ * @param {Object|null} byType The preview's `totals.by_type`, or null.
+ * @return {string} Sentence.
+ */
+function stockCleared( count, byType ) {
+	const products = Number( byType?.product?.matched ) || 0;
+	const variations = Number( byType?.variation?.matched ) || 0;
+	if ( products > 0 && variations > 0 ) {
+		return sprintf(
+			/* translators: %s: a number of products and variations together, such as "3". */
+			_n(
+				'Turning off Manage stock clears the stock quantity, backorders and low stock threshold on %s item. Undo puts them back.',
+				'Turning off Manage stock clears the stock quantity, backorders and low stock threshold on %s items. Undo puts them back.',
+				count,
+				'bulk-catalogue-manager-for-woocommerce'
+			),
+			formatNumber( count )
+		);
+	}
+	if ( variations > 0 ) {
+		return sprintf(
+			/* translators: %s: a number of variations, such as "3". */
+			_n(
+				'Turning off Manage stock clears the stock quantity, backorders and low stock threshold on %s variation. Undo puts them back.',
+				'Turning off Manage stock clears the stock quantity, backorders and low stock threshold on %s variations. Undo puts them back.',
+				count,
+				'bulk-catalogue-manager-for-woocommerce'
+			),
+			formatNumber( count )
+		);
+	}
+	return sprintf(
+		/* translators: %s: a number, such as "3". */
+		_n(
+			'Turning off Manage stock clears the stock quantity, backorders and low stock threshold on %s product. Undo puts them back.',
+			'Turning off Manage stock clears the stock quantity, backorders and low stock threshold on %s products. Undo puts them back.',
 			count,
 			'bulk-catalogue-manager-for-woocommerce'
 		),

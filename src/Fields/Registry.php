@@ -579,6 +579,35 @@ final class Registry {
 				adapter: Field::ADAPTER_OFF_RECORD,
 				internal: true
 			),
+			// WooCommerce clears these when Manage stock is turned off; journalled then, so undo puts them back.
+			new Field(
+				key: 'backorders',
+				label: __( 'Backorders', 'bulk-catalogue-manager-for-woocommerce' ),
+				type: Field::ENUM,
+				storage: Storage::meta( '_backorders' ),
+				edit_kinds: [ Field::SET ],
+				variation_rule: Field::PER_VARIATION,
+				getter: 'get_backorders',
+				setter: 'set_backorders',
+				choices: [
+					'no'     => __( 'Do not allow', 'bulk-catalogue-manager-for-woocommerce' ),
+					'notify' => __( 'Allow, but notify the customer', 'bulk-catalogue-manager-for-woocommerce' ),
+					'yes'    => __( 'Allow', 'bulk-catalogue-manager-for-woocommerce' ),
+				],
+				internal: true
+			),
+			new Field(
+				key: 'low_stock_amount',
+				label: __( 'Low stock threshold', 'bulk-catalogue-manager-for-woocommerce' ),
+				type: Field::INTEGER,
+				storage: Storage::meta( '_low_stock_amount' ),
+				edit_kinds: [ Field::SET ],
+				variation_rule: Field::PER_VARIATION,
+				getter: 'get_low_stock_amount',
+				setter: 'set_low_stock_amount',
+				nullable: true,
+				internal: true
+			),
 		];
 	}
 

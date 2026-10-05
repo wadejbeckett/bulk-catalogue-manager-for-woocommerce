@@ -688,7 +688,7 @@ final class RegistryTest extends TestCase {
 		$registry = new Registry();
 		$field    = $registry->get( 'availability_off' );
 		$this->assertTrue( null !== $field, 'get() resolves the internal field.' );
-		$this->assertSame( [ 'publication_password', 'availability_off' ], array_keys( $registry->internal() ) );
+		$this->assertSame( [ 'publication_password', 'availability_off', 'backorders', 'low_stock_amount' ], array_keys( $registry->internal() ), 'TESTS-1 adds the stock values WooCommerce clears with Manage stock.' );
 		$this->assertTrue( $field->internal() );
 		$this->assertSame( 'Status before Off', $field->label() );
 		$this->assertSame( [ Field::SET, Field::CLEAR ], $field->edit_kinds() );

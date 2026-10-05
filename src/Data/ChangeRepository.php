@@ -272,6 +272,19 @@ final class ChangeRepository {
 	}
 
 	/**
+	 * How many objects a batch wrote only in part: an applied row and a
+	 * skipped or failed row for the same object (ENGINE-1, an undo that put
+	 * back some of an object's values and not others).
+	 *
+	 * @param int $batch_id Batch.
+	 */
+	public function count_written_in_part( int $batch_id ): int {
+		global $wpdb;
+		$table = $this->registry->table( Schema::CHANGES );
+		return (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(DISTINCT object_id) FROM %i WHERE batch_id = %d AND result IN ('skipped', 'failed') AND object_id IN (SELECT object_id FROM %i WHERE batch_id = %d AND result = 'applied')", $table, $batch_id, $table, $batch_id ) );
+	}
+
+	/**
 	 * One page of a batch's journal in the order it was written, for the
 	 * changes feed (T36): optionally only rows with some results.
 	 *

@@ -542,3 +542,37 @@ test.describe( 'the export dialog', () => {
 		} );
 	}
 } );
+
+test( 'History’s Export log posts the nonce in the body, and an address carrying it is refused (SECURITY-1)', async ( {
+	page,
+} ) => {
+	const posts = exportPosts( page );
+	await openScreen( page, 'history' );
+	const file = await downloaded( page, () =>
+		page.getByRole( 'button', { name: 'Export log (CSV)' } ).click()
+	);
+	expect( file.name ).toMatch( /^change-history-\d{4}-\d{2}-\d{2}\.csv$/ );
+	expect( csvRows( file.text )[ 0 ][ 0 ] ).toBe( 'Change number' );
+	expect( posts ).toHaveLength( 1 );
+	expect( posts[ 0 ].url ).not.toMatch( /_wpnonce|source=/ );
+	const body = new URLSearchParams( posts[ 0 ].body );
+	expect( body.get( '_wpnonce' ) ).toBeTruthy();
+	expect( body.get( 'source' ) ).toBe( 'batches' );
+
+	const refused = await page.evaluate( async () => {
+		const settings = window.bulkcatSettings;
+		const join = settings.root.includes( '?' ) ? '&' : '?';
+		const response = await window.fetch(
+			settings.root +
+				'export' +
+				join +
+				'source=audit&columns%5B0%5D=name&_wpnonce=' +
+				encodeURIComponent( settings.nonce ),
+			{ credentials: 'same-origin' }
+		);
+		return { status: response.status, json: await response.json() };
+	} );
+	expect( refused.status ).toBe( 400 );
+	expect( refused.json.code ).toBe( 'bulkcat_invalid_value' );
+	expect( refused.json.data.param ).toBe( '_wpnonce' );
+} );

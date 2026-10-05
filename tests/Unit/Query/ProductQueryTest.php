@@ -38,6 +38,10 @@ final class ProductQueryTest extends TestCase {
 		'{SLUG}'   => 'FROM `wp_term_relationships` AS tr INNER JOIN `wp_term_taxonomy` AS tt ON tt.term_taxonomy_id = tr.term_taxonomy_id INNER JOIN `wp_terms` AS t ON t.term_id = tt.term_id',
 		'{TERM}'   => 'FROM `wp_term_relationships` AS tr INNER JOIN `wp_term_taxonomy` AS tt ON tt.term_taxonomy_id = tr.term_taxonomy_id',
 		'{OWNER}'  => "(CASE WHEN p.post_type = 'product_variation' THEN p.post_parent ELSE p.ID END)",
+		// SQR-1: the regular price the cell shows (ProductQuery::regular_price()).
+		'{PRICE}'  => "(CASE WHEN p.post_type = 'product' AND EXISTS (SELECT 1 FROM `wp_term_relationships` AS ptr WHERE ptr.object_id = p.ID AND ptr.term_taxonomy_id IN ((SELECT ptt.term_taxonomy_id FROM `wp_term_taxonomy` AS ptt INNER JOIN `wp_terms` AS pt ON pt.term_id = ptt.term_id WHERE ptt.taxonomy = 'product_type' AND pt.slug = 'variable' LIMIT 1), (SELECT ptt.term_taxonomy_id FROM `wp_term_taxonomy` AS ptt INNER JOIN `wp_terms` AS pt ON pt.term_id = ptt.term_id WHERE ptt.taxonomy = 'product_type' AND pt.slug = 'grouped' LIMIT 1))) THEN NULL WHEN l.onsale = 0 AND l.min_price > 0 THEN l.min_price ELSE (SELECT CAST(NULLIF(rp.meta_value, '') AS DECIMAL(19, 4)) FROM `wp_postmeta` AS rp WHERE rp.post_id = p.ID AND rp.meta_key = '_regular_price' ORDER BY rp.meta_id ASC LIMIT 1) END)",
+		'{VPRICE}' => "(CASE WHEN l.onsale = 0 AND l.min_price > 0 THEN l.min_price ELSE (SELECT CAST(NULLIF(rp.meta_value, '') AS DECIMAL(19, 4)) FROM `wp_postmeta` AS rp WHERE rp.post_id = p.ID AND rp.meta_key = '_regular_price' ORDER BY rp.meta_id ASC LIMIT 1) END)",
+		'{SHOWN}'  => '(l.product_id IS NULL OR l.onsale <> 0 OR l.min_price IS NULL OR l.min_price <= 0 OR l.min_price',
 	];
 
 	/**
@@ -225,13 +229,13 @@ final class ProductQueryTest extends TestCase {
 					'order'   => 'desc',
 				],
 				<<<'SQL'
-				SELECT {SCAN} p.ID AS id, p.post_parent AS parent_id, l.max_price AS regular_price {FROM}
+				SELECT {SCAN} p.ID AS id, p.post_parent AS parent_id, {VPRICE} AS regular_price {FROM}
 				WHERE p.post_type IN ('product_variation') AND {STATUS}
 				AND EXISTS (SELECT 1 {TERM} WHERE tr.object_id = p.post_parent AND tt.taxonomy = 'product_cat' AND tt.term_id IN (3))
 				AND EXISTS (SELECT 1 {TERM} WHERE tr.object_id = p.post_parent AND tt.taxonomy = 'product_cat' AND tt.term_id IN (7))
 				AND EXISTS (SELECT 1 {TERM} WHERE tr.object_id = p.ID AND tt.taxonomy = 'product_shipping_class' AND tt.term_id IN (9))
-				AND p.post_status NOT IN ('private') AND l.max_price >= 5
-				ORDER BY l.max_price DESC, p.ID DESC LIMIT 25 OFFSET 0
+				AND p.post_status NOT IN ('private') AND {SHOWN} >= 5) AND {VPRICE} >= 5
+				ORDER BY regular_price DESC, p.ID DESC LIMIT 25 OFFSET 0
 				SQL,
 			],
 			'search, dates and a clamped page size'    => [
@@ -271,7 +275,7 @@ final class ProductQueryTest extends TestCase {
 				WHERE p.post_type IN ('product') AND {STATUS}
 				AND (p.post_title LIKE '%50\\% off\\_\'\\%s%' OR l.sku LIKE '%50\\% off\\_\'\\%s%')
 				AND p.post_modified_gmt < '2026-09-01 00:00:00' AND p.post_date_gmt > '2026-09-01 10:00:00'
-				AND p.post_modified_gmt >= '2026-09-09 12:00:00' AND l.min_price <= 99.95
+				AND p.post_modified_gmt >= '2026-09-09 12:00:00' AND {SHOWN} <= 99.95) AND {PRICE} <= 99.95
 				ORDER BY l.total_sales DESC, p.post_modified_gmt DESC, p.ID DESC LIMIT 100 OFFSET 0
 				SQL,
 			],
@@ -355,7 +359,7 @@ final class ProductQueryTest extends TestCase {
 			$this->assertTrue( $joins || str_starts_with( $conditions['sql'], 'FROM %i AS p WHERE ' ), $name );
 			$this->assertSame( 1 === preg_match( '/\bl\./', $conditions['sql'] ), $joins, $name . ': the lookup is joined exactly when a condition reads it.' );
 			$hint = $joins ? strtr( Criteria::MODE_PRODUCTS === ( $args['mode'] ?? Criteria::MODE_PRODUCTS ) ? '{HINT} ' : '{SCAN} ', self::FRAGMENTS ) : '';
-			$this->assertStringNotContainsString( 'LIMIT', $conditions['sql'], $name );
+			$this->assertSame( 0, preg_match( '/LIMIT %d\)?$/', $conditions['sql'] ), $name . ': no LIMIT of its own (a sub-query may have one).' );
 			$this->assertSame( 0, preg_match( '/[\'"`]/', $conditions['sql'] ), $name );
 			$this->assertSame( preg_match_all( '/%[sdfi]/', $conditions['sql'] ), count( $conditions['args'] ), $name );
 			$this->assertSame( [], self::db()->prepared, $name . ': the accessor prepares nothing.' );
@@ -452,11 +456,6 @@ final class ProductQueryTest extends TestCase {
 				'value'    => true,
 			],
 			[
-				'field'    => 'regular_price',
-				'operator' => 'between',
-				'value'    => [ 1, 2 ],
-			],
-			[
 				'field'    => 'stock_quantity',
 				'operator' => 'lessThanOrEqual',
 				'value'    => 0,
@@ -486,6 +485,21 @@ final class ProductQueryTest extends TestCase {
 			],
 		];
 		foreach ( Criteria::MODES as $mode ) {
+			// SQR-1: a variable or grouped product has no regular price of its own, which its type term says; a variations read has none.
+			$price = self::query(
+				[
+					'mode'    => $mode,
+					'filters' => [
+						[
+							'field'    => 'regular_price',
+							'operator' => 'between',
+							'value'    => [ 1, 2 ],
+						],
+					],
+				]
+			)->statement();
+			$this->assertSame( Criteria::MODE_VARIATIONS !== $mode, str_contains( $price, '`wp_term_relationships` AS ptr' ), $mode );
+			$this->assertStringNotContainsString( 'AS tr ', $price, $mode );
 			foreach ( [
 				true  => $taxonomy,
 				false => $plain,
@@ -522,7 +536,10 @@ final class ProductQueryTest extends TestCase {
 				foreach ( $tables[1] as $table ) {
 					$this->assertContains( $table, $allowed, $name );
 				}
-				$this->assertStringNotContainsString( 'postmeta', $sql, $name );
+				// SQR-1: only the regular price, of a row on sale, reads its meta.
+				$price = str_contains( (string) wp_json_encode( $args ), 'regular_price' );
+				$this->assertSame( $price, str_contains( $sql, '`wp_postmeta` AS rp' ), $name );
+				$this->assertSame( substr_count( $sql, '`wp_postmeta` AS rp' ), substr_count( $sql, 'postmeta' ), $name . ': postmeta is read for nothing else.' );
 			}
 		}
 	}

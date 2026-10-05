@@ -8,9 +8,11 @@
  *
  * It reads exactly the dialect those statements use: SELECT with aliases,
  * COUNT(*) and COUNT(DISTINCT x); FROM one table with INNER and LEFT JOINs;
- * WHERE with AND, OR, NOT, =, <>, !=, <, <=, >, >=, [NOT] IN, [NOT] LIKE
+ * WHERE with AND, OR, NOT, =, <>, !=, <, <=, >, >=, BETWEEN, [NOT] IN, [NOT] LIKE
  * (backslash escapes), IS [NOT] NULL, EXISTS and scalar sub-queries
- * (correlated), CASE WHEN, CONCAT (NULL when any part is); GROUP BY; ORDER BY with ASC/DESC; LIMIT and
+ * (correlated), CASE WHEN, CONCAT (NULL when any part is), NULLIF, CAST AS
+ * DECIMAL(m, d); GROUP BY; ORDER BY with ASC/DESC, by expression or by a
+ * result column's alias; LIMIT and
  * OFFSET; an optimiser hint comment (opening slash, star, plus) is read
  * past. It follows MySQL where the answer depends on it: three-valued logic
  * with NULL, NULL sorting first ascending, numbers compared as numbers, text
@@ -42,7 +44,7 @@ if ( ! class_exists( SqlEvaluator::class ) ) {
 		 */
 		public const PAGE = '/^SELECT (\/\*\+ [^*]*\*\/ )?p\.ID AS id, p\.post_parent AS parent_id/';
 
-		private const KEYWORDS = [ 'SELECT', 'FROM', 'AS', 'LEFT', 'INNER', 'JOIN', 'ON', 'WHERE', 'AND', 'OR', 'NOT', 'IN', 'IS', 'NULL', 'LIKE', 'EXISTS', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'ORDER', 'BY', 'ASC', 'DESC', 'LIMIT', 'OFFSET', 'GROUP', 'COUNT', 'DISTINCT', 'CONCAT' ];
+		private const KEYWORDS = [ 'SELECT', 'FROM', 'AS', 'LEFT', 'INNER', 'JOIN', 'ON', 'WHERE', 'AND', 'OR', 'NOT', 'IN', 'IS', 'NULL', 'LIKE', 'EXISTS', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'ORDER', 'BY', 'ASC', 'DESC', 'LIMIT', 'OFFSET', 'GROUP', 'COUNT', 'DISTINCT', 'CONCAT', 'NULLIF', 'CAST', 'DECIMAL', 'BETWEEN' ];
 
 		/**
 		 * Tokens of the statement being parsed: [ kind, value ].
@@ -262,6 +264,11 @@ if ( ! class_exists( SqlEvaluator::class ) ) {
 				return [ 'exists', $select ];
 			}
 			$left = $this->operand();
+			if ( $this->accept( 'keyword', 'BETWEEN' ) ) {
+				$low = $this->operand();
+				$this->expect( 'keyword', 'AND' );
+				return [ 'and', [ [ 'compare', '>=', $left, $low ], [ 'compare', '<=', $left, $this->operand() ] ] ];
+			}
 			foreach ( [ '=', '<>', '!=', '<', '<=', '>', '>=' ] as $op ) {
 				if ( $this->accept( 'op', $op ) ) {
 					return [ 'compare', $op, $left, $this->operand() ];
@@ -321,6 +328,28 @@ if ( ! class_exists( SqlEvaluator::class ) ) {
 				} while ( $this->accept( 'op', ',' ) );
 				$this->expect( 'op', ')' );
 				return [ 'concat', $parts ];
+			}
+			if ( $this->accept( 'keyword', 'NULLIF' ) ) {
+				$this->expect( 'op', '(' );
+				$value = $this->operand();
+				$this->expect( 'op', ',' );
+				$empty = $this->operand();
+				$this->expect( 'op', ')' );
+				return [ 'nullif', $value, $empty ];
+			}
+			if ( $this->accept( 'keyword', 'CAST' ) ) {
+				// CAST( x AS DECIMAL( m, d ) ): the Regular price filter and sort.
+				$this->expect( 'op', '(' );
+				$value = $this->operand();
+				$this->expect( 'keyword', 'AS' );
+				$this->expect( 'keyword', 'DECIMAL' );
+				$this->expect( 'op', '(' );
+				$this->expect( 'value' );
+				$this->expect( 'op', ',' );
+				$scale = (int) $this->expect( 'value' );
+				$this->expect( 'op', ')' );
+				$this->expect( 'op', ')' );
+				return [ 'decimal', $value, $scale ];
 			}
 			if ( $this->accept( 'keyword', 'CASE' ) ) {
 				$cases = [];
@@ -400,10 +429,18 @@ if ( ! class_exists( SqlEvaluator::class ) ) {
 			}
 
 			if ( [] !== $select['order'] ) {
-				$keyed = [];
+				$keyed   = [];
+				$aliases = [];
+				foreach ( $select['columns'] as [ $expr, $name ] ) {
+					$aliases[ $name ] = $expr;
+				}
 				foreach ( $scopes as $index => $scope ) {
 					$keys = [];
 					foreach ( $select['order'] as [ $expr ] ) {
+						// An unqualified name that is a result column's alias orders by that column, as MySQL does.
+						if ( 'column' === $expr[0] && ! str_contains( $expr[1], '.' ) && isset( $aliases[ $expr[1] ] ) ) {
+							$expr = $aliases[ $expr[1] ];
+						}
 						$keys[] = $this->evaluate( $expr, [ $scope, ...$outer ] );
 					}
 					$keyed[] = [ $keys, $index, $scope ];
@@ -549,6 +586,17 @@ if ( ! class_exists( SqlEvaluator::class ) ) {
 						$text .= (string) $value;
 					}
 					return $text;
+				case 'nullif':
+					$value = $this->evaluate( $expr[1], $context );
+					$empty = $this->evaluate( $expr[2], $context );
+					return null !== $value && null !== $empty && 0 === self::order( $value, $empty ) ? null : $value;
+				case 'decimal':
+					// MySQL reads the leading number of a text and 0 when there is none.
+					$value = $this->evaluate( $expr[1], $context );
+					if ( null === $value ) {
+						return null;
+					}
+					return round( 1 === preg_match( '/^\s*[-+]?(\d+(\.\d*)?|\.\d+)/', (string) $value, $m ) ? (float) $m[0] : 0.0, $expr[2] );
 				case 'exists':
 					return [] !== $this->run( $expr[1], $context );
 				case 'scalar':

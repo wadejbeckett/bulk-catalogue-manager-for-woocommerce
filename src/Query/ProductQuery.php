@@ -24,7 +24,11 @@ defined( 'ABSPATH' ) || exit;
  *
  * The statement reads `{prefix}posts` joined to
  * `{prefix}wc_product_meta_lookup`, which carries SKU, prices, stock and sales,
- * so no filter or sort touches `wp_postmeta`. The lookup is a LEFT JOIN so a
+ * so most filters and sorts never touch `wp_postmeta`. The lookup's prices
+ * are WooCommerce's active price, the sale price while a sale runs, so the
+ * Regular price filter and sort read the regular price the row's cell shows
+ * (regular_price()): the lookup's price when the row is not on sale, and
+ * otherwise its own `_regular_price` meta. The lookup is a LEFT JOIN so a
  * product whose lookup row is missing still lists; any lookup condition simply
  * does not match it. It is joined only when a condition or a sort key reads it
  * (T76): joined on its primary key it can never add or remove a row, and at
@@ -112,20 +116,24 @@ final class ProductQuery {
 	];
 
 	/**
-	 * Sort key => [ column ascending, column descending ]. A price sorts on
-	 * the lowest price going up and the highest going down, as WooCommerce does.
+	 * Sort key => [ column ascending, column descending ]. The regular price
+	 * is not a column: see regular_price().
 	 */
 	private const SORT_COLUMNS = [
 		'id'             => [ 'p.ID', 'p.ID' ],
 		'name'           => [ 'p.post_title', 'p.post_title' ],
 		'sku'            => [ 'l.sku', 'l.sku' ],
-		'regular_price'  => [ 'l.min_price', 'l.max_price' ],
 		'stock_status'   => [ 'l.stock_status', 'l.stock_status' ],
 		'stock_quantity' => [ 'l.stock_quantity', 'l.stock_quantity' ],
 		'date_created'   => [ 'p.post_date_gmt', 'p.post_date_gmt' ],
 		'date_modified'  => [ 'p.post_modified_gmt', 'p.post_modified_gmt' ],
 		'units_sold'     => [ 'l.total_sales', 'l.total_sales' ],
 	];
+
+	/**
+	 * The sort key and filter read from the row's own regular price meta.
+	 */
+	private const REGULAR_PRICE = 'regular_price';
 
 	/**
 	 * Taxonomy per term-id filter.
@@ -228,18 +236,28 @@ final class ProductQuery {
 	 */
 	public function statement(): string {
 		global $wpdb;
-		$select  = [ 'p.ID AS id', 'p.post_parent AS parent_id' ];
-		$order   = [];
-		$ids     = false;
-		$keyword = 'ASC';
-		$lookup  = $this->lookup;
+		$select      = [ 'p.ID AS id', 'p.post_parent AS parent_id' ];
+		$select_args = [];
+		$order       = [];
+		$ids         = false;
+		$keyword     = 'ASC';
+		$lookup      = $this->lookup;
 		if ( [] === $this->criteria->sorts ) {
 			// Only a one-product variations read has no sort keys: WooCommerce's own order.
 			$order[] = 'p.menu_order ASC';
 		}
 		foreach ( $this->criteria->sorts as $sort ) {
-			$column  = self::SORT_COLUMNS[ $sort->field ][ Sort::DESC === $sort->direction ? 1 : 0 ];
 			$keyword = Sort::DESC === $sort->direction ? 'DESC' : 'ASC';
+			if ( self::REGULAR_PRICE === $sort->field ) {
+				// Ordered by its alias, so the expression runs once a row.
+				[ $price, $price_args ] = $this->regular_price();
+				$select[]               = $price . ' AS ' . $sort->field;
+				$select_args            = [ ...$select_args, ...$price_args ];
+				$order[]                = $sort->field . ' ' . $keyword;
+				$lookup                 = true;
+				continue;
+			}
+			$column  = self::SORT_COLUMNS[ $sort->field ][ Sort::DESC === $sort->direction ? 1 : 0 ];
 			$order[] = $column . ' ' . $keyword;
 			$lookup  = $lookup || str_starts_with( $column, 'l.' );
 			if ( 'id' === $sort->field ) {
@@ -253,7 +271,7 @@ final class ProductQuery {
 			$order[] = 'p.ID ' . $keyword;
 		}
 		$sql  = 'SELECT ' . $this->hint( $lookup ) . implode( ', ', $select ) . ' ' . $this->from( $lookup ) . ' WHERE ' . $this->where . ' ORDER BY ' . implode( ', ', $order ) . ' LIMIT %d OFFSET %d';
-		$args = [ ...$this->table_args( $lookup ), ...$this->where_args, $this->criteria->per_page, $this->criteria->offset() ];
+		$args = [ ...$select_args, ...$this->table_args( $lookup ), ...$this->where_args, $this->criteria->per_page, $this->criteria->offset() ];
 		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- The template holds only allow-listed literals and placeholders; every value is an argument.
 		return (string) $wpdb->prepare( $sql, ...$args );
 	}
@@ -530,8 +548,8 @@ final class ProductQuery {
 				$this->add( 'l.stock_quantity IS ' . ( $value ? 'NOT NULL' : 'NULL' ), [], true );
 				return;
 
-			case 'regular_price':
-				$this->range( 'l.min_price', 'l.max_price', '%f', $filter );
+			case self::REGULAR_PRICE:
+				$this->regular_price_range( $filter );
 				return;
 
 			case 'stock_quantity':
@@ -625,8 +643,7 @@ final class ProductQuery {
 	}
 
 	/**
-	 * A price or stock range. A product matches a price range when any of
-	 * its prices falls in it, as WooCommerce's price filter does.
+	 * A stock range.
 	 *
 	 * @param string $low_column  Column holding the lowest value.
 	 * @param string $high_column Column holding the highest value.
@@ -642,6 +659,71 @@ final class ProductQuery {
 		} else {
 			$this->add( $low_column . ' <= ' . $placeholder, [ $value ], true );
 		}
+	}
+
+	/**
+	 * The regular price a row's cell shows, as a number, or NULL when the
+	 * cell is empty (SQR-1). The cell shows the row's own `_regular_price`
+	 * meta; reading that meta for every row costs a second or more at 20,000
+	 * products, so the expression reads it only where the lookup cannot stand
+	 * in for it:
+	 *
+	 * - A variable or grouped product has no regular price of its own
+	 *   (WooCommerce deletes a variable product's when it syncs its
+	 *   variations, and the screen shows the variations' prices instead), so
+	 *   it is NULL: it never matches a Regular price filter and sorts with
+	 *   the other empty cells, while its variations match on their own
+	 *   prices. The lookup's prices for it are its children's.
+	 * - A row WooCommerce does not mark on sale (`onsale` 0) has its regular
+	 *   price as its active price, which the lookup holds: `_price` is set to
+	 *   the regular price whenever the sale price does not apply. A price of
+	 *   zero is not trusted, because a sale price of "0" is never marked on
+	 *   sale.
+	 * - Anything else (on sale, a zero or missing price, no lookup row) reads
+	 *   its `_regular_price` meta, the first row as `get_post_meta()` does,
+	 *   empty as NULL, through a sub-query on the `post_id` index; a sub-query
+	 *   rather than a join, so a duplicated meta row can never repeat a row.
+	 *
+	 * @return array{0: string, 1: list<int|string>} Expression template and its arguments.
+	 */
+	private function regular_price(): array {
+		$meta      = ' ELSE (SELECT CAST(NULLIF(rp.meta_value, %s) AS DECIMAL(%d, %d)) FROM %i AS rp WHERE rp.post_id = p.ID AND rp.meta_key = %s ORDER BY rp.meta_id ASC LIMIT %d) END)';
+		$meta_args = [ '', 19, 4, self::table( 'postmeta' ), '_regular_price', 1 ];
+		if ( Criteria::MODE_VARIATIONS === $this->criteria->mode ) {
+			// Only variations: no row is a variable or grouped product.
+			return [ '(CASE WHEN l.onsale = %d AND l.min_price > %d THEN l.min_price' . $meta, [ 0, 0, ...$meta_args ] ];
+		}
+		// Each type's term is an uncorrelated scalar sub-query, which MySQL reads once a statement; each row then costs one primary-key probe.
+		$type        = '(SELECT ptt.term_taxonomy_id FROM %i AS ptt INNER JOIN %i AS pt ON pt.term_id = ptt.term_id WHERE ptt.taxonomy = %s AND pt.slug = %s LIMIT %d)';
+		$type_args   = static fn( string $slug ): array => [ self::table( 'taxonomy' ), self::table( 'terms' ), 'product_type', $slug, 1 ];
+		$parent      = 'EXISTS (SELECT 1 FROM %i AS ptr WHERE ptr.object_id = p.ID AND ptr.term_taxonomy_id IN (' . $type . ', ' . $type . '))';
+		$parent_args = [ self::table( 'relationships' ), ...$type_args( 'variable' ), ...$type_args( 'grouped' ) ];
+		return [
+			'(CASE WHEN p.post_type = %s AND ' . $parent . ' THEN NULL'
+				. ' WHEN l.onsale = %d AND l.min_price > %d THEN l.min_price' . $meta,
+			[ 'product', ...$parent_args, 0, 0, ...$meta_args ],
+		];
+	}
+
+	/**
+	 * A Regular price range, on the price regular_price() reads.
+	 *
+	 * @param Filter $filter Range filter.
+	 */
+	private function regular_price_range( Filter $filter ): void {
+		[ $price, $args ]   = $this->regular_price();
+		$value              = $filter->value;
+		[ $range, $bounds ] = match ( $filter->operator ) {
+			'between'            => [ ' BETWEEN %f AND %f', [ $value[0], $value[1] ] ],
+			'greaterThanOrEqual' => [ ' >= %f', [ $value ] ],
+			default              => [ ' <= %f', [ $value ] ],
+		};
+		// First a test on the lookup alone, so the database can drop a row
+		// before it reads the post: a row whose regular price is the lookup's
+		// (see regular_price()) and out of range cannot match. It only ever
+		// narrows; the price itself decides.
+		$this->add( '(l.product_id IS NULL OR l.onsale <> %d OR l.min_price IS NULL OR l.min_price <= %d OR l.min_price' . $range . ')', [ 0, 0, ...$bounds ], true );
+		$this->add( $price . $range, [ ...$args, ...$bounds ], true );
 	}
 
 	/**

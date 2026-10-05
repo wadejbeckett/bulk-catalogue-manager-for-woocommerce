@@ -128,7 +128,7 @@ final class ManifestTest extends TestCase {
 		$this->assertSame( [ 'provider_unavailable', 'Sample labels', 'Sample labels needs its settings saved before it can be used.' ], [ $unavailable->kind, $unavailable->label, $unavailable->reason ], 'Registered but unavailable: its own reason.' );
 		delete_option( 'sample_provider_faults' );
 		$other                       = $manifest;
-		$other['sample']['contract'] = 2;
+		$other['sample']['contract'] = 3;
 		$this->assertSame( 'provider_unavailable', Manifest::blocked( $other, $providers )->kind, 'A contract this core does not support.' );
 		update_option( 'sample_provider_faults', [ 'version' => '1.1.0' ] );
 		$this->assertSame( '1.1.0', Manifest::refreshed( $manifest, Providers::of( [ new SampleProvider( new MemoryStore() ) ] ) )['sample']['version'], 'An undo records the version at undo time.' );

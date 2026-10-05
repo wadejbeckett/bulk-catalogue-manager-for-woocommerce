@@ -40,7 +40,12 @@ interface Context {
 	public const UNDO = 'undo';
 
 	/**
-	 * One of PREVIEW, APPLY, REPLAY and UNDO.
+	 * Listing or searching choices for a `lookup` argument (contract version 2).
+	 */
+	public const LOOKUP = 'lookup';
+
+	/**
+	 * One of PREVIEW, APPLY, REPLAY, UNDO and, in contract version 2, LOOKUP.
 	 */
 	public function mode(): string;
 

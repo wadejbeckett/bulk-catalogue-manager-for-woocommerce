@@ -5,8 +5,10 @@
  * registrations only while that action runs.
  *
  *     add_action( 'bulkcat_register_providers', static function ( Registrar $registrar ): void {
- *         if ( $registrar->supports( 1 ) ) {
- *             $registrar->register( new My_Provider() );
+ *         if ( $registrar->supports( 2 ) && $registrar->supports_feature( 'lookup' ) ) {
+ *             $registrar->register( new My_Provider() );        // declares contract 2
+ *         } elseif ( $registrar->supports( 1 ) ) {
+ *             $registrar->register( new My_Older_Provider() );  // declares contract 1
  *         }
  *     } );
  *
@@ -23,7 +25,7 @@ use BulkCatalogueManager\External\Collector;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * The registrar, contract version 1.
+ * The registrar, contract versions 1 and 2.
  */
 final class Registrar {
 	/**
@@ -47,6 +49,17 @@ final class Registrar {
 	 */
 	public function supports( int $version ): bool {
 		return in_array( $version, Contract::SUPPORTED, true );
+	}
+
+	/**
+	 * Whether this core implements a version 2 feature
+	 * (Contract::FEATURE_LOOKUP, FEATURE_ROW_ENTRY or FEATURE_CATEGORY_TARGET).
+	 * Contract version 2.
+	 *
+	 * @param string $feature A feature name.
+	 */
+	public function supports_feature( string $feature ): bool {
+		return in_array( $feature, Contract::FEATURES, true );
 	}
 
 	/**

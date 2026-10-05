@@ -116,6 +116,14 @@ final class ExportController implements ReadController {
 	private ?BatchesController $history = null;
 
 	/**
+	 * The history export lock this request holds until its file is streamed
+	 * (HeavyReadLock), or ''.
+	 *
+	 * @var string
+	 */
+	private string $held = '';
+
+	/**
 	 * The audit log, built on first use.
 	 *
 	 * @var AuditController|null
@@ -428,6 +436,13 @@ final class ExportController implements ReadController {
 				$read    = static fn( int $page, int $size ): array => $history->rows( $filters, $page, $size, 1 === $page );
 		}
 
+		// A history export reads every row with no time limit, so one streams at a time per user.
+		$lock = HeavyReadLock::acquire( HeavyReadLock::EXPORT );
+		if ( $lock instanceof \WP_Error ) {
+			return $lock;
+		}
+		$this->held = $lock;
+
 		$rows = new CallableRowSource(
 			static function ( array $unused, int $page, int $size ) use ( $read, $source ): array {
 				unset( $unused );
@@ -520,6 +535,9 @@ final class ExportController implements ReadController {
 					[ 'source' => Refusal::LOG_SOURCE ]
 				);
 			}
+		} finally {
+			HeavyReadLock::release( $this->held );
+			$this->held = '';
 		}
 		return true;
 	}

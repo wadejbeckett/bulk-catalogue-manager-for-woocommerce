@@ -617,6 +617,10 @@ final class Planner {
 			// Ticket 133 bug 1: a category goes back through its own term functions.
 			return \BulkCatalogueManager\Categories\TermUndo::plan( $object_id, $journal['fields'], $user_id );
 		}
+		if ( External\TermSubject::TAXONOMY === $type ) {
+			// Contract version 2: an add-on's value on a category goes back through its provider.
+			return $this->category_item( $object_id, $journal, $user_id, $batch_id, $loaded instanceof \WP_Term ? $loaded : null );
+		}
 		if ( [] === $journal['fields'] ) {
 			return self::skipped(
 				$object_id,
@@ -656,7 +660,7 @@ final class Planner {
 		foreach ( $journal['fields'] as $key => $values ) {
 			if ( External\Providers::is_external( (string) $key ) ) {
 				// T108: an add-on's value goes back through its provider.
-				$part = $this->external( $subject, (string) $key, $values, $user_id, $batch_id, $checked );
+				$part = $this->external( $subject, (string) $key, $values, $user_id, $batch_id, $checked, false );
 				if ( isset( $part['skip'] ) ) {
 					return self::skipped( $object_id, $type, $part['skip'][0], $part['skip'][1] );
 				}
@@ -751,24 +755,89 @@ final class Planner {
 	}
 
 	/**
+	 * Plan one category of an add-on's category change (contract version 2,
+	 * docs/EXTENSIONS-v2.md §5.4), for the person undoing: it still exists,
+	 * read unfiltered (a background undo with no user sees categories a term
+	 * query would hide); their edit_term on it; then, per value, the
+	 * capability, the provider's authorise() and the conflict check, as for
+	 * a product. A deleted category is skipped as missing.
+	 *
+	 * @param int                                                                               $object_id Term id.
+	 * @param array{type: string, fields: array<string, array{expected: mixed, target: mixed}>} $journal   Its journal.
+	 * @param int                                                                               $user_id   The person undoing.
+	 * @param int                                                                               $batch_id  The batch undone.
+	 * @param \WP_Term|null                                                                      $loaded    The category, already loaded; read here when null.
+	 * @return array{object_id: int, object_type: string, operations: list<array{action: string, args: array<string, mixed>}>, state: string, code: string, reason: string, conflicts: list<array{field: string, expected: mixed, current: mixed}>}
+	 */
+	private function category_item( int $object_id, array $journal, int $user_id, int $batch_id, ?\WP_Term $loaded ): array {
+		$type = External\TermSubject::TAXONOMY;
+		if ( [] === $journal['fields'] ) {
+			return self::skipped( $object_id, $type, self::NOT_APPLIED, __( 'This batch did not change this category, so there is nothing to undo.', 'bulk-catalogue-manager-for-woocommerce' ) );
+		}
+		$term = $loaded ?? External\TermSubject::load( $object_id );
+		if ( null === $term ) {
+			return self::skipped( $object_id, $type, self::MISSING, External\ExternalWriter::term_gone_sentence() );
+		}
+		if ( ! user_can( $user_id, 'edit_term', $object_id ) ) {
+			return self::skipped( $object_id, $type, self::CANNOT_EDIT, __( 'You can no longer change this category, so it was left alone. Ask an administrator for access to it.', 'bulk-catalogue-manager-for-woocommerce' ) );
+		}
+		$operations = [];
+		$conflicts  = [];
+		$checked    = [];
+		foreach ( $journal['fields'] as $key => $values ) {
+			$part = External\Providers::is_external( (string) $key )
+				? $this->external( $term, (string) $key, $values, $user_id, $batch_id, $checked, true )
+				: [ 'skip' => [ self::CANNOT_RESTORE, __( 'One of the values this batch changed can no longer be changed here, so this category was left alone.', 'bulk-catalogue-manager-for-woocommerce' ) ] ];
+			if ( isset( $part['skip'] ) ) {
+				return self::skipped( $object_id, $type, $part['skip'][0], $part['skip'][1] );
+			}
+			if ( null !== $part['conflict'] ) {
+				$conflicts[] = $part['conflict'];
+			}
+			$operations[] = $part['operation'];
+		}
+		$normalised = $this->actions->validate_list( $operations, true );
+		if ( $normalised instanceof \WP_Error ) {
+			return self::skipped( $object_id, $type, self::CANNOT_RESTORE, $normalised->get_error_message() );
+		}
+		return [
+			'object_id'   => $object_id,
+			'object_type' => $type,
+			'operations'  => $normalised,
+			'state'       => [] === $conflicts ? Plan::REVERTIBLE : Plan::CONFLICTED,
+			'code'        => [] === $conflicts ? '' : self::CHANGED_SINCE,
+			'reason'      => [] === $conflicts ? '' : __( 'This category was changed since this batch ran, so it is left alone unless you choose Revert anyway.', 'bulk-catalogue-manager-for-woocommerce' ),
+			'conflicts'   => $conflicts,
+		];
+	}
+
+	/**
 	 * One external field of an object (T108): the step putting it back and
 	 * its conflict, or why the object is skipped.
 	 *
-	 * @param object                                  $subject  The loaded object.
+	 * @param object                                  $subject  The loaded object: a product, or a category's WP_Term.
 	 * @param string                                  $key      Field key.
 	 * @param array{expected: mixed, target: mixed}   $values   The journalled envelopes.
 	 * @param int                                     $user_id  The person undoing.
 	 * @param int                                     $batch_id The batch undone.
 	 * @param array<string, bool>                     $checked  Providers whose permission is already checked for this object.
+	 * @param bool                                    $category Whether the object is a category.
 	 * @return array{operation?: array<string, mixed>, conflict?: array<string, mixed>|null, skip?: array{0: string, 1: string}}
 	 */
-	private function external( object $subject, string $key, array $values, int $user_id, int $batch_id, array &$checked ): array {
+	private function external( object $subject, string $key, array $values, int $user_id, int $batch_id, array &$checked, bool $category ): array {
 		$provider = $this->actions->providers()->owning( $key );
-		if ( null === $provider || null === $provider->field( $key ) ) {
-			return [ 'skip' => [ self::CANNOT_RESTORE, __( 'One of the values this batch changed can no longer be changed here, so this product was left alone.', 'bulk-catalogue-manager-for-woocommerce' ) ] ];
+		if ( null === $provider || null === $provider->field( $key ) || $category !== $provider->category_change( [ [ 'args' => [ 'field' => $key ] ] ] ) ) {
+			return [
+				'skip' => [
+					self::CANNOT_RESTORE,
+					$category
+						? __( 'One of the values this batch changed can no longer be changed here, so this category was left alone.', 'bulk-catalogue-manager-for-woocommerce' )
+						: __( 'One of the values this batch changed can no longer be changed here, so this product was left alone.', 'bulk-catalogue-manager-for-woocommerce' ),
+				],
+			];
 		}
 		$context = new External\RunContext( External\RunContext::UNDO, $user_id, $batch_id );
-		$object  = External\ProductSubject::of( $subject, $provider );
+		$object  = $subject instanceof \WP_Term ? new External\TermSubject( $subject, $provider ) : External\ProductSubject::of( $subject, $provider );
 		$step    = [
 			'action' => External\RestoreExternal::ID,
 			'args'   => [ 'field' => $key ],
@@ -777,7 +846,7 @@ final class Planner {
 			return [ 'skip' => [ self::CANNOT_EDIT, External\Refusals::no_permission() ] ];
 		}
 		if ( ! isset( $checked[ $provider->id ] ) ) {
-			$refusal = self::authorise( $provider, $user_id, $object );
+			$refusal = self::authorise( $provider, $user_id, $object, $category );
 			if ( null !== $refusal ) {
 				return [ 'skip' => [ self::CANNOT_EDIT, $refusal ] ];
 			}
@@ -790,7 +859,14 @@ final class Planner {
 		$expected = External\Envelope::current( $provider, $key, $values['expected'] );
 		$target   = External\Envelope::current( $provider, $key, $values['target'] );
 		if ( $expected instanceof \WP_Error || $target instanceof \WP_Error ) {
-			return [ 'skip' => [ self::CANNOT_RESTORE, __( 'A value this batch changed was saved in a shape the add-on can no longer read, so this product was left alone.', 'bulk-catalogue-manager-for-woocommerce' ) ] ];
+			return [
+				'skip' => [
+					self::CANNOT_RESTORE,
+					$category
+						? __( 'A value this batch changed was saved in a shape the add-on can no longer read, so this category was left alone.', 'bulk-catalogue-manager-for-woocommerce' )
+						: __( 'A value this batch changed was saved in a shape the add-on can no longer read, so this product was left alone.', 'bulk-catalogue-manager-for-woocommerce' ),
+				],
+			];
 		}
 		$field = $provider->field( $key );
 		try {
@@ -817,11 +893,12 @@ final class Planner {
 	/**
 	 * The provider's refusal of the person undoing on an object, or null when it allows it.
 	 *
-	 * @param External\Registered     $provider The provider.
-	 * @param int            $user_id  The person undoing.
-	 * @param External\ProductSubject $item     The object.
+	 * @param External\Registered                             $provider The provider.
+	 * @param int                                             $user_id  The person undoing.
+	 * @param External\ProductSubject|External\TermSubject $item     The object.
+	 * @param bool                                            $category Whether it is a category.
 	 */
-	private static function authorise( External\Registered $provider, int $user_id, External\ProductSubject $item ): ?string {
+	private static function authorise( External\Registered $provider, int $user_id, External\ProductSubject|External\TermSubject $item, bool $category = false ): ?string {
 		try {
 			$answer = External\Guard::run( $provider->id, 'authorise', static fn(): mixed => $provider->provider->authorise( $user_id, $item ) );
 		} catch ( External\ProviderFailure $e ) {
@@ -831,7 +908,12 @@ final class Planner {
 			return null;
 		}
 		$reason = $answer instanceof \WP_Error ? External\Text::plain( $answer->get_error_message(), External\Text::REASON ) : '';
-		return '' === $reason ? __( 'The add-on does not allow a change to this product, so it was left alone.', 'bulk-catalogue-manager-for-woocommerce' ) : $reason;
+		if ( '' !== $reason ) {
+			return $reason;
+		}
+		return $category
+			? __( 'The add-on does not allow a change to this category, so it was left alone.', 'bulk-catalogue-manager-for-woocommerce' )
+			: __( 'The add-on does not allow a change to this product, so it was left alone.', 'bulk-catalogue-manager-for-woocommerce' );
 	}
 
 	/**

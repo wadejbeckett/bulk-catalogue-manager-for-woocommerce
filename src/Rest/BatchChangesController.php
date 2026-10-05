@@ -174,12 +174,12 @@ final class BatchChangesController implements ReadController {
 	 * @param list<array<string, mixed>> $rows Typed journal rows.
 	 */
 	public static function prime_names( array $rows ): void {
-		$ids   = array_values( array_unique( array_map( static fn( array $row ): int => $row['object_id'], array_filter( $rows, static fn( array $row ): bool => 'term' !== $row['object_type'] ) ) ) );
+		$ids   = array_values( array_unique( array_map( static fn( array $row ): int => $row['object_id'], array_filter( $rows, static fn( array $row ): bool => ! in_array( $row['object_type'], [ 'term', 'product_cat' ], true ) ) ) ) );
 		$terms = [];
 		foreach ( $rows as $row ) {
 			if ( isset( $row['prop'] ) ) {
 				$terms = array_merge( $terms, HistoryText::ids_of( $row ) );
-			} elseif ( 'term' === ( $row['object_type'] ?? '' ) ) {
+			} elseif ( in_array( $row['object_type'] ?? '', [ 'term', 'product_cat' ], true ) ) {
 				$terms[] = (int) $row['object_id'];
 			}
 		}
@@ -285,12 +285,16 @@ final class BatchChangesController implements ReadController {
 	 * An object's name for the feed: its title, or a plain stand-in when it is gone.
 	 *
 	 * @param int    $object_id   Object.
-	 * @param string $object_type product, variation or term.
+	 * @param string $object_type product, variation, term or product_cat.
 	 */
 	public static function name( int $object_id, string $object_type ): string {
 		if ( 'term' === $object_type ) {
 			// Ticket 133 bug 3: a category by its path ("Clothing › Shirts › Golf"), entities decoded.
 			return HistoryText::path( $object_id );
+		}
+		if ( 'product_cat' === $object_type ) {
+			// Contract version 2: an add-on's change to a category, by its path as it is now (never a product's title).
+			return HistoryText::known_path( $object_id ) ?? __( 'A category that no longer exists', 'bulk-catalogue-manager-for-woocommerce' );
 		}
 		$post  = get_post( $object_id );
 		$title = is_object( $post ) ? (string) ( $post->post_title ?? '' ) : '';

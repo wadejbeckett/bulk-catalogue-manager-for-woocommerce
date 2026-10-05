@@ -115,7 +115,7 @@ final class UndoRecorder {
 		++$this->taken;
 		++$this->types[ match ( $item['object_type'] ) {
 			'variation' => 'variations',
-			'term'      => 'categories',
+			'term', 'product_cat' => 'categories',
 			default     => 'products',
 		} ];
 		foreach ( $item['operations'] as $operation ) {

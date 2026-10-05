@@ -265,7 +265,9 @@ final class UndoController implements Controller {
 			$user_id,
 			static function ( array $item ) use ( &$ids, &$by_type ): void {
 				$ids[ $item['state'] ][] = $item['object_id'];
-				++$by_type[ in_array( $item['object_type'], [ 'variation', 'term' ], true ) ? $item['object_type'] : 'product' ][ $item['state'] ];
+				// An add-on's category item counts with the categories (contract version 2).
+				$type = 'product_cat' === $item['object_type'] ? 'term' : $item['object_type'];
+				++$by_type[ in_array( $type, [ 'variation', 'term' ], true ) ? $type : 'product' ][ $item['state'] ];
 			}
 		);
 		if ( $summary instanceof \WP_Error ) {

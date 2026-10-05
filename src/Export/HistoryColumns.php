@@ -206,9 +206,10 @@ final class HistoryColumns {
 					'failed'  => __( 'Failed', 'bulk-catalogue-manager-for-woocommerce' ),
 				],
 				'object_type'   => [
-					'product'   => __( 'Product', 'bulk-catalogue-manager-for-woocommerce' ),
-					'variation' => __( 'Variation', 'bulk-catalogue-manager-for-woocommerce' ),
-					'term'      => __( 'Category', 'bulk-catalogue-manager-for-woocommerce' ),
+					'product'     => __( 'Product', 'bulk-catalogue-manager-for-woocommerce' ),
+					'variation'   => __( 'Variation', 'bulk-catalogue-manager-for-woocommerce' ),
+					'term'        => __( 'Category', 'bulk-catalogue-manager-for-woocommerce' ),
+					'product_cat' => __( 'Category', 'bulk-catalogue-manager-for-woocommerce' ),
 				],
 				'status'        => [
 					'queued'              => __( 'Waiting to start', 'bulk-catalogue-manager-for-woocommerce' ),

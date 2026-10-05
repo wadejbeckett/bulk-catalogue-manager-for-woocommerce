@@ -79,6 +79,16 @@ final class HistoryText {
 	}
 
 	/**
+	 * A category's path, or the path it had when it was deleted; null when
+	 * neither is known.
+	 *
+	 * @param int $id Term id.
+	 */
+	public static function known_path( int $id ): ?string {
+		return self::paths()[ $id ] ?? self::$deleted[ $id ] ?? null;
+	}
+
+	/**
 	 * A category's own name (the last part of its path).
 	 *
 	 * @param int $id Term id.

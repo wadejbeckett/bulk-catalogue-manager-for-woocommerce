@@ -430,6 +430,11 @@ final class ChangeRepository {
 				}
 				$where[] = $condition;
 				$args[]  = $filters[ $key ];
+				if ( 'object_id' === $key ) {
+					// A product's history: never a category's rows under the same number (contract version 2).
+					$where[] = 'c.object_type IN (%s, %s)';
+					array_push( $args, 'product', 'variation' );
+				}
 			}
 		}
 		if ( isset( $filters['prop'] ) ) {

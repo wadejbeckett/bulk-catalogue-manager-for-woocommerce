@@ -345,6 +345,16 @@ export function describeOperation( operation, byKey = {}, actions = {} ) {
 			);
 		default: {
 			const action = actions[ operation?.action ];
+			if (
+				action?.label &&
+				label &&
+				String( action.label )
+					.toLowerCase()
+					.includes( String( label ).toLowerCase() )
+			) {
+				// 1.3.4: "Add customer groups", never "Add customer groups: customer groups".
+				return action.label;
+			}
 			return action?.label
 				? sprintf(
 						/* translators: 1: an action, such as "Round prices"; 2: a field, such as "regular price". */

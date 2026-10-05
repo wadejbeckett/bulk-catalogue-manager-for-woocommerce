@@ -6,8 +6,9 @@
  * `tree` batch of one `term` item and journalled with the old and new
  * values; a duplicate name under the same parent, a slug in use, an empty
  * name, a missing parent and a parent inside the category itself are
- * refused with nothing written; a move renumbers the siblings compactly in
- * `bulkcat_order`, which the tree then honours; every write renews the tree cache.
+ * refused with nothing written; a move writes WooCommerce's own order
+ * (NativeOrderTest covers it), which the tree then honours; every write
+ * renews the tree cache.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -61,13 +62,13 @@ final class WriterTest extends TestCase {
 	}
 
 	/**
-	 * The stored tree order of some terms.
+	 * WooCommerce's stored order of some terms.
 	 *
 	 * @param list<int> $ids Term ids.
 	 * @return list<mixed>
 	 */
 	private static function orders( array $ids ): array {
-		return array_map( static fn( int $id ): mixed => $GLOBALS['bulkcat_test']['term_meta'][ $id ][ CategoryTree::TREE_ORDER_META ] ?? null, $ids );
+		return array_map( static fn( int $id ): mixed => $GLOBALS['bulkcat_test']['term_meta'][ $id ][ CategoryTree::ORDER_META ] ?? null, $ids );
 	}
 
 	public function test_a_create_writes_the_term_and_journals_a_tree_batch_of_one(): void {
@@ -90,6 +91,7 @@ final class WriterTest extends TestCase {
 				'parent'        => 1,
 				'depth'         => 1,
 				'order'         => 0,
+				'default'       => false,
 				'display_type'  => '',
 				'thumbnail_id'  => 0,
 				'thumbnail_url' => null,
@@ -269,6 +271,7 @@ final class WriterTest extends TestCase {
 				'parent'        => 2,
 				'depth'         => 2,
 				'order'         => 0,
+				'default'       => false,
 				'display_type'  => '',
 				'thumbnail_id'  => 0,
 				'thumbnail_url' => null,
@@ -338,13 +341,12 @@ final class WriterTest extends TestCase {
 		];
 		$result                                 = self::writer()->update( 3, [ 'parent' => 5 ], self::USER );
 		$this->assertTrue( is_array( $result ), $result instanceof \WP_Error ? $result->get_error_message() : '' );
-		$this->assertSame( [ 5, 1 ], [ $result['item']['parent'], $result['item']['order'] ] );
-		$this->assertSame( [ 0, 1 ], self::orders( [ 12, 3 ] ) );
+		$this->assertSame( [ 5, 0 ], [ $result['item']['parent'], $result['item']['order'] ] );
+		$this->assertSame( [ null, 0 ], self::orders( [ 12, 3 ] ), 'Dresses has no order, so WooCommerce sorts it first; Shirts takes 0 after it.' );
 		$this->assertSame(
 			[
 				[ 3, 'term_parent', 2, 5, 'applied' ],
-				[ 3, 'term_order', null, 1, 'applied' ],
-				[ 12, 'term_order', null, 0, 'applied' ],
+				[ 3, 'term_menu_order', null, 0, 'applied' ],
 			],
 			$this->store->journal()
 		);
@@ -363,76 +365,6 @@ final class WriterTest extends TestCase {
 		$this->assertSame( [ [ 3, 'term_name', 'Shirts', 'Shirts', 'failed' ] ], $this->store->journal() );
 	}
 
-	public function test_a_reorder_renumbers_the_siblings_compactly_and_the_tree_follows(): void {
-		// WooCommerce's own order puts Women (1) before Men (2).
-		$this->assertSame( [ 5, 2 ], CategoryTree::tree()->children( 1 ) );
-
-		$result = self::writer()->move( 2, 1, 0, self::USER );
-		$this->assertTrue( is_array( $result ), $result instanceof \WP_Error ? $result->get_error_message() : '' );
-		$this->assertSame( 'complete', $result['status'] );
-		$this->assertSame( [ 1, 0 ], [ $result['item']['parent'], $result['item']['order'] ] );
-		$this->assertSame( [ 'already', 'changed' ], array_column( $result['results'], 'state' ) );
-		$this->assertSame( [ 0, 1 ], self::orders( [ 2, 5 ] ) );
-		$this->assertSame( [ 2, 5 ], CategoryTree::tree()->children( 1 ), 'The tree honours bulkcat_order before WooCommerce\'s order.' );
-		$this->assertSame( [], $GLOBALS['bulkcat_test']['updated_terms'] ?? [], 'A reorder under the same parent does not touch the term.' );
-		$this->assertSame(
-			[
-				[ 2, 'term_order', null, 0, 'applied' ],
-				[ 5, 'term_order', null, 1, 'applied' ],
-			],
-			$this->store->journal()
-		);
-		$this->assertSame( [ 'tree', 'term' ], [ $this->store->batch( $result['batch_id'] )['source'], array_values( $this->store->items )[0]['object_type'] ] );
-		$this->assertNotSame( 'before', get_transient( Cache::VERSION ), 'A meta-only write renews the cache itself.' );
-	}
-
-	public function test_a_move_to_another_parent_renumbers_both_groups(): void {
-		// Clothing holds Women (0), Men (1) after a reorder; Shoes holds Boots only.
-		$GLOBALS['bulkcat_test']['term_meta'][5][ CategoryTree::TREE_ORDER_META ] = 0;
-		$GLOBALS['bulkcat_test']['term_meta'][2][ CategoryTree::TREE_ORDER_META ] = 1;
-
-		$result = self::writer()->move( 7, 1, 1, self::USER );
-		$this->assertTrue( is_array( $result ), $result instanceof \WP_Error ? $result->get_error_message() : '' );
-		$this->assertSame( [ 1, 1, 1 ], [ $result['item']['parent'], $result['item']['depth'], $result['item']['order'] ] );
-		$this->assertSame( [ [ 7, 'product_cat', [ 'parent' => 1 ] ] ], array_slice( $GLOBALS['bulkcat_test']['updated_terms'], -1 ) );
-		$this->assertSame( [ 5, 7, 2 ], CategoryTree::tree()->children( 1 ) );
-		$this->assertSame( [ 0, 1, 2 ], self::orders( [ 5, 7, 2 ] ), 'Contiguous from 0.' );
-		$this->assertSame( [], CategoryTree::tree()->children( 6 ) );
-		$this->assertSame(
-			[
-				[ 7, 'term_parent', 6, 1, 'applied' ],
-				[ 7, 'term_order', null, 1, 'applied' ],
-				[ 2, 'term_order', 1, 2, 'applied' ],
-			],
-			$this->store->journal()
-		);
-	}
-
-	public function test_a_move_leaving_a_group_closes_the_gap(): void {
-		foreach ( [
-			3  => 0,
-			12 => 1,
-			13 => 2,
-		] as $id => $order ) {
-			if ( 3 !== $id ) {
-				$GLOBALS['bulkcat_test']['term_list'][] = (object) [
-					'term_id'  => $id,
-					'name'     => 'Child ' . $id,
-					'slug'     => 'child-' . $id,
-					'parent'   => 2,
-					'taxonomy' => 'product_cat',
-				];
-			}
-			$GLOBALS['bulkcat_test']['term_meta'][ $id ][ CategoryTree::TREE_ORDER_META ] = $order;
-		}
-		$this->assertTrue( is_array( self::writer()->move( 3, 0, null, self::USER ) ) );
-		$this->assertSame( [ 12, 13 ], CategoryTree::tree()->children( 2 ) );
-		$this->assertSame( [ 0, 1 ], self::orders( [ 12, 13 ] ) );
-		$top = CategoryTree::tree()->children( 0 );
-		$this->assertSame( 3, end( $top ), 'Placed last at the top level.' );
-		$this->assertSame( count( $top ) - 1, self::orders( [ 3 ] )[0] );
-	}
-
 	public function test_a_move_inside_itself_a_child_or_a_grandchild_is_refused(): void {
 		foreach ( [
 			'self'             => 1,
@@ -449,30 +381,6 @@ final class WriterTest extends TestCase {
 	public function test_an_unknown_id_is_not_found(): void {
 		$this->assert_refused( self::writer()->update( 999, [ 'name' => 'X' ], self::USER ), Writer::NOT_FOUND, 404 );
 		$this->assert_refused( self::writer()->move( 999, 0, 0, self::USER ), Writer::NOT_FOUND, 404 );
-	}
-
-	public function test_tree_order_ranks_before_woocommerce_order_then_name(): void {
-		$terms = CatalogueFixture::terms();
-		$tree  = Tree::from_terms(
-			$terms,
-			[
-				2 => '2',
-				5 => '1',
-			],
-			[ 2 => '0' ]
-		);
-		$this->assertSame( [ 2, 5 ], $tree->children( 1 ), 'A ranked sibling comes before an unranked one.' );
-		$this->assertSame( 0, $tree->node( 2 )['order'] );
-		$this->assertSame( 1, $tree->node( 5 )['order'], 'An unranked node keeps WooCommerce\'s order.' );
-		$tree = Tree::from_terms(
-			$terms,
-			[],
-			[
-				1 => '1',
-				6 => '0',
-			]
-		);
-		$this->assertSame( [ 6, 1, 10, 9 ], $tree->children( 0 ), 'Ranked by tree order, then the rest by name.' );
 	}
 
 	public function test_a_tree_batch_takes_term_items_only(): void {
@@ -582,8 +490,8 @@ final class WriterTest extends TestCase {
 
 	public function test_history_names_every_category_property_in_plain_words(): void {
 		$this->assertSame(
-			[ 'Name', 'Slug', 'Description', 'Parent category', 'Display type', 'Image', 'Position' ],
-			array_map( [ Writer::class, 'label' ], [ 'term_name', 'term_slug', 'term_description', 'term_parent', 'term_display_type', 'term_thumbnail_id', 'term_order' ] )
+			[ 'Name', 'Slug', 'Description', 'Parent category', 'Display type', 'Image', 'Position', 'Old position in this screen only', 'Default category' ],
+			array_map( [ Writer::class, 'label' ], [ 'term_name', 'term_slug', 'term_description', 'term_parent', 'term_display_type', 'term_thumbnail_id', 'term_menu_order', 'term_order', 'term_default' ] )
 		);
 		$this->assertNull( Writer::label( 'regular_price' ), 'Product fields keep their own labels.' );
 	}

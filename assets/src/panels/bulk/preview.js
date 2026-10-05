@@ -7,6 +7,7 @@ import { __, _n, sprintf } from '@wordpress/i18n';
 
 import { termOptions } from './controls';
 import { fieldByKey } from './descriptors';
+import { groupSample } from './sample-rows';
 import {
 	availabilityLines,
 	outcomeLabel,
@@ -508,9 +509,11 @@ export function PreviewResult( {
 	const byType = totals.by_type || {};
 	const variationRows = Number( byType.variation?.matched ) || 0;
 	const sample = Array.isArray( response?.sample ) ? response.sample : [];
+	// Ticket 133 bug 4: one row per product or variation, with all its steps.
+	const objects = groupSample( sample );
 	const rows = changedOnly
-		? sample.filter( ( row ) => row.state === 'changed' )
-		: sample;
+		? objects.filter( ( row ) => row.state === 'changed' )
+		: objects;
 	const failures = Object.entries( totals.would_fail || {} );
 	const warnings = [
 		...warningSentences( response?.warnings, byType ),
@@ -523,10 +526,7 @@ export function PreviewResult( {
 	// listed ones; they stay in the change and are recorded as not changed.
 	const unavailable =
 		Number( response?.unavailable_count ?? unreadable.length ) || 0;
-	const allRows = Object.values( totals.rows || {} ).reduce(
-		( sum, each ) => sum + ( Number( each ) || 0 ),
-		0
-	);
+	const allRows = Math.max( Number( totals.matched ) || 0, objects.length );
 	const fieldNames = [
 		...new Set(
 			operations
@@ -758,53 +758,77 @@ export function PreviewResult( {
 						</tr>
 					</thead>
 					<tbody>
-						{ rows.map( ( row, index ) => {
-							const field = fieldByKey( registry, row.field );
+						{ rows.map( ( group ) => {
 							const classes = [
-								row.object_type === 'variation'
+								group.object_type === 'variation'
 									? 'is-variation'
 									: '',
-								[ 'skipped', 'failed' ].includes( row.state )
+								[ 'skipped', 'failed' ].includes( group.state )
 									? 'is-skip'
 									: '',
-								row.state === 'already' ? 'is-already' : '',
+								group.state === 'already' ? 'is-already' : '',
 							]
 								.filter( Boolean )
 								.join( ' ' );
+							const fieldOf = ( line ) =>
+								fieldByKey( registry, line.field );
 							return (
 								<tr
-									key={
-										row.object_id +
-										':' +
-										row.field +
-										':' +
-										index
-									}
+									key={ group.key }
 									className={ classes || undefined }
-									data-state={ row.state }
+									data-state={ group.state }
 								>
-									<th scope="row">{ row.name }</th>
+									<th scope="row">{ group.name }</th>
 									<td>
-										{ row.fieldLabel ||
-											field?.label ||
-											row.field }
+										{ group.lines.map( ( line, index ) => (
+											<div
+												key={ index }
+												className="bulkcat-bulk__step"
+											>
+												{ line.fieldLabel ||
+													fieldOf( line )?.label ||
+													line.field }
+											</div>
+										) ) }
 									</td>
 									<td className="bulkcat-bulk__from">
-										{ row.state === 'changed' ? (
-											<del>
-												{ nowText( field, row, terms ) }
-											</del>
-										) : (
-											nowText( field, row, terms )
-										) }
+										{ group.lines.map( ( line, index ) => (
+											<div
+												key={ index }
+												className="bulkcat-bulk__step"
+											>
+												{ line.state === 'changed' ? (
+													<del>
+														{ nowText(
+															fieldOf( line ),
+															line,
+															terms
+														) }
+													</del>
+												) : (
+													nowText(
+														fieldOf( line ),
+														line,
+														terms
+													)
+												) }
+											</div>
+										) ) }
 									</td>
 									<td>
-										<AfterCell
-											row={ row }
-											field={ field }
-											terms={ terms }
-											registry={ registry }
-										/>
+										{ group.lines.map( ( line, index ) => (
+											<div
+												key={ index }
+												className="bulkcat-bulk__step"
+											>
+												<AfterCell
+													row={ line }
+													field={ fieldOf( line ) }
+													terms={ terms }
+													registry={ registry }
+												/>
+											</div>
+										) ) }
 									</td>
 								</tr>
 							);
@@ -813,14 +837,14 @@ export function PreviewResult( {
 				</table>
 			</div>
 			<p className="bulkcat-bulk__hint">
-				{ sample.length < allRows
+				{ objects.length < allRows
 					? sprintf(
 							/* translators: 1: rows shown, such as "25"; 2: rows in all, such as "1,284". */
 							__(
 								'The first %1$s of %2$s rows are shown. The same change applies to the rest.',
 								'bulk-catalogue-manager-for-woocommerce'
 							),
-							formatNumber( sample.length ),
+							formatNumber( objects.length ),
 							formatNumber( allRows )
 						)
 					: __(

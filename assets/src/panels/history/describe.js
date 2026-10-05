@@ -6,6 +6,75 @@
  */
 import { __, _n, sprintf } from '@wordpress/i18n';
 
+/**
+ * Text with its HTML entities decoded, without parsing it as markup.
+ *
+ * @param {string} text Stored text.
+ * @return {string} Text as a person reads it.
+ */
+export function decodeEntities( text ) {
+	const named = {
+		amp: '&',
+		lt: '<',
+		gt: '>',
+		quot: '"',
+		apos: "'",
+		nbsp: '\u00a0',
+	};
+	return String( text ).replace(
+		/&(#x[0-9a-f]+|#[0-9]+|[a-z]+);/gi,
+		( whole, code ) => {
+			if ( code[ 0 ] === '#' ) {
+				const number =
+					code[ 1 ].toLowerCase() === 'x'
+						? parseInt( code.slice( 2 ), 16 )
+						: parseInt( code.slice( 1 ), 10 );
+				return Number.isFinite( number ) && number > 0
+					? String.fromCodePoint( number )
+					: whole;
+			}
+			return named[ code.toLowerCase() ] ?? whole;
+		}
+	);
+}
+
+/**
+ * A change row's before or after as a person reads it: the route's own
+ * words where it gave them (category names, paths, images, display types;
+ * ticket 133), else the value formatted by its field.
+ *
+ * @param {Object} row   Change row.
+ * @param {string} which `old` or `new`.
+ * @param {Object} field The field's descriptor, if known.
+ * @return {string} Text.
+ */
+export function rowValue( row, which, field ) {
+	const text = row?.[ which + '_text' ];
+	if ( typeof text === 'string' && text !== '' ) {
+		return text;
+	}
+	return formatValue( row?.[ which + '_value' ], field );
+}
+
+/**
+ * The heading of a changes table's first column: Category when every row
+ * is a category, Product when none is, else Product or category.
+ *
+ * @param {Array<Object>} rows Change rows.
+ * @return {string} Heading.
+ */
+export function objectHeading( rows ) {
+	const terms = ( rows || [] ).filter(
+		( row ) => row.object_type === 'term'
+	);
+	if ( rows?.length && terms.length === rows.length ) {
+		return __( 'Category', 'bulk-catalogue-manager-for-woocommerce' );
+	}
+	return terms.length
+		? __( 'Product or category', 'bulk-catalogue-manager-for-woocommerce' )
+		: __( 'Product', 'bulk-catalogue-manager-for-woocommerce' );
+}
+
 /** The reversibility states of GET /batches (Engine\Reversibility::STATES). */
 export const STATES = {
 	REVERSIBLE: 'reversible',
@@ -76,6 +145,10 @@ export function fieldLabel( key, byKey, given = '' ) {
  * @return {string} Text.
  */
 export function formatValue( value, field ) {
+	if ( typeof value === 'string' ) {
+		// Ticket 133: stored names keep HTML entities ("&amp;"); a person reads the character.
+		value = decodeEntities( value );
+	}
 	if ( value === null || value === undefined || value === '' ) {
 		return __( 'Empty', 'bulk-catalogue-manager-for-woocommerce' );
 	}
@@ -309,6 +382,10 @@ export function describeBatch( batch, byKey = {}, actions = {} ) {
 				String( batch.undo_of ?? '' )
 			)
 		);
+	}
+	if ( batch?.headline ) {
+		// Ticket 133: a category change in the server's words, with the categories' names.
+		return batch.headline;
 	}
 	const operations = batch?.operations || [];
 	// T108: an add-on's change keeps the labels its manifest recorded, used where the registry has none (the add-on has gone).

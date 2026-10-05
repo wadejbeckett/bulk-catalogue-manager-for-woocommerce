@@ -10,7 +10,7 @@ import { useEffect, useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 
 import { request } from '../../api';
-import { fieldLabel, formatValue, formatWhen } from './describe';
+import { fieldLabel, formatWhen, objectHeading, rowValue } from './describe';
 import ErrorNotice from './error-notice';
 import { useHistoryExport } from './export';
 
@@ -64,8 +64,8 @@ export function searchRows( rows, search, byKey ) {
 		[
 			row.name,
 			fieldLabel( row.field, byKey, row.field_label ),
-			formatValue( row.old_value, byKey[ row.field ] ),
-			formatValue( row.new_value, byKey[ row.field ] ),
+			rowValue( row, 'old', byKey[ row.field ] ),
+			rowValue( row, 'new', byKey[ row.field ] ),
 			row.message,
 			resultLabel( row.result ),
 		]
@@ -257,10 +257,7 @@ export default function Changes( { batch, byKey, problemsOnly, onNotice } ) {
 						<thead>
 							<tr>
 								<th scope="col">
-									{ __(
-										'Product',
-										'bulk-catalogue-manager-for-woocommerce'
-									) }
+									{ objectHeading( answer?.items ) }
 								</th>
 								<th scope="col">
 									{ __(
@@ -306,14 +303,16 @@ export default function Changes( { batch, byKey, problemsOnly, onNotice } ) {
 										) }
 									</td>
 									<td>
-										{ formatValue(
-											row.old_value,
+										{ rowValue(
+											row,
+											'old',
 											byKey[ row.field ]
 										) }
 									</td>
 									<td>
-										{ formatValue(
-											row.new_value,
+										{ rowValue(
+											row,
+											'new',
 											byKey[ row.field ]
 										) }
 									</td>

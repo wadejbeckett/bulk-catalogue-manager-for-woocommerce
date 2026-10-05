@@ -36,9 +36,10 @@ final class Cache {
 
 	/**
 	 * The shape of a stored tree, in every key, so a tree stored before a
-	 * node gained a property (2: `description`) is never served.
+	 * node gained a property (2: `description`; 3: `default`, and the order
+	 * read from WooCommerce's own `order` only) is never served.
 	 */
-	public const SHAPE = 2;
+	public const SHAPE = 3;
 
 	/**
 	 * The transient holding the current version.
@@ -61,12 +62,57 @@ final class Cache {
 	];
 
 	/**
+	 * Term meta hooks that renew the version when a category's sibling order
+	 * (WooCommerce's `order`, which its own drag-reorder writes with no term
+	 * hook), display type or image changes: hook => arguments taken.
+	 */
+	public const META_HOOKS = [
+		'added_term_meta'   => 3,
+		'updated_term_meta' => 3,
+		'deleted_term_meta' => 3,
+	];
+
+	/**
+	 * Term meta keys whose change shows in the tree.
+	 */
+	public const META_KEYS = [ CategoryTree::ORDER_META, 'display_type', 'thumbnail_id' ];
+
+	/**
+	 * Whether the version was renewed and no tree read since, so the next
+	 * meta change in a run (WooCommerce renumbers every category in one
+	 * drag) need not renew it again.
+	 *
+	 * @var bool
+	 */
+	private static bool $renewed = false;
+
+	/**
 	 * Add the invalidation hooks. WordPress keeps one entry per callback and
 	 * priority, so a second call adds nothing.
 	 */
 	public static function register_hooks(): void {
 		foreach ( self::HOOKS as $hook => $position ) {
 			add_action( $hook, 4 === $position ? [ self::class, 'on_object_terms' ] : [ self::class, 'on_term' ], 10, $position );
+		}
+		foreach ( self::META_HOOKS as $hook => $accepted ) {
+			add_action( $hook, [ self::class, 'on_term_meta' ], 10, $accepted );
+		}
+	}
+
+	/**
+	 * `added_term_meta`, `updated_term_meta` and `deleted_term_meta`: renew
+	 * the version when a key the tree shows changed (ticket 23: a drag on
+	 * WooCommerce's own screen shows here at once). The first change since
+	 * the last tree read renews it; the rest of a run's changes need not.
+	 *
+	 * @param mixed $meta_id  Meta id or ids; unused.
+	 * @param mixed $term_id  Term id; unused.
+	 * @param mixed $meta_key Meta key.
+	 */
+	public static function on_term_meta( mixed $meta_id = 0, mixed $term_id = 0, mixed $meta_key = '' ): void {
+		unset( $meta_id, $term_id );
+		if ( ! self::$renewed && in_array( $meta_key, self::META_KEYS, true ) ) {
+			self::invalidate();
 		}
 	}
 
@@ -105,6 +151,8 @@ final class Cache {
 	 */
 	public static function invalidate(): void {
 		set_transient( self::VERSION, uniqid( '', true ), 0 );
+		self::$renewed = true;
+		HistoryText::reset();
 	}
 
 	/**
@@ -113,7 +161,8 @@ final class Cache {
 	 * @param array<string, mixed> $conditions Criteria::conditions().
 	 */
 	public function key( array $conditions ): string {
-		$parts = [ self::version(), self::SHAPE ];
+		// The default category is an option, not a term: a new default shows at once.
+		$parts = [ self::version(), self::SHAPE, CategoryTree::default_id() ];
 		if ( wp_using_ext_object_cache() ) {
 			$parts[] = wp_cache_get_last_changed( 'terms' );
 			$parts[] = wp_cache_get_last_changed( 'posts' );
@@ -128,7 +177,8 @@ final class Cache {
 	 * @return list<array<string, mixed>>|null
 	 */
 	public function get( string $key ): ?array {
-		$stored = get_transient( $key );
+		self::$renewed = false;
+		$stored        = get_transient( $key );
 		return is_array( $stored ) && isset( $stored['tree'] ) && is_array( $stored['tree'] ) ? $stored['tree'] : null;
 	}
 

@@ -188,10 +188,33 @@ final class SavedProduct {
 		$this->props['stock_status'] = (float) ( $this->props['stock_quantity'] ?? 0 ) > 0 ? 'instock' : ( 'no' !== $backorders ? 'onbackorder' : 'outofstock' );
 	}
 
+	/**
+	 * Ticket 133 bug 2: whether save() leaves a list prop as WooCommerce's
+	 * WC_Data::apply_changes() does, array_replace_recursive( stored, set ):
+	 * a shorter list set keeps the stored list's tail in the object (the
+	 * stored terms are right; the object is not).
+	 */
+	public bool $merge_lists = false;
+
+	/**
+	 * Props as last saved (or as given), for $merge_lists.
+	 *
+	 * @var array<string, mixed>|null
+	 */
+	private ?array $stored = null;
+
 	public function save(): int {
 		$this->validate_props();
 		$this->saves[]      = $this->props;
 		$this->saved_meta[] = $this->meta;
+		if ( $this->merge_lists ) {
+			foreach ( $this->props as $key => $value ) {
+				if ( is_array( $value ) && array_is_list( $value ) && is_array( $this->stored[ $key ] ?? null ) ) {
+					$this->props[ $key ] = array_replace_recursive( $this->stored[ $key ], $value );
+				}
+			}
+		}
+		$this->stored = $this->props;
 		return (int) ( $this->props['id'] ?? 0 );
 	}
 
@@ -203,6 +226,7 @@ final class SavedProduct {
 			if ( isset( $this->refuse[ $method ] ) ) {
 				throw new \WC_Data_Exception( 'product_invalid_value', $this->refuse[ $method ] );
 			}
+			$this->stored                      ??= $this->props;
 			$this->sets[]                        = [ $method, $args[0] ];
 			$this->props[ substr( $method, 4 ) ] = $args[0];
 			return null;

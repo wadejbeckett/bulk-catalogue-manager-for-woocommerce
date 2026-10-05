@@ -323,6 +323,10 @@ final class BatchesController implements ReadController {
 					'type'  => 'array',
 					'items' => [ 'type' => 'string' ],
 				],
+				'headline'             => [
+					'description' => __( 'What a change to categories did, in words with the categories\' names; null where the screen describes the change from its steps.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'type'        => [ 'string', 'null' ],
+				],
 				'reversibility'        => [
 					'type'       => 'object',
 					'properties' => [

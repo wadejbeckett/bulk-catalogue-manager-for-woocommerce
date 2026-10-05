@@ -302,6 +302,33 @@ final class PreviewTest extends TestCase {
 		return array_map( static fn( array $r ): array => [ $r['object_id'], $r['field'], $r['current'], $r['new'], $r['state'] ], $result['sample'] );
 	}
 
+	public function test_the_sample_holds_whole_products_with_every_step(): void {
+		// Ticket 133 bug 4: a sample of 2 with two steps shows two products, each with both steps, not one product twice.
+		$result = $this->answer(
+			Selection::of_ids( [ 101, 104, 201 ] ),
+			self::ops(
+				[
+					[
+						'set_value',
+						[
+							'field' => 'regular_price',
+							'value' => '30',
+						],
+					],
+					[
+						'set_value',
+						[
+							'field' => 'regular_price',
+							'value' => '35',
+						],
+					],
+				]
+			),
+			2
+		);
+		$this->assertSame( [ 101, 101, 104, 104 ], array_column( $result['sample'], 'object_id' ) );
+	}
+
 	public function test_set_value_totals_and_sample(): void {
 		$result = $this->answer( Selection::of_ids( [ 101, 102, 103, 104, 201 ] ), self::set( 'regular_price', '25' ) );
 

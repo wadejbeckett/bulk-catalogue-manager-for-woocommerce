@@ -674,7 +674,16 @@ if ( ! function_exists( 'wp_set_object_terms' ) ) {
 	 */
 	function wp_set_object_terms( int $object_id, string|int|array $terms, string $taxonomy, bool $append = false ): array|\WP_Error {
 		$GLOBALS['bulkcat_test']['set_object_terms'][] = [ $object_id, $terms, $taxonomy, $append ];
-		return $GLOBALS['bulkcat_test']['set_object_terms_error'] ?? array_values( (array) $terms );
+		if ( isset( $GLOBALS['bulkcat_test']['set_object_terms_error'] ) ) {
+			return $GLOBALS['bulkcat_test']['set_object_terms_error'];
+		}
+		// What the object then holds, for the read stubs' wp_get_object_terms() (tickets 24 and 133 bug 2).
+		$kept = $append ? ( $GLOBALS['bulkcat_test']['object_terms'][ $object_id ] ?? [] ) : array_values( array_filter( $GLOBALS['bulkcat_test']['object_terms'][ $object_id ] ?? [], static fn( array $held ): bool => $held[0] !== $taxonomy ) );
+		foreach ( array_values( (array) $terms ) as $term_id ) {
+			$kept[] = [ $taxonomy, (int) $term_id, '' ];
+		}
+		$GLOBALS['bulkcat_test']['object_terms'][ $object_id ] = $kept;
+		return array_values( (array) $terms );
 	}
 }
 
@@ -939,10 +948,68 @@ if ( ! function_exists( 'wp_insert_term' ) ) {
 		return true;
 	}
 
+	/**
+	 * As core does (ticket 24): the term's children move up to its parent,
+	 * and each object holding it is given its other terms of the taxonomy
+	 * through wp_set_object_terms(), or the `default` argument's term when it
+	 * had no other. Answers the WP_Error or false in
+	 * 'delete_term_error' when a test sets one.
+	 */
 	function wp_delete_term( int $term, string $taxonomy, array|string $args = [] ): bool|int|WP_Error {
 		$GLOBALS['bulkcat_test']['deleted_terms'][] = [ $term, $taxonomy ];
-		$GLOBALS['bulkcat_test']['term_list']       = array_values( array_filter( $GLOBALS['bulkcat_test']['term_list'] ?? [], static fn( object $t ): bool => (int) $t->term_id !== $term ) );
+		if ( isset( $GLOBALS['bulkcat_test']['delete_term_error'][ $term ] ) ) {
+			return $GLOBALS['bulkcat_test']['delete_term_error'][ $term ];
+		}
+		$deleted = get_term( $term, $taxonomy );
+		foreach ( $GLOBALS['bulkcat_test']['term_list'] ?? [] as $candidate ) {
+			if ( null !== $deleted && (int) $candidate->parent === $term ) {
+				$candidate->parent = (int) $deleted->parent;
+			}
+		}
+		$GLOBALS['bulkcat_test']['term_list'] = array_values( array_filter( $GLOBALS['bulkcat_test']['term_list'] ?? [], static fn( object $t ): bool => (int) $t->term_id !== $term ) );
+		foreach ( $GLOBALS['bulkcat_test']['object_terms'] ?? [] as $object => $held ) {
+			$ids = [];
+			$had = false;
+			foreach ( $held as [ $held_taxonomy, $term_id ] ) {
+				if ( $held_taxonomy === $taxonomy ) {
+					$had = $had || (int) $term_id === $term;
+					if ( (int) $term_id !== $term ) {
+						$ids[] = (int) $term_id;
+					}
+				}
+			}
+			if ( $had ) {
+				// Core's `default` argument: an object whose only term this was gets the default.
+				$default = (int) ( ( (array) $args )['default'] ?? 0 );
+				wp_set_object_terms( (int) $object, [] === $ids && $default > 0 ? [ $default ] : $ids, $taxonomy );
+			}
+		}
 		return true;
+	}
+
+	/**
+	 * Ticket 133: removes a term meta value from 'term_meta', recording the call in 'term_meta_deletes'.
+	 */
+	function delete_term_meta( int $term_id, string $meta_key, mixed $meta_value = '' ): bool {
+		$GLOBALS['bulkcat_test']['term_meta_deletes'][] = [ $term_id, $meta_key ];
+		unset( $GLOBALS['bulkcat_test']['term_meta'][ $term_id ][ $meta_key ] );
+		return true;
+	}
+
+	/**
+	 * Ticket 24: the objects holding any of some terms, from the read stubs' 'object_terms'.
+	 */
+	function get_objects_in_term( int|array $term_ids, string|array $taxonomies, array|string $args = [] ): array|WP_Error {
+		$found = [];
+		foreach ( $GLOBALS['bulkcat_test']['object_terms'] ?? [] as $object => $held ) {
+			foreach ( $held as [ $taxonomy, $term_id ] ) {
+				if ( in_array( $taxonomy, (array) $taxonomies, true ) && in_array( (int) $term_id, array_map( 'intval', (array) $term_ids ), true ) ) {
+					$found[] = (string) $object;
+					break;
+				}
+			}
+		}
+		return $found;
 	}
 }
 

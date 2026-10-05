@@ -1,6 +1,22 @@
 <?php
 /**
- * The category write routes (SPEC §4.7, §7, §12.1, §13; T63, T64):
+ * The category write routes (SPEC §4.7, §7, §12.1, §13; T63, T64; tickets 23, 24).
+ *
+ * @package BulkCatalogueManager
+ * @license GPL-3.0-or-later
+ */
+
+declare( strict_types = 1 );
+
+namespace BulkCatalogueManager\Rest;
+
+use BulkCatalogueManager\Categories\Deleter;
+use BulkCatalogueManager\Categories\Writer;
+
+defined( 'ABSPATH' ) || exit;
+
+/**
+ * The category write routes:
  *
  * - `POST /bulkcat/v1/categories` creates a category from `name` and optionally
  *   `slug`, `description` and `parent`;
@@ -8,7 +24,10 @@
  *   `description` and `parent`;
  * - `POST /bulkcat/v1/categories/{id}/move` moves a category to `parent` (0 for
  *   the top level) at `position` among its new siblings, counted from 0,
- *   last when omitted.
+ *   last when omitted, writing WooCommerce's own sibling order (ticket 23);
+ * - `POST /bulkcat/v1/categories/{id}/default` makes it the shop's default
+ *   product category (WooCommerce's `default_product_cat`), with permission
+ *   to edit that category, as WooCommerce's own Make default.
  *
  * Each needs Access::can_manage_terms (the screen capability plus
  * `manage_product_terms`) and runs through Categories\Writer, which writes
@@ -20,23 +39,13 @@
  * category in the tree's node shape plus its description, the batch, its
  * final status and one outcome per property.
  *
- * There is deliberately no delete route: deleting a category stays on the
- * native screen, which explains what happens to its products (SPEC §2).
- *
- * @package BulkCatalogueManager
- * @license GPL-3.0-or-later
- */
-
-declare( strict_types = 1 );
-
-namespace BulkCatalogueManager\Rest;
-
-use BulkCatalogueManager\Categories\Writer;
-
-defined( 'ABSPATH' ) || exit;
-
-/**
- * The category write routes.
+ * `POST /bulkcat/v1/categories/delete` with `ids` deletes the chosen
+ * categories, and `POST /bulkcat/v1/categories/merge` with `ids` and
+ * `into` first moves their products into `into`, each with WooCommerce's
+ * native consequences (ticket 24, Categories\Deleter): `preview: true`
+ * answers what it would do and a `token`; without it the `token` is
+ * required and a change since is 409 `bulkcat_preview_stale`. The default
+ * category is refused, and so is a category the user may not delete.
  */
 final class CategoriesWriteController implements ReadController {
 	/**
@@ -55,6 +64,21 @@ final class CategoriesWriteController implements ReadController {
 	public const MOVE_ROUTE = '/categories/(?P<id>[\d]+)/move';
 
 	/**
+	 * The make-default route.
+	 */
+	public const DEFAULT_ROUTE = '/categories/(?P<id>[\d]+)/default';
+
+	/**
+	 * The delete route.
+	 */
+	public const DELETE_ROUTE = '/categories/delete';
+
+	/**
+	 * The merge route.
+	 */
+	public const MERGE_ROUTE = '/categories/merge';
+
+	/**
 	 * Longest name WordPress's terms table holds.
 	 */
 	public const NAME_LENGTH = 200;
@@ -63,9 +87,10 @@ final class CategoriesWriteController implements ReadController {
 	 * Build over a writer; the plugin's by default, built on first use so
 	 * booting the REST server does not build the operation registry.
 	 *
-	 * @param Writer|null $writer The category writer.
+	 * @param Writer|null  $writer  The category writer.
+	 * @param Deleter|null $deleter Deletes and merges; built on first use.
 	 */
-	public function __construct( private ?Writer $writer = null ) {}
+	public function __construct( private ?Writer $writer = null, private ?Deleter $deleter = null ) {}
 
 	/**
 	 * The category writer.
@@ -139,6 +164,145 @@ final class CategoriesWriteController implements ReadController {
 				],
 			]
 		);
+		$this->register_default( $routes );
+		$this->register_delete( $routes );
+	}
+
+	/**
+	 * Add the delete and merge routes.
+	 *
+	 * @param Routes $routes The registrar.
+	 */
+	private function register_delete( Routes $routes ): void {
+		$args = [
+			'ids'     => self::arg(
+				[
+					'description' => __( 'The categories to delete.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'type'        => 'array',
+					'items'       => [
+						'type'    => 'integer',
+						'minimum' => 1,
+					],
+					'minItems'    => 1,
+					'maxItems'    => Deleter::MAX_IDS,
+					'required'    => true,
+				],
+				static fn( mixed $value ): array => array_map( 'intval', (array) $value )
+			),
+			'preview' => self::arg(
+				[
+					'description' => __( 'Answer what it would do and its token, deleting nothing.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'type'        => 'boolean',
+					'default'     => false,
+				],
+				static fn( mixed $value ): bool => true === $value || 1 === $value || in_array( $value, [ 'true', '1' ], true )
+			),
+			'token'   => self::arg(
+				[
+					'description' => __( 'The preview\'s token, required to delete.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'type'        => 'string',
+					'maxLength'   => 128,
+				],
+				'strval'
+			),
+		];
+		$routes->add(
+			self::DELETE_ROUTE,
+			[
+				[
+					'methods'             => 'POST',
+					'callback'            => [ $this, 'delete_items' ],
+					'permission_callback' => [ Access::class, 'can_manage_terms' ],
+					'args'                => $args,
+				],
+			]
+		);
+		$routes->add(
+			self::MERGE_ROUTE,
+			[
+				[
+					'methods'             => 'POST',
+					'callback'            => [ $this, 'merge_items' ],
+					'permission_callback' => [ Access::class, 'can_manage_terms' ],
+					'args'                => $args + [
+						'into' => self::arg(
+							[
+								'description' => __( 'The category the products move into.', 'bulk-catalogue-manager-for-woocommerce' ),
+								'type'        => 'integer',
+								'minimum'     => 1,
+								'required'    => true,
+							],
+							'intval'
+						),
+					],
+				],
+			]
+		);
+	}
+
+	/**
+	 * `POST /categories/delete`.
+	 *
+	 * @param \WP_REST_Request $request The validated request.
+	 */
+	public function delete_items( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
+		return $this->delete_or_merge( $request, 0 );
+	}
+
+	/**
+	 * `POST /categories/merge`.
+	 *
+	 * @param \WP_REST_Request $request The validated request.
+	 */
+	public function merge_items( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
+		return $this->delete_or_merge( $request, max( 1, (int) $request->get_param( 'into' ) ) );
+	}
+
+	/**
+	 * Preview or run a delete or merge.
+	 *
+	 * @param \WP_REST_Request $request The validated request.
+	 * @param int              $into    Merge target, or 0 to delete.
+	 */
+	private function delete_or_merge( \WP_REST_Request $request, int $into ): \WP_REST_Response|\WP_Error {
+		$ids     = array_map( 'intval', (array) $request->get_param( 'ids' ) );
+		$deleter = $this->deleter ??= new Deleter();
+		if ( true === $request->get_param( 'preview' ) ) {
+			return self::answer( $deleter->preview( $ids, $into, get_current_user_id() ), 200 );
+		}
+		$token = (string) $request->get_param( 'token' );
+		if ( '' === $token ) {
+			return Refusal::invalid( 'bulkcat_preview_required', __( 'Check what this would change first, then confirm.', 'bulk-catalogue-manager-for-woocommerce' ) );
+		}
+		return self::answer( $deleter->apply( $ids, $into, $token, get_current_user_id() ), 200 );
+	}
+
+	/**
+	 * Add the make-default route.
+	 *
+	 * @param Routes $routes The registrar.
+	 */
+	private function register_default( Routes $routes ): void {
+		$routes->add(
+			self::DEFAULT_ROUTE,
+			[
+				[
+					'methods'             => 'POST',
+					'callback'            => [ $this, 'make_default' ],
+					'permission_callback' => [ Access::class, 'can_manage_terms' ],
+					'args'                => [ 'id' => self::id_arg() ],
+				],
+			]
+		);
+	}
+
+	/**
+	 * `POST /categories/{id}/default`.
+	 *
+	 * @param \WP_REST_Request $request The validated request.
+	 */
+	public function make_default( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
+		return self::answer( $this->writer()->make_default( (int) $request->get_param( 'id' ), get_current_user_id() ), 200 );
 	}
 
 	/**

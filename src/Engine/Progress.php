@@ -229,6 +229,8 @@ final class Progress {
 			// The selection's own objects, before any variations "Also apply to variations" added (T69).
 			'selection_difference' => self::difference( $batch['previewed_items'] ?? null, (int) ( $batch['selection']['selected'] ?? $batch['total_items'] ) ),
 			'actions'              => $batch['actions'] ?? [],
+			// Ticket 133 bug 3: what a category change did, in words with names; null where History describes it itself.
+			'headline'             => \BulkCatalogueManager\Categories\HistoryText::headline( $batch ),
 			'reversibility'        => $unclosed ? [
 				'state'     => 'in_progress',
 				'conflicts' => null,
@@ -268,7 +270,7 @@ final class Progress {
 	 * any other batch.
 	 *
 	 * @param array<string, mixed> $batch Typed batch row.
-	 * @return array{undo_of: int, label: string, forced: ?bool, counts: ?array<string, int>, left_alone: ?int, not_undone: ?int, sentence: string, reasons: list<array{message: string, count: int, sentence: string}>, by_type: ?array{products: int, variations: int}}|null
+	 * @return array{undo_of: int, label: string, forced: ?bool, counts: ?array<string, int>, left_alone: ?int, not_undone: ?int, sentence: string, reasons: list<array{message: string, count: int, sentence: string}>, by_type: ?array{products: int, variations: int, categories: int}}|null
 	 */
 	public static function undo_summary( array $batch ): ?array {
 		if ( 'undo' !== ( $batch['source'] ?? '' ) || null === ( $batch['undo_of'] ?? null ) ) {
@@ -327,6 +329,7 @@ final class Progress {
 				? [
 					'products'   => (int) ( $snapshot['by_type']['products'] ?? 0 ),
 					'variations' => (int) ( $snapshot['by_type']['variations'] ?? 0 ),
+					'categories' => (int) ( $snapshot['by_type']['categories'] ?? 0 ),
 				]
 				: null,
 		];

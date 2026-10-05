@@ -99,6 +99,7 @@ function dragTypes( event ) {
  * @param {boolean}  props.checkboxes       Show a checkbox per row; it and Space add or remove the row.
  * @param {boolean}  props.markMatches      Mark the search text in names and dim rows shown only as a match's path.
  * @param {number}   props.highlight        A category to highlight as new, or null.
+ * @param {Function} props.moreActions      Called with ( id ); returns more menu items `{ key, label, run }` (Make default, Delete…).
  * @return {Element} The tree.
  */
 export default function CategoryTree( {
@@ -121,6 +122,7 @@ export default function CategoryTree( {
 	checkboxes = false,
 	markMatches = false,
 	highlight = null,
+	moreActions,
 } ) {
 	const { nodes, byId } = tree;
 	const selected = valueIds( value );
@@ -522,6 +524,7 @@ export default function CategoryTree( {
 			label: __( 'Move to…', 'bulk-catalogue-manager-for-woocommerce' ),
 			run: () => onMoveDialog?.( id ),
 		},
+		...( moreActions?.( id ) || [] ),
 	];
 
 	const closeMenu = ( id ) => {
@@ -766,6 +769,14 @@ export default function CategoryTree( {
 														)
 												)
 											: name }
+									</span>
+								) }
+								{ row.node.default && (
+									<span className="bulkcat-cat-default">
+										{ __(
+											'Default',
+											'bulk-catalogue-manager-for-woocommerce'
+										) }
 									</span>
 								) }
 								{ count !== null && (

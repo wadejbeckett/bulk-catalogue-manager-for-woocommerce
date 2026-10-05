@@ -28,6 +28,7 @@ declare( strict_types = 1 );
 namespace BulkCatalogueManager\Rest;
 
 use BulkCatalogueManager\Availability\OffRecord;
+use BulkCatalogueManager\Categories\HistoryText;
 use BulkCatalogueManager\Data\BatchRepository;
 use BulkCatalogueManager\Data\ChangeRepository;
 use BulkCatalogueManager\Data\Schema;
@@ -173,9 +174,21 @@ final class BatchChangesController implements ReadController {
 	 * @param list<array<string, mixed>> $rows Typed journal rows.
 	 */
 	public static function prime_names( array $rows ): void {
-		$ids = array_values( array_unique( array_map( static fn( array $row ): int => $row['object_id'], array_filter( $rows, static fn( array $row ): bool => 'term' !== $row['object_type'] ) ) ) );
+		$ids   = array_values( array_unique( array_map( static fn( array $row ): int => $row['object_id'], array_filter( $rows, static fn( array $row ): bool => 'term' !== $row['object_type'] ) ) ) );
+		$terms = [];
+		foreach ( $rows as $row ) {
+			if ( isset( $row['prop'] ) ) {
+				$terms = array_merge( $terms, HistoryText::ids_of( $row ) );
+			} elseif ( 'term' === ( $row['object_type'] ?? '' ) ) {
+				$terms[] = (int) $row['object_id'];
+			}
+		}
 		if ( [] !== $ids ) {
 			_prime_post_caches( $ids, false, false );
+		}
+		if ( [] !== $terms ) {
+			// Ticket 133 bug 3: categories by path, deleted ones by the path they had.
+			HistoryText::prime( $terms );
 		}
 	}
 
@@ -227,6 +240,8 @@ final class BatchChangesController implements ReadController {
 			$row['old_value'] = OffRecord::describe( $row['old_value'] );
 			$row['new_value'] = OffRecord::describe( $row['new_value'] );
 		}
+		// Ticket 133 bug 3: categories, parents, images and category lists in words, never ids.
+		$text = HistoryText::values( $row );
 		return [
 			'change_id'   => $row['change_id'],
 			'object_id'   => $row['object_id'],
@@ -236,6 +251,10 @@ final class BatchChangesController implements ReadController {
 			'field_label' => $label,
 			'old_value'   => $row['old_value'],
 			'new_value'   => $row['new_value'],
+		] + ( null === $text ? [] : [
+			'old_text' => $text[0],
+			'new_text' => $text[1],
+		] ) + [
 			'result'      => $row['result'],
 			'message'     => $row['message'],
 			'detail'      => sprintf(
@@ -265,7 +284,11 @@ final class BatchChangesController implements ReadController {
 	 * @param string $object_type product, variation or term.
 	 */
 	public static function name( int $object_id, string $object_type ): string {
-		$post  = 'term' === $object_type ? null : get_post( $object_id );
+		if ( 'term' === $object_type ) {
+			// Ticket 133 bug 3: a category by its path ("Clothing › Shirts › Golf"), entities decoded.
+			return HistoryText::path( $object_id );
+		}
+		$post  = get_post( $object_id );
 		$title = is_object( $post ) ? (string) ( $post->post_title ?? '' ) : '';
 		if ( '' !== $title ) {
 			return $title;
@@ -302,6 +325,8 @@ final class BatchChangesController implements ReadController {
 				'field_label' => $text,
 				'old_value'   => $any,
 				'new_value'   => $any,
+				'old_text'    => $text + [ 'description' => __( 'The value before, in words, where History shows it as words rather than as stored (category names, paths, images and display types).', 'bulk-catalogue-manager-for-woocommerce' ) ],
+				'new_text'    => $text + [ 'description' => __( 'The value after, in words, as old_text.', 'bulk-catalogue-manager-for-woocommerce' ) ],
 				'result'      => [
 					'type' => 'string',
 					'enum' => Schema::CHANGE_RESULTS,

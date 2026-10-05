@@ -56,6 +56,8 @@ defined( 'ABSPATH' ) || exit;
  * of what the batch left when the list was empty before, `clear` for an
  * empty value where the field takes it, `set_value` otherwise. Each item is:
  *
+ * A category (`term`) is planned by Categories\TermUndo, by the same rules.
+ *
  * - skipped where the batch applied nothing to the object (its rows were
  *   themselves skipped or failed), where the object no longer exists or is
  *   no longer the same kind, where the person undoing (not the batch's author) may not
@@ -457,6 +459,9 @@ final class Planner {
 		if ( null !== ( $batch['pruned_gmt'] ?? null ) ) {
 			return self::not_reversible( self::PRUNED, self::pruned_sentence() );
 		}
+		if ( \BulkCatalogueManager\Engine\Reversibility::permanent( $batch ) ) {
+			return self::not_reversible( \BulkCatalogueManager\Engine\Reversibility::PERMANENT, __( 'A deleted category cannot be brought back, so this change cannot be undone.', 'bulk-catalogue-manager-for-woocommerce' ) );
+		}
 		$manifest = $batch['extensions'] ?? null;
 		$blocked  = is_array( $manifest ) ? External\Manifest::blocked( $manifest, $this->actions->providers(), false ) : null;
 		if ( null !== $blocked ) {
@@ -608,6 +613,10 @@ final class Planner {
 	private function item( int $object_id, array $journal, int $user_id, int $batch_id = 0, ?object $loaded = null ): array {
 		$type      = $journal['type'];
 		$variation = 'variation' === $type;
+		if ( \BulkCatalogueManager\Categories\Writer::OBJECT_TYPE === $type ) {
+			// Ticket 133 bug 1: a category goes back through its own term functions.
+			return \BulkCatalogueManager\Categories\TermUndo::plan( $object_id, $journal['fields'], $user_id );
+		}
 		if ( [] === $journal['fields'] ) {
 			return self::skipped(
 				$object_id,

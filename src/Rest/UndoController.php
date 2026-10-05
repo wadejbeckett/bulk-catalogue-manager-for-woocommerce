@@ -259,13 +259,13 @@ final class UndoController implements Controller {
 		$user_id         = get_current_user_id();
 		$ids             = array_fill_keys( [ Plan::CONFLICTED, Plan::REVERTIBLE, Plan::SKIPPED ], [] );
 		// T114: what the counts hold, products and variations apart, for the dialog's words.
-		$by_type = array_fill_keys( [ 'product', 'variation' ], array_fill_keys( Plan::STATES, 0 ) );
+		$by_type = array_fill_keys( [ 'product', 'variation', 'term' ], array_fill_keys( Plan::STATES, 0 ) );
 		$summary = $this->planner->walk(
 			$batch_id,
 			$user_id,
 			static function ( array $item ) use ( &$ids, &$by_type ): void {
 				$ids[ $item['state'] ][] = $item['object_id'];
-				++$by_type[ 'variation' === $item['object_type'] ? 'variation' : 'product' ][ $item['state'] ];
+				++$by_type[ in_array( $item['object_type'], [ 'variation', 'term' ], true ) ? $item['object_type'] : 'product' ][ $item['state'] ];
 			}
 		);
 		if ( $summary instanceof \WP_Error ) {
@@ -367,7 +367,7 @@ final class UndoController implements Controller {
 	 */
 	private function field( string $key ): array {
 		$field = $this->fields->get( $key );
-		$label = null === $field ? $key : $field->label();
+		$label = null === $field ? ( \BulkCatalogueManager\Categories\Writer::label( $key ) ?? $key ) : $field->label();
 		if ( \BulkCatalogueManager\External\Providers::is_external( $key ) ) {
 			// T108: an add-on's field by its label (a plan exists only while its provider is active); never its key.
 			$label = \BulkCatalogueManager\Operations\Registry::instance()->providers()->owning( $key )?->field_meta( $key )['label'] ?? BatchChangesController::gone_label();

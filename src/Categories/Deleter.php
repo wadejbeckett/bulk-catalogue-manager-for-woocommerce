@@ -30,8 +30,11 @@ defined( 'ABSPATH' ) || exit;
  * **Delete** removes each chosen category with WordPress's own
  * `wp_delete_term()`, so the consequences are WooCommerce's: its
  * subcategories move up to its parent, it is taken off every product, and a
- * product left with no category is given the shop's default category
- * (WooCommerce's `force_default_term` on `set_object_terms`). The default
+ * product left with no category is given the shop's default category.
+ * WooCommerce's own screens do that last part afterwards, in a scheduled
+ * action (AssignDefaultCategory); here it is done in the same call through
+ * `wp_delete_term()`'s own `default` argument, so the batch journals it and
+ * the confirmation's count is what happened. The default
  * category itself is refused, as WooCommerce refuses it, and so is a
  * category the user may not delete (`delete_term`).
  *
@@ -246,7 +249,10 @@ final class Deleter {
 		$failed   = [];
 		$recorded = 0;
 		foreach ( $plan['ids'] as $id ) {
-			$done = wp_delete_term( $id, Counts::TAXONOMY );
+			// WordPress's own default argument: a product whose only category this was gets the shop's
+			// default category now, as WooCommerce's scheduled AssignDefaultCategory would later, so the
+			// journal records it (wp_delete_term() otherwise just removes the relationship).
+			$done = wp_delete_term( $id, Counts::TAXONOMY, $plan['default'] > 0 && null !== $tree->node( $plan['default'] ) ? [ 'default' => $plan['default'] ] : [] );
 			if ( true === $done ) {
 				$deleted[] = $id;
 				$this->changes->append( $batch_id, $id, Writer::OBJECT_TYPE, self::DELETED_PROP, $names[ $id ], '', ChangeRepository::UNKNOWN_TIME, 'applied' );

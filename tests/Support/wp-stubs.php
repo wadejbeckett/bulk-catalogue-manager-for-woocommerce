@@ -683,10 +683,6 @@ if ( ! function_exists( 'wp_set_object_terms' ) ) {
 			$kept[] = [ $taxonomy, (int) $term_id, '' ];
 		}
 		$GLOBALS['bulkcat_test']['object_terms'][ $object_id ] = $kept;
-		if ( ! $append && [] === array_values( (array) $terms ) && isset( $GLOBALS['bulkcat_test']['force_default_term'][ $taxonomy ] ) ) {
-			// WooCommerce's force_default_term() on set_object_terms: a product left with no category gets the default.
-			$GLOBALS['bulkcat_test']['object_terms'][ $object_id ][] = [ $taxonomy, (int) $GLOBALS['bulkcat_test']['force_default_term'][ $taxonomy ], '' ];
-		}
 		return array_values( (array) $terms );
 	}
 }
@@ -955,7 +951,8 @@ if ( ! function_exists( 'wp_insert_term' ) ) {
 	/**
 	 * As core does (ticket 24): the term's children move up to its parent,
 	 * and each object holding it is given its other terms of the taxonomy
-	 * through wp_set_object_terms(). Answers the WP_Error or false in
+	 * through wp_set_object_terms(), or the `default` argument's term when it
+	 * had no other. Answers the WP_Error or false in
 	 * 'delete_term_error' when a test sets one.
 	 */
 	function wp_delete_term( int $term, string $taxonomy, array|string $args = [] ): bool|int|WP_Error {
@@ -982,7 +979,9 @@ if ( ! function_exists( 'wp_insert_term' ) ) {
 				}
 			}
 			if ( $had ) {
-				wp_set_object_terms( (int) $object, $ids, $taxonomy );
+				// Core's `default` argument: an object whose only term this was gets the default.
+				$default = (int) ( ( (array) $args )['default'] ?? 0 );
+				wp_set_object_terms( (int) $object, [] === $ids && $default > 0 ? [ $default ] : $ids, $taxonomy );
 			}
 		}
 		return true;

@@ -35,14 +35,13 @@ final class DeleterTest extends TestCase {
 
 	protected function setUp(): void {
 		bulkcat_test_reset();
-		$GLOBALS['bulkcat_test']['logged_in']                         = true;
-		$GLOBALS['bulkcat_test']['user_id']                           = self::USER;
-		$GLOBALS['bulkcat_test']['user_caps'][ self::USER ]           = [
+		$GLOBALS['bulkcat_test']['logged_in']                      = true;
+		$GLOBALS['bulkcat_test']['user_id']                        = self::USER;
+		$GLOBALS['bulkcat_test']['user_caps'][ self::USER ]        = [
 			'delete_term' => true,
 			'assign_term' => true,
 		];
-		$GLOBALS['bulkcat_test']['options']['default_product_cat']    = 9;
-		$GLOBALS['bulkcat_test']['force_default_term']['product_cat'] = 9;
+		$GLOBALS['bulkcat_test']['options']['default_product_cat'] = 9;
 		$this->store = new InlineStore();
 		CatalogueFixture::seed();
 		Cache::register_hooks();
@@ -102,6 +101,7 @@ final class DeleterTest extends TestCase {
 		$this->assertTrue( is_array( $done ), $done instanceof \WP_Error ? $done->get_error_message() : '' );
 		$this->assertSame( [ 'complete', [ 3, 2 ], [] ], [ $done['status'], $done['deleted'], $done['failed'] ] );
 		$this->assertSame( [ [ 3, 'product_cat' ], [ 2, 'product_cat' ] ], $GLOBALS['bulkcat_test']['deleted_terms'] );
+		$this->assertSame( [ [ 103, [ 9 ], 'product_cat', false ] ], array_values( array_filter( $GLOBALS['bulkcat_test']['set_object_terms'], static fn( array $call ): bool => 103 === $call[0] ) ), 'WordPress\'s own default argument put it in the default category.' );
 		$this->assertSame( 1, CategoryTree::tree()->node( 4 )['parent'], 'Formal moved up to Clothing.' );
 		$this->assertSame( [ 4 ], self::held( 102 ) );
 		$this->assertSame( [ 9 ], self::held( 103 ), 'Left with none, it got the default category.' );

@@ -211,6 +211,8 @@ final class CategoryTreeTest extends TestCase {
 				[
 					'taxonomy'               => 'product_cat',
 					'hide_empty'             => false,
+					'orderby'                => 'name',
+					'order'                  => 'ASC',
 					'update_term_meta_cache' => true,
 				],
 			],
@@ -229,6 +231,24 @@ final class CategoryTreeTest extends TestCase {
 		$this->assertSame( $cold, $warm );
 		$this->assertCount( 1, $GLOBALS['bulkcat_test']['get_terms_calls'], 'A warm read calls get_terms() no more.' );
 		$this->assertCount( 1, $GLOBALS['wpdb']->queries, 'A warm read runs no query.' );
+	}
+
+	public function test_siblings_follow_woocommerce_order_then_the_database_name_order(): void {
+		// As WooCommerce lists them: no `order` meta first (NULL + 0), then by order, then t.name as the database sorts it.
+		$GLOBALS['bulkcat_test']['term_list']              = CatalogueFixture::terms(
+			[
+				21 => [ '2RM', 'a', 0 ],
+				22 => [ '9BOK', 'b', 0 ],
+				23 => [ '2SA', 'c', 0 ],
+				24 => [ '26WC', 'd', 0 ],
+				25 => [ 'Aardvark', 'e', 0 ],
+				26 => [ '10 Ten', 'f', 0 ],
+			]
+		);
+		$GLOBALS['bulkcat_test']['term_meta'][25]['order'] = '2';
+		$GLOBALS['bulkcat_test']['term_meta'][26]['order'] = '1';
+		$this->assertSame( [ 24, 21, 23, 22, 26, 25 ], CategoryTree::tree()->children( 0 ) );
+		$this->assertSame( [ 24, 21, 23, 22, 26, 25 ], CategoryTree::complete()->children( 0 ), 'The unfiltered read sorts the same way.' );
 	}
 
 	public function test_counts_follow_a_status_filter_and_are_cached_apart(): void {

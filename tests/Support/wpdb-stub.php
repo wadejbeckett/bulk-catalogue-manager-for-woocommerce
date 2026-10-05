@@ -244,7 +244,7 @@ if ( ! class_exists( WpdbStub::class ) ) {
 					$rows[] = $term;
 				}
 			}
-			return $rows;
+			return str_contains( $query, 'ORDER BY t.name' ) ? bulkcat_test_by_name( $rows ) : $rows;
 		}
 
 		/**

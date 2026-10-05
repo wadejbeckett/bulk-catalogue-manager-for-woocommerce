@@ -126,18 +126,41 @@ final class TreeTest extends TestCase {
 		$this->assertSame( 1, $tree[0]['children'][0]['depth'] );
 	}
 
-	public function test_names_sort_naturally_without_case_when_orders_tie(): void {
-		$tree = Tree::from_terms(
-			CatalogueFixture::terms(
-				[
-					1 => [ 'size 10', 'a', 0 ],
-					2 => [ 'Size 9', 'b', 0 ],
-					3 => [ 'apple', 'c', 0 ],
-					4 => [ 'apple', 'd', 0 ],
-				]
+	public function test_names_sort_as_the_database_sorts_them_when_orders_tie(): void {
+		// WooCommerce sorts by `order` meta + 0, then t.name in the database's collation: not naturally.
+		$terms = CatalogueFixture::terms(
+			[
+				1 => [ '2RM', 'a', 0 ],
+				2 => [ '9BOK', 'b', 0 ],
+				3 => [ '2SA', 'c', 0 ],
+				4 => [ '26WC', 'd', 0 ],
+			]
+		);
+		// The ranks the database gave the names (ORDER BY t.name).
+		$ranks = [
+			4 => 0,
+			1 => 1,
+			3 => 2,
+			2 => 3,
+		];
+		$this->assertSame( [ 4, 1, 3, 2 ], array_column( Tree::from_terms( $terms, [], 0, $ranks )->to_array(), 'id' ) );
+		$this->assertSame( [ 4, 1, 3, 2 ], array_column( Tree::from_terms( $terms )->to_array(), 'id' ), 'Without ranks, as close to the collation as PHP gets: by character, without case.' );
+		$this->assertSame(
+			[ 3, 4, 1, 2 ],
+			array_column(
+				Tree::from_terms(
+					CatalogueFixture::terms(
+						[
+							1 => [ 'size 10', 'a', 0 ],
+							2 => [ 'Size 9', 'b', 0 ],
+							3 => [ 'apple', 'c', 0 ],
+							4 => [ 'apple', 'd', 0 ],
+						]
+					)
+				)->to_array(),
+				'id'
 			)
-		)->to_array();
-		$this->assertSame( [ 3, 4, 2, 1 ], array_column( $tree, 'id' ) );
+		);
 	}
 
 	public function test_counts_equal_a_naive_count_per_node(): void {

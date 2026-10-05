@@ -122,6 +122,21 @@ final class Validator {
 	}
 
 	/**
+	 * For a change to a term field (categories, tags, shipping class): the
+	 * refusal when the user lacks the taxonomy's `assign_terms` capability,
+	 * as core requires; null otherwise, and for any other field.
+	 *
+	 * @param Field $field The field changed.
+	 */
+	public function term_refusal( Field $field ): ?\WP_Error {
+		if ( ! self::assigns_terms( $field ) ) {
+			return null;
+		}
+		$allowed = Access::can_assign_terms( $this->user_id, $field->storage()->key(), $field->label() );
+		return true === $allowed ? null : $allowed;
+	}
+
+	/**
 	 * Check one computed Result for one object: the Results to apply, in
 	 * order. The first is the verdict on this Result; a second, clearing the
 	 * sale price, follows only when a regular price change leaves the sale
@@ -158,11 +173,9 @@ final class Validator {
 		if ( null === $field ) {
 			throw new \LogicException( esc_html( sprintf( 'Field "%s" is not in the registry.', $result->field() ) ) );
 		}
-		if ( self::assigns_terms( $field ) ) {
-			$denied = Access::can_assign_terms( $this->user_id, $field->storage()->key(), $field->label() );
-			if ( true !== $denied ) {
-				return [ Result::skipped( $result->field(), $result->old(), $denied->get_error_message(), (string) $denied->get_error_code() ) ];
-			}
+		$denied = $this->term_refusal( $field );
+		if ( null !== $denied ) {
+			return [ Result::skipped( $result->field(), $result->old(), $denied->get_error_message(), (string) $denied->get_error_code() ) ];
 		}
 
 		$refusal = $field->refusal( $subject, $result->new() );

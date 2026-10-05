@@ -675,10 +675,16 @@ final class Writer {
 	 * Finish an object a killed run left with intent rows (§12.3): nothing
 	 * is computed again. Each recorded value is compared, through the
 	 * field's canonical form, with what the object holds now: a value
-	 * already there (the killed run's save landed) is left alone, any other
-	 * is written as the recorded absolute value through Field::write() and
-	 * saved once. Each intent row is then settled — applied with the value
-	 * read back, or failed with the reason — and the variable parent, if
+	 * already there (the killed run's save landed) is left alone. A value
+	 * still pending passes the forward path's per-object checks first (C2):
+	 * on a product moved to the bin since it is skipped as unavailable; one
+	 * the user may no longer edit, or whose terms they may no longer assign,
+	 * is refused; one holding neither the recorded value before nor the
+	 * target was changed since and is never written over (an undo chunk
+	 * alike). Any other is written as the recorded absolute value through
+	 * Field::write() and saved once. Each intent row is then settled —
+	 * applied with the value read back, or skipped or failed with the
+	 * reason — and the variable parent, if
 	 * any, resynchronised. The object counts as changed and saved when any
 	 * recorded value now stands, whichever run saved it.
 	 *
@@ -722,20 +728,34 @@ final class Writer {
 		// Authorise the entire still-pending coupled group before any setter. Landed facts need no new grant.
 		$denied = null;
 		if ( [] !== $pending && null !== $product ) {
-			$denied   = $this->new_validator()->authorise( $native_before );
-			$previous = null;
+			$validator = $this->new_validator();
+			$denied    = $validator->authorise( $native_before );
+			$previous  = null;
 			if ( $publication && null !== $status && isset( $intents[ $status->key() ] ) ) {
 				// A partial save does not turn the original Draft transition into a resave exemption.
 				$previous = (string) $intents[ $status->key() ]['old'];
 				$denied ??= StatusPermission::check( $this->user_id, $native_before, (string) $intents[ $status->key() ]['new'], $previous );
 			}
 			$denied ??= PublicationPassword::variation_refusal( $native_before, null === $status ? '' : (string) $intents[ $status->key() ]['new'], isset( $intents[ PublicationPassword::FIELD ] ) );
+			// The forward path's per-object checks (C2): a still-pending value is written only on an object
+			// still in the catalogue, still at the value the killed run read, and still the user's to change.
+			$binned = is_callable( [ $product, 'get_status' ] ) && 'trash' === $product->get_status( 'edit' );
 			foreach ( $pending as $key => $result ) {
-				$field = $fields->get( $key );
-				if ( null !== $denied ) {
+				$field   = $fields->get( $key );
+				$refused = null;
+				if ( $binned ) {
+					// Moved to the bin since: unavailable, as the forward path leaves it.
+					$results[ $key ] = Result::skipped( $key, $result->old(), BatchFactory::unavailable_reason(), self::UNAVAILABLE );
+				} elseif ( null !== $denied ) {
 					$results[ $key ] = Result::failed( $key, $result->old(), $denied->get_error_message(), (string) $denied->get_error_code() );
-				} elseif ( $publication && ! Planner::same( $field, $field->read( $product ), $result->old() ) ) {
+				} elseif ( ! Planner::same( $field, $field->read( $product ), $result->old() ) ) {
+					// Neither the value before nor the target: someone changed it since. Never written over.
 					$results[ $key ] = Result::failed( $key, $result->old(), __( 'This product changed while the interrupted change was waiting, so its remaining values were left alone. Review it before trying again.', 'bulk-catalogue-manager-for-woocommerce' ), RestoreStatus::CHANGED_SINCE );
+				} else {
+					$refused = $validator->term_refusal( $field );
+				}
+				if ( null !== $refused ) {
+					$results[ $key ] = Result::skipped( $key, $result->old(), $refused->get_error_message(), (string) $refused->get_error_code() );
 				}
 			}
 			// Refuse the coupled pending group together when any of its members conflicts.
@@ -746,7 +766,7 @@ final class Writer {
 				}
 			}
 			foreach ( $pending as $key => $result ) {
-				if ( Result::FAILED === $results[ $key ]->state() ) {
+				if ( ! $results[ $key ]->is_changed() ) {
 					continue;
 				}
 				$results[ $key ] = $this->apply_field( $result, $product );
@@ -820,7 +840,7 @@ final class Writer {
 		$before = [];
 		foreach ( $results as $key => $result ) {
 			$failed = in_array( $result->state(), [ Result::FAILED,Result::SKIPPED ], true );
-			$this->journal->settle_one( $this->batch_id, $id, $key, $failed ? 'failed' : 'applied', $failed ? ( array_key_exists( $key, $uncertain ) ? $uncertain[ $key ] : $intents[ $key ]['old'] ) : $result->new(), $failed ? $result->reason() : '' );
+			$this->journal->settle_one( $this->batch_id, $id, $key, $failed ? ( Result::SKIPPED === $result->state() ? 'skipped' : 'failed' ) : 'applied', $failed ? ( array_key_exists( $key, $uncertain ) ? $uncertain[ $key ] : $intents[ $key ]['old'] ) : $result->new(), $failed ? $result->reason() : '' );
 			if ( $result->is_changed() ) {
 				$before[ $key ] = $result->old();
 			}

@@ -897,6 +897,154 @@ final class JournalTest extends TestCase {
 		$this->assertSame( [ [ 'regular_price', '10', '11.00', 'applied' ] ], self::summary() );
 	}
 
+	/**
+	 * Kill a write of $list to $id inside save(), before anything landed,
+	 * leaving the intent rows for a retry.
+	 *
+	 * @param int                  $id    Object id.
+	 * @param array<string, mixed> $props The product's props as loaded.
+	 * @param array                $list  The normalised list.
+	 */
+	private function kill_before_save( int $id, array $props, array $list ): void {
+		$GLOBALS['bulkcat_test']['products'][ $id ] = self::dying( new SavedProduct( 'simple', [ 'id' => $id ] + $props ), false );
+		try {
+			self::writer()->write( $id, $list );
+			$this->fail( 'The request was meant to die in save().' );
+		} catch ( \Error $e ) {
+			unset( $e );
+		}
+	}
+
+	public function test_replay_refuses_a_price_changed_between_kill_and_retry(): void {
+		self::answer_intents();
+		$list = $this->steps(
+			[
+				[
+					'set_value',
+					[
+						'field' => 'regular_price',
+						'value' => '11',
+					],
+				],
+			]
+		);
+		$this->kill_before_save( 93, [ 'regular_price' => '10' ], $list );
+		// Someone sets the price to 50 before the retry.
+		$fresh = self::product(
+			[
+				'id'            => 93,
+				'regular_price' => '50',
+			]
+		);
+
+		$retried = self::writer()->write( 93, $list );
+
+		$this->assertSame( '50', $fresh->props['regular_price'], 'The edit made since is kept.' );
+		$this->assertSame( [], $fresh->saves );
+		$this->assertSame( [ Result::FAILED ], self::states( $retried ) );
+		$this->assertSame( \BulkCatalogueManager\Operations\RestoreStatus::CHANGED_SINCE, $retried->results()[0]->code() );
+		$this->assertFalse( $retried->saved() );
+		$this->assertSame( [ [ 'regular_price', '10', '10', 'failed' ] ], self::summary() );
+		$this->assertStringContainsString( 'changed', self::rows()[0]['message'] );
+	}
+
+	public function test_replay_skips_a_product_moved_to_the_bin_since_as_unavailable(): void {
+		self::answer_intents();
+		$list = $this->ten_percent();
+		$this->kill_before_save( 94, [ 'regular_price' => '10' ], $list );
+		$fresh = self::product(
+			[
+				'id'            => 94,
+				'regular_price' => '10',
+				'status'        => 'trash',
+			]
+		);
+
+		$retried = self::writer()->write( 94, $list );
+
+		$this->assertSame( '10', $fresh->props['regular_price'] );
+		$this->assertSame( [], $fresh->saves, 'A binned product is never written.' );
+		$this->assertSame( [ Result::SKIPPED ], self::states( $retried ) );
+		$this->assertSame( Writer::UNAVAILABLE, $retried->results()[0]->code() );
+		$this->assertSame( \BulkCatalogueManager\Engine\BatchFactory::unavailable_reason(), $retried->results()[0]->reason() );
+		$this->assertSame( [ [ 'regular_price', '10', '10', 'skipped' ] ], self::summary() );
+	}
+
+	public function test_replay_rechecks_the_right_to_assign_categories(): void {
+		self::answer_intents();
+		$list = $this->steps(
+			[
+				[
+					'replace_terms',
+					[
+						'field' => 'category_ids',
+						'terms' => [ 12 ],
+					],
+				],
+			]
+		);
+		$this->kill_before_save( 95, [ 'category_ids' => [ 11 ] ], $list );
+		// The categories never landed, and the user has since lost the right to assign them.
+		$fresh = self::product(
+			[
+				'id'           => 95,
+				'category_ids' => [ 11 ],
+			]
+		);
+		$GLOBALS['bulkcat_test']['caps']['assign_product_terms'] = false;
+
+		$retried = self::writer()->write( 95, $list );
+
+		$this->assertSame( [ 11 ], $fresh->props['category_ids'] );
+		$this->assertSame( [], $fresh->saves );
+		$this->assertNotSame( Result::CHANGED, $retried->results()[0]->state() );
+		$this->assertStringContainsString( 'permission', $retried->results()[0]->reason() );
+		$this->assertSame( 'skipped', self::rows()[0]['result'] );
+	}
+
+	public function test_replay_still_finishes_a_value_still_at_its_old_value_or_already_landed(): void {
+		self::answer_intents();
+		$list = $this->steps(
+			[
+				[
+					'set_value',
+					[
+						'field' => 'regular_price',
+						'value' => '11',
+					],
+				],
+				[
+					'set_value',
+					[
+						'field' => 'name',
+						'value' => 'New',
+					],
+				],
+			]
+		);
+		$this->kill_before_save(
+			89,
+			[
+				'regular_price' => '10',
+				'name'          => 'Old',
+			],
+			$list
+		);
+		$fresh = self::product(
+			[
+				'id'            => 89,
+				'regular_price' => '11.00',
+				'name'          => 'Old',
+			]
+		);
+
+		$retried = self::writer()->write( 89, $list );
+
+		$this->assertSame( [ Result::CHANGED, Result::CHANGED ], self::states( $retried ) );
+		$this->assertSame( 'New', $fresh->props['name'] );
+		$this->assertCount( 1, $fresh->saves );
+	}
+
 	public function test_skip_already_crossed_with_record_unchanged_rows(): void {
 		$cases = [
 			'skip on, record off'  => [ true, false, false ],

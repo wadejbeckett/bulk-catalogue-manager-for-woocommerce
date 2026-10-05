@@ -461,6 +461,7 @@ final class ChunkRunner {
 		$writer->guarded( $undo ? $this->undo_guard( $batch, $items ) : null );
 		$error    = null;
 		$stopped  = false;
+		$written  = [];
 		$batches  = $this->batches;
 		$changes  = $this->changes;
 		$batch_id = $batch['batch_id'];
@@ -472,7 +473,7 @@ final class ChunkRunner {
 		wp_defer_term_counting( true );
 		try {
 			$writer->run(
-				static function ( Writer $writer ) use ( $items, $operations, $undo, $own, $batches, $changes, $batch_id, $token, $lease, $deadline, &$error, &$stopped ): void {
+				static function ( Writer $writer ) use ( $items, $operations, $undo, $own, $batches, $changes, $batch_id, $token, $lease, $deadline, &$error, &$stopped, &$written ): void {
 					$finish = static function ( int $item_id, array $mark, bool $changed ) use ( $batches, $batch_id ): void {
 						$batches->finish_item( $batch_id, $item_id, $mark[0], $mark[1], $changed );
 					};
@@ -502,16 +503,49 @@ final class ChunkRunner {
 						}
 						// An object a killed run wrote is skipped as already done, but still counts as changed (SILENT-FAILURES-3).
 						$finish( $item['item_id'], self::item_state( $outcome ), $outcome->saved() || ( self::done_before( $outcome ) && $changes->has_applied( $batch_id, $item['object_id'] ) ) );
+						if ( $outcome->saved() && 'variation' === $item['object_type'] ) {
+							$written[ $item['item_id'] ] = $item['object_id'];
+						}
 					}
 				}
 			);
 		} catch ( \Throwable $e ) {
 			// A parent's resynchronisation at the end of the run; the items are already written.
 			$error ??= $e;
+			$this->resync( $batch_id, $written );
 		} finally {
 			wp_defer_term_counting( false );
 		}
 		return [ $error, $stopped ];
+	}
+
+	/**
+	 * Resynchronise the parents of the variations a run saved, each on its
+	 * own, after the run's end-of-run resynchronisation threw
+	 * (SILENT-FAILURES-6): one parent that throws there stops the rest, so
+	 * every parent is tried again here, and the variations of a parent that
+	 * still cannot be refreshed are reported, so the batch never ends
+	 * complete with its price range or stock left stale.
+	 *
+	 * @param int             $batch_id The batch.
+	 * @param array<int, int> $written  Item id => variation id, for the variations the run saved.
+	 */
+	private function resync( int $batch_id, array $written ): void {
+		$parents = [];
+		foreach ( $written as $item_id => $variation_id ) {
+			$variation = wc_get_product( $variation_id );
+			$parent    = is_object( $variation ) ? (int) $variation->get_parent_id( 'edit' ) : 0;
+			if ( $parent > 0 ) {
+				$parents[ $parent ][] = (int) $item_id;
+			}
+		}
+		foreach ( $parents as $parent => $item_ids ) {
+			try {
+				\WC_Product_Variable::sync( $parent );
+			} catch ( \Throwable $e ) {
+				$this->batches->mark_items( $batch_id, $item_ids, 'done', self::stale_parent_reason() );
+			}
+		}
 	}
 
 	/**
@@ -791,6 +825,13 @@ final class ChunkRunner {
 	 */
 	private static function unreached_reason(): string {
 		return __( 'This product was not reached, because the background run stopped before getting to it on each of three tries. Nothing was done to it, so try the change again for it.', 'bulk-catalogue-manager-for-woocommerce' );
+	}
+
+	/**
+	 * The reason given on a saved variation whose variable product could not be refreshed (SILENT-FAILURES-6).
+	 */
+	private static function stale_parent_reason(): string {
+		return __( 'This variation was changed, but its variable product\'s price range and stock could not be refreshed. Open the variable product and update it to refresh them.', 'bulk-catalogue-manager-for-woocommerce' );
 	}
 
 	/**

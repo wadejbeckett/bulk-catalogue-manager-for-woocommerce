@@ -35,7 +35,9 @@ if ( ! class_exists( 'WC_Product' ) ) {
 // T32: the smallest faithful stand-ins for the writer. WooCommerce's
 // WC_Product_Variable::sync( $product, $save = true ) loads the parent, runs
 // its data store's sync_price() and sync_stock_status(), and saves it; the
-// stub records the id in $GLOBALS['bulkcat_test']['variable_syncs'] instead.
+// stub records the id in $GLOBALS['bulkcat_test']['variable_syncs'] instead,
+// and throws for a parent in $GLOBALS['bulkcat_test']['sync_throws'], as a
+// hook on the parent's save may (SILENT-FAILURES-6).
 if ( ! class_exists( 'WC_Product_Variable' ) ) {
 	/**
 	 * Records each parent resynchronisation.
@@ -49,6 +51,9 @@ if ( ! class_exists( 'WC_Product_Variable' ) ) {
 		 */
 		public static function sync( mixed $product, bool $save = true ): mixed {
 			$GLOBALS['bulkcat_test']['variable_syncs'][] = $product;
+			if ( isset( $GLOBALS['bulkcat_test']['sync_throws'][ (int) $product ] ) ) {
+				throw new \RuntimeException( 'A hook on the parent\'s save failed.' );
+			}
 			return $product;
 		}
 	}

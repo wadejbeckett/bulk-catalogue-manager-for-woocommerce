@@ -18,6 +18,10 @@ namespace BulkCatalogueManager\Tests\Unit\Categories;
 use BulkCatalogueManager\Categories\Deleter;
 use BulkCatalogueManager\Categories\HistoryText;
 use BulkCatalogueManager\Categories\Writer;
+use BulkCatalogueManager\Categories\NativeForm;
+use BulkCatalogueManager\Data\BatchRepository;
+use BulkCatalogueManager\Data\ChangeRepository;
+use BulkCatalogueManager\Fields\Registry as Fields;
 use BulkCatalogueManager\Rest\BatchChangesController;
 use PHPUnit\Framework\TestCase;
 
@@ -64,6 +68,29 @@ final class HistoryTextTest extends TestCase {
 		$this->assertSame( [ 'Orphans', 'Clothing › Women' ], HistoryText::values( self::row( 5, 'term', Writer::DEFAULT_PROP, 9, 5 ) ) );
 		$this->assertSame( [ 'Men, Women', 'Women' ], HistoryText::values( self::row( 101, 'product', 'category_ids', [ 2, 5 ], [ 5 ] ) ) );
 		$this->assertNull( HistoryText::values( self::row( 101, 'product', 'regular_price', '1', '2' ) ), 'Other fields are formatted by the screen.' );
+	}
+
+	public function test_a_category_hidden_from_term_queries_is_named_not_called_deleted(): void {
+		// Another plugin's filtering of term queries hides Shirts (3) and Men (2) from this viewer; both exist.
+		$GLOBALS['bulkcat_test']['hidden_terms'] = [ 2, 3 ];
+		$this->assertSame( 'Clothing › Men › Shirts', HistoryText::path( 3 ) );
+	}
+
+	public function test_other_plugins_fields_read_as_a_count_never_as_keys(): void {
+		$row  = self::row(
+			3,
+			'term',
+			NativeForm::OTHER_PROP,
+			[ 'vendor_flag' => [ '1' ] ],
+			[
+				'vendor_flag' => [ '0' ],
+				'vendor_list' => [ '' ],
+			]
+		);
+		$read = ( new BatchChangesController( new BatchRepository(), new ChangeRepository(), new Fields() ) )->change( $row );
+		$this->assertSame( [ 'Other fields', '', '2 fields changed' ], [ $read['field_label'], $read['old_value'], $read['new_value'] ] );
+		$this->assertSame( [ '', '2 fields changed' ], [ $read['old_text'], $read['new_text'] ] );
+		$this->assertStringNotContainsString( 'vendor_', wp_json_encode( array_diff_key( $read, [ 'detail' => true ] ) ) );
 	}
 
 	public function test_a_deleted_category_reads_by_the_path_its_delete_recorded(): void {

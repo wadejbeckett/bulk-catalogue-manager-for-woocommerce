@@ -242,6 +242,10 @@ final class BatchChangesController implements ReadController {
 		}
 		// Ticket 133 bug 3: categories, parents, images and category lists in words, never ids.
 		$text = HistoryText::values( $row );
+		if ( \BulkCatalogueManager\Categories\NativeForm::OTHER_PROP === $row['prop'] && null !== $text ) {
+			// Other plugins' fields: the journal keeps their keys and values; History shows only how many changed (1.3.4).
+			[ $row['old_value'], $row['new_value'] ] = $text;
+		}
 		return [
 			'change_id'   => $row['change_id'],
 			'object_id'   => $row['object_id'],

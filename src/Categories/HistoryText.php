@@ -406,7 +406,8 @@ final class HistoryText {
 	 */
 	private static function paths(): array {
 		if ( null === self::$paths ) {
-			$tree        = CategoryTree::tree();
+			// Every category, whatever this viewer's term queries show: hidden is not deleted (1.3.4).
+			$tree        = CategoryTree::complete();
 			self::$paths = [];
 			$stack       = $tree->children( 0 );
 			while ( [] !== $stack ) {

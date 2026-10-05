@@ -363,7 +363,8 @@ final class InlineWrite {
 			$args += Field::TERMS === $field->type() ? [ 'terms' => $value ] : [ 'value' => $empty ? '' : $value ];
 		}
 		if ( Field::SET === $kind && Field::MONEY === $field->type() ) {
-			$args['clear_invalid_sale'] = $price_pair;
+			// With both prices, the regular price step may clear the old sale price; a typed sale price is never cleared (ENGINE-6).
+			$args['clear_invalid_sale'] = $price_pair && $field->accepts( Field::COPY_FROM_SALE );
 		}
 		return [
 			'action' => StatusSwitch::governs( $field ) ? 'set_status' : $ids[0],

@@ -127,6 +127,20 @@ export function AppliedProgress( {
 	hidden = false,
 } ) {
 	const [ cancelling, setCancelling ] = useState( false );
+	// FRONTEND-13: stopping a running change is asked about first.
+	const [ asking, setAsking ] = useState( false );
+	const stopRef = useRef( null );
+	const keepRef = useRef( null );
+	const wasAsking = useRef( false );
+	useEffect( () => {
+		// Focus follows the question, and comes back when it is answered.
+		if ( asking ) {
+			keepRef.current?.focus();
+		} else if ( wasAsking.current ) {
+			stopRef.current?.focus();
+		}
+		wasAsking.current = asking;
+	}, [ asking ] );
 	const [ refused, setRefused ] = useState( '' );
 	const { report } = useBatchProgress( batchId );
 	const finished = FINISHED.includes( report?.status );
@@ -150,6 +164,7 @@ export function AppliedProgress( {
 		return null;
 	}
 	const cancel = () => {
+		setAsking( false );
 		setCancelling( true );
 		setRefused( '' );
 		request( `batches/${ Number( batchId ) }/cancel`, {
@@ -186,23 +201,26 @@ export function AppliedProgress( {
 			) }
 			<BatchProgress report={ report } />
 			<span className="bulkcat-catalogue__progress-acts">
-				<Button
-					variant="secondary"
-					size="compact"
-					onClick={ cancel }
-					disabled={ cancelling }
-					accessibleWhenDisabled
-				>
-					{ cancelling
-						? __(
-								'Cancelling…',
-								'bulk-catalogue-manager-for-woocommerce'
-							)
-						: __(
-								'Cancel',
-								'bulk-catalogue-manager-for-woocommerce'
-							) }
-				</Button>
+				{ ! asking && (
+					<Button
+						ref={ stopRef }
+						variant="secondary"
+						size="compact"
+						onClick={ () => setAsking( true ) }
+						disabled={ cancelling }
+						accessibleWhenDisabled
+					>
+						{ cancelling
+							? __(
+									'Stopping…',
+									'bulk-catalogue-manager-for-woocommerce'
+								)
+							: __(
+									'Stop this change',
+									'bulk-catalogue-manager-for-woocommerce'
+								) }
+					</Button>
+				) }
 				{ onViewHistory && (
 					<Button
 						variant="link"
@@ -215,6 +233,37 @@ export function AppliedProgress( {
 					</Button>
 				) }
 			</span>
+			{ asking && (
+				<span
+					className="bulkcat-catalogue__progress-ask"
+					role="group"
+					aria-labelledby="bulkcat-progress-ask"
+				>
+					<span id="bulkcat-progress-ask">
+						{ __(
+							'Stop this change? What it has already changed stays changed, and can be undone from History.',
+							'bulk-catalogue-manager-for-woocommerce'
+						) }
+					</span>{ ' ' }
+					<Button variant="primary" size="compact" onClick={ cancel }>
+						{ __(
+							'Yes, stop it',
+							'bulk-catalogue-manager-for-woocommerce'
+						) }
+					</Button>
+					<Button
+						ref={ keepRef }
+						variant="secondary"
+						size="compact"
+						onClick={ () => setAsking( false ) }
+					>
+						{ __(
+							'Keep it running',
+							'bulk-catalogue-manager-for-woocommerce'
+						) }
+					</Button>
+				</span>
+			) }
 			{ refused && (
 				<p className="bulkcat-catalogue__progress-error" role="alert">
 					{ refused }

@@ -157,4 +157,43 @@ describe( 'catalogue wiring', () => {
 		} );
 		expect( screen.queryByText( /done$/ ) ).toBeNull();
 	} );
+
+	it( 'asks before the banner stops a running change (FRONTEND-13)', async () => {
+		const stops = [];
+		route( apiFetch, {
+			'batches/9': () => ( {
+				status: 'running',
+				done_items: 3,
+				total_items: 10,
+			} ),
+			'batches/9/cancel': ( query, options ) => {
+				stops.push( options.method );
+				return {};
+			},
+		} );
+		render( <AppliedProgress batchId={ 9 } onFinished={ jest.fn() } /> );
+		const banner = await screen.findByRole( 'group', {
+			name: 'Change in progress',
+		} );
+		expect(
+			within( banner ).queryByRole( 'button', { name: 'Cancel' } )
+		).toBeNull();
+		fireEvent.click(
+			within( banner ).getByRole( 'button', { name: 'Stop this change' } )
+		);
+		expect( banner.textContent ).toContain(
+			'Stop this change? What it has already changed stays changed, and can be undone from History.'
+		);
+		fireEvent.click(
+			within( banner ).getByRole( 'button', { name: 'Keep it running' } )
+		);
+		expect( stops ).toEqual( [] );
+		fireEvent.click(
+			within( banner ).getByRole( 'button', { name: 'Stop this change' } )
+		);
+		fireEvent.click(
+			within( banner ).getByRole( 'button', { name: 'Yes, stop it' } )
+		);
+		await waitFor( () => expect( stops ).toEqual( [ 'POST' ] ) );
+	} );
 } );

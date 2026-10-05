@@ -172,7 +172,7 @@ test( 'a change in progress: pending rows, Cancel and View in History, then read
 	const banner = page.getByRole( 'group', { name: 'Change in progress' } );
 	await expect( banner ).toBeVisible();
 	await expect(
-		banner.getByRole( 'button', { name: 'Cancel' } )
+		banner.getByRole( 'button', { name: 'Stop this change' } )
 	).toBeVisible();
 	await expect(
 		banner.getByRole( 'button', { name: 'View in History' } )
@@ -254,7 +254,13 @@ test( 'Cancel stops a queued change', async ( { page } ) => {
 		.getByRole( 'button', { name: 'Back to products' } )
 		.press( 'Enter' );
 	const banner = page.getByRole( 'group', { name: 'Change in progress' } );
-	await banner.getByRole( 'button', { name: 'Cancel' } ).press( 'Enter' );
+	// FRONTEND-13: stopping a change is asked about first.
+	await banner
+		.getByRole( 'button', { name: 'Stop this change' } )
+		.press( 'Enter' );
+	await banner
+		.getByRole( 'button', { name: 'Yes, stop it' } )
+		.press( 'Enter' );
 	await expect( banner ).toBeHidden( { timeout: 20_000 } );
 	runQueue();
 	expect( ( await productByName( page, name ) ).regular_price ).toBe(

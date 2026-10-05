@@ -108,12 +108,18 @@ final class Snapshot {
 	}
 
 	/**
-	 * Date created, or null for a post never published.
+	 * Date created, or null when unset; for a draft whose date floats (a zero
+	 * `post_date_gmt`), its `post_date` in site time (SQR-5).
 	 *
 	 * @return object|null An object with date( $format ), as WC_DateTime has.
 	 */
 	public function get_date_created(): ?object {
-		return self::date( (string) $this->post->post_date_gmt );
+		$gmt = (string) $this->post->post_date_gmt;
+		if ( self::NO_DATE === $gmt ) {
+			// A draft whose date floats (SQR-5): its post_date, already in site time.
+			return self::local_date( (string) ( $this->post->post_date ?? '' ) );
+		}
+		return self::date( $gmt );
 	}
 
 	/**
@@ -338,6 +344,20 @@ final class Snapshot {
 			}
 		}
 		return false;
+	}
+
+	/**
+	 * A site-time column as a date object in the site's time zone, or null when unset.
+	 *
+	 * @param string $local Column value.
+	 * @return object|null
+	 */
+	private static function local_date( string $local ): ?object {
+		if ( '' === $local || self::NO_DATE === $local ) {
+			return null;
+		}
+		$zone = function_exists( 'wp_timezone' ) ? wp_timezone() : new \DateTimeZone( 'UTC' );
+		return self::date( ( new \DateTimeImmutable( $local, $zone ) )->setTimezone( new \DateTimeZone( 'UTC' ) )->format( 'Y-m-d H:i:s' ) );
 	}
 
 	/**

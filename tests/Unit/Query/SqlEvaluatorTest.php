@@ -117,6 +117,8 @@ final class SqlEvaluatorTest extends TestCase {
 		$this->assertSame( [ 3 ], self::ids( 'CAST(a.name AS DECIMAL(19, 4)) = 50' ), 'The leading number of a text.' );
 		$this->assertSame( [ 1, 2 ], self::ids( 'CAST(a.name AS DECIMAL(19, 4)) = 0' ), 'No leading number reads 0.' );
 		$this->assertSame( [ 2 ], self::ids( "CAST(NULLIF(a.name, 'Bluexshirt') AS DECIMAL(19, 4)) IS NULL" ) );
+		$this->assertSame( '2026-09-30 08:00:00', self::db()->value( "SELECT DATE_SUB('2026-09-30 10:00:00', INTERVAL 7200 SECOND) AS d FROM `wp_a` AS a LIMIT 1" ) );
+		$this->assertSame( '2026-09-30 12:00:00', self::db()->value( "SELECT DATE_SUB('2026-09-30 10:00:00', INTERVAL -7200 SECOND) AS d FROM `wp_a` AS a LIMIT 1" ) );
 		$rows = self::db()->rows( 'SELECT a.id AS id, (CASE WHEN a.n IS NULL THEN 7 ELSE a.n END) AS k FROM `wp_a` AS a ORDER BY k DESC, a.id ASC LIMIT 10' );
 		$this->assertSame( [ '3', '2', '1' ], array_column( $rows, 'id' ), 'An alias orders by its column.' );
 	}

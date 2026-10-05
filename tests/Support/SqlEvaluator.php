@@ -11,7 +11,7 @@
  * WHERE with AND, OR, NOT, =, <>, !=, <, <=, >, >=, BETWEEN, [NOT] IN, [NOT] LIKE
  * (backslash escapes), IS [NOT] NULL, EXISTS and scalar sub-queries
  * (correlated), CASE WHEN, CONCAT (NULL when any part is), NULLIF, CAST AS
- * DECIMAL(m, d); GROUP BY; ORDER BY with ASC/DESC, by expression or by a
+ * DECIMAL(m, d), DATE_SUB(x, INTERVAL n SECOND); GROUP BY; ORDER BY with ASC/DESC, by expression or by a
  * result column's alias; LIMIT and
  * OFFSET; an optimiser hint comment (opening slash, star, plus) is read
  * past. It follows MySQL where the answer depends on it: three-valued logic
@@ -44,7 +44,7 @@ if ( ! class_exists( SqlEvaluator::class ) ) {
 		 */
 		public const PAGE = '/^SELECT (\/\*\+ [^*]*\*\/ )?p\.ID AS id, p\.post_parent AS parent_id/';
 
-		private const KEYWORDS = [ 'SELECT', 'FROM', 'AS', 'LEFT', 'INNER', 'JOIN', 'ON', 'WHERE', 'AND', 'OR', 'NOT', 'IN', 'IS', 'NULL', 'LIKE', 'EXISTS', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'ORDER', 'BY', 'ASC', 'DESC', 'LIMIT', 'OFFSET', 'GROUP', 'COUNT', 'DISTINCT', 'CONCAT', 'NULLIF', 'CAST', 'DECIMAL', 'BETWEEN' ];
+		private const KEYWORDS = [ 'SELECT', 'FROM', 'AS', 'LEFT', 'INNER', 'JOIN', 'ON', 'WHERE', 'AND', 'OR', 'NOT', 'IN', 'IS', 'NULL', 'LIKE', 'EXISTS', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'ORDER', 'BY', 'ASC', 'DESC', 'LIMIT', 'OFFSET', 'GROUP', 'COUNT', 'DISTINCT', 'CONCAT', 'NULLIF', 'CAST', 'DECIMAL', 'BETWEEN', 'DATE_SUB', 'INTERVAL', 'SECOND' ];
 
 		/**
 		 * Tokens of the statement being parsed: [ kind, value ].
@@ -337,6 +337,17 @@ if ( ! class_exists( SqlEvaluator::class ) ) {
 				$this->expect( 'op', ')' );
 				return [ 'nullif', $value, $empty ];
 			}
+			if ( $this->accept( 'keyword', 'DATE_SUB' ) ) {
+				// DATE_SUB( x, INTERVAL n SECOND ): a floating draft's date taken back to GMT.
+				$this->expect( 'op', '(' );
+				$value = $this->operand();
+				$this->expect( 'op', ',' );
+				$this->expect( 'keyword', 'INTERVAL' );
+				$seconds = (int) $this->expect( 'value' );
+				$this->expect( 'keyword', 'SECOND' );
+				$this->expect( 'op', ')' );
+				return [ 'date_sub', $value, $seconds ];
+			}
 			if ( $this->accept( 'keyword', 'CAST' ) ) {
 				// CAST( x AS DECIMAL( m, d ) ): the Regular price filter and sort.
 				$this->expect( 'op', '(' );
@@ -590,6 +601,9 @@ if ( ! class_exists( SqlEvaluator::class ) ) {
 					$value = $this->evaluate( $expr[1], $context );
 					$empty = $this->evaluate( $expr[2], $context );
 					return null !== $value && null !== $empty && 0 === self::order( $value, $empty ) ? null : $value;
+				case 'date_sub':
+					$value = $this->evaluate( $expr[1], $context );
+					return null === $value ? null : ( new \DateTimeImmutable( (string) $value, new \DateTimeZone( 'UTC' ) ) )->modify( sprintf( '%+d seconds', -$expr[2] ) )->format( 'Y-m-d H:i:s' );
 				case 'decimal':
 					// MySQL reads the leading number of a text and 0 when there is none.
 					$value = $this->evaluate( $expr[1], $context );

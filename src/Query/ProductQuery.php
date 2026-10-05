@@ -125,7 +125,6 @@ final class ProductQuery {
 		'sku'            => [ 'l.sku', 'l.sku' ],
 		'stock_status'   => [ 'l.stock_status', 'l.stock_status' ],
 		'stock_quantity' => [ 'l.stock_quantity', 'l.stock_quantity' ],
-		'date_created'   => [ 'p.post_date_gmt', 'p.post_date_gmt' ],
 		'date_modified'  => [ 'p.post_modified_gmt', 'p.post_modified_gmt' ],
 		'units_sold'     => [ 'l.total_sales', 'l.total_sales' ],
 	];
@@ -134,6 +133,16 @@ final class ProductQuery {
 	 * The sort key and filter read from the row's own regular price meta.
 	 */
 	private const REGULAR_PRICE = 'regular_price';
+
+	/**
+	 * The sort key and filter whose date falls back to `post_date` (SQR-5).
+	 */
+	private const DATE_CREATED = 'date_created';
+
+	/**
+	 * The date WordPress leaves in `post_date_gmt` while a draft's date floats.
+	 */
+	private const NO_DATE = '0000-00-00 00:00:00';
 
 	/**
 	 * Taxonomy per term-id filter.
@@ -255,6 +264,13 @@ final class ProductQuery {
 				$select_args            = [ ...$select_args, ...$price_args ];
 				$order[]                = $sort->field . ' ' . $keyword;
 				$lookup                 = true;
+				continue;
+			}
+			if ( self::DATE_CREATED === $sort->field ) {
+				[ $created, $created_args ] = $this->date_created();
+				$select[]                   = $created . ' AS ' . $sort->field;
+				$select_args                = [ ...$select_args, ...$created_args ];
+				$order[]                    = $sort->field . ' ' . $keyword;
 				continue;
 			}
 			$column  = self::SORT_COLUMNS[ $sort->field ][ Sort::DESC === $sort->direction ? 1 : 0 ];
@@ -589,7 +605,7 @@ final class ProductQuery {
 
 			case 'date_created':
 			case 'date_modified':
-				$this->date( 'date_created' === $filter->field ? 'p.post_date_gmt' : 'p.post_modified_gmt', $filter );
+				$this->date( $filter );
 				return;
 
 			case 'category_ids':
@@ -758,33 +774,53 @@ final class ProductQuery {
 	}
 
 	/**
-	 * A date filter on a GMT column. A day (`Y-m-d`) is a day in the site's
-	 * time zone, as the grid shows dates (SQR-2): before a day means before
-	 * its first second there; after a day means from the next day's first
-	 * second there; each bound reaches SQL as the GMT time of that moment. A
-	 * full time is GMT and compares exactly. In the past counts back from now.
+	 * A date filter. A day (`Y-m-d`) is a day in the site's time zone, as the
+	 * grid shows dates (SQR-2): before a day means before its first second
+	 * there; after a day means from the next day's first second there. A full
+	 * time is GMT and compares exactly. In the past counts back from now.
+	 * Date modified compares `post_modified_gmt`; date created compares
+	 * `post_date_gmt`, or for a draft whose date floats (a zero
+	 * `post_date_gmt`) its `post_date` against the same moment in site time,
+	 * as its cell shows it (SQR-5).
 	 *
-	 * @param string $column Column.
 	 * @param Filter $filter Date filter.
 	 */
-	private function date( string $column, Filter $filter ): void {
+	private function date( Filter $filter ): void {
 		$value = $filter->value;
+		$utc   = new \DateTimeZone( 'UTC' );
 		if ( 'inThePast' === $filter->operator ) {
-			$since = $this->now->modify( sprintf( '-%d %s', $value[0], $value[1] ) )->format( 'Y-m-d H:i:s' );
-			$this->add( $column . ' >= %s', [ $since ] );
+			[ $op, $at ] = [ '>=', $this->now->modify( sprintf( '-%d %s', $value[0], $value[1] ) ) ];
+		} elseif ( 10 !== strlen( $value ) ) {
+			[ $op, $at ] = [ 'before' === $filter->operator ? '<' : '>', new \DateTimeImmutable( $value, $utc ) ];
+		} else {
+			$day         = new \DateTimeImmutable( $value . ' 00:00:00', self::site_zone() );
+			[ $op, $at ] = 'before' === $filter->operator ? [ '<', $day ] : [ '>=', $day->modify( '+1 day' ) ];
+		}
+		$gmt = $at->setTimezone( $utc )->format( 'Y-m-d H:i:s' );
+		if ( self::DATE_CREATED !== $filter->field ) {
+			$this->add( 'p.post_modified_gmt ' . $op . ' %s', [ $gmt ] );
 			return;
 		}
-		$is_day = 10 === strlen( $value );
-		if ( ! $is_day ) {
-			$this->add( $column . ( 'before' === $filter->operator ? ' < %s' : ' > %s' ), [ $value ] );
-			return;
-		}
-		$day = new \DateTimeImmutable( $value . ' 00:00:00', self::site_zone() );
-		if ( 'after' === $filter->operator ) {
-			$day = $day->modify( '+1 day' );
-		}
-		$gmt = $day->setTimezone( new \DateTimeZone( 'UTC' ) )->format( 'Y-m-d H:i:s' );
-		$this->add( $column . ( 'before' === $filter->operator ? ' < %s' : ' >= %s' ), [ $gmt ] );
+		$local = $at->setTimezone( self::site_zone() )->format( 'Y-m-d H:i:s' );
+		$this->add(
+			'((p.post_date_gmt <> %s AND p.post_date_gmt ' . $op . ' %s) OR (p.post_date_gmt = %s AND p.post_date ' . $op . ' %s))',
+			[ self::NO_DATE, $gmt, self::NO_DATE, $local ]
+		);
+	}
+
+	/**
+	 * Date created as a GMT time to sort on (SQR-5): `post_date_gmt`, or for
+	 * a draft whose date floats its `post_date` taken back to GMT by the
+	 * site's offset now, so it sorts among the dated products where its cell
+	 * places it rather than after all of them.
+	 *
+	 * @return array{0: string, 1: list<int|string>} Expression template and its arguments.
+	 */
+	private function date_created(): array {
+		return [
+			'(CASE WHEN p.post_date_gmt = %s THEN DATE_SUB(p.post_date, INTERVAL %d SECOND) ELSE p.post_date_gmt END)',
+			[ self::NO_DATE, self::site_zone()->getOffset( $this->now ) ],
+		];
 	}
 
 	/**

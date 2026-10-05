@@ -30,18 +30,20 @@ final class ProductQueryTest extends TestCase {
 	 * Shorthands the pinned SQL expands.
 	 */
 	private const FRAGMENTS = [
-		'{FROM}'   => 'FROM `wp_posts` AS p LEFT JOIN `wp_wc_product_meta_lookup` AS l ON l.product_id = p.ID',
-		'{POSTS}'  => 'FROM `wp_posts` AS p',
-		'{HINT}'   => '/*+ JOIN_PREFIX(p) */',
-		'{SCAN}'   => '/*+ NO_INDEX(l stock_status, min_max_price, stock_quantity) */',
-		'{STATUS}' => "p.post_status IN ('publish', 'future', 'draft', 'pending', 'private')",
-		'{SLUG}'   => 'FROM `wp_term_relationships` AS tr INNER JOIN `wp_term_taxonomy` AS tt ON tt.term_taxonomy_id = tr.term_taxonomy_id INNER JOIN `wp_terms` AS t ON t.term_id = tt.term_id',
-		'{TERM}'   => 'FROM `wp_term_relationships` AS tr INNER JOIN `wp_term_taxonomy` AS tt ON tt.term_taxonomy_id = tr.term_taxonomy_id',
-		'{OWNER}'  => "(CASE WHEN p.post_type = 'product_variation' THEN p.post_parent ELSE p.ID END)",
+		'{FROM}'    => 'FROM `wp_posts` AS p LEFT JOIN `wp_wc_product_meta_lookup` AS l ON l.product_id = p.ID',
+		'{POSTS}'   => 'FROM `wp_posts` AS p',
+		'{HINT}'    => '/*+ JOIN_PREFIX(p) */',
+		'{SCAN}'    => '/*+ NO_INDEX(l stock_status, min_max_price, stock_quantity) */',
+		'{STATUS}'  => "p.post_status IN ('publish', 'future', 'draft', 'pending', 'private')",
+		'{SLUG}'    => 'FROM `wp_term_relationships` AS tr INNER JOIN `wp_term_taxonomy` AS tt ON tt.term_taxonomy_id = tr.term_taxonomy_id INNER JOIN `wp_terms` AS t ON t.term_id = tt.term_id',
+		'{TERM}'    => 'FROM `wp_term_relationships` AS tr INNER JOIN `wp_term_taxonomy` AS tt ON tt.term_taxonomy_id = tr.term_taxonomy_id',
+		'{OWNER}'   => "(CASE WHEN p.post_type = 'product_variation' THEN p.post_parent ELSE p.ID END)",
 		// SQR-1: the regular price the cell shows (ProductQuery::regular_price()).
-		'{PRICE}'  => "(CASE WHEN p.post_type = 'product' AND EXISTS (SELECT 1 FROM `wp_term_relationships` AS ptr WHERE ptr.object_id = p.ID AND ptr.term_taxonomy_id IN ((SELECT ptt.term_taxonomy_id FROM `wp_term_taxonomy` AS ptt INNER JOIN `wp_terms` AS pt ON pt.term_id = ptt.term_id WHERE ptt.taxonomy = 'product_type' AND pt.slug = 'variable' LIMIT 1), (SELECT ptt.term_taxonomy_id FROM `wp_term_taxonomy` AS ptt INNER JOIN `wp_terms` AS pt ON pt.term_id = ptt.term_id WHERE ptt.taxonomy = 'product_type' AND pt.slug = 'grouped' LIMIT 1))) THEN NULL WHEN l.onsale = 0 AND l.min_price > 0 THEN l.min_price ELSE (SELECT CAST(NULLIF(rp.meta_value, '') AS DECIMAL(19, 4)) FROM `wp_postmeta` AS rp WHERE rp.post_id = p.ID AND rp.meta_key = '_regular_price' ORDER BY rp.meta_id ASC LIMIT 1) END)",
-		'{VPRICE}' => "(CASE WHEN l.onsale = 0 AND l.min_price > 0 THEN l.min_price ELSE (SELECT CAST(NULLIF(rp.meta_value, '') AS DECIMAL(19, 4)) FROM `wp_postmeta` AS rp WHERE rp.post_id = p.ID AND rp.meta_key = '_regular_price' ORDER BY rp.meta_id ASC LIMIT 1) END)",
-		'{SHOWN}'  => '(l.product_id IS NULL OR l.onsale <> 0 OR l.min_price IS NULL OR l.min_price <= 0 OR l.min_price',
+		'{PRICE}'   => "(CASE WHEN p.post_type = 'product' AND EXISTS (SELECT 1 FROM `wp_term_relationships` AS ptr WHERE ptr.object_id = p.ID AND ptr.term_taxonomy_id IN ((SELECT ptt.term_taxonomy_id FROM `wp_term_taxonomy` AS ptt INNER JOIN `wp_terms` AS pt ON pt.term_id = ptt.term_id WHERE ptt.taxonomy = 'product_type' AND pt.slug = 'variable' LIMIT 1), (SELECT ptt.term_taxonomy_id FROM `wp_term_taxonomy` AS ptt INNER JOIN `wp_terms` AS pt ON pt.term_id = ptt.term_id WHERE ptt.taxonomy = 'product_type' AND pt.slug = 'grouped' LIMIT 1))) THEN NULL WHEN l.onsale = 0 AND l.min_price > 0 THEN l.min_price ELSE (SELECT CAST(NULLIF(rp.meta_value, '') AS DECIMAL(19, 4)) FROM `wp_postmeta` AS rp WHERE rp.post_id = p.ID AND rp.meta_key = '_regular_price' ORDER BY rp.meta_id ASC LIMIT 1) END)",
+		'{VPRICE}'  => "(CASE WHEN l.onsale = 0 AND l.min_price > 0 THEN l.min_price ELSE (SELECT CAST(NULLIF(rp.meta_value, '') AS DECIMAL(19, 4)) FROM `wp_postmeta` AS rp WHERE rp.post_id = p.ID AND rp.meta_key = '_regular_price' ORDER BY rp.meta_id ASC LIMIT 1) END)",
+		// SQR-5: date created, a floating draft's post_date taken back to GMT (the tests' site is on UTC).
+		'{CREATED}' => "(CASE WHEN p.post_date_gmt = '0000-00-00 00:00:00' THEN DATE_SUB(p.post_date, INTERVAL 0 SECOND) ELSE p.post_date_gmt END)",
+		'{SHOWN}'   => '(l.product_id IS NULL OR l.onsale <> 0 OR l.min_price IS NULL OR l.min_price <= 0 OR l.min_price',
 	];
 
 	/**
@@ -75,9 +77,9 @@ final class ProductQueryTest extends TestCase {
 			'defaults'                                 => [
 				[],
 				<<<'SQL'
-				SELECT p.ID AS id, p.post_parent AS parent_id, p.post_date_gmt AS date_created {POSTS}
+				SELECT p.ID AS id, p.post_parent AS parent_id, {CREATED} AS date_created {POSTS}
 				WHERE p.post_type IN ('product') AND {STATUS}
-				ORDER BY p.post_date_gmt DESC, p.ID DESC LIMIT 25 OFFSET 0
+				ORDER BY date_created DESC, p.ID DESC LIMIT 25 OFFSET 0
 				SQL,
 			],
 			'every variation that is out of stock'     => [
@@ -190,14 +192,14 @@ final class ProductQueryTest extends TestCase {
 					],
 				],
 				<<<'SQL'
-				SELECT p.ID AS id, p.post_parent AS parent_id, p.post_date_gmt AS date_created {POSTS}
+				SELECT p.ID AS id, p.post_parent AS parent_id, {CREATED} AS date_created {POSTS}
 				WHERE p.post_type IN ('product') AND {STATUS}
 				AND ((NOT EXISTS (SELECT 1 {SLUG} WHERE tr.object_id = p.ID AND tt.taxonomy = 'product_visibility' AND t.slug IN ('exclude-from-catalog'))
 				AND EXISTS (SELECT 1 {SLUG} WHERE tr.object_id = p.ID AND tt.taxonomy = 'product_visibility' AND t.slug IN ('exclude-from-search')))
 				OR (EXISTS (SELECT 1 {SLUG} WHERE tr.object_id = p.ID AND tt.taxonomy = 'product_visibility' AND t.slug IN ('exclude-from-catalog'))
 				AND EXISTS (SELECT 1 {SLUG} WHERE tr.object_id = p.ID AND tt.taxonomy = 'product_visibility' AND t.slug IN ('exclude-from-search'))))
 				AND NOT (EXISTS (SELECT 1 {SLUG} WHERE tr.object_id = p.ID AND tt.taxonomy = 'product_type' AND t.slug IN ('grouped', 'external')))
-				ORDER BY p.post_date_gmt DESC, p.ID DESC LIMIT 25 OFFSET 0
+				ORDER BY date_created DESC, p.ID DESC LIMIT 25 OFFSET 0
 				SQL,
 			],
 			'variation filters on parent and row'      => [
@@ -274,7 +276,7 @@ final class ProductQueryTest extends TestCase {
 				SELECT {HINT} p.ID AS id, p.post_parent AS parent_id, l.total_sales AS units_sold, p.post_modified_gmt AS date_modified {FROM}
 				WHERE p.post_type IN ('product') AND {STATUS}
 				AND (p.post_title LIKE '%50\\% off\\_\'\\%s%' OR l.sku LIKE '%50\\% off\\_\'\\%s%')
-				AND p.post_modified_gmt < '2026-09-01 00:00:00' AND p.post_date_gmt > '2026-09-01 10:00:00'
+				AND p.post_modified_gmt < '2026-09-01 00:00:00' AND ((p.post_date_gmt <> '0000-00-00 00:00:00' AND p.post_date_gmt > '2026-09-01 10:00:00') OR (p.post_date_gmt = '0000-00-00 00:00:00' AND p.post_date > '2026-09-01 10:00:00'))
 				AND p.post_modified_gmt >= '2026-09-09 12:00:00' AND {SHOWN} <= 99.95) AND {PRICE} <= 99.95
 				ORDER BY l.total_sales DESC, p.post_modified_gmt DESC, p.ID DESC LIMIT 100 OFFSET 0
 				SQL,
@@ -308,10 +310,10 @@ final class ProductQueryTest extends TestCase {
 					'order'   => 'asc',
 				],
 				<<<'SQL'
-				SELECT p.ID AS id, p.post_parent AS parent_id, p.post_date_gmt AS date_created {POSTS}
+				SELECT p.ID AS id, p.post_parent AS parent_id, {CREATED} AS date_created {POSTS}
 				WHERE p.post_type IN ('product', 'product_variation') AND {STATUS}
-				AND (p.post_type = 'product_variation') AND p.post_date_gmt >= '2027-01-01 00:00:00'
-				ORDER BY p.post_date_gmt ASC, p.ID ASC LIMIT 25 OFFSET 0
+				AND (p.post_type = 'product_variation') AND ((p.post_date_gmt <> '0000-00-00 00:00:00' AND p.post_date_gmt >= '2027-01-01 00:00:00') OR (p.post_date_gmt = '0000-00-00 00:00:00' AND p.post_date >= '2027-01-01 00:00:00'))
+				ORDER BY date_created ASC, p.ID ASC LIMIT 25 OFFSET 0
 				SQL,
 			],
 		];

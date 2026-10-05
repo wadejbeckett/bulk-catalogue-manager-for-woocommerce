@@ -122,6 +122,8 @@ final class Plugin {
 			[ 'rest_api_init', [ $this, 'register_routes' ], 10, 0 ],
 			[ 'admin_menu', [ $this->screen(), 'register' ], 10, 0 ],
 			[ 'admin_enqueue_scripts', [ $this->screen(), 'enqueue' ], 10, 1 ],
+			[ 'admin_enqueue_scripts', [ Admin\TermEmbed::class, 'enqueue' ], 10, 1 ],
+			[ 'admin_body_class', [ Admin\TermEmbed::class, 'body_class' ], 10, 1 ],
 			[ Admin\Heartbeat::HOOK, [ Admin\Heartbeat::class, 'received' ], 10, 2 ],
 			[ Engine\BatchFactory::CREATED, [ Engine\ChunkRunner::class, 'enqueue' ], 10, 1 ],
 			[ Engine\ChunkRunner::HOOK, [ Engine\ChunkRunner::class, 'handle' ], 10, 2 ],

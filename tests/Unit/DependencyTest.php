@@ -85,7 +85,8 @@ final class DependencyTest extends TestCase {
 		$this->assertSame(
 			[
 				'admin_action_duplicate_product' => 1,
-				'admin_enqueue_scripts'          => 1,
+				'admin_body_class'               => 1,
+				'admin_enqueue_scripts'          => 2,
 				'admin_init'                     => 1,
 				'admin_menu'                     => 1,
 				'before_woocommerce_init'        => 1,
@@ -144,7 +145,8 @@ final class DependencyTest extends TestCase {
 		$this->assertSame(
 			[
 				'admin_action_duplicate_product' => 1,
-				'admin_enqueue_scripts'          => 1,
+				'admin_body_class'               => 1,
+				'admin_enqueue_scripts'          => 2,
 				'admin_init'                     => 1,
 				'admin_menu'                     => 1,
 				'before_woocommerce_init'        => 1,

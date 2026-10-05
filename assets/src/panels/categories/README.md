@@ -41,6 +41,16 @@ click takes the rows between (`workspace-model.js` `nextSelection()`).
   grid*, opens the Products tab through the page URL's `category` (ids,
   comma separated) and `search` arguments, which that tab reads once
   (`../catalogue/linked-category.js`).
+- **All fields** (`all-fields.js`) shows WordPress's own edit form for the
+  category (term.php) in the pane, so every field other plugins add to it
+  through `product_cat_edit_form_fields` appears and saves through WordPress
+  itself. The address comes from the localised `categoryEdit` (`{ url, flag
+  }`); with the flag, `src/Admin/TermEmbed.php` hides the admin's menu, bar,
+  footer, other notices and the Delete link on that page, and only for a user
+  who may edit that category. After the form is sent, WordPress's notice in
+  the frame says whether it saved; on a save the tree, the details and the
+  products are read again. **Open in WooCommerce** opens the same form on its
+  own, in a new tab.
 - Several chosen: `selection-pane.js` shows how many and which (with paths
   and counts, each removable), **Move to…** (`move-many-dialog.js`: each
   chosen category not inside another chosen one goes to the end of the new

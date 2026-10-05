@@ -3,12 +3,14 @@
  * path, its native fields (name, slug, description, parent, display type and
  * image), its product and subcategory counts, its actions and the paged list
  * of its products. Edit details opens the same editor as the category menu,
- * in the pane; Rename edits the name in place.
+ * in the pane; Rename edits the name in place; All fields shows WordPress's
+ * own form for the category, with the fields other plugins add to it.
  */
-import { Button, TextControl } from '@wordpress/components';
+import { Button, ExternalLink, TextControl } from '@wordpress/components';
 import { useEffect, useState } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 
+import AllFields, { termEditUrl } from './all-fields';
 import { announce } from './announce';
 import CategoryManager from './category-manager';
 import CategoryProducts from './category-products';
@@ -196,13 +198,13 @@ function RenameForm( { tree, id, name, onDone } ) {
  * @param {boolean}  props.canManage Whether the user may change categories.
  * @param {Object}   props.registry  GET /fields answer for the product list, or null.
  * @param {Function} props.navigate  The shell's navigate( panel, params ), or null.
- * @param {string}   props.mode      'view' or 'edit'.
+ * @param {string}   props.mode      'view', 'edit' or 'fields'.
  * @param {Function} props.onMode    Called with the next mode.
  * @param {Function} props.onSelect  Choose another category (the path's links).
  * @param {Function} props.onMove    Open Move to… for this category.
  * @param {Function} props.onAdd     Open Add subcategory under this category.
  * @param {Function} props.onAction  Open a registered action's dialog: ( action, ids ).
- * @param {Element}  props.native    WooCommerce's own form for this category (All fields), or null.
+ * @param {Object}   props.edit      The screen's `categoryEdit` ({ url, flag }), or null.
  * @return {Element} The pane.
  */
 export default function CategoryDetails( {
@@ -217,7 +219,7 @@ export default function CategoryDetails( {
 	onMove,
 	onAdd,
 	onAction,
-	native = null,
+	edit = null,
 } ) {
 	const entry = tree.byId.get( id );
 	const [ renaming, setRenaming ] = useState( false );
@@ -464,6 +466,23 @@ export default function CategoryDetails( {
 							'bulk-catalogue-manager-for-woocommerce'
 						) }
 					</Button>
+					{ edit?.url && (
+						<Button
+							variant={
+								mode === 'fields' ? 'primary' : 'secondary'
+							}
+							size="compact"
+							aria-pressed={ mode === 'fields' }
+							onClick={ () =>
+								onMode( mode === 'fields' ? 'view' : 'fields' )
+							}
+						>
+							{ __(
+								'All fields',
+								'bulk-catalogue-manager-for-woocommerce'
+							) }
+						</Button>
+					) }
 					{ /* Actions from their own modules (Delete, Merge into…): workspace-actions.js. */ }
 					{ extra.map( ( action ) => (
 						<Button
@@ -484,6 +503,26 @@ export default function CategoryDetails( {
 						'bulk-catalogue-manager-for-woocommerce'
 					) }
 				</p>
+			) }
+			{ canManage && edit?.url && (
+				<p className="bulkcat-cat-pane__native">
+					<ExternalLink href={ termEditUrl( edit, id ) }>
+						{ __(
+							'Open in WooCommerce',
+							'bulk-catalogue-manager-for-woocommerce'
+						) }
+					</ExternalLink>
+				</p>
+			) }
+			{ mode === 'fields' && canManage && edit?.url && (
+				<AllFields
+					key={ id }
+					edit={ edit }
+					id={ id }
+					name={ node.name }
+					onSaved={ () => tree.reload() }
+					onClose={ () => onMode( 'view' ) }
+				/>
 			) }
 			{ mode === 'edit' && canManage ? (
 				<div className="bulkcat-cat-pane__card">
@@ -509,7 +548,6 @@ export default function CategoryDetails( {
 					) ) }
 				</dl>
 			) }
-			{ native }
 			<CategoryProducts
 				id={ id }
 				name={ node.name }

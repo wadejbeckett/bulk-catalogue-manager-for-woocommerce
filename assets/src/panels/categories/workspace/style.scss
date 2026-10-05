@@ -499,3 +499,43 @@ $ws-new-edge: #dba617;
 		overflow-x: auto;
 	}
 }
+
+// All fields: WordPress's own category form, framed in the pane.
+.bulkcat-cat-fields {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+
+	&__head {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 4px 12px;
+
+		.bulkcat-cat-pane__hint {
+			flex: 1 1 260px;
+		}
+	}
+
+	&__status:empty {
+		display: none;
+	}
+
+	&__status .components-notice {
+		margin: 0;
+	}
+
+	&__frame {
+		display: block;
+		width: 100%;
+		min-height: 320px;
+		border: 1px solid $ws-border;
+		border-radius: 4px;
+		background: #fff;
+	}
+}
+
+.bulkcat-cat-pane__native {
+	margin: -8px 0 0;
+	font-size: 12px;
+}

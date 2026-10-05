@@ -21,6 +21,7 @@ final class RegistryTest extends TestCase {
 	 * Add a new hook name or code here only if it is never a storage key.
 	 */
 	private const NOT_STORAGE = [
+		'bulkcat_embed'                          => 'URL flag of the embedded category edit form (Admin\\TermEmbed); not stored',
 		'bulkcat_row_action'                     => 'native admin link marker; not stored',
 		'bulkcat_row_action_unavailable'         => 'native row action refusal code; not stored',
 		'bulkcat_row_sales'                      => 'signed native Trash warning-state link parameter; not stored',

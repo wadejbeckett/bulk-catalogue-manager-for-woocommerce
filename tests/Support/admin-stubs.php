@@ -96,6 +96,16 @@ if ( ! function_exists( 'add_submenu_page' ) ) {
 		bulkcat_test_admin_call( __FUNCTION__, func_get_args() );
 	}
 
+	function wp_register_style( string $handle, string|false $src, array $deps = [], string|bool|null $ver = false, string $media = 'all' ): bool {
+		bulkcat_test_admin_call( __FUNCTION__, func_get_args() );
+		return true;
+	}
+
+	function wp_add_inline_style( string $handle, string $data ): bool {
+		bulkcat_test_admin_call( __FUNCTION__, func_get_args() );
+		return true;
+	}
+
 	function wp_style_add_data( string $handle, string $key, mixed $value ): bool {
 		bulkcat_test_admin_call( __FUNCTION__, func_get_args() );
 		return true;

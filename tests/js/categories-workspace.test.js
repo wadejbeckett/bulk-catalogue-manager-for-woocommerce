@@ -156,7 +156,8 @@ function routes( overrides = {} ) {
 					status: 'complete',
 				};
 			}
-			return current;
+			// A fresh answer each read, as the route's JSON is.
+			return JSON.parse( JSON.stringify( current ) );
 		},
 		'categories/3': () => ( {
 			item: {
@@ -569,6 +570,102 @@ describe( 'categories workspace', () => {
 		).toBeVisible();
 	} );
 
+	it( 'opens WordPress’s own category form for every field, and refreshes after it saves', async () => {
+		await renderTab();
+		fireEvent.click( screen.getByRole( 'button', { name: 'Expand all' } ) );
+		fireEvent.click( rowOf( 'Pots' ) );
+		const pane = await screen.findByRole( 'region', { name: 'Pots' } );
+		expect(
+			within( pane )
+				.getByRole( 'link', { name: /^Open in WooCommerce/ } )
+				.getAttribute( 'href' )
+		).toBe(
+			'http://shop.test/wp-admin/term.php?taxonomy=cat&post_type=product&tag_ID=3'
+		);
+
+		fireEvent.click(
+			within( pane ).getByRole( 'button', { name: 'All fields' } )
+		);
+		const frame = within( pane ).getByTitle( 'All fields for Pots' );
+		expect( frame.getAttribute( 'src' ) ).toBe(
+			'http://shop.test/wp-admin/term.php?taxonomy=cat&post_type=product&tag_ID=3&bulkcat_embed=1'
+		);
+		const reads = () =>
+			apiFetch.mock.calls.filter(
+				( [ options ] ) =>
+					options.url.split( '?' )[ 0 ] === 'categories' &&
+					! options.method
+			).length;
+		// The page WordPress shows in the frame: its form, and after a save
+		// its notice. The admin's canonical-URL script takes `message` out of
+		// the address, so the notice is what tells.
+		const src = frame.getAttribute( 'src' );
+		let page;
+		const load = ( notice = '' ) => {
+			page = document.implementation.createHTMLDocument( 'Edit' );
+			page.body.innerHTML = `${ notice }<form id="edittag"></form>`;
+			Object.defineProperty( frame, 'contentWindow', {
+				configurable: true,
+				value: { location: { href: src } },
+			} );
+			Object.defineProperty( frame, 'contentDocument', {
+				configurable: true,
+				value: page,
+			} );
+			fireEvent.load( frame );
+		};
+		const send = () =>
+			page
+				.getElementById( 'edittag' )
+				.dispatchEvent( new window.Event( 'submit' ) );
+
+		// The form opening changes nothing.
+		const before = reads();
+		load();
+		expect( reads() ).toBe( before );
+
+		// WordPress saved it: the tree, the details and the products are read again.
+		const details = calls( apiFetch, 'categories/3' ).length;
+		send();
+		await act( async () =>
+			load(
+				'<div id="message" class="notice notice-success"><p>Category updated.</p></div>'
+			)
+		);
+		await waitFor( () => expect( reads() ).toBe( before + 1 ) );
+		await waitFor( () =>
+			expect( calls( apiFetch, 'categories/3' ).length ).toBeGreaterThan(
+				details
+			)
+		);
+		expect(
+			within( pane ).getByText(
+				'Saved through WordPress’s category form. The details and the tree are up to date.'
+			)
+		).toBeVisible();
+
+		// WordPress refused it: the form says why; nothing is read again.
+		send();
+		await act( async () =>
+			load(
+				'<div id="message" class="notice notice-error"><p>Category not updated.</p></div>'
+			)
+		);
+		expect(
+			within( pane ).getByText(
+				'WordPress could not save the category. The form below says why.'
+			)
+		).toBeVisible();
+		expect( reads() ).toBe( before + 1 );
+
+		fireEvent.click(
+			within( pane ).getByRole( 'button', { name: 'Close all fields' } )
+		);
+		expect(
+			within( pane ).queryByTitle( 'All fields for Pots' )
+		).toBeNull();
+	} );
+
 	it( 'keeps the tree browsable but offers no changes without permission', async () => {
 		await renderTab( VIEWER );
 		expect(
@@ -578,6 +675,14 @@ describe( 'categories workspace', () => {
 		const pane = await screen.findByRole( 'region', { name: 'Sports' } );
 		expect(
 			within( pane ).queryByRole( 'button', { name: 'Rename' } )
+		).toBeNull();
+		expect(
+			within( pane ).queryByRole( 'button', { name: 'All fields' } )
+		).toBeNull();
+		expect(
+			within( pane ).queryByRole( 'link', {
+				name: /^Open in WooCommerce/,
+			} )
 		).toBeNull();
 		expect(
 			within( pane ).getByText(

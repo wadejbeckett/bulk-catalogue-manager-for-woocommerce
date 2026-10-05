@@ -288,6 +288,7 @@ export default function CategoriesTab( { settings } ) {
 				onAction={ ( chosenAction, ids ) =>
 					setAction( { action: chosenAction, ids } )
 				}
+				edit={ settings?.categoryEdit || null }
 			/>
 		);
 	} else {

@@ -83,6 +83,7 @@ final class TreeTest extends TestCase {
 				'parent'               => 3,
 				'depth'                => 3,
 				'order'                => 0,
+				'default'              => false,
 				'count'                => 0,
 				'countWithDescendants' => 0,
 			],

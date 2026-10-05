@@ -89,7 +89,20 @@ final class CategoriesWriteRouteTest extends TestCase {
 					'position' => 0,
 				],
 			],
+			[ 'POST', '/categories/5/default', [] ],
 		];
+	}
+
+	public function test_make_default_answers_the_node_and_sets_woocommerce_default(): void {
+		$GLOBALS['bulkcat_test']['options']['default_product_cat'] = 9;
+		$GLOBALS['bulkcat_test']['caps']['edit_term:5']            = true;
+		$GLOBALS['bulkcat_test']['user_caps'][12]['edit_term:5']   = true;
+		$response = self::send( 'POST', '/categories/5/default' );
+		$this->assertInstanceOf( \WP_REST_Response::class, $response, $response instanceof \WP_Error ? $response->get_error_message() : '' );
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertTrue( $response->get_data()['item']['default'] );
+		$this->assertSame( 5, $GLOBALS['bulkcat_test']['options']['default_product_cat'] );
+		$this->assertSame( [ [ 5, 'term_default', 9, 5, 'applied' ] ], $this->store->journal() );
 	}
 
 	public function test_the_routes_need_manage_product_terms_and_none_deletes(): void {
@@ -110,6 +123,8 @@ final class CategoriesWriteRouteTest extends TestCase {
 		$move = $routes[ '/bulkcat/v1' . CategoriesWriteController::MOVE_ROUTE ];
 		$this->assertSame( [ 'POST', [ Access::class, 'can_manage_terms' ] ], [ $move[0]['methods'], $move[0]['permission_callback'] ] );
 		$this->assertSame( [ 'id', 'parent', 'position' ], array_keys( $move[0]['args'] ) );
+		$default = $routes[ '/bulkcat/v1' . CategoriesWriteController::DEFAULT_ROUTE ];
+		$this->assertSame( [ 'POST', [ Access::class, 'can_manage_terms' ] ], [ $default[0]['methods'], $default[0]['permission_callback'] ] );
 
 		$methods = [];
 		foreach ( rest_get_server()->get_routes() as $route => $endpoints ) {
@@ -118,7 +133,7 @@ final class CategoriesWriteRouteTest extends TestCase {
 			}
 		}
 		sort( $methods );
-		$this->assertSame( [ 'GET', 'GET', 'PATCH', 'POST', 'POST' ], $methods );
+		$this->assertSame( [ 'GET', 'GET', 'PATCH', 'POST', 'POST', 'POST' ], $methods );
 		$this->assertNotContains( 'DELETE', $methods, 'Deleting a category stays on the native screen (SPEC §2).' );
 		$this->assertSame( [], $GLOBALS['bulkcat_test']['wrong'] );
 	}
@@ -144,7 +159,7 @@ final class CategoriesWriteRouteTest extends TestCase {
 		$this->assertSame( 201, $response->get_status() );
 		$data = $response->get_data();
 		$this->assertSame( [ 'item', 'batch_id', 'status', 'results' ], array_keys( $data ) );
-		$this->assertSame( [ 'id', 'name', 'slug', 'description', 'parent', 'depth', 'order', 'display_type', 'thumbnail_id', 'thumbnail_url' ], array_keys( $data['item'] ) );
+		$this->assertSame( [ 'id', 'name', 'slug', 'description', 'parent', 'depth', 'order', 'default', 'display_type', 'thumbnail_id', 'thumbnail_url' ], array_keys( $data['item'] ) );
 		$this->assertSame( [ 12, 'Hats', 'hats', 6, 1 ], [ $data['item']['id'], $data['item']['name'], $data['item']['slug'], $data['item']['parent'], $data['item']['depth'] ] );
 		$this->assertSame( 'complete', $data['status'] );
 		$batch = $this->store->batch( $data['batch_id'] );
@@ -172,8 +187,7 @@ final class CategoriesWriteRouteTest extends TestCase {
 		$this->assertSame(
 			[
 				[ 3, 'term_name', 'Shirts', 'Tops', 'applied' ],
-				[ 2, 'term_order', null, 0, 'applied' ],
-				[ 5, 'term_order', null, 1, 'applied' ],
+				[ 2, 'term_menu_order', 2, 0, 'applied' ],
 			],
 			$this->store->journal()
 		);

@@ -35,11 +35,18 @@ final class CategoryTree {
 	public const ORDER_META = 'order';
 
 	/**
-	 * The plugin's own term meta key for a category's position among its
-	 * siblings in this tree only, written by a move (Categories\Writer) and
-	 * never read by the storefront (SPEC §4.7, §7; Data\Registry).
+	 * The plugin's old term meta key for a category's position in this tree
+	 * only (1.3.2 and earlier). Retired by ticket 23: the tree reads and a
+	 * move writes WooCommerce's own ORDER_META, so this is never read or
+	 * written again, and never copied into the shop's order; values already
+	 * stored stay as they were until uninstall removes them (Data\Registry).
 	 */
 	public const TREE_ORDER_META = 'bulkcat_order';
+
+	/**
+	 * WooCommerce's option holding the default product category.
+	 */
+	public const DEFAULT_OPTION = 'default_product_cat';
 
 	/**
 	 * Build over a cache.
@@ -88,7 +95,7 @@ final class CategoryTree {
 
 	/**
 	 * Every product category, from one get_terms() call that also primes the
-	 * term meta cache both stored orders are read from.
+	 * term meta cache WooCommerce's order is read from.
 	 */
 	public static function tree(): Tree {
 		return self::tree_of( self::terms() );
@@ -112,19 +119,24 @@ final class CategoryTree {
 	}
 
 	/**
-	 * The tree of a term list, with WooCommerce's order and the plugin's tree order.
+	 * The tree of a term list, in WooCommerce's order, with its default category marked.
 	 *
 	 * @param list<object> $terms Terms from terms().
 	 */
 	public static function tree_of( array $terms ): Tree {
-		$orders      = [];
-		$tree_orders = [];
+		$orders = [];
 		foreach ( $terms as $term ) {
 			if ( isset( $term->term_id ) ) {
-				$orders[ (int) $term->term_id ]      = get_term_meta( (int) $term->term_id, self::ORDER_META, true );
-				$tree_orders[ (int) $term->term_id ] = get_term_meta( (int) $term->term_id, self::TREE_ORDER_META, true );
+				$orders[ (int) $term->term_id ] = get_term_meta( (int) $term->term_id, self::ORDER_META, true );
 			}
 		}
-		return Tree::from_terms( $terms, $orders, $tree_orders );
+		return Tree::from_terms( $terms, $orders, self::default_id() );
+	}
+
+	/**
+	 * The shop's default product category id, as WooCommerce reads it; 0 when none.
+	 */
+	public static function default_id(): int {
+		return max( 0, (int) get_option( self::DEFAULT_OPTION, 0 ) );
 	}
 }

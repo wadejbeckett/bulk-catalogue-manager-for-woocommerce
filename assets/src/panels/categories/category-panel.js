@@ -18,6 +18,7 @@ import { useCallback, useEffect, useRef, useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 
 import { announce } from './announce';
+import useCategoryActions from './category-actions';
 import CategoryManager from './category-manager';
 import CategoryTree, { ALL } from './category-tree';
 import CreationNotice from './creation-notice';
@@ -214,6 +215,8 @@ export default function CategoryPanel( {
 		setFailure( { error, fallback } );
 		announce( errorMessage( error, fallback ), 'assertive' );
 	};
+
+	const actions = useCategoryActions( { tree, value, onFail: fail } );
 
 	const rename = async ( id, name ) => {
 		setFailure( null );
@@ -471,6 +474,7 @@ export default function CategoryPanel( {
 						onEdit={ ( id ) => setEditing( { id } ) }
 						onMoveDialog={ setMoving }
 						onDropSelection={ onDropSelection }
+						moreActions={ actions.menuItems }
 					/>
 				) }
 			</div>
@@ -503,6 +507,7 @@ export default function CategoryPanel( {
 
 	const dialogs = (
 		<>
+			{ actions.dialogs }
 			{ editing && (
 				<Modal
 					title={

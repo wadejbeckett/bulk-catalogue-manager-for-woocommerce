@@ -91,6 +91,7 @@ function dragTypes( event ) {
  * @param {Function} props.onEdit          Called with ( id ) to open the details pane.
  * @param {Function} props.onMoveDialog    Called with ( id ) to open Move to….
  * @param {Function} props.onDropSelection Called with ( id ) when the product selection is dropped on a category.
+ * @param {Function} props.moreActions     Called with ( id ); returns more menu items `{ key, label, run }` (Make default, Delete…).
  * @return {Element} The tree.
  */
 export default function CategoryTree( {
@@ -106,6 +107,7 @@ export default function CategoryTree( {
 	onEdit,
 	onMoveDialog,
 	onDropSelection,
+	moreActions,
 } ) {
 	const { nodes, byId } = tree;
 	const selected = valueIds( value );
@@ -481,6 +483,7 @@ export default function CategoryTree( {
 			label: __( 'Move to…', 'bulk-catalogue-manager-for-woocommerce' ),
 			run: () => onMoveDialog?.( id ),
 		},
+		...( moreActions?.( id ) || [] ),
 	];
 
 	const closeMenu = ( id ) => {
@@ -694,6 +697,14 @@ export default function CategoryTree( {
 										title={ name }
 									>
 										{ name }
+									</span>
+								) }
+								{ row.node.default && (
+									<span className="bulkcat-cat-default">
+										{ __(
+											'Default',
+											'bulk-catalogue-manager-for-woocommerce'
+										) }
 									</span>
 								) }
 								{ count !== null && (

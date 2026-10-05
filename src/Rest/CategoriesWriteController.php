@@ -8,7 +8,10 @@
  *   `description` and `parent`;
  * - `POST /bulkcat/v1/categories/{id}/move` moves a category to `parent` (0 for
  *   the top level) at `position` among its new siblings, counted from 0,
- *   last when omitted.
+ *   last when omitted, writing WooCommerce's own sibling order (ticket 23);
+ * - `POST /bulkcat/v1/categories/{id}/default` makes it the shop's default
+ *   product category (WooCommerce's `default_product_cat`), with permission
+ *   to edit that category, as WooCommerce's own Make default.
  *
  * Each needs Access::can_manage_terms (the screen capability plus
  * `manage_product_terms`) and runs through Categories\Writer, which writes
@@ -53,6 +56,11 @@ final class CategoriesWriteController implements ReadController {
 	 * The move route.
 	 */
 	public const MOVE_ROUTE = '/categories/(?P<id>[\d]+)/move';
+
+	/**
+	 * The make-default route.
+	 */
+	public const DEFAULT_ROUTE = '/categories/(?P<id>[\d]+)/default';
 
 	/**
 	 * Longest name WordPress's terms table holds.
@@ -139,6 +147,35 @@ final class CategoriesWriteController implements ReadController {
 				],
 			]
 		);
+		$this->register_default( $routes );
+	}
+
+	/**
+	 * Add the make-default route.
+	 *
+	 * @param Routes $routes The registrar.
+	 */
+	private function register_default( Routes $routes ): void {
+		$routes->add(
+			self::DEFAULT_ROUTE,
+			[
+				[
+					'methods'             => 'POST',
+					'callback'            => [ $this, 'make_default' ],
+					'permission_callback' => [ Access::class, 'can_manage_terms' ],
+					'args'                => [ 'id' => self::id_arg() ],
+				],
+			]
+		);
+	}
+
+	/**
+	 * `POST /categories/{id}/default`.
+	 *
+	 * @param \WP_REST_Request $request The validated request.
+	 */
+	public function make_default( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
+		return self::answer( $this->writer()->make_default( (int) $request->get_param( 'id' ), get_current_user_id() ), 200 );
 	}
 
 	/**

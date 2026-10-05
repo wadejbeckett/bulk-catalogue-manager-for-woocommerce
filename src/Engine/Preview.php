@@ -209,7 +209,7 @@ final class Preview {
 	 *
 	 * @param Selection     $selection   The selection, from an id list or a parsed token.
 	 * @param mixed         $operations  The operation list as submitted.
-	 * @param int           $sample_size Rows to return: 25, 100, or up to SAMPLE_ALL.
+	 * @param int           $sample_size Objects to sample, each with every step: 25, 100, or up to SAMPLE_ALL (rows).
 	 * @param string        $token       The selection token as sent, or '' for an id list.
 	 * @param Settings|null $settings    Settings; the stored ones by default.
 	 * @return array<string, mixed>|\WP_Error
@@ -507,8 +507,9 @@ final class Preview {
 					$field                               = $fields->get( $result->field() );
 					$tally['fields'][ $result->field() ] = null === $field ? $result->field() : $field->label();
 				}
-				if ( count( $tally['sample'] ) < $limit ) {
-					$tally['sample'][] = [
+				if ( self::in_sample( $tally, $id, $limit ) ) {
+					$tally['sampled'][ $id ] = true;
+					$tally['sample'][]       = [
 						'object_id'   => $id,
 						'object_type' => $type,
 						'name'        => $label,
@@ -665,9 +666,10 @@ final class Preview {
 						}
 					}
 				}
-				if ( count( $tally['sample'] ) < $limit ) {
-					$shown             = null !== $object && in_array( $state, [ Result::CHANGED, Result::ALREADY ], true );
-					$tally['sample'][] = [
+				if ( self::in_sample( $tally, $id, $limit ) ) {
+					$shown                   = null !== $object && in_array( $state, [ Result::CHANGED, Result::ALREADY ], true );
+					$tally['sampled'][ $id ] = true;
+					$tally['sample'][]       = [
 						'object_id'   => $id,
 						'object_type' => $type,
 						'name'        => $label,
@@ -1016,5 +1018,20 @@ final class Preview {
 				'limit' => Selection::MAX_OBJECTS,
 			]
 		);
+	}
+
+	/**
+	 * Whether an object's rows go in the sample (ticket 133 bug 4): the
+	 * sample holds whole objects, each with every step, up to the size asked
+	 * for (and no new one once it holds SAMPLE_ALL rows), so a change of two
+	 * steps shows each product once with both.
+	 *
+	 * @param array<string, mixed> $tally The tally so far.
+	 * @param int                  $id    The object.
+	 * @param int                  $limit Objects the sample holds.
+	 */
+	private static function in_sample( array $tally, int $id, int $limit ): bool {
+		// A new object joins while the sample holds fewer objects than asked and fewer than SAMPLE_ALL rows.
+		return isset( $tally['sampled'][ $id ] ) || ( count( $tally['sampled'] ?? [] ) < $limit && count( $tally['sample'] ) < self::SAMPLE_ALL );
 	}
 }

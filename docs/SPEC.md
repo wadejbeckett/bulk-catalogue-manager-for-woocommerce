@@ -128,7 +128,7 @@ In this order.
 
 1. A plain summary: "This will change the regular price on 1,284 products and 3,915 variations."
 2. Counts: will change, already at the target value, cannot change with the reason for each.
-3. A sample table — product, field, current value, new value — old struck through, new in bold, with a note on rows that will be skipped.
+3. A sample table — product, field, current value, new value — old struck through, new in bold, with a note on rows that will be skipped. **One row per product or variation** (ticket 133 bug 4), holding a line per step; steps on the same field are one line from the value before the first to the value after the last, so a change that adds and removes categories on 15 products shows 15 rows. The sample size counts products and variations, each with all its steps (and takes no new one once it holds 1,000 step rows).
 4. A warning block: a sale price above its regular price, a price falling to zero or below, stock going negative, a SKU duplicating another product's, and turning off Manage stock where WooCommerce will clear a stock quantity, backorders or low stock threshold (undo puts them back).
 
 **Controls.** Sample size 25, 100, or every row up to 1,000. Filter to changed rows only. Download the preview as CSV before applying.

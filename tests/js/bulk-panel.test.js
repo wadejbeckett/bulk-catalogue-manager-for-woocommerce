@@ -863,9 +863,12 @@ describe( 'bulk panel: preview, apply and done', () => {
 			} )
 		);
 		expect( panel() ).toHaveAttribute( 'data-state', 'applying' );
+		// FRONTEND-7: aria-disabled while busy, so focus can stay on it.
 		expect(
-			screen.getByRole( 'button', { name: 'Apply to 20 products' } )
-		).toBeDisabled();
+			screen
+				.getByRole( 'button', { name: 'Apply to 20 products' } )
+				.getAttribute( 'aria-disabled' )
+		).toBe( 'true' );
 	} );
 
 	it( 'hands a stalled batch to renderStalled', async () => {
@@ -1448,6 +1451,28 @@ describe( 'bulk panel: preview, apply and done', () => {
 		unmount();
 		expect( document.activeElement ).toBe( opener );
 		opener.remove();
+	} );
+
+	it( 'returns focus to the screen’s panel when its opener has gone (FRONTEND-7)', () => {
+		const region = document.createElement( 'div' );
+		region.className = 'bulkcat-app__panel';
+		region.tabIndex = -1;
+		const opener = document.createElement( 'button' );
+		region.appendChild( opener );
+		document.body.appendChild( region );
+		opener.focus();
+		const { unmount } = render(
+			<BulkChangePanel
+				selection={ { kind: 'ids', ids: IDS } }
+				registry={ REGISTRY }
+				settings={ SETTINGS }
+			/>
+		);
+		// A change that finished in full clears the selection, and its bar.
+		opener.remove();
+		unmount();
+		expect( document.activeElement ).toBe( region );
+		region.remove();
 	} );
 } );
 

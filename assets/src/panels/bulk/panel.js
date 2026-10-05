@@ -326,14 +326,23 @@ export default function BulkChangePanel( {
 		changes,
 	} );
 
-	// Focus: into the panel on open, back to whatever opened it on close (§14).
+	// Focus: into the panel on open, back to whatever opened it on close (§14),
+	// or, when that is gone (a change that finished in full clears the
+	// selection and its bar), to the screen's panel (FRONTEND-7).
 	useEffect( () => {
-		const opener = panelRef.current?.ownerDocument?.activeElement;
+		const doc = panelRef.current?.ownerDocument;
+		const opener = doc?.activeElement;
 		headingRef.current?.focus();
 		return () => {
-			if ( opener && typeof opener.focus === 'function' ) {
+			if (
+				opener &&
+				opener.isConnected &&
+				typeof opener.focus === 'function'
+			) {
 				opener.focus();
+				return;
 			}
+			doc?.querySelector( '.bulkcat-app__panel' )?.focus();
 		};
 	}, [] );
 

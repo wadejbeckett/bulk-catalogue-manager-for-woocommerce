@@ -280,17 +280,20 @@ export function ConfirmApply( {
 
 	return (
 		<div className="bulkcat-confirm">
+			{ /* FRONTEND-7: busy is aria-disabled, so focus returned here after
+			   a confirm stays on the button while the change is sent. */ }
 			<button
 				ref={ applyRef }
 				type="button"
 				className="button button-primary"
-				disabled={ disabled || busy || gate.armed }
+				disabled={ disabled || gate.armed }
+				aria-disabled={ busy || undefined }
 				aria-describedby={
 					disabled && disabledReason
 						? 'bulkcat-confirm-disabled'
 						: undefined
 				}
-				onClick={ gate.request }
+				onClick={ busy ? undefined : gate.request }
 			>
 				{ applyText }
 			</button>

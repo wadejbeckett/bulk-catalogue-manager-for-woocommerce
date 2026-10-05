@@ -95,6 +95,32 @@ describe( 'confirmation policy', () => {
 		}
 	);
 
+	it( 'keeps focus on Apply while the confirmed change is sent (FRONTEND-7)', () => {
+		const onApply = jest.fn();
+		const { rerender } = render(
+			<ConfirmApply count={ 300 } threshold={ 200 } onApply={ onApply } />
+		);
+		fireEvent.click( applyButton( 300 ) );
+		fireEvent.click(
+			screen.getByRole( 'button', { name: /^Yes, change/ } )
+		);
+		expect( onApply ).toHaveBeenCalledTimes( 1 );
+		rerender(
+			<ConfirmApply
+				count={ 300 }
+				threshold={ 200 }
+				onApply={ onApply }
+				busy
+			/>
+		);
+		const apply = applyButton( 300 );
+		expect( document.activeElement ).toBe( apply );
+		expect( apply.getAttribute( 'aria-disabled' ) ).toBe( 'true' );
+		fireEvent.click( apply );
+		expect( onApply ).toHaveBeenCalledTimes( 1 );
+		expect( screen.queryByRole( 'group' ) ).toBeNull();
+	} );
+
 	it( 'uses the default threshold of 200 when none is set', () => {
 		expect( confirmPolicy( { count: 199 } ).required ).toBe( false );
 		expect( confirmPolicy( { count: 200 } ).required ).toBe( true );

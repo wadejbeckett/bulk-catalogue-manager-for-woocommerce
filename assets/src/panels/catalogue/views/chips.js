@@ -395,7 +395,19 @@ export default function SavedViewsBar( {
 						)
 					) }
 					error={ saved.error }
-					onRetry={ saved.clearError }
+					onRetry={
+						saved.loadFailed && saved.reload
+							? saved.reload
+							: saved.clearError
+					}
+					retryLabel={
+						saved.loadFailed && saved.reload
+							? ''
+							: __(
+									'Dismiss',
+									'bulk-catalogue-manager-for-woocommerce'
+								)
+					}
 				/>
 			) }
 			<div

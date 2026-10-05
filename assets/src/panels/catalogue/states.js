@@ -197,13 +197,14 @@ export function NoMatches( { filters, onClear, variations = false } ) {
  * text (ticket 11; ../../errors.js). Rows already on screen stay where they
  * are.
  *
- * @param {Object}   props         Props.
- * @param {string}   props.message What failed, as a sentence.
- * @param {Error}    props.error   The failure.
- * @param {Function} props.onRetry Try again.
+ * @param {Object}   props            Props.
+ * @param {string}   props.message    What failed, as a sentence.
+ * @param {Error}    props.error      The failure.
+ * @param {Function} props.onRetry    Try again.
+ * @param {string}   props.retryLabel The action's label when it does not try again (Dismiss), or ''.
  * @return {Element} Notice.
  */
-export function ErrorNotice( { message, error, onRetry } ) {
+export function ErrorNotice( { message, error, onRetry, retryLabel = '' } ) {
 	const detail = [
 		error?.code,
 		error?.data?.status &&
@@ -222,10 +223,12 @@ export function ErrorNotice( { message, error, onRetry } ) {
 			isDismissible={ false }
 			actions={ [
 				{
-					label: __(
-						'Try again',
-						'bulk-catalogue-manager-for-woocommerce'
-					),
+					label:
+						retryLabel ||
+						__(
+							'Try again',
+							'bulk-catalogue-manager-for-woocommerce'
+						),
 					onClick: onRetry,
 					variant: 'primary',
 				},

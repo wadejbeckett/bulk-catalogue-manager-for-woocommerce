@@ -40,7 +40,7 @@ export function freeName( wanted, items ) {
 /**
  * The list and the calls that change it.
  *
- * @return {Object} { items, defaultId, isLoading, hasLoaded, error, busy, save, update, rename, duplicate, remove, reorder, setDefault, clearError }.
+ * @return {Object} { items, defaultId, isLoading, hasLoaded, error, loadFailed, busy, save, update, rename, duplicate, remove, reorder, setDefault, clearError, reload }.
  */
 export function useSavedViews() {
 	const [ items, setItems ] = useState( [] );
@@ -49,6 +49,10 @@ export function useSavedViews() {
 	const [ hasLoaded, setLoaded ] = useState( false );
 	const [ error, setError ] = useState( null );
 	const [ busy, setBusy ] = useState( false );
+	// Whether `error` is a failed read of the list (FRONTEND-5): Try again
+	// reads it again; a failed change can only be dismissed.
+	const [ loadFailed, setLoadFailed ] = useState( false );
+	const [ attempt, setAttempt ] = useState( 0 );
 
 	const take = useCallback( ( answer ) => {
 		setItems( Array.isArray( answer?.items ) ? answer.items : [] );
@@ -59,8 +63,18 @@ export function useSavedViews() {
 	useEffect( () => {
 		let live = true;
 		request( 'views' )
-			.then( ( answer ) => live && take( answer ) )
-			.catch( ( failure ) => live && setError( failure || new Error() ) )
+			.then( ( answer ) => {
+				if ( live ) {
+					take( answer );
+					setLoadFailed( false );
+				}
+			} )
+			.catch( ( failure ) => {
+				if ( live ) {
+					setError( failure || new Error() );
+					setLoadFailed( true );
+				}
+			} )
 			.finally( () => {
 				if ( live ) {
 					setLoading( false );
@@ -70,7 +84,7 @@ export function useSavedViews() {
 		return () => {
 			live = false;
 		};
-	}, [ take ] );
+	}, [ take, attempt ] );
 
 	/**
 	 * Run a write; a refusal is held in `error` and rethrown.
@@ -83,6 +97,7 @@ export function useSavedViews() {
 		( route, options ) => {
 			setBusy( true );
 			setError( null );
+			setLoadFailed( false );
 			return request( route, options )
 				.then( take )
 				.catch( ( failure ) => {
@@ -149,6 +164,12 @@ export function useSavedViews() {
 		[ write ]
 	);
 	const clearError = useCallback( () => setError( null ), [] );
+	// Read the list again after a failed load (FRONTEND-5).
+	const reload = useCallback( () => {
+		setError( null );
+		setLoading( true );
+		setAttempt( ( n ) => n + 1 );
+	}, [] );
 
 	return {
 		items,
@@ -156,6 +177,7 @@ export function useSavedViews() {
 		isLoading,
 		hasLoaded,
 		error,
+		loadFailed,
 		busy,
 		save,
 		update,
@@ -165,6 +187,7 @@ export function useSavedViews() {
 		reorder,
 		setDefault,
 		clearError,
+		reload,
 	};
 }
 

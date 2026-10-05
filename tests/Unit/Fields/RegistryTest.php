@@ -183,8 +183,8 @@ final class RegistryTest extends TestCase {
 		$client  = array_map( static fn( Field $field ): array => $field->to_client(), ( new Registry() )->all() );
 		$default = array_filter( $client, static fn( array $field ): bool => $field['defaultColumn'] );
 		uasort( $default, static fn( array $a, array $b ): int => $a['defaultOrder'] <=> $b['defaultOrder'] );
-		$this->assertSame( [ 'sku', 'category_ids', 'regular_price', 'stock_status', 'status' ], array_keys( $default ), 'T40, T45, T75: the columns after the product cell, in the prototype\'s order; the sale price shows under the regular price. T93: Shown in shop and search is not a default column; the status badge carries Off/On.' );
-		$this->assertSame( [ 1, 2, 3, 4, 5 ], array_column( $default, 'defaultOrder' ) );
+		$this->assertSame( [ 'sku', 'category_ids', 'regular_price', 'stock_status', 'status', 'catalog_visibility', 'visible_on_site' ], array_keys( $default ), 'T40, T45, T75: the columns after the product cell, in the prototype\'s order; the sale price shows under the regular price. Ticket 19: both presentations of the native listing visibility follow Status for a new layout.' );
+		$this->assertSame( [ 1, 2, 3, 4, 5, 6, 7 ], array_column( $default, 'defaultOrder' ) );
 		foreach ( array_diff_key( $client, $default ) as $key => $field ) {
 			$this->assertNull( $field['defaultOrder'], $key );
 		}
@@ -765,7 +765,7 @@ final class RegistryTest extends TestCase {
 		}
 	}
 
-	public function test_the_listing_switch_is_named_for_what_it_does_and_is_not_a_default_column(): void {
+	public function test_the_listing_switch_is_named_for_what_it_does_and_is_a_default_column(): void {
 		// T93 (SPEC §5.3): a listing control, not availability; the key stays for saved views, journals and CSV ids.
 		$field = self::field( 'visible_on_site' );
 		$this->assertSame( 'Shown in shop and search', $field->label() );
@@ -778,8 +778,8 @@ final class RegistryTest extends TestCase {
 			$field->choices()
 		);
 		$client = $field->to_client();
-		$this->assertFalse( $client['defaultColumn'] );
-		$this->assertNull( $client['defaultOrder'] );
+		$this->assertTrue( $client['defaultColumn'], 'Ticket 19: shown by default for a new layout; a saved layout keeps its own columns.' );
+		$this->assertSame( 7, $client['defaultOrder'] );
 		$this->assertTrue( $field->inline(), 'Still set in place for an owner who adds the column.' );
 		$this->assertSame( [ 'on', 'off' ], $field->writable_choices() );
 	}

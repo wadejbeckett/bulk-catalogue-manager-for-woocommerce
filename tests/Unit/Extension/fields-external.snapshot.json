@@ -177,8 +177,8 @@
             "variationNote": "Catalogue visibility belongs to the product, not to each variation.",
             "variableParentNote": "",
             "sortable": false,
-            "defaultColumn": false,
-            "defaultOrder": null,
+            "defaultColumn": true,
+            "defaultOrder": 6,
             "schema": {
                 "description": "Catalogue visibility",
                 "type": "string",
@@ -281,8 +281,8 @@
             "variationNote": "Shown in shop and search belongs to the product, not to each variation.",
             "variableParentNote": "",
             "sortable": false,
-            "defaultColumn": false,
-            "defaultOrder": null,
+            "defaultColumn": true,
+            "defaultOrder": 7,
             "schema": {
                 "description": "Shown in shop and search",
                 "type": "string",

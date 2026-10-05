@@ -25,8 +25,9 @@ describe( 'view to route arguments', () => {
 			fields: [
 				'name',
 				'status',
-				// T93: no switch column by default, so neither it nor its
-				// catalogue visibility companion is read.
+				// Ticket 19: both listing visibility presentations are default columns.
+				'catalog_visibility',
+				'visible_on_site',
 				'category_ids',
 				'regular_price',
 				'sale_price',

@@ -138,7 +138,8 @@ final class CatalogueBaselineTest extends TestCase {
 		$views = BaselineRows::views();
 		$this->assertCount( 29, $views['all'], 'Every field but the image.' );
 		$this->assertNotContains( 'thumbnail', $views['all'] );
-		$this->assertSame( [ 'name', 'sku', 'category_ids', 'regular_price', 'stock_status', 'status' ], $views['default'], 'Ticket 04 took the listing control out of the default columns.' );
+		$this->assertSame( [ 'name', 'sku', 'category_ids', 'regular_price', 'stock_status', 'status' ], $views['default'], 'The recorded default golden keeps the 1.0.0-era default columns, so the CSV bytes stay pinned (B24) whatever the screen\'s default columns become.' );
+		$this->assertSame( [ 'name', 'sku', 'category_ids', 'regular_price', 'stock_status', 'status', 'catalog_visibility', 'visible_on_site' ], BaselineRows::screen_default(), 'Ticket 19: the screen\'s default columns add both listing visibility presentations after Status.' );
 	}
 
 	public function test_only_the_listing_control_heading_differs_from_1_0_0(): void {

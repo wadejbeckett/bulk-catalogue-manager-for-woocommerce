@@ -11,6 +11,7 @@
  * `available: false` with its reason, and one change holds either native
  * steps or one add-on's steps (mixesKinds()).
  */
+import { lookupIds } from '../../components/lookup-picker';
 import { __ } from '@wordpress/i18n';
 
 /** Most steps one change may hold (Operations\Registry::validate_list()). */
@@ -109,9 +110,13 @@ export function isChoice( property ) {
  *
  * @param {string} name     Argument name.
  * @param {Object} property JSON Schema property.
- * @return {string} boolean, choice, integer, decimal, text, ids or value.
+ * @return {string} boolean, choice, lookup, integer, decimal, text, ids or value.
  */
 export function propertyKind( name, property ) {
+	if ( property?.lookup ) {
+		// Contract version 2: an add-on's searchable, paged choices (EXTENSIONS-v2 §4.6).
+		return 'lookup';
+	}
 	const type = property?.type;
 	const types = Array.isArray( type ) ? type : [ type ];
 	if ( isChoice( property ) ) {
@@ -375,6 +380,18 @@ export function operationProblem( registry, operation ) {
 			return { arg: name, reason };
 		}
 		if (
+			kind === 'lookup' &&
+			( ! Array.isArray( value ) ||
+				( property.lookup.multiple
+					? ( property.maxItems &&
+							value.length > property.maxItems ) ||
+						( property.minItems &&
+							value.length < property.minItems )
+					: value.length > 1 ) )
+		) {
+			return { arg: name, reason };
+		}
+		if (
 			kind === 'multichoice' &&
 			( ! Array.isArray( value ) ||
 				( property.maxItems && value.length > property.maxItems ) ||
@@ -418,6 +435,17 @@ export function toRequestOperations( registry, operations ) {
 					return;
 				}
 				const kind = propertyKind( name, properties[ name ] );
+				if ( kind === 'lookup' ) {
+					// The panel keeps chosen items with their labels; the server takes their ids.
+					const ids = lookupIds(
+						value,
+						properties[ name ].lookup.multiple
+					);
+					if ( ids !== undefined ) {
+						args[ name ] = ids;
+					}
+					return;
+				}
 				args[ name ] =
 					kind === 'integer' || kind === 'decimal'
 						? decimalPoint( value )

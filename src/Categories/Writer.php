@@ -239,6 +239,7 @@ final class Writer {
 			self::DEFAULT_PROP      => __( 'Default category', 'bulk-catalogue-manager-for-woocommerce' ),
 			TermUndo::CREATED       => __( 'New category', 'bulk-catalogue-manager-for-woocommerce' ),
 			Deleter::DELETED_PROP   => __( 'Deleted category', 'bulk-catalogue-manager-for-woocommerce' ),
+			NativeForm::OTHER_PROP  => __( 'Other fields', 'bulk-catalogue-manager-for-woocommerce' ),
 			default                 => null,
 		};
 	}
@@ -586,6 +587,46 @@ final class Writer {
 			'status'   => $status,
 			'results'  => [ $result->to_array() ],
 		];
+	}
+
+	/**
+	 * Record a save WordPress's own category form made (1.3.4; NativeForm):
+	 * one category change by that user, journalling each property that
+	 * differs between the values before and after, applied. Nothing is
+	 * written to the category; nothing is recorded when nothing differs.
+	 *
+	 * @param int                  $id      Term id.
+	 * @param array<string, mixed> $before  Journal property => value before the save.
+	 * @param array<string, mixed> $after   Journal property => value after it.
+	 * @param int                  $user_id The user who saved the form.
+	 * @return int|null The batch, or null when nothing changed or it could not be recorded.
+	 */
+	public function record_native( int $id, array $before, array $after, int $user_id ): ?int {
+		$entries = [];
+		$old     = [];
+		foreach ( $after as $prop => $value ) {
+			$was = $before[ $prop ] ?? null;
+			if ( NativeForm::OTHER_PROP === $prop ? $was !== $value : ! TermUndo::same( $prop, $was, $value ) ) {
+				$entries[]    = Result::changed( $prop, $was, $value );
+				$old[ $prop ] = $was;
+			}
+		}
+		if ( [] === $entries ) {
+			return null;
+		}
+		$batch_id = $this->factory->open( $user_id, [ self::step( self::EDIT, [ 'form' => NativeForm::FORM ] ) ], [ [ $id, self::OBJECT_TYPE ] ], self::SOURCE );
+		if ( $batch_id instanceof \WP_Error ) {
+			return null;
+		}
+		try {
+			$journal = Journal::from_settings( Fields::instance(), $this->settings(), $this->changes );
+			$applied = $journal->record( $batch_id, $id, self::OBJECT_TYPE, ChangeRepository::UNKNOWN_TIME, self::with_skip( $entries ), $old, (object) [ 'term_id' => $id ] );
+		} catch ( \Throwable $e ) {
+			$this->finish( $batch_id, 'failed', __( 'This save through WordPress\'s category form could not be recorded in full.', 'bulk-catalogue-manager-for-woocommerce' ), false );
+			return $batch_id;
+		}
+		$this->finish( $batch_id, 'done', '', $applied > 0 );
+		return $batch_id;
 	}
 
 	/**

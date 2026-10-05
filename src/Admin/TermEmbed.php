@@ -65,6 +65,36 @@ final class TermEmbed {
 	}
 
 	/**
+	 * `product_cat_pre_edit_form`: in the embedded form only, a warning
+	 * before the first save of a category through WordPress's own form
+	 * (1.3.4). That form saves every field other plugins add to it exactly
+	 * as shown, and a field a plugin has never stored for this category (a
+	 * category made elsewhere, such as in this tab) is shown empty or
+	 * unticked: pressing Update stores it so. WooCommerce stores the display
+	 * type with every save through its own forms, so a category without one
+	 * has never been saved through them. The warning is no `.notice`, which
+	 * the embedded page hides.
+	 *
+	 * @param object $tag      The category.
+	 * @param string $taxonomy Its taxonomy.
+	 */
+	public static function warn( object $tag, string $taxonomy = '' ): void {
+		$id = (int) ( $tag->term_id ?? 0 );
+		if ( self::TAXONOMY !== $taxonomy || 0 === $id || self::embedded_term() !== $id ) {
+			return;
+		}
+		$meta = get_term_meta( $id );
+		if ( is_array( $meta ) && array_key_exists( 'display_type', $meta ) ) {
+			return;
+		}
+		printf(
+			'<div class="bulkcat-embed-warning" role="note"><p><strong>%1$s</strong> %2$s</p></div>',
+			esc_html__( 'This category has not been saved with this form before.', 'bulk-catalogue-manager-for-woocommerce' ),
+			esc_html__( 'Fields other plugins add below start empty or unticked for it, and Update saves them exactly as shown. A visibility box left unticked can hide the category from customers. Check those fields before you press Update.', 'bulk-catalogue-manager-for-woocommerce' )
+		);
+	}
+
+	/**
 	 * `admin_body_class`: mark the embedded page.
 	 *
 	 * @param string $classes The admin body classes.
@@ -104,6 +134,8 @@ final class TermEmbed {
 				'#wpbody-content { padding-bottom: 16px !important; float: none; }',
 				'.wrap { margin: 0 !important; }',
 				'#edittag { max-width: none; }',
+				'.bulkcat-embed-warning { margin: 12px 0; padding: 8px 12px; border-left: 4px solid #dba617; background: #fcf9e8; color: #1d2327; }',
+				'.bulkcat-embed-warning p { margin: 0; }',
 			]
 		);
 	}

@@ -126,8 +126,26 @@ final class HistoryText {
 			'term_thumbnail_id'         => static fn( mixed $value ): string => null === $value ? '' : self::image( (int) $value ),
 			Deleter::DELETED_PROP       => static fn( mixed $value ): string => '' === (string) $value ? __( 'Deleted', 'bulk-catalogue-manager-for-woocommerce' ) : self::decode( (string) $value ),
 			Deleter::PRODUCT_PROP       => static fn( mixed $value ): string => is_array( $value ) ? implode( ', ', array_map( static fn( mixed $id ): string => self::name( (int) $id ), $value ) ) : '',
+			NativeForm::OTHER_PROP      => null,
 			default                     => null,
 		};
+		if ( NativeForm::OTHER_PROP === (string) $row['prop'] ) {
+			// Other plugins' fields: how many changed, never their keys (1.3.4).
+			$old     = is_array( $row['old_value'] ) ? $row['old_value'] : [];
+			$new     = is_array( $row['new_value'] ) ? $row['new_value'] : [];
+			$changed = 0;
+			foreach ( array_unique( array_merge( array_keys( $old ), array_keys( $new ) ) ) as $key ) {
+				$changed += ( $old[ $key ] ?? null ) === ( $new[ $key ] ?? null ) ? 0 : 1;
+			}
+			return [
+				'',
+				sprintf(
+					/* translators: %s: how many fields other plugins keep for a category changed, such as "3". */
+					_n( '%s field changed', '%s fields changed', $changed, 'bulk-catalogue-manager-for-woocommerce' ),
+					number_format_i18n( $changed )
+				),
+			];
+		}
 		return null === $text ? null : [ $text( $row['old_value'] ), $text( $row['new_value'] ) ];
 	}
 
@@ -228,6 +246,13 @@ final class HistoryText {
 	 * @param int                  $id   The category.
 	 */
 	private static function edit_headline( array $args, array $from, int $id ): string {
+		if ( NativeForm::FORM === ( $args['form'] ?? null ) ) {
+			return sprintf(
+				/* translators: %s: a category name, such as "Golf shirts". */
+				__( 'Saved category %s with WordPress’s category form', 'bulk-catalogue-manager-for-woocommerce' ),
+				self::name( $id )
+			);
+		}
 		$changed = array_values( array_intersect( [ 'name', 'slug', 'description', 'parent', 'display_type', 'thumbnail_id' ], array_keys( $args ) ) );
 		$name    = isset( $args['name'] ) ? self::decode( (string) $args['name'] ) : self::name( $id );
 		if ( [ 'name' ] === $changed || [ 'name', 'slug' ] === $changed ) {

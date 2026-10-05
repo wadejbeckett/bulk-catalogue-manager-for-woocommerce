@@ -269,4 +269,14 @@ final class CategoryWritePathTest extends TestCase {
 		$this->assertSame( [], ShelvesField::$written );
 		$this->assertArrayNotHasKey( 'authorise', ShelvesProvider::$calls );
 	}
+
+	public function test_the_core_offers_the_category_target_and_advertises_it(): void {
+		$this->assertContains( 'category_target', \BulkCatalogueManager\Extension\Contract::FEATURES );
+		$registered = Providers::of( [ new ShelvesProvider( $this->store ) ] );
+		$this->assertNotNull( $registered->get( 'shelves' ), 'A category provider registers by default.' );
+		$GLOBALS['bulkcat_test']['user_caps'][1] = [ 'manage_product_terms' => true ];
+		$entries                                 = array_column( ( new \BulkCatalogueManager\External\Advertiser( $registered ) )->actions( 1 ), null, 'id' );
+		$this->assertSame( 'product_cat', $entries['x_shelves_add']['target'] );
+		$this->assertTrue( $entries['x_shelves_add']['available'] );
+	}
 }

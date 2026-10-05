@@ -66,7 +66,8 @@ final class Advertiser {
 					'sortable'      => false,
 					'editKinds'     => array_values( array_unique( $kinds ) ),
 					'variations'    => $meta['rule'],
-					'variationNote' => ExternalField::PARENT_ONLY === $meta['rule'] ? self::parent_only( $meta['label'] ) : '',
+					// A category's value has no variations to speak of (contract version 2), so no note.
+					'variationNote' => ExternalField::PARENT_ONLY === $meta['rule'] && 'product_cat' !== ( $meta['target'] ?? 'product' ) ? self::parent_only( $meta['label'] ) : '',
 					'group'         => $group,
 					'defaultColumn' => false,
 					'defaultOrder'  => null,

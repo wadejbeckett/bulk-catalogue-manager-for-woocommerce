@@ -63,5 +63,8 @@ final class Contract {
 	 * Registrar::supports_feature() before declaring one; the registrar
 	 * refuses a provider that declares a feature missing from this list.
 	 */
-	public const FEATURES = [ self::FEATURE_LOOKUP ];
+	public const FEATURES = [
+		self::FEATURE_LOOKUP,
+		self::FEATURE_CATEGORY_TARGET,
+	];
 }

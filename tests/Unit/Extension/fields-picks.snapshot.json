@@ -1617,6 +1617,29 @@
             "schema": {},
             "dataviews": null,
             "choices": []
+        },
+        {
+            "key": "x_picks_category_items",
+            "label": "Category picks",
+            "type": "external",
+            "source": "external",
+            "provider": "picks",
+            "readOnly": false,
+            "nullable": false,
+            "inline": false,
+            "sortable": false,
+            "editKinds": [
+                "add",
+                "remove"
+            ],
+            "variations": "parent_only",
+            "variationNote": "",
+            "group": "x_picks_items",
+            "defaultColumn": false,
+            "defaultOrder": null,
+            "schema": {},
+            "dataviews": null,
+            "choices": []
         }
     ],
     "actions": [
@@ -2831,6 +2854,60 @@
             "unavailableReason": "",
             "alwaysConfirm": true,
             "confirmReason": "This removes every recipient from the chosen products."
+        },
+        {
+            "id": "x_picks_category_add",
+            "label": "Add recipients to categories",
+            "description": "",
+            "group": "x_picks_items",
+            "groups": [
+                "x_picks_items"
+            ],
+            "editKinds": [
+                "add"
+            ],
+            "fields": [
+                "x_picks_category_items"
+            ],
+            "args": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+            },
+            "provider": "picks",
+            "variations": "parent_only",
+            "available": false,
+            "unavailableReason": "You do not have permission to use this action.",
+            "alwaysConfirm": false,
+            "confirmReason": "",
+            "target": "product_cat"
+        },
+        {
+            "id": "x_picks_category_remove",
+            "label": "Remove recipients from categories",
+            "description": "",
+            "group": "x_picks_items",
+            "groups": [
+                "x_picks_items"
+            ],
+            "editKinds": [
+                "remove"
+            ],
+            "fields": [
+                "x_picks_category_items"
+            ],
+            "args": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+            },
+            "provider": "picks",
+            "variations": "parent_only",
+            "available": false,
+            "unavailableReason": "You do not have permission to use this action.",
+            "alwaysConfirm": false,
+            "confirmReason": "",
+            "target": "product_cat"
         }
     ],
     "groups": [

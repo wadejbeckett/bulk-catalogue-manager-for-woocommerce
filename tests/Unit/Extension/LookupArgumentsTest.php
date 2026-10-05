@@ -274,7 +274,7 @@ final class LookupArgumentsTest extends TestCase {
 	public function test_the_version_two_payload_matches_its_snapshot(): void {
 		$snapshot = __DIR__ . '/fields-picks.snapshot.json';
 		$fields   = new Fields();
-		$payload  = ( new FieldsController( $fields, new Actions( $fields, null, Providers::of( [ new PicksProvider( new MemoryStore(), new MemoryStore(), false ) ] ) ) ) )->payload();
+		$payload  = ( new FieldsController( $fields, new Actions( $fields, null, Providers::of( [ new PicksProvider( new MemoryStore(), new MemoryStore() ) ] ) ) ) )->payload();
 		$json     = (string) wp_json_encode( $payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) . "\n";
 		if ( '1' === getenv( 'BULKCAT_UPDATE_SNAPSHOT' ) ) {
 			file_put_contents( $snapshot, $json ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- The test's own snapshot.

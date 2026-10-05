@@ -578,6 +578,33 @@ final class ChangeRepository {
 	}
 
 	/**
+	 * The paths deleted categories had, from their `term_deleted` rows
+	 * (ticket 133: History names a deleted category, never its id): the
+	 * newest per category.
+	 *
+	 * @param list<int> $term_ids Category ids, at most MAX_OBJECTS.
+	 * @return array<int, string> Term id => path.
+	 */
+	public function deleted_paths( array $term_ids ): array {
+		global $wpdb;
+		$term_ids = array_values( array_filter( array_map( 'intval', $term_ids ), static fn( int $id ): bool => $id > 0 ) );
+		if ( [] === $term_ids ) {
+			return [];
+		}
+		$term_ids = array_slice( $term_ids, 0, self::MAX_OBJECTS );
+		$in       = implode( ', ', array_fill( 0, count( $term_ids ), '%d' ) );
+		$rows     = $wpdb->get_results( $wpdb->prepare( "SELECT object_id, old_value FROM %i WHERE object_type = %s AND prop = %s AND result = %s AND object_id IN ({$in}) ORDER BY change_id DESC LIMIT %d", array_merge( [ $this->registry->table( Schema::CHANGES ), 'term', 'term_deleted', 'applied' ], $term_ids, [ count( $term_ids ) * 4 ] ) ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in is only %d placeholders.
+		$out      = [];
+		foreach ( is_array( $rows ) ? $rows : [] as $row ) {
+			$id = (int) $row['object_id'];
+			if ( ! isset( $out[ $id ] ) ) {
+				$out[ $id ] = (string) ValueCodec::decode( (string) $row['old_value'] );
+			}
+		}
+		return $out;
+	}
+
+	/**
 	 * Every journal row of a batch for some of its objects, newest first
 	 * (T111): what the undo planner plans a page of objects from. The rows
 	 * are found by object (the `object_prop` index), not by walking the

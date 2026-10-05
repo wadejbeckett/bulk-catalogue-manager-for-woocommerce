@@ -152,6 +152,7 @@ final class Cache {
 	public static function invalidate(): void {
 		set_transient( self::VERSION, uniqid( '', true ), 0 );
 		self::$renewed = true;
+		HistoryText::reset();
 	}
 
 	/**

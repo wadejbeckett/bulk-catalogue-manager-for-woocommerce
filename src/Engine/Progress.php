@@ -229,6 +229,8 @@ final class Progress {
 			// The selection's own objects, before any variations "Also apply to variations" added (T69).
 			'selection_difference' => self::difference( $batch['previewed_items'] ?? null, (int) ( $batch['selection']['selected'] ?? $batch['total_items'] ) ),
 			'actions'              => $batch['actions'] ?? [],
+			// Ticket 133 bug 3: what a category change did, in words with names; null where History describes it itself.
+			'headline'             => \BulkCatalogueManager\Categories\HistoryText::headline( $batch ),
 			'reversibility'        => $unclosed ? [
 				'state'     => 'in_progress',
 				'conflicts' => null,

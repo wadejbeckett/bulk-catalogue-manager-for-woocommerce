@@ -368,7 +368,9 @@ final class Writer {
 			return $refused;
 		}
 
-		$batch_id = $this->factory->open( $user_id, [ self::step( self::EDIT, $wanted + $details ) ], [ [ $id, self::OBJECT_TYPE ] ], self::SOURCE );
+		// The id and the values before, for History's headline ("Renamed category Golf to Golf shirts").
+		$from     = array_intersect_key( $current, $wanted + $details );
+		$batch_id = $this->factory->open( $user_id, [ self::step( self::EDIT, $wanted + $details + [ 'id' => $id ] + ( [] === $from ? [] : [ 'from' => $from ] ) ) ], [ [ $id, self::OBJECT_TYPE ] ], self::SOURCE );
 		if ( $batch_id instanceof \WP_Error ) {
 			return $batch_id;
 		}
@@ -423,6 +425,9 @@ final class Writer {
 			[
 				'parent'   => $parent_id,
 				'position' => $position,
+				'id'       => $id,
+				'name'     => $current['name'],
+				'from'     => [ 'parent' => $current['parent'] ],
 			]
 		);
 		$batch_id = $this->factory->open( $user_id, [ $step ], [ [ $id, self::OBJECT_TYPE ] ], self::SOURCE );

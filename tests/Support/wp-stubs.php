@@ -588,7 +588,9 @@ if ( ! function_exists( 'add_filter' ) ) {
 // T21: terms, term meta and transients for the category tree. State lives
 // under bulkcat_test keys that bulkcat_test_reset() drops: 'term_list' (what
 // get_terms() returns), 'get_terms_calls' (each call's arguments),
-// 'term_meta' (term id => key => value), 'transients' (name => value),
+// 'term_meta' (term id => key => value), 'hidden_terms' (ids get_terms()
+// leaves out, as a visibility filter on term queries would; the term tables
+// read directly, through $wpdb, still hold them), 'transients' (name => value),
 // 'transient_ttl' (name => expiration) and 'ext_object_cache' (whether a
 // persistent object cache is in use). wp_cache_get_last_changed() is the one
 // in read-stubs.php, reading and writing 'last_changed' (group => value), so
@@ -596,7 +598,9 @@ if ( ! function_exists( 'add_filter' ) ) {
 if ( ! function_exists( 'get_terms' ) ) {
 	function get_terms( array|string $args = [], mixed $deprecated = '' ): array|WP_Error {
 		$GLOBALS['bulkcat_test']['get_terms_calls'][] = $args;
-		return $GLOBALS['bulkcat_test']['term_list'] ?? [];
+		// 'hidden_terms' (ids): what another plugin's filtering of term queries hides from the viewer.
+		$hidden = $GLOBALS['bulkcat_test']['hidden_terms'] ?? [];
+		return array_values( array_filter( $GLOBALS['bulkcat_test']['term_list'] ?? [], static fn( object $term ): bool => ! in_array( (int) $term->term_id, $hidden, true ) ) );
 	}
 
 	function get_term_meta( int $term_id, string $key = '', bool $single = false ): mixed {

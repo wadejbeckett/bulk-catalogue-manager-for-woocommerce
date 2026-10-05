@@ -266,7 +266,7 @@ final class Deleter {
 			];
 			$this->changes->append( $batch_id, $id, Writer::OBJECT_TYPE, self::DELETED_PROP, $names[ $id ], $names[ $id ], ChangeRepository::UNKNOWN_TIME, 'failed', $reason );
 		}
-		$after = CategoryTree::tree();
+		$after = CategoryTree::complete();
 		foreach ( $parents as $id => $parent ) {
 			$now = $after->node( $id );
 			if ( null !== $now && $now['parent'] !== $parent ) {
@@ -308,7 +308,8 @@ final class Deleter {
 				)
 			);
 		}
-		$tree    = CategoryTree::tree();
+		// Every category, whatever this viewer's term queries show (1.3.4).
+		$tree    = CategoryTree::complete();
 		$default = CategoryTree::default_id();
 		foreach ( $ids as $id ) {
 			if ( null === $tree->node( $id ) ) {

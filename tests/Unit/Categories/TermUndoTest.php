@@ -241,4 +241,37 @@ final class TermUndoTest extends TestCase {
 		$item = $this->item( 3 );
 		$this->assertSame( [ Plan::SKIPPED, Planner::CANNOT_RESTORE ], [ $item['state'], $item['code'] ] );
 	}
+	public function test_a_renumbering_is_undone_in_full_when_term_queries_hide_some_categories(): void {
+		// Moving one of 25 top-level siblings gave them all WooCommerce's order 1..25, where none had one.
+		$ids = range( 201, 225 );
+		foreach ( $ids as $n => $id ) {
+			$GLOBALS['bulkcat_test']['term_list'][]               = (object) [
+				'term_id'  => $id,
+				'name'     => sprintf( 'Sibling %02d', $n + 1 ),
+				'slug'     => sprintf( 'sibling-%02d', $n + 1 ),
+				'parent'   => 0,
+				'taxonomy' => 'product_cat',
+			];
+			$GLOBALS['bulkcat_test']['term_meta'][ $id ]['order'] = (string) ( $n + 1 );
+			$this->change( $id, Writer::ORDER_PROP, null, $n + 1 );
+		}
+		// The undo runs in the background, with no user, where another plugin's
+		// filtering of term queries hides 15 of them; they still exist.
+		$GLOBALS['bulkcat_test']['user_id']      = 0;
+		$GLOBALS['bulkcat_test']['hidden_terms'] = array_slice( $ids, 5, 15 );
+		$this->assertCount( 10 + count( CatalogueFixture::TERMS ), get_terms( [ 'taxonomy' => 'product_cat' ] ), 'Term queries see 10 of the 25.' );
+
+		// As the chunk runner plans and writes: for the person recorded on the undo.
+		$plan = $this->planner()->plan( self::BATCH, self::USER );
+		$this->assertInstanceOf( Plan::class, $plan );
+		$this->assertSame( 25, $plan->counts()['revertible'], 'Every category is planned, the hidden ones too.' );
+		$steps = array_column( $plan->items(), 'operations', 'object_id' );
+		foreach ( $ids as $id ) {
+			$now = $this->planner()->items( self::BATCH, [ $id ], self::USER )[ $id ];
+			$this->assertSame( [ 'done', '', true ], TermUndo::write( new ChangeRepository(), self::UNDO, $id, $steps[ $id ], $now ), "Category $id is put back." );
+			$this->assertArrayNotHasKey( 'order', $GLOBALS['bulkcat_test']['term_meta'][ $id ] ?? [], "Category $id has no order again, as before." );
+		}
+		$this->assertSame( array_fill( 0, 25, 'applied' ), array_column( $this->undo_rows(), 4 ) );
+		$this->assertSame( 25, count( array_filter( $this->undo_rows(), static fn( array $row ): bool => null === $row[3] ) ), 'Each row records the order taken away.' );
+	}
 }

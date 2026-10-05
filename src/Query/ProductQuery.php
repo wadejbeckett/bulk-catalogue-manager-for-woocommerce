@@ -727,9 +727,11 @@ final class ProductQuery {
 	}
 
 	/**
-	 * A date filter on a GMT column. Before a date means before its first
-	 * second; after a date means from the next day on; a full time compares
-	 * exactly. In the past counts back from now.
+	 * A date filter on a GMT column. A day (`Y-m-d`) is a day in the site's
+	 * time zone, as the grid shows dates (SQR-2): before a day means before
+	 * its first second there; after a day means from the next day's first
+	 * second there; each bound reaches SQL as the GMT time of that moment. A
+	 * full time is GMT and compares exactly. In the past counts back from now.
 	 *
 	 * @param string $column Column.
 	 * @param Filter $filter Date filter.
@@ -742,16 +744,23 @@ final class ProductQuery {
 			return;
 		}
 		$is_day = 10 === strlen( $value );
-		if ( 'before' === $filter->operator ) {
-			$this->add( $column . ' < %s', [ $is_day ? $value . ' 00:00:00' : $value ] );
+		if ( ! $is_day ) {
+			$this->add( $column . ( 'before' === $filter->operator ? ' < %s' : ' > %s' ), [ $value ] );
 			return;
 		}
-		if ( $is_day ) {
-			$next = ( new \DateTimeImmutable( $value, new \DateTimeZone( 'UTC' ) ) )->modify( '+1 day' )->format( 'Y-m-d' );
-			$this->add( $column . ' >= %s', [ $next . ' 00:00:00' ] );
-			return;
+		$day = new \DateTimeImmutable( $value . ' 00:00:00', self::site_zone() );
+		if ( 'after' === $filter->operator ) {
+			$day = $day->modify( '+1 day' );
 		}
-		$this->add( $column . ' > %s', [ $value ] );
+		$gmt = $day->setTimezone( new \DateTimeZone( 'UTC' ) )->format( 'Y-m-d H:i:s' );
+		$this->add( $column . ( 'before' === $filter->operator ? ' < %s' : ' >= %s' ), [ $gmt ] );
+	}
+
+	/**
+	 * The site's time zone (UTC outside WordPress).
+	 */
+	private static function site_zone(): \DateTimeZone {
+		return function_exists( 'wp_timezone' ) ? wp_timezone() : new \DateTimeZone( 'UTC' );
 	}
 
 	/**

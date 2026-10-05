@@ -615,6 +615,13 @@ if ( ! function_exists( 'get_terms' ) ) {
 	}
 }
 
+// SQR-2: the site's time zone, from $GLOBALS['bulkcat_test']['timezone'] (a zone name) when set, else UTC.
+if ( ! function_exists( 'wp_timezone' ) ) {
+	function wp_timezone(): DateTimeZone {
+		return new DateTimeZone( $GLOBALS['bulkcat_test']['timezone'] ?? 'UTC' );
+	}
+}
+
 // T22: the site's current time, from $GLOBALS['bulkcat_test']['now'] (any strtotime() text) when set.
 if ( ! function_exists( 'current_datetime' ) ) {
 	function current_datetime(): DateTimeImmutable {

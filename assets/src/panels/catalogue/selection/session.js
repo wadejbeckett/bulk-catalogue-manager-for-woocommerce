@@ -620,12 +620,15 @@ class SelectionSession {
 
 	/**
 	 * Which of the rows on screen are in the selection (`selected_ids`),
-	 * refreshed from the server; stale answers are ignored.
+	 * refreshed from the server; stale answers are ignored: an answer for
+	 * an earlier selection, or for rows a later probe has replaced
+	 * (FRONTEND-2: a slow page-1 answer must not untick page 2).
 	 *
 	 * @param {Array<*>} ids Rows drawn on screen.
 	 * @return {Promise} Done.
 	 */
 	async probe( ids ) {
+		const asked = ( this.probes = ( this.probes || 0 ) + 1 );
 		const key = this.currentKey;
 		if ( ! key ) {
 			// Nothing is selected: nothing to ask, and nothing to redraw
@@ -650,7 +653,11 @@ class SelectionSession {
 				} )
 			)
 		);
-		if ( this.currentKey !== key || this.disposed ) {
+		if (
+			this.currentKey !== key ||
+			this.disposed ||
+			this.probes !== asked
+		) {
 			return;
 		}
 		const selected = new Set(

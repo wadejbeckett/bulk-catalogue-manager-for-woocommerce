@@ -726,23 +726,74 @@ describe( 'history states', () => {
  *
  * @return {{url: URL, columns: Array<string>}} URL and columns.
  */
-function exportFrame() {
-	const frame = document.querySelector( 'iframe.bulkcat-export__frame' );
-	const url = new URL( frame.src );
-	const columns = [];
-	url.searchParams.forEach( ( value, key ) => {
-		if ( key.startsWith( 'columns[' ) ) {
-			columns.push( value );
-		}
-	} );
-	return { url, columns };
+/**
+ * The export form the screen posted (SECURITY-1): its address, which must
+ * carry nothing, and its fields, the nonce among them.
+ *
+ * @return {Object} `{ url, params, columns }`: `url` is the form's address,
+ *                  `params` its fields.
+ */
+function exportForm() {
+	const form = document.querySelector( 'form.bulkcat-export__form' );
+	const url = new URL( form.getAttribute( 'action' ) );
+	const params = new URLSearchParams();
+	form.querySelectorAll( 'input' ).forEach( ( input ) =>
+		params.append( input.name, input.value )
+	);
+	expect( form.method ).toBe( 'post' );
+	expect( url.search ).toBe( '' );
+	expect( params.get( '_wpnonce' ) ).toBeTruthy();
+	return {
+		url,
+		params,
+		columns: ( params.get( 'columns' ) || '' ).split( ',' ),
+	};
 }
 
+describe( 'following a change in progress (FRONTEND-8)', () => {
+	it( 'stops reading a running change after a sign-out', async () => {
+		serve( {
+			...DEFAULT_ROUTES(),
+			'GET bulkcat/v1/batches/3': () => {
+				throw Object.assign( new Error( 'Not logged in.' ), {
+					code: 'rest_not_logged_in',
+					data: { status: 401 },
+				} );
+			},
+		} );
+		await renderHistory();
+		const reads = () =>
+			calls.filter( ( call ) => call.route === 'bulkcat/v1/batches/3' )
+				.length;
+		await waitFor( () => expect( reads() ).toBe( 1 ) );
+		await act(
+			() => new Promise( ( resolve ) => setTimeout( resolve, 3500 ) )
+		);
+		expect( reads() ).toBe( 1 );
+	} );
+} );
+
 describe( 'history wire-ins', () => {
+	beforeEach( () => {
+		// jsdom cannot send a form; the posted form is read back instead.
+		jest.spyOn(
+			window.HTMLFormElement.prototype,
+			'submit'
+		).mockImplementation( () => {} );
+		// The nonce apiFetch's middleware holds (currentNonce()).
+		require( '@wordpress/api-fetch' ).default.nonceMiddleware = {
+			nonce: 'n0nce12345',
+		};
+	} );
+
 	afterEach( () => {
+		jest.restoreAllMocks();
+		delete require( '@wordpress/api-fetch' ).default.nonceMiddleware;
 		document
-			.querySelectorAll( 'iframe.bulkcat-export__frame' )
-			.forEach( ( frame ) => frame.remove() );
+			.querySelectorAll(
+				'iframe.bulkcat-export__frame, form.bulkcat-export__form'
+			)
+			.forEach( ( element ) => element.remove() );
 	} );
 
 	it( "names who from the row, else from GET /batches/users, never core's users route", async () => {
@@ -775,17 +826,17 @@ describe( 'history wire-ins', () => {
 		expect( within( card( 1 ) ).queryByText( /Put back by/ ) ).toBeNull();
 	} );
 
-	it( 'downloads the list from GET /export?source=batches with its filters', async () => {
+	it( 'downloads the list by posting /export with source=batches and its filters, the nonce in the body (SECURITY-1)', async () => {
 		await renderHistory();
 		const button = screen.getByRole( 'button', {
 			name: 'Export log (CSV)',
 		} );
 		await act( async () => fireEvent.click( button ) );
-		const { url, columns } = exportFrame();
+		const { url, params, columns } = exportForm();
 		expect( url.pathname ).toBe( '/wp-json/bulkcat/v1/export' );
-		expect( url.searchParams.get( 'source' ) ).toBe( 'batches' );
-		expect( url.searchParams.get( 'after' ) ).toMatch( /Z$/ );
-		expect( url.searchParams.get( 'page' ) ).toBeNull();
+		expect( params.get( 'source' ) ).toBe( 'batches' );
+		expect( params.get( 'after' ) ).toMatch( /Z$/ );
+		expect( params.get( 'page' ) ).toBeNull();
 		expect( columns ).toContain( 'user_name' );
 		expect( columns ).toContain( 'undone_by' );
 		expect( button.getAttribute( 'aria-disabled' ) ).toBe( 'true' );
@@ -801,11 +852,11 @@ describe( 'history wire-ins', () => {
 			name: 'Download these changes (CSV)',
 		} );
 		await act( async () => fireEvent.click( link ) );
-		const { url, columns } = exportFrame();
-		expect( url.searchParams.get( 'source' ) ).toBe( 'changes' );
-		expect( url.searchParams.get( 'batch' ) ).toBe( '4' );
+		const { params, columns } = exportForm();
+		expect( params.get( 'source' ) ).toBe( 'changes' );
+		expect( params.get( 'batch' ) ).toBe( '4' );
 		const result = [];
-		url.searchParams.forEach( ( value, key ) => {
+		params.forEach( ( value, key ) => {
 			if ( key.startsWith( 'result[' ) ) {
 				result.push( value );
 			}
@@ -821,12 +872,12 @@ describe( 'history wire-ins', () => {
 		} = require( '../../assets/src/panels/history/export.js' );
 		const notices = [];
 		let hook;
-		let started = '';
+		let started = [];
 		function Probe() {
 			hook = useHistoryExport( ( n ) => notices.push( n ), {
 				getNonce: () => 'abc',
-				start: ( url, { onError } ) => {
-					started = url;
+				start: ( fields, { onError } ) => {
+					started = fields;
 					onError(
 						Object.assign( new Error( 'Too many rows.' ), {
 							code: 'bulkcat_export_too_large',
@@ -840,10 +891,12 @@ describe( 'history wire-ins', () => {
 		render( <Probe /> );
 		await act( async () => hook.run( 'audit', { user: 2, page: 3 } ) );
 		expect( notices[ 0 ].error.message ).toBe( 'Too many rows.' );
-		const url = new URL( started );
-		expect( url.searchParams.get( '_wpnonce' ) ).toBe( 'abc' );
-		expect( url.searchParams.get( 'user' ) ).toBe( '2' );
-		expect( url.searchParams.get( 'page' ) ).toBeNull();
+		const posted = new URLSearchParams( started );
+		expect( started[ 0 ] ).toEqual( [ '_wpnonce', 'abc' ] );
+		expect( posted.get( 'source' ) ).toBe( 'audit' );
+		expect( posted.get( 'user' ) ).toBe( '2' );
+		expect( posted.get( 'page' ) ).toBeNull();
+		expect( posted.get( 'confirm_all' ) ).toBeNull();
 	} );
 } );
 

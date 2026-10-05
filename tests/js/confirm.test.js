@@ -95,6 +95,32 @@ describe( 'confirmation policy', () => {
 		}
 	);
 
+	it( 'keeps focus on Apply while the confirmed change is sent (FRONTEND-7)', () => {
+		const onApply = jest.fn();
+		const { rerender } = render(
+			<ConfirmApply count={ 300 } threshold={ 200 } onApply={ onApply } />
+		);
+		fireEvent.click( applyButton( 300 ) );
+		fireEvent.click(
+			screen.getByRole( 'button', { name: /^Yes, change/ } )
+		);
+		expect( onApply ).toHaveBeenCalledTimes( 1 );
+		rerender(
+			<ConfirmApply
+				count={ 300 }
+				threshold={ 200 }
+				onApply={ onApply }
+				busy
+			/>
+		);
+		const apply = applyButton( 300 );
+		expect( document.activeElement ).toBe( apply );
+		expect( apply.getAttribute( 'aria-disabled' ) ).toBe( 'true' );
+		fireEvent.click( apply );
+		expect( onApply ).toHaveBeenCalledTimes( 1 );
+		expect( screen.queryByRole( 'group' ) ).toBeNull();
+	} );
+
 	it( 'uses the default threshold of 200 when none is set', () => {
 		expect( confirmPolicy( { count: 199 } ).required ).toBe( false );
 		expect( confirmPolicy( { count: 200 } ).required ).toBe( true );
@@ -264,8 +290,10 @@ describe( 'confirmation policy', () => {
 } );
 
 describe( 'native Status confirmation', () => {
+	// FRONTEND-4: as the Settings help says, a change that drafts always asks,
+	// whatever the count and whatever old availability counts say.
 	it.each( [ 'set_status', 'set_value' ] )(
-		'ignores old availability counts for a new %s Status request',
+		'always asks before a %s Status request drafts, naming it',
 		( action ) => {
 			const reasons = alwaysConfirmReasons(
 				REGISTRY,
@@ -273,15 +301,34 @@ describe( 'native Status confirmation', () => {
 				1,
 				{ counts: { off: 1, on_restores: 1, conflict: 1 } }
 			);
-			expect( reasons ).toEqual( [] );
+			expect( reasons ).toEqual( [
+				'This sets Status to Draft on 1 product, which takes them off the site.',
+			] );
 			const onApply = renderApply( {
 				count: 1,
 				threshold: 200,
 				reasons,
 			} );
 			fireEvent.click( applyButton( 1 ) );
-			expect( onApply ).toHaveBeenCalledTimes( 1 );
-			expect( screen.queryByRole( 'group' ) ).toBeNull();
+			expect( onApply ).not.toHaveBeenCalled();
+			expect( screen.getByText( reasons[ 0 ] ) ).toBeVisible();
 		}
 	);
+
+	it( 'applies a publish in one click below the threshold', () => {
+		const reasons = alwaysConfirmReasons(
+			REGISTRY,
+			[
+				{
+					action: 'set_status',
+					args: { field: 'status', value: 'publish' },
+				},
+			],
+			1
+		);
+		expect( reasons ).toEqual( [] );
+		const onApply = renderApply( { count: 1, threshold: 200, reasons } );
+		fireEvent.click( applyButton( 1 ) );
+		expect( onApply ).toHaveBeenCalledTimes( 1 );
+	} );
 } );

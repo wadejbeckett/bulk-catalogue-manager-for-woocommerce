@@ -38,7 +38,7 @@ import { ShellContext } from '../../shell';
 import BulkChangePanel from '../bulk';
 import { FINISHED, resumeApply, useBatchProgress } from '../bulk/hooks';
 import { useProgressAnnouncer } from '../bulk/announce';
-import { doneSentence } from '../bulk/progress';
+import { ProgressStopped, doneSentence } from '../bulk/progress';
 import { announce } from '../categories/announce';
 import { CategoryPanel, useCategoryTree } from '../categories/index';
 import { categorySentence } from '../categories/tree-model';
@@ -62,6 +62,7 @@ import {
 	withFilters,
 	withoutFilter,
 } from './toolbar';
+import NothingSelected from './selection/nothing-selected';
 import {
 	SelectedProducts,
 	SelectionBar,
@@ -122,6 +123,8 @@ function useCurrentSettings( settings ) {
  * @param {Function} props.onFinished    Called once with the finished report.
  * @param {Function} props.onViewHistory Open History at this batch, or null.
  * @param {boolean}  props.replayed      The apply answered a change already accepted (T84).
+ * @param {boolean}  props.hidden        Follow the change without showing it, while the bulk panel covers the banner (FRONTEND-3).
+ * @param {Object}   props.byType        `{ products, variations }` the preview reached, or null (FRONTEND-6).
  * @return {Element|null} Progress.
  */
 export function AppliedProgress( {
@@ -129,10 +132,26 @@ export function AppliedProgress( {
 	onFinished,
 	onViewHistory = null,
 	replayed = false,
+	hidden = false,
+	byType = null,
 } ) {
 	const [ cancelling, setCancelling ] = useState( false );
+	// FRONTEND-13: stopping a running change is asked about first.
+	const [ asking, setAsking ] = useState( false );
+	const stopRef = useRef( null );
+	const keepRef = useRef( null );
+	const wasAsking = useRef( false );
+	useEffect( () => {
+		// Focus follows the question, and comes back when it is answered.
+		if ( asking ) {
+			keepRef.current?.focus();
+		} else if ( wasAsking.current ) {
+			stopRef.current?.focus();
+		}
+		wasAsking.current = asking;
+	}, [ asking ] );
 	const [ refused, setRefused ] = useState( '' );
-	const { report } = useBatchProgress( batchId );
+	const { report, stopped, checkAgain } = useBatchProgress( batchId );
 	const finished = FINISHED.includes( report?.status );
 	const tell = useRef( onFinished );
 	tell.current = onFinished;
@@ -146,14 +165,15 @@ export function AppliedProgress( {
 	useEffect( () => {
 		if ( finished && ! told.current ) {
 			told.current = true;
-			announce( doneSentence( report ), 'polite' );
+			announce( doneSentence( report, byType ), 'polite' );
 			tell.current( report );
 		}
-	}, [ finished, report ] );
-	if ( ! report || finished ) {
+	}, [ finished, report, byType ] );
+	if ( ( ! report && ! stopped ) || finished || hidden ) {
 		return null;
 	}
 	const cancel = () => {
+		setAsking( false );
 		setCancelling( true );
 		setRefused( '' );
 		request( `batches/${ Number( batchId ) }/cancel`, {
@@ -188,25 +208,29 @@ export function AppliedProgress( {
 					) }
 				</p>
 			) }
-			<BatchProgress report={ report } />
+			{ report && <BatchProgress report={ report } /> }
+			{ stopped && <ProgressStopped onCheckAgain={ checkAgain } /> }
 			<span className="bulkcat-catalogue__progress-acts">
-				<Button
-					variant="secondary"
-					size="compact"
-					onClick={ cancel }
-					disabled={ cancelling }
-					accessibleWhenDisabled
-				>
-					{ cancelling
-						? __(
-								'Cancelling…',
-								'bulk-catalogue-manager-for-woocommerce'
-							)
-						: __(
-								'Cancel',
-								'bulk-catalogue-manager-for-woocommerce'
-							) }
-				</Button>
+				{ ! asking && (
+					<Button
+						ref={ stopRef }
+						variant="secondary"
+						size="compact"
+						onClick={ () => setAsking( true ) }
+						disabled={ cancelling }
+						accessibleWhenDisabled
+					>
+						{ cancelling
+							? __(
+									'Stopping…',
+									'bulk-catalogue-manager-for-woocommerce'
+								)
+							: __(
+									'Stop this change',
+									'bulk-catalogue-manager-for-woocommerce'
+								) }
+					</Button>
+				) }
 				{ onViewHistory && (
 					<Button
 						variant="link"
@@ -219,6 +243,37 @@ export function AppliedProgress( {
 					</Button>
 				) }
 			</span>
+			{ asking && (
+				<span
+					className="bulkcat-catalogue__progress-ask"
+					role="group"
+					aria-labelledby="bulkcat-progress-ask"
+				>
+					<span id="bulkcat-progress-ask">
+						{ __(
+							'Stop this change? What it has already changed stays changed, and can be undone from History.',
+							'bulk-catalogue-manager-for-woocommerce'
+						) }
+					</span>{ ' ' }
+					<Button variant="primary" size="compact" onClick={ cancel }>
+						{ __(
+							'Yes, stop it',
+							'bulk-catalogue-manager-for-woocommerce'
+						) }
+					</Button>
+					<Button
+						ref={ keepRef }
+						variant="secondary"
+						size="compact"
+						onClick={ () => setAsking( false ) }
+					>
+						{ __(
+							'Keep it running',
+							'bulk-catalogue-manager-for-woocommerce'
+						) }
+					</Button>
+				</span>
+			) }
 			{ refused && (
 				<p className="bulkcat-catalogue__progress-error" role="alert">
 					{ refused }
@@ -381,36 +436,25 @@ export function CatalogueGrid( {
 			openBulk( [ step ] );
 		}
 	};
-	// T75: the header's Bulk change opens the panel on the selection, or,
-	// with nothing selected, on every product matching the view once the
-	// server has captured them (T84: added to the selection, like Select
-	// all matching).
+	// T75: the header's Bulk change opens the panel on the selection. With
+	// nothing selected it opens on nothing and asks (FRONTEND-1, ticket 20):
+	// Select all matching is offered there, never done on the operator's
+	// behalf.
 	const shell = useContext( ShellContext );
 	const { bulkRequested, consumeBulk } = shell;
-	const mounted = useRef( true );
-	useEffect(
-		() => () => {
-			mounted.current = false;
-		},
-		[]
-	);
 	useEffect( () => {
 		if ( ! bulkRequested ) {
 			return;
 		}
 		consumeBulk();
-		if ( hasSelection ) {
-			openBulk();
-		} else {
-			selection.selectAllMatching().then( ( saved ) => {
-				if ( saved && mounted.current ) {
-					openBulk();
-				}
-			} );
-		}
-		// openBulk reads the selection at the time of the request.
+		openBulk();
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [ bulkRequested ] );
+	// The view on screen has settled once the saved views have arrived and
+	// any default view is applied: until then the start view is not the one
+	// the operator works on (FRONTEND-1).
+	const [ viewSettled, setViewSettled ] = useState( false );
+	const onViewsReady = useCallback( () => setViewSettled( true ), [] );
 	const viewCategory = !! filterArgs( view.filters, descriptors )[
 		CATEGORY_FILTER
 	];
@@ -491,7 +535,13 @@ export function CatalogueGrid( {
 					? scope.ids.map( Number )
 					: ( scope ? tableSelection : [] ).map( Number );
 			setPending( covered.current, true );
-			setApplied( { id, replayed: !! answer.replayed } );
+			setApplied( {
+				id,
+				replayed: !! answer.replayed,
+				byType: answer.byType || null,
+			} );
+			// FRONTEND-3: the panel open now follows this change itself.
+			setBulk( ( open ) => ( open ? { ...open, appliedId: id } : open ) );
 			// T84: the snapshot applied is kept until the change finishes.
 			if ( scope?.kind === 'snapshot' && scope.key ) {
 				session.submit( id, scope.key );
@@ -557,6 +607,24 @@ export function CatalogueGrid( {
 		/>
 	);
 	const filtered = isFiltered( view ) || !! category;
+	// FRONTEND-1: what the panel says while nothing is selected; the count
+	// is the settled view's, read for exactly the query on screen.
+	const counted =
+		viewSettled &&
+		catalogue.hasLoaded &&
+		! catalogue.isLoading &&
+		! catalogue.error &&
+		catalogue.loadedKey === JSON.stringify( catalogue.query );
+	const emptyPrompt = (
+		<NothingSelected
+			ready={ counted }
+			total={ catalogue.pagination.totalItems }
+			filtered={ filtered }
+			mode={ modeOf( view ) }
+			onSelect={ selection.selectAllMatching }
+			disabled={ selection.status === 'uncertain' }
+		/>
+	);
 	if (
 		catalogue.hasLoaded &&
 		! catalogue.isLoading &&
@@ -596,6 +664,7 @@ export function CatalogueGrid( {
 						category={ category }
 						baseView={ baseView }
 						onApply={ applyView }
+						onReady={ onViewsReady }
 					/>
 					<div className="bulkcat-catalogue__toolbar">
 						<LayoutSwitch view={ view } onChangeView={ setView } />
@@ -677,12 +746,16 @@ export function CatalogueGrid( {
 					onRestore={ restore }
 					draggable
 				/>
-				{ applied && ! bulk && (
+				{ /* FRONTEND-3: a change applied earlier is still followed while
+				   a later bulk panel covers its banner. */ }
+				{ applied && bulk?.appliedId !== applied.id && (
 					<AppliedProgress
 						batchId={ applied.id }
 						replayed={ applied.replayed }
+						byType={ applied.byType }
 						onFinished={ finished }
 						onViewHistory={ toHistory }
+						hidden={ !! bulk }
 					/>
 				) }
 				<CatalogueLayout
@@ -733,6 +806,15 @@ export function CatalogueGrid( {
 					}
 					onRenewSelection={
 						bulk.live ? () => session.renewAll() : null
+					}
+					emptyPrompt={ bulk.live ? emptyPrompt : null }
+					applyHeld={
+						applied && bulk.appliedId !== applied.id
+							? __(
+									'Another change is still running. You can apply this one once it has finished.',
+									'bulk-catalogue-manager-for-woocommerce'
+								)
+							: ''
 					}
 					onUndo={
 						toHistory ? ( id ) => toHistory( id, true ) : null

@@ -219,6 +219,8 @@ export function panelState( facts ) {
  * @param {Function}      props.onFinished        Receives the finished batch's report (T84).
  * @param {Function}      props.onReview          Open Review selected products, or null.
  * @param {Function}      props.onRenewSelection  Restore a selection whose lease lapsed, or null.
+ * @param {Element}       props.emptyPrompt       What to show in place of the scope while nothing is selected (FRONTEND-1), or null.
+ * @param {string}        props.applyHeld         Why Apply must wait (another change is still running, FRONTEND-3), or ''.
  * @return {Element} Panel.
  */
 export default function BulkChangePanel( {
@@ -239,6 +241,8 @@ export default function BulkChangePanel( {
 	onFinished = null,
 	onReview = null,
 	onRenewSelection = null,
+	emptyPrompt = null,
+	applyHeld = '',
 } ) {
 	const panelRef = useRef( null );
 	const headingRef = useRef( null );
@@ -322,14 +326,23 @@ export default function BulkChangePanel( {
 		changes,
 	} );
 
-	// Focus: into the panel on open, back to whatever opened it on close (§14).
+	// Focus: into the panel on open, back to whatever opened it on close (§14),
+	// or, when that is gone (a change that finished in full clears the
+	// selection and its bar), to the screen's panel (FRONTEND-7).
 	useEffect( () => {
-		const opener = panelRef.current?.ownerDocument?.activeElement;
+		const doc = panelRef.current?.ownerDocument;
+		const opener = doc?.activeElement;
 		headingRef.current?.focus();
 		return () => {
-			if ( opener && typeof opener.focus === 'function' ) {
+			if (
+				opener &&
+				opener.isConnected &&
+				typeof opener.focus === 'function'
+			) {
 				opener.focus();
+				return;
 			}
+			doc?.querySelector( '.bulkcat-app__panel' )?.focus();
 		};
 	}, [] );
 
@@ -390,6 +403,8 @@ export default function BulkChangePanel( {
 				onApplied( created.batch_id, {
 					selection: created.earlier ? null : selection,
 					replayed: !! created.replayed,
+					// What the preview reached, for the banner's words (FRONTEND-6).
+					byType: created.earlier ? null : reachTypes,
 				} );
 			}
 		} );
@@ -579,11 +594,18 @@ export default function BulkChangePanel( {
 										'bulk-catalogue-manager-for-woocommerce'
 									) }
 						</h3>
-						<p className="bulkcat-bulk__big">
-							{ scopeLine(
-								batch && applied ? applied : selection
-							) }
-						</p>
+						{ ! batch &&
+						emptyPrompt &&
+						count < 1 &&
+						! selection?.waiting ? (
+							emptyPrompt
+						) : (
+							<p className="bulkcat-bulk__big">
+								{ scopeLine(
+									batch && applied ? applied : selection
+								) }
+							</p>
+						) }
 						{ ! batch && (
 							<p className="bulkcat-bulk__acts">
 								{ onReview && (
@@ -931,6 +953,7 @@ export default function BulkChangePanel( {
 						changed={ [ 'changed', 'legacy', 'renew' ].includes(
 							applier.status
 						) }
+						held={ applyHeld }
 					/>
 				) }
 				<button type="button" className="button" onClick={ onClose }>
@@ -974,6 +997,7 @@ export default function BulkChangePanel( {
  * @param {Array<string>} props.reasons   Always-confirm sentences.
  * @param {boolean}       props.busy      Whether an apply is running.
  * @param {boolean}       props.changed   Whether the last Apply was refused in a way only a new preview or a reload can fix.
+ * @param {string}        props.held      Why Apply must wait, or ''.
  * @return {Element} Control.
  */
 function FooterAction( {
@@ -987,8 +1011,16 @@ function FooterAction( {
 	reasons,
 	busy,
 	changed,
+	held = '',
 } ) {
 	if ( state === 'ready' || state === 'empty' || state === 'applying' ) {
+		let disabledReason = held;
+		if ( state === 'empty' ) {
+			disabledReason = __(
+				'Nothing would change, so there is nothing to apply.',
+				'bulk-catalogue-manager-for-woocommerce'
+			);
+		}
 		return (
 			<ConfirmApply
 				count={ count }
@@ -997,15 +1029,10 @@ function FooterAction( {
 				reasons={ reasons }
 				onApply={ apply }
 				busy={ busy }
-				disabled={ state === 'empty' || changed }
-				disabledReason={
-					state === 'empty'
-						? __(
-								'Nothing would change, so there is nothing to apply.',
-								'bulk-catalogue-manager-for-woocommerce'
-							)
-						: ''
+				disabled={
+					state === 'empty' || changed || ( !! held && ! busy )
 				}
+				disabledReason={ disabledReason }
 			/>
 		);
 	}

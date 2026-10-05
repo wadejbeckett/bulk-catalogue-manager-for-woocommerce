@@ -72,7 +72,7 @@ it( 'uses the saved row over the requested target or a prediction in a save anno
 	).toBe( 'Scheduled' );
 } );
 
-it.each( [ 'draft', 'pending', 'publish', 'private' ] )(
+it.each( [ 'publish', 'private' ] )(
 	'adds no extra native Status confirmation for %s',
 	( value ) => {
 		expect(
@@ -85,6 +85,22 @@ it.each( [ 'draft', 'pending', 'publish', 'private' ] )(
 		).toEqual( [] );
 	}
 );
+
+// FRONTEND-4: the Settings help says a change that drafts always asks.
+it.each( [
+	[ 'draft', 'Draft' ],
+	[ 'pending', 'Pending Review' ],
+] )( 'always asks before setting Status to %s', ( value, label ) => {
+	expect(
+		alwaysConfirmReasons(
+			REGISTRY,
+			[ { action: 'set_status', args: { field: 'status', value } } ],
+			1
+		)
+	).toEqual( [
+		`This sets Status to ${ label } on 1 product, which takes them off the site.`,
+	] );
+} );
 
 it( 'renders server schedule and redacted password consequences without inventing effects for other Private rows', () => {
 	const response = previewResponse();

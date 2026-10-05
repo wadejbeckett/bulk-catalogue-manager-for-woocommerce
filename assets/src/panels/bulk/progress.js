@@ -9,6 +9,7 @@ import { __, _n, sprintf } from '@wordpress/i18n';
 
 import { FINISHED, useBatchProgress } from './hooks';
 import { formatNumber, itemsPhrase, productsPhrase } from './words';
+import { countPhrase } from '../catalogue/selection/model';
 import { useProgressAnnouncer } from './announce';
 
 /**
@@ -70,6 +71,55 @@ export function doneSentence( report, byType = null ) {
 }
 
 /**
+ * What a running change works through (FRONTEND-6): products and variations
+ * apart when the preview counted them, products when it reached products
+ * only, and items when that is not known, as doneSentence() words it.
+ *
+ * @param {number}      total  Objects in the change.
+ * @param {Object|null} byType `{ products, variations }` from the preview, or null.
+ * @return {string} Phrase.
+ */
+export function workPhrase( total, byType = null ) {
+	if ( ! byType ) {
+		return itemsPhrase( total );
+	}
+	return Number( byType.variations ) > 0
+		? countPhrase( total, byType )
+		: productsPhrase( total );
+}
+
+/**
+ * Reading the progress has stopped on an answer that will not change by
+ * asking again (FRONTEND-8): a plain sentence and Check again.
+ *
+ * @param {Object}   props              Props.
+ * @param {Function} props.onCheckAgain Read the progress again.
+ * @return {Element} Notice.
+ */
+export function ProgressStopped( { onCheckAgain } ) {
+	return (
+		<div className="bulkcat-bulk__notice is-warn" role="alert">
+			<p>
+				{ __(
+					'The progress can no longer be read. If you have been signed out, sign in again, then check again.',
+					'bulk-catalogue-manager-for-woocommerce'
+				) }
+			</p>
+			<button
+				type="button"
+				className="button button-small"
+				onClick={ onCheckAgain }
+			>
+				{ __(
+					'Check again',
+					'bulk-catalogue-manager-for-woocommerce'
+				) }
+			</button>
+		</div>
+	);
+}
+
+/**
  * The Done step.
  *
  * @param {Object}   props               Props.
@@ -97,7 +147,10 @@ export function DoneStep( {
 	replayed = false,
 	earlier = false,
 } ) {
-	const { report, error } = useBatchProgress( batchId, interval );
+	const { report, error, stopped, checkAgain } = useBatchProgress(
+		batchId,
+		interval
+	);
 	const total = Number( report?.total_items ?? count ) || 0;
 	const done = Number( report?.done_items ) || 0;
 	const finished = FINISHED.includes( report?.status );
@@ -138,12 +191,12 @@ export function DoneStep( {
 				{ receipt && <p className="bulkcat-bulk__hint">{ receipt }</p> }
 				<p className="bulkcat-bulk__sub">
 					{ sprintf(
-						/* translators: %s: a number of products, such as "1,284 products". */
+						/* translators: %s: what the change works through, such as "1,284 products", "1,200 products and 50 variations" or "1,284 items". */
 						__(
 							'Working through %s in the background.',
 							'bulk-catalogue-manager-for-woocommerce'
 						),
-						productsPhrase( total )
+						workPhrase( total, byType )
 					) }
 				</p>
 				{ report?.stalled ? (
@@ -187,7 +240,7 @@ export function DoneStep( {
 						'bulk-catalogue-manager-for-woocommerce'
 					) }
 				</p>
-				{ error && (
+				{ error && ! stopped && (
 					<p className="bulkcat-bulk__hint">
 						{ __(
 							'The progress could not be read just now. Trying again.',
@@ -195,6 +248,7 @@ export function DoneStep( {
 						) }
 					</p>
 				) }
+				{ stopped && <ProgressStopped onCheckAgain={ checkAgain } /> }
 			</section>
 		);
 	}

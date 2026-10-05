@@ -21,7 +21,7 @@ The screen is **Products → Bulk Catalogue Manager**. It has five tabs.
 
 Status uses Published, Pending Review, Draft and Private. A stored scheduled date may make a Published request become Scheduled; the returned row and bulk Preview show that native result. Scheduled is a stored label and filter, not an ordinary edit target. An old remembered status never changes a new requested target.
 
-Individual edits use one Save (or Enter/blur in a cell). Bulk Status changes use Preview → Apply; warnings stay in Preview, with one extra count confirmation only at or above the configured threshold. Optional-provider review remains. Preview reports a password clear only when the server successfully projects that native consequence, without exposing a password. Variations whose stored passwords cannot safely be restored are refused in the ordinary result surface.
+Individual edits use one Save (or Enter/blur in a cell). Bulk Status changes use Preview → Apply; warnings stay in Preview, with one extra count confirmation at or above the configured threshold, and setting Draft or Pending Review always asks. Optional-provider review remains. Preview reports a password clear only when the server successfully projects that native consequence, without exposing a password. Variations whose stored passwords cannot safely be restored are refused in the ordinary result surface.
 
 Accepted legacy work and explicit Undo retain their recorded meaning. Existing Off/Changed outside this screen filters retain their exact predicates with a “legacy status filter” chip; new filter choices use native states. Native browser/archive-upgrade and release qualification remain required before release of this correction.
 
@@ -76,7 +76,7 @@ After a variation is saved, WooCommerce's own data store resynchronises the pare
 ## How a change is previewed, recorded and reversed
 
 1. **Preview.** Nothing is written until a preview has shown what will change: a one-sentence summary, how many rows will change, how many already hold the new value and how many cannot change (with the reason), a sample of rows showing the current and new value, and warnings such as a sale price above the regular price, a price at or below zero, stock going negative or a duplicate SKU. The preview can be downloaded as CSV. If the selection or the settings change afterwards, **Apply** becomes **Preview again**; if the number of products matching a filter has moved since the preview, the screen says so and asks again.
-2. **Confirm.** Apply is one click below 200 rows (a setting). Above it, Apply restates the count and needs a second click. A change that drafts, hides or empties a field always asks.
+2. **Confirm.** Apply is one click below 200 rows (a setting). At or above it, Apply restates the count and needs a second click. A change that drafts, hides or empties a field always asks.
 3. **Apply.** The plugin records the batch and the exact list of products and variations it will touch before any work starts, then works through them in the background in small groups using WooCommerce's built-in queue. A product that fails (for example a duplicate SKU) is reported with its reason and does not stop the rest.
 4. **Record.** Each field that actually changes is recorded with its value before and after, in the same step that saves the product. Rows that already hold the new value are skipped and not recorded, unless **Record unchanged rows in the audit log** is on. Inline edits and **Edit details** saves are recorded the same way, as a batch of one.
 5. **Undo.** **Undo this change** in History prepares an undo with its own preview. Before putting a value back it checks that the field still holds the value the batch wrote; any product changed again since is listed first and left alone, unless you choose **Revert anyway**. The undo is itself a recorded batch, shown as "Undo of #418", and can be reversed in turn with **Redo**. A batch that finished with errors, or was cancelled part-way, can be undone for the part that was applied.
@@ -113,7 +113,7 @@ One option, `bulkcat_settings`, checked against an explicit schema on every save
 | Who can use this screen | `administrators_only` | Shop managers and administrators (`false`) | Or administrators only |
 | Rows per page | `rows_per_page` | 25 | 25, 50 or 100 |
 | Show the category panel by default | `category_panel` | On | On or off |
-| Confirm above this many rows | `confirm_threshold` | 200 | 0 or more |
+| Confirm at or above this many rows | `confirm_threshold` | 200 | 0 or more |
 | Apply status changes to variations by default | `variations_status` | On | On or off |
 | Apply visibility changes to variations by default | `variations_visibility` | On | On or off (catalogue visibility belongs to the product, so this reaches no variation today) |
 | Apply price changes to variations by default | `variations_price` | Off | On or off |

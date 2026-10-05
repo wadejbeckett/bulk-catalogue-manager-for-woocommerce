@@ -295,20 +295,47 @@ export function useApply() {
 }
 
 /**
+ * Whether a failed read will fail the same way however often it is asked
+ * again (FRONTEND-8): signed out, not allowed, or the batch is gone.
+ *
+ * @param {Object} error The rejection.
+ * @return {boolean} Whether to stop asking.
+ */
+export function permanentReadError( error ) {
+	return (
+		[ 401, 403, 404 ].includes( Number( error?.data?.status ) ) ||
+		[ 'rest_not_logged_in', 'rest_cookie_invalid_nonce' ].includes(
+			error?.code
+		)
+	);
+}
+
+/**
  * A batch's progress report, read every `interval` milliseconds until it
- * has finished.
+ * has finished. A passing failure is read again after twice the interval;
+ * a permanent one (permanentReadError()) stops the reads, `stopped` says
+ * so, and `checkAgain()` starts them again (FRONTEND-8).
  *
  * @param {number} batchId  Batch id, or 0 for none.
  * @param {number} interval Milliseconds between reads.
- * @return {{report: Object|null, error: Object|null}} The latest report.
+ * @return {{report: Object|null, error: Object|null, stopped: boolean, checkAgain: Function}} The latest report.
  */
 export function useBatchProgress( batchId, interval = 2000 ) {
-	const [ state, setState ] = useState( { report: null, error: null } );
+	const [ state, setState ] = useState( {
+		report: null,
+		error: null,
+		stopped: false,
+	} );
+	const [ attempt, setAttempt ] = useState( 0 );
+	const checkAgain = useCallback( () => setAttempt( ( n ) => n + 1 ), [] );
 
 	useEffect( () => {
 		if ( ! batchId ) {
 			return undefined;
 		}
+		setState( ( previous ) =>
+			previous.stopped ? { ...previous, stopped: false } : previous
+		);
 		let stopped = false;
 		let timer = null;
 		const read = async () => {
@@ -317,7 +344,7 @@ export function useBatchProgress( batchId, interval = 2000 ) {
 				if ( stopped ) {
 					return;
 				}
-				setState( { report, error: null } );
+				setState( { report, error: null, stopped: false } );
 				if ( ! FINISHED.includes( report?.status ) ) {
 					timer = setTimeout( read, interval );
 				}
@@ -325,8 +352,15 @@ export function useBatchProgress( batchId, interval = 2000 ) {
 				if ( stopped ) {
 					return;
 				}
-				setState( ( previous ) => ( { ...previous, error } ) );
-				timer = setTimeout( read, interval * 2 );
+				const permanent = permanentReadError( error );
+				setState( ( previous ) => ( {
+					...previous,
+					error,
+					stopped: permanent,
+				} ) );
+				if ( ! permanent ) {
+					timer = setTimeout( read, interval * 2 );
+				}
 			}
 		};
 		read();
@@ -334,7 +368,7 @@ export function useBatchProgress( batchId, interval = 2000 ) {
 			stopped = true;
 			clearTimeout( timer );
 		};
-	}, [ batchId, interval ] );
+	}, [ batchId, interval, attempt ] );
 
-	return state;
+	return { ...state, checkAgain };
 }

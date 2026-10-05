@@ -3,13 +3,15 @@
  * decides and one component renders it, for the bulk panel, an undo and a
  * category batch alike.
  *
- * - Below the *Confirm above this many rows* setting, Apply is one click.
+ * - Below the *Confirm at or above this many rows* setting, Apply is one
+ *   click.
  * - At or above it, Apply restates the count in words and needs a second
  *   click.
- * - Other native changes that switch Shown in shop and search off, hide a
- *   product from the catalogue, or clear a field retain their existing extra
- *   confirmation, whatever the count, naming what it will do.
- * - Native Status warnings stay in Preview; only the count threshold confirms.
+ * - A change that takes products off the site (Status set to Draft or
+ *   Pending Review), switches Shown in shop and search off, hides a product
+ *   from the catalogue, or clears a field always asks, whatever the count,
+ *   naming what it will do (FRONTEND-4: as the setting's help says). Other
+ *   Status warnings stay in Preview.
  * - Nothing ever asks the owner to type a word, and a preview never confirms.
  */
 import { useEffect, useRef, useState } from '@wordpress/element';
@@ -85,9 +87,6 @@ export function alwaysConfirmReasons( registry, operations, count ) {
 						)
 				);
 			}
-			return;
-		}
-		if ( field.nativeStatus ) {
 			return;
 		}
 		const sets = Object.prototype.hasOwnProperty.call(
@@ -281,17 +280,20 @@ export function ConfirmApply( {
 
 	return (
 		<div className="bulkcat-confirm">
+			{ /* FRONTEND-7: busy is aria-disabled, so focus returned here after
+			   a confirm stays on the button while the change is sent. */ }
 			<button
 				ref={ applyRef }
 				type="button"
 				className="button button-primary"
-				disabled={ disabled || busy || gate.armed }
+				disabled={ disabled || gate.armed }
+				aria-disabled={ busy || undefined }
 				aria-describedby={
 					disabled && disabledReason
 						? 'bulkcat-confirm-disabled'
 						: undefined
 				}
-				onClick={ gate.request }
+				onClick={ busy ? undefined : gate.request }
 			>
 				{ applyText }
 			</button>

@@ -639,7 +639,10 @@ test( '100,000 members: composed exactly through the screen, every option too (1
 	await panel.getByRole( 'button', { name: 'Back to products' } ).click();
 	const banner = page.getByRole( 'group', { name: 'Change in progress' } );
 	if ( 'running' === sample.status || 'queued' === sample.status ) {
-		await banner.getByRole( 'button', { name: 'Cancel' } ).click();
+		await banner
+			.getByRole( 'button', { name: 'Stop this change' } )
+			.click();
+		await banner.getByRole( 'button', { name: 'Yes, stop it' } ).click();
 		await expect( banner ).toBeHidden( { timeout: 120_000 } );
 	}
 	execSync(

@@ -853,6 +853,28 @@ describe( 'selection session: redraws', () => {
 		expect( listener ).not.toHaveBeenCalled();
 		expect( server.calls( 'POST selection/inspect' ) ).toHaveLength( 0 );
 	} );
+
+	it( 'drops a probe answer that arrives after a later probe of other rows (FRONTEND-2)', async () => {
+		const session = makeSession();
+		await session.add( [ 11, 12, 21, 22 ] );
+		server.hold( 'POST selection/inspect' );
+		// Page 1, then page 2 before page 1 has answered.
+		const first = session.probe( [ 11, 12 ] );
+		const second = session.probe( [ 21, 22 ] );
+		await flush();
+		server.deliver( 'POST selection/inspect', ( data ) =>
+			( data.probe_ids || [] ).includes( 21 )
+		);
+		await second;
+		expect( session.isSelected( 21 ) ).toBe( true );
+		expect( session.isSelected( 22 ) ).toBe( true );
+		// The slow answer for page 1 must not replace what page 2 shows.
+		server.release( 'POST selection/inspect' );
+		await first;
+		await flush();
+		expect( session.isSelected( 21 ) ).toBe( true );
+		expect( session.isSelected( 22 ) ).toBe( true );
+	} );
 } );
 
 describe( 'selection session: Restore after Clear search (T85)', () => {

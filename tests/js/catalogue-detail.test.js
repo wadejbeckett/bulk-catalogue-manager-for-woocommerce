@@ -317,6 +317,104 @@ describe( 'detail panel', () => {
 	} );
 } );
 
+describe( 'reads the panel could not make (FRONTEND-9)', () => {
+	/**
+	 * Answer some paths differently, the rest as the suite does.
+	 *
+	 * @param {Object} overrides path => () => Promise.
+	 */
+	function answerWith( overrides ) {
+		const usual = apiFetch.getMockImplementation();
+		apiFetch.mockImplementation( ( options ) => {
+			const path = options.url.split( '?' )[ 0 ];
+			return overrides[ path ] ? overrides[ path ]() : usual( options );
+		} );
+	}
+
+	async function openOnly() {
+		render( <Catalogue settings={ SETTINGS } /> );
+		await screen.findByText( 'Classic Cotton T-Shirt' );
+		const row = screen
+			.getByRole( 'link', { name: 'Classic Cotton T-Shirt' } )
+			.closest( 'tr' );
+		fireEvent.click(
+			within( row ).getByRole( 'button', { name: 'Actions' } )
+		);
+		fireEvent.click(
+			await screen.findByRole( 'menuitem', { name: 'Edit details' } )
+		);
+		return screen.findByRole( 'dialog', { name: 'Details' } );
+	}
+
+	it( 'says a failed read of the latest change, never "No changes recorded yet", and tries again', async () => {
+		let failing = true;
+		answerWith( {
+			audit: () =>
+				failing
+					? Promise.reject( {
+							code: 'fetch_error',
+							message: 'Offline.',
+						} )
+					: Promise.resolve( {
+							items: [
+								{
+									field: 'regular_price',
+									field_label: 'Regular price',
+									applied_gmt: '2026-09-20 10:00:00',
+								},
+							],
+						} ),
+		} );
+		const dialog = await openOnly();
+		expect(
+			await within( dialog ).findByText(
+				/The latest change could not be read\./
+			)
+		).toBeTruthy();
+		expect(
+			within( dialog ).queryByText( /No changes recorded yet/ )
+		).toBeNull();
+		failing = false;
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Try again' } )
+		);
+		expect(
+			await within( dialog ).findByText( /Regular price was changed on/ )
+		).toBeTruthy();
+	} );
+
+	it( 'says a failed read of the product and of its variations', async () => {
+		answerWith( {
+			'products/11': () =>
+				Promise.reject( { code: 'fetch_error', message: 'Offline.' } ),
+			'products/11/variations': () =>
+				Promise.reject( { code: 'fetch_error', message: 'Offline.' } ),
+		} );
+		const dialog = await openOnly();
+		expect(
+			await within( dialog ).findByText(
+				'Some details of this product could not be loaded, so not everything is shown.'
+			)
+		).toBeTruthy();
+		expect(
+			within( dialog ).getByRole( 'button', { name: 'Try again' } )
+		).toBeTruthy();
+	} );
+
+	it( 'says when only the first 100 variations are listed', async () => {
+		answerWith( {
+			'products/11/variations': () =>
+				Promise.resolve( page( VARIATIONS, 150, 100 ) ),
+		} );
+		const dialog = await openOnly();
+		expect(
+			await within( dialog ).findByText(
+				'Showing the first 1 of 150 variations.'
+			)
+		).toBeTruthy();
+	} );
+} );
+
 describe( 'native Status in the drawer', () => {
 	it( 'opens an already-Scheduled row and saves no literal future when no target changes', async () => {
 		fullRow = { ...FULL, status: 'future' };

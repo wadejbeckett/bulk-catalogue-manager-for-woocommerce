@@ -501,6 +501,70 @@ describe( 'saved views row', () => {
 			screen.getByRole( 'button', { name: 'All products' } )
 		).toBeTruthy();
 	} );
+
+	it( 'reads the saved views again on Try again after a failed load (FRONTEND-5)', async () => {
+		apiFetch.mockImplementationOnce( () =>
+			Promise.reject( new Error( 'offline' ) )
+		);
+		render(
+			<SavedViewsBar
+				registry={ REGISTRY }
+				view={ BASE }
+				onApply={ jest.fn() }
+				applyDefault={ false }
+			/>
+		);
+		const box = (
+			await screen.findByText( /Your saved views could not be loaded/, {
+				selector: 'p',
+			} )
+		).closest( '.components-notice' );
+		fireEvent.click(
+			within( box ).getByRole( 'button', { name: 'Try again' } )
+		);
+		expect(
+			await screen.findByRole( 'button', { name: 'Options for Drafts' } )
+		).toBeTruthy();
+		expect( requests() ).toEqual( [
+			[ 'GET', 'views', undefined ],
+			[ 'GET', 'views', undefined ],
+		] );
+		expect(
+			screen.queryByText( /Your saved views could not be loaded/, {
+				selector: 'p',
+			} )
+		).toBeNull();
+	} );
+
+	it( 'offers Dismiss, not a Try again that repeats nothing, after a failed change (FRONTEND-5)', async () => {
+		await renderBar( { applyDefault: false } );
+		apiFetch.mockImplementation( ( { method = 'GET' } ) =>
+			method === 'GET'
+				? Promise.resolve( answer )
+				: Promise.reject( new Error( 'offline' ) )
+		);
+		await menu( 'Shirts', 'Open the screen with this view' );
+		const box = (
+			await screen.findByText( /Your saved views could not be loaded/, {
+				selector: 'p',
+			} )
+		).closest( '.components-notice' );
+		expect(
+			within( box ).queryByRole( 'button', { name: 'Try again' } )
+		).toBeNull();
+		fireEvent.click(
+			within( box ).getByRole( 'button', { name: 'Dismiss' } )
+		);
+		await waitFor( () =>
+			expect(
+				screen.queryByText( /Your saved views could not be loaded/, {
+					selector: 'p',
+				} )
+			).toBeNull()
+		);
+		// Dismissing reads and writes nothing more.
+		expect( requests() ).toHaveLength( 2 );
+	} );
 } );
 
 describe( 'serialising a view', () => {

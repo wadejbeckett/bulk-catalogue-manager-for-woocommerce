@@ -150,11 +150,15 @@ final class Plugin {
 	}
 
 	/**
-	 * Bring the plugin's tables up to the code's schema version; a no-op once current.
+	 * Bring the plugin's tables up to the code's schema version; a no-op once
+	 * current. Then repair the recurring clean-ups: the request clean-up and
+	 * the daily history prune. A network activation runs the activation hooks
+	 * on the main site only, so this is where each other site gets them.
 	 */
 	public function migrate(): void {
 		if ( ( new Data\Migrator( Data\Registry::plugin() ) )->run() ) {
 			Requests\Cleanup::schedule();
+			Engine\Pruner::schedule();
 		}
 	}
 

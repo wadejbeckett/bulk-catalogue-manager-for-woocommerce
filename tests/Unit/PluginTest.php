@@ -248,4 +248,20 @@ final class PluginTest extends TestCase {
 			$this->assertStringStartsWith( 'BULKCAT_', $constant );
 		}
 	}
+	/**
+	 * The recurring hooks scheduled so far, in order.
+	 *
+	 * @return list<string>
+	 */
+	private static function recurring(): array {
+		return array_values( array_map( static fn( array $entry ): string => $entry[1], array_filter( $GLOBALS['bulkcat_test']['scheduled'] ?? [], static fn( array $entry ): bool => 'recurring' === $entry[0] ) ) );
+	}
+
+	public function test_the_admin_migration_repairs_the_history_prune_schedule_too(): void {
+		// A sub-site of a network activation: tables current, nothing scheduled, no activation hook ran here.
+		$GLOBALS['bulkcat_test']['options'][ \BulkCatalogueManager\Data\Migrator::VERSION_OPTION ] = \BulkCatalogueManager\Data\Migrator::SCHEMA_VERSION;
+		( new Plugin() )->migrate();
+		$this->assertContains( \BulkCatalogueManager\Engine\Pruner::HOOK, self::recurring(), 'The daily history prune is scheduled where the request cleanup is.' );
+		$this->assertContains( 'bulkcat_prune_requests', self::recurring() );
+	}
 }

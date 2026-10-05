@@ -685,6 +685,52 @@ final class UndoRouteTest extends TestCase {
 		$this->assertSame( 'undone', $this->store->batch()['status'] );
 	}
 
+	public function test_a_retried_undo_chunk_leaves_a_price_edited_between_the_kill_and_the_retry(): void {
+		// C2 / TESTS-2: an undo chunk killed after recording its intent and before the save landed;
+		// an editor then sets the price. Without Revert anyway the retry must not write over the edit.
+		$created = $this->undo();
+		$undo_id = $created['batch_id'];
+		$ops     = [];
+		foreach ( $this->store->items_of( $undo_id ) as $row ) {
+			if ( 1001 === $row['object_id'] ) {
+				$ops = json_decode( (string) $row['operations'], true );
+			}
+		}
+		$stored                                    = $GLOBALS['bulkcat_test']['products'][1001];
+		$GLOBALS['bulkcat_test']['products'][1001] = new class( $stored ) {
+			public function __construct( private object $stored ) {}
+
+			public function is_type( string $type ): bool {
+				return $this->stored->is_type( $type );
+			}
+
+			public function save(): int {
+				throw new \Error( 'Maximum execution time of 30 seconds exceeded' );
+			}
+
+			public function __call( string $method, array $args ): mixed {
+				return $this->stored->$method( ...$args );
+			}
+		};
+		try {
+			\BulkCatalogueManager\Engine\Writer::for_batch( new Registry( new Fields() ), \BulkCatalogueManager\Engine\Journal::from_settings( ( new Registry( new Fields() ) )->fields(), new Settings( [] ) ), $undo_id, self::USER )->write( 1001, $ops, 'product' );
+			$this->fail( 'The undo write was meant to die in save().' );
+		} catch ( \Error $e ) {
+			unset( $e );
+		}
+		$GLOBALS['bulkcat_test']['products'][1001]                         = $stored;
+		$GLOBALS['bulkcat_test']['products'][1001]->props['regular_price'] = '30.00';
+		$saves = count( $stored->saves );
+
+		$this->run_batch( $undo_id );
+
+		$this->assertSame( '30.00', self::prop( 1001, 'regular_price' ), 'The edit made since is kept.' );
+		$this->assertCount( $saves, $stored->saves, 'Not saved.' );
+		$items = array_column( $this->store->items_of( $undo_id ), null, 'object_id' );
+		$this->assertSame( 'failed', $items[1001]['state'] );
+		$this->assertStringContainsString( 'changed', $items[1001]['message'] );
+	}
+
 	public function test_a_product_moved_to_the_bin_after_the_undo_started_is_unavailable_and_never_written(): void {
 		$created = $this->undo();
 		$GLOBALS['bulkcat_test']['products'][1002]->props['status'] = 'trash';

@@ -420,6 +420,39 @@ final class InlineWriteTest extends TestCase {
 		$this->assertSame( 'bulk-catalogue-manager-for-woocommerce', $context['source'] );
 	}
 
+	public function test_a_save_hook_throwing_after_the_price_was_stored_reports_and_journals_it_made(): void {
+		$stored                                   = self::product( 101, 'simple', [ 'regular_price' => '20' ] );
+		$GLOBALS['bulkcat_test']['products'][101] = new class( $stored ) {
+			public function __construct( private StoredProduct $stored ) {}
+
+			public function __clone() {
+				$this->stored = clone $this->stored;
+			}
+
+			public function save(): int {
+				// WooCommerce stored the price; a listener on woocommerce_after_product_object_save then threw.
+				$this->stored->save();
+				$GLOBALS['bulkcat_test']['products'][101] = new StoredProduct( 'simple', $this->stored->props );
+				throw new \RuntimeException( 'Remote index unreachable.' );
+			}
+
+			public function __call( string $method, array $args ): mixed {
+				return $this->stored->$method( ...$args );
+			}
+		};
+
+		$result = $this->writes()->write( 101, [ 'regular_price' => '25' ], 'inline', self::USER );
+
+		$this->assertTrue( is_array( $result ) );
+		$this->assertSame( 'complete', $result['status'] );
+		$this->assertSame( [ Result::CHANGED ], array_map( static fn( Result $r ): string => $r->state(), $result['outcome']->results() ) );
+		$this->assertSame( [ [ 101, 'regular_price', '20', '25.00', 'applied' ] ], $this->store->journal(), 'Undo can put the stored change back.' );
+		$this->assertCount( 1, $GLOBALS['bulkcat_test']['logged'] ?? [] );
+		$this->assertStringContainsString( 'RuntimeException', $GLOBALS['bulkcat_test']['logged'][0][1], 'The log names what threw and where.' );
+		$this->assertStringContainsString( 'InlineWriteTest.php', $GLOBALS['bulkcat_test']['logged'][0][1] );
+		$this->assertStringNotContainsString( 'Remote index unreachable.', $GLOBALS['bulkcat_test']['logged'][0][1], 'Not the text, which may echo the values saved.' );
+	}
+
 	public function test_a_value_already_in_place_finishes_complete_with_nothing_saved(): void {
 		$result = $this->writes()->write( 101, [ 'regular_price' => '20.00' ], 'inline', self::USER );
 		$this->assertTrue( is_array( $result ) );

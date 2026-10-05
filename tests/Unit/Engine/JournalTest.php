@@ -371,6 +371,15 @@ final class JournalTest extends TestCase {
 			}
 
 			public function save(): int {
+				// Nothing reached the database: a fresh load still finds the stored price.
+				$GLOBALS['bulkcat_test']['products'][86] = new SavedProduct(
+					'variation',
+					[
+						'id'            => 86,
+						'regular_price' => '10',
+						'parent_id'     => 30,
+					]
+				);
 				throw new \RuntimeException( 'Deadlock found when trying to get lock.' );
 			}
 
@@ -417,6 +426,230 @@ final class JournalTest extends TestCase {
 			self::summary()
 		);
 		$this->assertSame( 'variation', self::rows()[0]['object_type'] );
+	}
+
+	/**
+	 * A loaded product whose save() stores $stored (the props WooCommerce
+	 * wrote before a later hook threw; null: the product can no longer be
+	 * loaded) and then throws, as a listener on
+	 * woocommerce_after_product_object_save does.
+	 *
+	 * @param SavedProduct              $loaded The product as loaded.
+	 * @param array<string, mixed>|null $stored What a fresh load finds after the throw, or null for nothing.
+	 */
+	private static function throwing_after_write( SavedProduct $loaded, ?array $stored ): object {
+		return new class( $loaded, $stored ) {
+			public function __construct( private SavedProduct $loaded, private ?array $stored ) {}
+
+			public function is_type( string $type ): bool {
+				return $this->loaded->is_type( $type );
+			}
+
+			public function save(): int {
+				$id = (int) $this->loaded->props['id'];
+				if ( null === $this->stored ) {
+					unset( $GLOBALS['bulkcat_test']['products'][ $id ] );
+				} else {
+					$GLOBALS['bulkcat_test']['products'][ $id ] = new SavedProduct( $this->loaded->get_type(), $this->stored );
+				}
+				throw new \RuntimeException( 'Index sync failed: connection refused.' );
+			}
+
+			public function __call( string $method, array $args ): mixed {
+				return $this->loaded->$method( ...$args );
+			}
+		};
+	}
+
+	/**
+	 * A percentage increase of the regular price, normalised.
+	 */
+	private function ten_percent(): array {
+		return $this->steps(
+			[
+				[
+					'adjust',
+					[
+						'field'     => 'regular_price',
+						'direction' => 'increase',
+						'by'        => 'percent',
+						'amount'    => '10',
+					],
+				],
+			]
+		);
+	}
+
+	public function test_a_save_that_throws_after_the_value_was_stored_is_journalled_applied_and_logged(): void {
+		self::answer_intents();
+		$loaded                                  = new SavedProduct(
+			'simple',
+			[
+				'id'            => 96,
+				'regular_price' => '10',
+			]
+		);
+		$GLOBALS['bulkcat_test']['products'][96] = self::throwing_after_write(
+			$loaded,
+			[
+				'id'            => 96,
+				'regular_price' => '11.00',
+			]
+		);
+		$list                                    = $this->ten_percent();
+
+		$outcome = self::writer()->write( 96, $list );
+
+		$this->assertSame( [ Result::CHANGED ], self::states( $outcome ), 'The price is stored, so the change is reported made.' );
+		$this->assertTrue( $outcome->saved() );
+		$this->assertSame( [ [ 'regular_price', '10', '11.00', 'applied' ] ], self::summary(), 'Undo sees the stored change.' );
+		$this->assertCount( 1, $GLOBALS['bulkcat_test']['logged'] ?? [], 'The exception is logged.' );
+		[ $level, $message, $context ] = $GLOBALS['bulkcat_test']['logged'][0];
+		$this->assertSame( 'error', $level );
+		$this->assertStringContainsString( 'RuntimeException', $message );
+		$this->assertStringContainsString( '96', $message );
+		$this->assertStringNotContainsString( 'connection refused', $message, 'Not the text, which may echo the values saved.' );
+		$this->assertSame( 'bulk-catalogue-manager-for-woocommerce', $context['source'] );
+		// A retry of the chunk finds the settled row and does not apply 10% again.
+		$this->assertSame( Journal::ALREADY_DONE, self::writer()->write( 96, $list )->results()[0]->code() );
+		$this->assertSame( '11.00', $GLOBALS['bulkcat_test']['products'][96]->props['regular_price'] );
+	}
+
+	public function test_a_save_that_throws_with_a_value_neither_old_nor_new_is_journalled_uncertain(): void {
+		$GLOBALS['bulkcat_test']['products'][97] = self::throwing_after_write(
+			new SavedProduct(
+				'simple',
+				[
+					'id'            => 97,
+					'regular_price' => '10',
+				]
+			),
+			[
+				'id'            => 97,
+				'regular_price' => '10.50',
+			]
+		);
+
+		$outcome = self::writer()->write( 97, $this->ten_percent() );
+
+		$this->assertSame( [ Result::FAILED ], self::states( $outcome ) );
+		$this->assertFalse( $outcome->saved() );
+		$this->assertSame( Writer::SAVE_UNCERTAIN, $outcome->results()[0]->code() );
+		$this->assertStringContainsString( 'may not have been', $outcome->results()[0]->reason() );
+		$this->assertStringNotContainsString( 'was not made', $outcome->results()[0]->reason() );
+		$this->assertSame( [ [ 'regular_price', '10', '10.50', 'failed' ] ], self::summary(), 'The row holds what the product holds now, not the old value.' );
+		$this->assertSame( $outcome->results()[0]->reason(), self::rows()[0]['message'] );
+		$this->assertCount( 1, $GLOBALS['bulkcat_test']['logged'] ?? [] );
+	}
+
+	public function test_a_save_that_throws_and_cannot_be_read_back_is_journalled_uncertain(): void {
+		$GLOBALS['bulkcat_test']['products'][98] = self::throwing_after_write(
+			new SavedProduct(
+				'simple',
+				[
+					'id'            => 98,
+					'regular_price' => '10',
+				]
+			),
+			null
+		);
+
+		$outcome = self::writer()->write( 98, $this->ten_percent() );
+
+		$this->assertSame( [ Result::FAILED ], self::states( $outcome ) );
+		$this->assertSame( Writer::SAVE_UNCERTAIN, $outcome->results()[0]->code() );
+		$this->assertSame( [ [ 'regular_price', '10', '10', 'failed' ] ], self::summary() );
+		$this->assertStringContainsString( 'may not have been', self::rows()[0]['message'] );
+	}
+
+	public function test_a_save_that_throws_after_storing_one_field_of_two_reports_each_as_stored(): void {
+		$GLOBALS['bulkcat_test']['products'][99] = self::throwing_after_write(
+			new SavedProduct(
+				'simple',
+				[
+					'id'            => 99,
+					'regular_price' => '10',
+					'name'          => 'Old',
+				]
+			),
+			[
+				'id'            => 99,
+				'regular_price' => '12.00',
+				'name'          => 'Old',
+			]
+		);
+		$list                                    = $this->steps(
+			[
+				[
+					'set_value',
+					[
+						'field' => 'regular_price',
+						'value' => '12',
+					],
+				],
+				[
+					'set_value',
+					[
+						'field' => 'name',
+						'value' => 'New',
+					],
+				],
+			]
+		);
+
+		$outcome = self::writer()->write( 99, $list );
+
+		$this->assertSame( [ Result::CHANGED, Result::FAILED ], self::states( $outcome ) );
+		$this->assertTrue( $outcome->saved() );
+		$this->assertSame( Writer::SAVE_FAILED, $outcome->results()[1]->code(), 'The name still holds its old value: not made.' );
+		$this->assertSame(
+			[
+				[ 'regular_price', '10', '12.00', 'applied' ],
+				[ 'name', 'Old', 'Old', 'failed' ],
+			],
+			self::summary()
+		);
+	}
+
+	public function test_a_replayed_save_that_throws_after_the_value_was_stored_is_journalled_applied(): void {
+		self::answer_intents();
+		$list                                    = $this->ten_percent();
+		$GLOBALS['bulkcat_test']['products'][90] = self::dying(
+			new SavedProduct(
+				'simple',
+				[
+					'id'            => 90,
+					'regular_price' => '10',
+				]
+			),
+			false
+		);
+		try {
+			self::writer()->write( 90, $list );
+			$this->fail( 'The request was meant to die in save().' );
+		} catch ( \Error $e ) {
+			unset( $e );
+		}
+		$GLOBALS['bulkcat_test']['products'][90] = self::throwing_after_write(
+			new SavedProduct(
+				'simple',
+				[
+					'id'            => 90,
+					'regular_price' => '10',
+				]
+			),
+			[
+				'id'            => 90,
+				'regular_price' => '11.00',
+			]
+		);
+
+		$retried = self::writer()->write( 90, $list );
+
+		$this->assertSame( [ Result::CHANGED ], self::states( $retried ) );
+		$this->assertTrue( $retried->saved() );
+		$this->assertSame( [ [ 'regular_price', '10', '11.00', 'applied' ] ], self::summary() );
+		$this->assertCount( 1, $GLOBALS['bulkcat_test']['logged'] ?? [] );
 	}
 
 	public function test_an_object_that_is_not_there_writes_a_failed_row_with_an_unknown_time(): void {
@@ -662,6 +895,154 @@ final class JournalTest extends TestCase {
 		$this->assertSame( '11.00', $fresh->props['regular_price'] );
 		$this->assertCount( 1, $fresh->saves );
 		$this->assertSame( [ [ 'regular_price', '10', '11.00', 'applied' ] ], self::summary() );
+	}
+
+	/**
+	 * Kill a write of $list to $id inside save(), before anything landed,
+	 * leaving the intent rows for a retry.
+	 *
+	 * @param int                  $id    Object id.
+	 * @param array<string, mixed> $props The product's props as loaded.
+	 * @param array                $list  The normalised list.
+	 */
+	private function kill_before_save( int $id, array $props, array $list ): void {
+		$GLOBALS['bulkcat_test']['products'][ $id ] = self::dying( new SavedProduct( 'simple', [ 'id' => $id ] + $props ), false );
+		try {
+			self::writer()->write( $id, $list );
+			$this->fail( 'The request was meant to die in save().' );
+		} catch ( \Error $e ) {
+			unset( $e );
+		}
+	}
+
+	public function test_replay_refuses_a_price_changed_between_kill_and_retry(): void {
+		self::answer_intents();
+		$list = $this->steps(
+			[
+				[
+					'set_value',
+					[
+						'field' => 'regular_price',
+						'value' => '11',
+					],
+				],
+			]
+		);
+		$this->kill_before_save( 93, [ 'regular_price' => '10' ], $list );
+		// Someone sets the price to 50 before the retry.
+		$fresh = self::product(
+			[
+				'id'            => 93,
+				'regular_price' => '50',
+			]
+		);
+
+		$retried = self::writer()->write( 93, $list );
+
+		$this->assertSame( '50', $fresh->props['regular_price'], 'The edit made since is kept.' );
+		$this->assertSame( [], $fresh->saves );
+		$this->assertSame( [ Result::FAILED ], self::states( $retried ) );
+		$this->assertSame( \BulkCatalogueManager\Operations\RestoreStatus::CHANGED_SINCE, $retried->results()[0]->code() );
+		$this->assertFalse( $retried->saved() );
+		$this->assertSame( [ [ 'regular_price', '10', '10', 'failed' ] ], self::summary() );
+		$this->assertStringContainsString( 'changed', self::rows()[0]['message'] );
+	}
+
+	public function test_replay_skips_a_product_moved_to_the_bin_since_as_unavailable(): void {
+		self::answer_intents();
+		$list = $this->ten_percent();
+		$this->kill_before_save( 94, [ 'regular_price' => '10' ], $list );
+		$fresh = self::product(
+			[
+				'id'            => 94,
+				'regular_price' => '10',
+				'status'        => 'trash',
+			]
+		);
+
+		$retried = self::writer()->write( 94, $list );
+
+		$this->assertSame( '10', $fresh->props['regular_price'] );
+		$this->assertSame( [], $fresh->saves, 'A binned product is never written.' );
+		$this->assertSame( [ Result::SKIPPED ], self::states( $retried ) );
+		$this->assertSame( Writer::UNAVAILABLE, $retried->results()[0]->code() );
+		$this->assertSame( \BulkCatalogueManager\Engine\BatchFactory::unavailable_reason(), $retried->results()[0]->reason() );
+		$this->assertSame( [ [ 'regular_price', '10', '10', 'skipped' ] ], self::summary() );
+	}
+
+	public function test_replay_rechecks_the_right_to_assign_categories(): void {
+		self::answer_intents();
+		$list = $this->steps(
+			[
+				[
+					'replace_terms',
+					[
+						'field' => 'category_ids',
+						'terms' => [ 12 ],
+					],
+				],
+			]
+		);
+		$this->kill_before_save( 95, [ 'category_ids' => [ 11 ] ], $list );
+		// The categories never landed, and the user has since lost the right to assign them.
+		$fresh = self::product(
+			[
+				'id'           => 95,
+				'category_ids' => [ 11 ],
+			]
+		);
+		$GLOBALS['bulkcat_test']['caps']['assign_product_terms'] = false;
+
+		$retried = self::writer()->write( 95, $list );
+
+		$this->assertSame( [ 11 ], $fresh->props['category_ids'] );
+		$this->assertSame( [], $fresh->saves );
+		$this->assertNotSame( Result::CHANGED, $retried->results()[0]->state() );
+		$this->assertStringContainsString( 'permission', $retried->results()[0]->reason() );
+		$this->assertSame( 'skipped', self::rows()[0]['result'] );
+	}
+
+	public function test_replay_still_finishes_a_value_still_at_its_old_value_or_already_landed(): void {
+		self::answer_intents();
+		$list = $this->steps(
+			[
+				[
+					'set_value',
+					[
+						'field' => 'regular_price',
+						'value' => '11',
+					],
+				],
+				[
+					'set_value',
+					[
+						'field' => 'name',
+						'value' => 'New',
+					],
+				],
+			]
+		);
+		$this->kill_before_save(
+			89,
+			[
+				'regular_price' => '10',
+				'name'          => 'Old',
+			],
+			$list
+		);
+		$fresh = self::product(
+			[
+				'id'            => 89,
+				'regular_price' => '11.00',
+				'name'          => 'Old',
+			]
+		);
+
+		$retried = self::writer()->write( 89, $list );
+
+		$this->assertSame( [ Result::CHANGED, Result::CHANGED ], self::states( $retried ) );
+		$this->assertSame( 'New', $fresh->props['name'] );
+		$this->assertCount( 1, $fresh->saves );
 	}
 
 	public function test_skip_already_crossed_with_record_unchanged_rows(): void {

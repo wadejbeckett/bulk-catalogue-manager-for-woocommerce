@@ -57,6 +57,13 @@ final class SampleProvider extends AbstractProvider {
 	public static array $computed = [];
 
 	/**
+	 * Every write() call of the labels field, as [ object id, mode ].
+	 *
+	 * @var list<array{0: int, 1: string}>
+	 */
+	public static array $written = [];
+
+	/**
 	 * Every authorise() call's object id.
 	 *
 	 * @var list<int>
@@ -80,6 +87,7 @@ final class SampleProvider extends AbstractProvider {
 		self::$computed   = [];
 		self::$authorised = [];
 		self::$primed     = [];
+		self::$written    = [];
 	}
 
 	/**

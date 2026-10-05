@@ -4,6 +4,17 @@ The numbers `perf.py` measured against SPEC §12.5. How to run it, and what
 each number means, is in `README.md` (Performance). Rerun it before a release
 and add a dated record; keep older measurements as history.
 
+## Filtered export by id (SQR-3) — 5 October 2026
+
+A filtered export now walks its matches by id (`Export\FilterRows`, each
+page the next 100 after the last id written) instead of OFFSET pages of
+`GET /products` re-sorted for every page. Same stack as SQR-1 (load 2.4),
+`perf.py --only export,export_post --runs 3`, 1.3.0 then this change:
+20,000 rows by GET 13.3 s and 1,462 queries against 4.5 s and 669 queries;
+first byte 269 against 244 ms; peak 17.3 against 17.1 MB. By POST with the
+identifier switch on: filter 5.5 s, 1,066 queries, first byte 155 ms;
+selection 4.7 s; all within budget (6 passed, 0 failed).
+
 ## Regular price filter and sort (SQR-1) — 5 October 2026
 
 The Regular price filter and sort now read the regular price the cell shows

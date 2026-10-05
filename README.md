@@ -27,7 +27,7 @@ Accepted legacy work and explicit Undo retain their recorded meaning. Existing O
 
 ## Re-import the file
 
-**Export CSV** opens a dialog. **Selected**, chosen whenever anything is selected, exports exactly the selection in ascending ID order, including rows the list is not showing; items no longer available are left out and counted. **All matching the current filters** exports every matching row in the view's sort order; with no search, filter or category it is the whole catalogue and needs **Yes, export the whole catalogue** (the server requires it too). The columns are the name, then the visible columns in order, without the image. The catalogue is exported by `POST /bulkcat/v1/export` into a hidden frame, the nonce and the selection's token in the body; `GET /bulkcat/v1/export` exports History's rows only.
+**Export CSV** opens a dialog. **Selected**, chosen whenever anything is selected, exports exactly the selection in ascending ID order, including rows the list is not showing; items no longer available are left out and counted. **All matching the current filters** exports every matching row in ascending ID order, each once even when rows change while the file is written; with no search, filter or category it is the whole catalogue and needs **Yes, export the whole catalogue** (the server requires it too). The columns are the name, then the visible columns in order, without the image. The catalogue is exported by `POST /bulkcat/v1/export` into a hidden frame, the nonce and the selection's token in the body; `GET /bulkcat/v1/export` exports History's rows only.
 
 To update products through WooCommerce's own importer:
 

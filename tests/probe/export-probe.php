@@ -677,10 +677,7 @@ if ( ! function_exists( 'bulkcat_export_probe' ) ) {
 		wp_set_current_user( $user );
 		$registry = \BulkCatalogueManager\Fields\Registry::instance();
 		$plan     = new \BulkCatalogueManager\Export\ColumnPlan( $registry, [ 'name', 'sku', 'regular_price', 'stock_status', 'category_ids', 'type' ], true );
-		$reader   = new ReflectionMethod( \BulkCatalogueManager\Rest\ExportController::class, 'products_reader' );
-		$reader->setAccessible( true );
-		$filter = new \BulkCatalogueManager\Export\CallableRowSource( $reader->invoke( null, new \BulkCatalogueManager\Rest\ProductsController( $registry ) ) );
-		$out    = [];
+		$out      = [];
 		foreach ( [ 'products', 'products_and_variations', 'variations' ] as $mode ) {
 			// A fresh count for this mode: a 60-second count transient written by an earlier row could
 			// otherwise expire inside the measured window and add its recount to one page.
@@ -703,6 +700,11 @@ if ( ! function_exists( 'bulkcat_export_probe' ) ) {
 				'fields'  => $plan->fields(),
 			];
 			$rows = \BulkCatalogueManager\Export\ExportRows::ids( $ids, $registry );
+			// SQR-3: a filter export's own source, its matches walked by id.
+			$filter = new \BulkCatalogueManager\Export\FilterRows(
+				new \BulkCatalogueManager\Query\ProductQuery( \BulkCatalogueManager\Query\Criteria::from_array( array_diff_key( $read, [ 'fields' => true ] ) ) ),
+				new \BulkCatalogueManager\Query\Hydrator( $registry )
+			);
 			foreach ( [
 				'filter' => $filter,
 				'ids'    => $rows,

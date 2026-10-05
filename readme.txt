@@ -86,7 +86,7 @@ Before downgrading to 1.1.0, stop new changes and finish or explicitly handle ev
 
 = How do I export products as CSV? =
 
-On the Catalogue tab, choose **Export CSV**. When products are selected, **Selected** is chosen: the file holds exactly the selected products and variations, including any the list is not showing, in ID order. **All matching the current filters** exports every row the current search, filters, category and mode match; with nothing narrowing the list that is the whole catalogue, and you confirm it first. The file has the name, then the columns the table shows, in the same order. Before the download the dialog says how many rows the file will have, and how many selected items are no longer available and will be left out.
+On the Catalogue tab, choose **Export CSV**. When products are selected, **Selected** is chosen: the file holds exactly the selected products and variations, including any the list is not showing, in ID order. **All matching the current filters** exports every row the current search, filters, category and mode match, in ID order; with nothing narrowing the list that is the whole catalogue, and you confirm it first. The file has the name, then the columns the table shows, in the same order. Before the download the dialog says how many rows the file will have, and how many selected items are no longer available and will be left out.
 
 = How do I update products by re-importing the file? =
 

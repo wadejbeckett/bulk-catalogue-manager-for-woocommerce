@@ -182,6 +182,29 @@ final class CsvExportTest extends TestCase {
 		$this->assertStringEndsWith( "\"1\";\"SKU-1\"\r\n", $csv );
 	}
 
+	public function test_a_source_saying_more_follows_is_read_past_the_counted_pages(): void {
+		// SQR-3: 100 rows counted, then 30 more came to match while the file was written.
+		$source = new class() implements \BulkCatalogueManager\Export\RowSource {
+			/**
+			 * Pages asked for.
+			 *
+			 * @var list<int>
+			 */
+			public array $pages = [];
+
+			public function page( array $params, int $page, int $per_page ): array {
+				$this->pages[] = $page;
+				return [
+					'items' => array_map( static fn( int $n ): array => [ 'id' => ( $page - 1 ) * $per_page + $n ], range( 1, 1 === $page ? $per_page : 30 ) ),
+					'total' => 100,
+					'more'  => 1 === $page,
+				];
+			}
+		};
+		$this->assertCount( 131, self::parse( self::bytes( new CsvExport( $source, new Registry(), [ 'id' ], [], ',', 'f.csv' ) ) ) );
+		$this->assertSame( [ 1, 2 ], $source->pages );
+	}
+
 	public function test_reading_stops_at_an_empty_page(): void {
 		$source = new CallableRowSource(
 			function ( array $params, int $page, int $per_page ): array {

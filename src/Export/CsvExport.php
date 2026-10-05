@@ -14,7 +14,10 @@
  *
  * The number of pages is fixed by the total the first page reports, so a
  * source is asked ceil( total / 100 ) times (once when nothing matches);
- * reading stops early if a page comes back empty.
+ * reading stops early if a page comes back empty. A source that walks its
+ * rows by key (Export\FilterRows) may say a page has `more` after it; the
+ * last counted page then does not end the file, so rows that came to match
+ * meanwhile cannot push one off the end.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -142,6 +145,9 @@ final class CsvExport {
 			$result = $this->source->page( $this->params, $page, self::PER_PAGE );
 			if ( 1 === $page ) {
 				$pages = max( 1, (int) ceil( $result['total'] / self::PER_PAGE ) );
+			}
+			if ( $page === $pages && ! empty( $result['more'] ) ) {
+				++$pages;
 			}
 			if ( [] === $result['items'] ) {
 				break;

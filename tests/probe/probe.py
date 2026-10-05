@@ -685,7 +685,8 @@ def check_read_queries(p: Probe) -> None:
         grid: list[list[str]] = []
         page = 1
         while True:
-            d = p.http("manager", "GET", "/products", cat + [("per_page", "4"), ("page", str(page))]).json()
+            # SQR-3: a filtered export writes its rows in ID order, whatever the view's sort.
+            d = p.http("manager", "GET", "/products", cat + [("per_page", "4"), ("page", str(page)), ("orderby", "id"), ("order", "asc")]).json()
             grid += [[str(item["id"]), item["sku"], item["name"], item["regular_price"] or ""] for item in d["items"]]
             if page >= d["pagination"]["totalPages"]:
                 break

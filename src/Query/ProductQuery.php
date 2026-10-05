@@ -325,6 +325,37 @@ final class ProductQuery {
 	}
 
 	/**
+	 * The next rows after an id, in id order (SQR-3): `id` and `parent_id`
+	 * of at most $limit rows matching the conditions whose id is above
+	 * $after. Keyset paging for a walk over every match, such as a filtered
+	 * export: a row's place never depends on the view's sort keys or on rows
+	 * added or removed meanwhile, so no row is read twice or passed over, and
+	 * each statement starts where the last one stopped.
+	 *
+	 * @param int $after Last id read; 0 to start.
+	 * @param int $limit Most rows.
+	 * @return array<int, array{id: int, parent_id: int}>
+	 * @throws \RuntimeException On a database error.
+	 */
+	public function after( int $after, int $limit ): array {
+		global $wpdb;
+		$conditions = $this->conditions_sql();
+		$sql        = 'SELECT ' . $this->hint( $this->lookup ) . 'p.ID AS id, p.post_parent AS parent_id ' . $conditions['sql'] . ' AND p.ID > %d ORDER BY p.ID ASC LIMIT %d';
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Allow-listed conditions and placeholders; every value is an argument.
+		$rows = $wpdb->get_results( $wpdb->prepare( $sql, ...[ ...$conditions['args'], max( 0, $after ), max( 1, $limit ) ] ), ARRAY_A );
+		if ( ! is_array( $rows ) || '' !== $wpdb->last_error ) {
+			throw new \RuntimeException( 'The catalogue could not be read.' );
+		}
+		return array_map(
+			static fn( array $row ): array => [
+				'id'        => (int) $row['id'],
+				'parent_id' => (int) $row['parent_id'],
+			],
+			$rows
+		);
+	}
+
+	/**
 	 * Capture typed identities in one statement, independent of view paging.
 	 *
 	 * @param int[]|null $ids Optional validated explicit identities.

@@ -505,11 +505,32 @@ describe( 'history words', () => {
 		expect( putBackTypes( plan, false ) ).toEqual( {
 			products: 100,
 			variations: 20,
+			categories: 0,
 		} );
 		expect( putBackTypes( plan, true ) ).toEqual( {
 			products: 105,
 			variations: 20,
+			categories: 0,
 		} );
+		// Ticket 133: an undo of category changes says categories.
+		expect(
+			confirmSentence(
+				2,
+				'values',
+				putBackTypes(
+					{
+						by_type: {
+							term: {
+								revertible: 2,
+								conflicted: 0,
+								skipped: 0,
+							},
+						},
+					},
+					false
+				)
+			)
+		).toBe( 'This puts 2 categories back as they were before. Continue?' );
 		expect( putBackTypes( { counts: plan.counts }, false ) ).toBeNull();
 		expect(
 			confirmSentence( 120, 'prices', putBackTypes( plan, false ) )

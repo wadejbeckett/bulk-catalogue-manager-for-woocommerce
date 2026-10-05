@@ -989,6 +989,15 @@ if ( ! function_exists( 'wp_insert_term' ) ) {
 	}
 
 	/**
+	 * Ticket 133: removes a term meta value from 'term_meta', recording the call in 'term_meta_deletes'.
+	 */
+	function delete_term_meta( int $term_id, string $meta_key, mixed $meta_value = '' ): bool {
+		$GLOBALS['bulkcat_test']['term_meta_deletes'][] = [ $term_id, $meta_key ];
+		unset( $GLOBALS['bulkcat_test']['term_meta'][ $term_id ][ $meta_key ] );
+		return true;
+	}
+
+	/**
 	 * Ticket 24: the objects holding any of some terms, from the read stubs' 'object_terms'.
 	 */
 	function get_objects_in_term( int|array $term_ids, string|array $taxonomies, array|string $args = [] ): array|WP_Error {

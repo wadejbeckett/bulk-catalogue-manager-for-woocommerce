@@ -315,6 +315,11 @@ final class UndoRouteTest extends TestCase {
 					'conflicted' => 0,
 					'skipped'    => 0,
 				],
+				'term'      => [
+					'revertible' => 0,
+					'conflicted' => 0,
+					'skipped'    => 0,
+				],
 			],
 			$preview['by_type']
 		);
@@ -323,6 +328,7 @@ final class UndoRouteTest extends TestCase {
 			[
 				'products'   => 1,
 				'variations' => 1,
+				'categories' => 0,
 			],
 			$created['undo']['by_type'],
 			'The undo batch holds 1001 and 2001; 1002 was left alone.'

@@ -77,11 +77,12 @@ final class UndoRecorder {
 	/**
 	 * Items the undo puts back by type (T114): products and variations.
 	 *
-	 * @var array{products: int, variations: int}
+	 * @var array{products: int, variations: int, categories: int}
 	 */
 	private array $types = [
 		'products'   => 0,
 		'variations' => 0,
+		'categories' => 0,
 	];
 
 	/**
@@ -112,7 +113,11 @@ final class UndoRecorder {
 		}
 		$this->pending[] = [ $item['object_id'], $item['object_type'], $item['operations'] ];
 		++$this->taken;
-		++$this->types[ 'variation' === $item['object_type'] ? 'variations' : 'products' ];
+		++$this->types[ match ( $item['object_type'] ) {
+			'variation' => 'variations',
+			'term'      => 'categories',
+			default     => 'products',
+		} ];
 		foreach ( $item['operations'] as $operation ) {
 			$this->outline[ $operation['action'] . '|' . $operation['args']['field'] ] ??= [
 				'action' => $operation['action'],

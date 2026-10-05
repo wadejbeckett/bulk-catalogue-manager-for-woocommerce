@@ -237,6 +237,8 @@ final class Writer {
 			self::ORDER_PROP        => __( 'Position', 'bulk-catalogue-manager-for-woocommerce' ),
 			self::LEGACY_ORDER_PROP => __( 'Old position in this screen only', 'bulk-catalogue-manager-for-woocommerce' ),
 			self::DEFAULT_PROP      => __( 'Default category', 'bulk-catalogue-manager-for-woocommerce' ),
+			TermUndo::CREATED       => __( 'New category', 'bulk-catalogue-manager-for-woocommerce' ),
+			Deleter::DELETED_PROP   => __( 'Deleted category', 'bulk-catalogue-manager-for-woocommerce' ),
 			default                 => null,
 		};
 	}

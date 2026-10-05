@@ -24,6 +24,7 @@ use BulkCatalogueManager\Settings\Settings;
 use BulkCatalogueManager\Undo\Original;
 use BulkCatalogueManager\Undo\Plan;
 use BulkCatalogueManager\Undo\Planner;
+use BulkCatalogueManager\Categories\TermUndo;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -481,6 +482,7 @@ final class ChunkRunner {
 		$undo       = 'undo' === $batch['source'];
 		$own        = $this->batches->item_operations( $batch['batch_id'], array_values( array_map( static fn( array $item ): int => $item['item_id'], $items ) ) );
 		$writer->guarded( $undo ? $this->undo_guard( $batch, $items ) : null );
+		$terms    = $undo ? $this->term_guard( $batch, $items ) : null;
 		$error    = null;
 		$stopped  = false;
 		$written  = [];
@@ -495,7 +497,7 @@ final class ChunkRunner {
 		wp_defer_term_counting( true );
 		try {
 			$writer->run(
-				static function ( Writer $writer ) use ( $items, $operations, $undo, $own, $batches, $changes, $batch_id, $token, $lease, $deadline, &$error, &$stopped, &$written ): void {
+				static function ( Writer $writer ) use ( $items, $operations, $undo, $own, $batches, $changes, $batch_id, $token, $lease, $deadline, $terms, &$error, &$stopped, &$written ): void {
 					$finish = static function ( int $item_id, array $mark, bool $changed ) use ( $batches, $batch_id, $token ): void {
 						$batches->finish_item( $batch_id, $item_id, $token, $mark[0], $mark[1], $changed );
 					};
@@ -508,6 +510,12 @@ final class ChunkRunner {
 							continue; // Another run took the chunk over when this one's lease went stale.
 						}
 						if ( 'term' === $item['object_type'] ) {
+							if ( $undo && isset( $own[ $item['item_id'] ] ) ) {
+								// Ticket 133 bug 1: a category's undo, checked again now unless Revert anyway.
+								[ $state, $message, $changed ] = TermUndo::write( $changes, $batch_id, $item['object_id'], $own[ $item['item_id'] ], null === $terms ? null : $terms( $item['object_id'] ) );
+								$finish( $item['item_id'], [ $state, $message ], $changed );
+								continue;
+							}
 							$finish( $item['item_id'], [ 'failed', __( 'Category changes cannot run in the background yet, so this change was not made.', 'bulk-catalogue-manager-for-woocommerce' ) ], false );
 							continue;
 						}
@@ -605,6 +613,30 @@ final class ChunkRunner {
 			$item = $now( $object_id, $product );
 			return null !== $item && Plan::CONFLICTED === $item['state'] ? (string) $item['reason'] : null;
 		};
+	}
+
+	/**
+	 * The check an undo chunk's categories get just before each is written
+	 * (ticket 133 bug 1): the plan item of each as it stands then, or null
+	 * when nothing is checked (Revert anyway, or no category in the chunk).
+	 *
+	 * @param array                                                                     $batch The undo batch.
+	 * @param array<int, array{item_id: int, object_id: int, object_type: string, attempts: int}> $items The chunk's items.
+	 * @return \Closure( int ): ?array<string, mixed>|null
+	 */
+	private function term_guard( array $batch, array $items ): ?\Closure {
+		$undo_of = (int) ( $batch['undo_of'] ?? 0 );
+		$ids     = [];
+		foreach ( $items as $item ) {
+			if ( 'term' === $item['object_type'] ) {
+				$ids[] = $item['object_id'];
+			}
+		}
+		if ( $undo_of < 1 || [] === $ids || true === ( $batch['selection']['force'] ?? false ) ) {
+			return null;
+		}
+		$now = ( new Planner( $this->batches, $this->changes, $this->actions, $this->settings() ) )->checker( $undo_of, $ids, (int) $batch['user_id'] );
+		return static fn( int $object_id ): ?array => $now( $object_id );
 	}
 
 	/**

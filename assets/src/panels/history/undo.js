@@ -141,7 +141,31 @@ export function putBackTypes( plan, force ) {
 	const of = ( type ) =>
 		( Number( byType[ type ]?.revertible ) || 0 ) +
 		( force ? Number( byType[ type ]?.conflicted ) || 0 : 0 );
-	return { products: of( 'product' ), variations: of( 'variation' ) };
+	return {
+		products: of( 'product' ),
+		variations: of( 'variation' ),
+		categories: of( 'term' ),
+	};
+}
+
+/**
+ * "1 category" or "4 categories" (ticket 133: an undo of category changes
+ * puts categories back, not products).
+ *
+ * @param {number} count Count.
+ * @return {string} Phrase.
+ */
+export function categoriesPhrase( count ) {
+	return sprintf(
+		/* translators: %s: a number of categories, such as "4". */
+		_n(
+			'%s category',
+			'%s categories',
+			count,
+			'bulk-catalogue-manager-for-woocommerce'
+		),
+		Number( count ).toLocaleString()
+	);
 }
 
 /**
@@ -183,6 +207,22 @@ export function valueKind( batch, byKey ) {
  * @return {string} Sentence.
  */
 export function confirmSentence( count, kind, types = null ) {
+	if (
+		Number( types?.categories ) > 0 &&
+		! Number( types?.products ) &&
+		! Number( types?.variations )
+	) {
+		return sprintf(
+			/* translators: %s: what is put back, such as "1 category" or "4 categories". */
+			_n(
+				'This puts %s back as it was before. Continue?',
+				'This puts %s back as they were before. Continue?',
+				count,
+				'bulk-catalogue-manager-for-woocommerce'
+			),
+			categoriesPhrase( count )
+		);
+	}
 	const what = countPhrase( count, types || {} );
 	switch ( kind ) {
 		case 'prices':
@@ -243,6 +283,10 @@ export function confirmSentence( count, kind, types = null ) {
 function putBackPhrase( count, byType ) {
 	const products = Number( byType?.products ) || 0;
 	const variations = Number( byType?.variations ) || 0;
+	const categories = Number( byType?.categories ) || 0;
+	if ( byType && categories > 0 && 0 === products && 0 === variations ) {
+		return categoriesPhrase( count );
+	}
 	if ( byType && products > 0 && 0 === variations ) {
 		return productsPhrase( count );
 	}

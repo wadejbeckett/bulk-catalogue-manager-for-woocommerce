@@ -123,6 +123,7 @@ final class DependencyTest extends TestCase {
 					[ $file, [ Migrator::class, 'activate' ] ],
 					[ $file, [ Pruner::class, 'schedule' ] ],
 					[ $file, [ \BulkCatalogueManager\Requests\Cleanup::class, 'schedule' ] ],
+					[ $file, [ \BulkCatalogueManager\Engine\ChunkRunner::class, 'resume_interrupted' ] ],
 				],
 				$result['activate'],
 				"WooCommerce $version."

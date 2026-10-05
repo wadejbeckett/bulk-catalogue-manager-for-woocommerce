@@ -218,9 +218,9 @@ final class UninstallTest extends TestCase {
 		);
 	}
 
-	public function test_deactivation_unschedules_only_the_recurring_actions(): void {
+	public function test_deactivation_unschedules_only_the_plugins_scheduled_actions(): void {
 		Cleanup::deactivate();
-		$this->assertSame( [ [ 'bulkcat_prune_history', [], 'bulk-catalogue-manager-for-woocommerce' ], [ 'bulkcat_prune_selections', [], 'bulk-catalogue-manager-for-woocommerce' ], [ 'bulkcat_prune_requests', [], 'bulk-catalogue-manager-for-woocommerce' ] ], $GLOBALS['bulkcat_test']['unscheduled'] );
+		$this->assertSame( [ [ 'bulkcat_prune_history', [], 'bulk-catalogue-manager-for-woocommerce' ], [ 'bulkcat_prune_selections', [], 'bulk-catalogue-manager-for-woocommerce' ], [ 'bulkcat_prune_requests', [], 'bulk-catalogue-manager-for-woocommerce' ], [ 'bulkcat_run_chunk', [], 'bulk-catalogue-manager-for-woocommerce' ] ], $GLOBALS['bulkcat_test']['unscheduled'] );
 		$this->assertSame( [], $GLOBALS['bulkcat_test']['deleted'], 'Deactivation deletes no data.' );
 		$this->assertSame( [], $GLOBALS['wpdb']->queries );
 

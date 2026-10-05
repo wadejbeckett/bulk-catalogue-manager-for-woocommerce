@@ -125,7 +125,7 @@ Shop managers and administrators by default, or administrators only. Each produc
 
 = What happens when I deactivate or delete the plugin? =
 
-Deactivating stops the daily history clean-up and leaves everything else in place. Deleting the plugin keeps your history, settings and saved views by default, so they are there if you reinstall. To remove everything when the plugin is deleted, turn on **Remove all data when the plugin is deleted** on the Settings tab first. Your product data itself is never removed. With that setting on, deletion also removes legacy saved-status records while leaving product statuses unchanged. Review the products and history before removing retained data.
+Deactivating stops the plugin's scheduled clean-ups and pauses any change that is still running; when you activate the plugin again, that change carries on from where it stopped. Everything else stays in place. Deleting the plugin keeps your history, settings and saved views by default, so they are there if you reinstall. To remove everything when the plugin is deleted, turn on **Remove all data when the plugin is deleted** on the Settings tab first. Your product data itself is never removed. With that setting on, deletion also removes legacy saved-status records while leaving product statuses unchanged. Review the products and history before removing retained data.
 
 = Does it work on a multisite network? =
 

@@ -318,6 +318,28 @@ final class ChunkRunner {
 	}
 
 	/**
+	 * Queue again every batch left queued or running with no pending chunk:
+	 * deactivation removes a batch's pending chunk (Data\Cleanup::deactivate())
+	 * and leaves its status and items as they were, so on reactivation the
+	 * batch carries on from its next pending item. Runs on activation and
+	 * where the admin repairs the recurring clean-ups (Plugin::migrate()).
+	 * A batch whose chunk is already pending or running is left alone.
+	 */
+	public static function resume_interrupted(): void {
+		if ( ! function_exists( 'as_enqueue_async_action' ) ) {
+			return;
+		}
+		foreach ( ( new BatchRepository() )->active_ids() as $batch_id ) {
+			try {
+				self::ensure_queued( $batch_id );
+			} catch ( \RuntimeException $error ) {
+				// A batch that cannot be read now is retried at the next repair.
+				unset( $error );
+			}
+		}
+	}
+
+	/**
 	 * Whether a chunk of the batch is pending or running, or its delayed
 	 * retry is waiting (a chunk that stopped early backs off RETRY_DELAY
 	 * seconds; resolving the request must not cut that short).

@@ -44,9 +44,10 @@ final class PicksAction implements ExternalAction, LookupSource {
 	/**
 	 * Build one.
 	 *
-	 * @param string $id One of the constants.
+	 * @param string $id   One of the constants.
+	 * @param bool   $rows Whether to offer row entries (when the core supports them).
 	 */
-	public function __construct( private readonly string $id ) {}
+	public function __construct( private readonly string $id, private readonly bool $rows = true ) {}
 
 	/**
 	 * The descriptor.
@@ -72,12 +73,12 @@ final class PicksAction implements ExternalAction, LookupSource {
 			],
 		];
 		return match ( $this->id ) {
-			self::ADD          => ( new ActionDescriptor( self::ADD, PicksField::PRODUCT, 'x_picks_items', 'Add recipients', 'Adds the chosen recipients. Others are kept.', 'add', $many, 'edit_products' ) )->with_row_entry(),
-			self::REMOVE       => ( new ActionDescriptor( self::REMOVE, PicksField::PRODUCT, 'x_picks_items', 'Remove recipients', 'Removes the chosen recipients. Others are kept.', 'remove', $many, 'edit_products' ) )->with_row_entry(),
+			self::ADD          => ( new ActionDescriptor( self::ADD, PicksField::PRODUCT, 'x_picks_items', 'Add recipients', 'Adds the chosen recipients. Others are kept.', 'add', $many, 'edit_products' ) )->with_row_entry( $this->rows ),
+			self::REMOVE       => ( new ActionDescriptor( self::REMOVE, PicksField::PRODUCT, 'x_picks_items', 'Remove recipients', 'Removes the chosen recipients. Others are kept.', 'remove', $many, 'edit_products' ) )->with_row_entry( $this->rows ),
 			self::ONLY         => new ActionDescriptor( self::ONLY, PicksField::PRODUCT, 'x_picks_items', 'Keep one recipient', 'Replaces every recipient with the chosen one.', 'set', $one, 'edit_products', true, 'This replaces every recipient on the chosen products.' ),
 			self::CLEAR        => new ActionDescriptor( self::CLEAR, PicksField::PRODUCT, 'x_picks_items', 'Clear recipients', 'Removes every recipient.', 'clear', [], 'edit_products', true, 'This removes every recipient from the chosen products.' ),
-			self::CATEGORY_ADD => ( new ActionDescriptor( self::CATEGORY_ADD, PicksField::CATEGORY, 'x_picks_items', 'Add recipients to categories', 'Adds the chosen recipients to each chosen category. Others are kept.', 'add', $many, 'manage_product_terms' ) )->for_target( ActionDescriptor::TARGET_CATEGORY )->with_row_entry(),
-			default            => ( new ActionDescriptor( self::CATEGORY_REM, PicksField::CATEGORY, 'x_picks_items', 'Remove recipients from categories', 'Removes the chosen recipients from each chosen category. Others are kept.', 'remove', $many, 'manage_product_terms' ) )->for_target( ActionDescriptor::TARGET_CATEGORY )->with_row_entry(),
+			self::CATEGORY_ADD => ( new ActionDescriptor( self::CATEGORY_ADD, PicksField::CATEGORY, 'x_picks_items', 'Add recipients to categories', 'Adds the chosen recipients to each chosen category. Others are kept.', 'add', $many, 'manage_product_terms' ) )->for_target( ActionDescriptor::TARGET_CATEGORY )->with_row_entry( $this->rows ),
+			default            => ( new ActionDescriptor( self::CATEGORY_REM, PicksField::CATEGORY, 'x_picks_items', 'Remove recipients from categories', 'Removes the chosen recipients from each chosen category. Others are kept.', 'remove', $many, 'manage_product_terms' ) )->for_target( ActionDescriptor::TARGET_CATEGORY )->with_row_entry( $this->rows ),
 		};
 	}
 

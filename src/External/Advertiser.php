@@ -111,6 +111,13 @@ final class Advertiser {
 					'alwaysConfirm'     => $described['always_confirm'],
 					'confirmReason'     => $usable ? $described['confirm_reason'] : '',
 				];
+				// Contract version 2 keys, only when not the default, so a version 1 entry is unchanged (docs/EXTENSIONS-v2.md §7).
+				if ( 'product' !== ( $described['target'] ?? 'product' ) ) {
+					$entries[ count( $entries ) - 1 ]['target'] = $described['target'];
+				}
+				if ( ! empty( $described['row_entry'] ) ) {
+					$entries[ count( $entries ) - 1 ]['row'] = true;
+				}
 			}
 		}
 		return $entries;

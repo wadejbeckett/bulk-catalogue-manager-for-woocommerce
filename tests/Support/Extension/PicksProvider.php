@@ -20,13 +20,14 @@ use BulkCatalogueManager\Extension\CategoryScope;
 use BulkCatalogueManager\Extension\CategorySubject;
 use BulkCatalogueManager\Extension\ChooserGroup;
 use BulkCatalogueManager\Extension\Context;
+use BulkCatalogueManager\Extension\Contract;
 use BulkCatalogueManager\Extension\Scope;
 use BulkCatalogueManager\Extension\Subject;
 
 /**
  * The provider.
  */
-final class PicksProvider extends AbstractProvider implements CategoryProvider {
+class PicksProvider extends AbstractProvider implements CategoryProvider {
 	/**
 	 * Recorded calls, for assertions: kind => list of arguments.
 	 *
@@ -54,8 +55,10 @@ final class PicksProvider extends AbstractProvider implements CategoryProvider {
 	 * @param SampleStore|null $products Product storage (post meta by default).
 	 * @param SampleStore|null $terms    Category storage (term meta by default).
 	 * @param bool             $categories Whether to offer the category actions.
+	 * @param bool|null        $rows       Whether to offer row entries; by default when the core supports them.
 	 */
-	public function __construct( ?SampleStore $products = null, ?SampleStore $terms = null, private readonly bool $categories = true ) {
+	public function __construct( ?SampleStore $products = null, ?SampleStore $terms = null, private readonly bool $categories = true, private ?bool $rows = null ) {
+		$this->rows   ??= in_array( Contract::FEATURE_ROW_ENTRY, Contract::FEATURES, true );
 		$this->products = $products ?? new MetaStore();
 		$this->terms    = $terms ?? new TermMetaStore();
 	}
@@ -124,7 +127,8 @@ final class PicksProvider extends AbstractProvider implements CategoryProvider {
 		if ( $this->categories ) {
 			$ids = [ ...$ids, PicksAction::CATEGORY_ADD, PicksAction::CATEGORY_REM ];
 		}
-		return array_map( static fn( string $id ): PicksAction => new PicksAction( $id ), $ids );
+		$rows = (bool) $this->rows;
+		return array_map( static fn( string $id ): PicksAction => new PicksAction( $id, $rows ), $ids );
 	}
 
 	/**

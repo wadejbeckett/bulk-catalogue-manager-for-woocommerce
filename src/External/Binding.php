@@ -45,12 +45,18 @@ final class Binding {
 		$scope     = new ScopeView( $members );
 		$context ??= RunContext::current();
 		$state     = Guard::run( $provider->id, 'state_token', static fn(): mixed => $provider->provider->state_token( $scope, $operations, $context ) );
-		return [
+		$binding   = [
 			'provider' => $provider->id,
 			'version'  => $provider->version,
 			'contract' => $provider->contract,
 			'formats'  => $formats,
 			'state'    => is_string( $state ) ? $state : '',
 		];
+		// Contract version 2: the resolved choices, only when a step has a lookup (docs/EXTENSIONS-v2.md §4.4).
+		$choices = Choices::of( $provider, $operations, $context );
+		if ( [] !== $choices ) {
+			$binding['choices'] = $choices;
+		}
+		return $binding;
 	}
 }

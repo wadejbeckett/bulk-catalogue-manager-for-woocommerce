@@ -256,7 +256,7 @@ final class Progress {
 		}
 		if ( is_array( $batch['extensions'] ?? null ) ) {
 			// T108: an external change's add-on and labels, from its manifest; absent for a native change.
-			$report['external'] = \BulkCatalogueManager\External\Manifest::client( $batch['extensions'] );
+			$report['external'] = \BulkCatalogueManager\External\Manifest::client( $batch['extensions'], is_array( $report['operations'] ?? null ) ? $report['operations'] : [] );
 		}
 		if ( $summary ) {
 			$report['summary'] = $this->summary( $batch['batch_id'] );

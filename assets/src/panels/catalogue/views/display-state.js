@@ -62,3 +62,44 @@ export function applyDisplay( view, display, known ) {
 	}
 	return next;
 }
+
+/**
+ * The visible columns to store, keeping stored columns this screen does not
+ * offer just now (a field an add-on stopped providing, for instance), so they
+ * come back in place when it offers them again. Each run of such columns stays
+ * just before the next stored column the screen offers; a run whose anchor is
+ * not visible, or that ends the stored list, goes last.
+ *
+ * @param {Array<string>|undefined} stored  Stored column order.
+ * @param {Array<string>}           visible The visible columns now, in order.
+ * @param {Array<string>}           known   Column keys this screen offers.
+ * @return {Array<string>} Columns to store.
+ */
+export function mergeAvailableFields( stored, visible, known ) {
+	if ( ! Array.isArray( stored ) ) {
+		return [ ...visible ];
+	}
+	const offered = new Set( known );
+	const before = new Map();
+	const trailing = [];
+	let run = [];
+	stored.forEach( ( key ) => {
+		if ( offered.has( key ) ) {
+			if ( run.length ) {
+				before.set( key, run );
+				run = [];
+			}
+		} else {
+			run.push( key );
+		}
+	} );
+	trailing.push( ...run );
+	const out = [];
+	visible.forEach( ( key ) => {
+		out.push( ...( before.get( key ) || [] ), key );
+		before.delete( key );
+	} );
+	before.forEach( ( keys ) => out.push( ...keys ) );
+	out.push( ...trailing );
+	return out;
+}

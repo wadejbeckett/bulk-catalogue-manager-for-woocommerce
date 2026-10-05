@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from '@wordpress/element';
 
 import { request } from '../../../api';
-import { displayOf, sameDisplay } from './display-state';
+import { displayOf, mergeAvailableFields, sameDisplay } from './display-state';
 
 /** Wait after the last change before saving, in milliseconds. */
 export const SETTLE_MS = 800;
@@ -49,43 +49,39 @@ export function useDisplayPreferences() {
 }
 
 /**
- * Whether a display holds every stored choice.
+ * Save the view's display after the user changes it. Only changes the user
+ * makes (touch() marks them) are saved; the screen's own changes — its
+ * defaults, the stored choices arriving, a default view opening — become the
+ * new starting point without a write. Nothing is saved before the stored
+ * choices have been read. Stored columns this screen does not offer just now
+ * are kept in place.
  *
- * @param {Object|null} stored  Stored choices.
- * @param {Object}      display Display.
- * @return {boolean} Holds them.
+ * @param {Object}             view   DataViews view.
+ * @param {boolean}            ready  Whether the stored choices have been read.
+ * @param {Object|null}        stored The stored choices, already on the server.
+ * @param {Array<string>|null} known  Column keys this screen offers; null keeps no dormant columns.
+ * @return {Object} { error, retry, touch }.
  */
-function holds( stored, display ) {
-	return (
-		!! stored &&
-		Object.keys( stored ).every(
-			( key ) =>
-				JSON.stringify( stored[ key ] ) ===
-				JSON.stringify( display[ key ] )
-		)
-	);
-}
-
-/**
- * Save the view's display whenever the user changes it. Nothing is saved
- * before the stored choices have been read (so they are never overwritten
- * by the screen's defaults); the display at that moment is the starting point.
- *
- * @param {Object}      view   DataViews view.
- * @param {boolean}     ready  Whether the stored choices have been read.
- * @param {Object|null} stored The stored choices, already on the server.
- * @return {Object} { error, retry }.
- */
-export function useRememberDisplay( view, ready = true, stored = null ) {
+export function useRememberDisplay(
+	view,
+	ready = true,
+	stored = null,
+	known = null
+) {
 	const display = displayOf( view );
+	if ( known && Array.isArray( stored?.fields ) ) {
+		display.fields = mergeAvailableFields(
+			stored.fields,
+			display.fields,
+			known
+		);
+	}
 	const key = JSON.stringify( display );
 	const saved = useRef( null );
 	const wanted = useRef( display );
 	const running = useRef( false );
+	const touched = useRef( false );
 	const [ error, setError ] = useState( null );
-	if ( ready && null === saved.current ) {
-		saved.current = display;
-	}
 
 	const flush = useCallback( () => {
 		if (
@@ -109,7 +105,7 @@ export function useRememberDisplay( view, ready = true, stored = null ) {
 				running.current = false;
 			} )
 			.then( () => {
-				// A change made while this one was saving.
+				// A change made while this one was saving (a failure waits for Try again).
 				if (
 					! sameDisplay( wanted.current, sending ) &&
 					! sameDisplay( wanted.current, saved.current )
@@ -121,20 +117,24 @@ export function useRememberDisplay( view, ready = true, stored = null ) {
 
 	useEffect( () => {
 		wanted.current = JSON.parse( key );
-		if (
-			null === saved.current ||
-			sameDisplay( wanted.current, saved.current )
-		) {
+		if ( ! ready ) {
 			return undefined;
 		}
-		if ( holds( stored, wanted.current ) ) {
-			// The stored choices being shown: the server has them already.
+		if ( null === saved.current || ! touched.current ) {
+			// The screen's own change: the new starting point, not a write.
 			saved.current = wanted.current;
+			return undefined;
+		}
+		if ( sameDisplay( wanted.current, saved.current ) ) {
 			return undefined;
 		}
 		const timer = setTimeout( flush, SETTLE_MS );
 		return () => clearTimeout( timer );
-	}, [ key, flush, stored ] );
+	}, [ key, flush, ready ] );
 
-	return { error, retry: flush };
+	const touch = useCallback( () => {
+		touched.current = true;
+	}, [] );
+
+	return { error, retry: flush, touch };
 }

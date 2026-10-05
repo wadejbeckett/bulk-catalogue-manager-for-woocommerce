@@ -14,6 +14,7 @@ import {
 import {
 	applyDisplay,
 	displayOf,
+	mergeAvailableFields,
 } from '../../assets/src/panels/catalogue/views/display-state';
 import {
 	useDisplayPreferences,
@@ -95,6 +96,59 @@ describe( 'display state', () => {
 	} );
 } );
 
+describe( 'columns this screen does not offer just now', () => {
+	it( 'keeps them in place, before the next column still offered', () => {
+		// "missing" sat before stock_status; the user moves stock_status first.
+		expect(
+			mergeAvailableFields(
+				[ 'sku', 'missing', 'stock_status' ],
+				[ 'stock_status', 'sku' ],
+				KNOWN
+			)
+		).toEqual( [ 'missing', 'stock_status', 'sku' ] );
+		// A trailing run stays last; one whose anchor was hidden goes last too.
+		expect(
+			mergeAvailableFields(
+				[ 'sku', 'gone', 'regular_price', 'later' ],
+				[ 'sku' ],
+				KNOWN
+			)
+		).toEqual( [ 'sku', 'gone', 'later' ] );
+		// Nothing dormant: the visible order as it is.
+		expect(
+			mergeAvailableFields( [ 'sku' ], [ 'regular_price' ], KNOWN )
+		).toEqual( [ 'regular_price' ] );
+		expect( mergeAvailableFields( undefined, [ 'sku' ], KNOWN ) ).toEqual( [
+			'sku',
+		] );
+	} );
+
+	it( 'saves a display change without dropping a stored column the screen lacks', async () => {
+		jest.useFakeTimers();
+		apiFetch.mockResolvedValue( { version: 1, display: {} } );
+		const stored = { fields: [ 'sku', 'missing', 'stock_status' ] };
+		const shown = {
+			fields: [ 'sku', 'stock_status' ],
+			perPage: 25,
+			layout: {},
+		};
+		const { rerender, result } = renderHook(
+			( { view } ) => useRememberDisplay( view, true, stored, KNOWN ),
+			{ initialProps: { view: shown } }
+		);
+		await act( async () => jest.advanceTimersByTime( 2000 ) );
+		expect( apiFetch ).not.toHaveBeenCalled();
+		result.current.touch();
+		rerender( { view: { ...shown, perPage: 50 } } );
+		await act( async () => jest.advanceTimersByTime( 2000 ) );
+		expect( apiFetch ).toHaveBeenCalledTimes( 1 );
+		expect( apiFetch.mock.calls[ 0 ][ 0 ].data.display ).toEqual( {
+			fields: [ 'sku', 'missing', 'stock_status' ],
+			perPage: 50,
+		} );
+	} );
+} );
+
 describe( 'loading and remembering', () => {
 	it( 'reads the stored display once and treats a failed read as none', async () => {
 		apiFetch.mockResolvedValueOnce( {
@@ -133,6 +187,12 @@ describe( 'loading and remembering', () => {
 		await act( async () => jest.advanceTimersByTime( 2000 ) );
 		expect( apiFetch ).not.toHaveBeenCalled();
 
+		// The screen's own change (no touch) is not saved.
+		rerender( { view: { ...first, perPage: 100 } } );
+		await act( async () => jest.advanceTimersByTime( 2000 ) );
+		expect( apiFetch ).not.toHaveBeenCalled();
+		rerender( { view: { ...first, search: 'x', page: 4 } } );
+		result.current.touch();
 		rerender( { view: { ...first, search: 'x', page: 4 } } );
 		await act( async () => jest.advanceTimersByTime( 2000 ) );
 		expect( apiFetch ).not.toHaveBeenCalled();
@@ -159,6 +219,7 @@ describe( 'loading and remembering', () => {
 			( { view } ) => useRememberDisplay( view ),
 			{ initialProps: { view: first } }
 		);
+		result.current.touch();
 		rerender( { view: { ...first, perPage: 50 } } );
 		await act( async () => jest.advanceTimersByTime( 2000 ) );
 		expect( result.current.error ).not.toBe( null );
@@ -167,6 +228,26 @@ describe( 'loading and remembering', () => {
 		expect( apiFetch ).toHaveBeenCalledTimes( 2 );
 		expect( apiFetch.mock.calls[ 1 ][ 0 ].data.display.perPage ).toBe( 50 );
 		expect( result.current.error ).toBe( null );
+	} );
+} );
+
+describe( 'density', () => {
+	it( 'saves a density change even when the stored choices name no density', async () => {
+		jest.useFakeTimers();
+		apiFetch.mockResolvedValue( { version: 1, display: {} } );
+		const stored = { fields: [ 'sku' ], perPage: 25 };
+		const shown = { fields: [ 'sku' ], perPage: 25, layout: {} };
+		const { rerender, result } = renderHook(
+			( { view } ) => useRememberDisplay( view, true, stored, KNOWN ),
+			{ initialProps: { view: shown } }
+		);
+		result.current.touch();
+		rerender( { view: { ...shown, layout: { density: 'compact' } } } );
+		await act( async () => jest.advanceTimersByTime( 2000 ) );
+		expect( apiFetch ).toHaveBeenCalledTimes( 1 );
+		expect( apiFetch.mock.calls[ 0 ][ 0 ].data.display.density ).toBe(
+			'compact'
+		);
 	} );
 } );
 

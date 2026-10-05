@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Category editor: set a category's Display type (Default, Products, Subcategories or Both) and choose, replace or remove its image from the media library. Both are WooCommerce's own category settings, so the native category screen shows the same values.
 - History names category changes in plain words (Name, Slug, Description, Parent category, Display type, Image, Position) instead of internal keys.
+- The Select all button in an empty Bulk change wraps inside its box.
 
 ## [1.3.1] - 2026-10-05
 

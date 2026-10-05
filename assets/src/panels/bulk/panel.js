@@ -220,6 +220,7 @@ export function panelState( facts ) {
  * @param {Function}      props.onReview          Open Review selected products, or null.
  * @param {Function}      props.onRenewSelection  Restore a selection whose lease lapsed, or null.
  * @param {Element}       props.emptyPrompt       What to show in place of the scope while nothing is selected (FRONTEND-1), or null.
+ * @param {string}        props.applyHeld         Why Apply must wait (another change is still running, FRONTEND-3), or ''.
  * @return {Element} Panel.
  */
 export default function BulkChangePanel( {
@@ -241,6 +242,7 @@ export default function BulkChangePanel( {
 	onReview = null,
 	onRenewSelection = null,
 	emptyPrompt = null,
+	applyHeld = '',
 } ) {
 	const panelRef = useRef( null );
 	const headingRef = useRef( null );
@@ -940,6 +942,7 @@ export default function BulkChangePanel( {
 						changed={ [ 'changed', 'legacy', 'renew' ].includes(
 							applier.status
 						) }
+						held={ applyHeld }
 					/>
 				) }
 				<button type="button" className="button" onClick={ onClose }>
@@ -983,6 +986,7 @@ export default function BulkChangePanel( {
  * @param {Array<string>} props.reasons   Always-confirm sentences.
  * @param {boolean}       props.busy      Whether an apply is running.
  * @param {boolean}       props.changed   Whether the last Apply was refused in a way only a new preview or a reload can fix.
+ * @param {string}        props.held      Why Apply must wait, or ''.
  * @return {Element} Control.
  */
 function FooterAction( {
@@ -996,8 +1000,16 @@ function FooterAction( {
 	reasons,
 	busy,
 	changed,
+	held = '',
 } ) {
 	if ( state === 'ready' || state === 'empty' || state === 'applying' ) {
+		let disabledReason = held;
+		if ( state === 'empty' ) {
+			disabledReason = __(
+				'Nothing would change, so there is nothing to apply.',
+				'bulk-catalogue-manager-for-woocommerce'
+			);
+		}
 		return (
 			<ConfirmApply
 				count={ count }
@@ -1006,15 +1018,10 @@ function FooterAction( {
 				reasons={ reasons }
 				onApply={ apply }
 				busy={ busy }
-				disabled={ state === 'empty' || changed }
-				disabledReason={
-					state === 'empty'
-						? __(
-								'Nothing would change, so there is nothing to apply.',
-								'bulk-catalogue-manager-for-woocommerce'
-							)
-						: ''
+				disabled={
+					state === 'empty' || changed || ( !! held && ! busy )
 				}
+				disabledReason={ disabledReason }
 			/>
 		);
 	}

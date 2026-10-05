@@ -116,6 +116,7 @@ function useCurrentSettings( settings ) {
  * @param {Function} props.onFinished    Called once with the finished report.
  * @param {Function} props.onViewHistory Open History at this batch, or null.
  * @param {boolean}  props.replayed      The apply answered a change already accepted (T84).
+ * @param {boolean}  props.hidden        Follow the change without showing it, while the bulk panel covers the banner (FRONTEND-3).
  * @return {Element|null} Progress.
  */
 export function AppliedProgress( {
@@ -123,6 +124,7 @@ export function AppliedProgress( {
 	onFinished,
 	onViewHistory = null,
 	replayed = false,
+	hidden = false,
 } ) {
 	const [ cancelling, setCancelling ] = useState( false );
 	const [ refused, setRefused ] = useState( '' );
@@ -144,7 +146,7 @@ export function AppliedProgress( {
 			tell.current( report );
 		}
 	}, [ finished, report ] );
-	if ( ! report || finished ) {
+	if ( ! report || finished || hidden ) {
 		return null;
 	}
 	const cancel = () => {
@@ -444,6 +446,8 @@ export function CatalogueGrid( {
 					: ( scope ? tableSelection : [] ).map( Number );
 			setPending( covered.current, true );
 			setApplied( { id, replayed: !! answer.replayed } );
+			// FRONTEND-3: the panel open now follows this change itself.
+			setBulk( ( open ) => ( open ? { ...open, appliedId: id } : open ) );
 			// T84: the snapshot applied is kept until the change finishes.
 			if ( scope?.kind === 'snapshot' && scope.key ) {
 				session.submit( id, scope.key );
@@ -634,12 +638,15 @@ export function CatalogueGrid( {
 					onRestore={ restore }
 					draggable
 				/>
-				{ applied && ! bulk && (
+				{ /* FRONTEND-3: a change applied earlier is still followed while
+				   a later bulk panel covers its banner. */ }
+				{ applied && bulk?.appliedId !== applied.id && (
 					<AppliedProgress
 						batchId={ applied.id }
 						replayed={ applied.replayed }
 						onFinished={ finished }
 						onViewHistory={ toHistory }
+						hidden={ !! bulk }
 					/>
 				) }
 				<CatalogueLayout
@@ -692,6 +699,14 @@ export function CatalogueGrid( {
 						bulk.live ? () => session.renewAll() : null
 					}
 					emptyPrompt={ bulk.live ? emptyPrompt : null }
+					applyHeld={
+						applied && bulk.appliedId !== applied.id
+							? __(
+									'Another change is still running. You can apply this one once it has finished.',
+									'bulk-catalogue-manager-for-woocommerce'
+								)
+							: ''
+					}
 					onUndo={
 						toHistory ? ( id ) => toHistory( id, true ) : null
 					}

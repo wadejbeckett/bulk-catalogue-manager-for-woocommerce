@@ -44,7 +44,7 @@ import { CategoryPanel, useCategoryTree } from '../categories/index';
 import { categorySentence } from '../categories/tree-model';
 import { BatchProgress, StalledNotice } from '../history';
 import { useSettings } from '../settings/store';
-import { rowActions } from './actions';
+import { providerRowActions, providerRowChange, rowActions } from './actions';
 import { useNativeReturn } from './use-native-return';
 import { descriptorsOf, defaultView, fieldsFromRegistry } from './fields';
 import { onCatalogueFocus } from './focus-visibility';
@@ -423,8 +423,16 @@ export function CatalogueGrid( {
 								.sort( ( a, b ) => a - b ),
 						},
 					} ),
+				// Contract version 2: an add-on's action on this row only (EXTENSIONS-v2 §6).
+				providerActions: providerRowActions(
+					registry,
+					( action, row ) =>
+						setBulk(
+							providerRowChange( registry, settings, action, row )
+						)
+				),
 			} ),
-		[ onEditDetails ]
+		[ onEditDetails, registry, settings ]
 	);
 	// T41, T42: filter fields, chips, the selection and its quick actions.
 	const filterFields = useMemo(
@@ -829,6 +837,7 @@ export function CatalogueGrid( {
 				<BulkChangePanel
 					selection={ bulk.live ? selection.panel : bulk.selection }
 					initialOperations={ bulk.initialOperations }
+					object={ bulk.object || '' }
 					registry={ registry }
 					settings={ settings }
 					categories={ tree.nodes }

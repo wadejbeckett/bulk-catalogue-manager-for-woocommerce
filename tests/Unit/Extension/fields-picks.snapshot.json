@@ -2662,7 +2662,8 @@
             "available": true,
             "unavailableReason": "",
             "alwaysConfirm": false,
-            "confirmReason": ""
+            "confirmReason": "",
+            "row": true
         },
         {
             "id": "x_picks_remove",
@@ -2725,7 +2726,8 @@
             "available": true,
             "unavailableReason": "",
             "alwaysConfirm": false,
-            "confirmReason": ""
+            "confirmReason": "",
+            "row": true
         },
         {
             "id": "x_picks_only",

@@ -77,8 +77,9 @@ final class LookupArgumentsTest extends TestCase {
 		];
 	}
 
-	public function test_lookup_is_implemented(): void {
+	public function test_lookup_and_row_entry_are_implemented(): void {
 		$this->assertContains( Contract::FEATURE_LOOKUP, Contract::FEATURES );
+		$this->assertContains( Contract::FEATURE_ROW_ENTRY, Contract::FEATURES );
 		$this->assertSame( [], self::providers()->refusals() );
 		$this->assertNotNull( self::providers()->get( 'picks' ) );
 	}
@@ -266,6 +267,9 @@ final class LookupArgumentsTest extends TestCase {
 			],
 			$by_id['x_picks_only']['args']['properties']['recipient']
 		);
+		$this->assertTrue( $by_id['x_picks_add']['row'], 'A row entry is marked.' );
+		$this->assertTrue( $by_id['x_picks_remove']['row'] );
+		$this->assertArrayNotHasKey( 'row', $by_id['x_picks_only'] );
 		$this->assertArrayNotHasKey( 'target', $by_id['x_picks_add'], 'The default target carries no key.' );
 		$this->assertArrayNotHasKey( 'row', $by_id['x_sample_add'], 'A version 1 entry gains no key.' );
 		$this->assertArrayNotHasKey( 'target', $by_id['x_sample_add'] );

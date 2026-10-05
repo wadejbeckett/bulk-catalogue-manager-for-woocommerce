@@ -126,6 +126,7 @@ export function operationTitle( registry, operation ) {
  * @param {Object}   props.terms        Term options by source.
  * @param {Function} props.onArg        Receives ( name, value ).
  * @param {Function} props.onVariations Receives the switch position.
+ * @param {string}   props.object       A row's object key, or '' for a bulk change.
  * @return {Element} Controls.
  */
 function OperationControls( {
@@ -135,6 +136,7 @@ function OperationControls( {
 	terms,
 	onArg,
 	onVariations,
+	object = '',
 } ) {
 	const action = actionById( registry, operation.action );
 	const properties = action?.args?.properties || {};
@@ -187,6 +189,8 @@ function OperationControls( {
 						field={ field }
 						terms={ terms }
 						reason={ reasonFor( name ) }
+						action={ operation.action }
+						object={ object }
 					/>
 				) ) }
 			<div className="bulkcat-bulk__varbox is-full">
@@ -264,6 +268,7 @@ function OperationControls( {
  * @param {Function}      props.onArg        Receives ( name, value ).
  * @param {Function}      props.onVariations Receives the switch position.
  * @param {Array<Object>} props.operations   Every step of the change, to say in place when kinds are mixed (T105).
+ * @param {string}        props.object       A row's object key, or '' for a bulk change.
  * @return {Element} Chooser.
  */
 export function ActionChooser( {
@@ -275,6 +280,7 @@ export function ActionChooser( {
 	onArg,
 	onVariations,
 	operations = [],
+	object = '',
 } ) {
 	const idBase = 'bulkcat-op-' + operation.key;
 	// T105: a step of another kind than the rest of the change says so in place.
@@ -367,6 +373,7 @@ export function ActionChooser( {
 										terms={ terms }
 										onArg={ onArg }
 										onVariations={ onVariations }
+										object={ object }
 									/>
 								) }
 							</div>

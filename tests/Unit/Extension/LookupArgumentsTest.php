@@ -270,4 +270,16 @@ final class LookupArgumentsTest extends TestCase {
 		$this->assertArrayNotHasKey( 'row', $by_id['x_sample_add'], 'A version 1 entry gains no key.' );
 		$this->assertArrayNotHasKey( 'target', $by_id['x_sample_add'] );
 	}
+
+	public function test_the_version_two_payload_matches_its_snapshot(): void {
+		$snapshot = __DIR__ . '/fields-picks.snapshot.json';
+		$fields   = new Fields();
+		$payload  = ( new FieldsController( $fields, new Actions( $fields, null, Providers::of( [ new PicksProvider( new MemoryStore(), new MemoryStore(), false ) ] ) ) ) )->payload();
+		$json     = (string) wp_json_encode( $payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) . "\n";
+		if ( '1' === getenv( 'BULKCAT_UPDATE_SNAPSHOT' ) ) {
+			file_put_contents( $snapshot, $json ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- The test's own snapshot.
+		}
+		$this->assertFileExists( $snapshot );
+		$this->assertSame( (string) file_get_contents( $snapshot ), $json, 'The /fields payload with the version 2 provider changed. If that is deliberate, run BULKCAT_UPDATE_SNAPSHOT=1 composer test and commit the snapshot.' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- The test's own snapshot.
+	}
 }

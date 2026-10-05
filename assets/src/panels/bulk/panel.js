@@ -221,6 +221,7 @@ export function panelState( facts ) {
  * @param {Function}      props.onRenewSelection  Restore a selection whose lease lapsed, or null.
  * @param {Element}       props.emptyPrompt       What to show in place of the scope while nothing is selected (FRONTEND-1), or null.
  * @param {string}        props.applyHeld         Why Apply must wait (another change is still running, FRONTEND-3), or ''.
+ * @param {string}        props.object            A row entry's object key, such as "product:42" (contract version 2 row entry), or ''.
  * @return {Element} Panel.
  */
 export default function BulkChangePanel( {
@@ -243,6 +244,7 @@ export default function BulkChangePanel( {
 	onRenewSelection = null,
 	emptyPrompt = null,
 	applyHeld = '',
+	object = '',
 } ) {
 	const panelRef = useRef( null );
 	const headingRef = useRef( null );
@@ -709,6 +711,7 @@ export default function BulkChangePanel( {
 													operations={ operations }
 													index={ index }
 													terms={ terms }
+													object={ object }
 													onChoose={ ( id, group ) =>
 														update(
 															index,

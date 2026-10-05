@@ -26,7 +26,7 @@ interface RowSource {
 	 * @param array<string, mixed> $params   The read's validated parameters, without paging.
 	 * @param int                  $page     Page, from 1.
 	 * @param int                  $per_page Rows per page.
-	 * @return array{items: list<array<string, mixed>>, total: int} Rows keyed by field key.
+	 * @return array{items: list<array<string, mixed>>, total: int, more?: bool} Rows keyed by field key; `more` when rows are known to follow this page whatever the total said.
 	 */
 	public function page( array $params, int $page, int $per_page ): array;
 }

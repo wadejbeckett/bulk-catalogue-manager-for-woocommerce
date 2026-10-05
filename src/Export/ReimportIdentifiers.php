@@ -111,7 +111,7 @@ final class ReimportIdentifiers implements RowSource {
 		return [
 			'items' => $items,
 			'total' => $result['total'],
-		];
+		] + array_intersect_key( $result, [ 'more' => true ] );
 	}
 
 	/**

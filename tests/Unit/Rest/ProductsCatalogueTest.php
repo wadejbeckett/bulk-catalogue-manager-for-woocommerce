@@ -101,7 +101,7 @@ final class ProductsCatalogueTest extends TestCase {
 	}
 
 	public function test_each_filter_narrows_to_the_expected_products(): void {
-		$cases   = [
+		$cases = [
 			'category Clothing and below'  => [ 'category_ids', 'isAny', [ 10 ], [ 101, 102, 105, 106, 107 ] ],
 			'category Shirts and below'    => [ 'category_ids', 'isAny', [ 11 ], [ 101, 102, 106, 107 ] ],
 			'category Formal, a leaf'      => [ 'category_ids', 'isAny', [ 12 ], [ 102 ] ],
@@ -127,7 +127,9 @@ final class ProductsCatalogueTest extends TestCase {
 			'stock managed'                => [ 'manage_stock', 'is', true, [ 101, 102, 104, 106 ] ],
 			'stock not managed'            => [ 'manage_stock', 'is', false, [ 103, 105, 107 ] ],
 			'price between 15 and 50'      => [ 'regular_price', 'between', [ 15, 50 ], [ 101, 102, 106 ] ],
-			'price 50 or more'             => [ 'regular_price', 'greaterThanOrEqual', 50, [ 103 ] ],
+			// SQR-1: the variable product 103 has no regular price of its own, whatever its variations cost.
+			'price 40 or more'             => [ 'regular_price', 'greaterThanOrEqual', 40, [ 102 ] ],
+			'price 50 or more'             => [ 'regular_price', 'greaterThanOrEqual', 50, [] ],
 			'price 15 or less'             => [ 'regular_price', 'lessThanOrEqual', 15, [ 104, 106 ] ],
 			'stock between 0 and 5'        => [ 'stock_quantity', 'between', [ 0, 5 ], [ 101, 102 ] ],
 			'stock 0 or less'              => [ 'stock_quantity', 'lessThanOrEqual', 0, [ 102, 104 ] ],
@@ -336,16 +338,16 @@ final class ProductsCatalogueTest extends TestCase {
 			),
 			'Two keys: stock status up, then name down.'
 		);
-		$this->assertSame( [ 105, 107, 104, 106, 101, 102, 103 ], $this->ids( [ 'orderby' => 'regular_price' ] ), 'Price up on the lowest price, no price first.' );
+		$this->assertSame( [ 103, 105, 107, 104, 106, 101, 102 ], $this->ids( [ 'orderby' => 'regular_price' ] ), 'Regular price up, no regular price (the variable 103 among them) first.' );
 		$this->assertSame(
-			[ 103, 102, 101, 106, 104, 107, 105 ],
+			[ 102, 101, 106, 104, 107, 105, 103 ],
 			$this->ids(
 				[
 					'orderby' => 'regular_price',
 					'order'   => 'desc',
 				]
 			),
-			'Price down on the highest price.'
+			'Regular price down, no regular price last.'
 		);
 		$this->assertSame(
 			[ 105, 107, 103, 104, 102, 101, 106 ],

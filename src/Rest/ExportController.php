@@ -22,6 +22,7 @@ use BulkCatalogueManager\Export\CsvExport;
 use BulkCatalogueManager\Export\ExportName;
 use BulkCatalogueManager\Export\ExportRequest;
 use BulkCatalogueManager\Export\ExportRows;
+use BulkCatalogueManager\Export\FilterRows;
 use BulkCatalogueManager\Export\GuardedValues;
 use BulkCatalogueManager\Export\HistoryColumns;
 use BulkCatalogueManager\Export\IdRows;
@@ -29,6 +30,7 @@ use BulkCatalogueManager\Export\ReimportIdentifiers;
 use BulkCatalogueManager\Export\RowSource;
 use BulkCatalogueManager\Fields\Registry;
 use BulkCatalogueManager\Query\CountCache;
+use BulkCatalogueManager\Query\Hydrator;
 use BulkCatalogueManager\Query\ProductQuery;
 use BulkCatalogueManager\Settings\Settings;
 
@@ -42,9 +44,10 @@ defined( 'ABSPATH' ) || exit;
  * streams the body in place of JSON. A refusal before that point is an
  * ordinary JSON error.
  *
- * Rows come from a RowSource. The default one reads pages of `GET /products`
- * through ProductsController, so a filter export carries exactly the rows
- * and values the grid shows for the same filter.
+ * Rows come from a RowSource. For a filter export the default one,
+ * Export\FilterRows, walks the filter's matches by id (SQR-3) and hydrates
+ * them with the grid's Hydrator, so the file carries the rows and values the
+ * grid shows for the same filter, each once, in id order.
  *
  * History exports (T58, SPEC §4.6, §10) take `source`: `changes` with
  * `batch` (a batch's changes, optionally narrowed by `result`), `audit`
@@ -155,9 +158,9 @@ final class ExportController implements ReadController {
 	/**
 	 * Where rows come from.
 	 *
-	 * @var RowSource
+	 * @var RowSource|null
 	 */
-	private RowSource $source;
+	private ?RowSource $source;
 
 	/**
 	 * Resolves a selection token for a POST export, ( token, owner ) =>
@@ -171,7 +174,7 @@ final class ExportController implements ReadController {
 	 * Build over a registry and, for tests or other reads, a row source.
 	 *
 	 * @param Registry                    $registry Field registry.
-	 * @param RowSource|null              $source   Catalogue rows; pages of `GET /products` when null.
+	 * @param RowSource|null              $source   Catalogue rows for a filter export; the filter's matches walked by id (FilterRows) when null.
 	 * @param BatchesController|null      $history  The history list's rows; the plugin's when null.
 	 * @param AuditController|null        $audit    The audit log's rows; the plugin's when null.
 	 * @param BatchChangesController|null $changes  A batch's changes; the plugin's when null.
@@ -179,7 +182,7 @@ final class ExportController implements ReadController {
 	 */
 	public function __construct( private readonly Registry $registry, ?RowSource $source = null, ?BatchesController $history = null, ?AuditController $audit = null, ?BatchChangesController $changes = null, ?\Closure $selection = null ) {
 		$this->schema    = new RouteSchema( $registry );
-		$this->source    = $source ?? new CallableRowSource( self::products_reader( new ProductsController( $registry ) ) );
+		$this->source    = $source;
 		$this->history   = $history;
 		$this->audit     = $audit;
 		$this->changes   = $changes;
@@ -416,7 +419,7 @@ final class ExportController implements ReadController {
 			);
 		}
 
-		$source = $rows ?? $this->source;
+		$source = $rows ?? $this->source ?? new FilterRows( new ProductQuery( $export->criteria ), new Hydrator( $this->registry ) );
 		$read   = ( null === $rows ? $export->filter : [] ) + [ 'fields' => $plan->fields() ];
 		return new \WP_REST_Response(
 			new CsvExport(
@@ -625,33 +628,5 @@ final class ExportController implements ReadController {
 	 */
 	public function get_item_schema(): array {
 		return $this->schema->item_schema( self::TITLE );
-	}
-
-	/**
-	 * A page reader over `GET /products`: its handler, given the export's
-	 * parameters with paging added, reduced to its rows and total.
-	 *
-	 * @param ProductsController $products The products route.
-	 * @return callable(array<string, mixed>, int, int): array{items: list<array<string, mixed>>, total: int}
-	 */
-	private static function products_reader( ProductsController $products ): callable {
-		return static function ( array $params, int $page, int $per_page ) use ( $products ): array {
-			$request = new \WP_REST_Request( 'GET', '/' . Access::REST_NAMESPACE . ProductsController::ROUTE );
-			foreach ( [
-				'page'     => $page,
-				'per_page' => $per_page,
-			] + $params as $key => $value ) {
-				$request->set_param( (string) $key, $value );
-			}
-			$response = $products->get_items( $request );
-			if ( ! $response instanceof \WP_REST_Response ) {
-				throw new \UnexpectedValueException( 'The products read refused an export page.' );
-			}
-			$data = (array) $response->get_data();
-			return [
-				'items' => array_values( (array) ( $data['items'] ?? [] ) ),
-				'total' => (int) ( $data['pagination']['total'] ?? 0 ),
-			];
-		};
 	}
 }

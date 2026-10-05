@@ -36,7 +36,7 @@ final class PackagingTest extends TestCase {
 		'src/Data/ChangeRepository.php' => 4,
 		'src/Engine/BatchFactory.php'   => 1,
 		'src/Export/GuardedValues.php'  => 1,
-		'src/Query/ProductQuery.php'    => 6,
+		'src/Query/ProductQuery.php'    => 7,
 	];
 
 	/**

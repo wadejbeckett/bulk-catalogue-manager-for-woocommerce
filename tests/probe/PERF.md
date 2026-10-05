@@ -4,6 +4,50 @@ The numbers `perf.py` measured against SPEC §12.5. How to run it, and what
 each number means, is in `README.md` (Performance). Rerun it before a release
 and add a dated record; keep older measurements as history.
 
+## Filtered export by id (SQR-3) — 5 October 2026
+
+A filtered export now walks its matches by id (`Export\FilterRows`, each
+page the next 100 after the last id written) instead of OFFSET pages of
+`GET /products` re-sorted for every page. Same stack as SQR-1 (load 2.4),
+`perf.py --only export,export_post --runs 3`, 1.3.0 then this change:
+20,000 rows by GET 13.3 s and 1,462 queries against 4.5 s and 669 queries;
+first byte 269 against 244 ms; peak 17.3 against 17.1 MB. By POST with the
+identifier switch on: filter 5.5 s, 1,066 queries, first byte 155 ms;
+selection 4.7 s; all within budget (6 passed, 0 failed).
+
+## Regular price filter and sort (SQR-1) — 5 October 2026
+
+The Regular price filter and sort now read the regular price the cell shows
+(`ProductQuery::regular_price()`): the lookup's price for a row WooCommerce
+does not mark on sale, NULL for a variable or grouped product, and the row's
+own `_regular_price` meta otherwise, with a test on the lookup alone first so
+a row can be dropped before its post is read. Reading the meta for every row
+measured 1.2 s (products) to 5.9 s (products and variations) a statement, so
+the meta is read only for rows on sale. Throwaway docker stack, `mysql:8`
+(MySQL 8.4, 128 MB buffer pool), PHP 8.3, WordPress 7.1, WooCommerce 11.1.0,
+`seed.sh 20000` (20,015 products, 70,065 variations, no scale product on
+sale), shared 12-core workstation (load 4.5 to 6). `perf.py --only grid
+--runs 20`, the 1.3.0 code and this change run back to back:
+
+| Grid, 3 filters (category, in stock, price 10–40) | 1.3.0 | This change | Budget |
+| --- | --- | --- | --- |
+| Products, 25 rows: warm p95 / cold | 204 / 182 ms | 270 / 335 ms | < 400 / < 500 ms |
+| Products and variations, 25 rows: warm p95 / cold | 268 / 315 ms | 346 / 462 ms | < 750 / < 1000 ms |
+| Variations, 25 rows: warm p95 / cold | 219 / 372 ms | 220 / 289 ms | < 400 / < 500 ms |
+| Cold at 50 and 100 rows, worst | 449 ms | 449 ms | as above |
+| Queries in the dispatch | 12 / 12 / 11 | 12 / 13 / 11 | ≤ 20 |
+
+62 metrics: 23 passed, 0 failed. Counts differ (products 10,760 to 3,560)
+because variable products, whose own regular price is empty, no longer match
+on their variations' prices. Interleaved statement timings on the same stack
+(old and new statement alternately, median of nine): the three-filter page
+and count 1.0–1.2 times the 1.3.0 time; a Regular price sort with no filter
+1.0–1.5 times; a Regular price filter alone in the modes that read
+variations costs 3–5 times on the COUNT (about 300 ms against 80 ms, cached
+for 60 seconds by CountCache), because the optimiser then reads the posts
+first. A catalogue where most rows are on sale reads the meta for each of
+them and is slower; that was not measured.
+
 ## Release verification — 30 September 2026
 
 Final runtime `a7291ac`, integration test corrections `17571bd`; version

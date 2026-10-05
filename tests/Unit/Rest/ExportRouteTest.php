@@ -340,7 +340,7 @@ final class ExportRouteTest extends TestCase {
 		$this->assertSame( 251, substr_count( $output, "\r\n" ) );
 	}
 
-	public function test_the_default_source_reads_pages_of_the_products_route(): void {
+	public function test_the_default_source_counts_the_filter_first_and_reads_no_page_when_nothing_matches(): void {
 		bulkcat_test_reset();
 		$GLOBALS['bulkcat_test']['logged_in']                  = true;
 		$GLOBALS['bulkcat_test']['caps']['manage_woocommerce'] = true;

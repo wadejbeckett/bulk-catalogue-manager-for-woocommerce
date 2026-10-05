@@ -612,6 +612,29 @@ def check_read_queries(p: Probe) -> None:
         want = sorted(p.simple(n)["id"] for n in range(2, 6))
         p.row("read", "read:products:filter-price", sorted(ids) == want, f"{ids} want {want}")
 
+    def regular_price_on_sale() -> None:
+        # SQR-1: a product on sale is filtered and sorted by the regular price its cell shows,
+        # not by the sale price WooCommerce keeps in its lookup table. A variable product has
+        # no regular price of its own; its variations have theirs.
+        sale = p.seed["on_sale"]
+        simple, variable = sale["simple"]["id"], sale["variable"]["id"]
+        oak, pine = (v["id"] for v in sale["variable"]["variations"])
+        in_sale = filter_params("category_ids", "isAny", [sale["category"]])
+        lookup = p.wp_eval(f"global $wpdb; bulkcat_out( $wpdb->get_row( $wpdb->prepare( 'SELECT min_price, max_price, onsale FROM ' . $wpdb->wc_product_meta_lookup . ' WHERE product_id = %d', {simple} ), ARRAY_A ) );")
+        at_least, _ = all_ids(p, in_sale + filter_params("regular_price", "greaterThanOrEqual", "100"))
+        at_most, _ = all_ids(p, in_sale + filter_params("regular_price", "lessThanOrEqual", "100"))
+        r = p.http("manager", "GET", "/products", in_sale + [("orderby", "regular_price"), ("order", "desc"), ("per_page", "10")])
+        rows = [(row["id"], row.get("regular_price")) for row in r.json()["items"]]
+        ok = at_least == [simple] and at_most == [] and rows[:1] == [(simple, "150.00")] and [i for i, _ in rows] == [simple, variable]
+        ok = ok and float(lookup["min_price"]) == 80 and str(lookup["onsale"]) == "1"
+        p.row("read", "read:products:regular-price-on-sale", ok,
+              f"lookup {lookup}; at least 100 {at_least}, at most 100 {at_most} (want [{simple}] and []); sorted {rows}")
+        mode = [("mode", "variations")]
+        v_least, _ = all_ids(p, mode + in_sale + filter_params("regular_price", "greaterThanOrEqual", "100"))
+        v_sorted, _ = all_ids(p, mode + in_sale + [("orderby", "regular_price"), ("order", "desc")])
+        p.row("read", "read:variations:regular-price-on-sale", v_least == [oak] and v_sorted == [oak, pine],
+              f"at least 100 {v_least} (want [{oak}]); sorted {v_sorted} (want [{oak}, {pine}])")
+
     def status() -> None:
         ids, _ = all_ids(p, cat + filter_params("status", "isAny", ["draft"]))
         p.row("read", "read:products:filter-status", ids == [p.seed["draft"]["id"]], f"{ids}")
@@ -662,7 +685,8 @@ def check_read_queries(p: Probe) -> None:
         grid: list[list[str]] = []
         page = 1
         while True:
-            d = p.http("manager", "GET", "/products", cat + [("per_page", "4"), ("page", str(page))]).json()
+            # SQR-3: a filtered export writes its rows in ID order, whatever the view's sort.
+            d = p.http("manager", "GET", "/products", cat + [("per_page", "4"), ("page", str(page)), ("orderby", "id"), ("order", "asc")]).json()
             grid += [[str(item["id"]), item["sku"], item["name"], item["regular_price"] or ""] for item in d["items"]]
             if page >= d["pagination"]["totalPages"]:
                 break
@@ -725,6 +749,7 @@ def check_read_queries(p: Probe) -> None:
         p.row("read", "read:fields:flags", ok, f"default columns {default}; hiding choices {hiding}")
 
     for name, fn in [("hydration", hydration), ("filter-category", category), ("search", search), ("filter-price", price_range),
+                     ("regular-price-on-sale", regular_price_on_sale),
                      ("filter-status", status), ("sort", sort), ("paging", paging), ("variations", variations),
                      ("selection-ids", selection_ids), ("categories-counts", categories_counts), ("export-diff", export_diff),
                      ("filter-category-only", include_children), ("search-variation-sku", variation_sku),

@@ -69,9 +69,10 @@ final class ChunkRunnerTest extends TestCase {
 	}
 
 	/**
-	 * A product whose save() also runs a callback, as a slow save hook would.
+	 * A product whose save() also runs a callback, as a slow save hook would:
+	 * after the save, or before it with `$before`.
 	 */
-	private static function hooked( int $id, \Closure $on_save ): SavedProduct {
+	private static function hooked( int $id, \Closure $on_save, bool $before = false ): SavedProduct {
 		$stored                                     = new SavedProduct(
 			'simple',
 			[
@@ -79,16 +80,21 @@ final class ChunkRunnerTest extends TestCase {
 				'regular_price' => '10',
 			]
 		);
-		$GLOBALS['bulkcat_test']['products'][ $id ] = new class( $stored, $on_save ) {
-			public function __construct( private SavedProduct $stored, private \Closure $on_save ) {}
+		$GLOBALS['bulkcat_test']['products'][ $id ] = new class( $stored, $on_save, $before ) {
+			public function __construct( private SavedProduct $stored, private \Closure $on_save, private bool $before ) {}
 
 			public function is_type( string $type ): bool {
 				return $this->stored->is_type( $type );
 			}
 
 			public function save(): int {
+				if ( $this->before ) {
+					( $this->on_save )();
+				}
 				$id = $this->stored->save();
-				( $this->on_save )();
+				if ( ! $this->before ) {
+					( $this->on_save )();
+				}
 				return $id;
 			}
 
@@ -425,6 +431,118 @@ final class ChunkRunnerTest extends TestCase {
 		$this->assertSame( [ 1, 0, 1 ], [ $batch['done_items'], $batch['changed_items'], $batch['failed_items'] ] );
 	}
 
+	/**
+	 * Run one chunk as a process that a product's save kills: a save that
+	 * suspends the fiber stops the run there and nothing after it in the
+	 * run happens. The fiber is kept, never resumed.
+	 *
+	 * @param list<\Fiber> $dead Killed runs, kept alive.
+	 */
+	private function killed_run( array &$dead ): void {
+		$fiber = new \Fiber( fn(): string => $this->runner()->run( self::BATCH ) );
+		$fiber->start();
+		$this->assertTrue( $fiber->isSuspended(), 'The run was killed.' );
+		$dead[] = $fiber;
+	}
+
+	public function test_a_product_that_kills_its_chunk_three_times_fails_alone_and_written_products_stay_done(): void {
+		// ENGINE-2: a product whose save kills the process every time, in a chunk with products before and after it.
+		$ids   = self::products( 5 );
+		$store = new RunnerStore( self::BATCH, $ids, $this->increase(), self::USER );
+		// Its save kills the run before anything is stored, so the value set in memory is lost with the process.
+		$poison = null;
+		$poison = self::hooked(
+			1003,
+			static function () use ( &$poison ): void {
+				$poison->props['regular_price'] = '10';
+				\Fiber::suspend();
+			},
+			true
+		);
+		$dead   = [];
+
+		$this->killed_run( $dead );
+		$this->assertSame(
+			[
+				1001 => 'done',
+				1002 => 'done',
+				1003 => 'working',
+				1004 => 'pending',
+				1005 => 'pending',
+			],
+			$store->states(),
+			'Each product is marked as soon as it is written, so a killed run loses no marks.'
+		);
+		$this->assertSame( [ 2, 2, 0 ], [ $store->batch()['done_items'], $store->batch()['changed_items'], $store->batch()['failed_items'] ] );
+
+		// Two more killed runs past the lease: the same product kills each.
+		foreach ( [ 2, 3 ] as $attempt ) {
+			$this->now += BatchRepository::LEASE_SECONDS + 1;
+			$this->killed_run( $dead );
+			$this->assertSame( $attempt, $store->item( 1003 )['attempts'] );
+		}
+
+		$this->now += BatchRepository::LEASE_SECONDS + 1;
+		$this->assertSame( 'partial', $this->runner()->run( self::BATCH ) );
+		$this->assertSame(
+			[
+				1001 => 'done',
+				1002 => 'done',
+				1003 => 'failed',
+				1004 => 'failed',
+				1005 => 'failed',
+			],
+			$store->states(),
+			'The written products stay done; only the product that stopped the run and those never reached are not.'
+		);
+		$this->assertSame( [ '11.00', '11.00', '10', '10', '10' ], [ self::price( 1001 ), self::price( 1002 ), (string) $poison->props['regular_price'], self::price( 1004 ), self::price( 1005 ) ] );
+		$culprit = $store->item( 1003 )['message'];
+		$this->assertStringContainsString( 'stopped', $culprit );
+		$this->assertStringContainsString( 'may not have been finished', $culprit );
+		$unreached = $store->item( 1004 )['message'];
+		$this->assertStringContainsString( 'not reached', $unreached );
+		$this->assertStringNotContainsString( 'not changed', $unreached );
+		$this->assertNotSame( $culprit, $unreached );
+		$batch = $store->batch();
+		$this->assertSame( [ 5, 2, 3 ], [ $batch['done_items'], $batch['changed_items'], $batch['failed_items'] ], 'History counts the two written products as changed.' );
+
+		// The history's grouped reasons name both, though the product that stopped the run holds unsettled journal rows.
+		$messages = array_column( ( new \BulkCatalogueManager\Engine\Progress( new BatchRepository() ) )->summary( self::BATCH ), 'count', 'message' );
+		$this->assertSame( 1, $messages[ $culprit ] ?? null );
+		$this->assertSame( 2, $messages[ $unreached ] ?? null );
+
+		// Destroying the killed runs, last first, unwinds their finally blocks, so the state they changed does not leak into other tests.
+		while ( [] !== $dead ) {
+			array_pop( $dead );
+		}
+	}
+
+	public function test_an_exhausted_item_the_journal_holds_as_applied_is_done_not_failed(): void {
+		// ENGINE-2: a product written and journalled by a run killed before its mark, on each of three tries.
+		$ids   = self::products( 2 );
+		$list  = $this->increase();
+		$store = new RunnerStore( self::BATCH, $ids, $list, self::USER );
+		$repo  = new BatchRepository();
+		foreach ( [ 'a', 'b', 'c' ] as $token ) {
+			$repo->claim_chunk( self::BATCH, 50, str_repeat( $token, 32 ), gmdate( 'Y-m-d H:i:s', (int) $this->now ), gmdate( 'Y-m-d H:i:s', (int) $this->now - 300 ) );
+			if ( 'a' === $token ) {
+				Writer::for_batch( new Registry( new Fields() ), Journal::from_settings( new Fields(), new Settings( [] ) ), self::BATCH, self::USER )->write( 1001, $list );
+			}
+			$this->now += BatchRepository::LEASE_SECONDS + 1;
+		}
+
+		$this->assertSame( 'partial', $this->runner()->run( self::BATCH ) );
+		$this->assertSame(
+			[
+				1001 => 'done',
+				1002 => 'failed',
+			],
+			$store->states()
+		);
+		$this->assertSame( '', $store->item( 1001 )['message'] );
+		$this->assertSame( [ 2, 1, 1 ], [ $store->batch()['done_items'], $store->batch()['changed_items'], $store->batch()['failed_items'] ] );
+	}
+
 	public function test_a_rerun_chunk_does_not_apply_twice_through_the_journal_guard(): void {
 		$ids   = self::products( 3 );
 		$list  = $this->increase();
@@ -757,9 +875,9 @@ final class ChunkRunnerTest extends TestCase {
 
 	public function test_a_cancellation_during_a_chunk_keeps_its_work_and_ends_the_chain(): void {
 		$store = new RunnerStore( self::BATCH, self::products( 60 ), $this->increase(), self::USER );
-		// The screen cancels while the first chunk is under way: it lands as the chunk adds to the counters.
+		// The screen cancels while the first chunk is under way: it lands as the chunk counts its first product.
 		$this->wrap(
-			'/^UPDATE `wp_bulkcat_batches` SET done_items = /',
+			'/^UPDATE `wp_bulkcat_batch_items` AS i INNER JOIN `wp_bulkcat_batches` AS b /',
 			static function () use ( $store ): void {
 				$store->sync();
 				$store->batch['status'] = 'cancelled';

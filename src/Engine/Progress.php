@@ -26,8 +26,8 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Batch progress, the stalled check, the grouped reasons and cancellation.
  *
- * report() answers a batch's status, counters (updated by the chunk runner at
- * the end of every chunk, so a polling client counts up), its times, and:
+ * report() answers a batch's status, counters (updated by the chunk runner as
+ * each item finishes, so a polling client counts up), its times, and:
  * - `stalled`: the batch is queued or running with items still pending, and
  *   no chunk has claimed anything for STALL_SECONDS (five minutes) — the
  *   latest claimed_gmt of its items, or its creation time when none was

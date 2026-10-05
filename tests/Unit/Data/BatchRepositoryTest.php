@@ -566,7 +566,7 @@ final class BatchRepositoryTest extends TestCase {
 		$this->assertNull( $repo->last_claimed_gmt( 8 ) );
 
 		$this->assertSame( [], $repo->unjournalled_reasons( 7, 500 ) );
-		$this->assertSame( "SELECT i.message AS message, COUNT(*) AS objects FROM `wp_bulkcat_batch_items` AS i WHERE i.batch_id = 7 AND i.state IN ('failed', 'skipped') AND i.message <> '' AND NOT EXISTS (SELECT c.change_id FROM `wp_bulkcat_changes` AS c WHERE c.batch_id = i.batch_id AND c.object_id = i.object_id) GROUP BY i.message ORDER BY objects DESC LIMIT 100", end( self::db()->queries ) );
+		$this->assertSame( "SELECT i.message AS message, COUNT(*) AS objects FROM `wp_bulkcat_batch_items` AS i WHERE i.batch_id = 7 AND i.state IN ('failed', 'skipped') AND i.message <> '' AND NOT EXISTS (SELECT c.change_id FROM `wp_bulkcat_changes` AS c WHERE c.batch_id = i.batch_id AND c.object_id = i.object_id AND c.result <> 'pending') GROUP BY i.message ORDER BY objects DESC LIMIT 100", end( self::db()->queries ) );
 
 		$filters = [
 			'status'  => 'partial',

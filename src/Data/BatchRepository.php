@@ -471,6 +471,69 @@ final class BatchRepository {
 	}
 
 	/**
+	 * Settle every item of a batch claimed MAX_ATTEMPTS times whose last
+	 * claim is older than `$stale_before` (ENGINE-2), from what the journal
+	 * and the item hold rather than as one failure:
+	 *
+	 * - an item whose object has an `applied` journal row for the batch was
+	 *   written, though its run died before marking it: done, with no message;
+	 * - an item still `working` was being written when its run died, each
+	 *   time: failed with `$stopped`;
+	 * - an item still `pending` was claimed but never reached: failed with
+	 *   `$unreached`.
+	 *
+	 * Call it before reset_stale_working(), which would otherwise put the
+	 * working items back to pending.
+	 *
+	 * @param int    $batch_id     Batch.
+	 * @param string $stale_before GMT `Y-m-d H:i:s`: claims before it are stale.
+	 * @param string $stopped      The plain reason for an item whose write stopped the run.
+	 * @param string $unreached    The plain reason for an item never reached.
+	 * @return array{done: int, failed: int} Items marked done, items marked failed.
+	 * @throws \RuntimeException When a statement fails.
+	 */
+	public function give_up_exhausted( int $batch_id, string $stale_before, string $stopped, string $unreached ): array {
+		global $wpdb;
+		$table = $this->registry->table( Schema::ITEMS );
+		$done  = $wpdb->query( $wpdb->prepare( "UPDATE %i AS i SET i.state = 'done', i.message = '' WHERE i.batch_id = %d AND i.state IN (%s, %s) AND i.attempts >= %d AND (i.claimed_gmt IS NULL OR i.claimed_gmt < %s) AND EXISTS (SELECT c.change_id FROM %i AS c WHERE c.batch_id = i.batch_id AND c.object_id = i.object_id AND c.result = 'applied')", $table, $batch_id, 'pending', Schema::ITEM_WORKING, self::MAX_ATTEMPTS, $stale_before, $this->registry->table( Schema::CHANGES ) ) );
+		if ( false === $done ) {
+			throw new \RuntimeException( 'The batch items could not be updated.' );
+		}
+		$failed = $wpdb->query( $wpdb->prepare( "UPDATE %i SET state = 'failed', message = %s WHERE batch_id = %d AND state = %s AND attempts >= %d AND claimed_gmt < %s", $table, self::cut( $stopped ), $batch_id, Schema::ITEM_WORKING, self::MAX_ATTEMPTS, $stale_before ) );
+		if ( false === $failed ) {
+			throw new \RuntimeException( 'The batch items could not be updated.' );
+		}
+		return [
+			'done'   => (int) $done,
+			'failed' => (int) $failed + $this->fail_exhausted( $batch_id, $stale_before, $unreached ),
+		];
+	}
+
+	/**
+	 * Mark one item a run claimed for itself (claim_item()) with its outcome
+	 * and count it in the batch's progress, in one statement, so a run killed
+	 * after any item loses neither its mark nor its count (ENGINE-2).
+	 *
+	 * @param int    $batch_id Batch.
+	 * @param int    $item_id  Item.
+	 * @param string $state    One of Schema::ITEM_STATES other than pending.
+	 * @param string $message  The plain reason stored with the item (cut to MESSAGE_LENGTH).
+	 * @param bool   $changed  Whether the item counts as changed.
+	 * @return bool Whether the item was still this run's to mark, and was marked and counted.
+	 * @throws \InvalidArgumentException On an invalid state.
+	 * @throws \RuntimeException When the statement fails.
+	 */
+	public function finish_item( int $batch_id, int $item_id, string $state, string $message, bool $changed ): bool {
+		global $wpdb;
+		self::assert_in( $state, [ 'done', 'skipped', 'failed' ], 'item state' );
+		$result = $wpdb->query( $wpdb->prepare( 'UPDATE %i AS i INNER JOIN %i AS b ON b.batch_id = i.batch_id SET i.state = %s, i.message = %s, b.done_items = b.done_items + 1, b.changed_items = b.changed_items + %d, b.failed_items = b.failed_items + %d WHERE i.batch_id = %d AND i.item_id = %d AND i.state = %s', $this->registry->table( Schema::ITEMS ), $this->registry->table( Schema::BATCHES ), $state, self::cut( $message ), $changed ? 1 : 0, 'failed' === $state ? 1 : 0, $batch_id, $item_id, Schema::ITEM_WORKING ) );
+		if ( false === $result ) {
+			throw new \RuntimeException( 'The batch item could not be updated.' );
+		}
+		return (int) $result > 0;
+	}
+
+	/**
 	 * Number of a batch's items in a state.
 	 *
 	 * @param int    $batch_id Batch.
@@ -891,8 +954,9 @@ final class BatchRepository {
 
 	/**
 	 * The reasons of a batch's failed and skipped items that the journal
-	 * holds no row for (T36: an item given up on after three tries, a write
-	 * that threw, a category item), grouped by message with the number of
+	 * holds no settled row for (T36: an item given up on after three tries,
+	 * a write that threw, a category item; ENGINE-2: an item whose write
+	 * stopped its run, leaving only intent rows), grouped by message with the number of
 	 * items carrying each, most first.
 	 *
 	 * @param int $batch_id Batch.
@@ -903,10 +967,11 @@ final class BatchRepository {
 		global $wpdb;
 		$rows = $wpdb->get_results(
 			$wpdb->prepare(
-				"SELECT i.message AS message, COUNT(*) AS objects FROM %i AS i WHERE i.batch_id = %d AND i.state IN ('failed', 'skipped') AND i.message <> '' AND NOT EXISTS (SELECT c.change_id FROM %i AS c WHERE c.batch_id = i.batch_id AND c.object_id = i.object_id) GROUP BY i.message ORDER BY objects DESC LIMIT %d",
+				"SELECT i.message AS message, COUNT(*) AS objects FROM %i AS i WHERE i.batch_id = %d AND i.state IN ('failed', 'skipped') AND i.message <> '' AND NOT EXISTS (SELECT c.change_id FROM %i AS c WHERE c.batch_id = i.batch_id AND c.object_id = i.object_id AND c.result <> %s) GROUP BY i.message ORDER BY objects DESC LIMIT %d",
 				$this->registry->table( Schema::ITEMS ),
 				$batch_id,
 				$this->registry->table( Schema::CHANGES ),
+				Schema::CHANGE_INTENT,
 				max( 1, min( 100, $limit ) )
 			),
 			ARRAY_A

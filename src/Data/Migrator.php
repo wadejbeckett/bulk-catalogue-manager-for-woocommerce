@@ -136,6 +136,7 @@ final class Migrator {
 		global $wpdb;
 		// Schema check after dbDelta(); nothing to cache. The table name is a prepared value.
 		$found = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $table ) ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Whether the plugin's own table exists must be read live from the database, which no WordPress API answers, and the pattern is escaped and prepared.
-		return $table === $found;
+		// A server with lower_case_table_names=1 answers an upper-case prefix in lower case: still the same table.
+		return is_string( $found ) && 0 === strcasecmp( $table, $found );
 	}
 }

@@ -147,4 +147,16 @@ final class MigratorTest extends TestCase {
 		$this->assertFalse( ( new Migrator( self::fixture() ) )->run() );
 		$this->assertFalse( get_option( Migrator::VERSION_OPTION ) );
 	}
+	public function test_an_upper_case_prefix_on_a_lower_case_server_still_finishes(): void {
+		$GLOBALS['wpdb']->prefix               = 'WP_';
+		$GLOBALS['wpdb']->lower_case_names     = true;
+		$GLOBALS['wpdb']->tables               = [
+			'wp_bulkcat_alpha' => true,
+			'wp_bulkcat_beta'  => true,
+		];
+		$GLOBALS['bulkcat_test']['dbdelta_ok'] = false;
+
+		$this->assertTrue( ( new Migrator( self::fixture() ) )->run(), 'SHOW TABLES answers the lower-case name; it is the same table.' );
+		$this->assertSame( Migrator::SCHEMA_VERSION, get_option( Migrator::VERSION_OPTION ) );
+	}
 }

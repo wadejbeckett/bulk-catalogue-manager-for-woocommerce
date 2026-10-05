@@ -251,6 +251,106 @@ describe( 'the export dialog', () => {
 		expect( isDisabled( download() ) ).toBe( true );
 	} );
 
+	it( 'opened while the first ticks are still being saved, it follows the selection once saved instead of the filter (1.3.4)', async () => {
+		const SAVING = waitingReason( { status: 'saving' } );
+		const { rerender } = setup( {
+			selection: { ...NOTHING, waiting: SAVING },
+		} );
+		const dialog = open();
+		const filter = () =>
+			within( dialog ).getByRole( 'radio', {
+				name: 'All matching the current filters',
+			} );
+		expect( filter().checked ).toBe( false );
+		expect(
+			within( dialog ).getByText(
+				'Your selection is still being saved. Download is available once it is.'
+			)
+		).toBeTruthy();
+		expect( within( dialog ).queryByText( 'Nothing selected' ) ).toBeNull();
+		expect( isDisabled( download() ) ).toBe( true );
+		expect( summaries() ).toHaveLength( 0 );
+
+		// One tick saved, the next still on its way: still the selection, still waiting.
+		rerender( {
+			selection: {
+				...SELECTED,
+				token: 'v2.token-two',
+				count: 2,
+				byType: { products: 2, variations: 0 },
+				waiting: SAVING,
+			},
+		} );
+		expect(
+			within( dialog ).getByRole( 'radio', {
+				name: 'Selected: 2 products',
+			} ).checked
+		).toBe( true );
+		expect( isDisabled( download() ) ).toBe( true );
+
+		// Every tick saved: the dialog reads the selection as it is now.
+		rerender( {
+			selection: {
+				...SELECTED,
+				token: 'v2.token-three',
+				count: 3,
+				byType: { products: 3, variations: 0 },
+			},
+		} );
+		expect(
+			within( dialog ).getByRole( 'radio', {
+				name: 'Selected: 3 products',
+			} ).checked
+		).toBe( true );
+		expect( filter().checked ).toBe( false );
+		await waitFor( () => expect( isDisabled( download() ) ).toBe( false ) );
+		expect( summaries().map( ( asked ) => asked.data.selection ) ).toEqual(
+			[ 'v2.token-three' ]
+		);
+	} );
+
+	it( 'chooses the filter when the save leaves nothing selected, then keeps whichever choice it made (1.3.4)', async () => {
+		const SAVING = waitingReason( { status: 'saving' } );
+		const filter = ( dialog ) =>
+			within( dialog ).getByRole( 'radio', {
+				name: 'All matching the current filters',
+			} );
+		const { rerender } = setup( {
+			selection: { ...SELECTED, waiting: SAVING },
+		} );
+		const dialog = open();
+		rerender( { selection: NOTHING } );
+		expect( filter( dialog ).checked ).toBe( true );
+		// Made once: a selection arriving later does not move it.
+		rerender( { selection: SELECTED } );
+		expect( filter( dialog ).checked ).toBe( true );
+		await waitFor( () =>
+			expect( summaries().length ).toBeGreaterThan( 0 )
+		);
+		await waitFor( () => expect( isDisabled( download() ) ).toBe( false ) );
+	} );
+
+	it( 'keeps a choice the operator made while the selection was being saved (1.3.4)', async () => {
+		const SAVING = waitingReason( { status: 'saving' } );
+		const { rerender } = setup( {
+			selection: { ...SELECTED, waiting: SAVING },
+		} );
+		const dialog = open();
+		fireEvent.click(
+			within( dialog ).getByRole( 'radio', {
+				name: 'All matching the current filters',
+			} )
+		);
+		rerender( { selection: SELECTED } );
+		expect(
+			within( dialog ).getByRole( 'radio', {
+				name: 'All matching the current filters',
+			} ).checked
+		).toBe( true );
+		await waitFor( () => expect( isDisabled( download() ) ).toBe( false ) );
+		expect( summaries().pop().data.selection ).toBeUndefined();
+	} );
+
 	it( 'restores a lapsed selection through onRenewSelection and asks for the summary again', async () => {
 		const renewed = deferred();
 		const onRenewSelection = jest.fn( () => renewed.promise );

@@ -1,11 +1,13 @@
 /**
  * The export dialog (SPEC §10, §14; ticket 10, T103). Export CSV opens it:
  *
- * - Rows: Selected, the exact selection, chosen on opening whenever
- *   anything is selected (ruling R13), or everything matching the current
- *   filters, which reads "The whole catalogue (N products)" and needs a
- *   confirmation when nothing narrows it. The dialog never changes the
- *   operator's choice itself.
+ * - Rows: Selected, the exact selection, chosen whenever anything is
+ *   selected (ruling R13), or everything matching the current filters, which
+ *   reads "The whole catalogue (N products)" and needs a confirmation when
+ *   nothing narrows it. The choice is made from the selection once it is
+ *   saved: opened while ticks are still on their way, the dialog holds
+ *   Selected and waits, then chooses from the saved selection (1.3.4).
+ *   After that the dialog never changes the choice itself.
  * - Columns: the table's, as one line; there is no second field picker.
  * - Include identifiers for re-import: off at every opening.
  * - The summary: rows, left-out items and the file name, asked again when
@@ -38,6 +40,7 @@ import {
 	goneSentence,
 	guardSentences,
 	initialChoice,
+	isSaving,
 	rowChoices,
 	rowsBody,
 	summarySentence,
@@ -68,7 +71,15 @@ export default function ExportDialog( {
 	fetchSummary,
 } ) {
 	const id = `bulkcat-export-${ useId().replace( /\W/g, '' ) }`;
-	const [ choice, setChoice ] = useState( () => initialChoice( selection ) );
+	// Null while ticks made before opening are still being saved: the
+	// choice is then made from the saved selection, once (1.3.4).
+	const [ chosen, setChosen ] = useState( () =>
+		isSaving( selection ) ? null : initialChoice( selection )
+	);
+	if ( chosen === null && ! isSaving( selection ) ) {
+		setChosen( initialChoice( selection ) );
+	}
+	const choice = chosen ?? SELECTED;
 	const [ identifiers, setIdentifiers ] = useState( false );
 	const [ confirmAll, setConfirmAll ] = useState( false );
 	const [ filterAnswer, setFilterAnswer ] = useState( null );
@@ -109,7 +120,7 @@ export default function ExportDialog( {
 	const warnings = guardSentences( answer, identifiers );
 
 	const choose = ( value ) => {
-		setChoice( value );
+		setChosen( value );
 		setConfirmAll( false );
 	};
 

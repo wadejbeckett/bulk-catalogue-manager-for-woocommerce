@@ -34,6 +34,20 @@ export function initialChoice( selection ) {
 }
 
 /**
+ * Whether the selection is still being saved: ticks made just before Export
+ * was clicked are on their way to the server (1.3.4).
+ *
+ * @param {Object} selection panelSelection().
+ * @return {boolean} Saving.
+ */
+export function isSaving( selection ) {
+	return (
+		!! selection?.waiting &&
+		selection.waiting === waitingReason( { status: 'saving' } )
+	);
+}
+
+/**
  * A count of rows in the catalogue's mode: products, variations, or items
  * where both are listed together (ticket 11: a count that can include
  * variations says so).
@@ -63,6 +77,8 @@ export function modePhrase( mode, count ) {
  */
 export function rowChoices( selection, { mode, answer = null } = {} ) {
 	const count = Number( selection?.count ) || 0;
+	// Ticks still being saved are a selection on its way, not nothing.
+	const coming = ! count && isSaving( selection );
 	return [
 		{
 			value: SELECTED,
@@ -76,13 +92,14 @@ export function rowChoices( selection, { mode, answer = null } = {} ) {
 						countPhrase( count, selection.byType )
 					)
 				: __( 'Selected', 'bulk-catalogue-manager-for-woocommerce' ),
-			note: count
-				? ''
-				: __(
-						'Nothing selected',
-						'bulk-catalogue-manager-for-woocommerce'
-					),
-			disabled: ! count,
+			note:
+				count || coming
+					? ''
+					: __(
+							'Nothing selected',
+							'bulk-catalogue-manager-for-woocommerce'
+						),
+			disabled: ! count && ! coming,
 		},
 		{
 			value: FILTER,

@@ -669,3 +669,13 @@ $bulkcat-bad-line: #f3c3c4;
 	color: #50575e;
 	font-size: 12px;
 }
+
+// The empty-selection prompt's Select all button wraps inside the side box
+// instead of running past it (a long count and wording at desktop widths).
+.bulkcat-bulk__nothing .components-button {
+	height: auto;
+	min-height: 32px;
+	max-width: 100%;
+	white-space: normal;
+	text-align: left;
+}

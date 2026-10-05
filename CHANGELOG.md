@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-10-05
+
+- Category editor: set a category's Display type (Default, Products, Subcategories or Both) and choose, replace or remove its image from the media library. Both are WooCommerce's own category settings, so the native category screen shows the same values.
+- History names category changes in plain words (Name, Slug, Description, Parent category, Display type, Image, Position) instead of internal keys.
+
 ## [1.3.1] - 2026-10-05
 
 Fixes from the 5 October standalone code review (context: defects in undo, filtering, export, recovery and the admin screen). Schema 9 (InnoDB for every plugin table; no column change).

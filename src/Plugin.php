@@ -21,7 +21,7 @@ final class Plugin {
 	/**
 	 * Must equal the `Version:` header of the main plugin file.
 	 */
-	public const VERSION = '1.3.1';
+	public const VERSION = '1.3.2';
 
 	/**
 	 * Lowest WooCommerce version the plugin runs on. Must equal the

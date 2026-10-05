@@ -6,7 +6,7 @@ Tested up to: 7.1
 Requires PHP: 8.1
 WC requires at least: 11.1
 WC tested up to: 11.1
-Stable tag: 1.3.1
+Stable tag: 1.3.2
 License: GPL-3.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -145,6 +145,10 @@ Yes. Each site keeps its own history and settings, and deleting the plugin with 
 
 == Changelog ==
 
+= 1.3.2 =
+* Category editor: set a category's Display type and choose, replace or remove its image from the media library (WooCommerce's own category settings).
+* History names category changes in plain words instead of internal keys.
+
 = 1.3.1 =
 * Undo of Manage stock now puts back the stock quantity, backorders, low-stock threshold and stock status WooCommerce changed on save; the preview warns that switching stock management off clears quantities.
 * Undo puts a regular and sale price back as a valid pair, so an original sale price is restored.
@@ -196,6 +200,9 @@ Yes. Each site keeps its own history and settings, and deleting the plugin with 
 * Settings for access, page size, confirmation, variation defaults, background batch sizes, history and data removal.
 
 == Upgrade Notice ==
+
+= 1.3.2 =
+Adds category Display type and image to the category editor. No database or history-format change. Back up files and data before updating.
 
 = 1.3.1 =
 Fixes undo of stock and price changes, the Regular price filter, export paging and several recovery cases. Schema 9 converts the plugin's own tables to InnoDB. Back up files and data before updating.

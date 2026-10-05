@@ -112,6 +112,7 @@ final class UninstallTest extends TestCase {
 			[
 				'deleted'     => [
 					[ 'metadata', 'user', 0, 'bulkcat_views', '', true ],
+					[ 'metadata', 'user', 0, 'bulkcat_display_preferences', '', true ],
 					[ 'metadata', 'term', 0, 'bulkcat_order', '', true ],
 					[ 'metadata', 'post', 0, '_bulkcat_availability_off', '', true ],
 					[ 'option', 'bulkcat_settings' ],
@@ -237,7 +238,7 @@ final class UninstallTest extends TestCase {
 		$this->assertTrue( is_array( $result ), $text );
 		$this->assertFalse( $result['scheduler'] );
 		$this->assertSame( [], $result['unscheduled'] );
-		$this->assertSame( [ [ 'metadata', 'user', 0, 'bulkcat_views', '', true ], [ 'metadata', 'term', 0, 'bulkcat_order', '', true ], [ 'metadata', 'post', 0, '_bulkcat_availability_off', '', true ], [ 'option', 'bulkcat_settings' ], [ 'option', 'bulkcat_db_version' ], [ 'option', 'bulkcat_request_epoch' ] ], $result['deleted'] );
+		$this->assertSame( [ [ 'metadata', 'user', 0, 'bulkcat_views', '', true ], [ 'metadata', 'user', 0, 'bulkcat_display_preferences', '', true ], [ 'metadata', 'term', 0, 'bulkcat_order', '', true ], [ 'metadata', 'post', 0, '_bulkcat_availability_off', '', true ], [ 'option', 'bulkcat_settings' ], [ 'option', 'bulkcat_db_version' ], [ 'option', 'bulkcat_request_epoch' ] ], $result['deleted'] );
 	}
 
 	public function test_tables_are_dropped_through_prepare_with_an_identifier_placeholder(): void {

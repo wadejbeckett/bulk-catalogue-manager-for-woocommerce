@@ -68,6 +68,7 @@ final class Routes {
 				new CategoriesWriteController(),
 				new SettingsController(),
 				new ViewsController( Registry::instance() ),
+				new DisplayPreferencesController(),
 			]
 		);
 	}

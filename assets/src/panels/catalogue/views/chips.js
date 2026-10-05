@@ -334,7 +334,7 @@ export default function SavedViewsBar( {
 		const first = items.find( ( item ) => item.id === defaultId );
 		if ( applyDefault && first ) {
 			const state = fromSaved( first, baseView );
-			apply.current( state.view, state.category );
+			apply.current( state.view, state.category, { opening: true } );
 		}
 	}, [ hasLoaded, items, defaultId, applyDefault, baseView ] );
 

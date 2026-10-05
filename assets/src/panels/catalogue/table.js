@@ -7,14 +7,14 @@ import { useCallback, useEffect, useMemo, useRef } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 
 import { CellContext } from './cells';
-import { PER_PAGE_SIZES } from './defaults';
 import { useEditScope } from './edit';
 import { onGridKeyDown } from './grid-keys';
 import { LoadingRows } from './states';
 import { useVariationRows } from './variations';
 
 const LAYOUTS = { table: {} };
-const CONFIG = { perPageSizes: PER_PAGE_SIZES };
+// Ticket 19: rows per page is the toolbar control, which needs no sort.
+const CONFIG = { perPageSizes: [] };
 
 /**
  * A row's id as DataViews keys its selection.

@@ -131,6 +131,10 @@ final class Screen {
 			[ $this, 'render' ]
 		);
 		$this->hook_suffix = is_string( $hook ) ? $hook : '';
+		if ( '' !== $this->hook_suffix ) {
+			// Opening the screen repairs the schedules, so no other admin page pays for the check.
+			add_action( 'load-' . $this->hook_suffix, [ \BulkCatalogueManager\Plugin::class, 'repair_schedules' ], 10, 0 );
+		}
 	}
 
 	/**

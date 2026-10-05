@@ -151,17 +151,35 @@ final class Plugin {
 
 	/**
 	 * Bring the plugin's tables up to the code's schema version; a no-op once
-	 * current. Then repair the recurring clean-ups (the request clean-up and
-	 * the daily history prune) and queue again any batch a deactivation
-	 * interrupted. A network activation runs the activation hooks on the
-	 * main site only, so this is where each other site gets them.
+	 * current. When it migrated, repair the schedules (repair_schedules()):
+	 * a network activation runs the activation hooks on the main site only,
+	 * so a sub-site's first migration is where it gets them. At the current
+	 * schema nothing is checked, so other admin pages cost no query.
 	 */
 	public function migrate(): void {
-		if ( ( new Data\Migrator( Data\Registry::plugin() ) )->run() ) {
-			Requests\Cleanup::schedule();
-			Engine\Pruner::schedule();
-			Engine\ChunkRunner::resume_interrupted();
+		$migrator = new Data\Migrator( Data\Registry::plugin() );
+		if ( $migrator->is_current() ) {
+			return;
 		}
+		if ( $migrator->run() ) {
+			self::repair_schedules();
+		}
+	}
+
+	/**
+	 * Make sure the recurring clean-ups (the request clean-up and the daily
+	 * history prune) are scheduled and queue again any batch a deactivation
+	 * interrupted; each step is idempotent. Runs after a migration and each
+	 * time the manager screen loads (Admin\Screen::register()), so a lost
+	 * schedule comes back without reactivating the plugin.
+	 */
+	public static function repair_schedules(): void {
+		if ( ! ( new Data\Migrator( Data\Registry::plugin() ) )->is_current() ) {
+			return;
+		}
+		Requests\Cleanup::schedule();
+		Engine\Pruner::schedule();
+		Engine\ChunkRunner::resume_interrupted();
 	}
 
 	/**

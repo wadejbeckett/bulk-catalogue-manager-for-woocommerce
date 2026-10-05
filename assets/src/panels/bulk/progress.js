@@ -70,6 +70,37 @@ export function doneSentence( report, byType = null ) {
 }
 
 /**
+ * Reading the progress has stopped on an answer that will not change by
+ * asking again (FRONTEND-8): a plain sentence and Check again.
+ *
+ * @param {Object}   props              Props.
+ * @param {Function} props.onCheckAgain Read the progress again.
+ * @return {Element} Notice.
+ */
+export function ProgressStopped( { onCheckAgain } ) {
+	return (
+		<div className="bulkcat-bulk__notice is-warn" role="alert">
+			<p>
+				{ __(
+					'The progress can no longer be read. If you have been signed out, sign in again, then check again.',
+					'bulk-catalogue-manager-for-woocommerce'
+				) }
+			</p>
+			<button
+				type="button"
+				className="button button-small"
+				onClick={ onCheckAgain }
+			>
+				{ __(
+					'Check again',
+					'bulk-catalogue-manager-for-woocommerce'
+				) }
+			</button>
+		</div>
+	);
+}
+
+/**
  * The Done step.
  *
  * @param {Object}   props               Props.
@@ -97,7 +128,10 @@ export function DoneStep( {
 	replayed = false,
 	earlier = false,
 } ) {
-	const { report, error } = useBatchProgress( batchId, interval );
+	const { report, error, stopped, checkAgain } = useBatchProgress(
+		batchId,
+		interval
+	);
 	const total = Number( report?.total_items ?? count ) || 0;
 	const done = Number( report?.done_items ) || 0;
 	const finished = FINISHED.includes( report?.status );
@@ -187,7 +221,7 @@ export function DoneStep( {
 						'bulk-catalogue-manager-for-woocommerce'
 					) }
 				</p>
-				{ error && (
+				{ error && ! stopped && (
 					<p className="bulkcat-bulk__hint">
 						{ __(
 							'The progress could not be read just now. Trying again.',
@@ -195,6 +229,7 @@ export function DoneStep( {
 						) }
 					</p>
 				) }
+				{ stopped && <ProgressStopped onCheckAgain={ checkAgain } /> }
 			</section>
 		);
 	}

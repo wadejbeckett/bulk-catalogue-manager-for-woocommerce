@@ -43,6 +43,7 @@ import {
 	valueKind,
 } from './undo';
 import { isUncertain } from '../../requests';
+import { permanentReadError } from '../bulk/hooks';
 import { countPhrase } from '../catalogue/selection/model';
 
 /** How often a running batch is read again, in milliseconds. */
@@ -72,6 +73,8 @@ function conflictPhrase( plan, conflicted ) {
 /**
  * Follow a batch while it is being worked: read it every POLL_MS until
  * its status is no longer active, then call onDone with the last report.
+ * A failed read is tried again, unless it will fail the same way however
+ * often it is asked (signed out, not allowed, gone: FRONTEND-8).
  *
  * @param {number|null} batchId Batch to follow, or null.
  * @param {Function}    onDone  Called with the finished report.
@@ -102,8 +105,8 @@ function useFollow( batchId, onDone ) {
 						done.current( next );
 					}
 				} )
-				.catch( () => {
-					if ( live ) {
+				.catch( ( error ) => {
+					if ( live && ! permanentReadError( error ) ) {
 						timer = setTimeout( read, POLL_MS );
 					}
 				} );

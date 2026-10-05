@@ -750,6 +750,29 @@ function exportForm() {
 	};
 }
 
+describe( 'following a change in progress (FRONTEND-8)', () => {
+	it( 'stops reading a running change after a sign-out', async () => {
+		serve( {
+			...DEFAULT_ROUTES(),
+			'GET bulkcat/v1/batches/3': () => {
+				throw Object.assign( new Error( 'Not logged in.' ), {
+					code: 'rest_not_logged_in',
+					data: { status: 401 },
+				} );
+			},
+		} );
+		await renderHistory();
+		const reads = () =>
+			calls.filter( ( call ) => call.route === 'bulkcat/v1/batches/3' )
+				.length;
+		await waitFor( () => expect( reads() ).toBe( 1 ) );
+		await act(
+			() => new Promise( ( resolve ) => setTimeout( resolve, 3500 ) )
+		);
+		expect( reads() ).toBe( 1 );
+	} );
+} );
+
 describe( 'history wire-ins', () => {
 	beforeEach( () => {
 		// jsdom cannot send a form; the posted form is read back instead.

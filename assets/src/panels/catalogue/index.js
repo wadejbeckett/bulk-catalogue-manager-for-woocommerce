@@ -38,7 +38,7 @@ import { ShellContext } from '../../shell';
 import BulkChangePanel from '../bulk';
 import { FINISHED, resumeApply, useBatchProgress } from '../bulk/hooks';
 import { useProgressAnnouncer } from '../bulk/announce';
-import { doneSentence } from '../bulk/progress';
+import { ProgressStopped, doneSentence } from '../bulk/progress';
 import { announce } from '../categories/announce';
 import { CategoryPanel, useCategoryTree } from '../categories/index';
 import { categorySentence } from '../categories/tree-model';
@@ -142,7 +142,7 @@ export function AppliedProgress( {
 		wasAsking.current = asking;
 	}, [ asking ] );
 	const [ refused, setRefused ] = useState( '' );
-	const { report } = useBatchProgress( batchId );
+	const { report, stopped, checkAgain } = useBatchProgress( batchId );
 	const finished = FINISHED.includes( report?.status );
 	const tell = useRef( onFinished );
 	tell.current = onFinished;
@@ -160,7 +160,7 @@ export function AppliedProgress( {
 			tell.current( report );
 		}
 	}, [ finished, report ] );
-	if ( ! report || finished || hidden ) {
+	if ( ( ! report && ! stopped ) || finished || hidden ) {
 		return null;
 	}
 	const cancel = () => {
@@ -199,7 +199,8 @@ export function AppliedProgress( {
 					) }
 				</p>
 			) }
-			<BatchProgress report={ report } />
+			{ report && <BatchProgress report={ report } /> }
+			{ stopped && <ProgressStopped onCheckAgain={ checkAgain } /> }
 			<span className="bulkcat-catalogue__progress-acts">
 				{ ! asking && (
 					<Button

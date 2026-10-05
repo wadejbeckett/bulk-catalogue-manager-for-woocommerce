@@ -52,8 +52,8 @@ export async function readProduct( id, fields = [] ) {
 
 /**
  * Every field of one row, for the detail panel: GET /products/{id} (a
- * product or a variation) with the panel's fields; when it cannot be read
- * the grid's row is used as it is.
+ * product or a variation) with the panel's fields. A failed read rejects,
+ * so the panel can say so (FRONTEND-9) and show the grid's row meanwhile.
  *
  * @param {Object}        item   The grid's row.
  * @param {Array<string>} fields Field keys the panel shows.
@@ -66,36 +66,41 @@ export function loadProduct( item, fields = [] ) {
 	}
 	return request( `products/${ id }`, {
 		query: fields.length ? { fields } : {},
-	} )
-		.then( ( answer ) =>
-			answer?.item && Number( answer.item.id ) === id
-				? { ...item, ...answer.item }
-				: item
-		)
-		.catch( () => item );
+	} ).then( ( answer ) =>
+		answer?.item && Number( answer.item.id ) === id
+			? { ...item, ...answer.item }
+			: item
+	);
 }
 
 /**
- * A product's variations, read-only for the detail panel.
+ * A product's first 100 variations, read-only for the detail panel, and how
+ * many it has in all. A failed read rejects (FRONTEND-9).
  *
  * @param {Object} item Row.
- * @return {Promise<Array<Object>>} Variation rows; none for a variation.
+ * @return {Promise<{items: Array<Object>, total: number}>} Variation rows (none for a variation) and the total.
  */
 export function loadVariations( item ) {
 	if ( isVariation( item ) || Number( item?.[ ROW.parentId ] ) < 0 ) {
-		return Promise.resolve( [] );
+		return Promise.resolve( { items: [], total: 0 } );
 	}
 	return request( `products/${ Number( item.id ) }/variations`, {
 		query: { per_page: 100 },
-	} )
-		.then( ( answer ) =>
-			Array.isArray( answer?.items ) ? answer.items : []
-		)
-		.catch( () => [] );
+	} ).then( ( answer ) => {
+		const items = Array.isArray( answer?.items ) ? answer.items : [];
+		return {
+			items,
+			total: Math.max(
+				items.length,
+				Number( answer?.pagination?.total ) || 0
+			),
+		};
+	} );
 }
 
 /**
- * The newest recorded change to one product or variation.
+ * The newest recorded change to one product or variation. A failed read
+ * rejects, so it is never mistaken for none (FRONTEND-9).
  *
  * @param {number} id Product or variation id.
  * @return {Promise<Object|null>} Audit row, or null when there is none.
@@ -103,7 +108,5 @@ export function loadVariations( item ) {
 export function loadRecentChange( id ) {
 	return request( 'audit', {
 		query: { product: Number( id ), per_page: 1 },
-	} )
-		.then( ( answer ) => ( answer?.items || [] )[ 0 ] || null )
-		.catch( () => null );
+	} ).then( ( answer ) => ( answer?.items || [] )[ 0 ] || null );
 }

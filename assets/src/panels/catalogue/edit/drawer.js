@@ -45,6 +45,7 @@ import {
 } from './rules';
 import { editChoices, savedOutcome } from './status';
 import { productName } from './switch';
+import { formatNumber } from '../../bulk/words';
 
 const FOCUSABLE =
 	'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -214,7 +215,11 @@ export default function DetailDrawer( {
 	const [ savedNote, setSavedNote ] = useState( '' );
 	const [ asking, setAsking ] = useState( false );
 	const [ variations, setVariations ] = useState( [] );
+	const [ variationTotal, setVariationTotal ] = useState( 0 );
+	// undefined while read, null when there is none, false when it could not be read.
 	const [ recent, setRecent ] = useState( undefined );
+	// FRONTEND-9: the reads that failed, which Try again makes again.
+	const [ failedReads, setFailedReads ] = useState( [] );
 	const panel = useRef( null );
 	const form = useRef( null );
 	const closeButton = useRef( null );
@@ -225,24 +230,64 @@ export default function DetailDrawer( {
 	const live = useRef( true );
 	const id = item.id;
 
-	useEffect( () => {
-		let active = true;
-		live.current = true;
-		loadProduct(
-			item,
-			descriptors.map( ( field ) => field.key )
-		).then( ( row ) => {
-			if ( active ) {
-				setSaved( row );
-				setData( row );
-			}
-		} );
-		loadVariations( item ).then(
-			( rows ) => active && setVariations( rows )
+	const active = useRef( true );
+	const failed = ( part ) =>
+		active.current &&
+		setFailedReads( ( was ) =>
+			was.includes( part ) ? was : [ ...was, part ]
 		);
-		loadRecentChange( id ).then( ( row ) => active && setRecent( row ) );
+	const load = ( parts ) => {
+		setFailedReads( ( was ) =>
+			was.filter( ( part ) => ! parts.includes( part ) )
+		);
+		if ( parts.includes( 'product' ) ) {
+			loadProduct(
+				item,
+				descriptors.map( ( field ) => field.key )
+			)
+				.catch( () => {
+					failed( 'product' );
+					// The grid's row meanwhile: only its fields are shown.
+					return item;
+				} )
+				.then( ( row ) => {
+					if ( active.current ) {
+						setSaved( row );
+						setData( row );
+					}
+				} );
+		}
+		if ( parts.includes( 'variations' ) ) {
+			loadVariations( item ).then(
+				( answer ) => {
+					if ( active.current ) {
+						setVariations( answer.items );
+						setVariationTotal( answer.total );
+					}
+				},
+				() => failed( 'variations' )
+			);
+		}
+		if ( parts.includes( 'recent' ) ) {
+			setRecent( undefined );
+			loadRecentChange( id ).then(
+				( row ) => active.current && setRecent( row ),
+				() => {
+					if ( active.current ) {
+						setRecent( false );
+					}
+					failed( 'recent' );
+				}
+			);
+		}
+	};
+
+	useEffect( () => {
+		active.current = true;
+		live.current = true;
+		load( [ 'product', 'variations', 'recent' ] );
 		return () => {
-			active = false;
+			active.current = false;
 			live.current = false;
 		};
 		// Loaded once per product opened.
@@ -505,7 +550,12 @@ export default function DetailDrawer( {
 	} )();
 
 	let recentLine = '';
-	if ( recent === null ) {
+	if ( recent === false ) {
+		recentLine = __(
+			'The latest change could not be read.',
+			'bulk-catalogue-manager-for-woocommerce'
+		);
+	} else if ( recent === null ) {
 		recentLine = __(
 			'No changes recorded yet.',
 			'bulk-catalogue-manager-for-woocommerce'
@@ -662,6 +712,37 @@ export default function DetailDrawer( {
 							</div>
 						</form>
 					) }
+					{ failedReads.some( ( part ) => part !== 'recent' ) && (
+						<div
+							className="bulkcat-drawer__notice is-warn"
+							role="alert"
+						>
+							<p>
+								{ __(
+									'Some details of this product could not be loaded, so not everything is shown.',
+									'bulk-catalogue-manager-for-woocommerce'
+								) }
+							</p>
+							<Button
+								variant="secondary"
+								size="compact"
+								onClick={ () =>
+									load(
+										failedReads.filter(
+											// A product read again would overwrite edits in progress.
+											( part ) =>
+												part !== 'product' || ! dirty
+										)
+									)
+								}
+							>
+								{ __(
+									'Try again',
+									'bulk-catalogue-manager-for-woocommerce'
+								) }
+							</Button>
+						</div>
+					) }
 					{ variations.length > 0 && (
 						<section className="bulkcat-drawer__section">
 							<h4>
@@ -670,6 +751,19 @@ export default function DetailDrawer( {
 									'bulk-catalogue-manager-for-woocommerce'
 								) }
 							</h4>
+							{ variationTotal > variations.length && (
+								<p className="bulkcat-drawer__hint">
+									{ sprintf(
+										/* translators: 1: variations listed, such as "100"; 2: variations in all, such as "150". */
+										__(
+											'Showing the first %1$s of %2$s variations.',
+											'bulk-catalogue-manager-for-woocommerce'
+										),
+										formatNumber( variations.length ),
+										formatNumber( variationTotal )
+									) }
+								</p>
+							) }
 							<ul className="bulkcat-drawer__variations">
 								{ variations.map( ( row ) => (
 									<li key={ row.id }>
@@ -714,6 +808,20 @@ export default function DetailDrawer( {
 						</h4>
 						<p className="bulkcat-drawer__hint">
 							{ recentLine }{ ' ' }
+							{ recent === false &&
+								! failedReads.some(
+									( part ) => part !== 'recent'
+								) && (
+									<Button
+										variant="link"
+										onClick={ () => load( [ 'recent' ] ) }
+									>
+										{ __(
+											'Try again',
+											'bulk-catalogue-manager-for-woocommerce'
+										) }
+									</Button>
+								) }{ ' ' }
 							{ history && (
 								<a href={ history }>
 									{ __(

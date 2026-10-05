@@ -616,6 +616,10 @@ if ( ! function_exists( 'get_terms' ) ) {
 	}
 
 	function get_term_meta( int $term_id, string $key = '', bool $single = false ): mixed {
+		if ( '' === $key ) {
+			// Every key, each as a list of values, as core answers.
+			return array_map( static fn( mixed $value ): array => [ $value ], $GLOBALS['bulkcat_test']['term_meta'][ $term_id ] ?? [] );
+		}
 		$value = $GLOBALS['bulkcat_test']['term_meta'][ $term_id ][ $key ] ?? null;
 		return null === $value ? ( $single ? '' : [] ) : ( $single ? $value : [ $value ] );
 	}
@@ -1056,5 +1060,17 @@ if ( ! function_exists( 'get_post_type_object' ) ) {
 				'edit_post'     => 'edit_product',
 			],
 		];
+	}
+}
+
+// 1.3.4: the request context, read from 'is_admin' and 'doing_ajax' (false unless a test sets them).
+if ( ! function_exists( 'is_admin' ) ) {
+	function is_admin(): bool {
+		return (bool) ( $GLOBALS['bulkcat_test']['is_admin'] ?? false );
+	}
+}
+if ( ! function_exists( 'wp_doing_ajax' ) ) {
+	function wp_doing_ajax(): bool {
+		return (bool) ( $GLOBALS['bulkcat_test']['doing_ajax'] ?? false );
 	}
 }

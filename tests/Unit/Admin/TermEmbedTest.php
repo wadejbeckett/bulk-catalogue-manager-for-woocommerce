@@ -100,4 +100,33 @@ final class TermEmbedTest extends TestCase {
 		$this->assertContains( [ 'admin_enqueue_scripts', [ TermEmbed::class, 'enqueue' ], 10, 1 ], $hooks );
 		$this->assertContains( [ 'admin_body_class', [ TermEmbed::class, 'body_class' ], 10, 1 ], $hooks );
 	}
+
+	public function test_it_warns_before_the_first_save_through_this_form(): void {
+		$tag = (object) [
+			'term_id'  => 12,
+			'taxonomy' => 'product_cat',
+		];
+		// Never saved through WordPress's own form: WooCommerce's display type has never been stored.
+		ob_start();
+		TermEmbed::warn( $tag, 'product_cat' );
+		$html = (string) ob_get_clean();
+		$this->assertStringContainsString( 'bulkcat-embed-warning', $html );
+		$this->assertStringContainsString( 'has not been saved with this form before', $html );
+		$this->assertStringNotContainsString( 'class="notice', $html, 'Not a notice the embedded page hides.' );
+
+		$GLOBALS['bulkcat_test']['term_meta'][12]['display_type'] = '';
+		ob_start();
+		TermEmbed::warn( $tag, 'product_cat' );
+		$this->assertSame( '', (string) ob_get_clean(), 'Saved through it before: no warning.' );
+
+		unset( $GLOBALS['bulkcat_test']['term_meta'][12] );
+		unset( $_GET[ TermEmbed::FLAG ] );
+		ob_start();
+		TermEmbed::warn( $tag, 'product_cat' );
+		$this->assertSame( '', (string) ob_get_clean(), 'WordPress’s own screen, opened normally, is untouched.' );
+	}
+
+	public function test_the_warning_hook_is_registered(): void {
+		$this->assertContains( [ 'product_cat_pre_edit_form', [ TermEmbed::class, 'warn' ], 10, 2 ], ( new Plugin() )->hooks() );
+	}
 }

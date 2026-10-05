@@ -14,7 +14,7 @@ import { announce } from './announce';
 import DeleteDialog from './delete-dialog';
 import { makeDefaultCategory } from './manage-requests';
 import { valueIds } from './tree-model';
-import './actions.scss';
+import './actions/style.scss';
 
 /**
  * Extra menu items and their dialogs for the category tree.

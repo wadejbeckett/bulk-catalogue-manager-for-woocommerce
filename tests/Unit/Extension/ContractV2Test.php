@@ -69,7 +69,7 @@ final class ContractV2Test extends TestCase {
 	 * @param bool $categories Whether to offer category actions.
 	 */
 	private static function picks( bool $categories = true ): PicksProvider {
-		return new PicksProvider( new MemoryStore(), new MemoryStore(), $categories );
+		return new PicksProvider( new MemoryStore(), new MemoryStore(), $categories, true );
 	}
 
 	/**

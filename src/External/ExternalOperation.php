@@ -122,6 +122,11 @@ final class ExternalOperation implements Operation {
 		if ( $clean instanceof \WP_Error ) {
 			return Validation::refused( $clean );
 		}
+		// Contract version 2: every chosen id of a lookup argument must resolve now (docs/EXTENSIONS-v2.md §4.4).
+		$resolved = Choices::resolve( $this->provider, $described, $clean, $context );
+		if ( $resolved instanceof \WP_Error ) {
+			return Validation::refused( $resolved );
+		}
 		$action = $this->provider->action( $this->id );
 		try {
 			$answer = null === $action ? null : Guard::run( $this->provider->id, 'validate', static fn(): mixed => $action->validate( $clean, $context ) );

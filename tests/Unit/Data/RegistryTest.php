@@ -21,6 +21,9 @@ final class RegistryTest extends TestCase {
 	 * Add a new hook name or code here only if it is never a storage key.
 	 */
 	private const NOT_STORAGE = [
+		'bulkcat_choice_unavailable'             => 'external action refusal code: a chosen lookup item no longer resolves (EXTENSIONS-v2 §4.4); not stored',
+		'bulkcat_invalid_lookup'                 => 'lookup route refusal code (EXTENSIONS-v2 §4.7); not stored',
+		'bulkcat_lookup_failed'                  => 'lookup route refusal code: the add-on could not list its choices; not stored',
 		'bulkcat_embed'                          => 'URL flag of the embedded category edit form (Admin\\TermEmbed); not stored',
 		'bulkcat_row_action'                     => 'native admin link marker; not stored',
 		'bulkcat_row_action_unavailable'         => 'native row action refusal code; not stored',

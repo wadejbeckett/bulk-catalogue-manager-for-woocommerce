@@ -69,6 +69,7 @@ final class Routes {
 				new SettingsController(),
 				new ViewsController( Registry::instance() ),
 				new DisplayPreferencesController(),
+				new LookupController(),
 			]
 		);
 	}

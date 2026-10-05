@@ -48,6 +48,8 @@ final class Arguments {
 				return null !== $number && self::in_range( (float) $number, $spec ) ? $number : null;
 			case 'choice':
 				return is_string( $value ) && array_key_exists( $value, $spec['choices'] ) ? $value : null;
+			case 'lookup':
+				return self::lookup( $value, $spec );
 			case 'multichoice':
 				if ( ! is_array( $value ) || ! array_is_list( $value ) ) {
 					return null;
@@ -173,6 +175,18 @@ final class Arguments {
 				$schema['enum']    = array_map( 'strval', array_keys( $spec['choices'] ) );
 				$schema['choices'] = self::choices( $spec['choices'] );
 				break;
+			case 'lookup':
+				if ( empty( $spec['multiple'] ) ) {
+					$schema['type'] = 'string';
+				} else {
+					$schema['type']        = 'array';
+					$schema['items']       = [ 'type' => 'string' ];
+					$schema['uniqueItems'] = true;
+					$schema['minItems']    = $spec['min_items'] ?? 0;
+					$schema['maxItems']    = $spec['max_items'] ?? Inspector::MAX_ITEMS;
+				}
+				$schema['lookup'] = [ 'multiple' => ! empty( $spec['multiple'] ) ];
+				break;
 			case 'multichoice':
 				$schema['type']        = 'array';
 				$schema['items']       = [
@@ -200,6 +214,34 @@ final class Arguments {
 	 * @param array<string, string> $choices Value => label.
 	 * @return list<array{value: string, label: string}>
 	 */
+	/**
+	 * A lookup value in canonical form (docs/EXTENSIONS-v2.md §4.1): one id,
+	 * or distinct ids sorted by bytes; null when the spec refuses it. Whether
+	 * each id may be chosen is the provider's answer (Choices::resolve()).
+	 *
+	 * @param mixed                $value Submitted value.
+	 * @param array<string, mixed> $spec  A checked lookup spec.
+	 */
+	private static function lookup( mixed $value, array $spec ): string|array|null {
+		$valid = static fn( mixed $id ): bool => is_string( $id ) && 1 === preg_match( \BulkCatalogueManager\Extension\LookupItem::ID, $id );
+		if ( empty( $spec['multiple'] ) ) {
+			return $valid( $value ) ? $value : null;
+		}
+		if ( ! is_array( $value ) || ! array_is_list( $value ) || count( $value ) !== count( array_unique( $value, SORT_REGULAR ) ) ) {
+			return null;
+		}
+		foreach ( $value as $id ) {
+			if ( ! $valid( $id ) ) {
+				return null;
+			}
+		}
+		if ( count( $value ) < ( $spec['min_items'] ?? 0 ) || count( $value ) > ( $spec['max_items'] ?? Inspector::MAX_ITEMS ) ) {
+			return null;
+		}
+		sort( $value, SORT_STRING );
+		return $value;
+	}
+
 	private static function choices( array $choices ): array {
 		$list = [];
 		foreach ( $choices as $value => $label ) {

@@ -83,18 +83,19 @@ describe( 'settings effects', () => {
 		expect( products[ 0 ] ).toContain( 'per_page=50' );
 	} );
 
-	it( 'confirm above this many rows sets the second-click threshold', async () => {
+	it( 'confirm at or above this many rows sets the second-click threshold', async () => {
 		const { useSettings, needsSecondClick, setSettings } = load( {
 			confirm_threshold: 10,
 		} );
-		expect( needsSecondClick( 10, { confirm_threshold: 10 } ) ).toBe(
+		// FRONTEND-4: at or above, as the Apply control asks (confirmPolicy()).
+		expect( needsSecondClick( 9, { confirm_threshold: 10 } ) ).toBe(
 			false
 		);
-		expect( needsSecondClick( 11, { confirm_threshold: 10 } ) ).toBe(
+		expect( needsSecondClick( 10, { confirm_threshold: 10 } ) ).toBe(
 			true
 		);
-		expect( needsSecondClick( 200, {} ) ).toBe( false );
-		expect( needsSecondClick( 201, {} ) ).toBe( true );
+		expect( needsSecondClick( 199, {} ) ).toBe( false );
+		expect( needsSecondClick( 200, {} ) ).toBe( true );
 		expect( needsSecondClick( 1, {}, true ) ).toBe( true );
 		expect( needsSecondClick( 1, { confirm_threshold: 0 } ) ).toBe( true );
 

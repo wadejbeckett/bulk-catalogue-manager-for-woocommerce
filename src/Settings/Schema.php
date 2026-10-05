@@ -172,7 +172,7 @@ final class Schema {
 			self::BATCH_SIZE            => __( 'Products per background batch', 'bulk-catalogue-manager-for-woocommerce' ),
 			self::VARIATION_BATCH_SIZE  => __( 'Variations per background batch', 'bulk-catalogue-manager-for-woocommerce' ),
 			self::HISTORY_DAYS          => __( 'Keep history for', 'bulk-catalogue-manager-for-woocommerce' ),
-			self::CONFIRM_THRESHOLD     => __( 'Confirm above this many rows', 'bulk-catalogue-manager-for-woocommerce' ),
+			self::CONFIRM_THRESHOLD     => __( 'Confirm at or above this many rows', 'bulk-catalogue-manager-for-woocommerce' ),
 			self::VARIATIONS_STATUS     => __( 'Apply status changes to variations by default', 'bulk-catalogue-manager-for-woocommerce' ),
 			self::VARIATIONS_VISIBILITY => __( 'Apply visibility changes to variations by default', 'bulk-catalogue-manager-for-woocommerce' ),
 			self::VARIATIONS_PRICE      => __( 'Apply price changes to variations by default', 'bulk-catalogue-manager-for-woocommerce' ),

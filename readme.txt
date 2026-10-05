@@ -31,7 +31,7 @@ Up to 20 changes can run in order as one step, such as "increase the regular pri
 
 **See it first.** Nothing is saved until a preview has shown how many products will change, a sample of old and new values, and any warnings, such as a sale price above the regular price or a duplicate SKU.
 
-**Change native Status.** Choose Published, Pending Review, Draft or Private. A stored future publication date can make a Published request become Scheduled; the preview and saved row show that result. Draft does not remember a status, and Published does not restore one. Individual edits use one Save; bulk Status changes use Preview then Apply, with one additional count confirmation at or above your configured threshold. Password consequences appear as redacted warnings in Preview, while optional-provider reviews remain.
+**Change native Status.** Choose Published, Pending Review, Draft or Private. A stored future publication date can make a Published request become Scheduled; the preview and saved row show that result. Draft does not remember a status, and Published does not restore one. Individual edits use one Save; bulk Status changes use Preview then Apply, with one additional count confirmation at or above your configured threshold; setting Draft or Pending Review always asks first. Password consequences appear as redacted warnings in Preview, while optional-provider reviews remain.
 
 **Export it.** Export CSV downloads the selected products, or every product matching your filters, in the columns the table shows. With **Include identifiers for re-import** on, the file goes back through WooCommerce's own Products → Import to update the same products.
 

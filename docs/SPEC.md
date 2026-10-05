@@ -138,7 +138,7 @@ In this order.
 
 ### 4.5 Confirmation policy
 
-Ordinary individual edits use one Save/Update (inline edits commit on Enter or blur). Bulk changes use Preview → Apply. Native Status warnings stay in Preview: below the configured threshold (default 200 rows), Apply is one click; at or above it, one additional confirmation restates the count. Optional-provider review safeguards remain. The existing confirmation behavior for other native actions is unchanged in this Status slice; general confirmation polish belongs to ticket20. Nothing requires typing a word to confirm.
+Ordinary individual edits use one Save/Update (inline edits commit on Enter or blur). Bulk changes use Preview → Apply. Native Status warnings stay in Preview: below the configured threshold (default 200 rows), Apply is one click; at or above it, one additional confirmation restates the count. A Status change that takes products off the site (Draft or Pending Review) always asks, naming what it will do, as the setting's help says (hotfix 1.3.1, FRONTEND-4). Optional-provider review safeguards remain. The existing confirmation behavior for other native actions is unchanged in this Status slice; general confirmation polish belongs to ticket20. Nothing requires typing a word to confirm.
 
 Status Preview names the requested and effective native states, including a stored date that will keep Published scheduled. A successfully projected native password clear carries a redacted per-row boolean and warning count, counted across computed objects independently of the displayed sample (estimated with the existing totals when computation is capped); empty passwords, refused/no-op steps and failed projections never claim a clear. No password or password hash is exposed. The bulk panel, inline editor and detail drawer use the same server result. New edits never offer restoration or **Keep current status** on the basis of an old record. Historical Off/On outcome text remains readable for accepted legacy work. Wider publication Visibility controls and confirmation UX are separate follow-ups.
 
@@ -405,7 +405,7 @@ One option, `bulkcat_settings`, an array sanitised on save against an explicit s
 | Products per background batch | 50 | 10 to 100; lowered if a chunk nears the time limit |
 | Variations per background batch | 100 | 10 to 100; lowered with the product size |
 | Keep history for | 90 days | 7 to 730, or indefinitely |
-| Confirm above this many rows | 200 | The second-click threshold |
+| Confirm at or above this many rows | 200 | The second-click threshold |
 | Apply to variations by default | Status and visibility on, price and stock off | Starting position of the switch, per field group: Publishing reads status, Pricing price, Stock stock, anything else starts off; catalogue visibility belongs to the product, so its switch reaches no variation today |
 | Record unchanged rows in the audit log | Off | On makes the log complete but much larger |
 | Show the category panel by default | On | |

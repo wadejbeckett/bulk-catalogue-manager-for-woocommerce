@@ -21,9 +21,10 @@ import { joinPath, pathNames } from './tree-model';
  * @return {Array<{value: string, label: string}>} Options.
  */
 export function targetOptions( byId, ids ) {
+	const merged = ids.map( Number );
 	const options = [];
 	byId.forEach( ( entry, each ) => {
-		if ( ! ids.includes( each ) ) {
+		if ( ! merged.includes( Number( each ) ) ) {
 			options.push( {
 				value: String( each ),
 				label: joinPath( pathNames( byId, each ) ),
@@ -129,9 +130,8 @@ export default function DeleteDialog( {
 		() => ( merge ? targetOptions( tree.byId, ids ) : [] ),
 		[ merge, tree.byId, ids ]
 	);
-	const [ into, setInto ] = useState(
-		merge ? options[ 0 ]?.value || '' : ''
-	);
+	// 1.3.4: nothing is chosen, and so nothing checked or refused, until the operator chooses.
+	const [ into, setInto ] = useState( '' );
 	const [ preview, setPreview ] = useState( null );
 	const [ error, setError ] = useState( null );
 	const [ busy, setBusy ] = useState( false );
@@ -203,9 +203,27 @@ export default function DeleteDialog( {
 						'bulk-catalogue-manager-for-woocommerce'
 					) }
 					value={ into }
-					options={ options }
+					options={ [
+						{
+							value: '',
+							label: __(
+								'Choose a category…',
+								'bulk-catalogue-manager-for-woocommerce'
+							),
+							disabled: true,
+						},
+						...options,
+					] }
 					onChange={ setInto }
 				/>
+			) }
+			{ merge && ! target && (
+				<p>
+					{ __(
+						'Choose the category to merge into.',
+						'bulk-catalogue-manager-for-woocommerce'
+					) }
+				</p>
 			) }
 			{ error && (
 				<ErrorNotice
@@ -216,7 +234,7 @@ export default function DeleteDialog( {
 					) }
 				/>
 			) }
-			{ ! preview && ! error && (
+			{ ! preview && ! error && ( ! merge || target > 0 ) && (
 				<p>
 					{ __(
 						'Checking what this would change…',

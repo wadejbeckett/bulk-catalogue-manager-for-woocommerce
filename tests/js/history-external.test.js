@@ -9,6 +9,7 @@ import {
 	formatValue,
 	reasonSentence,
 } from '../../assets/src/panels/history/describe';
+import { undoneNotice } from '../../assets/src/panels/history/undo';
 
 const BATCH = {
 	batch_id: 41,
@@ -61,7 +62,26 @@ describe( 'history of an external change', () => {
 					},
 				}
 			)
-		).toBe( 'Add some labels: labels' );
+		).toBe(
+			'Add some labels',
+			'The action already names its field: said once (1.3.4).'
+		);
+	} );
+
+	it( 'never repeats a field its action already names, in History or the undo notice (1.3.4)', () => {
+		const groups = {
+			...BATCH,
+			external: {
+				...BATCH.external,
+				actions: { x_sample_add: 'Add customer groups' },
+				fields: { x_sample_labels: 'Customer groups' },
+			},
+		};
+		const what = describeBatch( groups, {}, {} );
+		expect( what ).toBe( 'Add customer groups' );
+		expect(
+			undoneNotice( what, { changed_items: 1, done_items: 1 } )
+		).toBe( 'Undone: Add customer groups. 1 item was put back.' );
 	} );
 
 	it( 'shows the values the server sends as text', () => {

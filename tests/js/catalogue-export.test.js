@@ -1,22 +1,22 @@
 /**
  * T53: the export arguments are the grid's filters, search, sort and mode and
  * the visible columns in the owner's order; the wp_rest nonce goes as
- * `_wpnonce` (core's cookie check reads it before the header); and the
- * hidden frame History's GET exports load. The Export control itself opens
- * the export dialog since T103: catalogue-export-dialog.test.js.
+ * `_wpnonce` in a posted body, never an address (SECURITY-1); and how a
+ * refusal is read back from the hidden frame. The Export control itself
+ * opens the export dialog since T103: catalogue-export-dialog.test.js.
  */
-import { getQueryArgs } from '@wordpress/url';
-
-import {
-	exportArgs,
-	exportColumns,
-	exportUrl,
-} from '../../assets/src/panels/catalogue/views';
+import * as views from '../../assets/src/panels/catalogue/views';
 import {
 	currentNonce,
-	download,
 	refusalIn,
 } from '../../assets/src/panels/catalogue/views/export';
+import * as exporter from '../../assets/src/panels/catalogue/views/export';
+import {
+	historyExportArgs,
+	historyFormFields,
+} from '../../assets/src/panels/history/export';
+
+const { exportArgs, exportColumns } = views;
 import {
 	defaultView,
 	descriptorsOf,
@@ -93,28 +93,21 @@ describe( 'export arguments', () => {
 		).toEqual( [ 'name', 'sku' ] );
 	} );
 
-	it( 'compose a URL whose query PHP reads back as the arguments, nonce included', () => {
-		const url = exportUrl(
-			exportArgs( QUERY, VIEW, REGISTRY ),
+	it( 'never put the nonce in an address: History posts it in the body (SECURITY-1)', () => {
+		expect( views.exportUrl ).toBeUndefined();
+		expect( exporter.exportUrl ).toBeUndefined();
+		expect( exporter.download ).toBeUndefined();
+		const fields = historyFormFields(
+			historyExportArgs( 'audit', { user: 2, page: 3 } ),
 			'abc123def0'
 		);
-		expect( url.split( '?' )[ 0 ] ).toBe( 'export' );
-		const query = getQueryArgs( url );
-		expect( query._wpnonce ).toBe( 'abc123def0' );
-		expect( query.columns ).toEqual( [
-			'name',
-			'stock_status',
-			'sku',
-			'regular_price',
-		] );
-		expect( query.category_ids ).toEqual( {
-			operator: 'isAny',
-			value: [ '3', '4' ],
-		} );
-		expect( query.orderby ).toEqual( [ 'regular_price' ] );
-		expect( query.search ).toBe( 'golf' );
-		expect( url ).toContain(
-			'columns%5B0%5D=name&columns%5B1%5D=stock_status'
+		expect( fields[ 0 ] ).toEqual( [ '_wpnonce', 'abc123def0' ] );
+		const posted = new URLSearchParams( fields );
+		expect( posted.get( 'source' ) ).toBe( 'audit' );
+		expect( posted.get( 'user' ) ).toBe( '2' );
+		expect( posted.get( 'page' ) ).toBeNull();
+		expect( posted.get( 'columns' ) ).toBe(
+			'applied_gmt,batch_id,user_name,name,object_id,object_type,field_label,old_value,new_value,result,message'
 		);
 	} );
 
@@ -127,56 +120,43 @@ describe( 'export arguments', () => {
 } );
 
 describe( 'the hidden frame', () => {
-	it( 'loads the URL in a hidden frame and settles when the browser reports nothing', () => {
-		jest.useFakeTimers();
-		const onDone = jest.fn();
-		const onError = jest.fn();
-		const stop = download( 'about:blank#export', {
-			onDone,
-			onError,
-			settle: 1000,
-		} );
-		const frame = document.querySelector( 'iframe.bulkcat-export__frame' );
-		expect( frame.hidden ).toBe( true );
-		expect( frame.getAttribute( 'src' ) ).toBe( 'about:blank#export' );
-		jest.advanceTimersByTime( 1000 );
-		expect( onDone ).toHaveBeenCalledTimes( 1 );
-		expect( onError ).not.toHaveBeenCalled();
-		stop();
-		expect(
-			document.querySelector( 'iframe.bulkcat-export__frame' )
-		).toBeNull();
+	/**
+	 * A hidden frame in the page, as postDownload() adds one.
+	 *
+	 * @return {HTMLIFrameElement} Frame.
+	 */
+	function frame() {
+		const element = document.createElement( 'iframe' );
+		document.body.appendChild( element );
+		return element;
+	}
+
+	afterEach( () => {
+		document
+			.querySelectorAll( 'iframe' )
+			.forEach( ( element ) => element.remove() );
 	} );
 
 	it( 'reads a JSON refusal from the frame', () => {
-		const onDone = jest.fn();
-		const onError = jest.fn();
-		const stop = download( 'about:blank', { onDone, onError } );
-		const frame = document.querySelector( 'iframe.bulkcat-export__frame' );
-		frame.contentDocument.body.textContent = JSON.stringify( {
+		const shown = frame();
+		shown.contentDocument.body.textContent = JSON.stringify( {
 			code: 'bulkcat_forbidden',
 			message: 'Your account does not have permission.',
 		} );
-		frame.dispatchEvent( new window.Event( 'load' ) );
-		expect( onError ).toHaveBeenCalledTimes( 1 );
-		expect( onError.mock.calls[ 0 ][ 0 ].code ).toBe( 'bulkcat_forbidden' );
-		expect( onDone ).not.toHaveBeenCalled();
-		stop();
+		const refusal = refusalIn( shown );
+		expect( refusal.code ).toBe( 'bulkcat_forbidden' );
+		expect( refusal.message ).toBe(
+			'Your account does not have permission.'
+		);
 	} );
 
 	it( 'reads a server’s HTML error page in the frame as a failure, never as done (ticket 11)', () => {
-		const onDone = jest.fn();
-		const onError = jest.fn();
-		const stop = download( 'about:blank', { onDone, onError } );
-		const frame = document.querySelector( 'iframe.bulkcat-export__frame' );
-		frame.contentDocument.body.innerHTML =
+		const shown = frame();
+		shown.contentDocument.body.innerHTML =
 			'<div class="wp-die-message"><p>There has been a critical error on this website.</p></div>';
-		frame.dispatchEvent( new window.Event( 'load' ) );
-		expect( onDone ).not.toHaveBeenCalled();
-		expect( onError ).toHaveBeenCalledTimes( 1 );
-		expect( onError.mock.calls[ 0 ][ 0 ].code ).not.toMatch( /^bulkcat_/ );
-		expect( onError.mock.calls[ 0 ][ 0 ].message ).toBe( '' );
-		stop();
+		const refusal = refusalIn( shown );
+		expect( refusal.code ).not.toMatch( /^bulkcat_/ );
+		expect( refusal.message ).toBe( '' );
 	} );
 
 	it( 'treats a page that is not a refusal as done', () => {

@@ -2,8 +2,11 @@
 /**
  * `/bulkcat/v1/export` (SPEC §10, §12.1, §13): CSV exports, streamed 100
  * rows at a time so memory stays flat, behind the read routes' capability,
- * cookie and nonce, generated on request and stored nowhere. The catalogue
- * is exported by `POST` (the export dialog); `GET` exports History's rows.
+ * cookie and nonce, generated on request and stored nowhere. The screen
+ * posts every export, the catalogue's and History's, with the nonce in the
+ * body; `GET` still exports History's rows for a client sending the nonce
+ * as a header. A `_wpnonce` in the address is refused on either method
+ * (SECURITY-1: an address lands in access logs and browser history).
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -71,6 +74,11 @@ defined( 'ABSPATH' ) || exit;
  * columns and headings come from Export\ColumnPlan, and with the identifier
  * switch on the rows pass through Export\ReimportIdentifiers. The export
  * writes nothing but the grid's own count cache.
+ *
+ * A History export may be posted too (SECURITY-1), as the screen does: the
+ * same `source` and filters in the body, each argument validated as the
+ * history's when `source` names a history source and as the catalogue's
+ * otherwise (post_args()), and answered by the same history export.
  */
 final class ExportController implements ReadController {
 	/**
@@ -189,7 +197,7 @@ final class ExportController implements ReadController {
 					'methods'             => 'POST',
 					'callback'            => [ $this, 'create_item' ],
 					'permission_callback' => [ Access::class, 'can_read' ],
-					'args'                => $this->schema->export_args(),
+					'args'                => $this->post_args(),
 				],
 				'schema' => [ $this, 'get_item_schema' ],
 			]
@@ -254,6 +262,30 @@ final class ExportController implements ReadController {
 	}
 
 	/**
+	 * `POST /export`'s arguments (SECURITY-1): the catalogue export's
+	 * (RouteSchema::export_args()), each one the history also takes checked
+	 * as the history's when `source` names a history source, plus the
+	 * history's own filters, which only a history export reads. Those take
+	 * no default, so a catalogue post is checked exactly as before.
+	 *
+	 * @return array<string, array<string, mixed>>
+	 */
+	private function post_args(): array {
+		$catalogue = $this->schema->export_args();
+		$history   = $this->args();
+		$args      = [];
+		foreach ( $catalogue as $key => $arg ) {
+			$args[ $key ] = isset( $history[ $key ] ) ? self::per_source( $arg, $history[ $key ] ) : $arg;
+		}
+		// Paging and fields are not export arguments: an export pages itself.
+		foreach ( array_diff_key( $history, $catalogue, array_flip( [ 'page', 'per_page', 'fields' ] ) ) as $key => $arg ) {
+			unset( $arg['default'], $arg['required'] );
+			$args[ $key ] = $arg;
+		}
+		return $args;
+	}
+
+	/**
 	 * An argument validated and sanitised as $products for a catalogue
 	 * export and as $history for any other source.
 	 *
@@ -262,9 +294,22 @@ final class ExportController implements ReadController {
 	 * @return array<string, mixed>
 	 */
 	private static function by_source( array $products, array $history ): array {
-		$pick               = static fn( mixed $request ): array => $request instanceof \WP_REST_Request && is_string( $request->get_param( self::SOURCE ) ) && self::PRODUCTS !== $request->get_param( self::SOURCE ) ? $history : $products;
-		$arg                = $products;
+		$arg                = self::per_source( $products, $history );
 		$arg['description'] = __( 'For the catalogue, the status filter; for the change history, only changes with this outcome.', 'bulk-catalogue-manager-for-woocommerce' );
+		return $arg;
+	}
+
+	/**
+	 * $products's argument, validated and sanitised as $history's when the
+	 * request's `source` names a history source.
+	 *
+	 * @param array<string, mixed> $products The catalogue's argument.
+	 * @param array<string, mixed> $history  The history's argument.
+	 * @return array<string, mixed>
+	 */
+	private static function per_source( array $products, array $history ): array {
+		$pick = static fn( mixed $request ): array => $request instanceof \WP_REST_Request && is_string( $request->get_param( self::SOURCE ) ) && self::PRODUCTS !== $request->get_param( self::SOURCE ) ? $history : $products;
+		$arg  = $products;
 		unset( $arg['type'], $arg['properties'], $arg['additionalProperties'], $arg['enum'] );
 		$arg['validate_callback'] = static function ( mixed $value, mixed $request = null, string $param = '' ) use ( $pick ): mixed {
 			$chosen = $pick( $request );
@@ -286,6 +331,10 @@ final class ExportController implements ReadController {
 	 * @param \WP_REST_Request $request The validated, sanitised request.
 	 */
 	public function get_items( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
+		$address = self::nonce_in_address( $request );
+		if ( null !== $address ) {
+			return $address;
+		}
 		$params = $request->get_params();
 		$source = (string) ( $params[ self::SOURCE ] ?? self::PRODUCTS );
 		if ( in_array( $source, HistoryColumns::SOURCES, true ) ) {
@@ -299,6 +348,24 @@ final class ExportController implements ReadController {
 	}
 
 	/**
+	 * A refusal when the request's address carries `_wpnonce` (SECURITY-1):
+	 * the screen sends the nonce in a posted body, and a nonce in an address
+	 * lands in access logs and browser history. Null when it does not.
+	 *
+	 * @param \WP_REST_Request $request The request.
+	 */
+	private static function nonce_in_address( \WP_REST_Request $request ): ?\WP_Error {
+		if ( ! array_key_exists( '_wpnonce', $request->get_query_params() ) ) {
+			return null;
+		}
+		return Refusal::invalid(
+			'bulkcat_invalid_value',
+			__( 'The security code must not be sent in the page address. Reload the page and export again.', 'bulk-catalogue-manager-for-woocommerce' ),
+			[ 'param' => '_wpnonce' ]
+		);
+	}
+
+	/**
 	 * `POST /export`: a catalogue export, or with `summary` its counts. The
 	 * request is checked and the rows resolved before any byte, so every
 	 * refusal is JSON; a streamed answer is a CsvExport, which serve() sends.
@@ -306,6 +373,14 @@ final class ExportController implements ReadController {
 	 * @param \WP_REST_Request $request The validated, sanitised request.
 	 */
 	public function create_item( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
+		$address = self::nonce_in_address( $request );
+		if ( null !== $address ) {
+			return $address;
+		}
+		$source = $request->get_param( self::SOURCE );
+		if ( is_string( $source ) && in_array( $source, HistoryColumns::SOURCES, true ) ) {
+			return $this->history_export( $source, $request->get_params() );
+		}
 		$export = ExportRequest::from( $request, $this->registry );
 		if ( $export instanceof \WP_Error ) {
 			return $export;

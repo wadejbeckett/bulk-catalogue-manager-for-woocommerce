@@ -266,14 +266,30 @@ describe( 'audit tab', () => {
 } );
 
 describe( 'audit export and product link', () => {
+	beforeEach( () => {
+		// jsdom cannot send a form; the posted form is read back instead.
+		jest.spyOn(
+			window.HTMLFormElement.prototype,
+			'submit'
+		).mockImplementation( () => {} );
+		// The nonce apiFetch's middleware holds (currentNonce()).
+		require( '@wordpress/api-fetch' ).default.nonceMiddleware = {
+			nonce: 'n0nce12345',
+		};
+	} );
+
 	afterEach( () => {
+		jest.restoreAllMocks();
+		delete require( '@wordpress/api-fetch' ).default.nonceMiddleware;
 		document
-			.querySelectorAll( 'iframe.bulkcat-export__frame' )
-			.forEach( ( frame ) => frame.remove() );
+			.querySelectorAll(
+				'iframe.bulkcat-export__frame, form.bulkcat-export__form'
+			)
+			.forEach( ( element ) => element.remove() );
 		window.history.replaceState( null, '', '/' );
 	} );
 
-	it( 'downloads GET /export?source=audit with the filters on screen', async () => {
+	it( 'downloads by posting /export with source=audit and the filters on screen, the nonce in the body (SECURITY-1)', async () => {
 		serve( {
 			'GET bulkcat/v1/fields': { fields: FIELDS, actions: [] },
 			'GET bulkcat/v1/batches': page( [] ),
@@ -289,20 +305,22 @@ describe( 'audit export and product link', () => {
 			name: 'Export log (CSV)',
 		} );
 		await act( async () => fireEvent.click( button ) );
-		const frame = document.querySelector( 'iframe.bulkcat-export__frame' );
-		expect( frame ).not.toBeNull();
-		const url = new URL( frame.src );
+		const form = document.querySelector( 'form.bulkcat-export__form' );
+		expect( form ).not.toBeNull();
+		expect( form.method ).toBe( 'post' );
+		const url = new URL( form.getAttribute( 'action' ) );
 		expect( url.pathname ).toBe( '/wp-json/bulkcat/v1/export' );
-		expect( url.searchParams.get( 'source' ) ).toBe( 'audit' );
-		expect( url.searchParams.get( 'product' ) ).toBe( '55' );
-		expect( url.searchParams.get( 'page' ) ).toBeNull();
-		expect( url.searchParams.get( 'per_page' ) ).toBeNull();
-		const columns = [];
-		url.searchParams.forEach( ( value, key ) => {
-			if ( key.startsWith( 'columns[' ) ) {
-				columns.push( value );
-			}
-		} );
+		expect( url.search ).toBe( '' );
+		const params = new URLSearchParams();
+		form.querySelectorAll( 'input' ).forEach( ( input ) =>
+			params.append( input.name, input.value )
+		);
+		expect( params.get( '_wpnonce' ) ).toBeTruthy();
+		expect( params.get( 'source' ) ).toBe( 'audit' );
+		expect( params.get( 'product' ) ).toBe( '55' );
+		expect( params.get( 'page' ) ).toBeNull();
+		expect( params.get( 'per_page' ) ).toBeNull();
+		const columns = params.get( 'columns' ).split( ',' );
 		expect( columns ).toContain( 'user_name' );
 		expect( columns[ 0 ] ).toBe( 'applied_gmt' );
 		expect( button.getAttribute( 'aria-disabled' ) ).toBe( 'true' );

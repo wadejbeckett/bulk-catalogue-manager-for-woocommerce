@@ -216,9 +216,14 @@ final class ExportPostRouteTest extends TestCase {
 		$this->assertSame( 'POST', $route[1]['methods'] );
 		$this->assertSame( [ Access::class, 'can_read' ], $route[1]['permission_callback'] );
 		$this->assertSame( [ $this->controller, 'create_item' ], $route[1]['callback'] );
-		$this->assertSame( array_keys( ( new RouteSchema( new Registry() ) )->export_args() ), array_keys( $route[1]['args'] ) );
+		// SECURITY-1: History's exports are posted too, so their filters are arguments, with no default.
+		$history = [ 'batch', 'result', 'product', 'field', 'user', 'after', 'before', 'action' ];
+		$this->assertSame( [ ...array_keys( ( new RouteSchema( new Registry() ) )->export_args() ), ...$history ], array_keys( $route[1]['args'] ) );
+		foreach ( $history as $filter ) {
+			$this->assertArrayNotHasKey( 'default', $route[1]['args'][ $filter ] );
+		}
 		$this->assertTrue( $route[1]['args']['columns']['required'] );
-		$this->assertSame( ( new Registry() )->keys(), $route[1]['args']['columns']['items']['enum'], 'Only registry columns are posted.' );
+		$this->assertSame( ( new Registry() )->keys(), $route[1]['args']['columns']['items']['enum'], 'A catalogue export posts only registry columns.' );
 		foreach ( [ 'page', 'per_page', 'fields' ] as $absent ) {
 			$this->assertArrayNotHasKey( $absent, $route[1]['args'] );
 		}

@@ -18,12 +18,7 @@ import './style.scss';
 export { default as SavedViewsBar } from './chips';
 export { default as LayoutSwitch, LAYOUT_TYPES, withLayout } from './layout';
 export { default as CatalogueLayout, CatalogueCards } from './cards';
-export {
-	default as ExportControl,
-	exportArgs,
-	exportColumns,
-	exportUrl,
-} from './export';
+export { default as ExportControl, exportArgs, exportColumns } from './export';
 export { useSavedViews } from './use-saved-views';
 export { builtInViews } from './presets';
 export { toSaved, fromSaved } from './serialize';

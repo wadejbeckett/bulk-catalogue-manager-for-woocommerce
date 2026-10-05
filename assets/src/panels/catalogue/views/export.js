@@ -20,8 +20,9 @@
  * apiFetch's nonce middleware holds, which Heartbeat keeps fresh
  * (../../../nonce.js); it falls back to the one the page was given.
  *
- * History's exports still load a `GET /export` address in a hidden frame
- * (download() and exportUrl(), used by ../../history/export.js).
+ * History's exports are posted the same way (../../history/export.js,
+ * SECURITY-1): no export puts the nonce in an address, where it would land
+ * in access logs and browser history, and the route refuses one there.
  *
  * Busy and failure. The control is busy from Download until the frame
  * reports a page (a refusal, which the server sends as JSON before any CSV)
@@ -108,17 +109,6 @@ export function currentNonce() {
 }
 
 /**
- * The export URL, nonce included.
- *
- * @param {Object} args  exportArgs().
- * @param {string} nonce wp_rest nonce.
- * @return {string} URL.
- */
-export function exportUrl( args, nonce ) {
-	return routeUrl( 'export', nonce ? { ...args, _wpnonce: nonce } : args );
-}
-
-/**
  * The refusal a frame shows, when it shows one: core and the plugin answer
  * a refused export as JSON `{ code, message }`; a page with markup (a
  * server's HTML error page) is a failure whose text is never shown. A
@@ -152,52 +142,6 @@ export function refusalIn( frame ) {
 	return page
 		? Object.assign( new Error( '' ), { code: 'export_error_page' } )
 		: null;
-}
-
-/**
- * Load a URL in a hidden frame: the browser downloads an attachment, and a
- * refusal page is read back.
- *
- * @param {string}   url              Export URL.
- * @param {Object}   handlers         Handlers.
- * @param {Function} handlers.onDone  The download started (or nothing was reported).
- * @param {Function} handlers.onError Called with the refusal.
- * @param {Document} handlers.doc     Document to add the frame to.
- * @param {number}   handlers.settle  Busy time without a report, ms.
- * @return {Function} Cleanup: stops waiting and removes the frame.
- */
-export function download(
-	url,
-	{ onDone, onError, doc = document, settle = SETTLE_MS }
-) {
-	const frame = doc.createElement( 'iframe' );
-	frame.hidden = true;
-	frame.setAttribute( 'aria-hidden', 'true' );
-	frame.tabIndex = -1;
-	frame.className = 'bulkcat-export__frame';
-	let finished = false;
-	let timer = null;
-	const finish = ( refusal ) => {
-		if ( finished ) {
-			return;
-		}
-		finished = true;
-		clearTimeout( timer );
-		if ( refusal ) {
-			onError( refusal );
-		} else {
-			onDone();
-		}
-	};
-	timer = setTimeout( () => finish( null ), settle );
-	frame.addEventListener( 'load', () => finish( refusalIn( frame ) ) );
-	frame.src = url;
-	doc.body.appendChild( frame );
-	return () => {
-		finished = true;
-		clearTimeout( timer );
-		frame.remove();
-	};
 }
 
 /**

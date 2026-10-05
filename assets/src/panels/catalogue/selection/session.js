@@ -597,6 +597,11 @@ class SelectionSession {
 			kind: 'kept',
 			batchId: Number( batchId ),
 			status: String( outcome?.status || '' ),
+			// 1.3.4: it finished, and only rows skipped by design were left.
+			skipped:
+				outcome?.status === 'partial' &&
+				! ( Number( outcome.failed_items ) > 0 ) &&
+				! ( Number( outcome.pending_items ) > 0 ),
 		};
 		this.release( released );
 		this.changed();

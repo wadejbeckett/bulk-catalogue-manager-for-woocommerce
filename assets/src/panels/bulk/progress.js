@@ -10,6 +10,7 @@ import { __, _n, sprintf } from '@wordpress/i18n';
 import { FINISHED, useBatchProgress } from './hooks';
 import { formatNumber, itemsPhrase, productsPhrase } from './words';
 import { countPhrase } from '../catalogue/selection/model';
+import { skippedOnly } from '../history/describe';
 import { useProgressAnnouncer } from './announce';
 
 /**
@@ -36,6 +37,18 @@ export function doneSentence( report, byType = null ) {
 				'bulk-catalogue-manager-for-woocommerce'
 			);
 		case 'partial':
+			if ( skippedOnly( report ) ) {
+				// 1.3.4: rows skipped as the preview said are not a failure.
+				return sprintf(
+					/* translators: 1: products done, such as "1,280"; 2: products in all, such as "1,284 products" or "1,284 items". */
+					__(
+						'%1$s of %2$s updated. Nothing failed; what was skipped, and why, is listed below.',
+						'bulk-catalogue-manager-for-woocommerce'
+					),
+					formatNumber( report.changed_items ?? report.done_items ),
+					products ? productsPhrase( total ) : itemsPhrase( total )
+				);
+			}
 			return sprintf(
 				/* translators: 1: products done, such as "1,280"; 2: products in all, such as "1,284 products" or "1,284 items". */
 				__(

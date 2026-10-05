@@ -996,6 +996,30 @@ describe( 'selection session: completion', () => {
 		expect( tokenOf( session ) ).toBe( token );
 	} );
 
+	it( 'says a change that only skipped rows finished, not that it failed (1.3.4)', async () => {
+		const {
+			noticeText,
+		} = require( '../../assets/src/panels/catalogue/selection/model' );
+		const session = makeSession();
+		await session.add( [ 11, 12 ] );
+		session.submit( 9 );
+		await session.finish( 9, {
+			status: 'partial',
+			failed_items: 0,
+			pending_items: 0,
+		} );
+		const { notice } = session.getState();
+		expect( notice ).toMatchObject( { kind: 'kept', batchId: 9 } );
+		expect( noticeText( notice ) ).toBe(
+			'The change finished and some rows were skipped, so your selection is kept. History shows what was skipped and why.'
+		);
+		expect(
+			noticeText( { kind: 'kept', batchId: 9, status: 'partial' } )
+		).toBe(
+			'The change did not finish for every product, so your selection is kept. History shows what was not changed.'
+		);
+	} );
+
 	it( 'keeps what was selected after applying: (current − submitted) ∪ additions', async () => {
 		const session = makeSession();
 		await session.add( [ 11, 12 ] );

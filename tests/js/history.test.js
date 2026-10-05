@@ -742,6 +742,82 @@ describe( 'history states', () => {
 	} );
 } );
 
+describe( 'rows skipped as previewed (1.3.4)', () => {
+	const SKIPPED = base( 8, {
+		status: 'partial',
+		total_items: 2,
+		done_items: 2,
+		changed_items: 2,
+		failed_items: 0,
+		reversibility: { state: 'reversible', conflicts: null, reason: null },
+	} );
+	const SKIP_REASON = {
+		message: 'Stock quantity only applies where stock is managed.',
+		count: 1,
+		sentence:
+			'1 product: Stock quantity only applies where stock is managed.',
+	};
+
+	it( 'shows a change with nothing failed as done with rows skipped, never with errors, and opens on its skipped rows', async () => {
+		serve( {
+			...DEFAULT_ROUTES(),
+			'GET bulkcat/v1/batches': {
+				items: [ base( 1 ), SKIPPED, BATCHES[ 3 ] ],
+				pagination: { page: 1, perPage: 25, total: 3, totalPages: 1 },
+			},
+			'GET bulkcat/v1/batches/8': {
+				...SKIPPED,
+				summary: [ SKIP_REASON ],
+			},
+			'GET bulkcat/v1/batches/8/changes': {
+				items: [
+					{
+						...FAILED.items[ 0 ],
+						change_id: 31,
+						field: 'stock_quantity',
+						field_label: 'Stock quantity',
+						result: 'skipped',
+						message: SKIP_REASON.message,
+					},
+				],
+				pagination: { page: 1, perPage: 25, total: 1, totalPages: 1 },
+			},
+		} );
+		await renderHistory();
+		const eight = within( card( 8 ) );
+		expect( eight.getByText( 'Done, some rows skipped' ) ).toBeTruthy();
+		expect( eight.queryByText( 'Done with errors' ) ).toBeNull();
+		expect( eight.queryByText( /failed/ ) ).toBeNull();
+		expect( eight.getByRole( 'button', { name: 'Undo' } ).disabled ).toBe(
+			false
+		);
+		// A change that did fail still says so.
+		const four = within( card( 4 ) );
+		expect( four.getByText( 'Done with errors' ) ).toBeTruthy();
+		expect( four.getByText( '2 failed' ) ).toBeTruthy();
+
+		fireEvent.click(
+			eight.getByRole( 'button', { name: 'See every change' } )
+		);
+		await waitFor( () =>
+			expect( eight.getByText( SKIP_REASON.sentence ) ).toBeTruthy()
+		);
+		const request = calls.find(
+			( c ) => c.route === 'bulkcat/v1/batches/8/changes'
+		);
+		expect( request.query.result ).toEqual( [ 'failed', 'skipped' ] );
+	} );
+
+	it( 'filters on both kinds of partial outcome by a name that says so', () => {
+		const {
+			statusElements,
+		} = require( '../../assets/src/panels/history/describe.js' );
+		expect(
+			statusElements().find( ( each ) => each.value === 'partial' ).label
+		).toBe( 'Done with skipped or failed rows' );
+	} );
+} );
+
 /**
  * The hidden export frame's URL, and its `columns[]` in order.
  *

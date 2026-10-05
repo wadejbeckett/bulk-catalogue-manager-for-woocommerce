@@ -136,6 +136,7 @@ describe( 'the Done step', () => {
 		status: 'partial',
 		total_items: 1284,
 		changed_items: 1280,
+		failed_items: 4,
 	};
 
 	it( 'says items when the change may have reached variations', () => {

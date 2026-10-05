@@ -514,6 +514,21 @@ final class HistoryExportTest extends TestCase {
 		$this->assertSame( [ '"Change number"', '"3"', '"1"' ], self::lines() );
 	}
 
+	public function test_a_history_export_does_not_call_skipped_rows_errors(): void {
+		// Batch 2 finished partial with nothing failed: its only problems were rows skipped as previewed.
+		$this->batches[1]['failed_items'] = 0;
+		$this->serve(
+			self::get(
+				[
+					'source'  => 'batches',
+					'status'  => 'partial',
+					'columns' => [ 'batch_id', 'status', 'failed_items', 'reversibility' ],
+				]
+			)
+		);
+		$this->assertSame( [ '"Change number","Outcome","Failed","Can be undone"', '"2","Completed, some rows skipped","0","Yes"' ], self::lines() );
+	}
+
 	public function test_a_history_export_is_posted_with_its_filters_in_the_body(): void {
 		$headers = $this->serve(
 			self::post(

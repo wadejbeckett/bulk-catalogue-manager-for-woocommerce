@@ -82,3 +82,73 @@ it( 'ends the banner with the Done step’s own sentence', async () => {
 		)
 	);
 } );
+
+describe( 'a change whose only problems are rows skipped as previewed (1.3.4)', () => {
+	const SKIPPED = {
+		status: 'partial',
+		total_items: 2,
+		done_items: 2,
+		changed_items: 2,
+		failed_items: 0,
+		summary: [
+			{
+				message: 'Stock quantity only applies where stock is managed.',
+				count: 1,
+				sentence:
+					'1 product: Stock quantity only applies where stock is managed.',
+			},
+		],
+	};
+	const SENTENCE =
+		'2 of 2 products updated. Nothing failed; what was skipped, and why, is listed below.';
+
+	it( 'says nothing failed in the Done step, with the skipped reasons', async () => {
+		report = SKIPPED;
+		render(
+			<DoneStep
+				batchId={ 9 }
+				count={ 2 }
+				byType={ { products: 2, variations: 0 } }
+				interval={ 50 }
+			/>
+		);
+		expect( await screen.findByText( SENTENCE ) ).toBeTruthy();
+		expect(
+			screen.getByText(
+				'1 product: Stock quantity only applies where stock is managed.'
+			)
+		).toBeTruthy();
+		expect( document.body.textContent ).not.toMatch( /error|failed\./i );
+	} );
+
+	it( 'ends the banner with the same sentence', async () => {
+		report = SKIPPED;
+		render(
+			<AppliedProgress
+				batchId={ 9 }
+				byType={ { products: 2, variations: 0 } }
+				onFinished={ jest.fn() }
+			/>
+		);
+		await waitFor( () =>
+			expect( announce ).toHaveBeenCalledWith( SENTENCE, 'polite' )
+		);
+	} );
+
+	it( 'keeps its own sentence for a change in which something failed', async () => {
+		report = { ...SKIPPED, changed_items: 1, failed_items: 1 };
+		render(
+			<DoneStep
+				batchId={ 9 }
+				count={ 2 }
+				byType={ { products: 2, variations: 0 } }
+				interval={ 50 }
+			/>
+		);
+		expect(
+			await screen.findByText(
+				'1 of 2 products updated. The rest are listed below.'
+			)
+		).toBeTruthy();
+	} );
+} );

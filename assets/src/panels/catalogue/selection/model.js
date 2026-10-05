@@ -177,6 +177,12 @@ export function noticeText( notice, state = {} ) {
 						'bulk-catalogue-manager-for-woocommerce'
 					);
 		case 'kept':
+			if ( notice.skipped ) {
+				return __(
+					'The change finished and some rows were skipped, so your selection is kept. History shows what was skipped and why.',
+					'bulk-catalogue-manager-for-woocommerce'
+				);
+			}
 			return __(
 				'The change did not finish for every product, so your selection is kept. History shows what was not changed.',
 				'bulk-catalogue-manager-for-woocommerce'

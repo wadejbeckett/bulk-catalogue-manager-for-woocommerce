@@ -50,6 +50,11 @@ final class HistoryColumns {
 	public const SOURCES = [ self::CHANGES, self::AUDIT, self::BATCHES ];
 
 	/**
+	 * The outcome label's key for a partial batch with nothing failed (1.3.4); never a stored status.
+	 */
+	private const PARTIAL_SKIPPED = 'partial_skipped';
+
+	/**
 	 * Column keys per source, in the default order.
 	 */
 	public const KEYS = [
@@ -120,6 +125,10 @@ final class HistoryColumns {
 		$cells = [];
 		foreach ( self::KEYS[ $source ] ?? [] as $key ) {
 			$cells[ $key ] = self::cell( $key, $row[ $key ] ?? null );
+		}
+		if ( isset( $cells['status'] ) && 'partial' === ( $row['status'] ?? null ) && ! Reversibility::with_errors( $row ) ) {
+			// 1.3.4: rows skipped by design are not errors; History says the same.
+			$cells['status'] = self::map( 'status' )[ self::PARTIAL_SKIPPED ];
 		}
 		if ( isset( $cells['actions'] ) && is_array( $row['external']['actions'] ?? null ) ) {
 			// T108: an add-on's action by the label its manifest kept, even after the add-on has gone.
@@ -202,14 +211,15 @@ final class HistoryColumns {
 					'term'      => __( 'Category', 'bulk-catalogue-manager-for-woocommerce' ),
 				],
 				'status'        => [
-					'queued'    => __( 'Waiting to start', 'bulk-catalogue-manager-for-woocommerce' ),
-					'running'   => __( 'In progress', 'bulk-catalogue-manager-for-woocommerce' ),
-					'complete'  => __( 'Complete', 'bulk-catalogue-manager-for-woocommerce' ),
-					'partial'   => __( 'Completed with errors', 'bulk-catalogue-manager-for-woocommerce' ),
-					'failed'    => __( 'Failed', 'bulk-catalogue-manager-for-woocommerce' ),
-					'cancelled' => __( 'Cancelled', 'bulk-catalogue-manager-for-woocommerce' ),
-					'undoing'   => __( 'Being undone', 'bulk-catalogue-manager-for-woocommerce' ),
-					'undone'    => __( 'Undone', 'bulk-catalogue-manager-for-woocommerce' ),
+					'queued'              => __( 'Waiting to start', 'bulk-catalogue-manager-for-woocommerce' ),
+					'running'             => __( 'In progress', 'bulk-catalogue-manager-for-woocommerce' ),
+					'complete'            => __( 'Complete', 'bulk-catalogue-manager-for-woocommerce' ),
+					'partial'             => __( 'Completed with errors', 'bulk-catalogue-manager-for-woocommerce' ),
+					self::PARTIAL_SKIPPED => __( 'Completed, some rows skipped', 'bulk-catalogue-manager-for-woocommerce' ),
+					'failed'              => __( 'Failed', 'bulk-catalogue-manager-for-woocommerce' ),
+					'cancelled'           => __( 'Cancelled', 'bulk-catalogue-manager-for-woocommerce' ),
+					'undoing'             => __( 'Being undone', 'bulk-catalogue-manager-for-woocommerce' ),
+					'undone'              => __( 'Undone', 'bulk-catalogue-manager-for-woocommerce' ),
 				],
 				'reversibility' => [
 					Reversibility::REVERSIBLE            => __( 'Yes', 'bulk-catalogue-manager-for-woocommerce' ),

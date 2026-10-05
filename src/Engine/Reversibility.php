@@ -48,8 +48,11 @@ defined( 'ABSPATH' ) || exit;
  *     whose own reason the answer carries as `provider_reason`. Recomputed
  *     on every read, so it clears when the add-on can run again; both carry
  *     the add-on's label as `provider` (External\Blocked).
- * - `completed_with_errors`: it ended partial or failed with applied rows;
- *   the applied part can be undone on its own (§12.6).
+ * - `completed_with_errors`: it ended failed, or partial with a failed
+ *   item, with applied rows; the applied part can be undone on its own
+ *   (§12.6). A partial batch whose only problems are rows skipped by design
+ *   (the preview said so: not applicable, already at the value) has no
+ *   errors, so it reads `reversible` or `partially_reversible` (1.3.4).
  * - `partially_reversible`: some applied rows were changed again since
  *   (`conflicts` > 0), so undo would leave those alone unless forced.
  * - `reversible` otherwise (a cancelled batch with applied rows included).
@@ -109,7 +112,8 @@ final class Reversibility {
 	public const ACTIVE = [ 'queued', 'running', 'undoing' ];
 
 	/**
-	 * Statuses that end with errors.
+	 * Statuses that can end with errors: `failed` always, `partial` only
+	 * when an item failed (with_errors()).
 	 */
 	public const WITH_ERRORS = [ 'partial', 'failed' ];
 
@@ -258,10 +262,22 @@ final class Reversibility {
 			return self::answer( self::NOT_REVERSIBLE, $none, $blocked->kind ) + [ 'provider' => $blocked->label ] + ( $blocked->is_missing() ? [] : [ 'provider_reason' => $blocked->reason ] );
 		}
 		$conflicts = $count ? max( 0, (int) ( $this->conflicts )( $batch ) ) : null;
-		if ( in_array( $batch['status'], self::WITH_ERRORS, true ) ) {
+		if ( self::with_errors( $batch ) ) {
 			return self::answer( self::COMPLETED_WITH_ERRORS, $conflicts );
 		}
 		return self::answer( null !== $conflicts && $conflicts > 0 ? self::PARTIALLY_REVERSIBLE : self::REVERSIBLE, $conflicts );
+	}
+
+	/**
+	 * Whether a finished batch ended with errors: it failed, or it ended
+	 * partial with at least one failed item. Rows skipped by design are not
+	 * errors (1.3.4); the history export words the outcome by this too.
+	 *
+	 * @param array<string, mixed> $batch Typed batch row or report.
+	 */
+	public static function with_errors( array $batch ): bool {
+		$status = $batch['status'] ?? '';
+		return 'failed' === $status || ( 'partial' === $status && (int) ( $batch['failed_items'] ?? 0 ) > 0 );
 	}
 
 	/**

@@ -415,6 +415,17 @@ final class HistoryAuditRouteTest extends TestCase {
 		$this->assertSame( [ 'adjust' ], $this->ok( self::dispatch( '/batches/1' ) )['actions'] );
 	}
 
+	public function test_rows_skipped_as_previewed_are_not_errors(): void {
+		// A step the preview said would be skipped (not applicable here), on a change where nothing failed: stored partial.
+		$this->batch( 18, 'partial', [ 'adjust' ], [ 'failed_items' => 0 ] );
+		$this->change( 18, 1001, 'regular_price', '10', '11', 'applied', '2026-09-20 10:01:00' );
+		$this->change( 18, 1002, 'stock_quantity', null, null, 'skipped', '2026-09-20 10:01:00' );
+
+		$this->assertSame( [ 'reversible', null, null ], $this->states()[18], 'The list does not call a change with nothing failed "with errors".' );
+		$this->assertSame( 'reversible', $this->ok( self::dispatch( '/batches/18', [ 'reversibility' => 'count' ] ) )['reversibility']['state'], 'Nor does the single read.' );
+		$this->assertSame( 'completed_with_errors', $this->states()[5][0], 'A partial change with a failed row still is.' );
+	}
+
 	public function test_retention_follows_the_setting_and_never_applies_when_kept_indefinitely(): void {
 		$GLOBALS['bulkcat_test']['options']['bulkcat_settings'] = [ 'history_days' => 730 ];
 		$this->assertSame( [ 'reversible', null, null ], $this->states()[10] );

@@ -466,8 +466,9 @@ export function statusElements() {
 		},
 		{
 			value: 'partial',
+			// Rows skipped or failed: a card says which (outcomeLabel()).
 			label: __(
-				'Done with errors',
+				'Done with skipped or failed rows',
 				'bulk-catalogue-manager-for-woocommerce'
 			),
 		},
@@ -502,6 +503,43 @@ export function statusElements() {
 export function statusLabel( status ) {
 	const found = statusElements().find( ( each ) => each.value === status );
 	return found ? found.label : String( status || '' );
+}
+
+/**
+ * Whether a finished batch's only problems were rows skipped by design (a
+ * step the preview said would be skipped: not applicable, already at the
+ * value): it ended partial with nothing failed (1.3.4). Such a change has
+ * no errors (Engine\Reversibility::with_errors()).
+ *
+ * @param {Object} batch Batch report.
+ * @return {boolean} Skipped rows only.
+ */
+export function skippedOnly( batch ) {
+	return (
+		batch?.status === 'partial' && ! ( Number( batch?.failed_items ) > 0 )
+	);
+}
+
+/**
+ * A batch's outcome, in words: its status's label, except that a partial
+ * batch says whether rows failed or were only skipped.
+ *
+ * @param {Object} batch Batch report.
+ * @return {string} Label.
+ */
+export function outcomeLabel( batch ) {
+	if ( batch?.status === 'partial' ) {
+		return skippedOnly( batch )
+			? __(
+					'Done, some rows skipped',
+					'bulk-catalogue-manager-for-woocommerce'
+				)
+			: __(
+					'Done with errors',
+					'bulk-catalogue-manager-for-woocommerce'
+				);
+	}
+	return statusLabel( batch?.status );
 }
 
 /**

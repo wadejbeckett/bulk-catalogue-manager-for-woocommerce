@@ -23,10 +23,11 @@ import {
 	formatAgo,
 	formatValue,
 	formatWhen,
+	outcomeLabel,
 	reasonSentence,
 	rowsLabel,
+	skippedOnly,
 	sourceLabel,
-	statusLabel,
 } from './describe';
 import ErrorNotice from './error-notice';
 import { BatchProgress, isUnclosedInline } from './stalled-notice';
@@ -315,9 +316,11 @@ export default function BatchCard( {
 		)
 	);
 
-	// A batch with errors shows its grouped reasons, from the single read.
+	// A batch with errors, or with rows skipped by design (1.3.4), shows its
+	// grouped reasons from the single read and opens on those rows.
+	const problems = state === STATES.WITH_ERRORS || skippedOnly( batch );
 	useEffect( () => {
-		if ( state !== STATES.WITH_ERRORS || ! open || details ) {
+		if ( ! problems || ! open || details ) {
 			return;
 		}
 		let live = true;
@@ -327,7 +330,7 @@ export default function BatchCard( {
 		return () => {
 			live = false;
 		};
-	}, [ state, open, details, batch.batch_id ] );
+	}, [ problems, open, details, batch.batch_id ] );
 
 	const startUndo = async () => {
 		setBusy( true );
@@ -506,9 +509,11 @@ export default function BatchCard( {
 					{ rowsLabel( batch.total_items ) }
 				</span>
 				<span
-					className={ `bulkcat-pill bulkcat-pill--${ batch.status }` }
+					className={ `bulkcat-pill bulkcat-pill--${
+						skippedOnly( batch ) ? 'skipped' : batch.status
+					}` }
 				>
-					{ statusLabel( batch.status ) }
+					{ outcomeLabel( batch ) }
 				</span>
 				{ state === STATES.PARTIAL && knownConflicts > 0 && (
 					<span className="bulkcat-pill bulkcat-pill--warn">
@@ -522,22 +527,23 @@ export default function BatchCard( {
 						) }
 					</span>
 				) }
-				{ state === STATES.WITH_ERRORS && (
-					<span className="bulkcat-pill bulkcat-pill--warn">
-						{ sprintf(
-							/* translators: %s: number of products that failed, such as "3". */
-							_n(
-								'%s failed',
-								'%s failed',
-								Number( batch.failed_items ) || 0,
-								'bulk-catalogue-manager-for-woocommerce'
-							),
-							(
-								Number( batch.failed_items ) || 0
-							).toLocaleString()
-						) }
-					</span>
-				) }
+				{ state === STATES.WITH_ERRORS &&
+					Number( batch.failed_items ) > 0 && (
+						<span className="bulkcat-pill bulkcat-pill--warn">
+							{ sprintf(
+								/* translators: %s: number of products that failed, such as "3". */
+								_n(
+									'%s failed',
+									'%s failed',
+									Number( batch.failed_items ) || 0,
+									'bulk-catalogue-manager-for-woocommerce'
+								),
+								(
+									Number( batch.failed_items ) || 0
+								).toLocaleString()
+							) }
+						</span>
+					) }
 				{ batch.variations_included && (
 					<span className="bulkcat-pill">
 						{ __(
@@ -788,20 +794,18 @@ export default function BatchCard( {
 				</Modal>
 			) }
 
-			{ open &&
-				state === STATES.WITH_ERRORS &&
-				details?.summary?.length > 0 && (
-					<ul className="bulkcat-batch__reasons">
-						{ details.summary.map( ( reason ) => (
-							<li key={ reason.message }>{ reason.sentence }</li>
-						) ) }
-					</ul>
-				) }
+			{ open && problems && details?.summary?.length > 0 && (
+				<ul className="bulkcat-batch__reasons">
+					{ details.summary.map( ( reason ) => (
+						<li key={ reason.message }>{ reason.sentence }</li>
+					) ) }
+				</ul>
+			) }
 			{ open && (
 				<Changes
 					batch={ batch }
 					byKey={ byKey }
-					problemsOnly={ state === STATES.WITH_ERRORS }
+					problemsOnly={ problems }
 					onNotice={ onNotice }
 				/>
 			) }

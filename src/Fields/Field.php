@@ -605,6 +605,33 @@ final class Field {
 	}
 
 	/**
+	 * The value a saved object holds as WordPress stored it, for the journal
+	 * (ticket 133 bug 2): a term list is read from the object's stored terms,
+	 * because WooCommerce merges a shorter list set on a product into the one
+	 * it had when it saves (WC_Data::apply_changes() uses
+	 * array_replace_recursive()), so the saved object can still list a term
+	 * the save removed. Every other value reads as read() does.
+	 *
+	 * @param object $product The saved product or variation.
+	 */
+	public function read_stored( object $product ): mixed {
+		if ( self::TERMS !== $this->type || Storage::TAXONOMY !== $this->storage->kind() || ! is_callable( [ $product, 'get_id' ] ) ) {
+			return $this->read( $product );
+		}
+		$terms = wp_get_object_terms( [ (int) $product->get_id() ], $this->storage->key(), [ 'fields' => 'all_with_object_id' ] );
+		if ( ! is_array( $terms ) ) {
+			return $this->read( $product );
+		}
+		$ids = [];
+		foreach ( $terms as $term ) {
+			if ( is_object( $term ) && isset( $term->term_id ) ) {
+				$ids[] = (int) $term->term_id;
+			}
+		}
+		return array_values( array_unique( $ids ) );
+	}
+
+	/**
 	 * The getter path: the object's current value in canonical form.
 	 *
 	 * @param object $product A WooCommerce product or variation.

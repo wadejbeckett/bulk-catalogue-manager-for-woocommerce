@@ -89,6 +89,17 @@ function routes() {
 						failed: [],
 					};
 		},
+		'categories/2': ( query, options ) => {
+			if ( options.method === 'PATCH' ) {
+				posts.push( options.data );
+				return {
+					item: { ...node( 2, 'Pots' ), ...options.data },
+					batch_id: 10,
+					status: 'complete',
+				};
+			}
+			return { ...node( 2, 'Pots' ), display_type: '', thumbnail_id: 0 };
+		},
 		'categories/6/default': ( query, options ) => {
 			posts.push( { url: options.url } );
 			return { item: { id: 6, default: true }, status: 'complete' };
@@ -390,6 +401,34 @@ describe( 'workspace category actions: panes and row menu', () => {
 			'3 products move into Kitchen › Pans.'
 		);
 		expect( posts ).toEqual( [ { ids: [ 2 ], into: 3, preview: true } ] );
+	} );
+
+	it( 'says visibly that the details of a category were saved (1.3.4)', async () => {
+		await renderTab();
+		fireEvent.click( rowOf( 'Pots' ) );
+		const pane = await screen.findByRole( 'region', { name: 'Pots' } );
+		fireEvent.click(
+			within( pane ).getByRole( 'button', { name: 'Edit details' } )
+		);
+		fireEvent.change(
+			await within( pane ).findByLabelText( 'Description' ),
+			{
+				target: { value: 'Pots of every size' },
+			}
+		);
+		await act( async () => {
+			fireEvent.click(
+				within( pane ).getByRole( 'button', { name: 'Save category' } )
+			);
+		} );
+		expect( posts.pop() ).toEqual( { description: 'Pots of every size' } );
+		expect(
+			await within( pane ).findByText( 'Category "Pots" saved.' )
+		).toBeTruthy();
+		// Choosing another category starts afresh.
+		fireEvent.click( rowOf( 'Pans' ) );
+		const pans = await screen.findByRole( 'region', { name: 'Pans' } );
+		expect( within( pans ).queryByText( /saved\./ ) ).toBeNull();
 	} );
 
 	it( 'merges from the row menu of one of several chosen, keeping the target chosen', async () => {

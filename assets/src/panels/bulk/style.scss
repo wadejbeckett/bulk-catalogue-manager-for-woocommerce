@@ -301,6 +301,10 @@ $bulkcat-bad-line: #f3c3c4;
 			box-shadow: inset 0 0 0 1px $bulkcat-blue;
 		}
 
+		&.is-preset .bulkcat-bulk__cbody {
+			padding-left: 12px;
+		}
+
 		> label {
 			display: flex;
 			align-items: flex-start;
@@ -308,6 +312,23 @@ $bulkcat-bad-line: #f3c3c4;
 			padding: 11px 12px;
 			cursor: pointer;
 		}
+	}
+
+	// 1.4.1: a preset change shows its own card first; the chooser is folded.
+	&__presethead {
+		margin: 0;
+		padding: 11px 12px;
+	}
+
+	&__presetgroup {
+		display: block;
+		margin-bottom: 2px;
+		font-size: 12px;
+		color: $bulkcat-ink-2;
+	}
+
+	&__unfold {
+		margin: 0;
 	}
 
 	&__ct {

@@ -57,6 +57,32 @@ const FOCUSABLE =
 	'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /**
+ * The first argument control of a step opened with its change chosen
+ * (1.4.1): the first control a person can use in the folded step, passing
+ * over a field list that offers only one field.
+ *
+ * @param {Element|null} panel The panel.
+ * @return {Element|null} The control, or null when no step is folded.
+ */
+export function firstArgument( panel ) {
+	const body = panel?.querySelector(
+		'.bulkcat-bulk__choices.is-preset .bulkcat-bulk__cbody'
+	);
+	if ( ! body ) {
+		return null;
+	}
+	return (
+		Array.from( body.querySelectorAll( FOCUSABLE ) ).find(
+			( element ) =>
+				! (
+					element.matches( 'select.bulkcat-bulk__field' ) &&
+					element.options.length < 2
+				)
+		) || null
+	);
+}
+
+/**
  * How many products and variations a selection holds.
  *
  * @param {Object} selection Panel selection.
@@ -260,6 +286,25 @@ export default function BulkChangePanel( {
 			: [ emptyOperation( 1 ) ]
 	);
 	const [ active, setActive ] = useState( 0 );
+	// 1.4.1: a step opened with its change chosen (a row entry, a quick
+	// action) shows only that change's arguments until the operator asks
+	// for the whole chooser.
+	const [ folded, setFolded ] = useState(
+		() =>
+			new Set(
+				opening
+					.map( ( operation, index ) =>
+						operation?.action ? index + 1 : 0
+					)
+					.filter( Boolean )
+			)
+	);
+	const unfold = ( key ) =>
+		setFolded( ( was ) => {
+			const next = new Set( was );
+			next.delete( key );
+			return next;
+		} );
 	const [ sampleSize, setSampleSize ] = useState( 25 );
 	const [ changedOnly, setChangedOnly ] = useState( false );
 	const [ batch, setBatch ] = useState( null );
@@ -328,13 +373,20 @@ export default function BulkChangePanel( {
 		changes,
 	} );
 
-	// Focus: into the panel on open, back to whatever opened it on close (§14),
+	// Focus: into the panel on open — at a preset change's first argument
+	// (1.4.1), else the heading — back to whatever opened it on close (§14),
 	// or, when that is gone (a change that finished in full clears the
 	// selection and its bar), to the screen's panel (FRONTEND-7).
 	useEffect( () => {
 		const doc = panelRef.current?.ownerDocument;
 		const opener = doc?.activeElement;
-		headingRef.current?.focus();
+		const first = firstArgument( panelRef.current );
+		if ( first ) {
+			first.focus();
+			first.scrollIntoView?.( { block: 'nearest' } );
+		} else {
+			headingRef.current?.focus();
+		}
 		return () => {
 			if (
 				opener &&
@@ -712,6 +764,12 @@ export default function BulkChangePanel( {
 													index={ index }
 													terms={ terms }
 													object={ object }
+													folded={ folded.has(
+														operation.key
+													) }
+													onUnfold={ () =>
+														unfold( operation.key )
+													}
 													onChoose={ ( id, group ) =>
 														update(
 															index,

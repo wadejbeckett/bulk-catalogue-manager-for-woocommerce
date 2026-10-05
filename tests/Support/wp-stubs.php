@@ -67,6 +67,10 @@ if ( ! function_exists( 'add_filter' ) ) {
 		return true === ( $GLOBALS['bulkcat_test']['multisite'] ?? false );
 	}
 
+	function is_main_site(): bool {
+		return ! is_multisite() || 1 === ( $GLOBALS['bulkcat_test']['site'] ?? 1 );
+	}
+
 	function get_sites( array $args = [] ): array {
 		$GLOBALS['bulkcat_test']['get_sites_args'][] = $args;
 		return $GLOBALS['bulkcat_test']['sites'] ?? [];

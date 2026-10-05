@@ -111,6 +111,7 @@ final class UninstallTest extends TestCase {
 		$this->assertSame(
 			[
 				'deleted'     => [
+					[ 'metadata', 'user', 0, 'wp_bulkcat_views', '', true ],
 					[ 'metadata', 'user', 0, 'bulkcat_views', '', true ],
 					[ 'metadata', 'term', 0, 'bulkcat_order', '', true ],
 					[ 'metadata', 'post', 0, '_bulkcat_availability_off', '', true ],
@@ -188,6 +189,7 @@ final class UninstallTest extends TestCase {
 			[
 				[ 'transient', 'bulkcat_count_abc' ],
 				[ 'site_transient', 'bulkcat_count_net' ],
+				[ 'metadata', 'user', 0, 'wp_bulkcat_views', '', true ],
 				[ 'metadata', 'user', 0, 'bulkcat_views', '', true ],
 				[ 'metadata', 'term', 0, 'bulkcat_order', '', true ],
 				[ 'metadata', 'post', 0, '_bulkcat_record', '', true ],
@@ -237,7 +239,7 @@ final class UninstallTest extends TestCase {
 		$this->assertTrue( is_array( $result ), $text );
 		$this->assertFalse( $result['scheduler'] );
 		$this->assertSame( [], $result['unscheduled'] );
-		$this->assertSame( [ [ 'metadata', 'user', 0, 'bulkcat_views', '', true ], [ 'metadata', 'term', 0, 'bulkcat_order', '', true ], [ 'metadata', 'post', 0, '_bulkcat_availability_off', '', true ], [ 'option', 'bulkcat_settings' ], [ 'option', 'bulkcat_db_version' ], [ 'option', 'bulkcat_request_epoch' ] ], $result['deleted'] );
+		$this->assertSame( [ [ 'metadata', 'user', 0, 'wp_bulkcat_views', '', true ], [ 'metadata', 'user', 0, 'bulkcat_views', '', true ], [ 'metadata', 'term', 0, 'bulkcat_order', '', true ], [ 'metadata', 'post', 0, '_bulkcat_availability_off', '', true ], [ 'option', 'bulkcat_settings' ], [ 'option', 'bulkcat_db_version' ], [ 'option', 'bulkcat_request_epoch' ] ], $result['deleted'] );
 	}
 
 	public function test_tables_are_dropped_through_prepare_with_an_identifier_placeholder(): void {
@@ -291,5 +293,18 @@ final class UninstallTest extends TestCase {
 		$this->assertStringContainsString( "require_once __DIR__ . '/src/Autoloader.php';", $source );
 		$this->assertStringContainsString( 'Settings::load()', $source, 'Uninstall must read the settings through the typed reader.' );
 		$this->assertLessThan( strpos( $source, 'Autoloader.php' ), strpos( $source, 'WP_UNINSTALL_PLUGIN' ) );
+	}
+	public function test_on_a_network_one_sites_uninstall_removes_only_that_sites_saved_views(): void {
+		self::seed( [ 'remove_data_on_delete' => false ] );
+		$GLOBALS['bulkcat_test']['multisite']    = true;
+		$GLOBALS['bulkcat_test']['sites']        = [ 1, 5 ];
+		$GLOBALS['bulkcat_test']['site_options'] = [
+			5 => [ 'bulkcat_settings' => [ 'remove_data_on_delete' => true ] ],
+		];
+
+		self::run_uninstall();
+
+		$users = array_values( array_filter( $GLOBALS['bulkcat_test']['deleted'], static fn( array $call ): bool => 'metadata' === $call[0] && 'user' === $call[1] ) );
+		$this->assertSame( [ [ 'metadata', 'user', 0, 'wp_5_bulkcat_views', '', true ] ], $users, 'Only site 5\'s views go; the main site keeps its own and the old network-wide list.' );
 	}
 }

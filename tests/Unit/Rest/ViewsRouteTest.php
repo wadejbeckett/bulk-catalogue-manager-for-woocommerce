@@ -171,7 +171,7 @@ final class ViewsRouteTest extends TestCase {
 		);
 
 		// Stored as JSON in the user's own meta.
-		$stored = json_decode( $GLOBALS['bulkcat_test']['user_meta'][ self::A ][ ViewsController::META_KEY ], true );
+		$stored = json_decode( $GLOBALS['bulkcat_test']['user_meta'][ self::A ]['wp_bulkcat_views'], true );
 		$this->assertSame( $item['id'], $stored['views'][0]['id'] );
 
 		$listed = self::call( 'GET', '/views' )->get_data();
@@ -428,7 +428,7 @@ final class ViewsRouteTest extends TestCase {
 
 	public function test_a_malformed_stored_value_reads_as_no_views(): void {
 		foreach ( [ 'not json', '[]', '{"views":"x"}', '{"views":[{"id":"../x","name":"n","view":{}}],"default":"../x"}' ] as $raw ) {
-			$GLOBALS['bulkcat_test']['user_meta'][ self::A ][ ViewsController::META_KEY ] = $raw;
+			$GLOBALS['bulkcat_test']['user_meta'][ self::A ]['wp_bulkcat_views'] = $raw;
 			$answer = self::call( 'GET', '/views' )->get_data();
 			$this->assertSame( [], $answer['items'], $raw );
 			$this->assertNull( $answer['default'] );
@@ -443,5 +443,33 @@ final class ViewsRouteTest extends TestCase {
 
 	public function test_bulkcat_views_is_registered_for_uninstall(): void {
 		$this->assertContains( ViewsController::META_KEY, DataRegistry::plugin()->user_meta() );
+	}
+	public function test_on_a_network_each_site_keeps_its_own_views(): void {
+		$GLOBALS['bulkcat_test']['multisite'] = true;
+		$first                                = self::create( 'Site one' )->get_data()['item']['id'];
+		switch_to_blog( 2 );
+		$this->assertSame( [], self::call( 'GET', '/views' )->get_data()['items'], 'Another site never lists this site\'s views.' );
+		$second = self::create( 'Site two' )->get_data()['item']['id'];
+		restore_current_blog();
+		$this->assertSame( [ $first ], array_column( self::call( 'GET', '/views' )->get_data()['items'], 'id' ) );
+		$stored = $GLOBALS['bulkcat_test']['user_meta'][ self::A ];
+		$this->assertSame( $first, json_decode( $stored['wp_bulkcat_views'], true )['views'][0]['id'], 'The main site keeps its views under its own prefix.' );
+		$this->assertSame( $second, json_decode( $stored['wp_2_bulkcat_views'], true )['views'][0]['id'], 'Site 2 keeps its views under its own prefix.' );
+		$this->assertArrayNotHasKey( ViewsController::META_KEY, $stored, 'Nothing is written network-wide.' );
+	}
+
+	public function test_views_saved_before_the_per_site_key_are_read_once_on_the_main_site(): void {
+		$GLOBALS['bulkcat_test']['multisite'] = true;
+		$legacy                               = '{"version":1,"default":"aaaaaaaaaaaa","views":[{"id":"aaaaaaaaaaaa","name":"Old","view":{"type":"table"},"category":null}]}';
+		$GLOBALS['bulkcat_test']['user_meta'][ self::A ][ ViewsController::META_KEY ] = $legacy;
+		switch_to_blog( 2 );
+		$this->assertSame( [], self::call( 'GET', '/views' )->get_data()['items'], 'A sub-site does not take over the old network-wide list.' );
+		restore_current_blog();
+		$listed = self::call( 'GET', '/views' )->get_data();
+		$this->assertSame( [ 'aaaaaaaaaaaa' ], array_column( $listed['items'], 'id' ) );
+		$this->assertSame( 'aaaaaaaaaaaa', $listed['default'] );
+		$stored = $GLOBALS['bulkcat_test']['user_meta'][ self::A ];
+		$this->assertSame( $legacy, $stored['wp_bulkcat_views'], 'The old list moves to the main site\'s own key.' );
+		$this->assertArrayNotHasKey( ViewsController::META_KEY, $stored, 'The old key is read once and removed.' );
 	}
 }

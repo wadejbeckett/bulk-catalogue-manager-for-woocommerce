@@ -76,8 +76,15 @@ final class Cleanup {
 		}
 		$this->drop_tables();
 		$this->delete_transients();
+		// User meta is shared by every site of a network, so each site removes only
+		// its own prefixed key; the main site also removes the unprefixed key that
+		// releases before 1.3.1 wrote, which it alone takes over.
+		global $wpdb;
 		foreach ( $this->registry->user_meta() as $key ) {
-			delete_metadata( 'user', 0, $key, '', true );
+			delete_metadata( 'user', 0, $wpdb->prefix . $key, '', true );
+			if ( is_main_site() ) {
+				delete_metadata( 'user', 0, $key, '', true );
+			}
 		}
 		foreach ( $this->registry->term_meta() as $key ) {
 			delete_metadata( 'term', 0, $key, '', true );

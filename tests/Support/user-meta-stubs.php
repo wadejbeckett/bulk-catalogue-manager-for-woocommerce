@@ -27,3 +27,10 @@ if ( ! function_exists( 'update_user_meta' ) ) {
 		return true;
 	}
 }
+
+if ( ! function_exists( 'delete_user_meta' ) ) {
+	function delete_user_meta( int $user_id, string $meta_key, mixed $meta_value = '' ): bool {
+		unset( $GLOBALS['bulkcat_test']['user_meta'][ $user_id ][ $meta_key ] );
+		return true;
+	}
+}

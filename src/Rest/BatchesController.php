@@ -485,7 +485,9 @@ final class BatchesController implements ReadController {
 				[
 					'description' => __( 'Only changes that used this action.', 'bulk-catalogue-manager-for-woocommerce' ),
 					'type'        => 'string',
-					'enum'        => ( $this->actions ?? Actions::instance() )->ids(),
+					// The native action ids. The native registry is built here rather than
+					// the shared one, so booting the REST server never collects providers.
+					'enum'        => ( $this->actions ?? new Actions( Fields::instance() ) )->ids(),
 				],
 				'strval'
 			),

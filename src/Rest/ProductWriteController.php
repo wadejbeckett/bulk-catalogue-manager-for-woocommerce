@@ -78,11 +78,12 @@ final class ProductWriteController implements ReadController {
 	private Catalogue $catalogue;
 
 	/**
-	 * The write.
+	 * The write, built on first use so the shared operation registry (and
+	 * the add-ons' providers) is not built when the REST server boots.
 	 *
-	 * @var InlineWrite
+	 * @var InlineWrite|null
 	 */
-	private InlineWrite $writes;
+	private ?InlineWrite $writes = null;
 
 	/**
 	 * Build over a field registry and the operation registry built on it.
@@ -93,7 +94,9 @@ final class ProductWriteController implements ReadController {
 	public function __construct( private readonly Registry $registry, ?Actions $actions = null ) {
 		$this->schema    = new RouteSchema( $registry );
 		$this->catalogue = new Catalogue( new Hydrator( $registry ) );
-		$this->writes    = new InlineWrite( $actions ?? Actions::instance() );
+		if ( null !== $actions ) {
+			$this->writes = new InlineWrite( $actions );
+		}
 	}
 
 	/**
@@ -235,7 +238,7 @@ final class ProductWriteController implements ReadController {
 		$values = array_diff_key( $params, array_flip( [ 'id', 'source', 'fields', 'keep_changed_status', 'uuid', 'request_proof', 'intent', '_locale', '_wpnonce', 'rest_route' ] ) );
 		$source = (string) ( $request->get_param( 'source' ) ?? InlineWrite::SOURCES[0] );
 
-		$written = ( new \BulkCatalogueManager\Requests\RequestService( inline: $this->writes ) )->inline( array_intersect_key( $params, array_flip( [ 'uuid', 'request_proof', 'intent' ] ) ), $id, $values, $source, true === $request->get_param( 'keep_changed_status' ) );
+		$written = ( new \BulkCatalogueManager\Requests\RequestService( inline: $this->writes ??= new InlineWrite( Actions::instance() ) ) )->inline( array_intersect_key( $params, array_flip( [ 'uuid', 'request_proof', 'intent' ] ) ), $id, $values, $source, true === $request->get_param( 'keep_changed_status' ) );
 		if ( $written instanceof \WP_Error ) {
 			return $written;
 		}

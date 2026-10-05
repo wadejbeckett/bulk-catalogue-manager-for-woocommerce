@@ -39,20 +39,32 @@ final class FieldsController implements ReadController {
 	public const ROUTE = '/fields';
 
 	/**
-	 * The action registry.
+	 * The action registry, or what resolves it on first use.
 	 *
-	 * @var Actions
+	 * @var Actions|\Closure(): Actions
 	 */
-	private readonly Actions $actions;
+	private Actions|\Closure $actions;
 
 	/**
-	 * Build over the registries.
+	 * Build over the registries. The plugin's routes pass a closure, so the
+	 * shared registry (and with it the add-ons' providers) is only built when
+	 * this route runs, never when the REST server boots.
 	 *
-	 * @param Registry     $registry Field registry.
-	 * @param Actions|null $actions  Action registry; null for every action over $registry.
+	 * @param Registry                         $registry Field registry.
+	 * @param Actions|\Closure(): Actions|null $actions  Action registry or its resolver; null for every action over $registry.
 	 */
-	public function __construct( private readonly Registry $registry, ?Actions $actions = null ) {
+	public function __construct( private readonly Registry $registry, Actions|\Closure|null $actions = null ) {
 		$this->actions = $actions ?? new Actions( $registry );
+	}
+
+	/**
+	 * The action registry, resolved on first use.
+	 */
+	private function actions(): Actions {
+		if ( $this->actions instanceof \Closure ) {
+			$this->actions = ( $this->actions )();
+		}
+		return $this->actions;
 	}
 
 	/**
@@ -84,10 +96,10 @@ final class FieldsController implements ReadController {
 	public function payload(): array {
 		$payload   = [
 			'fields'  => $this->registry->to_client(),
-			'actions' => $this->actions->to_client(),
+			'actions' => $this->actions()->to_client(),
 			'groups'  => Group::to_client(),
 		];
-		$providers = $this->actions->providers();
+		$providers = $this->actions()->providers();
 		if ( ! $providers->any() ) {
 			return $payload;
 		}
@@ -120,7 +132,7 @@ final class FieldsController implements ReadController {
 			'type'  => 'array',
 			'items' => [ 'type' => 'string' ],
 		];
-		$external    = $this->actions->providers()->any() ? new Advertiser( $this->actions->providers() ) : null;
+		$external    = $this->actions()->providers()->any() ? new Advertiser( $this->actions()->providers() ) : null;
 		$group_ids   = [ ...Group::ALL, ...( null === $external ? [] : array_column( $external->groups(), 'id' ) ) ];
 		$schema      = [
 			'$schema'    => 'http://json-schema.org/draft-04/schema#',

@@ -44,17 +44,26 @@ final class Providers {
 	}
 
 	/**
-	 * Fire `bulkcat_register_providers` once and keep what registered.
+	 * Fire `bulkcat_register_providers` once and keep what registered. An
+	 * add-on callback that throws is caught here: the error goes to the
+	 * WooCommerce log, the screen shows one plain refusal, and whatever
+	 * registered before the failure is kept. It never reaches the caller,
+	 * so a faulty add-on cannot take down a request.
 	 */
 	public static function fire(): self {
 		$collector = new Collector();
-		/**
-		 * Register external action providers (docs/EXTENSIONS.md §3.1).
-		 *
-		 * @param Registrar $registrar Call register() with each provider.
-		 */
-		do_action( 'bulkcat_register_providers', new Registrar( $collector ) );
-		$collector->close();
+		try {
+			/**
+			 * Register external action providers (docs/EXTENSIONS.md §3.1).
+			 *
+			 * @param Registrar $registrar Call register() with each provider.
+			 */
+			do_action( 'bulkcat_register_providers', new Registrar( $collector ) );
+		} catch ( \Throwable $error ) {
+			$collector->failed( $error );
+		} finally {
+			$collector->close();
+		}
 		return new self( $collector->registered(), $collector->refusals() );
 	}
 

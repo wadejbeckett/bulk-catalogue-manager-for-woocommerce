@@ -147,8 +147,9 @@ final class Registry {
 	 */
 	public static function instance(): self {
 		if ( null === self::$instance || ( ! self::$fired && did_action( 'init' ) > 0 ) ) {
-			self::$fired    = did_action( 'init' ) > 0;
-			self::$instance = new self( Fields::instance(), null, self::$fired ? Providers::fire() : null );
+			$fire           = did_action( 'init' ) > 0;
+			self::$instance = new self( Fields::instance(), null, $fire ? Providers::fire() : null );
+			self::$fired    = $fire;
 		}
 		return self::$instance;
 	}

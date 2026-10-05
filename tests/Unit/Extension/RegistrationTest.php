@@ -30,6 +30,7 @@ use BulkCatalogueManager\Operations\Registry as Actions;
 use BulkCatalogueManager\Operations\Result;
 use BulkCatalogueManager\Operations\Validation;
 use BulkCatalogueManager\Rest\FieldsController;
+use BulkCatalogueManager\Rest\Routes;
 use BulkCatalogueManager\Tests\Support\Extension\LabelsAction;
 use BulkCatalogueManager\Tests\Support\Extension\LabelsField;
 use BulkCatalogueManager\Tests\Support\Extension\MemoryStore;
@@ -520,5 +521,76 @@ final class RegistrationTest extends TestCase {
 		$this->assertSame( 1, substr_count( $html, 'notice-warning' ) );
 		$this->assertStringContainsString( 'Sample labels could not be added to Bulk Catalogue Manager', $html );
 		$this->assertStringContainsString( 'Everything else works as usual.', $html );
+	}
+	public function test_an_add_on_callback_that_throws_is_caught_logged_and_reported_never_fatal(): void {
+		add_action(
+			Contract::HOOK,
+			static function ( Registrar $registrar ): void {
+				$registrar->register( new SampleProvider( new MemoryStore() ) );
+			}
+		);
+		add_action(
+			Contract::HOOK,
+			static function (): void {
+				throw new \RuntimeException( 'Missing dependency on purpose.' );
+			}
+		);
+		$GLOBALS['bulkcat_test']['did_actions']['init'] = 1;
+		$shared = Actions::instance();
+		$this->assertSame( 'sample', $shared->providers()->get( 'sample' )?->id, 'What registered before the failure is kept.' );
+		$reasons = implode( "\n", array_column( $shared->providers()->refusals(), 'reason' ) );
+		$this->assertStringContainsString( 'An add-on failed while registering', $reasons );
+		$this->assertStringNotContainsString( 'on purpose', $reasons, 'The exception itself never reaches the notice.' );
+		$messages = implode( "\n", array_column( $GLOBALS['bulkcat_test']['logged'] ?? [], 1 ) );
+		$this->assertStringContainsString( 'Missing dependency on purpose.', $messages, 'The details go to the WooCommerce log.' );
+		$this->assertSame( $shared, Actions::instance(), 'Registration is not retried within the request.' );
+		$this->assertSame( 1, did_action( Contract::HOOK ) );
+	}
+
+	public function test_a_type_error_in_an_add_on_callback_is_caught_too(): void {
+		add_action(
+			Contract::HOOK,
+			static function ( Registrar $registrar ): void {
+				$registrar->register( new \stdClass() ); // @phpstan-ignore-line -- the fault under test.
+			}
+		);
+		$GLOBALS['bulkcat_test']['did_actions']['init'] = 1;
+		$shared = Actions::instance();
+		$this->assertFalse( $shared->providers()->any() );
+		$this->assertCount( 1, $shared->providers()->refusals() );
+		$this->assertSame( ( new Actions( new Fields() ) )->ids(), $shared->ids(), 'Every native action is still there.' );
+	}
+
+	public function test_registering_the_routes_does_not_collect_providers_until_a_route_needs_them(): void {
+		$calls = 0;
+		add_action(
+			Contract::HOOK,
+			static function () use ( &$calls ): void {
+				++$calls;
+				throw new \RuntimeException( 'A faulty add-on.' );
+			}
+		);
+		$GLOBALS['bulkcat_test']['did_actions']['init'] = 1;
+		Routes::plugin()->register();
+		$this->assertSame( 0, $calls, 'Booting the REST server (any /wp-json/ request) never fires the provider hook.' );
+		$fields = $GLOBALS['bulkcat_test']['routes']['/bulkcat/v1/fields'][0]['callback'];
+		$this->assertSame( 200, $fields( null )->get_status(), 'The plugin\'s own route still answers.' );
+		$this->assertSame( 1, $calls, 'The plugin\'s own route collects the providers when it runs.' );
+	}
+	public function test_the_audit_field_filter_still_accepts_an_add_ons_field_once_a_request_is_checked(): void {
+		add_action(
+			Contract::HOOK,
+			static function ( Registrar $registrar ): void {
+				$registrar->register( new SampleProvider( new MemoryStore() ) );
+			}
+		);
+		$GLOBALS['bulkcat_test']['did_actions']['init'] = 1;
+		Routes::plugin()->register();
+		$this->assertSame( 0, did_action( Contract::HOOK ), 'Registering the routes collects no providers.' );
+		$validate = $GLOBALS['bulkcat_test']['routes']['/bulkcat/v1/audit'][0]['args']['field']['validate_callback'];
+		$this->assertTrue( $validate( 'name', null, 'field' ) );
+		$this->assertTrue( $validate( 'x_sample_labels', null, 'field' ), 'T108: a registered add-on field can be filtered by.' );
+		$this->assertInstanceOf( \WP_Error::class, $validate( 'x_sample_nothing', null, 'field' ) );
+		$this->assertInstanceOf( \WP_Error::class, $validate( 'no_such_field', null, 'field' ) );
 	}
 }

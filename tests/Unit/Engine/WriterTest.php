@@ -953,6 +953,114 @@ final class WriterTest extends TestCase {
 		$this->assertSame( [ [ 'set_sku', 'NEW-1' ] ], $second->sets );
 	}
 
+	/**
+	 * The outcome's Results by field: [ state, old, new ].
+	 *
+	 * @return array<string, array{0: string, 1: mixed, 2: mixed}>
+	 */
+	private static function by_field( WriteOutcome $outcome ): array {
+		$out = [];
+		foreach ( $outcome->results() as $result ) {
+			$out[ $result->field() ] = [ $result->state(), $result->old(), $result->new() ];
+		}
+		return $out;
+	}
+
+	public function test_turning_manage_stock_off_reports_the_stock_values_woocommerce_clears_on_save(): void {
+		// TESTS-1: WooCommerce's save empties quantity, backorders and low stock amount on unmanaged stock.
+		$product               = self::product(
+			'variation',
+			[
+				'id'               => 61,
+				'parent_id'        => 60,
+				'manage_stock'     => true,
+				'stock_quantity'   => 7,
+				'backorders'       => 'notify',
+				'low_stock_amount' => 3,
+				'stock_status'     => 'instock',
+			]
+		);
+		$product->native_stock = true;
+
+		$outcome = ( new Writer( self::registry() ) )->write(
+			61,
+			$this->steps(
+				[
+					[
+						'set_value',
+						[
+							'field' => 'manage_stock',
+							'value' => false,
+						],
+					],
+				]
+			)
+		);
+
+		$this->assertSame(
+			[
+				'manage_stock'     => [ Result::CHANGED, true, false ],
+				'stock_quantity'   => [ Result::CHANGED, 7, null ],
+				'backorders'       => [ Result::CHANGED, 'notify', 'no' ],
+				'low_stock_amount' => [ Result::CHANGED, 3, null ],
+			],
+			self::by_field( $outcome )
+		);
+		$this->assertSame( [ [ 'set_manage_stock', false ] ], $product->sets, 'WooCommerce clears them itself; the writer sets only Manage stock.' );
+		$this->assertCount( 1, $product->saves );
+		$this->assertSame( 'instock', $product->saves[0]['stock_status'] );
+		$this->assertSame(
+			[
+				'manage_stock'     => true,
+				'stock_quantity'   => 7,
+				'backorders'       => 'notify',
+				'low_stock_amount' => 3,
+			],
+			$outcome->before(),
+			'The value before of each, for the journal.'
+		);
+	}
+
+	public function test_turning_manage_stock_on_reports_the_stock_status_woocommerce_works_out_on_save(): void {
+		// TESTS-1, the reverse: an unmanaged in-stock product with no quantity goes out of stock.
+		$product               = self::product(
+			'simple',
+			[
+				'id'               => 62,
+				'manage_stock'     => false,
+				'stock_quantity'   => null,
+				'backorders'       => 'no',
+				'low_stock_amount' => '',
+				'stock_status'     => 'instock',
+			]
+		);
+		$product->native_stock = true;
+
+		$outcome = ( new Writer( self::registry() ) )->write(
+			62,
+			$this->steps(
+				[
+					[
+						'set_value',
+						[
+							'field' => 'manage_stock',
+							'value' => true,
+						],
+					],
+				]
+			)
+		);
+
+		$this->assertSame(
+			[
+				'manage_stock' => [ Result::CHANGED, false, true ],
+				'stock_status' => [ Result::CHANGED, 'instock', 'outofstock' ],
+			],
+			self::by_field( $outcome )
+		);
+		$this->assertSame( 'outofstock', $product->saves[0]['stock_status'] );
+	}
+
 	public function test_the_engine_never_writes_meta_sql_or_setters_of_its_own(): void {
 		$files = glob( dirname( __DIR__, 3 ) . '/src/Engine/*.php' );
 		$this->assertNotEmpty( $files );

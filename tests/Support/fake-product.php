@@ -163,7 +163,33 @@ final class SavedProduct {
 	 */
 	public array $saved_meta = [];
 
+	/**
+	 * Whether save() runs WooCommerce's stock rules first (validate_props()).
+	 */
+	public bool $native_stock = false;
+
+	/**
+	 * WooCommerce's WC_Product::validate_props() (11.1), when $native_stock is
+	 * on: unmanaged stock empties the quantity, backorders and low stock
+	 * amount; managed stock works the stock status out from the quantity and
+	 * backorders. Off, it does nothing, as the other doubles do.
+	 */
+	public function validate_props(): void {
+		if ( ! $this->native_stock ) {
+			return;
+		}
+		if ( true !== ( $this->props['manage_stock'] ?? false ) ) {
+			$this->props['stock_quantity']   = null;
+			$this->props['backorders']       = 'no';
+			$this->props['low_stock_amount'] = '';
+			return;
+		}
+		$backorders                  = $this->props['backorders'] ?? 'no';
+		$this->props['stock_status'] = (float) ( $this->props['stock_quantity'] ?? 0 ) > 0 ? 'instock' : ( 'no' !== $backorders ? 'onbackorder' : 'outofstock' );
+	}
+
 	public function save(): int {
+		$this->validate_props();
 		$this->saves[]      = $this->props;
 		$this->saved_meta[] = $this->meta;
 		return (int) ( $this->props['id'] ?? 0 );

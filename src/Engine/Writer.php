@@ -26,6 +26,7 @@ use BulkCatalogueManager\Operations\Operation;
 use BulkCatalogueManager\Operations\Registry;
 use BulkCatalogueManager\Operations\RestoreStatus;
 use BulkCatalogueManager\Operations\Result;
+use BulkCatalogueManager\Operations\StockCoupling;
 use BulkCatalogueManager\Operations\Validator;
 use BulkCatalogueManager\Operations\WriteRefused;
 use BulkCatalogueManager\Undo\Planner;
@@ -428,6 +429,13 @@ final class Writer {
 				}
 			}
 		}
+		// What WooCommerce's save changes with Manage stock: journalled, never set here, read back once saved.
+		foreach ( StockCoupling::follow( $this->operations->fields(), $native_before, $product, array_column( $entries, 0 ) ) as $result ) {
+			$entries[] = [ $result, true ];
+			if ( ! array_key_exists( $result->field(), $before ) ) {
+				$before[ $result->field() ] = $result->old();
+			}
+		}
 		$results = array_column( $entries, 0 );
 		foreach ( $results as $result ) {
 			if ( Result::FAILED === $result->state() && in_array( $result->field(), [ PublicationPassword::FIELD, \BulkCatalogueManager\Availability\OffRecord::FIELD ], true ) ) {
@@ -612,8 +620,14 @@ final class Writer {
 					$results[ $key ] = Result::failed( $key, $result->old(), $failure[0]->reason(), $failure[0]->code() );
 				}
 			}
+			$derived = [];
 			foreach ( $pending as $key => $result ) {
 				if ( Result::FAILED === $results[ $key ]->state() ) {
+					continue;
+				}
+				if ( isset( $intents[ StockCoupling::FIELD ] ) && in_array( $key, StockCoupling::COUPLED, true ) && null !== $fields->get( $key )->refusal( $product, $result->new() ) ) {
+					// WooCommerce's save sets it with Manage stock (a quantity cleared with it): read back once saved.
+					$derived[] = $key;
 					continue;
 				}
 				$results[ $key ] = $this->apply_field( $result, $product );
@@ -659,7 +673,17 @@ final class Writer {
 			}
 		}
 		if ( $written ) {
+			foreach ( $derived ?? [] as $key ) {
+				$field           = $fields->get( $key );
+				$now             = $field->read( $product );
+				$results[ $key ] = Planner::same( $field, $intents[ $key ]['old'], $now ) ? Result::already( $key, $now ) : Result::changed( $key, $intents[ $key ]['old'], $now );
+			}
 			$results = array_combine( array_keys( $results ), $this->stored( array_values( $results ), $product ) );
+		} else {
+			foreach ( $derived ?? [] as $key ) {
+				$refusal         = $fields->get( $key )->refusal( $product, $intents[ $key ]['new'] );
+				$results[ $key ] = Result::failed( $key, $intents[ $key ]['old'], null === $refusal ? '' : $refusal->get_error_message(), null === $refusal ? '' : (string) $refusal->get_error_code() );
+			}
 		}
 		$before = [];
 		foreach ( $results as $key => $result ) {

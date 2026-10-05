@@ -223,6 +223,28 @@ describe( 'preview', () => {
 		expect( items[ 0 ].textContent ).toBe( sentence );
 	} );
 
+	it( 'warns that turning off Manage stock clears stock values undo puts back', () => {
+		const { container } = renderPreview( {
+			response: previewResponse( {
+				warnings: {
+					sale_above_regular: 0,
+					price_not_positive: 0,
+					stock_negative: 0,
+					sku_duplicate: 0,
+					stock_cleared: 3,
+				},
+			} ),
+		} );
+		const items = container.querySelectorAll( '[data-warning]' );
+		expect( items ).toHaveLength( 1 );
+		expect( items[ 0 ].getAttribute( 'data-warning' ) ).toBe(
+			'stock_cleared'
+		);
+		expect( items[ 0 ].textContent ).toBe(
+			'Turning off Manage stock clears the stock quantity, backorders and low stock threshold on 3 products. Undo puts them back.'
+		);
+	} );
+
 	it.each( [
 		[ 'products and variations', 20, 4, 'items' ],
 		[ 'variations only', 0, 4, 'variations' ],

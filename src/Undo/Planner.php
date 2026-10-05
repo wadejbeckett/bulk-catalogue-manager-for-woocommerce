@@ -25,6 +25,8 @@ use BulkCatalogueManager\Fields\Field;
 use BulkCatalogueManager\Fields\Values;
 use BulkCatalogueManager\Operations\Registry as Actions;
 use BulkCatalogueManager\Operations\RestoreStatus;
+use BulkCatalogueManager\Operations\RestoreStock;
+use BulkCatalogueManager\Operations\StockCoupling;
 use BulkCatalogueManager\Operations\Terms;
 use BulkCatalogueManager\Rest\Access;
 use BulkCatalogueManager\Rest\Refusal;
@@ -639,6 +641,7 @@ final class Planner {
 		$operations = [];
 		$conflicts  = [];
 		$restore    = null;
+		$stock      = null;
 		$external   = false;
 		$checked    = [];
 		foreach ( $journal['fields'] as $key => $values ) {
@@ -680,10 +683,25 @@ final class Planner {
 				$operations[ $restore ][ $status ? 'value' : ( OffRecord::FIELD === $key ? 'record' : 'password' ) ] = $values['target'] ?? '';
 				continue;
 			}
+			if ( isset( $journal['fields'][ StockCoupling::FIELD ] ) && ( StockCoupling::FIELD === $key || in_array( $key, StockCoupling::COUPLED, true ) ) ) {
+				// Manage stock and what WooCommerce changed with it go back together, as one internal step, where the first of them was.
+				if ( null === $stock ) {
+					$stock        = count( $operations );
+					$operations[] = [];
+				}
+				$operations[ $stock ][ StockCoupling::FIELD === $key ? 'value' : $key ] = $values['target'] ?? '';
+				continue;
+			}
 			$operation = self::operation( $field, $values['target'], $values['expected'] );
 			if ( null !== $operation ) {
 				$operations[] = $operation;
 			}
+		}
+		if ( null !== $stock ) {
+			$operations[ $stock ] = [
+				'action' => RestoreStock::ID,
+				'args'   => [ 'field' => StockCoupling::FIELD ] + $operations[ $stock ] + [ 'apply_to_variations' => false ],
+			];
 		}
 		if ( null !== $restore ) {
 			$operations[ $restore ] = self::restore_step( $fields, $operations[ $restore ], $subject );
@@ -693,7 +711,7 @@ final class Planner {
 			}
 		}
 
-		$normalised = [] === $operations ? [] : $this->actions->validate_list( $operations, null !== $restore || $external );
+		$normalised = [] === $operations ? [] : $this->actions->validate_list( $operations, null !== $restore || null !== $stock || $external );
 		if ( $normalised instanceof \WP_Error ) {
 			return self::skipped( $object_id, $type, self::CANNOT_RESTORE, $normalised->get_error_message() );
 		}

@@ -13,9 +13,11 @@
  * arguments normalised, as preview, batches and the journal store it.
  *
  * Internal actions (T90): `restore_status`, undo's step for a status and its
- * Off record, is resolved by get() so the writer runs stored undo items, but
- * ids(), descriptors(), to_client() and actions_for() leave it out, and
- * validate_list() refuses it as an unknown action for every caller except
+ * Off record, and `restore_stock`, undo's step for Manage stock and the stock
+ * values WooCommerce changed with it, are resolved by get() so the writer
+ * runs stored undo items, but ids(), descriptors(), to_client() and
+ * actions_for() leave them out, and validate_list() refuses them as unknown
+ * actions for every caller except
  * the undo planner, which asks with `$internal` true.
  *
  * @package BulkCatalogueManager
@@ -79,7 +81,7 @@ final class Registry {
 	/**
 	 * Actions only the engine itself may list (T90).
 	 */
-	public const INTERNAL = [ RestoreStatus::ID, RestoreExternal::ID ];
+	public const INTERNAL = [ RestoreStatus::ID, RestoreStock::ID, RestoreExternal::ID ];
 
 	/**
 	 * The instance runtime code shares.
@@ -448,6 +450,7 @@ final class Registry {
 			new Terms( $fields, Terms::REMOVE ),
 			new Terms( $fields, Terms::REPLACE ),
 			new RestoreStatus( $fields ),
+			new RestoreStock( $fields ),
 		];
 	}
 

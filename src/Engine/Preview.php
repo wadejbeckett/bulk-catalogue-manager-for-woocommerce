@@ -29,6 +29,7 @@ use BulkCatalogueManager\Fields\Values;
 use BulkCatalogueManager\Operations\Operation;
 use BulkCatalogueManager\Operations\Registry as Actions;
 use BulkCatalogueManager\Operations\Result;
+use BulkCatalogueManager\Operations\StockCoupling;
 use BulkCatalogueManager\Operations\Validator;
 use BulkCatalogueManager\Rest\Refusal;
 use BulkCatalogueManager\Rest\SelectionController;
@@ -853,7 +854,9 @@ final class Preview {
 	/**
 	 * Count the warnings a computed change raises, before the validator
 	 * decides on it: a sale price that would not be below the regular price,
-	 * a price falling to zero or below, and stock falling below zero.
+	 * a price falling to zero or below, stock falling below zero, and stock
+	 * management turned off where it clears a stock quantity, backorders or a
+	 * low stock threshold (`stock_cleared`, listed only when counted).
 	 *
 	 * @param array<string, int> $warnings The counts.
 	 * @param object             $subject  The detached copy, before this change.
@@ -889,6 +892,10 @@ final class Preview {
 			if ( null !== $number && (float) $number < 0.0 ) {
 				++$warnings['stock_negative'];
 			}
+		}
+		if ( StockCoupling::FIELD === $field->key() && false === $new && StockCoupling::clears( $fields, $subject ) ) {
+			// WooCommerce clears the quantity, backorders and low stock threshold with it; undo puts them back.
+			$warnings['stock_cleared'] = ( $warnings['stock_cleared'] ?? 0 ) + 1;
 		}
 	}
 

@@ -293,6 +293,20 @@ function inRange( number, property ) {
 }
 
 /**
+ * A step's number as typed, with one decimal comma read as a point, as an
+ * inline edit reads it (FRONTEND-10): "2,5" is "2.5". Anything else is left
+ * as it is, so "1.000,5" or "2,5,1" is still refused.
+ *
+ * @param {*} value The typed value.
+ * @return {*} The value, a decimal comma made a point.
+ */
+export function decimalPoint( value ) {
+	return typeof value === 'string' && /^\s*-?\d*,\d+\s*$/.test( value )
+		? value.replace( ',', '.' )
+		: value;
+}
+
+/**
  * The first problem with a step, as the argument it concerns and the
  * server's own sentence for it (the schema's `description` is the rule), or
  * null when the step can be checked.
@@ -334,7 +348,7 @@ export function operationProblem( registry, operation ) {
 			return { arg: name, reason };
 		}
 		if ( kind === 'integer' || kind === 'decimal' ) {
-			const number = Number( value );
+			const number = Number( decimalPoint( value ) );
 			if (
 				! Number.isFinite( number ) ||
 				( kind === 'integer' && ! Number.isInteger( number ) ) ||
@@ -403,7 +417,11 @@ export function toRequestOperations( registry, operations ) {
 				) {
 					return;
 				}
-				args[ name ] = value;
+				const kind = propertyKind( name, properties[ name ] );
+				args[ name ] =
+					kind === 'integer' || kind === 'decimal'
+						? decimalPoint( value )
+						: value;
 			} );
 			if (
 				properties.apply_to_variations &&

@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-10-05
+
+Fixes from the 5 October standalone code review (context: defects in undo, filtering, export, recovery and the admin screen). Schema 9 (InnoDB for every plugin table; no column change).
+
+- Undo of Manage stock now puts back the stock quantity, backorders, low-stock threshold and stock status WooCommerce changed on save; the preview warns that switching stock management off clears quantities.
+- Undo puts a regular and sale price back as a valid pair, so an original sale price is restored.
+- Stock status changes on products whose stock is managed are skipped with a plain reason instead of being reported as changed.
+- The Regular price filter and sort use the regular price the table shows, also for products on sale.
+- Date filters use the site's own day; drafts without a GMT date sort and filter by their site date.
+- Filtered CSV exports walk products by ID, so no row is repeated or dropped, and run faster.
+- A save that fails after WooCommerce stored the change is recorded as made (or uncertain), never as "not made", and is logged.
+- Retrying an interrupted change checks again for edits made since, products moved to the Bin and the user's rights, for the plugin's own fields and for add-on fields.
+- A product that stops its batch every time fails alone; products already changed stay counted, and products not reached say so.
+- Batches no longer stay "Being undone", finish early on a failed count, or skip parents after one parent sync fails.
+- Bulk change with nothing selected asks before selecting all matching products.
+- A second Apply waits until the running change ends; the running change can be stopped only after a confirmation.
+- Draft and Pending review always ask before Apply; settings text says "at or above".
+- History, audit and change exports send their security token in the request body.
+- Per-person display settings: rows per page and display options are remembered.
+- Multisite: saved views are kept per site; history pruning is scheduled on every site.
+- All plugin tables use InnoDB (schema 9); an add-on that fails while registering no longer affects other REST requests.
+
 ## [1.2.0] - 2026-10-04
 
 Private installation candidate; target-host acceptance is pending.

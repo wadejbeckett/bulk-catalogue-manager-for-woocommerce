@@ -520,6 +520,35 @@ describe( 'categories workspace', () => {
 		);
 	} );
 
+	it( 'puts focus back on the moved category after Move to…', async () => {
+		await renderTab();
+		fireEvent.click( screen.getByRole( 'button', { name: 'Expand all' } ) );
+		act( () => item( 'Knives' ).focus() );
+		fireEvent.keyDown( item( 'Knives' ), { key: 'F10', shiftKey: true } );
+		fireEvent.click( screen.getByRole( 'menuitem', { name: 'Move to…' } ) );
+		const dialog = screen.getByRole( 'dialog', { name: 'Move “Knives”' } );
+		fireEvent.change( within( dialog ).getByLabelText( 'Move into' ), {
+			target: { value: '8' },
+		} );
+		current = tree();
+		current[ 0 ].children = current[ 0 ].children.filter(
+			( child ) => child.id !== 7
+		);
+		current[ 1 ].children.push( node( 7, 'Knives', [], 100 ) );
+		await act( async () => {
+			fireEvent.click(
+				within( dialog ).getByRole( 'button', { name: 'Move' } )
+			);
+		} );
+		await waitFor( () =>
+			expect( screen.queryByRole( 'dialog' ) ).toBeNull()
+		);
+		await waitFor( () =>
+			expect( document.activeElement ).toBe( item( 'Knives' ) )
+		);
+		expect( item( 'Knives' ) ).toHaveAttribute( 'aria-level', '2' );
+	} );
+
 	it( 'searches, keeping each match’s path and marking the match', async () => {
 		await renderTab();
 		fireEvent.change(

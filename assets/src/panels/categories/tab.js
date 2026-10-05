@@ -74,6 +74,10 @@ export default function CategoriesTab( { settings } ) {
 	const [ action, setAction ] = useState( null );
 	const [ failure, setFailure ] = useState( null );
 	const [ fresh, setFresh ] = useState( null );
+	// When Move to… closes, focus goes back to the moved category in the tree
+	// once it has been read again, or to its new parent while that is shut,
+	// not to the menu item that opened the dialog, which is gone (SPEC §14).
+	const [ refocus, setRefocus ] = useState( null );
 
 	const { byId, nodes } = tree;
 	// Categories that are gone after a read are no longer chosen.
@@ -89,6 +93,26 @@ export default function CategoriesTab( { settings } ) {
 		() => visibleRows( nodes, expanded, kept ),
 		[ nodes, expanded, kept ]
 	);
+
+	useEffect( () => {
+		if ( ! refocus || moving || refocus.before === nodes ) {
+			return undefined;
+		}
+		const frame = window.requestAnimationFrame( () => {
+			const doc = window.document;
+			const target =
+				doc.getElementById( `bulkcat-cat-${ refocus.id }` ) ||
+				( refocus.parent
+					? doc.getElementById( `bulkcat-cat-${ refocus.parent }` )
+					: null ) ||
+				doc.querySelector( '[role="treeitem"][tabindex="0"]' );
+			if ( target ) {
+				target.focus();
+				setRefocus( null );
+			}
+		} );
+		return () => window.cancelAnimationFrame( frame );
+	}, [ refocus, moving, nodes ] );
 
 	const reveal = useCallback(
 		( ids ) =>
@@ -203,6 +227,9 @@ export default function CategoriesTab( { settings } ) {
 	const move = async ( id, parent, position ) => {
 		setFailure( null );
 		const name = byId.get( id )?.node.name || '';
+		setRefocus( ( was ) =>
+			was && was.before === nodes ? was : { id, parent, before: nodes }
+		);
 		try {
 			await moveCategory( id, parent, position );
 			reveal( parent ? [ parent, id ] : [ id ] );
@@ -540,7 +567,10 @@ export default function CategoriesTab( { settings } ) {
 					tree={ tree }
 					id={ moving[ 0 ] }
 					onMove={ move }
-					onClose={ () => setMoving( null ) }
+					onClose={ () => {
+						setRefocus( ( was ) => was || { id: moving[ 0 ] } );
+						setMoving( null );
+					} }
 				/>
 			) }
 			{ moving?.length > 1 && (
@@ -548,7 +578,10 @@ export default function CategoriesTab( { settings } ) {
 					tree={ tree }
 					ids={ moving }
 					onMove={ ( id, parent ) => move( id, parent ) }
-					onClose={ () => setMoving( null ) }
+					onClose={ () => {
+						setRefocus( ( was ) => was || { id: moving[ 0 ] } );
+						setMoving( null );
+					} }
 				/>
 			) }
 			{ ActionDialog && (

@@ -219,6 +219,7 @@ export function panelState( facts ) {
  * @param {Function}      props.onFinished        Receives the finished batch's report (T84).
  * @param {Function}      props.onReview          Open Review selected products, or null.
  * @param {Function}      props.onRenewSelection  Restore a selection whose lease lapsed, or null.
+ * @param {Element}       props.emptyPrompt       What to show in place of the scope while nothing is selected (FRONTEND-1), or null.
  * @return {Element} Panel.
  */
 export default function BulkChangePanel( {
@@ -239,6 +240,7 @@ export default function BulkChangePanel( {
 	onFinished = null,
 	onReview = null,
 	onRenewSelection = null,
+	emptyPrompt = null,
 } ) {
 	const panelRef = useRef( null );
 	const headingRef = useRef( null );
@@ -579,11 +581,18 @@ export default function BulkChangePanel( {
 										'bulk-catalogue-manager-for-woocommerce'
 									) }
 						</h3>
-						<p className="bulkcat-bulk__big">
-							{ scopeLine(
-								batch && applied ? applied : selection
-							) }
-						</p>
+						{ ! batch &&
+						emptyPrompt &&
+						count < 1 &&
+						! selection?.waiting ? (
+							emptyPrompt
+						) : (
+							<p className="bulkcat-bulk__big">
+								{ scopeLine(
+									batch && applied ? applied : selection
+								) }
+							</p>
+						) }
 						{ ! batch && (
 							<p className="bulkcat-bulk__acts">
 								{ onReview && (

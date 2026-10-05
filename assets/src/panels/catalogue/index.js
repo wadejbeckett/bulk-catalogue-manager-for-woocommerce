@@ -62,6 +62,7 @@ import {
 	withFilters,
 	withoutFilter,
 } from './toolbar';
+import NothingSelected from './selection/nothing-selected';
 import {
 	SelectedProducts,
 	SelectionBar,
@@ -351,36 +352,25 @@ export function CatalogueGrid( {
 			openBulk( [ step ] );
 		}
 	};
-	// T75: the header's Bulk change opens the panel on the selection, or,
-	// with nothing selected, on every product matching the view once the
-	// server has captured them (T84: added to the selection, like Select
-	// all matching).
+	// T75: the header's Bulk change opens the panel on the selection. With
+	// nothing selected it opens on nothing and asks (FRONTEND-1, ticket 20):
+	// Select all matching is offered there, never done on the operator's
+	// behalf.
 	const shell = useContext( ShellContext );
 	const { bulkRequested, consumeBulk } = shell;
-	const mounted = useRef( true );
-	useEffect(
-		() => () => {
-			mounted.current = false;
-		},
-		[]
-	);
 	useEffect( () => {
 		if ( ! bulkRequested ) {
 			return;
 		}
 		consumeBulk();
-		if ( hasSelection ) {
-			openBulk();
-		} else {
-			selection.selectAllMatching().then( ( saved ) => {
-				if ( saved && mounted.current ) {
-					openBulk();
-				}
-			} );
-		}
-		// openBulk reads the selection at the time of the request.
+		openBulk();
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [ bulkRequested ] );
+	// The view on screen has settled once the saved views have arrived and
+	// any default view is applied: until then the start view is not the one
+	// the operator works on (FRONTEND-1).
+	const [ viewSettled, setViewSettled ] = useState( false );
+	const onViewsReady = useCallback( () => setViewSettled( true ), [] );
 	const viewCategory = !! filterArgs( view.filters, descriptors )[
 		CATEGORY_FILTER
 	];
@@ -519,6 +509,24 @@ export function CatalogueGrid( {
 		/>
 	);
 	const filtered = isFiltered( view ) || !! category;
+	// FRONTEND-1: what the panel says while nothing is selected; the count
+	// is the settled view's, read for exactly the query on screen.
+	const counted =
+		viewSettled &&
+		catalogue.hasLoaded &&
+		! catalogue.isLoading &&
+		! catalogue.error &&
+		catalogue.loadedKey === JSON.stringify( catalogue.query );
+	const emptyPrompt = (
+		<NothingSelected
+			ready={ counted }
+			total={ catalogue.pagination.totalItems }
+			filtered={ filtered }
+			mode={ modeOf( view ) }
+			onSelect={ selection.selectAllMatching }
+			disabled={ selection.status === 'uncertain' }
+		/>
+	);
 	if (
 		catalogue.hasLoaded &&
 		! catalogue.isLoading &&
@@ -558,6 +566,7 @@ export function CatalogueGrid( {
 						category={ category }
 						baseView={ baseView }
 						onApply={ applyView }
+						onReady={ onViewsReady }
 					/>
 					<div className="bulkcat-catalogue__toolbar">
 						<LayoutSwitch view={ view } onChangeView={ setView } />
@@ -682,6 +691,7 @@ export function CatalogueGrid( {
 					onRenewSelection={
 						bulk.live ? () => session.renewAll() : null
 					}
+					emptyPrompt={ bulk.live ? emptyPrompt : null }
 					onUndo={
 						toHistory ? ( id ) => toHistory( id, true ) : null
 					}

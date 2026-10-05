@@ -305,6 +305,7 @@ function ViewMenu( { item, isFirst, isLast, isOnScreen, onAction } ) {
  * @param {Function}    props.onApply      Called with ( view, category ) to show a view.
  * @param {boolean}     props.applyDefault Apply the default view once the list arrives.
  * @param {Object}      props.saved        useSavedViews() result, for tests or a shared hook.
+ * @param {Function}    props.onReady      Called once the list has arrived and any default view is applied (FRONTEND-1).
  * @return {Element} Row.
  */
 export default function SavedViewsBar( {
@@ -315,6 +316,7 @@ export default function SavedViewsBar( {
 	onApply,
 	applyDefault = true,
 	saved: given,
+	onReady = null,
 } ) {
 	const own = useSavedViews();
 	const saved = given || own;
@@ -324,6 +326,8 @@ export default function SavedViewsBar( {
 	const opened = useRef( false );
 	const apply = useRef( onApply );
 	apply.current = onApply;
+	const ready = useRef( onReady );
+	ready.current = onReady;
 
 	const { hasLoaded, items, defaultId } = saved;
 	useEffect( () => {
@@ -336,6 +340,7 @@ export default function SavedViewsBar( {
 			const state = fromSaved( first, baseView );
 			apply.current( state.view, state.category );
 		}
+		ready.current?.();
 	}, [ hasLoaded, items, defaultId, applyDefault, baseView ] );
 
 	const ids = items.map( ( item ) => item.id );

@@ -29,6 +29,7 @@ import BulkChangePanel from './panels/bulk';
 | `onFinished` | no | Called once with the batch's final report when the Done step sees it finish (T84: the catalogue clears the applied selection only on full success). |
 | `onReview` | no | Opens Review selected products; shown in the scope card when given. |
 | `onRenewSelection` | no | Restores a snapshot whose lease lapsed (`bulkcat_selection_renew_required`), offered as **Restore the selection**. |
+| `emptyPrompt` | no | Shown in place of the scope while nothing is selected: the catalogue's prompt with **Select all matching** (FRONTEND-1). The panel never selects anything by itself. |
 | `categories` | no | The `GET /categories` tree (`[ { id, name, children } ]`), for the categories picker of add, remove and replace. |
 | `tags` | no | Tags as `[ { id, name } ]`, for the tags picker. |
 | `shippingClasses` | no | Shipping classes as `[ { id, name } ]`, for **Set a value** on Shipping class. |

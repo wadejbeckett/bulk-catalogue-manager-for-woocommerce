@@ -50,7 +50,7 @@ export function useRegistry() {
  * @param {Array<Object>} descriptors  Registry descriptors.
  * @param {Object}        extra        Further filter arguments (the category panel's).
  * @param {Function}      onChangeView Update the current page after it empties.
- * @return {Object} Current page state, read-only refetch/reconcile and pending-row controls.
+ * @return {Object} Current page state (`loadedKey`: the query, as JSON, the rows on screen answer), read-only refetch/reconcile and pending-row controls.
  */
 export function useCatalogue( view, descriptors, extra = NONE, onChangeView ) {
 	const query = useMemo(
@@ -66,6 +66,8 @@ export function useCatalogue( view, descriptors, extra = NONE, onChangeView ) {
 	const [ isLoading, setLoading ] = useState( true );
 	const [ hasLoaded, setLoaded ] = useState( false );
 	const [ error, setError ] = useState( null );
+	// The query the rows and total on screen answer (FRONTEND-1).
+	const [ loadedKey, setLoadedKey ] = useState( null );
 	const [ pending, setPendingIds ] = useState( () => new Set() );
 	const latest = useRef( 0 );
 	const current = useRef( { key, onChangeView } );
@@ -112,6 +114,7 @@ export function useCatalogue( view, descriptors, extra = NONE, onChangeView ) {
 						Array.isArray( answer?.items ) ? answer.items : []
 					);
 					setPagination( paginationNow );
+					setLoadedKey( wanted );
 					setError( null );
 					setLoaded( true );
 					return { status: 'read', pagination: paginationNow };
@@ -176,6 +179,7 @@ export function useCatalogue( view, descriptors, extra = NONE, onChangeView ) {
 		pagination,
 		isLoading,
 		hasLoaded,
+		loadedKey,
 		error,
 		refetch,
 		reconcile,

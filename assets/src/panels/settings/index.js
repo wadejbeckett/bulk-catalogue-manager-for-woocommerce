@@ -260,6 +260,7 @@ export default function Settings() {
 										value={ draft[ setting.key ] }
 										error={ errors[ setting.key ] || '' }
 										disabled={ readOnly || busy }
+										readOnly={ readOnly }
 										onChange={ ( value ) =>
 											update( setting.key, value )
 										}

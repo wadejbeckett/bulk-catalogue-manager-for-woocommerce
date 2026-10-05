@@ -11,6 +11,21 @@
 	margin-bottom: 20px;
 }
 
+// 1.3.4: read-only, each setting is its label and its value in words.
+.bulkcat-settings__readonly {
+	margin: 0;
+
+	dt {
+		font-weight: 600;
+		color: #1d2327;
+	}
+
+	dd {
+		margin: 2px 0 0;
+		color: #1d2327;
+	}
+}
+
 .bulkcat-settings__help {
 	margin: 4px 0 0;
 	color: #50575e;

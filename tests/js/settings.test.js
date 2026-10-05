@@ -477,13 +477,70 @@ describe( 'Settings tab', () => {
 			)
 		).toBeTruthy();
 		expect( screen.queryByRole( 'button', { name: /Sav/ } ) ).toBeNull();
-		const controls = document.querySelectorAll(
-			'.bulkcat-settings__form input, .bulkcat-settings__form select'
+	} );
+
+	it( 'shows each read-only setting as its value in words, not as a greyed-out control (1.3.4)', async () => {
+		await renderTab( {
+			...FIXTURE,
+			values: { ...VALUES, remove_data_on_delete: true },
+			canEdit: false,
+		} );
+		// Nothing that looks like a switch someone has turned off.
+		expect(
+			document.querySelectorAll(
+				'.bulkcat-settings__form input, .bulkcat-settings__form select, .bulkcat-settings__form button'
+			)
+		).toHaveLength( 0 );
+		const value = ( key ) => {
+			const row = document.querySelector( `[data-setting="${ key }"]` );
+			const setting = FIXTURE.settings.find(
+				( each ) => each.key === key
+			);
+			// The label names the value it reads, so a screen reader hears both.
+			const term = within( row ).getByText( setting.label );
+			const definition = row.querySelector( 'dd' );
+			expect( term.tagName ).toBe( 'DT' );
+			expect( definition ).not.toBeNull();
+			return definition.textContent;
+		};
+		expect( value( 'administrators_only' ) ).toBe(
+			'Shop managers and administrators'
 		);
-		expect( controls.length ).toBeGreaterThan( 13 );
-		controls.forEach( ( control ) =>
-			expect( control.disabled ).toBe( true )
+		expect( value( 'rows_per_page' ) ).toBe( '25' );
+		expect( value( 'category_panel' ) ).toBe( 'On' );
+		expect( value( 'variations_status' ) ).toBe( 'On' );
+		expect( value( 'variations_price' ) ).toBe( 'Off' );
+		expect( value( 'confirm_threshold' ) ).toBe( '200 rows' );
+		expect( value( 'batch_size' ) ).toBe( '50 products' );
+		expect( value( 'history_days' ) ).toBe( '90 days' );
+		expect( value( 'csv_separator' ) ).toBe( 'Comma' );
+		expect( value( 'remove_data_on_delete' ) ).toBe( 'On' );
+		// Help and warnings still read as they do for an administrator.
+		FIXTURE.settings.forEach( ( setting ) =>
+			expect( screen.getByText( setting.help ) ).toBeTruthy()
 		);
+		expect(
+			within(
+				document.querySelector(
+					'[data-setting="remove_data_on_delete"]'
+				)
+			).getByText(
+				'When this is on, deleting the plugin permanently removes its settings, history and undo records.'
+			)
+		).toBeTruthy();
+		expectNoRawText();
+	} );
+
+	it( 'reads a history kept indefinitely as its own words (1.3.4)', async () => {
+		await renderTab( {
+			...FIXTURE,
+			values: { ...VALUES, history_days: 0 },
+			canEdit: false,
+		} );
+		expect(
+			document.querySelector( '[data-setting="history_days"] dd' )
+				.textContent
+		).toBe( 'Indefinitely' );
 	} );
 
 	it( 'offers a retry when the settings cannot be loaded', async () => {

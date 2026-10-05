@@ -78,6 +78,13 @@ import {
 	SavedViewsBar,
 } from './views';
 import { switchFieldId } from './views/cards';
+// Ticket 19: personal display choices and rows per page.
+import { applyDisplay, displayOf, sameDisplay } from './views/display-state';
+import PageSizeControl from './views/page-size';
+import {
+	useDisplayPreferences,
+	useRememberDisplay,
+} from './views/use-display-preferences';
 import { MODES, modeOf } from './variations';
 import './style.scss';
 
@@ -228,6 +235,8 @@ export function AppliedProgress( {
  * @param {Object}   props.registry      GET /fields answer.
  * @param {Object}   props.settings      Localised settings.
  * @param {Object}   props.initialView   View overrides to open with (a saved view, tests).
+ * @param {Object}   props.personal      The user's stored display choices, or null (ticket 19).
+ * @param {boolean}  props.personalRead  Whether the stored choices have been read.
  * @param {Function} props.onEditDetails Open the detail panel (T47).
  * @return {Element} Grid.
  */
@@ -235,6 +244,8 @@ export function CatalogueGrid( {
 	registry,
 	settings: localised,
 	initialView,
+	personal = null,
+	personalRead = false,
 	onEditDetails,
 } ) {
 	const settings = useCurrentSettings( localised );
@@ -253,10 +264,29 @@ export function CatalogueGrid( {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 		[ registry ]
 	);
+	// Ticket 19: the user's own display choices over the starting view.
+	const known = useMemo(
+		() => descriptors.map( ( field ) => field.key ),
+		[ descriptors ]
+	);
 	const [ view, setView ] = useState( () => ( {
-		...baseView,
+		...applyDisplay( baseView, personal, known ),
 		...initialView,
 	} ) );
+	// The display the screen set itself (opening, default view), which the
+	// stored choices may replace when they arrive; a user's own change is kept.
+	const ownDisplay = useRef( displayOf( view ) );
+	useEffect( () => {
+		if ( ! personal ) {
+			return;
+		}
+		setView( ( current ) =>
+			sameDisplay( displayOf( current ), ownDisplay.current )
+				? applyDisplay( current, personal, known )
+				: current
+		);
+	}, [ personal, known ] );
+	const displayMemory = useRememberDisplay( view, personalRead, personal );
 	const [ category, setCategory ] = useState( null );
 	const [ sentence, setSentence ] = useState( '' );
 	// T41, T42: the bulk panel opens on the selection, with any quick action's step.
@@ -418,12 +448,20 @@ export function CatalogueGrid( {
 	// T52: a saved or built-in view sets the view and the category panel.
 	const { byId } = tree;
 	const applyView = useCallback(
-		( next, value ) => {
-			setView( next );
+		( next, value, how = {} ) => {
+			// Ticket 19: the default view opening the screen keeps the user's own
+			// display choices; a view picked deliberately brings its own.
+			const shown = how.opening
+				? applyDisplay( next, personal, known )
+				: next;
+			if ( how.opening ) {
+				ownDisplay.current = displayOf( shown );
+			}
+			setView( shown );
 			setCategory( value || null );
 			setSentence( value ? categorySentence( value, byId ) : '' );
 		},
-		[ byId ]
+		[ byId, personal, known ]
 	);
 	// T51: the cards' Shown in shop and search slot draws the switch field's own cell.
 	const renderSwitch = useMemo( () => {
@@ -561,11 +599,25 @@ export function CatalogueGrid( {
 					/>
 					<div className="bulkcat-catalogue__toolbar">
 						<LayoutSwitch view={ view } onChangeView={ setView } />
+						<PageSizeControl
+							view={ view }
+							onChangeView={ setView }
+						/>
 						{ shell.exportSlot
 							? createPortal( exportControl, shell.exportSlot )
 							: exportControl }
 					</div>
 				</div>
+				{ displayMemory.error && (
+					<ErrorNotice
+						message={ __(
+							'Your display choices could not be saved, so they may not be kept next time.',
+							'bulk-catalogue-manager-for-woocommerce'
+						) }
+						error={ displayMemory.error }
+						onRetry={ displayMemory.retry }
+					/>
+				) }
 				{ nativeReturn.error && (
 					<ErrorNotice
 						message={ __(
@@ -712,6 +764,7 @@ export function CatalogueGrid( {
  */
 export default function Catalogue( { settings, initialView, onEditDetails } ) {
 	const { registry, error, retry } = useRegistry();
+	const preferences = useDisplayPreferences();
 	return (
 		<div className="bulkcat-catalogue">
 			{ error && (
@@ -729,6 +782,8 @@ export default function Catalogue( { settings, initialView, onEditDetails } ) {
 					registry={ registry }
 					settings={ settings }
 					initialView={ initialView }
+					personal={ preferences.display }
+					personalRead={ preferences.hasLoaded }
 					onEditDetails={ onEditDetails }
 				/>
 			) }

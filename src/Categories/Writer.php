@@ -76,6 +76,32 @@ final class Writer {
 	];
 
 	/**
+	 * Journal property per native category detail kept in term meta, as
+	 * WooCommerce's own category screen stores them (ticket 22): display type
+	 * ('' Default, products, subcategories, both) and the image attachment id
+	 * (0 when removed).
+	 */
+	public const META = [
+		'display_type' => 'term_display_type',
+		'thumbnail_id' => 'term_thumbnail_id',
+	];
+
+	/**
+	 * Display types WooCommerce stores; '' is Default.
+	 */
+	public const DISPLAY_TYPES = [ '', 'products', 'subcategories', 'both' ];
+
+	/**
+	 * Refusal code for a display type WooCommerce does not offer.
+	 */
+	public const INVALID_DETAIL = 'bulkcat_category_detail_invalid';
+
+	/**
+	 * Refusal code for an image that is not a usable image attachment.
+	 */
+	public const INVALID_IMAGE = 'bulkcat_category_image_invalid';
+
+	/**
 	 * Journal property of the tree order.
 	 */
 	public const ORDER_PROP = 'term_order';
@@ -170,6 +196,21 @@ final class Writer {
 	}
 
 	/**
+	 * One category's details as the write routes answer them (the tree's node
+	 * plus description, display type and image), or not found.
+	 *
+	 * @param int $id Term id.
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function details_of( int $id ): array|\WP_Error {
+		$terms = CategoryTree::terms();
+		if ( null === self::find( $terms, $id ) ) {
+			return self::not_found();
+		}
+		return self::item( $id );
+	}
+
+	/**
 	 * Create a category.
 	 *
 	 * @param array<string, mixed> $input   name, and optionally slug, description and parent.
@@ -186,6 +227,10 @@ final class Writer {
 		}
 		$refused = $slug instanceof \WP_Error ? $slug : self::parent_refusal( $tree, 0, $parent_id );
 		$refused = $refused ?? self::name_refusal( $tree, 0, $parent_id, $name ) ?? self::slug_refusal( $tree, 0, $slug );
+		$details = self::details( $input, $user_id );
+		if ( null === $refused && $details instanceof \WP_Error ) {
+			$refused = $details;
+		}
 		if ( null !== $refused ) {
 			return $refused;
 		}
@@ -208,7 +253,12 @@ final class Writer {
 			wp_delete_term( $id, Counts::TAXONOMY );
 			return $batch_id;
 		}
-		return $this->complete( $batch_id, $id, array_fill_keys( array_values( self::PROPS ), null ), [] );
+		$before = array_fill_keys( array_values( self::PROPS ), null );
+		foreach ( $details as $key => $value ) {
+			$before[ self::META[ $key ] ] = null;
+			update_term_meta( $id, $key, $value );
+		}
+		return $this->complete( $batch_id, $id, $before, [] );
 	}
 
 	/**
@@ -248,6 +298,10 @@ final class Writer {
 		if ( array_key_exists( 'parent', $input ) && null !== $input['parent'] ) {
 			$wanted['parent'] = (int) $input['parent'];
 		}
+		$details = self::details( $input, $user_id );
+		if ( $details instanceof \WP_Error ) {
+			return $details;
+		}
 
 		$parent_id = $wanted['parent'] ?? $current['parent'];
 		$regroup   = array_key_exists( 'parent', $wanted ) && $parent_id !== $tree->node( $id )['parent'];
@@ -262,7 +316,7 @@ final class Writer {
 			return $refused;
 		}
 
-		$batch_id = $this->factory->open( $user_id, [ self::step( self::EDIT, $wanted ) ], [ [ $id, self::OBJECT_TYPE ] ], self::SOURCE );
+		$batch_id = $this->factory->open( $user_id, [ self::step( self::EDIT, $wanted + $details ) ], [ [ $id, self::OBJECT_TYPE ] ], self::SOURCE );
 		if ( $batch_id instanceof \WP_Error ) {
 			return $batch_id;
 		}
@@ -270,9 +324,17 @@ final class Writer {
 		foreach ( array_keys( $wanted ) as $key ) {
 			$before[ self::PROPS[ $key ] ] = $current[ $key ];
 		}
+		foreach ( array_keys( $details ) as $key ) {
+			$before[ self::META[ $key ] ] = $current[ $key ];
+		}
 		$updated = [] === $wanted ? true : wp_update_term( $id, Counts::TAXONOMY, wp_slash( $wanted ) );
 		if ( is_wp_error( $updated ) ) {
 			return $this->complete( $batch_id, $id, $before, [], $updated );
+		}
+		foreach ( $details as $key => $value ) {
+			if ( $value !== $current[ $key ] ) {
+				update_term_meta( $id, $key, $value );
+			}
 		}
 		return $this->complete( $batch_id, $id, $before, $regroup ? self::place( $tree, $id, $parent_id, null ) : [] );
 	}
@@ -374,7 +436,7 @@ final class Writer {
 		$after   = is_object( $term ) ? self::values( $term ) : [];
 		$entries = [];
 		foreach ( $before as $prop => $old ) {
-			$key       = (string) array_search( $prop, self::PROPS, true );
+			$key       = (string) array_search( $prop, self::PROPS + self::META, true );
 			$entries[] = match ( true ) {
 				null !== $failure                     => Result::failed( $prop, $old, self::not_saved( $failure )->get_error_message(), self::NOT_SAVED ),
 				( $after[ $key ] ?? null ) === $old => Result::already( $prop, $old ),
@@ -445,11 +507,19 @@ final class Writer {
 	 * @param int $id Term id.
 	 * @return array<string, mixed>
 	 */
-	private static function item( int $id ): array {
+	public static function item( int $id ): array {
 		$terms = CategoryTree::terms();
 		$term  = self::find( $terms, $id );
+		$meta  = null === $term ? [
+			'display_type' => '',
+			'thumbnail_id' => 0,
+		] : self::values( $term );
+		$url   = $meta['thumbnail_id'] > 0 ? wp_get_attachment_image_url( $meta['thumbnail_id'], 'thumbnail' ) : false;
 		return ( CategoryTree::tree_of( $terms )->node( $id ) ?? [ 'id' => $id ] ) + [
-			'description' => null === $term ? '' : (string) ( $term->description ?? '' ),
+			'description'   => null === $term ? '' : (string) ( $term->description ?? '' ),
+			'display_type'  => $meta['display_type'],
+			'thumbnail_id'  => $meta['thumbnail_id'],
+			'thumbnail_url' => is_string( $url ) ? $url : null,
 		];
 	}
 
@@ -636,12 +706,63 @@ final class Writer {
 	 * @return array{name: string, slug: string, description: string, parent: int}
 	 */
 	private static function values( object $term ): array {
+		$id = (int) ( $term->term_id ?? 0 );
 		return [
-			'name'        => (string) ( $term->name ?? '' ),
-			'slug'        => (string) ( $term->slug ?? '' ),
-			'description' => (string) ( $term->description ?? '' ),
-			'parent'      => (int) ( $term->parent ?? 0 ),
+			'name'         => (string) ( $term->name ?? '' ),
+			'slug'         => (string) ( $term->slug ?? '' ),
+			'description'  => (string) ( $term->description ?? '' ),
+			'parent'       => (int) ( $term->parent ?? 0 ),
+			'display_type' => $id > 0 ? (string) get_term_meta( $id, 'display_type', true ) : '',
+			'thumbnail_id' => $id > 0 ? max( 0, (int) get_term_meta( $id, 'thumbnail_id', true ) ) : 0,
 		];
+	}
+
+	/**
+	 * The native details a request asks for, checked: a display type
+	 * WooCommerce offers, and an image the user may choose (an existing image
+	 * attachment they can read, with permission to use the media library) or
+	 * 0 to remove it. Removing needs no media permission.
+	 *
+	 * @param array<string, mixed> $input   Request input.
+	 * @param int                  $user_id The user the change is for.
+	 * @return array<string, string|int>|\WP_Error
+	 */
+	private static function details( array $input, int $user_id ): array|\WP_Error {
+		$details = [];
+		if ( array_key_exists( 'display_type', $input ) && null !== $input['display_type'] ) {
+			if ( ! is_string( $input['display_type'] ) || ! in_array( $input['display_type'], self::DISPLAY_TYPES, true ) ) {
+				return Refusal::invalid( self::INVALID_DETAIL, __( 'Choose a display type from the list: Default, Products, Subcategories, or Both.', 'bulk-catalogue-manager-for-woocommerce' ) );
+			}
+			$details['display_type'] = $input['display_type'];
+		}
+		if ( array_key_exists( 'thumbnail_id', $input ) && null !== $input['thumbnail_id'] ) {
+			$image = $input['thumbnail_id'];
+			if ( ! is_int( $image ) && ! ( is_string( $image ) && ctype_digit( $image ) ) ) {
+				return self::invalid_image();
+			}
+			$image = (int) $image;
+			if ( $image < 0 ) {
+				return self::invalid_image();
+			}
+			if ( $image > 0 ) {
+				if ( ! user_can( $user_id, 'upload_files' ) || ! user_can( $user_id, 'read_post', $image ) ) {
+					return Refusal::create( self::INVALID_IMAGE, __( 'Choosing a category image needs permission to use the media library. Ask an administrator, or leave the image as it is.', 'bulk-catalogue-manager-for-woocommerce' ), 403 );
+				}
+				$post = get_post( $image );
+				if ( null === $post || 'attachment' !== $post->post_type || ! str_starts_with( (string) ( $post->post_mime_type ?? '' ), 'image/' ) ) {
+					return self::invalid_image();
+				}
+			}
+			$details['thumbnail_id'] = $image;
+		}
+		return $details;
+	}
+
+	/**
+	 * The refusal of an image that cannot be used.
+	 */
+	private static function invalid_image(): \WP_Error {
+		return Refusal::invalid( self::INVALID_IMAGE, __( 'That image could not be found in the media library, or it is not an image. Choose another image.', 'bulk-catalogue-manager-for-woocommerce' ) );
 	}
 
 	/**

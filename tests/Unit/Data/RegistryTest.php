@@ -91,6 +91,8 @@ final class RegistryTest extends TestCase {
 		'bulkcat_too_many_views'                 => 'REST refusal code for saving a 51st view',
 		'bulkcat_invalid_display'                => 'REST refusal code for display preferences that break the schema; nothing is saved',
 		'bulkcat_display_unsaved'                => 'REST refusal code for display preferences WordPress did not store',
+		'bulkcat_category_detail_invalid'        => 'REST refusal code for a category display type WooCommerce does not offer; nothing is saved',
+		'bulkcat_category_image_invalid'         => 'REST refusal code for a category image that is not a usable media library image; nothing is saved',
 		'bulkcat_view_not_found'                 => 'REST refusal code for a view id not in the current user\'s bulkcat_views',
 		'bulkcat_availability_conflict'          => 'result and refusal code for Published on a product whose status was changed elsewhere while Off (SPEC §5.5); nothing is stored under it',
 		'bulkcat_changed_since'                  => 'result code of a queued undo item whose product changed after the undo was planned (SPEC §9.4); nothing is stored under it',

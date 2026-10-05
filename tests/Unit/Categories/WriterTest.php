@@ -83,13 +83,16 @@ final class WriterTest extends TestCase {
 		$this->assertSame( [ 'item', 'batch_id', 'status', 'results' ], array_keys( $result ) );
 		$this->assertSame(
 			[
-				'id'          => 12,
-				'name'        => 'Hats',
-				'slug'        => 'hats',
-				'description' => 'Every hat',
-				'parent'      => 1,
-				'depth'       => 1,
-				'order'       => 0,
+				'id'            => 12,
+				'name'          => 'Hats',
+				'slug'          => 'hats',
+				'description'   => 'Every hat',
+				'parent'        => 1,
+				'depth'         => 1,
+				'order'         => 0,
+				'display_type'  => '',
+				'thumbnail_id'  => 0,
+				'thumbnail_url' => null,
 			],
 			$result['item']
 		);
@@ -259,13 +262,16 @@ final class WriterTest extends TestCase {
 		$this->assertSame( 'complete', $result['status'] );
 		$this->assertSame(
 			[
-				'id'          => 3,
-				'name'        => 'Tops',
-				'slug'        => 'tops',
-				'description' => 'Shirts and more',
-				'parent'      => 2,
-				'depth'       => 2,
-				'order'       => 0,
+				'id'            => 3,
+				'name'          => 'Tops',
+				'slug'          => 'tops',
+				'description'   => 'Shirts and more',
+				'parent'        => 2,
+				'depth'         => 2,
+				'order'         => 0,
+				'display_type'  => '',
+				'thumbnail_id'  => 0,
+				'thumbnail_url' => null,
 			],
 			$result['item']
 		);
@@ -488,5 +494,89 @@ final class WriterTest extends TestCase {
 		}
 		$this->assertInstanceOf( \InvalidArgumentException::class, $thrown );
 		$this->assertSame( [], $GLOBALS['wpdb']->writes );
+	}
+
+	/**
+	 * An image attachment the user may use.
+	 */
+	private static function image( int $id, string $mime = 'image/jpeg' ): void {
+		$GLOBALS['bulkcat_test']['posts'][ $id ]                                  = [
+			'post_type'      => 'attachment',
+			'post_mime_type' => $mime,
+			'post_status'    => 'inherit',
+		];
+		$GLOBALS['bulkcat_test']['meta'][ $id ]['_wp_attached_file']              = '2026/10/img-' . $id . '.jpg';
+		$GLOBALS['bulkcat_test']['user_caps'][ self::USER ]['upload_files']       = true;
+		$GLOBALS['bulkcat_test']['user_caps'][ self::USER ][ 'read_post:' . $id ] = true;
+	}
+
+	public function test_an_edit_sets_the_native_display_type_and_image_and_journals_them(): void {
+		self::image( 501 );
+		$result = self::writer()->update(
+			3,
+			[
+				'display_type' => 'subcategories',
+				'thumbnail_id' => 501,
+			],
+			self::USER
+		);
+		$this->assertTrue( is_array( $result ), $result instanceof \WP_Error ? $result->get_error_message() : '' );
+		$this->assertSame( 'complete', $result['status'] );
+		$this->assertSame( 'subcategories', $GLOBALS['bulkcat_test']['term_meta'][3]['display_type'] );
+		$this->assertSame( 501, $GLOBALS['bulkcat_test']['term_meta'][3]['thumbnail_id'] );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['updated_terms'] ?? [], 'Only native term meta changes; the term itself is untouched.' );
+		$this->assertSame(
+			[
+				[ 3, 'term_display_type', '', 'subcategories', 'applied' ],
+				[ 3, 'term_thumbnail_id', 0, 501, 'applied' ],
+			],
+			$this->store->journal()
+		);
+		$this->assertSame( 'subcategories', $result['item']['display_type'] );
+		$this->assertSame( 501, $result['item']['thumbnail_id'] );
+		$this->assertStringContainsString( 'img-501', (string) $result['item']['thumbnail_url'] );
+
+		// Removing the image stores 0, as the native category form does; Default display stores ''.
+		$result = self::writer()->update(
+			3,
+			[
+				'display_type' => '',
+				'thumbnail_id' => 0,
+			],
+			self::USER
+		);
+		$this->assertSame( 'complete', $result['status'] );
+		$this->assertSame( 0, $GLOBALS['bulkcat_test']['term_meta'][3]['thumbnail_id'] );
+		$this->assertSame( '', $GLOBALS['bulkcat_test']['term_meta'][3]['display_type'] );
+		$this->assertNull( $result['item']['thumbnail_url'] );
+	}
+
+	public function test_a_display_type_or_image_that_is_not_allowed_is_refused_with_nothing_written(): void {
+		$this->assert_refused( self::writer()->update( 3, [ 'display_type' => 'grid' ], self::USER ), Writer::INVALID_DETAIL );
+		self::image( 502, 'application/pdf' );
+		$GLOBALS['bulkcat_test']['user_caps'][ self::USER ]['read_post:999'] = true;
+		$this->assert_refused( self::writer()->update( 3, [ 'thumbnail_id' => 999 ], self::USER ), Writer::INVALID_IMAGE );
+		$this->assert_refused( self::writer()->update( 3, [ 'thumbnail_id' => 502 ], self::USER ), Writer::INVALID_IMAGE );
+		self::image( 503 );
+		unset( $GLOBALS['bulkcat_test']['user_caps'][ self::USER ]['upload_files'] );
+		$this->assert_refused( self::writer()->update( 3, [ 'thumbnail_id' => 503 ], self::USER ), Writer::INVALID_IMAGE, 403 );
+		$this->assert_refused( self::writer()->update( 3, [ 'thumbnail_id' => -4 ], self::USER ), Writer::INVALID_IMAGE );
+	}
+
+	public function test_a_create_can_set_the_display_type_and_image(): void {
+		self::image( 504 );
+		$result = self::writer()->create(
+			[
+				'name'         => 'Hats',
+				'display_type' => 'both',
+				'thumbnail_id' => 504,
+			],
+			self::USER
+		);
+		$this->assertTrue( is_array( $result ), $result instanceof \WP_Error ? $result->get_error_message() : '' );
+		$this->assertSame( 'both', $GLOBALS['bulkcat_test']['term_meta'][12]['display_type'] );
+		$this->assertSame( 504, $GLOBALS['bulkcat_test']['term_meta'][12]['thumbnail_id'] );
+		$this->assertContains( [ 12, 'term_display_type', null, 'both', 'applied' ], $this->store->journal() );
+		$this->assertContains( [ 12, 'term_thumbnail_id', null, 504, 'applied' ], $this->store->journal() );
 	}
 }

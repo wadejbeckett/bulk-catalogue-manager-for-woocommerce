@@ -100,11 +100,13 @@ final class CategoriesWriteRouteTest extends TestCase {
 		$this->assertSame( 'bulkcat-category', call_user_func( $create['schema'] )['title'], 'The read keeps its schema.' );
 		$this->assertSame( [ Access::class, 'can_manage_terms' ], $create[1]['permission_callback'] );
 		$this->assertTrue( $create[1]['args']['name']['required'] );
-		$this->assertSame( [ 'name', 'slug', 'description', 'parent' ], array_keys( $create[1]['args'] ) );
+		$this->assertSame( [ 'name', 'slug', 'description', 'parent', 'display_type', 'thumbnail_id' ], array_keys( $create[1]['args'] ) );
 
 		$item = $routes[ '/bulkcat/v1' . CategoriesWriteController::ITEM_ROUTE ];
-		$this->assertSame( [ 'PATCH', [ Access::class, 'can_manage_terms' ] ], [ $item[0]['methods'], $item[0]['permission_callback'] ] );
-		$this->assertSame( [ 'id', 'name', 'slug', 'description', 'parent' ], array_keys( $item[0]['args'] ) );
+		$this->assertSame( [ 'GET', [ Access::class, 'can_manage_terms' ] ], [ $item[0]['methods'], $item[0]['permission_callback'] ], 'Ticket 22: one category\'s details for its editor.' );
+		$this->assertSame( [ 'id' ], array_keys( $item[0]['args'] ) );
+		$this->assertSame( [ 'PATCH', [ Access::class, 'can_manage_terms' ] ], [ $item[1]['methods'], $item[1]['permission_callback'] ] );
+		$this->assertSame( [ 'id', 'name', 'slug', 'description', 'parent', 'display_type', 'thumbnail_id' ], array_keys( $item[1]['args'] ) );
 		$move = $routes[ '/bulkcat/v1' . CategoriesWriteController::MOVE_ROUTE ];
 		$this->assertSame( [ 'POST', [ Access::class, 'can_manage_terms' ] ], [ $move[0]['methods'], $move[0]['permission_callback'] ] );
 		$this->assertSame( [ 'id', 'parent', 'position' ], array_keys( $move[0]['args'] ) );
@@ -116,7 +118,7 @@ final class CategoriesWriteRouteTest extends TestCase {
 			}
 		}
 		sort( $methods );
-		$this->assertSame( [ 'GET', 'PATCH', 'POST', 'POST' ], $methods );
+		$this->assertSame( [ 'GET', 'GET', 'PATCH', 'POST', 'POST' ], $methods );
 		$this->assertNotContains( 'DELETE', $methods, 'Deleting a category stays on the native screen (SPEC §2).' );
 		$this->assertSame( [], $GLOBALS['bulkcat_test']['wrong'] );
 	}
@@ -142,7 +144,7 @@ final class CategoriesWriteRouteTest extends TestCase {
 		$this->assertSame( 201, $response->get_status() );
 		$data = $response->get_data();
 		$this->assertSame( [ 'item', 'batch_id', 'status', 'results' ], array_keys( $data ) );
-		$this->assertSame( [ 'id', 'name', 'slug', 'description', 'parent', 'depth', 'order' ], array_keys( $data['item'] ) );
+		$this->assertSame( [ 'id', 'name', 'slug', 'description', 'parent', 'depth', 'order', 'display_type', 'thumbnail_id', 'thumbnail_url' ], array_keys( $data['item'] ) );
 		$this->assertSame( [ 12, 'Hats', 'hats', 6, 1 ], [ $data['item']['id'], $data['item']['name'], $data['item']['slug'], $data['item']['parent'], $data['item']['depth'] ] );
 		$this->assertSame( 'complete', $data['status'] );
 		$batch = $this->store->batch( $data['batch_id'] );
@@ -252,5 +254,21 @@ final class CategoriesWriteRouteTest extends TestCase {
 		$this->assert_refused( self::send( 'POST', '/categories/2/move', [ 'position' => 0 ] ), 'rest_missing_callback_param', 400 );
 		$this->assert_refused( self::send( 'POST', '/categories/2/move', [ 'parent' => -1 ] ), 'rest_invalid_param', 400 );
 		$this->assert_refused( self::send( 'PATCH', '/categories/2', [ 'name' => str_repeat( 'x', 201 ) ] ), 'rest_invalid_param', 400 );
+	}
+
+	public function test_one_categorys_details_are_read_for_its_editor(): void {
+		$GLOBALS['bulkcat_test']['term_meta'][3]['display_type'] = 'both';
+		$GLOBALS['bulkcat_test']['term_meta'][3]['thumbnail_id'] = '0';
+		$response = self::send( 'GET', '/categories/3' );
+		$this->assertInstanceOf( \WP_REST_Response::class, $response );
+		$item = $response->get_data()['item'];
+		$this->assertSame( [ 3, 'both', 0, null ], [ $item['id'], $item['display_type'], $item['thumbnail_id'], $item['thumbnail_url'] ] );
+		$missing = self::send( 'GET', '/categories/999' );
+		$this->assertInstanceOf( \WP_Error::class, $missing );
+		$this->assertSame( 404, $missing->get_error_data()['status'] );
+		unset( $GLOBALS['bulkcat_test']['caps']['manage_product_terms'] );
+		$denied = self::send( 'GET', '/categories/3' );
+		$this->assertInstanceOf( \WP_Error::class, $denied );
+		$this->assertSame( 403, $denied->get_error_data()['status'] );
 	}
 }

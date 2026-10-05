@@ -38,7 +38,7 @@ defined( 'ABSPATH' ) || exit;
 /**
  * The category write routes.
  */
-final class CategoriesWriteController implements Controller {
+final class CategoriesWriteController implements ReadController {
 	/**
 	 * The create route, shared with CategoriesController's read.
 	 */
@@ -95,11 +95,18 @@ final class CategoriesWriteController implements Controller {
 			self::ITEM_ROUTE,
 			[
 				[
+					'methods'             => 'GET',
+					'callback'            => [ $this, 'get_item' ],
+					'permission_callback' => [ Access::class, 'can_manage_terms' ],
+					'args'                => [ 'id' => self::id_arg() ],
+				],
+				[
 					'methods'             => 'PATCH',
 					'callback'            => [ $this, 'update_item' ],
 					'permission_callback' => [ Access::class, 'can_manage_terms' ],
 					'args'                => [ 'id' => self::id_arg() ] + $this->term_args(),
 				],
+				'schema' => [ $this, 'get_item_schema' ],
 			]
 		);
 		$routes->add(
@@ -141,7 +148,7 @@ final class CategoriesWriteController implements Controller {
 	 */
 	public function term_args(): array {
 		return [
-			'name'        => self::arg(
+			'name'         => self::arg(
 				[
 					'description' => __( 'The category name.', 'bulk-catalogue-manager-for-woocommerce' ),
 					'type'        => 'string',
@@ -149,7 +156,7 @@ final class CategoriesWriteController implements Controller {
 				],
 				'sanitize_text_field'
 			),
-			'slug'        => self::arg(
+			'slug'         => self::arg(
 				[
 					'description' => __( 'The category slug, used in its web address; made from the name when empty.', 'bulk-catalogue-manager-for-woocommerce' ),
 					'type'        => 'string',
@@ -157,14 +164,14 @@ final class CategoriesWriteController implements Controller {
 				],
 				'sanitize_text_field'
 			),
-			'description' => self::arg(
+			'description'  => self::arg(
 				[
 					'description' => __( 'The category description.', 'bulk-catalogue-manager-for-woocommerce' ),
 					'type'        => 'string',
 				],
 				'strval'
 			),
-			'parent'      => self::arg(
+			'parent'       => self::arg(
 				[
 					'description' => __( 'The parent category; 0 for the top level.', 'bulk-catalogue-manager-for-woocommerce' ),
 					'type'        => 'integer',
@@ -172,7 +179,65 @@ final class CategoriesWriteController implements Controller {
 				],
 				'intval'
 			),
+			'display_type' => self::arg(
+				[
+					'description' => __( 'What the category page shows: empty for Default, products, subcategories or both.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'type'        => 'string',
+				],
+				'strval'
+			),
+			'thumbnail_id' => self::arg(
+				[
+					'description' => __( 'The category image: a media library image id, or 0 to remove it.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'type'        => 'integer',
+					'minimum'     => 0,
+				],
+				'intval'
+			),
 		];
+	}
+
+	/**
+	 * The schema of one category's details.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function get_item_schema(): array {
+		return [
+			'$schema'    => 'http://json-schema.org/draft-04/schema#',
+			'title'      => 'bulkcat-category-details',
+			'type'       => 'object',
+			'properties' => [
+				'id'            => [
+					'description' => __( 'The category id.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'type'        => 'integer',
+					'readonly'    => true,
+				],
+				'display_type'  => [
+					'description' => __( 'What the category page shows: empty for Default, products, subcategories or both.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'type'        => 'string',
+				],
+				'thumbnail_id'  => [
+					'description' => __( 'The category image id, 0 when there is none.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'type'        => 'integer',
+				],
+				'thumbnail_url' => [
+					'description' => __( 'The address of the image\'s thumbnail, or null.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'type'        => [ 'string', 'null' ],
+					'readonly'    => true,
+				],
+			],
+		];
+	}
+
+	/**
+	 * `GET /categories/{id}`: one category's details for its editor.
+	 *
+	 * @param \WP_REST_Request $request The validated request.
+	 */
+	public function get_item( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
+		$item = $this->writer()->details_of( (int) $request->get_param( 'id' ) );
+		return $item instanceof \WP_Error ? $item : new \WP_REST_Response( [ 'item' => $item ], 200 );
 	}
 
 	/**
@@ -214,7 +279,7 @@ final class CategoriesWriteController implements Controller {
 	 */
 	private static function term_input( \WP_REST_Request $request ): array {
 		$input = [];
-		foreach ( [ 'name', 'slug', 'description', 'parent' ] as $key ) {
+		foreach ( [ 'name', 'slug', 'description', 'parent', 'display_type', 'thumbnail_id' ] as $key ) {
 			$value = $request->get_param( $key );
 			if ( null !== $value ) {
 				$input[ $key ] = $value;

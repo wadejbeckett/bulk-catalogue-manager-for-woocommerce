@@ -13,9 +13,9 @@
 import { useEffect, useRef, useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 
-import { request } from '../api';
-import { plainMessage } from '../errors';
-import './lookup-picker.scss';
+import { request } from '../../api';
+import { plainMessage } from '../../errors';
+import './style.scss';
 
 /** Wait after typing before searching, in milliseconds. */
 export const SEARCH_DELAY = 250;

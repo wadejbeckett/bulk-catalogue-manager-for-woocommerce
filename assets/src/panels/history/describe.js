@@ -65,7 +65,10 @@ export function rowValue( row, which, field ) {
  */
 export function objectHeading( rows ) {
 	const terms = ( rows || [] ).filter(
-		( row ) => row.object_type === 'term'
+		// A native category write (`term`) or an add-on's change to a category: anything not a product or variation.
+		( row ) =>
+			!! row.object_type &&
+			! [ 'product', 'variation' ].includes( row.object_type )
 	);
 	if ( rows?.length && terms.length === rows.length ) {
 		return __( 'Category', 'bulk-catalogue-manager-for-woocommerce' );

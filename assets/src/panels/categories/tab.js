@@ -41,6 +41,7 @@ import SelectionPane from './selection-pane';
 import { joinPath, pathNames, searchMatches, visibleRows } from './tree-model';
 import useCategoryTree from './use-category-tree';
 import { categoryActions } from './workspace-actions';
+import { syncProviderActions } from './provider-actions';
 import {
 	ancestorsOf,
 	branchIds,
@@ -61,6 +62,11 @@ const QUERY = {};
 export default function CategoriesTab( { settings } ) {
 	const tree = useCategoryTree( QUERY );
 	const { registry } = useRegistry();
+	// An add-on's actions on categories, in the action slot (contract version 2).
+	useMemo(
+		() => syncProviderActions( registry, settings ),
+		[ registry, settings ]
+	);
 	const shell = useContext( ShellContext );
 	const navigate = shell?.navigate || null;
 	const canManage = canManageTerms( settings );

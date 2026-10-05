@@ -62,7 +62,10 @@ export function actionById( registry, id ) {
  * @return {Array<{id: string, label: string, actions: Array<Object>}>} Groups with actions.
  */
 export function groupedActions( registry ) {
-	const actions = registry?.actions || [];
+	// An add-on's actions on categories belong to the Categories workspace, never to products.
+	const actions = ( registry?.actions || [] ).filter(
+		( action ) => ! action.target || action.target === 'product'
+	);
 	return ( registry?.groups || [] )
 		.map( ( group ) => ( {
 			...group,

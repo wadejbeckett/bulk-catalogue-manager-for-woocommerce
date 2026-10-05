@@ -72,3 +72,17 @@ export function categoryActions( count, { ids, tree } = {} ) {
 				action.available( ids, tree ) )
 	);
 }
+
+/**
+ * Remove every registered action whose key starts with a prefix (an
+ * add-on's actions, registered again when the registry changes).
+ *
+ * @param {string} prefix Key prefix.
+ */
+export function unregisterCategoryActions( prefix ) {
+	for ( let at = registered.length - 1; at >= 0; at-- ) {
+		if ( String( registered[ at ].key ).startsWith( prefix ) ) {
+			registered.splice( at, 1 );
+		}
+	}
+}

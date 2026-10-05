@@ -1,0 +1,60 @@
+// An add-on's action on chosen categories (provider-actions/dialog.js).
+.bulkcat-cat-provider {
+	max-width: 720px;
+	width: 100%;
+}
+
+.bulkcat-cat-provider__args {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	margin-bottom: 12px;
+}
+
+.bulkcat-cat-provider__records {
+	list-style: none;
+	margin: 8px 0;
+	padding: 0;
+	max-height: 50vh;
+	overflow-y: auto;
+	border: 1px solid #dcdcde;
+}
+
+.bulkcat-cat-provider__record {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	gap: 2px 12px;
+	padding: 8px 12px;
+	border-bottom: 1px solid #f0f0f1;
+	overflow-wrap: anywhere;
+
+	&:last-child {
+		border-bottom: 0;
+	}
+
+	&.is-skip,
+	&.is-fail,
+	&.is-unavailable {
+		color: #50575e;
+	}
+}
+
+.bulkcat-cat-provider__path {
+	font-weight: 600;
+}
+
+.bulkcat-cat-provider__row,
+.bulkcat-cat-provider__note {
+	grid-column: 1 / -1;
+}
+
+.bulkcat-cat-provider__note {
+	display: block;
+	font-style: italic;
+}
+
+@media (max-width: 600px) {
+	.bulkcat-cat-provider__record {
+		grid-template-columns: 1fr;
+	}
+}

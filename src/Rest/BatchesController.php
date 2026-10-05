@@ -485,7 +485,9 @@ final class BatchesController implements ReadController {
 				[
 					'description' => __( 'Only changes that used this action.', 'bulk-catalogue-manager-for-woocommerce' ),
 					'type'        => 'string',
-					'enum'        => ( $this->actions ?? Actions::instance() )->ids(),
+					// The native action ids. The native registry is built here rather than
+					// the shared one, so booting the REST server never collects providers.
+					'enum'        => ( $this->actions ?? new Actions( Fields::instance() ) )->ids(),
 				],
 				'strval'
 			),
@@ -621,11 +623,20 @@ final class BatchesController implements ReadController {
 	 */
 	public function get_item( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
 		$count = 'count' === $request->get_param( 'reversibility' );
+		$lock  = '';
 		if ( $count ) {
-			// Counting conflicts walks the whole undo plan (T111).
+			// Counting conflicts walks the whole undo plan (T111), so one runs at a time per user.
+			$lock = HeavyReadLock::acquire( HeavyReadLock::COUNT );
+			if ( $lock instanceof \WP_Error ) {
+				return $lock;
+			}
 			UndoController::lift_time_limit();
 		}
-		$report = $this->progress->report( (int) $request->get_param( 'id' ), $count );
+		try {
+			$report = $this->progress->report( (int) $request->get_param( 'id' ), $count );
+		} finally {
+			HeavyReadLock::release( $lock );
+		}
 		return null === $report ? self::not_found() : new \WP_REST_Response( $report, 200 );
 	}
 

@@ -248,4 +248,36 @@ final class PluginTest extends TestCase {
 			$this->assertStringStartsWith( 'BULKCAT_', $constant );
 		}
 	}
+	/**
+	 * The recurring hooks scheduled so far, in order.
+	 *
+	 * @return list<string>
+	 */
+	private static function recurring(): array {
+		return array_values( array_map( static fn( array $entry ): string => $entry[1], array_filter( $GLOBALS['bulkcat_test']['scheduled'] ?? [], static fn( array $entry ): bool => 'recurring' === $entry[0] ) ) );
+	}
+
+	public function test_the_admin_migration_repairs_the_history_prune_schedule_too(): void {
+		// A sub-site of a network activation: no activation hook ran here, so its first admin request migrates.
+		( new Plugin() )->migrate();
+		$this->assertContains( \BulkCatalogueManager\Engine\Pruner::HOOK, self::recurring(), 'The daily history prune is scheduled where the request cleanup is.' );
+		$this->assertContains( 'bulkcat_prune_requests', self::recurring() );
+	}
+	public function test_an_admin_page_at_the_current_schema_does_not_check_the_schedules(): void {
+		$GLOBALS['bulkcat_test']['options'][ \BulkCatalogueManager\Data\Migrator::VERSION_OPTION ] = \BulkCatalogueManager\Data\Migrator::SCHEMA_VERSION;
+		( new Plugin() )->migrate();
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['scheduled'] ?? [], 'The Dashboard, Orders and every other admin page cost no scheduling query.' );
+		$this->assertSame( [], $GLOBALS['wpdb']->queries );
+	}
+
+	public function test_opening_the_manager_screen_repairs_the_schedules(): void {
+		require_once dirname( __DIR__ ) . '/Support/admin-stubs.php';
+		$GLOBALS['bulkcat_test']['options'][ \BulkCatalogueManager\Data\Migrator::VERSION_OPTION ] = \BulkCatalogueManager\Data\Migrator::SCHEMA_VERSION;
+		$GLOBALS['bulkcat_test']['caps']['manage_woocommerce']                                     = true;
+		$plugin = new Plugin();
+		$plugin->screen()->register();
+		do_action( 'load-' . $plugin->screen()->hook_suffix() ); // phpcs:ignore WordPress.NamingConventions.ValidHookName.UseUnderscores -- core's own load-{page} hook.
+		$this->assertContains( \BulkCatalogueManager\Engine\Pruner::HOOK, self::recurring(), 'A lost schedule comes back when the screen is opened.' );
+		$this->assertContains( 'bulkcat_prune_selections', self::recurring() );
+	}
 }

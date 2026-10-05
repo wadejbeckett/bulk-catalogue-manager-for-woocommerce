@@ -1068,6 +1068,19 @@ final class BatchRepository {
 	}
 
 	/**
+	 * The ids of batches still queued or running, oldest first: the ones a
+	 * deactivation may have interrupted (Engine\ChunkRunner::resume_interrupted()).
+	 *
+	 * @param int $limit Most ids returned, 1 to 1000.
+	 * @return list<int>
+	 */
+	public function active_ids( int $limit = 100 ): array {
+		global $wpdb;
+		$ids = $wpdb->get_col( $wpdb->prepare( "SELECT batch_id FROM %i WHERE status IN ('queued', 'running') ORDER BY batch_id ASC LIMIT %d", $this->registry->table( Schema::BATCHES ), max( 1, min( 1000, $limit ) ) ) );
+		return array_map( 'intval', is_array( $ids ) ? array_values( $ids ) : [] );
+	}
+
+	/**
 	 * The WHERE clause and its arguments (the table first) for history() and history_count().
 	 *
 	 * @param array<string, mixed> $filters Filters.

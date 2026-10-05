@@ -1,7 +1,7 @@
 <?php
 /**
  * Deactivation and uninstall cleanup (SPEC §11, §15 Data lifecycle).
- * Deactivation unschedules only the plugin's own recurring actions. Uninstall
+ * Deactivation unschedules only the plugin's own scheduled actions. Uninstall
  * deletes nothing unless "Remove all data when the plugin is deleted" is on;
  * then it removes every scheduled action in the plugin's group, every
  * registry table, transient, user meta, term meta, post meta and option.
@@ -41,10 +41,21 @@ final class Cleanup {
 
 	/**
 	 * Deactivation hook callback. WordPress passes whether the deactivation is
-	 * network-wide; it is ignored.
+	 * network-wide; then every site's actions are removed, each switched to in
+	 * turn, else only the current site's.
+	 *
+	 * @param bool $network_wide Whether the plugin is deactivated for the whole network.
 	 */
-	public static function deactivate(): void {
-		( new self( Registry::plugin() ) )->unschedule_recurring();
+	public static function deactivate( bool $network_wide = false ): void {
+		$unschedule = static function (): void {
+			( new self( Registry::plugin() ) )->unschedule_recurring();
+			self::unschedule_chunks();
+		};
+		if ( $network_wide ) {
+			self::on_every_site( $unschedule );
+			return;
+		}
+		$unschedule();
 	}
 
 	/**
@@ -57,6 +68,18 @@ final class Cleanup {
 		}
 		foreach ( $this->registry->recurring_actions() as $hook ) {
 			as_unschedule_all_actions( $hook, [], Registry::ACTION_GROUP );
+		}
+	}
+
+	/**
+	 * Unschedule every pending chunk of a batch, so Action Scheduler never
+	 * runs one while the plugin is inactive (it would fail with no callback).
+	 * An interrupted batch keeps its status and items, and is queued again
+	 * on reactivation (Engine\ChunkRunner::resume_interrupted()).
+	 */
+	private static function unschedule_chunks(): void {
+		if ( function_exists( 'as_unschedule_all_actions' ) ) {
+			as_unschedule_all_actions( \BulkCatalogueManager\Engine\ChunkRunner::HOOK, [], Registry::ACTION_GROUP );
 		}
 	}
 
@@ -76,8 +99,15 @@ final class Cleanup {
 		}
 		$this->drop_tables();
 		$this->delete_transients();
+		// User meta is shared by every site of a network, so each site removes only
+		// its own prefixed key; the main site also removes the unprefixed key that
+		// releases before 1.3.1 wrote, which it alone takes over.
+		global $wpdb;
 		foreach ( $this->registry->user_meta() as $key ) {
-			delete_metadata( 'user', 0, $key, '', true );
+			delete_metadata( 'user', 0, $wpdb->prefix . $key, '', true );
+			if ( is_main_site() ) {
+				delete_metadata( 'user', 0, $key, '', true );
+			}
 		}
 		foreach ( $this->registry->term_meta() as $key ) {
 			delete_metadata( 'term', 0, $key, '', true );

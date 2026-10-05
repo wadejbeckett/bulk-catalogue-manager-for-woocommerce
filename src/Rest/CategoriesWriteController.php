@@ -60,19 +60,18 @@ final class CategoriesWriteController implements Controller {
 	public const NAME_LENGTH = 200;
 
 	/**
-	 * The writer.
-	 *
-	 * @var Writer
-	 */
-	private Writer $writer;
-
-	/**
-	 * Build over a writer; the plugin's by default.
+	 * Build over a writer; the plugin's by default, built on first use so
+	 * booting the REST server does not build the operation registry.
 	 *
 	 * @param Writer|null $writer The category writer.
 	 */
-	public function __construct( ?Writer $writer = null ) {
-		$this->writer = $writer ?? new Writer();
+	public function __construct( private ?Writer $writer = null ) {}
+
+	/**
+	 * The category writer.
+	 */
+	private function writer(): Writer {
+		return $this->writer ??= new Writer();
 	}
 
 	/**
@@ -182,7 +181,7 @@ final class CategoriesWriteController implements Controller {
 	 * @param \WP_REST_Request $request The validated, sanitised request.
 	 */
 	public function create_item( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
-		return self::answer( $this->writer->create( self::term_input( $request ), get_current_user_id() ), 201 );
+		return self::answer( $this->writer()->create( self::term_input( $request ), get_current_user_id() ), 201 );
 	}
 
 	/**
@@ -191,7 +190,7 @@ final class CategoriesWriteController implements Controller {
 	 * @param \WP_REST_Request $request The validated, sanitised request.
 	 */
 	public function update_item( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
-		return self::answer( $this->writer->update( (int) $request->get_param( 'id' ), self::term_input( $request ), get_current_user_id() ), 200 );
+		return self::answer( $this->writer()->update( (int) $request->get_param( 'id' ), self::term_input( $request ), get_current_user_id() ), 200 );
 	}
 
 	/**
@@ -202,7 +201,7 @@ final class CategoriesWriteController implements Controller {
 	public function move_item( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
 		$position = $request->get_param( 'position' );
 		return self::answer(
-			$this->writer->move( (int) $request->get_param( 'id' ), (int) $request->get_param( 'parent' ), null === $position ? null : (int) $position, get_current_user_id() ),
+			$this->writer()->move( (int) $request->get_param( 'id' ), (int) $request->get_param( 'parent' ), null === $position ? null : (int) $position, get_current_user_id() ),
 			200
 		);
 	}

@@ -32,6 +32,9 @@ if ( ! class_exists( WpdbStub::class ) ) {
 
 		public string $options = 'wp_options';
 
+		/** As MySQL with lower_case_table_names=1: names are stored and answered in lower case. */
+		public bool $lower_case_names = false;
+
 		public int $insert_id = 0;
 
 		public string $last_error = '';
@@ -200,6 +203,7 @@ if ( ! class_exists( WpdbStub::class ) ) {
 			}
 			if ( 1 === preg_match( "/^SHOW TABLES LIKE '(.*)'$/", $query, $m ) ) {
 				$name = self::unlike( stripslashes( $m[1] ) );
+				$name = $this->lower_case_names ? strtolower( $name ) : $name;
 				return isset( $this->tables[ $name ] ) ? $name : null;
 			}
 			$value = $this->respond( $query, null );

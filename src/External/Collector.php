@@ -76,6 +76,21 @@ final class Collector {
 	}
 
 	/**
+	 * Record that an add-on's registration callback failed: the details go
+	 * to the WooCommerce log and the screen gets one plain refusal.
+	 *
+	 * @param \Throwable $error What the callback threw.
+	 */
+	public function failed( \Throwable $error ): void {
+		Guard::log( sprintf( 'An add-on failed while registering with bulkcat_register_providers: %s: %s (%s:%d)', get_class( $error ), $error->getMessage(), $error->getFile(), $error->getLine() ) );
+		$label            = Refusals::an_add_on();
+		$this->refusals[] = [
+			'label'  => $label,
+			'reason' => __( 'An add-on failed while registering with Bulk Catalogue Manager, so it may be missing from the manager. Update the add-on, or ask its author. Everything else works as usual.', 'bulk-catalogue-manager-for-woocommerce' ),
+		];
+	}
+
+	/**
 	 * Stop accepting registrations.
 	 */
 	public function close(): void {

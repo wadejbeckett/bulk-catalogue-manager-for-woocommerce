@@ -45,7 +45,7 @@ The work runs in the background in small groups, so large catalogues do not time
 
 == Installation ==
 
-1. Install and activate WooCommerce 11.1 or later.
+1. Use WordPress 7.x (WordPress 8.x is not yet supported) and install and activate WooCommerce 11.1 or later.
 2. In Plugins → Add New, search for Bulk Catalogue Manager and install it, or upload the ZIP through Plugins → Add New → Upload Plugin.
 3. Activate the plugin.
 4. Open Products → Bulk Catalogue Manager.
@@ -119,13 +119,17 @@ Yes. Variations appear as rows of their own and can be edited one by one or in b
 
 No. It needs only WooCommerce 11.1 or later.
 
+= Which WordPress versions does it support? =
+
+WordPress 7.0 and later 7.x releases. WordPress 8.x is not yet supported: the manager screen is built to match the screen components of WordPress 7, so on WordPress 8 it shows a notice instead of opening. Your products and history are not affected. Update the plugin to a version that supports WordPress 8 before you update WordPress to 8.0.
+
 = Who can use it? =
 
 Shop managers and administrators by default, or administrators only. Each product is also checked against the user's own permission to edit it. Only administrators can change the settings.
 
 = What happens when I deactivate or delete the plugin? =
 
-Deactivating stops the daily history clean-up and leaves everything else in place. Deleting the plugin keeps your history, settings and saved views by default, so they are there if you reinstall. To remove everything when the plugin is deleted, turn on **Remove all data when the plugin is deleted** on the Settings tab first. Your product data itself is never removed. With that setting on, deletion also removes legacy saved-status records while leaving product statuses unchanged. Review the products and history before removing retained data.
+Deactivating stops the plugin's scheduled clean-ups and pauses any change that is still running; when you activate the plugin again, that change carries on from where it stopped. Everything else stays in place. Deleting the plugin keeps your history, settings and saved views by default, so they are there if you reinstall. To remove everything when the plugin is deleted, turn on **Remove all data when the plugin is deleted** on the Settings tab first. Your product data itself is never removed. With that setting on, deletion also removes legacy saved-status records while leaving product statuses unchanged. Review the products and history before removing retained data.
 
 = Does it work on a multisite network? =
 

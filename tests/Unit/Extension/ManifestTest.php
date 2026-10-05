@@ -54,7 +54,7 @@ final class ManifestTest extends TestCase {
 		$GLOBALS['bulkcat_test']['options'][ Migrator::VERSION_OPTION ] = '7';
 		$this->assertStringContainsString( "\nextensions longtext NULL,\n", Schema::BATCHES_BODY );
 		$this->assertTrue( ( new Migrator( Registry::plugin() ) )->run() );
-		$this->assertSame( '8', get_option( Migrator::VERSION_OPTION ) );
+		$this->assertSame( Migrator::SCHEMA_VERSION, get_option( Migrator::VERSION_OPTION ) );
 		$this->assertCount( 1, $GLOBALS['bulkcat_test']['dbdelta'] );
 		$this->assertStringContainsString( 'extensions longtext NULL', $GLOBALS['bulkcat_test']['dbdelta'][0][0] );
 		$this->assertTrue( ( new Migrator( Registry::plugin() ) )->run() );

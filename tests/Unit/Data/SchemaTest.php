@@ -164,10 +164,10 @@ final class SchemaTest extends TestCase {
 		$statements = $GLOBALS['bulkcat_test']['dbdelta'][0];
 		$this->assertCount( 5, $statements );
 		foreach ( array_keys( Schema::TABLES ) as $i => $name ) {
-			$this->assertSame( "CREATE TABLE wp_7_{$name} (\n" . Schema::TABLES[ $name ] . "\n) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci" . ( in_array( $name, [ Schema::SELECTIONS, Schema::REQUESTS ], true ) ? ' ENGINE=InnoDB' : '' ) . ';', $statements[ $i ] );
+			$this->assertSame( "CREATE TABLE wp_7_{$name} (\n" . Schema::TABLES[ $name ] . "\n) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci ENGINE=InnoDB;", $statements[ $i ], 'Every table is InnoDB, as storage readiness requires.' );
 		}
 		$this->assertSame( [ 'wp_7_bulkcat_batches', 'wp_7_bulkcat_batch_items', 'wp_7_bulkcat_changes', 'wp_7_bulkcat_selections', 'wp_7_bulkcat_requests' ], array_keys( $GLOBALS['wpdb']->tables ) );
-		$this->assertSame( '8', Migrator::SCHEMA_VERSION, 'T81 added snapshot and receipt storage (7); T107 adds the batch\'s provider manifest (8).' );
+		$this->assertSame( '9', Migrator::SCHEMA_VERSION, 'T81 added snapshot and receipt storage (7); T107 adds the batch\'s provider manifest (8); 9 converts every table to InnoDB.' );
 	}
 
 	public function test_table_names_come_only_from_the_registry_with_the_site_prefix(): void {

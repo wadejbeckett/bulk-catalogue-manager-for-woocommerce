@@ -210,7 +210,7 @@ final class BatchChangesController implements ReadController {
 	 */
 	public function change( array $row ): array {
 		$field = $this->fields->get( $row['prop'] );
-		$label = null === $field ? $row['prop'] : $field->label();
+		$label = null === $field ? ( \BulkCatalogueManager\Categories\Writer::label( (string) $row['prop'] ) ?? $row['prop'] ) : $field->label();
 		if ( Providers::is_external( (string) $row['prop'] ) ) {
 			// An add-on's value reads from the batch's manifest and the text journalled with it (T108).
 			$this->prime_manifests( [ $row ] );

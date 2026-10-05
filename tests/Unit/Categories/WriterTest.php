@@ -579,4 +579,26 @@ final class WriterTest extends TestCase {
 		$this->assertContains( [ 12, 'term_display_type', null, 'both', 'applied' ], $this->store->journal() );
 		$this->assertContains( [ 12, 'term_thumbnail_id', null, 504, 'applied' ], $this->store->journal() );
 	}
+
+	public function test_history_names_every_category_property_in_plain_words(): void {
+		$this->assertSame(
+			[ 'Name', 'Slug', 'Description', 'Parent category', 'Display type', 'Image', 'Position' ],
+			array_map( [ Writer::class, 'label' ], [ 'term_name', 'term_slug', 'term_description', 'term_parent', 'term_display_type', 'term_thumbnail_id', 'term_order' ] )
+		);
+		$this->assertNull( Writer::label( 'regular_price' ), 'Product fields keep their own labels.' );
+	}
+
+	public function test_a_create_records_its_details_in_the_batch_step(): void {
+		self::image( 505 );
+		$result = self::writer()->create(
+			[
+				'name'         => 'Caps',
+				'display_type' => 'products',
+				'thumbnail_id' => 505,
+			],
+			self::USER
+		);
+		$args   = json_decode( $this->store->batch( $result['batch_id'] )['operations'], true )[0]['args'];
+		$this->assertSame( [ 'products', 505 ], [ $args['display_type'] ?? null, $args['thumbnail_id'] ?? null ] );
+	}
 }

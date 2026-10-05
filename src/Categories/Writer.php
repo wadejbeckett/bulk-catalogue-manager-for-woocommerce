@@ -196,6 +196,25 @@ final class Writer {
 	}
 
 	/**
+	 * The plain label History shows for a category property, or null when the
+	 * property is not a category's.
+	 *
+	 * @param string $prop Journal property.
+	 */
+	public static function label( string $prop ): ?string {
+		return match ( $prop ) {
+			'term_name'         => __( 'Name', 'bulk-catalogue-manager-for-woocommerce' ),
+			'term_slug'         => __( 'Slug', 'bulk-catalogue-manager-for-woocommerce' ),
+			'term_description'  => __( 'Description', 'bulk-catalogue-manager-for-woocommerce' ),
+			'term_parent'       => __( 'Parent category', 'bulk-catalogue-manager-for-woocommerce' ),
+			'term_display_type' => __( 'Display type', 'bulk-catalogue-manager-for-woocommerce' ),
+			'term_thumbnail_id' => __( 'Image', 'bulk-catalogue-manager-for-woocommerce' ),
+			self::ORDER_PROP    => __( 'Position', 'bulk-catalogue-manager-for-woocommerce' ),
+			default             => null,
+		};
+	}
+
+	/**
 	 * One category's details as the write routes answer them (the tree's node
 	 * plus description, display type and image), or not found.
 	 *
@@ -247,7 +266,7 @@ final class Writer {
 			return self::not_saved( $inserted );
 		}
 		$id       = (int) $inserted['term_id'];
-		$batch_id = $this->factory->open( $user_id, [ self::step( self::CREATE, [ 'name' => $name ] + $args ) ], [ [ $id, self::OBJECT_TYPE ] ], self::SOURCE );
+		$batch_id = $this->factory->open( $user_id, [ self::step( self::CREATE, [ 'name' => $name ] + $args + $details ) ], [ [ $id, self::OBJECT_TYPE ] ], self::SOURCE );
 		if ( $batch_id instanceof \WP_Error ) {
 			// Never leave a category the journal does not know about.
 			wp_delete_term( $id, Counts::TAXONOMY );

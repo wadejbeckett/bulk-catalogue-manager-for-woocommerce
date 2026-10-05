@@ -579,7 +579,9 @@ final class ChunkRunner {
 			$applied
 		);
 		if ( $this->batches->transition( $batch_id, 'running', $status ) ) {
-			Original::settle( $this->batches, $batch, $status, $applied );
+			// An undo that put an object back only in part has not undone the batch (ENGINE-1).
+			$whole = 'undo' !== ( $batch['source'] ?? '' ) || 0 === $this->changes->count_written_in_part( $batch_id );
+			Original::settle( $this->batches, $batch, $status, $applied, $whole );
 		}
 		return $status;
 	}

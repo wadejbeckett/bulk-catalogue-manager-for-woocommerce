@@ -480,6 +480,46 @@ final class PlannerTest extends TestCase {
 		$this->assertSame( [ 'batch_id', 'items', 'counts', 'hash' ], array_keys( $plan->to_array() ) );
 	}
 
+	public function test_the_price_pair_goes_back_in_an_order_valid_at_each_step(): void {
+		// ENGINE-1: regular 100 -> 60 cleared the sale price 80 (regular journalled first). Sale first would be
+		// checked against the regular 60 still there and skipped, so regular goes back first.
+		$this->change( 1001, 'regular_price', '100.00', '60.00' );
+		$this->change( 1001, 'sale_price', '80.00', '' );
+		self::product(
+			1001,
+			[
+				'regular_price' => '60.00',
+				'sale_price'    => '',
+			]
+		);
+		// An inline pair edit, 100/80 -> 60/48: regular first again.
+		$this->change( 1002, 'regular_price', '100.00', '60.00' );
+		$this->change( 1002, 'sale_price', '80.00', '48.00' );
+		self::product(
+			1002,
+			[
+				'regular_price' => '60.00',
+				'sale_price'    => '48.00',
+			]
+		);
+		// Both raised, 60/48 -> 100/80: sale first, as journalled newest first, stays valid.
+		$this->change( 1003, 'regular_price', '60.00', '100.00' );
+		$this->change( 1003, 'sale_price', '48.00', '80.00' );
+		self::product(
+			1003,
+			[
+				'regular_price' => '100.00',
+				'sale_price'    => '80.00',
+			]
+		);
+
+		$plan   = $this->plan();
+		$fields = static fn( int $id ): array => array_column( array_column( self::item( $plan, $id )['operations'], 'args' ), 'field' );
+		$this->assertSame( [ 'regular_price', 'sale_price' ], $fields( 1001 ) );
+		$this->assertSame( [ 'regular_price', 'sale_price' ], $fields( 1002 ) );
+		$this->assertSame( [ 'sale_price', 'regular_price' ], $fields( 1003 ) );
+	}
+
 	public function test_several_applied_rows_for_one_field_go_back_to_the_oldest_value(): void {
 		$this->change( 1001, 'regular_price', '10.00', '11.00' );
 		$this->change( 1001, 'regular_price', '11.00', '12.10' );

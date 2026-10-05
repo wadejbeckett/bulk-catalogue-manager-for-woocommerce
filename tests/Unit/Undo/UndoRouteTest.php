@@ -883,6 +883,48 @@ final class UndoRouteTest extends TestCase {
 		$this->assertSame( 'undone', $this->store->batch()['status'] );
 	}
 
+	public function test_undo_of_a_regular_price_that_cleared_the_sale_price_puts_both_back(): void {
+		// ENGINE-1: regular 100 -> 60 with "clear the sale price where it is not below" journalled regular, then sale.
+		$this->store->changes = [];
+		$this->change( 1001, 'regular_price', '100.00', '60.00' );
+		$this->change( 1001, 'sale_price', '80.00', '' );
+		self::product(
+			1001,
+			[
+				'regular_price' => '60.00',
+				'sale_price'    => '',
+			]
+		);
+		$this->store->sync();
+
+		$undo_id = $this->undo()['batch_id'];
+		$this->assertSame( 'complete', $this->run_batch( $undo_id ) );
+		$this->assertSame( '100.00', self::prop( 1001, 'regular_price' ) );
+		$this->assertSame( '80.00', self::prop( 1001, 'sale_price' ), 'The original sale price is back.' );
+		$this->assertSame( 'undone', $this->store->batch()['status'] );
+	}
+
+	public function test_an_object_the_undo_put_back_only_in_part_leaves_the_batch_undoable(): void {
+		// ENGINE-1: an undo that saved an object with one of its values not put back never marks the batch undone.
+		$this->store->changes = [];
+		$this->change( 1001, 'regular_price', '10.00', '11.00' );
+		$this->change( 1001, 'stock_quantity', 5, 7 );
+		self::product(
+			1001,
+			[
+				'regular_price'  => '11.00',
+				'manage_stock'   => false,
+				'stock_quantity' => null,
+			]
+		);
+		$this->store->sync();
+
+		$created = $this->undo( self::BATCH, true );
+		$this->assertSame( 'partial', $this->run_batch( $created['batch_id'] ) );
+		$this->assertSame( '10.00', self::prop( 1001, 'regular_price' ), 'What could go back went back.' );
+		$this->assertSame( 'complete', $this->store->batch()['status'], 'The stock quantity did not go back, so the batch is not undone and stays undoable.' );
+	}
+
 	public function test_a_product_changed_after_the_undo_was_applied_is_left_alone_when_its_chunk_runs(): void {
 		// Should-fix (1): the plan's changed-since guard held at Apply; the change lands before the chunk.
 		$record               = \BulkCatalogueManager\Availability\OffRecord::create( 1001, 'publish', '2026-09-23T08:01:00Z', self::BATCH )->to_json();

@@ -88,6 +88,10 @@ if ( ! function_exists( 'add_submenu_page' ) ) {
 		bulkcat_test_admin_call( __FUNCTION__, func_get_args() );
 	}
 
+	function wp_enqueue_media( array $args = [] ): void {
+		bulkcat_test_admin_call( __FUNCTION__, func_get_args() );
+	}
+
 	function wp_enqueue_style( string $handle, string $src = '', array $deps = [], string|bool|null $ver = false, string $media = 'all' ): void {
 		bulkcat_test_admin_call( __FUNCTION__, func_get_args() );
 	}

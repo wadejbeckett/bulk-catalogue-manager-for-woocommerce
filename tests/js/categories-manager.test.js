@@ -328,10 +328,12 @@ describe( 'category manager', () => {
 		).toBeTruthy();
 	} );
 
-	it( 'shows the description the tree carries in the details pane', () => {
+	it( 'shows the description the tree carries in the details pane', async () => {
 		render(
 			<CategoryManager tree={ makeTree() } categoryId={ 2 } canManage />
 		);
 		expect( field( 'Description' ).value ).toBe( 'Short sleeves' );
+		// Ticket 22: the display type and image are read afterwards.
+		await act( async () => {} );
 	} );
 } );

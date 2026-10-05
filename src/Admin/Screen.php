@@ -166,6 +166,10 @@ final class Screen {
 		wp_set_script_translations( 'bulkcat-app', 'bulk-catalogue-manager-for-woocommerce', $dir . 'languages' );
 		wp_add_inline_script( 'bulkcat-app', 'window.bulkcatSettings = ' . wp_json_encode( $this->client_settings(), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT ) . ';', 'before' );
 		wp_enqueue_script( 'bulkcat-app' );
+		// Ticket 22: the category editor chooses its image in WordPress's own media library.
+		if ( current_user_can( 'upload_files' ) && function_exists( 'wp_enqueue_media' ) ) {
+			wp_enqueue_media();
+		}
 
 		wp_enqueue_style( 'bulkcat-app', plugins_url( 'assets/build/style-index.css', $this->plugin_file ), [], $asset['version'] );
 		wp_style_add_data( 'bulkcat-app', 'rtl', 'replace' );

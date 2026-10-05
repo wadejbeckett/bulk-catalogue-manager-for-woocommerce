@@ -175,6 +175,15 @@ final class AssetsTest extends TestCase {
 		$this->assertSame( [ [ 'bulkcat-app', 'rtl', 'replace' ] ], bulkcat_test_admin_calls( 'wp_style_add_data' ) );
 	}
 
+	public function test_the_media_library_loads_only_for_users_who_may_upload(): void {
+		$screen = self::registered();
+		$screen->enqueue( self::SCREEN_ID );
+		$this->assertSame( [], bulkcat_test_admin_calls( 'wp_enqueue_media' ), 'Ticket 22: no media library without upload_files.' );
+		$GLOBALS['bulkcat_test']['caps']['upload_files'] = true;
+		$screen->enqueue( self::SCREEN_ID );
+		$this->assertSame( [ [] ], bulkcat_test_admin_calls( 'wp_enqueue_media' ), 'The category image chooser uses WordPress\'s own media library.' );
+	}
+
 	public function test_the_client_is_told_the_current_users_capabilities(): void {
 		self::grant( [ 'manage_woocommerce', 'edit_products', 'manage_product_terms' ] );
 		$caps = self::registered()->client_settings()['user']['capabilities'];

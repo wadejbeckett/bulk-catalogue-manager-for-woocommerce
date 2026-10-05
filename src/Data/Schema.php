@@ -81,7 +81,7 @@ final class Schema {
 	/**
 	 * Object types an item or change refers to.
 	 */
-	public const OBJECT_TYPES = [ 'product', 'variation', 'term' ];
+	public const OBJECT_TYPES = [ 'product', 'variation', 'term', 'product_cat' ];
 
 	/**
 	 * Item states.

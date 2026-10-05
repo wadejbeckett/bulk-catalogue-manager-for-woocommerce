@@ -14,6 +14,8 @@ use BulkCatalogueManager\Engine\BatchFactory;
 use BulkCatalogueManager\Engine\Journal;
 use BulkCatalogueManager\Engine\WriteOutcome;
 use BulkCatalogueManager\Engine\Writer;
+use BulkCatalogueManager\Extension\ActionDescriptor;
+use BulkCatalogueManager\Extension\CategoryProvider;
 use BulkCatalogueManager\Extension\Context;
 use BulkCatalogueManager\Extension\ExternalField;
 use BulkCatalogueManager\Extension\Unknown;
@@ -60,6 +62,17 @@ defined( 'ABSPATH' ) || exit;
  * in a Context::REPLAY run; anything else fails
  * `bulkcat_changed_during_write`. So a relative action cannot apply twice.
  *
+ * Categories (docs/EXTENSIONS-v2.md §5.4): an item chosen as `product_cat`
+ * is a term, never a product of the same number. It is read straight from
+ * the term tables (TermSubject::load(), unfiltered, so a background run with
+ * no user sees categories a term query would hide); one gone is skipped as
+ * unavailable; then the recorded user's `edit_term` on it, the action's
+ * capability and the provider's authorise(), in that order, with the same
+ * compute, intent, compare-and-set write, read-back, settle and replay as a
+ * product, journalled as `product_cat`. The term itself is never updated.
+ * prime_terms() and flush_terms() replace prime() and flush(). A category
+ * change is never written to a product, nor a product change to a category.
+ *
 
  */
 final class ExternalWriter {
@@ -69,6 +82,13 @@ final class ExternalWriter {
 	 * @var array<int, true>
 	 */
 	private array $written = [];
+
+	/**
+	 * Categories written since the last flush, as keys.
+	 *
+	 * @var array<int, true>
+	 */
+	private array $written_terms = [];
 
 	/**
 	 * For one provider, run, journal and batch.
@@ -88,11 +108,20 @@ final class ExternalWriter {
 	/**
 	 * Load the values of some objects in one go, through the guard.
 	 *
-	 * @param list<int> $ids Objects.
+	 * @param list<int> $ids    Objects: products and variations, or terms for a category change.
+	 * @param string    $target ActionDescriptor::TARGET_PRODUCT, or TARGET_CATEGORY for term ids.
 	 */
-	public function prime( array $ids ): void {
+	public function prime( array $ids, string $target = ActionDescriptor::TARGET_PRODUCT ): void {
+		$ids      = array_values( array_map( 'intval', $ids ) );
+		$provider = $this->provider->provider;
 		try {
-			Guard::run( $this->provider->id, 'prime', fn(): mixed => $this->provider->provider->prime( array_values( array_map( 'intval', $ids ) ) ) );
+			if ( ActionDescriptor::TARGET_CATEGORY === $target ) {
+				if ( $provider instanceof CategoryProvider ) {
+					Guard::run( $this->provider->id, 'prime_terms', static fn(): mixed => $provider->prime_terms( TermSubject::TAXONOMY, $ids ) );
+				}
+				return;
+			}
+			Guard::run( $this->provider->id, 'prime', static fn(): mixed => $provider->prime( $ids ) );
 		} catch ( ProviderFailure $e ) {
 			unset( $e ); // Logged by the guard; each read then loads on its own.
 		}
@@ -102,13 +131,26 @@ final class ExternalWriter {
 	 * Call flush() once with the objects written since the last call, if any.
 	 */
 	public function flush(): void {
+		$provider = $this->provider->provider;
+		if ( [] !== $this->written_terms ) {
+			$terms               = array_keys( $this->written_terms );
+			$this->written_terms = [];
+			sort( $terms, SORT_NUMERIC );
+			try {
+				if ( $provider instanceof CategoryProvider ) {
+					Guard::run( $this->provider->id, 'flush_terms', fn(): mixed => $provider->flush_terms( TermSubject::TAXONOMY, $terms, $this->context ) );
+				}
+			} catch ( ProviderFailure $e ) {
+				unset( $e ); // Logged by the guard; it never changes a reported result.
+			}
+		}
 		if ( [] === $this->written ) {
 			return;
 		}
 		$ids           = array_keys( $this->written );
 		$this->written = [];
 		try {
-			Guard::run( $this->provider->id, 'flush', fn(): mixed => $this->provider->provider->flush( $ids, $this->context ) );
+			Guard::run( $this->provider->id, 'flush', fn(): mixed => $provider->flush( $ids, $this->context ) );
 		} catch ( ProviderFailure $e ) {
 			unset( $e ); // Logged by the guard; it never changes a reported result.
 		}
@@ -123,22 +165,124 @@ final class ExternalWriter {
 	 * @param \Closure|null $guard The queued undo check after the object is loaded, or null.
 	 */
 	public function write( int $id, array $operations, ?string $type, ?\Closure $guard = null ): WriteOutcome {
+		$categories = $this->targets_categories( $operations );
+		if ( TermSubject::TAXONOMY === $type || $categories ) {
+			if ( TermSubject::TAXONOMY !== $type || ! $categories ) {
+				// One kind of object per change: never a category change on a product, nor the reverse.
+				return $this->refuse_all( $id, $operations, static fn( string $key ): Result => Result::failed( $key, null, Refusals::mixed_sentence(), Refusals::MIXED ), (string) ( $type ?? 'product' ), self::unknown_time() );
+			}
+			return $this->write_term( $id, $operations, $guard );
+		}
 		$product = self::load( $id );
 		if ( null === $product ) {
-			return $this->refuse_all( $id, $operations, static fn( string $key ): Result => Result::failed( $key, null, __( 'That product could not be found. It may have been deleted; reload the list and try again.', 'bulk-catalogue-manager-for-woocommerce' ), Writer::NOT_FOUND ) );
+			return $this->refuse_all( $id, $operations, static fn( string $key ): Result => Result::failed( $key, null, __( 'That product could not be found. It may have been deleted; reload the list and try again.', 'bulk-catalogue-manager-for-woocommerce' ), Writer::NOT_FOUND ), 'product', $this->modified( null ) );
 		}
 		$subject = ProductSubject::of( $product, $this->provider );
 		$refusal = $this->object_refusal( $id, $product, $subject, $type );
 		if ( null !== $refusal ) {
-			return $this->refuse_all( $id, $operations, $refusal, $product );
+			return $this->refuse_all( $id, $operations, $refusal, Journal::object_type( $product ), $this->modified( $product ) );
 		}
 		$modified = null === $this->journal ? '' : $this->journal->modified_gmt( $product );
 
 		$reason = null === $guard ? null : $guard( $id, $product );
 		if ( is_string( $reason ) && '' !== $reason ) {
-			return $this->refuse_all( $id, $operations, static fn( string $key ): Result => Result::skipped( $key, null, $reason, \BulkCatalogueManager\Operations\RestoreStatus::CHANGED_SINCE ), $product, $modified );
+			return $this->refuse_all( $id, $operations, static fn( string $key ): Result => Result::skipped( $key, null, $reason, \BulkCatalogueManager\Operations\RestoreStatus::CHANGED_SINCE ), Journal::object_type( $product ), '' === $modified ? $this->modified( $product ) : $modified );
 		}
+		return $this->commit( $id, $subject, $operations, Journal::object_type( $product ), '' === $modified ? $this->modified( $product ) : $modified );
+	}
 
+	/**
+	 * Apply one category's steps (docs/EXTENSIONS-v2.md §5.4): read it
+	 * unfiltered (a deleted one is skipped as unavailable), check the user's
+	 * edit_term on it, then compute (the action's capability and the
+	 * provider's authorise() come first there) and write as a product is.
+	 *
+	 * @param int                                                     $id         Term id.
+	 * @param list<array{action: string, args: array<string, mixed>}> $operations The normalised steps.
+	 * @param \Closure|null                                           $guard      The queued undo check after the category is loaded, or null.
+	 */
+	private function write_term( int $id, array $operations, ?\Closure $guard ): WriteOutcome {
+		$time = self::unknown_time();
+		$term = TermSubject::load( $id );
+		if ( null === $term ) {
+			return $this->refuse_all( $id, $operations, static fn( string $key ): Result => Result::skipped( $key, null, self::term_gone_sentence(), Writer::UNAVAILABLE ), TermSubject::TAXONOMY, $time );
+		}
+		$refusal = $this->term_refusal( $id );
+		if ( null !== $refusal ) {
+			return $this->refuse_all( $id, $operations, $refusal, TermSubject::TAXONOMY, $time );
+		}
+		$reason = null === $guard ? null : $guard( $id, $term );
+		if ( is_string( $reason ) && '' !== $reason ) {
+			return $this->refuse_all( $id, $operations, static fn( string $key ): Result => Result::skipped( $key, null, $reason, \BulkCatalogueManager\Operations\RestoreStatus::CHANGED_SINCE ), TermSubject::TAXONOMY, $time );
+		}
+		return $this->commit( $id, new TermSubject( $term, $this->provider ), $operations, TermSubject::TAXONOMY, $time );
+	}
+
+	/**
+	 * The sentence for a category that no longer exists.
+	 */
+	public static function term_gone_sentence(): string {
+		return __( 'This category no longer exists, so it was left alone.', 'bulk-catalogue-manager-for-woocommerce' );
+	}
+
+	/**
+	 * The core's own check of a category before the provider is asked:
+	 * whether the run's user may edit it (`edit_term`); null when they may.
+	 *
+	 * @param int $id Term id.
+	 * @return \Closure(string): Result|null
+	 */
+	private function term_refusal( int $id ): ?\Closure {
+		if ( user_can( $this->context->user_id(), 'edit_term', $id ) ) {
+			return null;
+		}
+		$reason = __( 'You do not have permission to change this category, so it was left alone.', 'bulk-catalogue-manager-for-woocommerce' );
+		return static fn( string $key ): Result => Result::skipped( $key, null, $reason, Access::CANNOT_EDIT );
+	}
+
+	/**
+	 * Whether a change's steps act on categories: their fields belong to
+	 * category actions (a restore step names its field only).
+	 *
+	 * @param list<array{action: string, args: array<string, mixed>}> $operations The normalised steps.
+	 */
+	public function targets_categories( array $operations ): bool {
+		foreach ( $operations as $step ) {
+			$meta = $this->provider->field_meta( (string) ( $step['args']['field'] ?? '' ) );
+			if ( ActionDescriptor::TARGET_CATEGORY === ( $meta['target'] ?? ActionDescriptor::TARGET_PRODUCT ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * The journal's time for an object: its modified time, or the unknown time.
+	 *
+	 * @param object|null $product The loaded product, or null.
+	 */
+	private function modified( ?object $product ): string {
+		return null === $this->journal ? self::unknown_time() : $this->journal->modified_gmt( $product );
+	}
+
+	/**
+	 * The time recorded for an object without one (a category).
+	 */
+	private static function unknown_time(): string {
+		return \BulkCatalogueManager\Data\ChangeRepository::UNKNOWN_TIME;
+	}
+
+	/**
+	 * Compute an object's steps and write what changed, as the file comment
+	 * describes from step 3 on: the same for a product and a category.
+	 *
+	 * @param int                                                     $id         Object id.
+	 * @param ProductSubject|TermSubject                              $subject    The object.
+	 * @param list<array{action: string, args: array<string, mixed>}> $operations The normalised steps.
+	 * @param string                                                  $type       Its journal object type.
+	 * @param string                                                  $modified   Its modified time, or the unknown time.
+	 */
+	private function commit( int $id, ProductSubject|TermSubject $subject, array $operations, string $type, string $modified ): WriteOutcome {
 		$computation = ( new Computer( $this->provider, $this->context ) )->run( $subject, $operations );
 		$results     = $computation->results;
 		$finals      = [];
@@ -159,11 +303,11 @@ final class ExternalWriter {
 			$before[ $key ] = $this->provider->envelope( $subject, $key, $value );
 		}
 		if ( [] === $finals ) {
-			$this->record( $id, $product, $modified, $this->entries( $subject, $results, $skips ), $before );
+			$this->record( $id, $type, $modified, $this->entries( $subject, $results, $skips ), $before );
 			return new WriteOutcome( $id, $results, false );
 		}
 
-		$intended = null === $this->journal ? [] : $this->journal->intend( $this->batch_id, $id, Journal::object_type( $product ), $modified, $this->entries( $subject, $results, $skips ), $before );
+		$intended = null === $this->journal ? [] : $this->journal->intend( $this->batch_id, $id, $type, $modified, $this->entries( $subject, $results, $skips ), $before );
 		$failures = [];
 		$stored   = [];
 		foreach ( $finals as $key => $final ) {
@@ -208,8 +352,13 @@ final class ExternalWriter {
 	 * @param string|null                                             $type       The kind it was chosen as, or null not to check.
 	 */
 	public function replay( int $id, array $intents, array $operations = [], ?string $type = null ): WriteOutcome {
-		$product = self::load( $id );
-		$subject = null === $product ? null : ProductSubject::of( $product, $this->provider );
+		$category = TermSubject::TAXONOMY === $type;
+		$product  = $category ? TermSubject::load( $id ) : self::load( $id );
+		if ( null === $product ) {
+			$subject = null;
+		} else {
+			$subject = $product instanceof \WP_Term ? new TermSubject( $product, $this->provider ) : ProductSubject::of( $product, $this->provider );
+		}
 		$results = [];
 		$before  = [];
 		$pending = [];
@@ -219,7 +368,7 @@ final class ExternalWriter {
 			$old_v = $this->current_format( $key, $old );
 			$new_v = $this->current_format( $key, $new );
 			if ( null === $subject || null === $field || $old_v instanceof \WP_Error || $new_v instanceof \WP_Error ) {
-				$reason = null === $subject ? __( 'That product could not be found. It may have been deleted; reload the list and try again.', 'bulk-catalogue-manager-for-woocommerce' ) : Refusals::error_sentence();
+				$reason = null === $subject ? ( $category ? self::term_gone_sentence() : __( 'That product could not be found. It may have been deleted; reload the list and try again.', 'bulk-catalogue-manager-for-woocommerce' ) ) : Refusals::error_sentence();
 				$this->settle_failed( $id, $key, $old, $reason );
 				$results[ $key ] = Result::failed( $key, null, $reason, null === $subject ? Writer::NOT_FOUND : Refusals::ERROR );
 				continue;
@@ -247,7 +396,7 @@ final class ExternalWriter {
 		if ( [] !== $pending && null !== $product && null !== $subject ) {
 			$context  = new RunContext( Context::REPLAY, $this->context->user_id(), $this->context->batch_id() );
 			$computer = new Computer( $this->provider, $context );
-			$refusal  = $this->object_refusal( $id, $product, $subject, $type ) ?? $computer->refusal( $subject, $operations );
+			$refusal  = ( $subject instanceof TermSubject ? $this->term_refusal( $id ) : $this->object_refusal( $id, $product, $subject, $type ) ) ?? $computer->refusal( $subject, $operations );
 			foreach ( $pending as $key => [ $field, $old, $old_v, $new_v ] ) {
 				$refused = null === $refusal ? $computer->parent_only( $subject, $key ) : $refusal( $key );
 				if ( null !== $refused ) {
@@ -270,7 +419,7 @@ final class ExternalWriter {
 	 * Settle one replayed field from what put() (or the landed check) answered.
 	 *
 	 * @param int                                                       $id      Object id.
-	 * @param ProductSubject                                            $subject The object.
+	 * @param ProductSubject|TermSubject                                $subject The object.
 	 * @param string                                                    $key     Field key.
 	 * @param ExternalField                                             $field   The field.
 	 * @param mixed                                                     $old     The recorded old envelope.
@@ -279,7 +428,7 @@ final class ExternalWriter {
 	 * @param array{ok: bool, value: mixed, reason: string, code: string} $put     The answer.
 	 * @param array<string, mixed>                                      $before  Each changed field's value before, added to.
 	 */
-	private function settle_replayed( int $id, ProductSubject $subject, string $key, ExternalField $field, mixed $old, mixed $old_v, mixed $new_v, array $put, array &$before ): Result {
+	private function settle_replayed( int $id, ProductSubject|TermSubject $subject, string $key, ExternalField $field, mixed $old, mixed $old_v, mixed $new_v, array $put, array &$before ): Result {
 		if ( ! $put['ok'] ) {
 			$this->settle_failed( $id, $key, $old, $put['reason'] );
 			return Result::failed( $key, $old_v, $put['reason'], $put['code'] );
@@ -328,14 +477,14 @@ final class ExternalWriter {
 	/**
 	 * Write one field and read it back.
 	 *
-	 * @param ProductSubject $subject  The object.
+	 * @param ProductSubject|TermSubject $subject  The object.
 	 * @param string         $key      Field key.
 	 * @param mixed          $target   The value to set.
 	 * @param mixed          $expected The value it should hold now.
 	 * @param Context|null   $context  The run the provider sees, when not this writer's own (a replay).
 	 * @return array{ok: bool, value: mixed, reason: string, code: string} The value read back, or why it failed.
 	 */
-	private function put( ProductSubject $subject, string $key, mixed $target, mixed $expected, ?Context $context = null ): array {
+	private function put( ProductSubject|TermSubject $subject, string $key, mixed $target, mixed $expected, ?Context $context = null ): array {
 		$field = $this->provider->field( $key );
 		if ( null === $field ) {
 			return self::failure( Refusals::error_sentence(), Refusals::ERROR );
@@ -354,8 +503,12 @@ final class ExternalWriter {
 			$own = 1 === preg_match( '/^x_' . preg_quote( $this->provider->id, '/' ) . '_[a-z0-9_]+$/', $code );
 			return self::failure( '' === $message ? __( 'The add-on refused to write this value, so this change was not made.', 'bulk-catalogue-manager-for-woocommerce' ) : $message, $own ? $code : Refusals::ERROR );
 		}
-		$this->written[ $subject->id() ] = true;
-		$read                            = $subject->fresh( $key );
+		if ( $subject instanceof TermSubject ) {
+			$this->written_terms[ $subject->id() ] = true;
+		} else {
+			$this->written[ $subject->id() ] = true;
+		}
+		$read = $subject->fresh( $key );
 		if ( $read instanceof Unknown || ! self::same( $field, $read, $target ) ) {
 			return self::failure( Refusals::not_stored_sentence(), Refusals::NOT_STORED );
 		}
@@ -428,13 +581,13 @@ final class ExternalWriter {
 	 * @param int                                                     $id         Object id.
 	 * @param list<array{action: string, args: array<string, mixed>}> $operations The steps.
 	 * @param \Closure(string): Result                                $build      Builds a step's Result from its field.
-	 * @param object|null                                             $product    The loaded object, or null.
-	 * @param string                                                  $modified   Its modified time, or ''.
+	 * @param string                                                  $type       Its journal object type.
+	 * @param string                                                  $modified   Its modified time, or the unknown time.
 	 */
-	private function refuse_all( int $id, array $operations, \Closure $build, ?object $product = null, string $modified = '' ): WriteOutcome {
+	private function refuse_all( int $id, array $operations, \Closure $build, string $type, string $modified ): WriteOutcome {
 		$results = array_map( static fn( array $step ): Result => $build( (string) ( $step['args']['field'] ?? '' ) ), $operations );
 		$skips   = array_map( static fn( array $step ): bool => (bool) ( $step['args']['skip_already'] ?? true ), $operations );
-		$this->record( $id, $product, $modified, array_map( null, $results, $skips ), [] );
+		$this->record( $id, $type, $modified, array_map( null, $results, $skips ), [] );
 		return new WriteOutcome( $id, $results, false );
 	}
 
@@ -442,30 +595,27 @@ final class ExternalWriter {
 	 * Journal an object nothing is written to.
 	 *
 	 * @param int                             $id       Object id.
-	 * @param object|null                     $product  The loaded object, or null.
-	 * @param string                          $modified Its modified time, or ''.
+	 * @param string                          $type     Its journal object type.
+	 * @param string                          $modified Its modified time, or the unknown time.
 	 * @param list<array{0: Result, 1: bool}> $entries  Results with their skip switch.
 	 * @param array<string, mixed>            $before   Enveloped values before.
 	 */
-	private function record( int $id, ?object $product, string $modified, array $entries, array $before ): void {
+	private function record( int $id, string $type, string $modified, array $entries, array $before ): void {
 		if ( null === $this->journal ) {
 			return;
 		}
-		if ( '' === $modified ) {
-			$modified = $this->journal->modified_gmt( $product );
-		}
-		$this->journal->record( $this->batch_id, $id, Journal::object_type( $product ), $modified, $entries, $before, null );
+		$this->journal->record( $this->batch_id, $id, $type, $modified, $entries, $before, null );
 	}
 
 	/**
 	 * The Results as the journal stores them: every value an envelope, with each step's skip switch.
 	 *
-	 * @param ProductSubject $subject The object.
+	 * @param ProductSubject|TermSubject $subject The object.
 	 * @param list<Result>   $results One per step.
 	 * @param list<bool>     $skips   Each step's skip_already.
 	 * @return list<array{0: Result, 1: bool}>
 	 */
-	private function entries( ProductSubject $subject, array $results, array $skips ): array {
+	private function entries( ProductSubject|TermSubject $subject, array $results, array $skips ): array {
 		$entries = [];
 		foreach ( $results as $index => $result ) {
 			$key       = $result->field();

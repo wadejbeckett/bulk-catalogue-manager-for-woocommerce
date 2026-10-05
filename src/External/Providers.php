@@ -71,10 +71,11 @@ final class Providers {
 	 * Register the given providers directly, in order, outside the action
 	 * (tests and tools): the same checks, the same refusals.
 	 *
-	 * @param list<Provider> $providers The providers.
+	 * @param list<Provider>    $providers The providers.
+	 * @param list<string>|null $features  Contract version 2 features to accept; Contract::FEATURES when null.
 	 */
-	public static function of( array $providers ): self {
-		$collector = new Collector();
+	public static function of( array $providers, ?array $features = null ): self {
+		$collector = new Collector( $features );
 		$registrar = new Registrar( $collector );
 		foreach ( $providers as $provider ) {
 			$registrar->register( $provider );

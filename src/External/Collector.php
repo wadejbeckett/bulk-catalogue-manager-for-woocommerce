@@ -44,6 +44,14 @@ final class Collector {
 	private array $refusals = [];
 
 	/**
+	 * A collector checking against the features this core implements, or
+	 * against a given list (tests and tools, before a feature ships).
+	 *
+	 * @param list<string>|null $features Contract version 2 features to accept; Contract::FEATURES when null.
+	 */
+	public function __construct( private readonly ?array $features = null ) {}
+
+	/**
 	 * Accept or refuse a provider.
 	 *
 	 * @param Provider $provider The provider.
@@ -55,7 +63,7 @@ final class Collector {
 			Guard::log( 'An add-on registered after bulkcat_register_providers finished and was not added.', 'warning' );
 			return $refusal;
 		}
-		$checked = Inspector::inspect( $provider, array_keys( $this->registered ) );
+		$checked = Inspector::inspect( $provider, array_keys( $this->registered ), $this->features );
 		if ( $checked instanceof Registered ) {
 			$this->registered[ $checked->id ] = $checked;
 			return true;

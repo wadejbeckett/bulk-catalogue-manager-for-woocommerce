@@ -31,6 +31,7 @@ require_once __DIR__ . '/Support/testcase-shim.php';
 require_once __DIR__ . '/Support/wpdb-stub.php';
 require_once __DIR__ . '/Support/SqlEvaluator.php';
 require_once __DIR__ . '/Support/wp-stubs.php';
+require_once __DIR__ . '/Support/wp-term-stub.php';
 require_once __DIR__ . '/Support/rest-stubs.php';
 require_once __DIR__ . '/Support/read-stubs.php';
 require_once __DIR__ . '/Support/wc-product-sentinel.php';

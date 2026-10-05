@@ -48,10 +48,10 @@ final class Computer {
 	/**
 	 * Compute every step on one object.
 	 *
-	 * @param ProductSubject                                          $subject The object.
+	 * @param ProductSubject|TermSubject                               $subject The object.
 	 * @param list<array{action: string, args: array<string, mixed>}> $steps   The normalised steps.
 	 */
-	public function run( ProductSubject $subject, array $steps ): Computation {
+	public function run( ProductSubject|TermSubject $subject, array $steps ): Computation {
 		$refusal = $this->refusal( $subject, $steps );
 		if ( null !== $refusal ) {
 			return new Computation( self::all( $steps, $refusal ), [], [] );
@@ -97,11 +97,11 @@ final class Computer {
 	 * then the provider's authorise(). The forward write and a replay of an
 	 * interrupted one (ExternalWriter::replay()) both ask here.
 	 *
-	 * @param ProductSubject                                          $subject The object.
+	 * @param ProductSubject|TermSubject                               $subject The object.
 	 * @param list<array{action: string, args: array<string, mixed>}> $steps   The normalised steps.
 	 * @return \Closure(string): Result|null
 	 */
-	public function refusal( ProductSubject $subject, array $steps ): ?\Closure {
+	public function refusal( ProductSubject|TermSubject $subject, array $steps ): ?\Closure {
 		$user = $this->context->user_id();
 		foreach ( $steps as $step ) {
 			if ( ! $this->may( $user, $step ) ) {
@@ -115,10 +115,10 @@ final class Computer {
 	 * The variation rule: a parent-only field on a variation is skipped with
 	 * the core's sentence; null when the field applies to the object.
 	 *
-	 * @param ProductSubject $subject The object.
-	 * @param string         $key     The field.
+	 * @param ProductSubject|TermSubject $subject The object.
+	 * @param string                     $key     The field.
 	 */
-	public function parent_only( ProductSubject $subject, string $key ): ?Result {
+	public function parent_only( ProductSubject|TermSubject $subject, string $key ): ?Result {
 		$meta = $this->provider->field_meta( $key );
 		if ( null !== $meta && 'variation' === $subject->type() && ExternalField::PARENT_ONLY === $meta['rule'] ) {
 			return Result::skipped( $key, null, Advertiser::parent_only( $meta['label'] ), 'bulkcat_not_available' );
@@ -150,10 +150,10 @@ final class Computer {
 	/**
 	 * The provider's answer for the object, or the Result every step takes when it refuses.
 	 *
-	 * @param ProductSubject $subject The object.
+	 * @param ProductSubject|TermSubject $subject The object.
 	 * @return \Closure(string): Result|null
 	 */
-	private function authorise( ProductSubject $subject ): ?\Closure {
+	private function authorise( ProductSubject|TermSubject $subject ): ?\Closure {
 		try {
 			$answer = Guard::run( $this->provider->id, 'authorise', fn(): mixed => $this->provider->provider->authorise( $this->context->user_id(), $subject ) );
 		} catch ( ProviderFailure $e ) {
@@ -162,7 +162,12 @@ final class Computer {
 		if ( true === $answer ) {
 			return null;
 		}
-		$reason = self::sentence( $answer instanceof \WP_Error ? $answer->get_error_message() : '', __( 'The add-on does not allow a change to this product, so it was left alone.', 'bulk-catalogue-manager-for-woocommerce' ) );
+		$reason = self::sentence(
+			$answer instanceof \WP_Error ? $answer->get_error_message() : '',
+			$subject instanceof TermSubject
+				? __( 'The add-on does not allow a change to this category, so it was left alone.', 'bulk-catalogue-manager-for-woocommerce' )
+				: __( 'The add-on does not allow a change to this product, so it was left alone.', 'bulk-catalogue-manager-for-woocommerce' )
+		);
 		$code   = $this->code( $answer instanceof \WP_Error ? (string) $answer->get_error_code() : '', 'bulkcat_cannot_edit' );
 		return static fn( string $key ): Result => Result::skipped( $key, null, $reason, $code );
 	}
@@ -170,12 +175,12 @@ final class Computer {
 	/**
 	 * One step computed and checked.
 	 *
-	 * @param ProductSubject                                    $subject The object.
+	 * @param ProductSubject|TermSubject                        $subject The object.
 	 * @param array{action: string, args: array<string, mixed>} $step    The step.
 	 * @param string                                            $key     Its field.
 	 * @param mixed                                             $current The field's value so far.
 	 */
-	private function step( ProductSubject $subject, array $step, string $key, mixed $current ): Result {
+	private function step( ProductSubject|TermSubject $subject, array $step, string $key, mixed $current ): Result {
 		$field = $this->provider->field( $key );
 		if ( RestoreExternal::ID === $step['action'] ) {
 			// T108: the core computes an undo step itself: the value now against the value to put back.

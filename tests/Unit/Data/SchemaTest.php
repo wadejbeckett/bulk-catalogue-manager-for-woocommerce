@@ -189,7 +189,7 @@ final class SchemaTest extends TestCase {
 	public function test_allowed_values_match_the_spec(): void {
 		$this->assertSame( [ 'queued', 'running', 'complete', 'partial', 'failed', 'cancelled', 'undoing', 'undone' ], Schema::BATCH_STATUSES );
 		$this->assertSame( [ 'bulk', 'inline', 'tree', 'undo' ], Schema::BATCH_SOURCES );
-		$this->assertSame( [ 'product', 'variation', 'term' ], Schema::OBJECT_TYPES );
+		$this->assertSame( [ 'product', 'variation', 'term', 'product_cat' ], Schema::OBJECT_TYPES );
 		$this->assertSame( [ 'pending', 'done', 'skipped', 'failed' ], Schema::ITEM_STATES );
 		$this->assertSame( [ 'applied', 'skipped', 'failed' ], Schema::CHANGE_RESULTS );
 	}

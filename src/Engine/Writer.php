@@ -292,7 +292,9 @@ final class Writer {
 	public function prime_external( array $operations, array $ids ): void {
 		$kinds = $this->operations->kinds( $operations );
 		if ( 1 === count( $kinds ) && '' !== $kinds[0] ) {
-			$this->external_writer( $kinds[0], self::external_mode( $operations ) )?->prime( $ids );
+			$external = $this->external_writer( $kinds[0], self::external_mode( $operations ) );
+			// A category change primes terms through prime_terms(), never prime() (docs/EXTENSIONS-v2.md §5.4).
+			$external?->prime( $ids, $external->targets_categories( $operations ) ? \BulkCatalogueManager\Extension\ActionDescriptor::TARGET_CATEGORY : \BulkCatalogueManager\Extension\ActionDescriptor::TARGET_PRODUCT );
 		}
 	}
 

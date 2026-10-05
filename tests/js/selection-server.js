@@ -47,7 +47,9 @@ function restError( code, status, message = code, data = {} ) {
  * @return {Object} Server.
  */
 function createSelectionServer( { objects = OBJECTS } = {} ) {
-	let now = Date.parse( '2026-09-28T10:00:00Z' );
+	// The browser session reads the real clock, so the fixture starts at it: a fixed
+	// date made retention lapse once that date was a week old (5 October 2026).
+	let now = Date.now();
 	let seq = 0;
 	let snapSeq = 0;
 	let batchSeq = 100;

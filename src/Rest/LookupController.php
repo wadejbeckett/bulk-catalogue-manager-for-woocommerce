@@ -15,6 +15,7 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Rest;
 
+use BulkCatalogueManager\Extension\ActionDescriptor;
 use BulkCatalogueManager\Extension\Context;
 use BulkCatalogueManager\Extension\LookupPage;
 use BulkCatalogueManager\Extension\ObjectRef;
@@ -25,6 +26,7 @@ use BulkCatalogueManager\External\ProviderFailure;
 use BulkCatalogueManager\External\Refusals;
 use BulkCatalogueManager\External\Registered;
 use BulkCatalogueManager\External\RunContext;
+use BulkCatalogueManager\External\TermSubject;
 use BulkCatalogueManager\Operations\Registry as Actions;
 
 defined( 'ABSPATH' ) || exit;
@@ -156,7 +158,10 @@ final class LookupController implements ReadController {
 		$ref = null;
 		if ( null !== $object && '' !== $object ) {
 			$ref = is_string( $object ) ? ObjectRef::from_key( $object ) : null;
-			if ( null === $ref || ObjectRef::TERM === $ref->kind() ) {
+			// A row of the action's own kind only: a category row for a category action, a product or variation row otherwise.
+			$category = ActionDescriptor::TARGET_CATEGORY === ( $found['target'] ?? ActionDescriptor::TARGET_PRODUCT );
+			$term     = null !== $ref && ObjectRef::TERM === $ref->kind();
+			if ( null === $ref || $term !== $category ) {
 				return self::invalid( __( 'That row cannot be used here. Reload the page and try again.', 'bulk-catalogue-manager-for-woocommerce' ) );
 			}
 		}
@@ -200,6 +205,9 @@ final class LookupController implements ReadController {
 	 * @param int        $user     The user.
 	 */
 	private static function row( Registered $provider, ObjectRef $ref, int $user ): bool|\WP_Error {
+		if ( ObjectRef::TERM === $ref->kind() ) {
+			return self::category_row( $provider, $ref, $user );
+		}
 		$product = wc_get_product( $ref->id() );
 		if ( ! is_object( $product ) || ! is_callable( [ $product, 'get_id' ] ) ) {
 			return Refusals::forbidden();
@@ -208,6 +216,29 @@ final class LookupController implements ReadController {
 		if ( $subject->type() !== $ref->kind() || true !== Access::user_can_edit_object( $user, $subject->id(), $subject->parent_id() ) ) {
 			return Refusals::forbidden();
 		}
+		try {
+			$answer = Guard::run( $provider->id, 'authorise', static fn(): mixed => $provider->provider->authorise( $user, $subject ) );
+		} catch ( ProviderFailure $e ) {
+			$answer = false;
+		}
+		return true === $answer ? true : Refusals::forbidden();
+	}
+
+	/**
+	 * Whether the user may act on a category row (docs/EXTENSIONS-v2.md
+	 * §5.4): it still exists, read unfiltered; the user's edit_term on it;
+	 * then the add-on's authorise() with the typed category.
+	 *
+	 * @param Registered $provider The provider.
+	 * @param ObjectRef  $ref      The category.
+	 * @param int        $user     The user.
+	 */
+	private static function category_row( Registered $provider, ObjectRef $ref, int $user ): bool|\WP_Error {
+		$term = TermSubject::load( $ref->id() );
+		if ( null === $term || ! user_can( $user, 'edit_term', $ref->id() ) ) {
+			return Refusals::forbidden();
+		}
+		$subject = new TermSubject( $term, $provider );
 		try {
 			$answer = Guard::run( $provider->id, 'authorise', static fn(): mixed => $provider->provider->authorise( $user, $subject ) );
 		} catch ( ProviderFailure $e ) {

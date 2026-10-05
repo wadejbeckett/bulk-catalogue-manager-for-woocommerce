@@ -3,7 +3,8 @@
  * The lookup route (ticket 25; docs/EXTENSIONS-v2.md §4.3, §4.7): one
  * bounded, searchable page of a lookup argument's choices, after the screen
  * right, availability and the action's capability, and for a row the
- * object's edit right and the provider's authorise(); every refusal named;
+ * object's edit right (edit_term for a category row) and the provider's
+ * authorise(); every refusal named;
  * never cached.
  *
  * @package BulkCatalogueManager
@@ -160,5 +161,50 @@ final class LookupRouteTest extends TestCase {
 		$data = self::ask( [ 'query' => 'nobody by that name' ] )->get_data();
 		$this->assertSame( [], $data['items'] );
 		$this->assertFalse( $data['hasMore'] );
+	}
+
+	public function test_a_category_row_is_checked_as_a_category_never_as_a_product(): void {
+		$GLOBALS['bulkcat_test']['term_list']                = [
+			(object) [
+				'term_id'  => 10,
+				'name'     => 'Kitchen',
+				'slug'     => 'kitchen',
+				'parent'   => 0,
+				'taxonomy' => 'product_cat',
+			],
+			(object) [
+				'term_id'  => 12,
+				'name'     => 'Pots',
+				'slug'     => 'pots',
+				'parent'   => 10,
+				'taxonomy' => 'product_cat',
+			],
+		];
+		$GLOBALS['bulkcat_test']['user_caps'][ self::USER ] += [
+			'manage_product_terms' => true,
+			'edit_term'            => true,
+			'edit_term:12'         => false,
+		];
+		$controller = new LookupController( static fn(): Actions => new Actions( new Fields(), null, Providers::of( [ new PicksProvider( new MemoryStore(), new MemoryStore(), true, false ) ], [ 'lookup', 'category_target' ] ) ) );
+		$ask        = static function ( string $action, string $object ) use ( $controller ): array {
+			$request = new \WP_REST_Request( 'GET', '/bulkcat/v1/lookup' );
+			$request->set_query_params(
+				[
+					'action'   => $action,
+					'argument' => 'recipients',
+					'object'   => $object,
+				]
+			);
+			return self::refusal( $controller->get_items( $request ) );
+		};
+		$this->assertSame( [ 'answered', 200 ], $ask( 'x_picks_category_add', 'term:product_cat:10' ), 'A category the user may edit and the provider allows.' );
+		$this->assertSame( [ 'bulkcat_forbidden', 403 ], $ask( 'x_picks_category_add', 'term:product_cat:12' ), 'No edit_term on it.' );
+		$this->assertSame( [ 'bulkcat_forbidden', 403 ], $ask( 'x_picks_category_add', 'term:product_cat:99' ), 'No such category, though product 10 exists.' );
+		$this->assertSame( [ 'bulkcat_invalid_lookup', 400 ], $ask( 'x_picks_category_add', 'product:10' ), 'A product row for a category action.' );
+		$this->assertSame( [ 'bulkcat_invalid_lookup', 400 ], $ask( 'x_picks_add', 'term:product_cat:10' ), 'A category row for a product action.' );
+		update_option( PicksFaults::OPTION, [ 'refuse_terms' => [ 10 ] ] );
+		$this->assertSame( [ 'bulkcat_forbidden', 403 ], $ask( 'x_picks_category_add', 'term:product_cat:10' ), 'The provider narrows a category.' );
+		$this->assertSame( [ [ 'product_cat', 10 ], [ 'product_cat', 10 ] ], array_map( static fn( array $call ): array => [ $call[1], $call[2] ], PicksProvider::$calls['authorise'] ), 'authorise() is asked about the typed category only after the core checks.' );
+		$this->assertCount( 1, PicksDirectory::$lookups );
 	}
 }

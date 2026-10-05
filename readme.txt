@@ -45,7 +45,7 @@ The work runs in the background in small groups, so large catalogues do not time
 
 == Installation ==
 
-1. Install and activate WooCommerce 11.1 or later.
+1. Use WordPress 7.x (WordPress 8.x is not yet supported) and install and activate WooCommerce 11.1 or later.
 2. In Plugins → Add New, search for Bulk Catalogue Manager and install it, or upload the ZIP through Plugins → Add New → Upload Plugin.
 3. Activate the plugin.
 4. Open Products → Bulk Catalogue Manager.
@@ -118,6 +118,10 @@ Yes. Variations appear as rows of their own and can be edited one by one or in b
 = Does it need any other plugin? =
 
 No. It needs only WooCommerce 11.1 or later.
+
+= Which WordPress versions does it support? =
+
+WordPress 7.0 and later 7.x releases. WordPress 8.x is not yet supported: the manager screen is built to match the screen components of WordPress 7, so on WordPress 8 it shows a notice instead of opening. Your products and history are not affected. Update the plugin to a version that supports WordPress 8 before you update WordPress to 8.0.
 
 = Who can use it? =
 

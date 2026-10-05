@@ -2,14 +2,14 @@
 # This file is distributed under the GPL-3.0-or-later.
 msgid ""
 msgstr ""
-"Project-Id-Version: Bulk Catalogue Manager for WooCommerce 1.3.0\n"
+"Project-Id-Version: Bulk Catalogue Manager for WooCommerce 1.3.1\n"
 "Report-Msgid-Bugs-To: https://wordpress.org/support/plugin/bulk-catalogue-manager-for-woocommerce\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-10-04T10:19:52+00:00\n"
+"POT-Creation-Date: 2026-10-05T08:31:48+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -200,7 +200,13 @@ msgid_plural "Groups of products were finishing well within the time the server 
 msgstr[0] ""
 msgstr[1] ""
 
-msgid "This product could not be finished after three tries, so it was not changed. Open it to check it, then try the change again."
+msgid "The background run stopped while changing this product on each of three tries, so it may not have been finished. Open the product to check it."
+msgstr ""
+
+msgid "This product was not reached, because the background run stopped before getting to it on each of three tries. Nothing was done to it, so try the change again for it."
+msgstr ""
+
+msgid "This variation was changed, but its variable product's price range and stock could not be refreshed. Open the variable product and update it to refresh them."
 msgstr ""
 
 msgid "The record of what to put back on this product is missing, so it was left alone."
@@ -340,10 +346,13 @@ msgstr ""
 msgid "Nothing this batch changed can be put back now, so nothing was undone. The preview lists why for each product."
 msgstr ""
 
-msgid "This product changed while the interrupted change was waiting, so its remaining values were left alone. Review it before trying again."
+msgid "WooCommerce could not save this product, so this change was not made. Try again, or open the product to see why."
 msgstr ""
 
-msgid "WooCommerce could not save this product, so this change was not made. Try again, or open the product to see why."
+msgid "WooCommerce reported an error while saving this product, so this change may not have been made as asked. Open the product to check it before trying again."
+msgstr ""
+
+msgid "This product changed while the interrupted change was waiting, so its remaining values were left alone. Review it before trying again."
 msgstr ""
 
 msgid "This product was already updated by this change, so it was not changed again."
@@ -555,6 +564,9 @@ msgstr ""
 msgid "%1$s could not be added to Bulk Catalogue Manager: %2$s Update the add-on, or ask its author. Everything else works as usual."
 msgstr ""
 
+msgid "An add-on failed while registering with Bulk Catalogue Manager, so it may be missing from the manager. Update the add-on, or ask its author. Everything else works as usual."
+msgstr ""
+
 msgid "The add-on does not allow a change to this product, so it was left alone."
 msgstr ""
 
@@ -579,10 +591,10 @@ msgstr ""
 msgid "%s belongs to the product, not to each variation, so it cannot be applied to variations. Turn off Also apply to variations and try again."
 msgstr ""
 
-msgid "You can no longer edit this product, so it was left alone."
+msgid "The value this product holds now is larger than an add-on value may be, so this change was not made."
 msgstr ""
 
-msgid "The value this product holds now is larger than an add-on value may be, so this change was not made."
+msgid "You can no longer edit this product, so it was left alone."
 msgstr ""
 
 msgid "The add-on refused to write this value, so this change was not made."
@@ -1004,6 +1016,21 @@ msgstr ""
 msgid "A variation is never switched Off on its own, so it has no saved status."
 msgstr ""
 
+msgid "Backorders"
+msgstr ""
+
+msgid "Do not allow"
+msgstr ""
+
+msgid "Allow, but notify the customer"
+msgstr ""
+
+msgid "Allow"
+msgstr ""
+
+msgid "Low stock threshold"
+msgstr ""
+
 msgid "Type"
 msgstr ""
 
@@ -1311,6 +1338,18 @@ msgstr ""
 msgid "This product was changed since this batch ran, so it is left alone unless you choose Revert anyway."
 msgstr ""
 
+msgid "Put the stock settings back"
+msgstr ""
+
+msgid "Puts back Manage stock, and the stock quantity, backorders, low stock threshold and stock status that changed with it."
+msgstr ""
+
+msgid "Manage stock to put back"
+msgstr ""
+
+msgid "The stock settings to put back could not be read, so this product was left alone."
+msgstr ""
+
 msgid "Round prices"
 msgstr ""
 
@@ -1454,6 +1493,9 @@ msgstr ""
 msgid "This variation does not manage its own stock, so its stock quantity was not changed. Turn on Manage stock for the variation first."
 msgstr ""
 
+msgid "Stock status is set by the stock quantity when stock is managed, so it was not changed. Change the stock quantity, or turn off Manage stock first."
+msgstr ""
+
 msgid "Bulk Catalogue Manager for WooCommerce needs WooCommerce 11.1 or later. Install or update WooCommerce to use it."
 msgstr ""
 
@@ -1542,13 +1584,13 @@ msgstr ""
 msgid "Only changes to this product or variation, by id."
 msgstr ""
 
-msgid "Only changes to this field."
-msgstr ""
-
 msgid "Only changes written at or after this time (UTC unless it names a zone)."
 msgstr ""
 
 msgid "Only changes written before this time (UTC unless it names a zone)."
+msgstr ""
+
+msgid "Only changes to this field."
 msgstr ""
 
 msgid "Only rows with these results: applied, skipped or failed."
@@ -1713,6 +1755,21 @@ msgstr ""
 msgid "The category."
 msgstr ""
 
+msgid "Your display choices: columns in order, rows per page and row density."
+msgstr ""
+
+msgid "Format of the stored choices."
+msgstr ""
+
+msgid "Your display choices, or null when none are saved."
+msgstr ""
+
+msgid "Your display choices could not be saved. Try again."
+msgstr ""
+
+msgid "Those display choices could not be saved because they were not in the expected form. Reload the page and try again."
+msgstr ""
+
 msgid "Columns to export, in order: the visible columns of the view."
 msgstr ""
 
@@ -1726,6 +1783,9 @@ msgid "For the catalogue, the status filter; for the change history, only change
 msgstr ""
 
 msgid "The catalogue is now exported from the Export dialog. Reload the page and export again."
+msgstr ""
+
+msgid "The security code must not be sent in the page address. Reload the page and export again."
 msgstr ""
 
 msgid "The export could not be prepared. Export again; if this continues, ask an administrator to check the site's error log."
@@ -1747,6 +1807,12 @@ msgid "Whether setting this choice takes the product out of shoppers' sight. Nat
 msgstr ""
 
 msgid "How it hides the product: off_site (its status keeps it off the site) or hidden (hidden from the shop and from search); null when it does not."
+msgstr ""
+
+msgid "Your last check of this change is still running. Wait for it to finish, then try again."
+msgstr ""
+
+msgid "Your last history export is still being prepared. Wait for it to finish, then try again."
 msgstr ""
 
 msgid "Chosen products that cannot be changed now, by id; at most 1,000 are listed."
@@ -1941,7 +2007,7 @@ msgstr ""
 msgid "Older changes are removed from the history, along with what is needed to undo them."
 msgstr ""
 
-msgid "Above this many rows, Apply shows the count again and needs one more click. Changes that draft, hide or empty a field always ask."
+msgid "At or above this many rows, Apply shows the count again and needs one more click. Changes that set Status to Draft or Pending Review, hide products or empty a field always ask."
 msgstr ""
 
 msgid "Where the \"Also apply to variations\" switch starts. You can still turn it on or off for each change."
@@ -2062,7 +2128,7 @@ msgstr ""
 msgid "Keep history for"
 msgstr ""
 
-msgid "Confirm above this many rows"
+msgid "Confirm at or above this many rows"
 msgstr ""
 
 msgid "Apply status changes to variations by default"
@@ -2565,6 +2631,27 @@ msgid_plural "Stock would go below zero on %s products."
 msgstr[0] ""
 msgstr[1] ""
 
+#. translators: %s: a number of products and variations together, such as "3".
+#, js-format
+msgid "Turning off Manage stock clears the stock quantity, backorders and low stock threshold on %s item. Undo puts them back."
+msgid_plural "Turning off Manage stock clears the stock quantity, backorders and low stock threshold on %s items. Undo puts them back."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of variations, such as "3".
+#, js-format
+msgid "Turning off Manage stock clears the stock quantity, backorders and low stock threshold on %s variation. Undo puts them back."
+msgid_plural "Turning off Manage stock clears the stock quantity, backorders and low stock threshold on %s variations. Undo puts them back."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number, such as "3".
+#, js-format
+msgid "Turning off Manage stock clears the stock quantity, backorders and low stock threshold on %s product. Undo puts them back."
+msgid_plural "Turning off Manage stock clears the stock quantity, backorders and low stock threshold on %s products. Undo puts them back."
+msgstr[0] ""
+msgstr[1] ""
+
 #. translators: %s: a number, such as "3".
 #, js-format
 msgid "%s SKU would duplicate another product’s, so it would not be applied."
@@ -2719,6 +2806,12 @@ msgid_plural "%s items updated."
 msgstr[0] ""
 msgstr[1] ""
 
+msgid "The progress can no longer be read. If you have been signed out, sign in again, then check again."
+msgstr ""
+
+msgid "Check again"
+msgstr ""
+
 msgid "An earlier attempt to apply a change had gone through, so nothing new was sent. This is that change."
 msgstr ""
 
@@ -2728,7 +2821,7 @@ msgstr ""
 msgid "Applying the change"
 msgstr ""
 
-#. translators: %s: a number of products, such as "1,284 products".
+#. translators: %s: what the change works through, such as "1,284 products", "1,200 products and 50 variations" or "1,284 items".
 #, js-format
 msgid "Working through %s in the background."
 msgstr ""
@@ -3447,6 +3540,9 @@ msgstr ""
 msgid "Review product History"
 msgstr ""
 
+msgid "The latest change could not be read."
+msgstr ""
+
 msgid "No changes recorded yet."
 msgstr ""
 
@@ -3489,6 +3585,14 @@ msgid "We could not save the changes to %1$s. %2$s"
 msgstr ""
 
 msgid "Save"
+msgstr ""
+
+msgid "Some details of this product could not be loaded, so not everything is shown."
+msgstr ""
+
+#. translators: 1: variations listed, such as "100"; 2: variations in all, such as "150".
+#, js-format
+msgid "Showing the first %1$s of %2$s variations."
 msgstr ""
 
 msgid "Show the variations in the list"
@@ -4222,9 +4326,6 @@ msgstr ""
 msgid "This page was idle for a while, so your selection was checked again. The same products are still selected; check any change again before applying it."
 msgstr ""
 
-msgid "Check again"
-msgstr ""
-
 msgid "Clear selection"
 msgstr ""
 
@@ -4247,6 +4348,29 @@ msgid "Hide from shop and search"
 msgstr ""
 
 msgid "Make a change to these"
+msgstr ""
+
+msgid "Nothing is selected, and no products match the current filters."
+msgstr ""
+
+msgid "Nothing is selected, and there are no products to select."
+msgstr ""
+
+#. translators: %s: a number of rows, such as "1,284".
+#, js-format
+msgid "Nothing is selected. Select products in the table, or select the %s matching the current filters."
+msgid_plural "Nothing is selected. Select products in the table, or select all %s matching the current filters."
+msgstr[0] ""
+msgstr[1] ""
+
+#. translators: %s: a number of rows, such as "1,284".
+#, js-format
+msgid "Nothing is selected. Select products in the table, or select the %s in the catalogue."
+msgid_plural "Nothing is selected. Select products in the table, or select all %s in the catalogue."
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "Nothing is selected. Select products in the table."
 msgstr ""
 
 msgid "Selected products"
@@ -4364,6 +4488,9 @@ msgstr ""
 msgid "Your saved views could not be loaded or changed. Check your connection and try again."
 msgstr ""
 
+msgid "Dismiss"
+msgstr ""
+
 msgid "Saved views"
 msgstr ""
 
@@ -4403,10 +4530,22 @@ msgstr ""
 msgid "This change had already been accepted, so it was not sent again. Its progress is shown here."
 msgstr ""
 
+msgid "Stopping…"
+msgstr ""
+
+msgid "Stop this change"
+msgstr ""
+
+msgid "Stop this change? What it has already changed stays changed, and can be undone from History."
+msgstr ""
+
 msgid "The change could not be cancelled. Try again in a moment."
 msgstr ""
 
-msgid "Cancelling…"
+msgid "Yes, stop it"
+msgstr ""
+
+msgid "Keep it running"
 msgstr ""
 
 msgid "Edit details"
@@ -4420,6 +4559,9 @@ msgstr ""
 msgid "Name or SKU contains “%s”"
 msgstr ""
 
+msgid "Your display choices could not be saved, so they may not be kept next time."
+msgstr ""
+
 msgid "Selected products could not be refreshed. Your selection has been kept."
 msgstr ""
 
@@ -4427,6 +4569,9 @@ msgid "The products could not be loaded."
 msgstr ""
 
 msgid "Show all products"
+msgstr ""
+
+msgid "Another change is still running. You can apply this one once it has finished."
 msgstr ""
 
 msgid "The list of product fields could not be loaded, so the products cannot be shown."

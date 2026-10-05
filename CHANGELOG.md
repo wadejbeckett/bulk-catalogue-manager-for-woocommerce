@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.4] - 2026-10-05
+
+- A change whose only problems were rows skipped as the preview said (not applicable, already at the value) now reads "Done, some rows skipped" in History, the Done step, the progress banner and the history export, not "Done with errors".
+- Export CSV opened straight after ticking rows waits for the selection to be saved, then chooses Selected from it, so it no longer opens one selection behind.
+- Settings shown to someone who cannot change them read as each value in words (On, Off, the chosen option or the number) instead of greyed-out switches.
+- Undo of a category change, and category delete and merge, now see every category even where another plugin hides some from term queries, so an undo run in the background puts every category back instead of skipping some as gone.
+- The Categories tab orders categories with the same position by name exactly as WooCommerce and the shop do ("26WC" before "2RM"), not naturally.
+
 ## [1.3.3] - 2026-10-05
 
 - Categories tab uses the full width: the tree on the left with whole names, expand and collapse all, search that keeps the path, and a details pane on the right with the category's details and its products.

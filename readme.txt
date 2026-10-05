@@ -6,7 +6,7 @@ Tested up to: 7.1
 Requires PHP: 8.1
 WC requires at least: 11.1
 WC tested up to: 11.1
-Stable tag: 1.3.3
+Stable tag: 1.3.4
 License: GPL-3.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -145,6 +145,13 @@ Yes. Each site keeps its own history and settings, and deleting the plugin with 
 
 == Changelog ==
 
+= 1.3.4 =
+* A change whose only problems were rows skipped as the preview said (not applicable, already at the value) now reads "Done, some rows skipped" in History, the Done step, the progress banner and the history export, not "Done with errors".
+* Export CSV opened straight after ticking rows waits for the selection to be saved, then chooses Selected from it, so it no longer opens one selection behind.
+* Settings shown to someone who cannot change them read as each value in words (On, Off, the chosen option or the number) instead of greyed-out switches.
+* Undo of a category change, and category delete and merge, now see every category even where another plugin hides some from term queries, so an undo run in the background puts every category back instead of skipping some as gone.
+* The Categories tab orders categories with the same position by name exactly as WooCommerce and the shop do ("26WC" before "2RM"), not naturally.
+
 = 1.3.3 =
 * Categories tab uses the full width: the tree on the left with whole names, expand and collapse all, search that keeps the path, and a details pane on the right with the category's details and its products.
 * All fields shows WordPress's own category form inside the tab, so fields other plugins add to categories appear and save there; Open in WooCommerce links to the native screen.
@@ -210,6 +217,9 @@ Yes. Each site keeps its own history and settings, and deleting the plugin with 
 * Settings for access, page size, confirmation, variation defaults, background batch sizes, history and data removal.
 
 == Upgrade Notice ==
+
+= 1.3.4 =
+Fixes: category undo in the background puts every category back; the tab orders categories by name as WooCommerce does; skipped rows no longer read "with errors"; Export CSV waits for the saved selection; read-only Settings show values in words. No database change.
 
 = 1.3.3 =
 A full-width Categories tab with delete, merge, native order and other plugins' category fields. Category order now uses WooCommerce's own order. No database change.

@@ -32,6 +32,10 @@ if ( ! class_exists( WpdbStub::class ) ) {
 
 		public string $options = 'wp_options';
 
+		public string $terms = 'wp_terms';
+
+		public string $term_taxonomy = 'wp_term_taxonomy';
+
 		/** As MySQL with lower_case_table_names=1: names are stored and answered in lower case. */
 		public bool $lower_case_names = false;
 
@@ -217,7 +221,30 @@ if ( ! class_exists( WpdbStub::class ) ) {
 
 		public function get_results( string $query, string $output = OBJECT ): array {
 			$this->queries[] = $query;
-			return $this->respond( $query, [] );
+			// The term tables are the term stubs' own list, unless a test answers this exact statement.
+			$terms = array_key_exists( $query, $this->responses ) ? null : $this->stored_terms( $query );
+			return $terms ?? $this->respond( $query, [] );
+		}
+
+		/**
+		 * The product categories as the term tables hold them: every term in
+		 * the stubs' 'term_list', whatever a filter on term queries hides
+		 * ('hidden_terms'), for a direct read of `wp_terms` joined to
+		 * `wp_term_taxonomy` by taxonomy and, optionally, one term id.
+		 *
+		 * @return list<object>|null Null for any other statement.
+		 */
+		private function stored_terms( string $query ): ?array {
+			if ( 1 !== preg_match( "/FROM `wp_terms` AS t INNER JOIN `wp_term_taxonomy` AS tt ON tt\\.term_id = t\\.term_id WHERE tt\\.taxonomy = '([^']+)'(?: AND t\\.term_id = (\\d+))?/", $query, $m ) ) {
+				return null;
+			}
+			$rows = [];
+			foreach ( $GLOBALS['bulkcat_test']['term_list'] ?? [] as $term ) {
+				if ( ( $term->taxonomy ?? 'product_cat' ) === $m[1] && ( ! isset( $m[2] ) || (int) $term->term_id === (int) $m[2] ) ) {
+					$rows[] = $term;
+				}
+			}
+			return $rows;
 		}
 
 		/**

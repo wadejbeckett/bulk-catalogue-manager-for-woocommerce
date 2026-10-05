@@ -102,6 +102,47 @@ final class CategoryTree {
 	}
 
 	/**
+	 * Every product category as the term tables hold it (1.3.4), for the
+	 * writes that must judge whether a category exists, and what it holds,
+	 * whoever is asking: undo, delete and merge. A term query is filtered
+	 * for the viewer (another plugin may hide categories from someone, or
+	 * from a background run with no user), so this reads the tables
+	 * directly and is never filtered. Its order is WooCommerce's stored
+	 * `order` meta, as tree() reads it.
+	 */
+	public static function complete(): Tree {
+		return self::tree_of( self::stored_terms() );
+	}
+
+	/**
+	 * Every product category straight from the term tables, unfiltered,
+	 * with the term meta cache primed for their order.
+	 *
+	 * @return list<object> Objects with term_id, name, slug, taxonomy, description and parent.
+	 */
+	public static function stored_terms(): array {
+		global $wpdb;
+		$rows = $wpdb->get_results( $wpdb->prepare( 'SELECT t.term_id, t.name, t.slug, tt.taxonomy, tt.description, tt.parent FROM %i AS t INNER JOIN %i AS tt ON tt.term_id = t.term_id WHERE tt.taxonomy = %s', $wpdb->terms, $wpdb->term_taxonomy, Counts::TAXONOMY ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- An unfiltered read on purpose: term queries are filtered for the viewer.
+		$rows = is_array( $rows ) ? array_values( array_filter( $rows, 'is_object' ) ) : [];
+		if ( [] !== $rows ) {
+			update_meta_cache( 'term', array_map( static fn( object $row ): int => (int) $row->term_id, $rows ) );
+		}
+		return $rows;
+	}
+
+	/**
+	 * One product category straight from the term tables, unfiltered; null
+	 * when there is none with that id.
+	 *
+	 * @param int $id Term id.
+	 */
+	public static function stored_term( int $id ): ?object {
+		global $wpdb;
+		$rows = $wpdb->get_results( $wpdb->prepare( 'SELECT t.term_id, t.name, t.slug, tt.taxonomy, tt.description, tt.parent FROM %i AS t INNER JOIN %i AS tt ON tt.term_id = t.term_id WHERE tt.taxonomy = %s AND t.term_id = %d', $wpdb->terms, $wpdb->term_taxonomy, Counts::TAXONOMY, $id ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- An unfiltered read on purpose: term queries are filtered for the viewer.
+		return is_array( $rows ) && isset( $rows[0] ) && is_object( $rows[0] ) ? $rows[0] : null;
+	}
+
+	/**
 	 * Every product category as get_terms() returns them, in one call that
 	 * primes the term meta cache.
 	 *

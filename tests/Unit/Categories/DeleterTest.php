@@ -198,6 +198,25 @@ final class DeleterTest extends TestCase {
 		$this->assertSame( 'Shoes', json_decode( $this->store->batch( $done['batch_id'] )['operations'], true )[0]['args']['path'] );
 	}
 
+	public function test_delete_and_merge_see_every_category_whatever_term_queries_hide(): void {
+		// Another plugin's filtering of term queries hides Formal (4) and Hiking (8) from this viewer; both exist.
+		$GLOBALS['bulkcat_test']['hidden_terms'] = [ 4, 8 ];
+		$deleter                                 = new Deleter();
+		$preview                                 = $deleter->preview( [ 3 ], 0, self::USER );
+		$this->assertSame( 1, $preview['subcategories'], 'Formal, hidden, still moves up when Shirts goes.' );
+		$done = $deleter->apply( [ 3 ], 0, $preview['token'], self::USER );
+		$this->assertSame( 'complete', $done['status'] );
+		$this->assertContains( [ 4, 'term_parent', 3, 2, 'applied' ], $this->store->journal(), 'Its move is journalled.' );
+
+		// A hidden category can itself be deleted, and merged into, by id.
+		$preview = $deleter->preview( [ 8 ], 0, self::USER );
+		$this->assertTrue( is_array( $preview ), $preview instanceof \WP_Error ? $preview->get_error_message() : '' );
+		$this->assertSame( 'Shoes › Boots › Hiking', $preview['categories'][0]['path'] );
+		$merge = $deleter->preview( [ 7 ], 4, self::USER );
+		$this->assertTrue( is_array( $merge ), $merge instanceof \WP_Error ? $merge->get_error_message() : '' );
+		$this->assertSame( 4, $merge['into']['id'] );
+	}
+
 	public function test_merge_needs_a_target_outside_those_merged(): void {
 		foreach ( [ 2, 999 ] as $into ) {
 			$this->assertSame( Deleter::BAD_TARGET, ( new Deleter() )->preview( [ 2, 5 ], $into, self::USER )->get_error_code() );

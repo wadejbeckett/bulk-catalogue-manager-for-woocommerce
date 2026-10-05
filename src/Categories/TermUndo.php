@@ -38,6 +38,11 @@ defined( 'ABSPATH' ) || exit;
  * category), which no client can send: tree items never reach the
  * operation registry. write() journals what it put back on the undo batch
  * under the same properties, so the undo can itself be undone.
+ *
+ * Whether a category exists and what it holds now are read from the term
+ * tables (CategoryTree::complete(), stored_term()), never from a term query
+ * filtered for whoever runs the undo (1.3.4); permission is still checked
+ * for the person who asked for it.
  */
 final class TermUndo {
 	/**
@@ -72,7 +77,8 @@ final class TermUndo {
 			// Only what nothing reads any more (the retired tree-only order) or what cannot come back.
 			return self::skipped( $id, Planner::CANNOT_RESTORE, __( 'This change cannot be undone here, so it was left alone.', 'bulk-catalogue-manager-for-woocommerce' ) );
 		}
-		$tree = CategoryTree::tree();
+		// Never what this viewer's term queries show: a background undo has no user (1.3.4).
+		$tree = CategoryTree::complete();
 		if ( null === $tree->node( $id ) ) {
 			return self::skipped( $id, Planner::MISSING, __( 'This category no longer exists, so it was left alone.', 'bulk-catalogue-manager-for-woocommerce' ) );
 		}
@@ -230,8 +236,8 @@ final class TermUndo {
 	 * @return array<string, mixed>
 	 */
 	public static function current( int $id ): array {
-		$term = get_term( $id, Counts::TAXONOMY );
-		if ( ! is_object( $term ) || is_wp_error( $term ) ) {
+		$term = CategoryTree::stored_term( $id );
+		if ( null === $term ) {
 			return [];
 		}
 		$order = get_term_meta( $id, CategoryTree::ORDER_META, true );

@@ -867,6 +867,91 @@ describe( 'following a change in progress (FRONTEND-8)', () => {
 			() => new Promise( ( resolve ) => setTimeout( resolve, 3500 ) )
 		);
 		expect( reads() ).toBe( 1 );
+		// SILENT-FAILURES-8: and says so, with a way to try again.
+		const three = within( card( 3 ) );
+		expect(
+			three.getByText(
+				'The progress of this change could not be read, so it is no longer shown here. Try again, or reload the page.'
+			)
+		).toBeTruthy();
+		serve( DEFAULT_ROUTES() );
+		fireEvent.click( three.getByRole( 'button', { name: 'Try again' } ) );
+		await waitFor( () => expect( reads() ).toBe( 2 ) );
+	} );
+
+	it( 'stops after five failed reads in a row and says so (SILENT-FAILURES-8)', async () => {
+		serve( {
+			...DEFAULT_ROUTES(),
+			'GET bulkcat/v1/batches/3': () => {
+				throw Object.assign( new Error( 'Server error.' ), {
+					code: 'internal_server_error',
+					data: { status: 500 },
+				} );
+			},
+		} );
+		jest.useFakeTimers();
+		try {
+			await renderHistory();
+			const reads = () =>
+				calls.filter(
+					( call ) => call.route === 'bulkcat/v1/batches/3'
+				).length;
+			for ( let i = 0; i < 8; i++ ) {
+				await act( async () => {
+					jest.advanceTimersByTime( 3000 );
+				} );
+			}
+			expect( reads() ).toBe( 5 );
+			expect(
+				within( card( 3 ) ).getByText(
+					'The progress of this change could not be read, so it is no longer shown here. Try again, or reload the page.'
+				)
+			).toBeTruthy();
+		} finally {
+			jest.useRealTimers();
+		}
+	} );
+
+	it( 'says when the reasons of a change with errors could not be loaded (SILENT-FAILURES-8)', async () => {
+		let fail = true;
+		serve( {
+			...DEFAULT_ROUTES(),
+			'GET bulkcat/v1/batches/4': () => {
+				if ( fail ) {
+					throw Object.assign( new Error( 'Server error.' ), {
+						code: 'internal_server_error',
+						data: { status: 500 },
+					} );
+				}
+				return DEFAULT_ROUTES()[ 'GET bulkcat/v1/batches/4' ];
+			},
+		} );
+		await renderHistory();
+		const four = within( card( 4 ) );
+		fireEvent.click(
+			four.getByRole( 'button', { name: 'See every change' } )
+		);
+		await waitFor( () =>
+			expect(
+				four.getByText(
+					'The reasons for this change could not be loaded. Try again, or reload the page.'
+				)
+			).toBeTruthy()
+		);
+		fail = false;
+		fireEvent.click( four.getByRole( 'button', { name: 'Try again' } ) );
+		await waitFor( () =>
+			expect(
+				four.getByText(
+					'2 products: Another user was editing this product.'
+				)
+			).toBeTruthy()
+		);
+		expect(
+			four.queryByText(
+				'The reasons for this change could not be loaded. Try again, or reload the page.'
+			)
+		).toBeNull();
 	} );
 } );
 

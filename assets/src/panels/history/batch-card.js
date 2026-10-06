@@ -71,34 +71,45 @@ function conflictPhrase( plan, conflicted ) {
 	);
 }
 
+/** Failed reads in a row after which a followed batch is no longer read (SILENT-FAILURES-8). */
+export const MAX_FAILED_READS = 5;
+
 /**
  * Follow a batch while it is being worked: read it every POLL_MS until
  * its status is no longer active, then call onDone with the last report.
  * A failed read is tried again, unless it will fail the same way however
- * often it is asked (signed out, not allowed, gone: FRONTEND-8).
+ * often it is asked (signed out, not allowed, gone: FRONTEND-8) or has
+ * failed MAX_FAILED_READS times in a row; then the reads stop and
+ * `failure` holds the last error until `retry()` starts them again
+ * (SILENT-FAILURES-8).
  *
  * @param {number|null} batchId Batch to follow, or null.
  * @param {Function}    onDone  Called with the finished report.
- * @return {Object|null} The latest report.
+ * @return {{report: Object|null, failure: *, retry: Function}} The latest report, the error that stopped the reads, and a retry.
  */
 function useFollow( batchId, onDone ) {
 	const [ report, setReport ] = useState( null );
+	const [ failure, setFailure ] = useState( null );
+	const [ attempt, setAttempt ] = useState( 0 );
 	const done = useRef( onDone );
 	done.current = onDone;
 
 	useEffect( () => {
+		setFailure( null );
 		if ( ! batchId ) {
 			setReport( null );
 			return;
 		}
 		let live = true;
 		let timer = null;
+		let failed = 0;
 		const read = () => {
 			readBatch( batchId )
 				.then( ( next ) => {
 					if ( ! live ) {
 						return;
 					}
+					failed = 0;
 					setReport( next );
 					if ( ACTIVE_STATUSES.includes( next?.status ) ) {
 						timer = setTimeout( read, POLL_MS );
@@ -107,9 +118,18 @@ function useFollow( batchId, onDone ) {
 					}
 				} )
 				.catch( ( error ) => {
-					if ( live && ! permanentReadError( error ) ) {
-						timer = setTimeout( read, POLL_MS );
+					if ( ! live ) {
+						return;
 					}
+					failed += 1;
+					if (
+						permanentReadError( error ) ||
+						failed >= MAX_FAILED_READS
+					) {
+						setFailure( error );
+						return;
+					}
+					timer = setTimeout( read, POLL_MS );
 				} );
 		};
 		read();
@@ -117,9 +137,39 @@ function useFollow( batchId, onDone ) {
 			live = false;
 			clearTimeout( timer );
 		};
-	}, [ batchId ] );
+	}, [ batchId, attempt ] );
 
-	return report;
+	const retry = useCallback( () => setAttempt( ( n ) => n + 1 ), [] );
+	return { report, failure, retry };
+}
+
+/**
+ * Why a followed batch is no longer read, with Try again (SILENT-FAILURES-8).
+ *
+ * @param {Object}   props         Props.
+ * @param {*}        props.failure The error that stopped the reads.
+ * @param {Function} props.retry   Starts the reads again.
+ * @return {Element|null} Notice, or nothing.
+ */
+function FollowFailure( { failure, retry } ) {
+	if ( ! failure ) {
+		return null;
+	}
+	return (
+		<div className="bulkcat-batch__error">
+			<ErrorNotice
+				error={ failure }
+				message={ __(
+					'The progress of this change could not be read, so it is no longer shown here. Try again, or reload the page.',
+					'bulk-catalogue-manager-for-woocommerce'
+				) }
+				fallback=""
+			/>
+			<Button variant="secondary" size="small" onClick={ retry }>
+				{ __( 'Try again', 'bulk-catalogue-manager-for-woocommerce' ) }
+			</Button>
+		</div>
+	);
 }
 
 /**
@@ -338,13 +388,14 @@ export default function BatchCard( {
 	const [ uncertain, setUncertain ] = useState( null );
 
 	// A batch in progress is followed until it finishes, then the list is read again.
-	const progress = useFollow(
+	const following = useFollow(
 		state === STATES.IN_PROGRESS && ! running ? batch.batch_id : null,
 		useCallback( () => onChanged(), [ onChanged ] )
 	);
+	const progress = following.report;
 
 	// The undo batch this card started, followed to its end.
-	const undoReport = useFollow(
+	const undoFollowing = useFollow(
 		running,
 		useCallback(
 			( finished ) => {
@@ -366,22 +417,25 @@ export default function BatchCard( {
 			[ what, isRedo, onChanged, onNotice ]
 		)
 	);
+	const undoReport = undoFollowing.report;
 
 	// A batch with errors, or with rows skipped by design (1.3.4), shows its
 	// grouped reasons from the single read and opens on those rows.
 	const problems = state === STATES.WITH_ERRORS || skippedOnly( batch );
+	// A failed read says so, with Try again, never an empty space (SILENT-FAILURES-8).
+	const [ reasonsError, setReasonsError ] = useState( null );
 	useEffect( () => {
-		if ( ! problems || ! open || details ) {
+		if ( ! problems || ! open || details || reasonsError ) {
 			return;
 		}
 		let live = true;
 		readBatch( batch.batch_id )
 			.then( ( report ) => live && setDetails( report ) )
-			.catch( () => {} );
+			.catch( ( caught ) => live && setReasonsError( caught ) );
 		return () => {
 			live = false;
 		};
-	}, [ problems, open, details, batch.batch_id ] );
+	}, [ problems, open, details, reasonsError, batch.batch_id ] );
 
 	const startUndo = async () => {
 		setBusy( true );
@@ -643,6 +697,10 @@ export default function BatchCard( {
 				</p>
 			) }
 
+			<FollowFailure
+				failure={ running ? undoFollowing.failure : following.failure }
+				retry={ running ? undoFollowing.retry : following.retry }
+			/>
 			{ inProgress && (
 				<div className="bulkcat-batch__progress">
 					<BatchProgress
@@ -857,6 +915,28 @@ export default function BatchCard( {
 				</Modal>
 			) }
 
+			{ open && problems && reasonsError && (
+				<div className="bulkcat-batch__error">
+					<ErrorNotice
+						error={ reasonsError }
+						message={ __(
+							'The reasons for this change could not be loaded. Try again, or reload the page.',
+							'bulk-catalogue-manager-for-woocommerce'
+						) }
+						fallback=""
+					/>
+					<Button
+						variant="secondary"
+						size="small"
+						onClick={ () => setReasonsError( null ) }
+					>
+						{ __(
+							'Try again',
+							'bulk-catalogue-manager-for-woocommerce'
+						) }
+					</Button>
+				</div>
+			) }
 			{ open && problems && details?.summary?.length > 0 && (
 				<ul className="bulkcat-batch__reasons">
 					{ details.summary.map( ( reason ) => (

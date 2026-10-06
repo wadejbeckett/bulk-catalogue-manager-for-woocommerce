@@ -923,6 +923,50 @@ describe( 'history wire-ins', () => {
 		expect( within( card( 1 ) ).queryByText( /Put back by/ ) ).toBeNull();
 	} );
 
+	it( 'reads a change undone and then redone as Redone, with who put it back and who made it again', async () => {
+		const seven = BATCHES[ 6 ];
+		BATCHES[ 6 ] = {
+			...seven,
+			undone_by: {
+				batch_id: 42,
+				user_id: 2,
+				user_name: 'Sam Naidoo',
+				finished_gmt: '2026-09-23 12:00:00',
+			},
+			redone_by: {
+				batch_id: 43,
+				user_id: 9,
+				user_name: 'Lee Adams',
+				finished_gmt: '2026-09-23 13:00:00',
+			},
+		};
+		try {
+			await renderHistory();
+			const row = within( card( 7 ) );
+			// The outcome and the settled Undo button both say Redone.
+			expect( row.getAllByText( 'Redone' ) ).toHaveLength( 2 );
+			expect( row.queryByText( 'Undone' ) ).toBeNull();
+			expect(
+				row.getByText( /^Put back by Sam Naidoo in change #42 on / )
+			).toBeTruthy();
+			expect(
+				row.getByText( /^Done again by Lee Adams in change #43 on / )
+			).toBeTruthy();
+		} finally {
+			BATCHES[ 6 ] = seven;
+		}
+	} );
+
+	it( 'exports who made an undone change again', async () => {
+		await renderHistory();
+		await act( async () =>
+			fireEvent.click(
+				screen.getByRole( 'button', { name: 'Export log (CSV)' } )
+			)
+		);
+		expect( exportForm().columns ).toContain( 'redone_by' );
+	} );
+
 	it( 'downloads the list by posting /export with source=batches and its filters, the nonce in the body (SECURITY-1)', async () => {
 		await renderHistory();
 		const button = screen.getByRole( 'button', {

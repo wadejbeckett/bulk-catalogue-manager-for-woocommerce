@@ -387,12 +387,23 @@ final class BatchesController implements ReadController {
 					'type'        => 'boolean',
 				],
 				'undone_by'            => [
-					'description' => __( 'On a change that was undone, the undo that put it back and who ran it; null otherwise. List rows only.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'description' => __( 'On a change that was undone, the latest undo that put it back, who ran it and when; null otherwise. On the single read only when undone.', 'bulk-catalogue-manager-for-woocommerce' ),
 					'type'        => [ 'object', 'null' ],
 					'properties'  => [
-						'batch_id'  => $integer,
-						'user_id'   => $integer,
-						'user_name' => $text,
+						'batch_id'     => $integer,
+						'user_id'      => $integer,
+						'user_name'    => $text,
+						'finished_gmt' => [ 'type' => [ 'string', 'null' ] ],
+					],
+				],
+				'redone_by'            => [
+					'description' => __( 'On a change that was undone and then redone, the latest redo that made it again, who ran it and when; null otherwise.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'type'        => [ 'object', 'null' ],
+					'properties'  => [
+						'batch_id'     => $integer,
+						'user_id'      => $integer,
+						'user_name'    => $text,
+						'finished_gmt' => [ 'type' => [ 'string', 'null' ] ],
 					],
 				],
 				'summary'              => [
@@ -561,21 +572,54 @@ final class BatchesController implements ReadController {
 		}
 		$ids    = array_map( static fn( array $item ): int => (int) $item['batch_id'], $items );
 		$undone = array_values( array_map( static fn( array $item ): int => (int) $item['batch_id'], array_filter( $items, static fn( array $item ): bool => 'undone' === $item['status'] ) ) );
-		$by     = $this->batches->undone_by_with_users( $undone );
+		$chains = $this->batches->undo_chains( $undone );
 		$with   = array_flip( $this->batches->with_variations_added( $ids ) );
-		$names  = self::user_names( [ ...array_column( $items, 'user_id' ), ...array_column( $by, 'user_id' ) ] );
+		$names  = self::user_names( [ ...array_column( $items, 'user_id' ), ...self::chain_users( $chains ) ] );
 		foreach ( $items as $index => $item ) {
-			$undo = $by[ (int) $item['batch_id'] ] ?? null;
 			// The list's own properties sit after the report's, before its undo summary.
 			$items[ $index ] = $item + [
 				'user_name'           => $names[ (int) $item['user_id'] ] ?? '',
 				'variations_included' => isset( $with[ (int) $item['batch_id'] ] ),
-				'undone_by'           => null === $undo ? null : $undo + [ 'user_name' => $names[ $undo['user_id'] ] ?? '' ],
-			];
+			] + self::chain( $chains[ (int) $item['batch_id'] ] ?? null, $names );
 		}
 		// Contract version 2: an add-on's row names its chosen items from its manifest, read once for the page and only when the page has one.
 		$external = self::external_ids( $items );
 		return [] === $external ? $items : self::with_manifests( $items, $this->batches->manifests( $external ) );
+	}
+
+	/**
+	 * The user ids an undo chain names (BatchRepository::undo_chains()).
+	 *
+	 * @param array<int, array<string, mixed>> $chains Chains by batch id.
+	 * @return list<int>
+	 */
+	private static function chain_users( array $chains ): array {
+		$ids = [];
+		foreach ( $chains as $chain ) {
+			foreach ( [ 'undone_by', 'redone_by' ] as $key ) {
+				if ( is_array( $chain[ $key ] ?? null ) ) {
+					$ids[] = (int) $chain[ $key ]['user_id'];
+				}
+			}
+		}
+		return $ids;
+	}
+
+	/**
+	 * A row's `undone_by` and `redone_by`, each with its user's name, from
+	 * its undo chain: who last put the change back, and who last made it
+	 * again after that (a Redo); both null on a row never undone.
+	 *
+	 * @param array<string, mixed>|null $chain The row's chain, or null.
+	 * @param array<int, string>        $names User names by id.
+	 * @return array{undone_by: ?array<string, mixed>, redone_by: ?array<string, mixed>}
+	 */
+	private static function chain( ?array $chain, array $names ): array {
+		$named = static fn( ?array $link ): ?array => null === $link ? null : $link + [ 'user_name' => $names[ (int) $link['user_id'] ] ?? '' ];
+		return [
+			'undone_by' => $named( $chain['undone_by'] ?? null ),
+			'redone_by' => $named( $chain['redone_by'] ?? null ),
+		];
 	}
 
 	/**
@@ -683,7 +727,15 @@ final class BatchesController implements ReadController {
 		} finally {
 			HeavyReadLock::release( $lock );
 		}
-		return null === $report ? self::not_found() : new \WP_REST_Response( $report, 200 );
+		if ( null === $report ) {
+			return self::not_found();
+		}
+		if ( 'undone' === ( $report['status'] ?? null ) ) {
+			// Who put it back and who made it again, as the list says (one read per link).
+			$chains = $this->batches->undo_chains( [ (int) $report['batch_id'] ] );
+			$report = $report + self::chain( $chains[ (int) $report['batch_id'] ] ?? null, self::user_names( self::chain_users( $chains ) ) );
+		}
+		return new \WP_REST_Response( $report, 200 );
 	}
 
 	/**

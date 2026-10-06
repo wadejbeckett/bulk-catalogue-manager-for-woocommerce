@@ -426,7 +426,7 @@ final class ChunkRunner {
 		}
 
 		self::schedule_retry( $now + BatchRepository::LEASE_SECONDS + self::RETRY_DELAY, $batch_id );
-		[ $error, $stopped ] = $this->work( $batch, $items, $token );
+		[ $error, $stopped ] = $this->work( $batch, $items, $token, $now );
 
 		if ( null !== $error || $stopped ) {
 			$this->batches->release_claim( $batch_id, $token );
@@ -474,9 +474,10 @@ final class ChunkRunner {
 	 * @param array                                                                     $batch The batch row.
 	 * @param array<int, array{item_id: int, object_id: int, object_type: string, attempts: int}> $items Claimed items.
 	 * @param string                                                                    $token The chunk's claim token.
+	 * @param int                                                                       $claimed_at Unix time the chunk was claimed; each item's own lease is stamped from it plus the lease clock's elapsed time (ENGINE-5).
 	 * @return array{0: ?\Throwable, 1: bool} The exception that stopped the chunk, whether the lease ran short.
 	 */
-	private function work( array $batch, array $items, string $token ): array {
+	private function work( array $batch, array $items, string $token, int $claimed_at ): array {
 		$writer     = Writer::for_batch( $this->actions, Journal::from_settings( $this->actions->fields(), $this->settings(), $this->changes ), $batch['batch_id'], $batch['user_id'] );
 		$operations = $batch['operations'];
 		$undo       = 'undo' === $batch['source'];
@@ -490,14 +491,16 @@ final class ChunkRunner {
 		$changes  = $this->changes;
 		$batch_id = $batch['batch_id'];
 		$lease    = $this->lease_clock;
-		$deadline = $lease() + self::LEASE_SHARE * BatchRepository::LEASE_SECONDS;
+		$began    = $lease();
+		$started  = $claimed_at;
+		$deadline = $began + self::LEASE_SHARE * BatchRepository::LEASE_SECONDS;
 
 		// An external change's objects are primed once per chunk (T107).
 		$writer->prime_external( $operations, array_values( array_map( static fn( array $item ): int => (int) $item['object_id'], $items ) ) );
 		wp_defer_term_counting( true );
 		try {
 			$writer->run(
-				static function ( Writer $writer ) use ( $items, $operations, $undo, $own, $batches, $changes, $batch_id, $token, $lease, $deadline, $terms, &$error, &$stopped, &$written ): void {
+				static function ( Writer $writer ) use ( $items, $operations, $undo, $own, $batches, $changes, $batch_id, $token, $lease, $began, $started, $deadline, $terms, &$error, &$stopped, &$written ): void {
 					$finish = static function ( int $item_id, array $mark, bool $changed ) use ( $batches, $batch_id, $token ): void {
 						$batches->finish_item( $batch_id, $item_id, $token, $mark[0], $mark[1], $changed );
 					};
@@ -506,7 +509,8 @@ final class ChunkRunner {
 							$stopped = true;
 							return;
 						}
-						if ( ! $batches->claim_item( $batch_id, $item['item_id'], $token ) ) {
+						// The item's own lease starts as it is taken up (ENGINE-5), so a later run waits for this write.
+						if ( ! $batches->claim_item( $batch_id, $item['item_id'], $token, gmdate( 'Y-m-d H:i:s', $started + (int) floor( $lease() - $began ) ) ) ) {
 							continue; // Another run took the chunk over when this one's lease went stale.
 						}
 						if ( 'term' === $item['object_type'] ) {

@@ -700,6 +700,48 @@ final class ChunkRunnerTest extends TestCase {
 		$this->assertSame( [ 3, 3, 0 ], [ $batch['done_items'], $batch['changed_items'], $batch['failed_items'] ], 'Each item is counted once, so progress never passes 100%.' );
 	}
 
+	public function test_a_second_run_waits_for_an_item_the_first_claimed_late_and_is_still_writing(): void {
+		// ENGINE-5: the chunk was claimed at T; the first run reaches 1002 just inside its lease share (T+230) and is
+		// still saving it when the delayed retry starts (T+361: past the chunk's lease, not past 1002's own).
+		$ids    = self::products( 3 );
+		$store  = new RunnerStore( self::BATCH, $ids, $this->increase(), self::USER );
+		$lease  = 1000.0;
+		$clock  = static function () use ( &$lease ): float {
+			return $lease;
+		};
+		$second = null;
+		self::hooked(
+			1001,
+			function () use ( &$lease ): void {
+				$this->now += 230;
+				$lease     += 230;
+			}
+		);
+		$late = self::hooked(
+			1002,
+			function () use ( &$second, &$lease, $store, $clock ): void {
+				if ( null === $second ) {
+					$this->now += 131;
+					$lease     += 131;
+					$second     = [ $this->runner( [], 30, $clock )->run( self::BATCH ), $store->batch()['status'], $store->states() ];
+				}
+			},
+			true
+		);
+
+		$this->runner( [], 30, $clock )->run( self::BATCH );
+
+		$this->assertNotSame( 'complete', $second[0], 'The second run never finalises while the first is still writing an item.' );
+		$this->assertSame( 'running', $second[1] );
+		$this->assertSame( 'working', $second[2][1002], 'The item being written is left to the run writing it.' );
+		$this->assertCount( 1, $late->saves, 'Written once.' );
+		$this->assertSame( '11.00', (string) $late->props['regular_price'] );
+		$this->assertSame( [ 'done' => 3 ], array_count_values( $store->states() ) );
+		$batch = $store->batch();
+		$this->assertSame( [ 3, 3, 0 ], [ $batch['done_items'], $batch['changed_items'], $batch['failed_items'] ] );
+		$this->assertSame( 'complete', $batch['status'], 'The batch completes once the last write is finished.' );
+	}
+
 	public function test_a_run_never_marks_an_item_another_run_now_holds(): void {
 		// ENGINE-5: while the first run is still saving 1001, another run takes the item over and is writing it.
 		$ids   = self::products( 2 );

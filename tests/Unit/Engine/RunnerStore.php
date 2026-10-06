@@ -128,7 +128,7 @@ final class RunnerStore {
 			"/^UPDATE $items SET claim_token = '/"      => fn( string $sql ): int => $this->claim( $sql ),
 			"/^SELECT item_id, object_id, object_type, attempts FROM $items/" => fn( string $sql ): array => $this->claimed( $sql ),
 			"/^UPDATE $items SET claim_token = NULL/"   => fn( string $sql ): int => $this->release( $sql ),
-			"/^UPDATE $items SET state = 'working' WHERE /" => fn( string $sql ): int => $this->claim_item( $sql ),
+			"/^UPDATE $items SET state = 'working', claimed_gmt = /" => fn( string $sql ): int => $this->claim_item( $sql ),
 			"/^UPDATE $items SET state = 'pending' WHERE batch_id = \\d+ AND state = 'working'/" => fn( string $sql ): int => $this->reset_working( $sql ),
 			"/^UPDATE $items AS i SET i.state = 'done', i.message = '' WHERE /" => fn( string $sql ): int => $this->exhausted_applied( $sql ),
 			"/^UPDATE $items SET state = 'failed', message = .* AND state = 'working' AND attempts >= /s" => fn( string $sql ): int => $this->exhaust( $sql, 'working' ),
@@ -385,12 +385,13 @@ final class RunnerStore {
 	}
 
 	private function claim_item( string $sql ): int {
-		preg_match( "/WHERE batch_id = (\\d+) AND item_id = (\\d+) AND claim_token = '([0-9a-f]+)' AND state = 'pending'$/", $sql, $m );
-		$item = $this->items[ (int) $m[2] ] ?? null;
-		if ( null === $item || (int) $m[1] !== $item['batch_id'] || $m[3] !== $item['claim_token'] || 'pending' !== $item['state'] ) {
+		preg_match( "/SET state = 'working', claimed_gmt = '([^']+)' WHERE batch_id = (\\d+) AND item_id = (\\d+) AND claim_token = '([0-9a-f]+)' AND state = 'pending'$/", $sql, $m );
+		$item = $this->items[ (int) $m[3] ] ?? null;
+		if ( null === $item || (int) $m[2] !== $item['batch_id'] || $m[4] !== $item['claim_token'] || 'pending' !== $item['state'] ) {
 			return 0;
 		}
-		$this->items[ (int) $m[2] ]['state'] = 'working';
+		$this->items[ (int) $m[3] ]['state']       = 'working';
+		$this->items[ (int) $m[3] ]['claimed_gmt'] = $m[1];
 		return 1;
 	}
 

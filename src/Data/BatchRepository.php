@@ -649,15 +649,23 @@ final class BatchRepository {
 	 * run's. A run whose lease went stale and was taken over gets false and
 	 * leaves the item to the run that holds it now.
 	 *
+	 * The item's own lease starts now (ENGINE-5): its claimed_gmt is set to
+	 * `$now_gmt`, so a later run measures staleness from when this item was
+	 * taken up, not from when its chunk was claimed. An item a run reached
+	 * near the end of its chunk's lease and is still writing is then neither
+	 * put back to pending (reset_stale_working()) nor counted as finished,
+	 * so another run cannot finalise the batch while the write is in flight.
+	 *
 	 * @param int    $batch_id Batch.
 	 * @param int    $item_id  Item.
 	 * @param string $token    The chunk's claim token.
+	 * @param string $now_gmt  GMT `Y-m-d H:i:s`: when this run takes the item up.
 	 * @return bool Whether this run holds the item.
 	 * @throws \RuntimeException When the statement fails.
 	 */
-	public function claim_item( int $batch_id, int $item_id, string $token ): bool {
+	public function claim_item( int $batch_id, int $item_id, string $token, string $now_gmt ): bool {
 		global $wpdb;
-		$result = $wpdb->query( $wpdb->prepare( 'UPDATE %i SET state = %s WHERE batch_id = %d AND item_id = %d AND claim_token = %s AND state = %s', $this->registry->table( Schema::ITEMS ), Schema::ITEM_WORKING, $batch_id, $item_id, $token, 'pending' ) );
+		$result = $wpdb->query( $wpdb->prepare( 'UPDATE %i SET state = %s, claimed_gmt = %s WHERE batch_id = %d AND item_id = %d AND claim_token = %s AND state = %s', $this->registry->table( Schema::ITEMS ), Schema::ITEM_WORKING, $now_gmt, $batch_id, $item_id, $token, 'pending' ) );
 		if ( false === $result ) {
 			throw new \RuntimeException( 'The batch item could not be claimed.' );
 		}

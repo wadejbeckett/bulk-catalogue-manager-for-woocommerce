@@ -567,6 +567,45 @@ describe( 'category panel', () => {
 		);
 	} );
 
+	it( 'says where a reordered category now sits, not that it moved to the top level', async () => {
+		routes[ 'POST categories/6/move' ] = () =>
+			Promise.resolve( { item: { id: 6 } } );
+		await renderPanel();
+		const data = new Map();
+		const dataTransfer = {
+			setData: ( type, value ) => data.set( type, value ),
+			getData: ( type ) => data.get( type ),
+			get types() {
+				return [ ...data.keys() ];
+			},
+		};
+		// Drop on the top edge of Drinkware's row: before it.
+		const box = jest
+			.spyOn( window.Element.prototype, 'getBoundingClientRect' )
+			.mockReturnValue( { top: 0, height: 28 } );
+		fireEvent.dragStart( rowOf( 'Bags' ), { dataTransfer } );
+		fireEvent.dragOver( item( 'Drinkware' ), { dataTransfer, clientY: 2 } );
+		await act( async () => {
+			fireEvent.drop( item( 'Drinkware' ), {
+				dataTransfer,
+				clientY: 2,
+			} );
+		} );
+		const move = apiFetch.mock.calls.find(
+			( [ o ] ) => o.method === 'POST'
+		)[ 0 ];
+		expect( move.data ).toEqual( { parent: 0, position: 1 } );
+		expect( speak ).toHaveBeenCalledWith(
+			'Bags moved to position 2 of 3.',
+			'polite'
+		);
+		expect( speak ).not.toHaveBeenCalledWith(
+			'Bags moved to the top level.',
+			'polite'
+		);
+		box.mockRestore();
+	} );
+
 	it( 'blocks dropping a category inside itself', async () => {
 		await renderPanel();
 		fireEvent.click(

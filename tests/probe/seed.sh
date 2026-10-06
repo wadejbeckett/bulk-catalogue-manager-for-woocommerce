@@ -273,8 +273,10 @@ $insert = function ( string $table, array $columns, array $rows ) use ( $wpdb ):
 		}
 	}
 };
-$now     = current_time( 'mysql' );
-$now_gmt = current_time( 'mysql', true );
+// A year back: the probe catalogue (made through CRUD, dated now) stays the newest products, so it
+// is the grid's first page whether the scale catalogue is seeded before it, after it or in a later run.
+$now     = wp_date( 'Y-m-d H:i:s', time() - YEAR_IN_SECONDS );
+$now_gmt = gmdate( 'Y-m-d H:i:s', time() - YEAR_IN_SECONDS );
 $post    = function ( string $type, int $parent, string $title, string $slug, string $excerpt, string $comments ) use ( $now, $now_gmt ): array {
 	return array( 0, $now, $now_gmt, '', $title, $excerpt, 'publish', $comments, 'closed', $slug, '', '', $now, $now_gmt, '', $parent, '', 0, $type );
 };

@@ -237,7 +237,7 @@ function Footer( { meta, ctx } ) {
 			{ __( 'Hide options', 'bulk-catalogue-manager-for-woocommerce' ) }
 		</Button>
 	);
-	if ( ! entry || entry.status === 'loading' ) {
+	if ( ! entry || entry.status === 'loading' || entry.status === 'stale' ) {
 		return (
 			<span className="bulkcat-vfoot" role="status">
 				{ __(

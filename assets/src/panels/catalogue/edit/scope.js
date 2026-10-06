@@ -17,6 +17,7 @@ import {
 } from '@wordpress/element';
 
 import { __ } from '@wordpress/i18n';
+import { ROW } from '../defaults';
 import { createInlineReceipts } from './receipts';
 import { SaveNotice } from './reconciliation';
 import ErrorNotice from '../../history/error-notice';
@@ -31,6 +32,63 @@ export const EditContext = createContext( null );
 const NONE = new Set();
 
 /**
+ * How long, after its save settles, an edited control keeps its claim on
+ * keyboard focus while its row is drawn again (milliseconds).
+ */
+const HOLD_FOCUS = 5000;
+
+/**
+ * The control a focus home names: a cell's trigger (`key`), or the row's
+ * action menu button (no `key`, the detail panel's return).
+ *
+ * @param {Element} root   The scope's wrapper.
+ * @param {Object}  target { id, key }.
+ * @return {Element|null} The control, when it is drawn.
+ */
+function findHome( root, target ) {
+	const cells = [
+		...( root?.querySelectorAll( '[data-bulkcat-row]' ) || [] ),
+	];
+	if ( target.key ) {
+		const cell = cells.find(
+			( element ) =>
+				element.dataset.bulkcatRow === String( target.id ) &&
+				element.dataset.bulkcatField === target.key
+		);
+		return cell?.querySelector( '.bulkcat-inline__trigger' ) || null;
+	}
+	const cell = cells.find(
+		( element ) => element.dataset.bulkcatRow === String( target.id )
+	);
+	// The row's action menu button is its last menu button.
+	const buttons = cell
+		?.closest( 'tr' )
+		?.querySelectorAll( 'button[aria-haspopup]' );
+	return buttons?.[ buttons.length - 1 ] || null;
+}
+
+/**
+ * Whether focus is still on the control a home names (its editor or its
+ * trigger, before or after a redraw).
+ *
+ * @param {Element} root    The scope's wrapper.
+ * @param {Element} element The focused element.
+ * @param {Object}  target  { id, key }.
+ * @return {boolean} Still there.
+ */
+function atHome( root, element, target ) {
+	if ( ! target.key ) {
+		return element === findHome( root, target );
+	}
+	const cell = element.closest?.( '[data-bulkcat-row]' );
+	return (
+		!! cell &&
+		cell.dataset.bulkcatRow === String( target.id ) &&
+		cell.dataset.bulkcatField === target.key
+	);
+}
+
+/**
  * The fields a row's replacement should carry: the ones it has now.
  *
  * @param {Object}        item        Row.
@@ -43,6 +101,21 @@ export function rowFields( item, descriptors, extra = [] ) {
 	return descriptors
 		.map( ( field ) => field.key )
 		.filter( ( key ) => has.has( key ) );
+}
+
+/**
+ * After every draw of the scope's contents (a row drawn again included),
+ * give focus left on nothing back to the control that holds it.
+ *
+ * @param {Object}   props        Props.
+ * @param {Function} props.settle The scope's settleFocus().
+ * @return {null} Nothing.
+ */
+function SettleFocus( { settle } ) {
+	useEffect( () => {
+		settle();
+	} );
+	return null;
 }
 
 /**
@@ -85,6 +158,10 @@ export function useEditScope( {
 	committed.current = onCommitted;
 	const wrapper = useRef( null );
 	const lostFocus = useRef( null );
+	// The control that takes keyboard focus back when its row is drawn again
+	// after a save (T75, 1.4.3): { id, key, parent, until }.
+	const home = useRef( null );
+	const homeTimer = useRef( null );
 	const opener = useRef( null );
 	const returnFocus = useRef( null );
 
@@ -402,6 +479,10 @@ export function useEditScope( {
 				)
 				.finally( () => {
 					inflight.current.delete( id );
+					// The row is drawn again after this: the window starts now.
+					if ( home.current?.id === id ) {
+						home.current.until = Date.now() + HOLD_FOCUS;
+					}
 					mark( id, receipts.isHeld( id ) );
 				} );
 			inflight.current.set( id, { intent, promise } );
@@ -437,19 +518,122 @@ export function useEditScope( {
 		}
 	};
 
-	// A removed row must not strand keyboard focus. Never steal focus after
-	// the user moves elsewhere, or from a drawer that is still open.
-	useEffect( () => {
+	const latestRows = useRef( rows );
+	latestRows.current = rows;
+	const drawerOpen = useRef( false );
+	drawerOpen.current = drawer !== null;
+	const settleRef = useRef( null );
+
+	/**
+	 * Keep focus with a control while its row is drawn again: `target` is
+	 * { id, key, parent } (a cell's trigger, or with no key the row's action
+	 * menu button), or null to let go.
+	 */
+	const holdFocus = useCallback( ( target ) => {
+		home.current = target
+			? { ...target, until: Date.now() + HOLD_FOCUS }
+			: null;
+	}, [] );
+
+	/**
+	 * A removed row must not strand keyboard focus. Focus left on nothing goes
+	 * back to the held control as soon as its row is drawn again; the results
+	 * search takes it only when that row is truly gone: its save has settled
+	 * and neither it nor its product is on the page, or the wait ran out.
+	 * Never steal focus after the user moves elsewhere, or from a drawer that
+	 * is still open.
+	 */
+	const settleFocus = useCallback( () => {
+		const box = wrapper.current;
+		const doc = box?.ownerDocument;
+		// A closed detail panel returns focus to its opener first.
+		if ( ! doc || returnFocus.current ) {
+			return;
+		}
+		clearTimeout( homeTimer.current );
+		const active = doc.activeElement;
+		const lost = ! active || active === doc.body;
+		const search = () =>
+			box.querySelector( 'input[type="search"]' )?.focus();
+		let target = home.current;
+		const saving = !! target && inflight.current.has( target.id );
+		if ( target && ! saving && Date.now() > target.until ) {
+			// The wait ran out: the row was not drawn again.
+			home.current = null;
+			if ( lost && ! drawerOpen.current && ! findHome( box, target ) ) {
+				lostFocus.current = null;
+				search();
+				return;
+			}
+			target = null;
+		}
+		if ( target ) {
+			if ( ! lost ) {
+				if ( ! atHome( box, active, target ) ) {
+					home.current = null;
+				}
+				return;
+			}
+			if ( drawerOpen.current ) {
+				return;
+			}
+			const element = findHome( box, target );
+			if ( element ) {
+				element.focus();
+				lostFocus.current = null;
+				return;
+			}
+			const listed = latestRows.current.some(
+				( row ) =>
+					row.id === target.id ||
+					( !! target.parent && row.id === target.parent )
+			);
+			if ( saving || listed ) {
+				if ( ! saving ) {
+					homeTimer.current = setTimeout(
+						() => settleRef.current(),
+						target.until - Date.now() + 1
+					);
+				}
+				return;
+			}
+			home.current = null;
+			lostFocus.current = null;
+			search();
+			return;
+		}
 		const element = lostFocus.current;
-		const doc = wrapper.current?.ownerDocument;
 		if ( element && ! element.isConnected ) {
 			lostFocus.current = null;
-			if ( doc?.activeElement === doc.body && ! drawer ) {
-				wrapper.current
-					?.querySelector( 'input[type="search"]' )
-					?.focus();
+			if ( lost && ! drawerOpen.current ) {
+				search();
 			}
 		}
+	}, [] );
+	settleRef.current = settleFocus;
+	useEffect( () => () => clearTimeout( homeTimer.current ), [] );
+
+	// The user moving focus anywhere else lets the held control go at once,
+	// before any redraw could take focus back to it.
+	useEffect( () => {
+		const doc = typeof document !== 'undefined' ? document : null;
+		if ( ! doc ) {
+			return;
+		}
+		const moved = ( event ) => {
+			if (
+				home.current &&
+				! atHome( wrapper.current, event.target, home.current )
+			) {
+				home.current = null;
+			}
+		};
+		doc.addEventListener( 'focusin', moved, true );
+		return () => doc.removeEventListener( 'focusin', moved, true );
+	}, [] );
+
+	useEffect( () => {
+		settleFocus();
 	} );
 
 	const openDrawer = useCallback( ( item ) => {
@@ -457,6 +641,7 @@ export function useEditScope( {
 		opener.current = {
 			element: doc?.activeElement || null,
 			id: item.id,
+			parent: Number( item[ ROW.parentId ] ) || 0,
 		};
 		setDrawer( item );
 	}, [] );
@@ -467,29 +652,36 @@ export function useEditScope( {
 	}, [] );
 
 	// Focus back to whatever opened the panel (§14): the control itself, or
-	// the row's action menu button when the menu item has gone.
+	// the row's action menu button when the menu item has gone — once the row
+	// is drawn again if a save is redrawing it, else the results search.
 	useEffect( () => {
 		if ( drawer !== null || ! returnFocus.current ) {
 			return;
 		}
-		const { element, id } = returnFocus.current;
+		const { element, id, parent } = returnFocus.current;
 		returnFocus.current = null;
+		lostFocus.current = null;
 		if ( element && element.isConnected && element.focus ) {
 			element.focus();
 			return;
 		}
-		const cell = document.querySelector(
-			`[data-bulkcat-row="${ String( id ).replace( /[^\d]/g, '' ) }"]`
-		);
-		// The row's action menu button is its last menu button.
-		const buttons = cell
-			?.closest( 'tr' )
-			?.querySelectorAll( 'button[aria-haspopup]' );
-		const target =
-			buttons?.[ buttons.length - 1 ] ||
-			wrapper.current?.querySelector( 'input[type="search"]' );
-		target?.focus();
-	}, [ drawer ] );
+		const target = findHome( wrapper.current, { id } );
+		if ( target ) {
+			target.focus();
+			return;
+		}
+		// The row is drawn with no menu to return to (a card): the search.
+		const drawn = [
+			...( wrapper.current?.querySelectorAll( '[data-bulkcat-row]' ) ||
+				[] ),
+		].some( ( cell ) => cell.dataset.bulkcatRow === String( id ) );
+		if ( drawn ) {
+			wrapper.current?.querySelector( 'input[type="search"]' )?.focus();
+			return;
+		}
+		holdFocus( { id, key: null, parent } );
+		settleFocus();
+	}, [ drawer, holdFocus, settleFocus ] );
 
 	const withDrawer = useMemo(
 		() =>
@@ -516,8 +708,10 @@ export function useEditScope( {
 			replace,
 			notify: setFailure,
 			openDrawer,
+			holdFocus,
+			settleFocus,
 		} ),
-		[ descriptors, commit, replace, openDrawer ]
+		[ descriptors, commit, replace, openDrawer, holdFocus, settleFocus ]
 	);
 
 	const drawerItem =
@@ -555,6 +749,7 @@ export function useEditScope( {
 					</div>
 				) }
 				{ children }
+				<SettleFocus settle={ settleFocus } />
 				{ drawerItem && (
 					<DetailDrawer
 						item={ drawerItem }

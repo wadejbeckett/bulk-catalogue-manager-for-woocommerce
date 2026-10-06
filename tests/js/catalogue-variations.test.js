@@ -30,6 +30,7 @@ import {
 	reducer,
 	variationRoles,
 } from '../../assets/src/panels/catalogue/variations';
+import { toFetch } from '../../assets/src/panels/catalogue/variations/model';
 
 jest.mock( '@wordpress/api-fetch', () => {
 	const apiFetch = jest.fn();
@@ -647,16 +648,51 @@ describe( 'row tree model', () => {
 		);
 	} );
 
-	it( 'drops fetched entries and closed-off rows when the page is read again', () => {
+	it( 'reads fetched entries again when the page is read again, drawing their rows meanwhile, and drops closed-off rows', () => {
+		const rows = TEE_VARIATIONS.slice( 0, 2 );
 		let state = reducer( INITIAL, { type: 'open_all', ids: [ 21, 22 ] } );
 		state = reducer( state, {
 			type: 'receive',
 			id: 21,
-			items: [],
-			total: 0,
+			items: rows,
+			total: 2,
 		} );
+		state = reducer( state, { type: 'request', id: 22 } );
+		state = reducer( state, { type: 'refresh', ids: [ 21, 22 ] } );
+		// 21 is stale and fetched again; 22 had nothing drawn yet.
+		expect( state ).toEqual( {
+			open: [ 21, 22 ],
+			entries: { 21: { status: 'stale', items: rows, total: 2 } },
+		} );
+		expect( toFetch( state ) ).toEqual( [ 21, 22 ] );
+		const drawn = () =>
+			buildRows( [ TEE ], state, roles, 'products' )
+				.filter( ( row ) => metaOf( row ).kind === KINDS.variation )
+				.map( ( row ) => row.id );
+		expect( drawn() ).toEqual( rows.map( ( row ) => row.id ) );
+		// While the new read is out the rows stay; its answer replaces them.
+		state = reducer( state, { type: 'request', id: 21 } );
+		expect( state.entries[ 21 ] ).toMatchObject( {
+			status: 'loading',
+			stale: true,
+		} );
+		expect( toFetch( state ) ).toEqual( [ 22 ] );
+		expect( drawn() ).toEqual( rows.map( ( row ) => row.id ) );
+		state = reducer( state, {
+			type: 'receive',
+			id: 21,
+			items: rows.slice( 0, 1 ),
+			total: 1,
+		} );
+		expect( drawn() ).toEqual( [ rows[ 0 ].id ] );
+		// A failed read says so instead of keeping old rows.
 		state = reducer( state, { type: 'refresh', ids: [ 21 ] } );
-		expect( state ).toEqual( { open: [ 21 ], entries: {} } );
+		state = reducer( state, { type: 'request', id: 21 } );
+		state = reducer( state, { type: 'fail', id: 21, error: {} } );
+		expect( drawn() ).toEqual( [] );
+		// A product no longer on the page is closed and forgotten.
+		state = reducer( state, { type: 'refresh', ids: [] } );
+		expect( state ).toEqual( { open: [], entries: {} } );
 		expect( reducer( state, { type: 'reset' } ) ).toBe( INITIAL );
 	} );
 

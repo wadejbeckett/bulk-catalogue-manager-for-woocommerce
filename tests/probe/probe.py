@@ -1065,13 +1065,30 @@ def check_write_history(p: Probe) -> None:
     def run() -> None:
         listing = p.http("manager", "GET", "/batches", [("per_page", "100")]).json() or {}
         items = listing.get("items", [])
-        undone = next((b for b in items if b.get("status") == "undone"), None)
+        # The engine chapter's own undone change (the manager's), whatever else History holds.
+        undone = next((b for b in items if b.get("status") == "undone" and b.get("user_id") == manager_id), None)
         names = p.wp_eval(f"bulkcat_out( get_userdata( {manager_id} )->display_name );")
         ok = bool(items) and all(isinstance(b.get("variations_included"), bool) and b.get("user_name") for b in items)
-        ok = ok and all((b.get("undone_by") is None) == (b.get("status") != "undone") for b in items)
+        # Every undone change names the undo that put it back; nothing else does. 1.4.2 (`redone_by`):
+        # a change undone and then redone (an undo of its undo) still reads undone, names that undo
+        # and the later redo that made it again; a change never undone names neither.
+        wrong = []
+        for b in items:
+            back, again = b.get("undone_by"), b.get("redone_by")
+            if b.get("status") == "undone":
+                fine = isinstance(back, dict) and back.get("batch_id", 0) > b["batch_id"] and bool(back.get("user_name"))
+                if again is not None:
+                    fine = fine and isinstance(again, dict) and again.get("batch_id", 0) > back.get("batch_id", 0) and bool(again.get("user_name"))
+            else:
+                fine = back is None and again is None
+            if not fine:
+                wrong.append((b["batch_id"], b.get("status"), back, again))
+        ok = ok and not wrong
         by = (undone or {}).get("undone_by") or {}
-        ok = ok and undone is not None and by.get("user_name") == names and by.get("batch_id", 0) > undone["batch_id"]
-        p.row("write", "write:history-rows", ok, f"{len(items)} rows; undone #{(undone or {}).get('batch_id')} put back by {by}; manager is {names!r}")
+        ok = ok and undone is not None and by.get("user_name") == names and by.get("batch_id", 0) > undone["batch_id"] and undone.get("redone_by") is None
+        redone = sum(1 for b in items if b.get("redone_by"))
+        p.row("write", "write:history-rows", ok,
+              f"{len(items)} rows ({redone} redone); undone #{(undone or {}).get('batch_id')} put back by {by}; manager is {names!r}; inconsistent {wrong[:3]}")
 
         users = p.http("manager", "GET", "/batches/users").json() or {}
         p.row("write", "write:history-users", {"id": manager_id, "name": names} in users.get("items", []), f"{users.get('items')}")
@@ -1098,11 +1115,23 @@ def check_write_history(p: Probe) -> None:
         p.row("write", "write:export-audit", r.status == 200 and got == want and len(want) == audit["pagination"]["total"] > 0,
               f"product {product}: {len(got)} CSV rows vs {len(want)} audit rows")
 
-        r = p.http("manager", "GET", "/export", [("source", "batches"), ("status", "undone"), ("columns[]", "batch_id"), ("columns[]", "status"), ("columns[]", "undone_by")])
+        # The History CSV says what the list says: every undone row's "Put back by" names its undo;
+        # with 1.4.2's "Done again by" column (offered when the list carries `redone_by`), a redone
+        # row reads Redone and names its redo, any other undone row reads Undone with that cell empty.
+        redo = any("redone_by" in b for b in items)
+        columns = ["batch_id", "status", "undone_by"] + (["redone_by"] if redo else [])
+        r = p.http("manager", "GET", "/export", [("source", "batches"), ("status", "undone")] + [("columns[]", c) for c in columns])
         rows = lines(r)[1:]
-        total = (p.http("manager", "GET", "/batches", [("status", "undone")]).json() or {}).get("pagination", {}).get("total")
-        ok = r.status == 200 and len(rows) == total and all(row[1] == "Undone" and row[2].startswith("#") for row in rows)
-        p.row("write", "write:export-batches", ok, f"{len(rows)} undone rows vs {total}; first {rows[:1]}")
+        undone_list = p.http("manager", "GET", "/batches", [("status", "undone"), ("per_page", "100")]).json() or {}
+        total = undone_list.get("pagination", {}).get("total")
+        again = {b["batch_id"] for b in undone_list.get("items", []) if b.get("redone_by")}
+        good = all(row[2].startswith("#") for row in rows)
+        if redo:
+            good = good and all((row[1], row[3].startswith("#")) == (("Redone", True) if int(row[0]) in again else ("Undone", False)) for row in rows)
+        else:
+            good = good and all(row[1] == "Undone" for row in rows)
+        ok = r.status == 200 and len(rows) == total and good
+        p.row("write", "write:export-batches", ok, f"{len(rows)} undone rows vs {total} ({len(again)} redone); columns {columns}; first {rows[:1]}")
 
         refusals = [
             p.http(None, "GET", "/export", [("source", "changes"), ("batch", str(bid)), ("columns[]", "name")]).status,

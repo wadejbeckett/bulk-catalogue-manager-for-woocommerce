@@ -904,6 +904,10 @@ if ( ! function_exists( 'sanitize_title' ) ) {
 if ( ! function_exists( 'wp_insert_term' ) ) {
 	function get_term( int|object $term, string $taxonomy = '', string $output = 'OBJECT', string $filter = 'raw' ): mixed {
 		$id = is_object( $term ) ? (int) $term->term_id : $term;
+		if ( ! empty( $GLOBALS['bulkcat_test']['term_list_get_term_hidden'] ) && in_array( $id, $GLOBALS['bulkcat_test']['hidden_terms'] ?? [], true ) ) {
+			// 'term_list_get_term_hidden': a filter that hides 'hidden_terms' from get_term() as well.
+			return null;
+		}
 		foreach ( $GLOBALS['bulkcat_test']['term_list'] ?? [] as $candidate ) {
 			if ( (int) $candidate->term_id === $id && ( '' === $taxonomy || ( $candidate->taxonomy ?? 'product_cat' ) === $taxonomy ) ) {
 				return $candidate;

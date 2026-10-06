@@ -641,7 +641,8 @@ final class Writer {
 	 */
 	private function complete( int $batch_id, int $id, array $before, array $orders, ?\WP_Error $failure = null ): array|\WP_Error {
 		$journal = Journal::from_settings( Fields::instance(), $this->settings(), $this->changes );
-		$term    = get_term( $id, Counts::TAXONOMY );
+		// Read back from the term tables, never a read filtered for the viewer (1.4.2).
+		$term    = CategoryTree::stored_term( $id );
 		$after   = is_object( $term ) ? self::values( $term ) : [];
 		$entries = [];
 		foreach ( $before as $prop => $old ) {

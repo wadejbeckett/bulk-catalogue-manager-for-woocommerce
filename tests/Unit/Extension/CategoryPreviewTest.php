@@ -28,6 +28,7 @@ use BulkCatalogueManager\Requests\BatchIntent;
 use BulkCatalogueManager\Requests\CategoryAcceptance;
 use BulkCatalogueManager\Selection\Selection;
 use BulkCatalogueManager\Tests\Support\Extension\MemoryStore;
+use BulkCatalogueManager\Tests\Support\Extension\PicksFaults;
 use BulkCatalogueManager\Tests\Support\Extension\PicksProvider;
 use BulkCatalogueManager\Tests\Support\Extension\SampleProvider;
 use BulkCatalogueManager\Tests\Support\Extension\ShelvesField;
@@ -317,6 +318,87 @@ final class CategoryPreviewTest extends TestCase {
 		update_option( ShelvesProvider::FAULTS, [ 'state' => 'moved on' ] );
 		$state = CategoryAcceptance::check( $intent, $credentials, self::USER, $this->actions() );
 		$this->assertSame( 'provider_changed', $state->get_error_data()['reason'] );
+	}
+
+	public function test_a_choice_renamed_or_withdrawn_between_preview_and_apply_refuses_the_apply(): void {
+		// The unit form of the version 2 journey's V4 check: a lookup choice that goes stale after the preview.
+		$picks   = new Actions( new Fields(), null, Providers::of( [ new PicksProvider( new MemoryStore(), new MemoryStore(), true, false ) ], [ 'lookup', 'category_target' ] ) );
+		$step    = [
+			[
+				'action' => 'x_picks_category_add',
+				'args'   => [
+					'field'      => 'x_picks_category_items',
+					'recipients' => [ 'r0009' ],
+				],
+			],
+		];
+		$preview = ( new CategoryPreview( $picks ) )->run( $step, [ 41 ], false );
+		$this->assertTrue( is_array( $preview ), $preview instanceof \WP_Error ? $preview->get_error_message() : '' );
+		$intent      = [
+			'version'    => 1,
+			'source'     => 'bulk',
+			'operations' => $preview['operations'],
+			'scope_hash' => $preview['scope_hash'],
+			'categories' => [
+				'chosen'        => $preview['categories']['chosen'],
+				'subcategories' => false,
+				'ids'           => $preview['categories']['ids'],
+			],
+		];
+		$credentials = [ 'preview_hash' => $preview['hash'] ];
+		$this->assertTrue( is_array( CategoryAcceptance::check( $intent, $credentials, self::USER, $picks ) ), 'Unchanged, the Apply is accepted.' );
+
+		update_option( PicksFaults::OPTION, [ 'renamed' => [ 'r0009' => 'Renamed recipient' ] ] );
+		$renamed = CategoryAcceptance::check( $intent, $credentials, self::USER, $picks );
+		$this->assertInstanceOf( \WP_Error::class, $renamed );
+		$this->assertSame( [ 'bulkcat_preview_stale', 409, 'provider_changed' ], [ $renamed->get_error_code(), $renamed->get_error_data()['status'], $renamed->get_error_data()['reason'] ], 'A choice renamed since the preview makes Apply stale.' );
+
+		update_option( PicksFaults::OPTION, [ 'withdrawn' => [ 'r0009' ] ] );
+		$withdrawn = CategoryAcceptance::check( $intent, $credentials, self::USER, $picks );
+		$this->assertInstanceOf( \WP_Error::class, $withdrawn );
+		$this->assertSame( 'bulkcat_choice_unavailable', $withdrawn->get_error_code(), 'A choice withdrawn since the preview is refused at Apply.' );
+		delete_option( PicksFaults::OPTION );
+	}
+
+	public function test_a_product_choice_renamed_or_withdrawn_between_preview_and_apply_refuses_the_apply(): void {
+		// The same check for a product change (BatchAcceptance), through the shared registry it reads.
+		$picks = new Actions( new Fields(), null, Providers::of( [ new PicksProvider( new MemoryStore(), new MemoryStore(), true, false ) ], [ 'lookup', 'category_target' ] ) );
+		$this->share( $picks );
+		$step    = [
+			[
+				'action' => 'x_picks_add',
+				'args'   => [
+					'field'      => 'x_picks_items',
+					'recipients' => [ 'r0009' ],
+				],
+			],
+		];
+		$preview = RunContext::within( RunContext::preview( self::USER ), static fn(): mixed => ( new Preview( $picks ) )->run( Selection::of_ids( [ 42 ] ), $step, Preview::DEFAULT_SAMPLE, '', null, true ) );
+		$this->assertTrue( is_array( $preview ), $preview instanceof \WP_Error ? $preview->get_error_message() : '' );
+		$intent = [
+			'version'    => 1,
+			'source'     => 'bulk',
+			'operations' => $preview['operations'],
+			'ids'        => [ 42 ],
+			'scope_hash' => $preview['scope_hash'],
+		];
+		$claims = [
+			'operation' => 'batch.apply',
+			'uuid'      => '00000000-0000-4000-8000-000000000042',
+			'owner'     => self::USER,
+		];
+		$clock  = static fn(): int => time();
+		$same   = \BulkCatalogueManager\Requests\BatchAcceptance::accept( [ 'uuid' => '00000000-0000-4000-8000-000000000041' ] + $claims, $intent, [ 'preview_hash' => $preview['hash'] ], $clock );
+		$this->assertTrue( is_array( $same ), 'Unchanged, the Apply is accepted: ' . ( $same instanceof \WP_Error ? $same->get_error_code() : '' ) );
+		update_option( PicksFaults::OPTION, [ 'renamed' => [ 'r0009' => 'Renamed recipient' ] ] );
+		$renamed = \BulkCatalogueManager\Requests\BatchAcceptance::accept( $claims, $intent, [ 'preview_hash' => $preview['hash'] ], $clock );
+		$this->assertInstanceOf( \WP_Error::class, $renamed );
+		$this->assertSame( [ 'bulkcat_preview_stale', 'provider_changed' ], [ $renamed->get_error_code(), $renamed->get_error_data()['reason'] ?? null ] );
+		update_option( PicksFaults::OPTION, [ 'withdrawn' => [ 'r0009' ] ] );
+		$withdrawn = \BulkCatalogueManager\Requests\BatchAcceptance::accept( $claims, $intent, [ 'preview_hash' => $preview['hash'] ], $clock );
+		$this->assertInstanceOf( \WP_Error::class, $withdrawn );
+		$this->assertSame( 'bulkcat_choice_unavailable', $withdrawn->get_error_code() );
+		delete_option( PicksFaults::OPTION );
 	}
 
 	public function test_the_preview_route_is_for_writers_and_takes_only_its_own_arguments(): void {

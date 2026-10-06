@@ -6,6 +6,8 @@
  */
 import { __, _x, sprintf } from '@wordpress/i18n';
 
+import { formatNumber } from '../bulk/words';
+
 /**
  * Index a nested tree by id.
  *
@@ -374,6 +376,51 @@ export function movePayload( nodes, byId, id, target, zone ) {
 		return null;
 	}
 	return { parent, position, blocked: false };
+}
+
+/**
+ * What a move did, in words, from the tree as it was before it. A category
+ * that stayed under the same parent is said by its new place among its
+ * siblings ("Bags moved to position 2 of 3."), never as a move to where it
+ * already was; one that changed parent is said by its new parent's path, or
+ * the top level.
+ *
+ * @param {Array<Object>}       nodes    Top-level nodes, before the move.
+ * @param {Map<number, Object>} byId     Index, before the move.
+ * @param {number}              id       The category moved.
+ * @param {number}              parent   Its new parent, 0 for the top level.
+ * @param {number|undefined}    position Its place among the new siblings from 0; last when undefined.
+ * @return {string} Sentence.
+ */
+export function moveSentence( nodes, byId, id, parent, position ) {
+	const name = byId.get( id )?.node.name || '';
+	const to = Number( parent ) || 0;
+	if ( ( byId.get( id )?.parent || 0 ) === to ) {
+		const others = childrenOf( nodes, byId, to ).filter(
+			( each ) => each !== id
+		).length;
+		const place = Number.isInteger( position )
+			? Math.min( position, others ) + 1
+			: others + 1;
+		return sprintf(
+			/* translators: 1: a category name, 2: its new place among the categories beside it, such as "2", 3: how many categories are there, such as "5". */
+			__(
+				'%1$s moved to position %2$s of %3$s.',
+				'bulk-catalogue-manager-for-woocommerce'
+			),
+			name,
+			formatNumber( place ),
+			formatNumber( others + 1 )
+		);
+	}
+	return sprintf(
+		/* translators: 1: a category name, 2: where it now sits, such as "Clothing › T-Shirts" or "the top level". */
+		__( '%1$s moved to %2$s.', 'bulk-catalogue-manager-for-woocommerce' ),
+		name,
+		to
+			? joinPath( pathNames( byId, to ) )
+			: __( 'the top level', 'bulk-catalogue-manager-for-woocommerce' )
+	);
 }
 
 /**

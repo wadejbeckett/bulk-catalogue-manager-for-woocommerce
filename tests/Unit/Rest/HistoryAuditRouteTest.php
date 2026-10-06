@@ -371,7 +371,7 @@ final class HistoryAuditRouteTest extends TestCase {
 		// One grouped read each for the whole page, not one per row.
 		$queries = $GLOBALS['wpdb']->queries;
 		$this->assertCount( 1, preg_grep( '/^SELECT batch_id, undo_of FROM .* undo_of IN \(/', $queries ) );
-		$this->assertCount( 1, preg_grep( '/^SELECT batch_id, undo_of, user_id FROM .* undo_of IN \(/', $queries ), 'The list row\'s "put back by", for the undone rows only.' );
+		$this->assertCount( 1, preg_grep( '/^SELECT batch_id, undo_of, user_id, status, finished_gmt FROM .* undo_of IN \(/', $queries ), 'The list row\'s "put back by", for the undone rows only: one read per link, and no undone row here was redone.' );
 		$this->assertCount( 1, preg_grep( "/result = 'applied' GROUP BY batch_id/", $queries ) );
 
 		// The single read counts them when asked (T85), only where undo is still possible.
@@ -504,9 +504,10 @@ final class HistoryAuditRouteTest extends TestCase {
 		$this->assertSame( [ 1 ], array_keys( array_filter( array_column( $items, 'variations_included', 'batch_id' ) ) ), 'Only a batch whose switch added variations.' );
 		$this->assertSame(
 			[
-				'batch_id'  => 15,
-				'user_id'   => 5,
-				'user_name' => 'User 5',
+				'batch_id'     => 15,
+				'user_id'      => 5,
+				'finished_gmt' => '2026-09-20 10:05:00',
+				'user_name'    => 'User 5',
 			],
 			$items[13]['undone_by']
 		);
@@ -529,6 +530,85 @@ final class HistoryAuditRouteTest extends TestCase {
 		$before = count( $GLOBALS['wpdb']->queries );
 		$this->ok( self::dispatch( '/batches', [ 'status' => 'complete' ] ) );
 		$this->assertCount( 0, preg_grep( '/undo_of, user_id/', array_slice( $GLOBALS['wpdb']->queries, $before ) ) );
+	}
+
+	public function test_an_undo_then_redo_then_undo_again_chain_reads_who_did_each_and_when(): void {
+		// Batch 20 was undone by 21 (Rosa); 21 was undone in turn by 22 (Sam): a Redo, so 20's change is in effect again.
+		$this->batch( 20, 'undone', [ 'adjust' ] );
+		$this->batch(
+			21,
+			'undone',
+			[ 'set_value' ],
+			[
+				'source'       => 'undo',
+				'undo_of'      => 20,
+				'user_id'      => 4,
+				'finished_gmt' => '2026-09-20 11:00:00',
+			]
+		);
+		$this->batch(
+			22,
+			'complete',
+			[ 'set_value' ],
+			[
+				'source'       => 'undo',
+				'undo_of'      => 21,
+				'user_id'      => 3,
+				'finished_gmt' => '2026-09-20 12:00:00',
+			]
+		);
+		$items = array_column( $this->ok( self::dispatch( '/batches', [ 'per_page' => 100 ] ) )['items'], null, 'batch_id' );
+		$this->assertSame(
+			[
+				'batch_id'     => 21,
+				'user_id'      => 4,
+				'finished_gmt' => '2026-09-20 11:00:00',
+				'user_name'    => 'Rosa Admin',
+			],
+			$items[20]['undone_by'],
+			'The undo that put it back is still named after it was redone.'
+		);
+		$this->assertSame(
+			[
+				'batch_id'     => 22,
+				'user_id'      => 3,
+				'finished_gmt' => '2026-09-20 12:00:00',
+				'user_name'    => 'Sam Shop',
+			],
+			$items[20]['redone_by'],
+			'The redo that made the change again, with who and when.'
+		);
+		$this->assertSame( 22, $items[21]['undone_by']['batch_id'], 'The undo itself reads as put back by the redo.' );
+		$this->assertNull( $items[21]['redone_by'] );
+		$this->assertNull( $items[22]['undone_by'] );
+		$this->assertNull( $items[22]['redone_by'] );
+		$this->assertNull( $items[13]['redone_by'], 'A plain undo is not redone.' );
+		$single = $this->ok( self::dispatch( '/batches/20' ) );
+		$this->assertSame( [ 21, 22 ], [ $single['undone_by']['batch_id'], $single['redone_by']['batch_id'] ], 'The single read agrees with the list.' );
+
+		// Undo again: 22 is undone by 23, so 20's change is undone once more, by 23.
+		foreach ( $this->batches as $index => $row ) {
+			if ( 22 === $row['batch_id'] ) {
+				$this->batches[ $index ]['status'] = 'undone';
+			}
+		}
+		$this->batch(
+			23,
+			'complete',
+			[ 'set_value' ],
+			[
+				'source'       => 'undo',
+				'undo_of'      => 22,
+				'user_id'      => 4,
+				'finished_gmt' => '2026-09-20 13:00:00',
+			]
+		);
+		$items = array_column( $this->ok( self::dispatch( '/batches', [ 'per_page' => 100 ] ) )['items'], null, 'batch_id' );
+		$this->assertSame( [ 23, null ], [ $items[20]['undone_by']['batch_id'], $items[20]['redone_by'] ], 'Undone again, by the latest undo in the chain.' );
+		$this->assertSame( [ 22, 23 ], [ $items[21]['undone_by']['batch_id'], $items[21]['redone_by']['batch_id'] ] );
+		$this->assertSame( [ 23, null ], [ $items[22]['undone_by']['batch_id'], $items[22]['redone_by'] ] );
+		$single = $this->ok( self::dispatch( '/batches/20' ) );
+		$this->assertSame( [ 23, null ], [ $single['undone_by']['batch_id'], $single['redone_by'] ] );
 	}
 
 	public function test_the_users_route_lists_every_batch_owner_by_name(): void {

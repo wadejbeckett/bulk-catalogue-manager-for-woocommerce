@@ -10,7 +10,7 @@ import { _n, sprintf } from '@wordpress/i18n';
  *
  * @return {string|undefined} BCP 47 tag.
  */
-function locale() {
+export function adminLocale() {
 	const lang =
 		typeof document !== 'undefined' && document.documentElement.lang;
 	return lang || undefined;
@@ -25,7 +25,7 @@ function locale() {
 export function formatNumber( value ) {
 	const number = Number( value ) || 0;
 	try {
-		return new Intl.NumberFormat( locale() ).format( number );
+		return new Intl.NumberFormat( adminLocale() ).format( number );
 	} catch {
 		return String( number );
 	}
@@ -99,7 +99,7 @@ export function itemsPhrase( count ) {
 export function listPhrase( items ) {
 	const list = items.filter( Boolean );
 	try {
-		return new Intl.ListFormat( locale(), {
+		return new Intl.ListFormat( adminLocale(), {
 			style: 'long',
 			type: 'conjunction',
 		} ).format( list );

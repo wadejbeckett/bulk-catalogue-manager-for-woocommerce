@@ -13,6 +13,7 @@ import { ROW } from '../defaults';
 import { STATES, cellState } from './cell-state';
 import { KINDS, metaOf } from './model';
 import { countOf } from './registry';
+import { formatNumber } from '../../bulk/words';
 
 /**
  * True inside a cell cellState() does not let the owner edit (a locked cell,
@@ -291,7 +292,7 @@ function Footer( { meta, ctx } ) {
 						total,
 						'bulk-catalogue-manager-for-woocommerce'
 					),
-					total.toLocaleString(),
+					formatNumber( total ),
 					name
 				) }
 			</span>
@@ -317,7 +318,7 @@ function Footer( { meta, ctx } ) {
 								'Show all %s options',
 								'bulk-catalogue-manager-for-woocommerce'
 							),
-							total.toLocaleString()
+							formatNumber( total )
 						) }
 					</Button>
 				</>

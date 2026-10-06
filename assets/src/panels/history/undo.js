@@ -11,7 +11,12 @@ import { __, _n, sprintf } from '@wordpress/i18n';
 
 import { request } from '../../api';
 import { envelope, sendWithGrant } from '../../requests';
-import { itemsPhrase, productsPhrase, variationsPhrase } from '../bulk/words';
+import {
+	formatNumber,
+	itemsPhrase,
+	productsPhrase,
+	variationsPhrase,
+} from '../bulk/words';
 import { countPhrase } from '../catalogue/selection/model';
 
 /**
@@ -164,7 +169,7 @@ export function categoriesPhrase( count ) {
 			count,
 			'bulk-catalogue-manager-for-woocommerce'
 		),
-		Number( count ).toLocaleString()
+		formatNumber( count )
 	);
 }
 
@@ -332,11 +337,39 @@ export function undoneNotice( what, report, redo = false ) {
 		),
 		putBackPhrase( count, report?.undo?.by_type || null )
 	);
-	const text = redo
+	// The route's own line about any left alone is part of the sentence a
+	// translator orders (FRONTEND-11).
+	const extra = report?.undo?.sentence;
+	if ( redo ) {
+		return extra
+			? sprintf(
+					/* translators: 1: what was put back, such as "12 products were put back."; 2: the products left alone, a sentence. */
+					__(
+						'Redone. %1$s %2$s',
+						'bulk-catalogue-manager-for-woocommerce'
+					),
+					putBack,
+					extra
+				)
+			: sprintf(
+					/* translators: %s: what was put back, such as "12 products were put back.". */
+					__(
+						'Redone. %s',
+						'bulk-catalogue-manager-for-woocommerce'
+					),
+					putBack
+				);
+	}
+	return extra
 		? sprintf(
-				/* translators: %s: what was put back, such as "12 products were put back.". */
-				__( 'Redone. %s', 'bulk-catalogue-manager-for-woocommerce' ),
-				putBack
+				/* translators: 1: the change undone, in words, such as "Increased the regular price by 8%"; 2: how many were put back; 3: the products left alone, a sentence. */
+				__(
+					'Undone: %1$s. %2$s %3$s',
+					'bulk-catalogue-manager-for-woocommerce'
+				),
+				what,
+				putBack,
+				extra
 			)
 		: sprintf(
 				/* translators: 1: the change undone, in words, such as "Increased the regular price by 8%"; 2: how many were put back. */
@@ -347,6 +380,4 @@ export function undoneNotice( what, report, redo = false ) {
 				what,
 				putBack
 			);
-	const extra = report?.undo?.sentence;
-	return extra ? `${ text } ${ extra }` : text;
 }

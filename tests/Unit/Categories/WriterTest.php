@@ -365,6 +365,41 @@ final class WriterTest extends TestCase {
 		$this->assertSame( [ [ 3, 'term_name', 'Shirts', 'Shirts', 'failed' ] ], $this->store->journal() );
 	}
 
+	public function test_a_move_whose_journal_fails_says_it_was_made_and_is_not_called_failed(): void {
+		// SILENT-FAILURES-9: WordPress moved the category, then the History row could not be written.
+		$GLOBALS['wpdb']->failing = [ 'insert:wp_bulkcat_changes' ];
+		$result                   = self::writer()->move( 2, 1, 0, self::USER );
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'bulkcat_save_failed', $result->get_error_code() );
+		$this->assertTrue( $result->get_error_data()['applied'], 'The answer says the change was made, so the screen reloads the tree.' );
+		$this->assertSame( 'The category was changed, but the change could not be recorded in History, so it cannot be undone there. Reload the categories to see it.', $result->get_error_message() );
+		$this->assertSame( 1, CategoryTree::tree()->node( 2 )['parent'], 'The move stands.' );
+		$batch = $this->store->batch( $result->get_error_data()['batch_id'] );
+		$this->assertSame( [ 'partial', 0 ], [ $batch['status'], $batch['failed_items'] ], 'Made but not recorded: not "failed".' );
+	}
+
+	public function test_a_create_whose_journal_fails_leaves_no_category_behind(): void {
+		$GLOBALS['wpdb']->failing = [ 'insert:wp_bulkcat_changes' ];
+		$result                   = self::writer()->create( [ 'name' => 'Hats' ], self::USER );
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( 'bulkcat_save_failed', $result->get_error_code() );
+		$this->assertFalse( $result->get_error_data()['applied'] );
+		$this->assertSame( 'The category could not be created, because its History record could not be written. Nothing was changed; try again.', $result->get_error_message() );
+		$this->assertContains( [ 12, 'product_cat' ], $GLOBALS['bulkcat_test']['deleted_terms'] ?? [], 'Never a category the journal does not know about.' );
+		$this->assertNull( CategoryTree::tree()->node( 12 ) );
+		$this->assertSame( 'failed', $this->store->batch( $result->get_error_data()['batch_id'] )['status'] );
+	}
+
+	public function test_an_order_wordpress_did_not_store_is_not_journalled_as_applied(): void {
+		// SILENT-FAILURES-9: update_term_meta() can fail; the order journalled is the one read back.
+		$GLOBALS['bulkcat_test']['term_meta_fail'] = [ CategoryTree::ORDER_META ];
+		$before                                    = self::orders( [ 2, 5 ] );
+		$result                                    = self::writer()->move( 2, 1, 0, self::USER );
+		$this->assertTrue( is_array( $result ), $result instanceof \WP_Error ? $result->get_error_message() : '' );
+		$this->assertSame( $before, self::orders( [ 2, 5 ] ) );
+		$this->assertSame( [], array_filter( $this->store->journal(), static fn( array $row ): bool => 'term_menu_order' === $row[1] && 'applied' === $row[4] ), 'No order row reads applied.' );
+	}
+
 	public function test_a_move_inside_itself_a_child_or_a_grandchild_is_refused(): void {
 		foreach ( [
 			'self'             => 1,

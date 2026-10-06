@@ -19,7 +19,9 @@
  * - `state` (string): mixed into state_token();
  * - `format` (int): the labels field's format;
  * - `slow_write` (int): microseconds each write() sleeps (the lease path);
- * - `throw_flush` (bool): flush() throws.
+ * - `throw_flush` (bool): flush() throws;
+ * - `dropped` (list of action ids): actions() no longer offers them (an
+ *   update removed or renamed them, EXT-5).
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later

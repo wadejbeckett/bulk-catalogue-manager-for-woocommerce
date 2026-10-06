@@ -38,7 +38,13 @@ import MoveDialog from './move-dialog';
 import MoveManyDialog from './move-many-dialog';
 import { moveCategory, updateCategory } from './requests';
 import SelectionPane from './selection-pane';
-import { joinPath, pathNames, searchMatches, visibleRows } from './tree-model';
+import {
+	joinPath,
+	moveSentence,
+	pathNames,
+	searchMatches,
+	visibleRows,
+} from './tree-model';
 import useCategoryTree from './use-category-tree';
 import { menuLabel } from '../../components/provider-menu';
 import { categoryActions, offeredCategoryActions } from './workspace-actions';
@@ -204,6 +210,10 @@ export default function CategoriesTab( { settings } ) {
 	const fail = ( error, fallback ) => {
 		setFailure( { error, fallback } );
 		announce( errorMessage( error, fallback ), 'assertive' );
+		if ( error?.data?.applied ) {
+			// Made but not recorded (SILENT-FAILURES-9): show the tree as it now is.
+			tree.reload();
+		}
 	};
 
 	const rename = async ( id, name ) => {
@@ -236,7 +246,8 @@ export default function CategoriesTab( { settings } ) {
 
 	const move = async ( id, parent, position ) => {
 		setFailure( null );
-		const name = byId.get( id )?.node.name || '';
+		// Said from the tree as it was before the move.
+		const said = moveSentence( nodes, byId, id, parent, position );
 		setRefocus( ( was ) =>
 			was && was.before === nodes ? was : { id, parent, before: nodes }
 		);
@@ -247,22 +258,7 @@ export default function CategoriesTab( { settings } ) {
 				setExpanded( ( open ) => new Set( [ ...open, parent ] ) );
 			}
 			tree.reload();
-			announce(
-				sprintf(
-					/* translators: 1: a category name, 2: where it now sits, such as "Clothing › T-Shirts" or "Top level". */
-					__(
-						'%1$s moved to %2$s.',
-						'bulk-catalogue-manager-for-woocommerce'
-					),
-					name,
-					parent
-						? joinPath( pathNames( byId, parent ) )
-						: __(
-								'the top level',
-								'bulk-catalogue-manager-for-woocommerce'
-							)
-				)
-			);
+			announce( said );
 		} catch ( error ) {
 			fail(
 				error,

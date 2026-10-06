@@ -23,6 +23,7 @@ import {
 	valueIds,
 	visibleRows,
 } from './tree-model';
+import { formatNumber } from '../bulk/words';
 
 /** The drag data type a dragged category carries. */
 export const CATEGORY_DRAG_TYPE = 'application/x-bulkcat-category';
@@ -605,7 +606,7 @@ export default function CategoryTree( {
 										'bulk-catalogue-manager-for-woocommerce'
 									),
 									name,
-									count.toLocaleString()
+									formatNumber( count )
 								);
 					const manageable = canManage && row.id !== ALL;
 					const className = [
@@ -784,7 +785,7 @@ export default function CategoryTree( {
 										className="bulkcat-cat-count"
 										aria-hidden="true"
 									>
-										{ count.toLocaleString() }
+										{ formatNumber( count ) }
 									</span>
 								) }
 								{ manageable && (

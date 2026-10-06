@@ -21,6 +21,7 @@ import {
 } from './describe';
 import ErrorNotice from './error-notice';
 import { rowUserName } from './users';
+import { formatNumber } from '../bulk/words';
 
 export const PER_PAGE_SIZES = [ 10, 25, 50, 100 ];
 
@@ -148,7 +149,7 @@ export function retentionLine( days ) {
 			kept,
 			'bulk-catalogue-manager-for-woocommerce'
 		),
-		kept.toLocaleString()
+		formatNumber( kept )
 	);
 }
 

@@ -649,15 +649,23 @@ final class BatchRepository {
 	 * run's. A run whose lease went stale and was taken over gets false and
 	 * leaves the item to the run that holds it now.
 	 *
+	 * The item's own lease starts now (ENGINE-5): its claimed_gmt is set to
+	 * `$now_gmt`, so a later run measures staleness from when this item was
+	 * taken up, not from when its chunk was claimed. An item a run reached
+	 * near the end of its chunk's lease and is still writing is then neither
+	 * put back to pending (reset_stale_working()) nor counted as finished,
+	 * so another run cannot finalise the batch while the write is in flight.
+	 *
 	 * @param int    $batch_id Batch.
 	 * @param int    $item_id  Item.
 	 * @param string $token    The chunk's claim token.
+	 * @param string $now_gmt  GMT `Y-m-d H:i:s`: when this run takes the item up.
 	 * @return bool Whether this run holds the item.
 	 * @throws \RuntimeException When the statement fails.
 	 */
-	public function claim_item( int $batch_id, int $item_id, string $token ): bool {
+	public function claim_item( int $batch_id, int $item_id, string $token, string $now_gmt ): bool {
 		global $wpdb;
-		$result = $wpdb->query( $wpdb->prepare( 'UPDATE %i SET state = %s WHERE batch_id = %d AND item_id = %d AND claim_token = %s AND state = %s', $this->registry->table( Schema::ITEMS ), Schema::ITEM_WORKING, $batch_id, $item_id, $token, 'pending' ) );
+		$result = $wpdb->query( $wpdb->prepare( 'UPDATE %i SET state = %s, claimed_gmt = %s WHERE batch_id = %d AND item_id = %d AND claim_token = %s AND state = %s', $this->registry->table( Schema::ITEMS ), Schema::ITEM_WORKING, $now_gmt, $batch_id, $item_id, $token, 'pending' ) );
 		if ( false === $result ) {
 			throw new \RuntimeException( 'The batch item could not be claimed.' );
 		}
@@ -1089,35 +1097,78 @@ final class BatchRepository {
 	}
 
 	/**
-	 * For a page of batches in one read, the latest undo batch that
-	 * finished undoing each (complete or partial, having put something back),
-	 * with its user: batch id => [ batch_id,
-	 * user_id ] of the undo batch, batches without one left out (the
-	 * history's "put back by").
+	 * Most links followed along one chain of undos and redos (a guard; a
+	 * real chain is a handful long).
+	 */
+	private const CHAIN_LIMIT = 50;
+
+	/**
+	 * For a page of batches, who last put each back and who last made it
+	 * again (the history's "put back by" and "done again by"): batch id =>
+	 * `[ undone_by, redone_by ]`, each null or `[ batch_id, user_id,
+	 * finished_gmt ]` of an undo batch, batches never undone left out.
+	 *
+	 * The chain is followed from each batch: its latest undo that finished
+	 * having put something back (complete or partial, or `undone` itself
+	 * when a later undo reversed it: a Redo), then that undo's own, and so
+	 * on. Odd links put the batch's change back, even links made it again,
+	 * so `undone_by` is the latest odd link and `redone_by` the latest even
+	 * link when the chain ends on one (the change is in effect again), else
+	 * null. One read per link level for the whole page.
 	 *
 	 * @param list<int> $batch_ids Batches.
-	 * @return array<int, array{batch_id: int, user_id: int}>
+	 * @return array<int, array{undone_by: array{batch_id: int, user_id: int, finished_gmt: ?string}, redone_by: ?array{batch_id: int, user_id: int, finished_gmt: ?string}}>
 	 * @throws \InvalidArgumentException On an id that is not a positive integer.
 	 */
-	public function undone_by_with_users( array $batch_ids ): array {
+	public function undo_chains( array $batch_ids ): array {
 		global $wpdb;
 		$batch_ids = array_values( array_unique( $batch_ids ) );
 		if ( [] === $batch_ids ) {
 			return [];
 		}
 		self::assert_ids( $batch_ids, 'batch id' );
-		$in   = implode( ', ', array_fill( 0, count( $batch_ids ), '%d' ) );
-		$args = array_merge( [ $this->registry->table( Schema::BATCHES ) ], $batch_ids );
-		// $in holds only %d placeholders, one per id; every id is a prepared argument.
-		$rows   = $wpdb->get_results( $wpdb->prepare( "SELECT batch_id, undo_of, user_id FROM %i WHERE undo_of IN ({$in}) AND source = 'undo' AND status IN ('complete', 'partial') AND changed_items > 0 ORDER BY batch_id ASC", $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in is only %d placeholders; every id is an argument.
-		$undone = [];
-		foreach ( is_array( $rows ) ? $rows : [] as $row ) {
-			$undone[ (int) $row['undo_of'] ] = [
-				'batch_id' => (int) $row['batch_id'],
-				'user_id'  => (int) $row['user_id'],
+		$links = array_fill_keys( $batch_ids, [] );
+		$tips  = array_combine( $batch_ids, $batch_ids );
+		for ( $level = 0; [] !== $tips && $level < self::CHAIN_LIMIT; ++$level ) {
+			$in   = implode( ', ', array_fill( 0, count( $tips ), '%d' ) );
+			$args = array_merge( [ $this->registry->table( Schema::BATCHES ) ], array_values( $tips ) );
+			// $in holds only %d placeholders, one per id; every id is a prepared argument.
+			$rows   = $wpdb->get_results( $wpdb->prepare( "SELECT batch_id, undo_of, user_id, status, finished_gmt FROM %i WHERE undo_of IN ({$in}) AND source = 'undo' AND status IN ('complete', 'partial', 'undone') AND changed_items > 0 ORDER BY batch_id ASC", $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in is only %d placeholders; every id is an argument.
+			$latest = [];
+			foreach ( is_array( $rows ) ? $rows : [] as $row ) {
+				$latest[ (int) $row['undo_of'] ] = $row;
+			}
+			$next = [];
+			foreach ( $tips as $root => $tip ) {
+				$row = $latest[ $tip ] ?? null;
+				if ( null === $row ) {
+					continue;
+				}
+				$links[ $root ][] = [
+					'batch_id'     => (int) $row['batch_id'],
+					'user_id'      => (int) $row['user_id'],
+					'finished_gmt' => null === $row['finished_gmt'] ? null : (string) $row['finished_gmt'],
+				];
+				// Only an undo that was itself undone has a further link.
+				if ( 'undone' === $row['status'] ) {
+					$next[ $root ] = (int) $row['batch_id'];
+				}
+			}
+			$tips = $next;
+		}
+		$chains = [];
+		foreach ( $links as $root => $chain ) {
+			$count = count( $chain );
+			if ( 0 === $count ) {
+				continue;
+			}
+			$odd             = 1 === $count % 2;
+			$chains[ $root ] = [
+				'undone_by' => $chain[ $odd ? $count - 1 : $count - 2 ],
+				'redone_by' => $odd ? null : $chain[ $count - 1 ],
 			];
 		}
-		return $undone;
+		return $chains;
 	}
 
 	/**

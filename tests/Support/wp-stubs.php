@@ -226,8 +226,12 @@ if ( ! function_exists( 'add_filter' ) ) {
 		$queries                              = (array) $queries;
 		$GLOBALS['bulkcat_test']['dbdelta'][] = $queries;
 		foreach ( $queries as $query ) {
-			if ( $GLOBALS['bulkcat_test']['dbdelta_ok'] && isset( $GLOBALS['wpdb'] ) && 1 === preg_match( '/^CREATE TABLE (\S+) \(/', $query, $match ) ) {
-				$GLOBALS['wpdb']->tables[ $match[1] ] = true;
+			if ( isset( $GLOBALS['wpdb'] ) && 1 === preg_match( '/^CREATE TABLE (\S+) \((.*)\n\) /s', $query, $match ) ) {
+				// ENGINE-9: the body each table was given, so SHOW COLUMNS and SHOW INDEX can answer from it.
+				$GLOBALS['wpdb']->bodies[ $match[1] ] = $match[2];
+				if ( $GLOBALS['bulkcat_test']['dbdelta_ok'] ) {
+					$GLOBALS['wpdb']->tables[ $match[1] ] = true;
+				}
 			}
 		}
 		return [];
@@ -904,6 +908,10 @@ if ( ! function_exists( 'sanitize_title' ) ) {
 if ( ! function_exists( 'wp_insert_term' ) ) {
 	function get_term( int|object $term, string $taxonomy = '', string $output = 'OBJECT', string $filter = 'raw' ): mixed {
 		$id = is_object( $term ) ? (int) $term->term_id : $term;
+		if ( ! empty( $GLOBALS['bulkcat_test']['term_list_get_term_hidden'] ) && in_array( $id, $GLOBALS['bulkcat_test']['hidden_terms'] ?? [], true ) ) {
+			// 'term_list_get_term_hidden': a filter that hides 'hidden_terms' from get_term() as well.
+			return null;
+		}
 		foreach ( $GLOBALS['bulkcat_test']['term_list'] ?? [] as $candidate ) {
 			if ( (int) $candidate->term_id === $id && ( '' === $taxonomy || ( $candidate->taxonomy ?? 'product_cat' ) === $taxonomy ) ) {
 				return $candidate;
@@ -963,6 +971,10 @@ if ( ! function_exists( 'wp_insert_term' ) ) {
 	}
 
 	function update_term_meta( int $term_id, string $meta_key, mixed $meta_value, mixed $prev_value = '' ): int|bool {
+		if ( in_array( $meta_key, $GLOBALS['bulkcat_test']['term_meta_fail'] ?? [], true ) ) {
+			// 'term_meta_fail' (keys): the database refuses these writes, as update_term_meta() reports with false.
+			return false;
+		}
 		$GLOBALS['bulkcat_test']['term_meta'][ $term_id ][ $meta_key ] = $meta_value;
 		$GLOBALS['bulkcat_test']['term_meta_updates'][]                = [ $term_id, $meta_key, $meta_value ];
 		return true;

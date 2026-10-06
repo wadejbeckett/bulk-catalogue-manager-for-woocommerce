@@ -567,6 +567,45 @@ describe( 'category panel', () => {
 		);
 	} );
 
+	it( 'says where a reordered category now sits, not that it moved to the top level', async () => {
+		routes[ 'POST categories/6/move' ] = () =>
+			Promise.resolve( { item: { id: 6 } } );
+		await renderPanel();
+		const data = new Map();
+		const dataTransfer = {
+			setData: ( type, value ) => data.set( type, value ),
+			getData: ( type ) => data.get( type ),
+			get types() {
+				return [ ...data.keys() ];
+			},
+		};
+		// Drop on the top edge of Drinkware's row: before it.
+		const box = jest
+			.spyOn( window.Element.prototype, 'getBoundingClientRect' )
+			.mockReturnValue( { top: 0, height: 28 } );
+		fireEvent.dragStart( rowOf( 'Bags' ), { dataTransfer } );
+		fireEvent.dragOver( item( 'Drinkware' ), { dataTransfer, clientY: 2 } );
+		await act( async () => {
+			fireEvent.drop( item( 'Drinkware' ), {
+				dataTransfer,
+				clientY: 2,
+			} );
+		} );
+		const move = apiFetch.mock.calls.find(
+			( [ o ] ) => o.method === 'POST'
+		)[ 0 ];
+		expect( move.data ).toEqual( { parent: 0, position: 1 } );
+		expect( speak ).toHaveBeenCalledWith(
+			'Bags moved to position 2 of 3.',
+			'polite'
+		);
+		expect( speak ).not.toHaveBeenCalledWith(
+			'Bags moved to the top level.',
+			'polite'
+		);
+		box.mockRestore();
+	} );
+
 	it( 'blocks dropping a category inside itself', async () => {
 		await renderPanel();
 		fireEvent.click(
@@ -761,6 +800,36 @@ describe( 'category panel', () => {
 		expectPlain( box, sentence );
 		expect( speak ).toHaveBeenCalledWith( sentence, 'assertive' );
 		expectNoRawText();
+	} );
+
+	it( 'reloads the tree when a rename was made but not recorded (SILENT-FAILURES-9)', async () => {
+		const sentence =
+			'The category was changed, but the change could not be recorded in History, so it cannot be undone there. Reload the categories to see it.';
+		routes[ 'PATCH categories/6' ] = () =>
+			Promise.reject( {
+				code: 'bulkcat_save_failed',
+				message: sentence,
+				data: { status: 500, batch_id: 9, applied: true },
+			} );
+		await renderPanel();
+		let reads = 0;
+		routes[ 'GET categories' ] = () => {
+			reads += 1;
+			return Promise.resolve( TREE );
+		};
+		act( () => item( 'Bags' ).focus() );
+		fireEvent.keyDown( item( 'Bags' ), { key: 'F2' } );
+		const input = screen.getByRole( 'textbox', {
+			name: 'New name for Bags',
+		} );
+		fireEvent.change( input, { target: { value: 'Totes' } } );
+		await act( async () => {
+			fireEvent.keyDown( input, { key: 'Enter' } );
+		} );
+		expect(
+			await screen.findByText( sentence, { selector: 'p' } )
+		).toBeTruthy();
+		await waitFor( () => expect( reads ).toBe( 1 ) );
 	} );
 
 	it( 'is a button opening the tree as a sheet below 960 pixels', async () => {

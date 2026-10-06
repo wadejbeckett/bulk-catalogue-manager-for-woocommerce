@@ -3,8 +3,9 @@
  * Schema migrator (SPEC §9.2, §15 Data lifecycle). On activation, and on the
  * first admin request after an update, compares `bulkcat_db_version` with the
  * code's schema version and, when they differ, feeds every registry table to
- * dbDelta(). The new version is stored only once every table exists, so a
- * failed run is retried on the next request.
+ * dbDelta(). The new version is stored only once every table exists with
+ * every column and index its body names (ENGINE-9), so a failed run is
+ * retried on the next request.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -91,8 +92,8 @@ final class Migrator {
 				$statements[] = "CREATE TABLE {$wpdb->prefix}{$name} (\n" . trim( $body ) . "\n) {$collate} ENGINE=InnoDB;";
 			}
 			dbDelta( $statements );
-			foreach ( array_keys( $tables ) as $name ) {
-				if ( ! self::table_exists( $wpdb->prefix . $name ) || ! self::ensure_innodb( $name ) ) {
+			foreach ( $tables as $name => $body ) {
+				if ( ! self::table_exists( $wpdb->prefix . $name ) || ! self::ensure_innodb( $name ) || ! self::shape_landed( $name, $body ) ) {
 					return false;
 				}
 			}
@@ -125,6 +126,36 @@ final class Migrator {
 		}
 		// The plugin's own registry table (validated bulkcat_ name plus the site prefix), as a %i identifier.
 		return false !== $wpdb->query( $wpdb->prepare( 'ALTER TABLE %i ENGINE=InnoDB', $table ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.DirectDatabaseQuery.SchemaChange -- Converts only the plugin's own table to the engine its transactions need.
+	}
+
+	/**
+	 * Whether every column and index a table's body names is on the table
+	 * (ENGINE-9): dbDelta() reports nothing when an ALTER it ran failed
+	 * (permissions, a lock timeout), so the version is stored only once
+	 * each one is read back, and a run that missed one is retried.
+	 *
+	 * @param string $name Unprefixed registry table name.
+	 * @param string $body Its CREATE TABLE body.
+	 */
+	private static function shape_landed( string $name, string $body ): bool {
+		global $wpdb;
+		$columns = [];
+		$indexes = [];
+		foreach ( explode( "\n", $body ) as $line ) {
+			$line = trim( $line );
+			if ( 1 === preg_match( '/^PRIMARY KEY/i', $line ) ) {
+				$indexes[] = 'primary';
+			} elseif ( 1 === preg_match( '/^(?:UNIQUE\s+)?(?:KEY|INDEX)\s+(\w+)/i', $line, $match ) ) {
+				$indexes[] = strtolower( $match[1] );
+			} elseif ( 1 === preg_match( '/^(\w+)\s/', $line, $match ) && ! in_array( strtoupper( $match[1] ), [ 'UNIQUE', 'KEY', 'INDEX', 'FULLTEXT', 'SPATIAL', 'CONSTRAINT', 'FOREIGN' ], true ) ) {
+				$columns[] = strtolower( $match[1] );
+			}
+		}
+		$table = $wpdb->prefix . $name;
+		// Live schema reads of the plugin's own table after dbDelta(); nothing to cache.
+		$have_columns = array_map( 'strtolower', array_map( 'strval', (array) $wpdb->get_col( $wpdb->prepare( 'SHOW COLUMNS FROM %i', $table ) ) ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Whether dbDelta()'s changes landed must be read live.
+		$have_indexes = array_map( 'strtolower', array_map( 'strval', (array) $wpdb->get_col( $wpdb->prepare( 'SHOW INDEX FROM %i', $table ), 2 ) ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- As above; column 2 is Key_name.
+		return [] === array_diff( $columns, $have_columns ) && [] === array_diff( $indexes, $have_indexes );
 	}
 
 	/**

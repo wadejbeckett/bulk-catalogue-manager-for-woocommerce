@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-10-06
+
+- After Undo then Redo, History reads "Redone" with who put it back and who did it again, in the list, the change and the CSV.
+- Undo puts prices back exactly as they were stored.
+- The Categories tab lists, reads and edits every category even where another plugin hides categories from queries; edit rights are still checked.
+- A SKU prefix or suffix is always added, also when the SKU already starts or ends with that text.
+- The database update is recorded only once every column and index is in place.
+- A second run of a change waits for a product still being written.
+- If an add-on removes an action after Apply, the change stops with one reason.
+- History says when progress or reasons cannot be read, with Try again; a category change that could not be recorded says so.
+- The Select all offer always shows the count of the current search; an Apply left unconfirmed stays on screen after the panel closes.
+- Category actions offer View in History; reordering announces the new position.
+- Messages translate as whole sentences, numbers follow the admin language, and the table's own labels can be translated.
+- New screenshots.
+
 ## [1.4.1] - 2026-10-05
 
 - An add-on action chosen from a product's row menu opens Bulk change at that action's settings, with the first one ready to fill in; the full list of changes is folded behind "Choose a different change". The same applies to the selection bar's quick actions.

@@ -17,6 +17,7 @@ import { makeDefaultCategory } from './manage-requests';
 import { valueIds } from './tree-model';
 import { registerCategoryAction } from './workspace-actions';
 import './actions/style.scss';
+import { formatNumber } from '../bulk/words';
 
 /**
  * Whether a category is the shop's default.
@@ -59,7 +60,7 @@ export function removedSentence( answer, into ) {
 					count,
 					'bulk-catalogue-manager-for-woocommerce'
 				),
-				count.toLocaleString(),
+				formatNumber( count ),
 				into.path || ''
 			)
 		: sprintf(
@@ -70,7 +71,7 @@ export function removedSentence( answer, into ) {
 					count,
 					'bulk-catalogue-manager-for-woocommerce'
 				),
-				count.toLocaleString()
+				formatNumber( count )
 			);
 }
 

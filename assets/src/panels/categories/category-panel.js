@@ -32,7 +32,7 @@ import {
 	readPanelState,
 	writePanelState,
 } from './storage';
-import { categorySentence, joinPath, nextValue, pathNames } from './tree-model';
+import { categorySentence, moveSentence, nextValue } from './tree-model';
 import useCategoryTree from './use-category-tree';
 import './style.scss';
 
@@ -214,6 +214,10 @@ export default function CategoryPanel( {
 	const fail = ( error, fallback ) => {
 		setFailure( { error, fallback } );
 		announce( errorMessage( error, fallback ), 'assertive' );
+		if ( error?.data?.applied ) {
+			// Made but not recorded (SILENT-FAILURES-9): show the tree as it now is.
+			tree.reload();
+		}
 	};
 
 	const actions = useCategoryActions( { tree, value, onFail: fail } );
@@ -249,26 +253,18 @@ export default function CategoryPanel( {
 	const move = async ( id, parent, position ) => {
 		setFailure( null );
 		setRefocus( { id, parent, before: tree.nodes } );
-		const name = tree.byId.get( id )?.node.name || '';
+		// Said from the tree as it was before the move.
+		const said = moveSentence(
+			tree.nodes,
+			tree.byId,
+			id,
+			parent,
+			position
+		);
 		try {
 			await moveCategory( id, parent, position );
 			tree.reload();
-			announce(
-				sprintf(
-					/* translators: 1: a category name, 2: where it now sits, such as "Clothing › T-Shirts" or "Top level". */
-					__(
-						'%1$s moved to %2$s.',
-						'bulk-catalogue-manager-for-woocommerce'
-					),
-					name,
-					parent
-						? joinPath( pathNames( tree.byId, parent ) )
-						: __(
-								'the top level',
-								'bulk-catalogue-manager-for-woocommerce'
-							)
-				)
-			);
+			announce( said );
 		} catch ( error ) {
 			fail(
 				error,

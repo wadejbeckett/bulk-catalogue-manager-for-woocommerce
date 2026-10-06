@@ -164,13 +164,19 @@ final class SampleProvider extends AbstractProvider {
 	}
 
 	public function actions(): array {
-		return [
-			new LabelsAction( LabelsAction::ADD ),
-			new LabelsAction( LabelsAction::REMOVE ),
-			new LabelsAction( LabelsAction::REPLACE ),
-			new LabelsAction( LabelsAction::CLEAR ),
-			new NoteAction(),
-		];
+		$dropped = (array) SampleFaults::get( 'dropped', [] );
+		return array_values(
+			array_filter(
+				[
+					new LabelsAction( LabelsAction::ADD ),
+					new LabelsAction( LabelsAction::REMOVE ),
+					new LabelsAction( LabelsAction::REPLACE ),
+					new LabelsAction( LabelsAction::CLEAR ),
+					new NoteAction(),
+				],
+				static fn( object $action ): bool => ! in_array( $action->describe()->id(), $dropped, true )
+			)
+		);
 	}
 
 	public function groups(): array {

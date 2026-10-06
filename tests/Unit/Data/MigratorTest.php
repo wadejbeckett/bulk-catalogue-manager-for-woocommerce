@@ -73,6 +73,22 @@ final class MigratorTest extends TestCase {
 		$this->assertSame( Migrator::SCHEMA_VERSION, get_option( Migrator::VERSION_OPTION ) );
 	}
 
+	public function test_the_version_is_not_stored_when_a_column_or_index_did_not_land(): void {
+		// ENGINE-9: dbDelta()'s ALTER can fail silently (permissions, a lock timeout); the table exists but lacks a column.
+		$GLOBALS['wpdb']->dropped_columns['wp_bulkcat_beta'] = [ 'state' ];
+		$this->assertFalse( ( new Migrator( self::fixture() ) )->run(), 'A missing column fails the run.' );
+		$this->assertFalse( get_option( Migrator::VERSION_OPTION ), 'The version stays unset, so the next request retries.' );
+
+		$GLOBALS['wpdb']->dropped_columns                    = [];
+		$GLOBALS['wpdb']->dropped_indexes['wp_bulkcat_beta'] = [ 'state' ];
+		$this->assertFalse( ( new Migrator( self::fixture() ) )->run(), 'A missing index fails the run.' );
+		$this->assertFalse( get_option( Migrator::VERSION_OPTION ) );
+
+		$GLOBALS['wpdb']->dropped_indexes = [];
+		$this->assertTrue( ( new Migrator( self::fixture() ) )->run(), 'Retried once the change lands.' );
+		$this->assertSame( Migrator::SCHEMA_VERSION, get_option( Migrator::VERSION_OPTION ) );
+	}
+
 	public function test_a_failed_run_keeps_an_older_stored_version(): void {
 		$GLOBALS['bulkcat_test']['options'][ Migrator::VERSION_OPTION ] = '0';
 		$GLOBALS['bulkcat_test']['dbdelta_ok']                          = false;

@@ -429,7 +429,7 @@ final class UndoRouteTest extends TestCase {
 		$this->assertSame( 'undo', $row['source'] );
 		$this->assertSame( self::BATCH, $row['undo_of'] );
 		$this->assertSame( self::USER, $row['user_id'] );
-		$this->assertSame( ',set_value,replace_terms,clear,', $row['actions'], 'The batch\'s actions come from the items\' operations.' );
+		$this->assertSame( ',restore_value,replace_terms,clear,', $row['actions'], 'The batch\'s actions come from the items\' operations.' );
 		$items = $this->store->items_of( $undo_id );
 		$this->assertSame( [ 2001, 1002, 1001 ], array_column( $items, 'object_id' ) );
 		$this->assertSame( [ 'variation', 'product', 'product' ], array_column( $items, 'object_type' ) );
@@ -491,6 +491,29 @@ final class UndoRouteTest extends TestCase {
 		$this->assertSame( 'reversible', $report['reversibility']['state'], 'The undo can itself be undone: Redo.' );
 		$this->assertSame( 'already_undone', $this->ok( self::dispatch( 'GET', '/batches/12' ) )['reversibility']['reason'] );
 		$this->assertNull( $this->ok( self::dispatch( 'GET', '/batches/12' ) )['undo'] );
+	}
+
+	public function test_undo_puts_back_the_exact_price_string_that_was_stored(): void {
+		// The shop stored "10" and "5.5" (as WooCommerce's own editor does); the batch wrote 11.00 and 6.00.
+		foreach ( $this->store->changes as $index => $row ) {
+			if ( 'regular_price' === $row['prop'] && in_array( $row['object_id'], [ 1001, 2001 ], true ) ) {
+				$this->store->changes[ $index ]['old_value'] = 1001 === $row['object_id'] ? '10' : '5.5';
+			}
+		}
+		$this->store->sync();
+		$undo_id = $this->undo()['batch_id'];
+		$this->assertSame( 'complete', $this->run_batch( $undo_id ) );
+		$this->assertSame( '10', self::prop( 1001, 'regular_price' ), 'Not reformatted at the shop\'s precision ("10.00").' );
+		$this->assertSame( '5.5', self::prop( 2001, 'regular_price' ) );
+		$this->assertSame( '20.00', self::prop( 1002, 'regular_price' ), 'A value stored at the shop\'s precision comes back as it was too.' );
+		$by = [];
+		foreach ( $this->store->changes as $row ) {
+			if ( $undo_id === $row['batch_id'] ) {
+				$by[ $row['object_id'] . ':' . $row['prop'] ] = [ $row['old_value'], $row['new_value'], $row['result'] ];
+			}
+		}
+		$this->assertSame( [ '11.00', '10', 'applied' ], $by['1001:regular_price'], 'Journalled as written, so a redo puts 11.00 back exactly.' );
+		$this->assertSame( [ '6.00', '5.5', 'applied' ], $by['2001:regular_price'] );
 	}
 
 	public function test_an_undo_item_without_its_own_operations_fails_plainly_and_the_rest_revert(): void {

@@ -5,6 +5,7 @@
  * outcome. Pure: the dialog and the tests share it.
  */
 import { __, _n, sprintf } from '@wordpress/i18n';
+import { formatNumber } from '../../bulk/words';
 
 /**
  * The add-on actions that act on categories, in the registry's order: those
@@ -147,7 +148,7 @@ export function scopeSentence( preview ) {
 			count,
 			'bulk-catalogue-manager-for-woocommerce'
 		),
-		count.toLocaleString()
+		formatNumber( count )
 	);
 	if ( ! added ) {
 		return covers;
@@ -161,7 +162,7 @@ export function scopeSentence( preview ) {
 			'bulk-catalogue-manager-for-woocommerce'
 		),
 		covers,
-		added.toLocaleString()
+		formatNumber( added )
 	);
 }
 
@@ -194,7 +195,7 @@ export function finishedSentence( report ) {
 			total,
 			'bulk-catalogue-manager-for-woocommerce'
 		),
-		changed.toLocaleString(),
-		total.toLocaleString()
+		formatNumber( changed ),
+		formatNumber( total )
 	);
 }

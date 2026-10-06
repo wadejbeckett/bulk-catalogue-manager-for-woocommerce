@@ -10,6 +10,7 @@ import {
 	isInside,
 	joinPath,
 	movePayload,
+	moveSentence,
 	nextValue,
 	parentOptions,
 	pathNames,
@@ -140,6 +141,24 @@ describe( 'category tree model', () => {
 		expect( dropZone( 14, 28 ) ).toBe( 'inside' );
 		expect( dropZone( 26, 28 ) ).toBe( 'after' );
 		expect( dropZone( 5, 0 ) ).toBe( 'inside' );
+	} );
+
+	it( 'says a reorder by its new position, and a new parent by its path', () => {
+		// Reorder at the top level: Bags before Drinkware.
+		expect( moveSentence( TREE, byId, 6, 0, 1 ) ).toBe(
+			'Bags moved to position 2 of 3.'
+		);
+		// To the end of its own siblings.
+		expect( moveSentence( TREE, byId, 1, 0, undefined ) ).toBe(
+			'Clothing moved to position 3 of 3.'
+		);
+		// Into another category, and out to the top level.
+		expect( moveSentence( TREE, byId, 5, 1, undefined ) ).toBe(
+			'Drinkware moved to Clothing.'
+		);
+		expect( moveSentence( TREE, byId, 3, 0, 2 ) ).toBe(
+			'Hats moved to the top level.'
+		);
 	} );
 
 	it( 'builds the move payload, counting positions without the category itself', () => {

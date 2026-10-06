@@ -233,6 +233,7 @@ export function panelState( facts ) {
  * @param {Object}        props.settings          The `bulkcat_settings` values (or the screen settings carrying them).
  * @param {Function}      props.onClose           Close the panel.
  * @param {Function}      props.onApplied         Receives the new batch id.
+ * @param {Function|null} props.onUncertain       Told when an Apply ends with no definite answer, even after the panel closed (FRONTEND-12).
  * @param {Array<Object>} props.categories        Category tree for the terms picker.
  * @param {Array<Object>} props.tags              Tags for the terms picker.
  * @param {Array<Object>} props.shippingClasses   Shipping classes for a set.
@@ -256,6 +257,7 @@ export default function BulkChangePanel( {
 	settings,
 	onClose = () => {},
 	onApplied = () => {},
+	onUncertain = null,
 	categories = [],
 	tags = [],
 	shippingClasses = [],
@@ -314,7 +316,7 @@ export default function BulkChangePanel( {
 	const [ reran, setReran ] = useState( false );
 	const [ details, setDetails ] = useState( false );
 	const preview = usePreview();
-	const applier = useApply();
+	const applier = useApply( onUncertain );
 
 	const values = settingsValues( settings );
 	const terms = useMemo(

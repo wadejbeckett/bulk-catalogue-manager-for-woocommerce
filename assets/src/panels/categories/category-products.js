@@ -17,6 +17,7 @@ import { descriptorsOf, queryFields, rolesOf } from '../catalogue/fields';
 import { categoryArgs } from '../catalogue/query';
 import ErrorNotice from './error-notice';
 import { catalogueParams } from './workspace-model';
+import { formatNumber } from '../bulk/words';
 
 const PER_PAGE = 10;
 
@@ -174,7 +175,7 @@ export default function CategoryProducts( {
 					{ state.status !== 'failed' &&
 						Number.isFinite( state.total ) && (
 							<span className="bulkcat-cat-products__total">
-								{ state.total.toLocaleString() }
+								{ formatNumber( state.total ) }
 							</span>
 						) }
 				</h3>
@@ -358,7 +359,7 @@ export default function CategoryProducts( {
 									state.total,
 									'bulk-catalogue-manager-for-woocommerce'
 								),
-								state.total.toLocaleString()
+								formatNumber( state.total )
 							) }
 						</span>
 					</div>

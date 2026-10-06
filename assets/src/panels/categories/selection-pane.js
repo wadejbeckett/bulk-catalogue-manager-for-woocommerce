@@ -12,6 +12,7 @@ import { joinPath, pathNames } from './tree-model';
 import ActionButtons from './action-buttons';
 import { categoryActions } from './workspace-actions';
 import { catalogueParams } from './workspace-model';
+import { formatNumber } from '../bulk/words';
 
 /**
  * The pane.
@@ -138,9 +139,9 @@ export default function SelectionPane( {
 										entry.node.countWithDescendants || 0,
 										'bulk-catalogue-manager-for-woocommerce'
 									),
-									(
+									formatNumber(
 										entry.node.countWithDescendants || 0
-									).toLocaleString()
+									)
 								) }
 							</span>
 							<Button

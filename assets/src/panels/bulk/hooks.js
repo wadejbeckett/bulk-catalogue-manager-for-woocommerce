@@ -9,8 +9,11 @@ import { useCallback, useEffect, useRef, useState } from '@wordpress/element';
 import { request } from '../../api';
 import {
 	envelope,
+	isDead,
 	isUncertain,
+	keepHeld,
 	keptHolder,
+	resolveGrant,
 	resolveHeld,
 	sendWithGrant,
 } from '../../requests';
@@ -217,6 +220,46 @@ export async function resumeApply() {
 }
 
 /**
+ * FRONTEND-12: what became of an Apply whose answer never came, asked of the
+ * server with the same grant (POST /requests/resolve, which never makes the
+ * change). `{ batch_id, …, selectionKey }` when it had been accepted (the
+ * grant is then let go); `{ status: 'not_made' }` when the server has no
+ * record of it, or the grant can no longer be accepted; `{ status: 'none' }`
+ * when no unanswered Apply is held. A failed check rejects, and the grant
+ * stays held.
+ *
+ * @param {Function} resolve Grant resolution (tests).
+ * @return {Promise<Object>} The outcome.
+ */
+export async function checkApply( resolve = resolveGrant ) {
+	const holder = applyGrant();
+	const held = holder.current;
+	if ( ! held?.uncertain ) {
+		return { status: 'none' };
+	}
+	let outcome;
+	try {
+		outcome = await resolve( held.grant );
+	} catch ( error ) {
+		if ( holder.current === held && isDead( error ) ) {
+			holder.current = null;
+			keepHeld( holder );
+			return { status: 'not_made' };
+		}
+		throw error;
+	}
+	if ( holder.current !== held ) {
+		return { status: 'none' };
+	}
+	if ( outcome?.batch_id ) {
+		holder.current = null;
+		keepHeld( holder );
+		return { ...outcome, selectionKey: held.meta?.selectionKey || '' };
+	}
+	return { status: 'not_made' };
+}
+
+/**
  * The durable apply (T84). One grant per intent: a retry of the same
  * previewed change — after a dropped connection, a server error, or a new
  * preview of the same exact scope — sends the same `uuid`, `request_proof`
@@ -224,13 +267,19 @@ export async function resumeApply() {
  * made (`replayed: true`) instead of making another. A different change
  * gets a new grant, only after an uncertain earlier one has been resolved.
  *
+ * An answer that never came is also told to `onUncertain`, even after the
+ * panel has closed, so the screen can keep it in view (FRONTEND-12).
+ *
+ * @param {Function} onUncertain Called when an Apply ends without a definite answer.
  * @return {Object} `{ status, batch, error, apply, reset }`; status is idle,
  *                  applying, applied, uncertain, changed, stale, renew,
  *                  legacy or error.
  */
-export function useApply() {
+export function useApply( onUncertain = null ) {
 	const mounted = useMounted();
 	const [ state, setState ] = useState( { status: 'idle' } );
+	const tellUncertain = useRef( onUncertain );
+	tellUncertain.current = onUncertain;
 
 	const apply = useCallback(
 		async ( { selection, preview } ) => {
@@ -267,6 +316,9 @@ export function useApply() {
 				}
 				return batch;
 			} catch ( error ) {
+				if ( isUncertain( error ) ) {
+					tellUncertain.current?.();
+				}
 				if ( ! mounted.current ) {
 					return null;
 				}

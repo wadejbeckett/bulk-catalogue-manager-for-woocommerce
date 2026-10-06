@@ -24,6 +24,7 @@ import { fetchCategory, updateCategory } from './requests';
 import { joinPath, lineage, pathNames } from './tree-model';
 import ActionButtons from './action-buttons';
 import { categoryActions } from './workspace-actions';
+import { formatNumber } from '../bulk/words';
 
 /**
  * WooCommerce's display types by value; '' is Default.
@@ -343,8 +344,8 @@ export default function CategoryDetails( {
 					'%1$s in this category, %2$s with its subcategories',
 					'bulk-catalogue-manager-for-woocommerce'
 				),
-				( node.count || 0 ).toLocaleString(),
-				( node.countWithDescendants || 0 ).toLocaleString()
+				formatNumber( node.count || 0 ),
+				formatNumber( node.countWithDescendants || 0 )
 			),
 		},
 		{

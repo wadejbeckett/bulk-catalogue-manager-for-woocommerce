@@ -450,6 +450,41 @@ describe( 'selection in the catalogue', () => {
 		expect( box( 'Classic Cotton T-Shirt' ).checked ).toBe( true );
 	} );
 
+	it( 'never offers Select all with the count of the query before (FRONTEND-14)', async () => {
+		let answer = null;
+		route( apiFetch, {
+			fields: () => REGISTRY,
+			products: ( query ) =>
+				query.search === 'Cap'
+					? new Promise( ( resolve ) => {
+							answer = () => resolve( page( [ CAP ], 3 ) );
+						} )
+					: products( query ),
+			categories: () => CATEGORIES,
+			...server.routes(),
+		} );
+		await renderLoaded();
+		tick( 'Classic Cotton T-Shirt' );
+		await counted( '1 product selected' );
+		await waitFor( () =>
+			expect( bar().textContent ).toContain(
+				'Select all 1,284 products matching these filters.'
+			)
+		);
+		await search( 'Cap' );
+		// The new query has not answered: no count is offered for it yet.
+		expect( bar().textContent ).not.toContain( '1,284' );
+		expect(
+			within( bar() ).queryByRole( 'button', { name: /^Select all/ } )
+		).toBeNull();
+		await act( async () => answer() );
+		await waitFor( () =>
+			expect( bar().textContent ).toContain(
+				'Select all 3 products matching these filters.'
+			)
+		);
+	} );
+
 	it( 'offers Select all in the words of the grid’s mode (ticket 11)', async () => {
 		await renderLoaded( { ...FILTERED, mode: 'variations' } );
 		fireEvent.click( header() );

@@ -45,7 +45,9 @@ import {
 } from './undo';
 import { isUncertain } from '../../requests';
 import { permanentReadError } from '../bulk/hooks';
+import { ProgressStopped } from '../bulk/progress';
 import { countPhrase } from '../catalogue/selection/model';
+import { formatNumber } from '../bulk/words';
 
 /** How often a running batch is read again, in milliseconds. */
 export const POLL_MS = 3000;
@@ -75,18 +77,23 @@ function conflictPhrase( plan, conflicted ) {
  * Follow a batch while it is being worked: read it every POLL_MS until
  * its status is no longer active, then call onDone with the last report.
  * A failed read is tried again, unless it will fail the same way however
- * often it is asked (signed out, not allowed, gone: FRONTEND-8).
+ * often it is asked (signed out, not allowed, gone: FRONTEND-8); then
+ * `stopped` says so and `checkAgain()` starts the reads again.
  *
  * @param {number|null} batchId Batch to follow, or null.
  * @param {Function}    onDone  Called with the finished report.
- * @return {Object|null} The latest report.
+ * @return {{report: Object|null, stopped: boolean, checkAgain: Function}} The latest report.
  */
 function useFollow( batchId, onDone ) {
 	const [ report, setReport ] = useState( null );
+	const [ stopped, setStopped ] = useState( false );
+	const [ attempt, setAttempt ] = useState( 0 );
+	const checkAgain = useCallback( () => setAttempt( ( n ) => n + 1 ), [] );
 	const done = useRef( onDone );
 	done.current = onDone;
 
 	useEffect( () => {
+		setStopped( false );
 		if ( ! batchId ) {
 			setReport( null );
 			return;
@@ -107,7 +114,12 @@ function useFollow( batchId, onDone ) {
 					}
 				} )
 				.catch( ( error ) => {
-					if ( live && ! permanentReadError( error ) ) {
+					if ( ! live ) {
+						return;
+					}
+					if ( permanentReadError( error ) ) {
+						setStopped( true );
+					} else {
 						timer = setTimeout( read, POLL_MS );
 					}
 				} );
@@ -117,9 +129,9 @@ function useFollow( batchId, onDone ) {
 			live = false;
 			clearTimeout( timer );
 		};
-	}, [ batchId ] );
+	}, [ batchId, attempt ] );
 
-	return report;
+	return { report, stopped, checkAgain };
 }
 
 /**
@@ -315,6 +327,9 @@ export default function BatchCard( {
 			[ what, isRedo, onChanged, onNotice ]
 		)
 	);
+
+	// The read this card shows: the undo it started, else the batch itself.
+	const following = running ? undoReport : progress;
 
 	// A batch with errors, or with rows skipped by design (1.3.4), shows its
 	// grouped reasons from the single read and opens on those rows.
@@ -523,7 +538,7 @@ export default function BatchCard( {
 								'%s changed since',
 								'bulk-catalogue-manager-for-woocommerce'
 							),
-							knownConflicts.toLocaleString()
+							formatNumber( knownConflicts )
 						) }
 					</span>
 				) }
@@ -538,9 +553,9 @@ export default function BatchCard( {
 									Number( batch.failed_items ) || 0,
 									'bulk-catalogue-manager-for-woocommerce'
 								),
-								(
+								formatNumber(
 									Number( batch.failed_items ) || 0
-								).toLocaleString()
+								)
 							) }
 						</span>
 					) }
@@ -582,9 +597,12 @@ export default function BatchCard( {
 
 			{ inProgress && (
 				<div className="bulkcat-batch__progress">
-					<BatchProgress
-						report={ ( running ? undoReport : progress ) || batch }
-					/>
+					<BatchProgress report={ following.report || batch } />
+					{ following.stopped && (
+						<ProgressStopped
+							onCheckAgain={ following.checkAgain }
+						/>
+					) }
 				</div>
 			) }
 
@@ -672,7 +690,7 @@ export default function BatchCard( {
 									'Undo the other %s',
 									'bulk-catalogue-manager-for-woocommerce'
 								),
-								revertible.toLocaleString()
+								formatNumber( revertible )
 							) }
 						</Button>
 						<Button
@@ -689,7 +707,7 @@ export default function BatchCard( {
 									'See the %s that changed',
 									'bulk-catalogue-manager-for-woocommerce'
 								),
-								conflicted.toLocaleString()
+								formatNumber( conflicted )
 							) }
 						</Button>
 						<Button

@@ -12,6 +12,7 @@ import { __, _n, sprintf } from '@wordpress/i18n';
 import ErrorNotice from './error-notice';
 import { deleteCategories, mergeCategories } from './manage-requests';
 import { joinPath, pathNames } from './tree-model';
+import { formatNumber } from '../bulk/words';
 
 /**
  * The categories a merge may go into: every category not being merged, by path.
@@ -56,7 +57,7 @@ export function consequences( preview, into ) {
 					products,
 					'bulk-catalogue-manager-for-woocommerce'
 				),
-				products.toLocaleString(),
+				formatNumber( products ),
 				preview?.into?.path || ''
 			)
 		);
@@ -70,7 +71,7 @@ export function consequences( preview, into ) {
 					products,
 					'bulk-catalogue-manager-for-woocommerce'
 				),
-				products.toLocaleString()
+				formatNumber( products )
 			)
 		);
 		if ( fallback > 0 ) {
@@ -83,7 +84,7 @@ export function consequences( preview, into ) {
 						fallback,
 						'bulk-catalogue-manager-for-woocommerce'
 					),
-					fallback.toLocaleString(),
+					formatNumber( fallback ),
 					preview?.default?.path || ''
 				)
 			);
@@ -99,7 +100,7 @@ export function consequences( preview, into ) {
 					moved,
 					'bulk-catalogue-manager-for-woocommerce'
 				),
-				moved.toLocaleString()
+				formatNumber( moved )
 			)
 		);
 	}

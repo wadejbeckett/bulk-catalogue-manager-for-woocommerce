@@ -524,7 +524,18 @@ def read_routes(p: Probe) -> list[tuple[str, str, str, Any, Any, Callable[[Respo
             return "no variations"
         if not all(row.get("parent_id") == variable and isinstance(row.get("attributes"), list) for row in rows):
             return f"rows {[(row.get('id'), row.get('parent_id')) for row in rows][:5]}"
-        return "" if all(set(row) <= {"id", "parent_id", "sku", "parent_name", "attribute_summary", "attributes"} for row in rows) else f"row keys {sorted(rows[0])}"
+        if not all(set(row) <= {"id", "parent_id", "sku", "parent_name", "attribute_summary", "attributes", "native_actions"} for row in rows):
+            return f"row keys {sorted(rows[0])}"
+        # 1.3.0: every row carries its native actions (src/Admin/ProductRowActions.php). A variation
+        # offers Edit details only, with the sentence saying why; the editor, view, duplicate and
+        # trash links belong to its parent product and are null.
+        for row in rows:
+            actions = row.get("native_actions")
+            if not isinstance(actions, dict) or set(actions) != {"details", "editor", "view", "duplicate", "trash", "unavailable"} \
+                    or actions["details"] is not True or any(actions[k] is not None for k in ("editor", "view", "duplicate", "trash")) \
+                    or not isinstance(actions["unavailable"], str) or not actions["unavailable"]:
+                return f"row {row.get('id')} native_actions {actions}"
+        return ""
 
     def views_shape(r: Response) -> str:
         d = r.json()

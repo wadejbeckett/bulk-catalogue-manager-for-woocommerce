@@ -10,6 +10,7 @@
  * row: `BatchProgress` shows either the progress bar or this notice.
  */
 import { __, _n, sprintf } from '@wordpress/i18n';
+import { formatNumber } from '../bulk/words';
 
 /** WooCommerce → Status → Scheduled Actions, relative to wp-admin. */
 export const SCHEDULED_ACTIONS_URL =
@@ -97,8 +98,8 @@ export function StalledNotice( { report } ) {
 								total,
 								'bulk-catalogue-manager-for-woocommerce'
 							),
-							done.toLocaleString(),
-							total.toLocaleString()
+							formatNumber( done ),
+							formatNumber( total )
 						) }
 			</p>
 			<p>
@@ -133,8 +134,8 @@ export function BatchProgress( { report } ) {
 	const text = sprintf(
 		/* translators: 1: products done so far, such as "40"; 2: products in the change, such as "1,248". */
 		__( '%1$s of %2$s done', 'bulk-catalogue-manager-for-woocommerce' ),
-		done.toLocaleString(),
-		total.toLocaleString()
+		formatNumber( done ),
+		formatNumber( total )
 	);
 	return (
 		<div className="bulkcat-progress">

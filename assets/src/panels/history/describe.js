@@ -5,6 +5,7 @@
  * routes' own fields and GET /fields, so the panels and their tests share it.
  */
 import { __, _n, sprintf } from '@wordpress/i18n';
+import { adminLocale, formatNumber } from '../bulk/words';
 
 /**
  * Text with its HTML entities decoded, without parsing it as markup.
@@ -584,19 +585,30 @@ export function reasonSentence( reason, provider = '', detail = '' ) {
 	switch ( reason ) {
 		case 'provider_unavailable': {
 			// Registered but cannot run: its own reason follows the core's words.
-			const lead = sprintf(
-				/* translators: %s: the name of an add-on, such as "Example add-on". */
-				__(
-					'%s cannot run now, so this change cannot be undone yet.',
-					'bulk-catalogue-manager-for-woocommerce'
-				),
+			const who =
 				provider ||
-					__(
-						'The add-on that made this change',
-						'bulk-catalogue-manager-for-woocommerce'
+				__(
+					'The add-on that made this change',
+					'bulk-catalogue-manager-for-woocommerce'
+				);
+			return detail
+				? sprintf(
+						/* translators: 1: the name of an add-on, such as "Example add-on"; 2: the add-on's own reason, a sentence. */
+						__(
+							'%1$s cannot run now, so this change cannot be undone yet. %2$s',
+							'bulk-catalogue-manager-for-woocommerce'
+						),
+						who,
+						detail
 					)
-			);
-			return detail ? lead + ' ' + detail : lead;
+				: sprintf(
+						/* translators: %s: the name of an add-on, such as "Example add-on". */
+						__(
+							'%s cannot run now, so this change cannot be undone yet.',
+							'bulk-catalogue-manager-for-woocommerce'
+						),
+						who
+					);
 		}
 		case 'provider_missing':
 			return provider
@@ -658,7 +670,7 @@ export function rowsLabel( count ) {
 			n,
 			'bulk-catalogue-manager-for-woocommerce'
 		),
-		n.toLocaleString()
+		formatNumber( n )
 	);
 }
 
@@ -687,7 +699,7 @@ export function formatWhen( gmt ) {
 	if ( ! date ) {
 		return '';
 	}
-	return date.toLocaleString( undefined, {
+	return date.toLocaleString( adminLocale(), {
 		dateStyle: 'medium',
 		timeStyle: 'short',
 	} );
@@ -706,7 +718,7 @@ export function formatAgo( gmt, now = Date.now() ) {
 		return '';
 	}
 	const seconds = Math.round( ( date.getTime() - now ) / 1000 );
-	const format = new Intl.RelativeTimeFormat( undefined, {
+	const format = new Intl.RelativeTimeFormat( adminLocale(), {
 		numeric: 'auto',
 	} );
 	const steps = [

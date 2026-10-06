@@ -47,6 +47,7 @@ import { isUncertain } from '../../requests';
 import { permanentReadError } from '../bulk/hooks';
 import { ProgressStopped } from '../bulk/progress';
 import { countPhrase } from '../catalogue/selection/model';
+import { formatNumber } from '../bulk/words';
 
 /** How often a running batch is read again, in milliseconds. */
 export const POLL_MS = 3000;
@@ -537,7 +538,7 @@ export default function BatchCard( {
 								'%s changed since',
 								'bulk-catalogue-manager-for-woocommerce'
 							),
-							knownConflicts.toLocaleString()
+							formatNumber( knownConflicts )
 						) }
 					</span>
 				) }
@@ -552,9 +553,9 @@ export default function BatchCard( {
 									Number( batch.failed_items ) || 0,
 									'bulk-catalogue-manager-for-woocommerce'
 								),
-								(
+								formatNumber(
 									Number( batch.failed_items ) || 0
-								).toLocaleString()
+								)
 							) }
 						</span>
 					) }
@@ -689,7 +690,7 @@ export default function BatchCard( {
 									'Undo the other %s',
 									'bulk-catalogue-manager-for-woocommerce'
 								),
-								revertible.toLocaleString()
+								formatNumber( revertible )
 							) }
 						</Button>
 						<Button
@@ -706,7 +707,7 @@ export default function BatchCard( {
 									'See the %s that changed',
 									'bulk-catalogue-manager-for-woocommerce'
 								),
-								conflicted.toLocaleString()
+								formatNumber( conflicted )
 							) }
 						</Button>
 						<Button

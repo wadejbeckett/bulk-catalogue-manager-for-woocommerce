@@ -218,18 +218,21 @@ export function driftText() {
  * @return {string} Sentence.
  */
 export function lostText( lost ) {
-	const had = sprintf(
-		/* translators: %s: what was selected, such as "25 products". */
-		__( 'You had %s selected.', 'bulk-catalogue-manager-for-woocommerce' ),
-		countPhrase( lost?.count, lost?.byType )
-	);
 	const why =
 		lost?.message ||
 		__(
 			'These selected products are no longer kept. Choose them again before starting a new change.',
 			'bulk-catalogue-manager-for-woocommerce'
 		);
-	return `${ why } ${ had }`;
+	return sprintf(
+		/* translators: 1: why the selection is no longer kept, a sentence; 2: what was selected, such as "25 products". */
+		__(
+			'%1$s You had %2$s selected.',
+			'bulk-catalogue-manager-for-woocommerce'
+		),
+		why,
+		countPhrase( lost?.count, lost?.byType )
+	);
 }
 
 /**

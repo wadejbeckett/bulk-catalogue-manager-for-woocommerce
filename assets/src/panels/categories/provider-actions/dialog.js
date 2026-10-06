@@ -42,6 +42,7 @@ import {
 	rowText,
 	scopeSentence,
 } from './model';
+import { formatNumber } from '../../bulk/words';
 
 /** The Apply grant, kept for the tab, so a retry or a reload never applies twice. */
 let holder = null;
@@ -204,7 +205,7 @@ export default function ProviderActionDialog( {
 						ids.length,
 						'bulk-catalogue-manager-for-woocommerce'
 					),
-					ids.length.toLocaleString()
+					formatNumber( ids.length )
 				) }{ ' ' }
 				{ names.join( ', ' ) }
 			</p>
@@ -315,7 +316,7 @@ export default function ProviderActionDialog( {
 										count,
 										'bulk-catalogue-manager-for-woocommerce'
 									),
-									count.toLocaleString()
+									formatNumber( count )
 								) }
 							</p>
 							{ gate.reasons.length > 0 && (
@@ -415,7 +416,7 @@ export default function ProviderActionDialog( {
 												count,
 												'bulk-catalogue-manager-for-woocommerce'
 											),
-											count.toLocaleString()
+											formatNumber( count )
 										)
 									: sprintf(
 											/* translators: %s: a number of categories, such as "12". */
@@ -425,7 +426,7 @@ export default function ProviderActionDialog( {
 												count,
 												'bulk-catalogue-manager-for-woocommerce'
 											),
-											count.toLocaleString()
+											formatNumber( count )
 										) }
 							</Button>
 						) }

@@ -13,6 +13,7 @@ import { request } from '../../api';
 import { fieldLabel, formatWhen, objectHeading, rowValue } from './describe';
 import ErrorNotice from './error-notice';
 import { useHistoryExport } from './export';
+import { formatNumber } from '../bulk/words';
 
 export const CHANGES_PER_PAGE = 25;
 
@@ -365,9 +366,9 @@ export default function Changes( { batch, byKey, problemsOnly, onNotice } ) {
 								'Page %1$s of %2$s (%3$s rows)',
 								'bulk-catalogue-manager-for-woocommerce'
 							),
-							page.toLocaleString(),
-							pages.toLocaleString(),
-							total.toLocaleString()
+							formatNumber( page ),
+							formatNumber( pages ),
+							formatNumber( total )
 						) }
 					</span>
 					<Button

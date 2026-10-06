@@ -8,6 +8,7 @@ import { Button } from '@wordpress/components';
 import { __, _n, sprintf } from '@wordpress/i18n';
 
 import { MODES } from './registry';
+import { formatNumber } from '../../bulk/words';
 
 /**
  * The mode switch and Open all.
@@ -122,7 +123,7 @@ export function FocusNotice( { focus, failed, onClear } ) {
  * @return {Element} Line.
  */
 export function CountLine( { mode, total } ) {
-	const shown = total.toLocaleString();
+	const shown = formatNumber( total );
 	let text;
 	if ( mode === MODES.variations ) {
 		text = sprintf(

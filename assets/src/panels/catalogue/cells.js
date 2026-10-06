@@ -8,6 +8,7 @@ import { __, _n, sprintf } from '@wordpress/i18n';
 
 import { ROW, TONES } from './defaults';
 import { statusLabel } from './edit/status';
+import { adminLocale } from '../bulk/words';
 
 /**
  * What cells read from the table around them: term names per source and the
@@ -80,7 +81,7 @@ export function formatDate( value ) {
 	const date = new Date( String( value ).replace( ' ', 'T' ) );
 	return Number.isNaN( date.getTime() )
 		? String( value )
-		: date.toLocaleDateString( undefined, {
+		: date.toLocaleDateString( adminLocale(), {
 				year: 'numeric',
 				month: 'short',
 				day: 'numeric',

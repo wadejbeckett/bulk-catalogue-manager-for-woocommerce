@@ -235,7 +235,10 @@ providers() {
 	local action=$1
 	for name in bulkcat-sample-provider.php bulkcat-picks-provider.php; do
 		if [ "$action" = add ]; then
+			# Owned by the web user, as WordPress would make it: probes and specs that copy
+			# a must-use plugin of their own run as www-data (probe.py's time-limit observer).
 			docker exec "$WEB" mkdir -p /var/www/html/wp-content/mu-plugins
+			docker exec "$WEB" chown www-data:www-data /var/www/html/wp-content/mu-plugins
 			docker cp "$ROOT/tests/fixtures/mu-plugins/$name" "$WEB:/var/www/html/wp-content/mu-plugins/$name"
 			docker exec "$WEB" chown www-data:www-data "/var/www/html/wp-content/mu-plugins/$name"
 		else

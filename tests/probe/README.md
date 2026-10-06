@@ -649,6 +649,75 @@ With it in place and `BULKCAT_PROBE_SITEURL` added to `WP_CMD`:
   site without the must-use plugin, so the rest of the browser suite runs
   unchanged elsewhere.
 
+- `tests/e2e/provider-actions.spec.js` (contract version 2, 1.4.x) drives the
+  version 2 journeys in the browser with the neutral "Sample picks" provider
+  (`bulkcat-picks-provider.php`) and the category provider "Sample shelves"
+  (`bulkcat-shelves-provider.php`, Put on shelves / Take off shelves on
+  product categories only): a row action on one product through its Actions
+  menu and the add-on's group (search picker, Apply, View in History, Undo,
+  a retained selection of another product untouched), a bulk action on a
+  retained selection of two products, and a category action on two
+  categories with Include subcategories (five categories changed, a sibling
+  left alone, History, Undo). Its products and categories are its own (UUID
+  names, deleted afterwards), and stored values are read back through
+  `WP_CMD`. With the fixture opt-in (`BULKCAT_E2E_FIXTURE=1`) it copies the two
+  must-use plugins in itself and removes only what it copied, as
+  `provider-labels.spec.js` now does with "Sample labels"; the site's plugin
+  must carry this checkout's `tests/` (wp-env, or the stack above).
+
+## Native release gate in one command (TESTS-8)
+
+`tests/probe/gate.sh all` runs the native probes a release gate needs on a
+throwaway stack of its own (every docker name suffixed `$SUFFIX`, default
+`-gate`, port `$PORT`, default 8960) and removes the stack afterwards, even
+after a failure:
+
+```sh
+RELEASED=/path/to/bulk-catalogue-manager-for-woocommerce-1.1.1.zip \
+RELEASED_SHA256=<its sha256> \
+CANDIDATE=dist/bulk-catalogue-manager-for-woocommerce-<version>.zip \
+WC_ZIP=/path/to/woocommerce.11.1.2.zip \
+  bash tests/probe/gate.sh all
+```
+
+1. **up**: WordPress, WooCommerce and the released archive, the plugin inside
+   the WordPress volume (an upgrade is a real `wp plugin install --force`).
+2. **upgrade**: `seed.sh`, then `native-status-upgrade.sh` seed, upgrade,
+   verify and cleanup against the two archives (the released archive must be
+   from before native Status, 1.1.x: the probe checks that release's own
+   `set_value` work carries over).
+3. **mount**: the web container again, with this checkout's `tests/`
+   read-only inside the installed plugin; the plugin itself stays the archive.
+4. **native**: the fault probes (`exact-selection`, `exact-selection-routes`,
+   `exact-selection-cleanup`, `exact-selection-capacity`, `selection-lifecycle`,
+   `selection-lifecycle-routes`, `exact-batch`, `exact-batch-routes`,
+   `exact-batch-faults`, `stock-undo`), the two-process races
+   (`exact-selection-race`; `exact-batch-race` apply and undo;
+   `selection-lifecycle-race` dual renew, renew against prune, prune against
+   renew, and compose), and the add-on journeys (`provider-journey`,
+   `provider-v2-journey`) with the "Sample labels" and "Sample picks" must-use
+   plugins copied in for them and removed after.
+5. **down**.
+
+Each step prints PASS or FAIL with its time to `$WORK/summary.txt` and keeps
+its output in `$WORK/logs/<step>.log`; the script exits 1 if any step failed.
+Set `WORK` to run the phases one by one (`up`, `upgrade`, `mount`, `native`,
+`down`) or to keep the evidence; `ONLY="exact-batch race-exact-batch-apply"`
+narrows `native` to named steps. `WORK` holds signed test grants: keep it
+private. `probe.py` and the Playwright suite then run on any seeded stack as
+above.
+
+## Probes clean up after themselves
+
+Every chapter that makes products removes them at its end through WooCommerce
+CRUD, so the grid's first page shows the seed again for whatever runs next
+(the browser specs): `read:export:cleanup` (the export round trip's fixtures,
+keyed `_bulkcat_probe_key`, and their terms and page), `variations:cleanup`
+(Probe Sixty) and `offon:cleanup` (SKUs `bulkcat-offon-*`, the chapter's
+categories and tag; its orders and customers stay with the throwaway stack).
+`read:products:live-schema` makes and deletes its own Scheduled product and
+variation, so a scheduled row is always validated against the schema.
+
 ## Native Status oracle and publication lifecycle (plan 14)
 
 Use an **existing, explicitly assigned** synthetic candidate fixture. The

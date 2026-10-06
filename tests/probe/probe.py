@@ -730,7 +730,10 @@ def check_read_queries(p: Probe) -> None:
         p.row("read", "read:products:fixed-query-count", all(len(q) == 1 for q in spread.values()),
               f"queries per page at 25/50/100 rows, cold object cache: {spread}; rows {rows}")
         p.row("read", "read:products:no-product-objects", found["product_reads"] == 0, f"woocommerce_product_read fired {found['product_reads']} times")
-        p.row("read", "read:products:live-schema", invalid == 0, f"{invalid} rows invalid against the registered schema (rest_validate_value_from_schema)")
+        sched = found["scheduled"]
+        ok = invalid == 0 and sched["status"] == "future" and sched["rows"] >= 1 and sched["invalid"] == 0 and not sched["left"]
+        p.row("read", "read:products:live-schema", ok,
+              f"{invalid} rows invalid against the registered schema (rest_validate_value_from_schema); own Scheduled product: {sched}")
 
     def include_children() -> None:
         # T62: "this category only" (include_children false) against WordPress's own tax query without children.
@@ -1189,13 +1192,17 @@ $out = array();
 foreach ( array( 'products', 'products_and_variations', 'variations' ) as $mode ) {
 	$get( array( 'per_page' => 10, 'mode' => $mode ) ); // warms the shared count, which paging does not change
 	foreach ( array( 25, 50, 100 ) as $n ) {
-		wp_cache_flush();
-		$get( array() ); // re-reads options and WooCommerce state outside the measured window
-		wp_cache_flush();
-		$before = $wpdb->num_queries;
 		// Id order keeps every page's make-up alike (products and variations mixed), since the
 		// variation lookups run only for a page that holds variation rows.
-		$res    = $get( array( 'per_page' => $n, 'mode' => $mode, 'orderby' => array( 'id' ), 'order' => array( 'asc' ) ) );
+		$params = array( 'per_page' => $n, 'mode' => $mode, 'orderby' => array( 'id' ), 'order' => array( 'asc' ) );
+		wp_cache_flush();
+		// The same page once outside the measured window: it re-reads options and WooCommerce state,
+		// and fills WooCommerce's own wc_term_counts transient for this page's categories (any product
+		// save or delete empties it, and refilling it reads each term's meta once).
+		$get( $params );
+		wp_cache_flush();
+		$before = $wpdb->num_queries;
+		$res    = $get( $params );
 		$errors = 0;
 		foreach ( $res->get_data()['items'] as $item ) {
 			$errors += is_wp_error( rest_validate_value_from_schema( $item, $schema, 'item' ) ) ? 1 : 0;
@@ -1203,7 +1210,33 @@ foreach ( array( 'products', 'products_and_variations', 'variations' ) as $mode 
 		$out[ $mode ][ $n ] = array( 'queries' => $wpdb->num_queries - $before, 'rows' => count( $res->get_data()['items'] ), 'invalid' => $errors );
 	}
 }
-bulkcat_out( array( 'modes' => $out, 'product_reads' => $reads ) );
+$listed_reads = $reads; // the listing itself; the fixture below is made and read through CRUD
+// Every Status the grid lists must be valid against the schema, whatever order and page size the
+// catalogue gives the rows above: a Scheduled product and a Scheduled variation of its own (the offon
+// chapter's fixtures once fell outside it), read through the same route and deleted again.
+$scheduled = new WC_Product_Variable();
+$marker    = 'bulkcat-probe-scheduled-' . wp_generate_uuid4();
+$scheduled->set_name( 'Bulkcat Probe Scheduled' );
+$scheduled->set_sku( $marker );
+$scheduled->set_status( 'future' );
+$scheduled->set_date_created( time() + 7 * DAY_IN_SECONDS );
+$scheduled->save();
+$variation = new WC_Product_Variation();
+$variation->set_parent_id( $scheduled->get_id() );
+$variation->set_regular_price( '5.00' );
+$variation->set_sku( $marker . '-v' );
+$variation->save();
+$future = array( 'status' => get_post_status( $scheduled->get_id() ), 'invalid' => 0, 'rows' => 0 );
+foreach ( array( 'products', 'products_and_variations' ) as $mode ) {
+	$res = $get( array( 'per_page' => 100, 'mode' => $mode, 'search' => $marker, 'status' => array( 'operator' => 'isAny', 'value' => array( 'future' ) ) ) );
+	foreach ( $res->get_data()['items'] ?? array() as $item ) {
+		++$future['rows'];
+		$future['invalid'] += is_wp_error( rest_validate_value_from_schema( $item, $schema, 'item' ) ) ? 1 : 0;
+	}
+}
+$scheduled->delete( true );
+$future['left'] = (bool) get_post( $scheduled->get_id() );
+bulkcat_out( array( 'modes' => $out, 'product_reads' => $listed_reads, 'scheduled' => $future ) );
 """
 
 INDEXES_PHP = r"""

@@ -5,9 +5,12 @@
  * chosen position has to be one the chosen field allows.
  *
  * An object with no SKU is skipped and counted, since adding the same text
- * to many empty SKUs would give them all one SKU. A SKU that already starts
- * (or ends) with the text is already correct, so running the same batch
- * twice never doubles it. The new SKU then takes the same path as setting a
+ * to many empty SKUs would give them all one SKU. Every other SKU gets the
+ * text, even one that already starts (or ends) with it (ENGINE-10): a
+ * natural SKU such as "123" given the prefix "1" becomes "1123", as the
+ * preview shows; an interrupted batch's retry is kept from adding it twice
+ * by the journal (the writer's already-done check), not by guessing from
+ * the SKU. The new SKU then takes the same path as setting a
  * value (BaseOperation::value_outcome()), so the field's length rule applies; a clash
  * with another product's SKU is T28's check and the write-time refusal's.
  *
@@ -133,9 +136,11 @@ final class AffixSku extends BaseOperation {
 				)
 			);
 		}
-		if ( '' === $affix || ( $prefix ? str_starts_with( $text, $affix ) : str_ends_with( $text, $affix ) ) ) {
+		if ( '' === $affix ) {
 			return Result::already( $field->key(), $old );
 		}
+		// ENGINE-10: every SKU gets the text, even one that already starts or ends with it ("1" on "123" is "1123").
+		// A retry of the same batch is kept from adding it twice by the journal, not by guessing from the SKU.
 		return self::value_outcome( $field, $subject, $prefix ? $affix . $text : $text . $affix );
 	}
 }

@@ -226,8 +226,12 @@ if ( ! function_exists( 'add_filter' ) ) {
 		$queries                              = (array) $queries;
 		$GLOBALS['bulkcat_test']['dbdelta'][] = $queries;
 		foreach ( $queries as $query ) {
-			if ( $GLOBALS['bulkcat_test']['dbdelta_ok'] && isset( $GLOBALS['wpdb'] ) && 1 === preg_match( '/^CREATE TABLE (\S+) \(/', $query, $match ) ) {
-				$GLOBALS['wpdb']->tables[ $match[1] ] = true;
+			if ( isset( $GLOBALS['wpdb'] ) && 1 === preg_match( '/^CREATE TABLE (\S+) \((.*)\n\) /s', $query, $match ) ) {
+				// ENGINE-9: the body each table was given, so SHOW COLUMNS and SHOW INDEX can answer from it.
+				$GLOBALS['wpdb']->bodies[ $match[1] ] = $match[2];
+				if ( $GLOBALS['bulkcat_test']['dbdelta_ok'] ) {
+					$GLOBALS['wpdb']->tables[ $match[1] ] = true;
+				}
 			}
 		}
 		return [];

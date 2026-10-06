@@ -235,6 +235,19 @@ export function putBackBy( undoneBy ) {
 			who
 		);
 	}
+	const when = formatWhen( undoneBy.finished_gmt );
+	if ( when ) {
+		return sprintf(
+			/* translators: 1: a user's name; 2: the undo change's number, such as "42"; 3: when it finished, such as "6 Oct 2026, 14:05". */
+			__(
+				'Put back by %1$s in change #%2$s on %3$s',
+				'bulk-catalogue-manager-for-woocommerce'
+			),
+			who,
+			String( undoneBy.batch_id ),
+			when
+		);
+	}
 	return sprintf(
 		/* translators: 1: a user's name; 2: the undo change's number, such as "42". */
 		__(
@@ -243,6 +256,44 @@ export function putBackBy( undoneBy ) {
 		),
 		who,
 		String( undoneBy.batch_id )
+	);
+}
+
+/**
+ * Who made an undone batch again with a Redo, in which change and when:
+ * from the row's `redone_by` `{ batch_id, user_id, user_name, finished_gmt }`.
+ *
+ * @param {Object|null} redoneBy The row's `redone_by`.
+ * @return {string} Sentence, or '' when the row was not redone.
+ */
+export function doneAgainBy( redoneBy ) {
+	if ( ! redoneBy?.batch_id ) {
+		return '';
+	}
+	const who = redoneBy.user_name
+		? String( redoneBy.user_name )
+		: userName( redoneBy.user_id, {} );
+	const when = formatWhen( redoneBy.finished_gmt );
+	if ( when ) {
+		return sprintf(
+			/* translators: 1: a user's name; 2: the redo change's number, such as "43"; 3: when it finished, such as "6 Oct 2026, 14:05". */
+			__(
+				'Done again by %1$s in change #%2$s on %3$s',
+				'bulk-catalogue-manager-for-woocommerce'
+			),
+			who,
+			String( redoneBy.batch_id ),
+			when
+		);
+	}
+	return sprintf(
+		/* translators: 1: a user's name; 2: the redo change's number, such as "43". */
+		__(
+			'Done again by %1$s in change #%2$s',
+			'bulk-catalogue-manager-for-woocommerce'
+		),
+		who,
+		String( redoneBy.batch_id )
 	);
 }
 
@@ -483,8 +534,15 @@ export default function BatchCard( {
 							onClick={ startUndo }
 						>
 							{ settled &&
+								! batch.redone_by &&
 								__(
 									'Undone',
+									'bulk-catalogue-manager-for-woocommerce'
+								) }
+							{ settled &&
+								!! batch.redone_by &&
+								__(
+									'Redone',
 									'bulk-catalogue-manager-for-woocommerce'
 								) }
 							{ ! settled &&
@@ -555,6 +613,11 @@ export default function BatchCard( {
 				{ putBackBy( batch.undone_by ) && (
 					<span className="bulkcat-pill bulkcat-batch__put-back">
 						{ putBackBy( batch.undone_by ) }
+					</span>
+				) }
+				{ doneAgainBy( batch.redone_by ) && (
+					<span className="bulkcat-pill bulkcat-batch__put-back">
+						{ doneAgainBy( batch.redone_by ) }
 					</span>
 				) }
 				{ batch.undo?.sentence && (

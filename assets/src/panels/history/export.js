@@ -56,6 +56,7 @@ export const EXPORT_COLUMNS = {
 		'reversibility',
 		'undo',
 		'undone_by',
+		'redone_by',
 	],
 };
 

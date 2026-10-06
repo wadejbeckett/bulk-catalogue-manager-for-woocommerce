@@ -487,7 +487,7 @@ final class HistoryExportTest extends TestCase {
 		$this->assertCount( 5, $lines );
 		$this->assertStringStartsWith( '"4","\'=Rosa","', $lines[1] );
 		$this->assertStringContainsString( '"Undo of #3"', $lines[1] );
-		$this->assertSame( 1, preg_match( '/^"3","Sam Shop","[^"]+","Undone","No","","#4 by =Rosa","No"$/', $lines[2] ), $lines[2] );
+		$this->assertSame( 1, preg_match( '/^"3","Sam Shop","[^"]+","Undone","No","","#4 by =Rosa on 2026-09-24 10:05:00 UTC","No"$/', $lines[2] ), $lines[2] );
 		$this->assertSame( 1, preg_match( '/^"2","\'=Rosa","[^"]+","Completed with errors","Yes, with errors","","","No"$/', $lines[3] ), $lines[3] );
 
 		$this->serve(
@@ -512,6 +512,47 @@ final class HistoryExportTest extends TestCase {
 			)
 		);
 		$this->assertSame( [ '"Change number"', '"3"', '"1"' ], self::lines() );
+	}
+
+	public function test_a_history_export_says_who_redid_an_undone_change_and_when(): void {
+		// Batch 3 was undone by 4; 4 was undone by 5 (a Redo), so batch 3's change is in effect again.
+		foreach ( $this->batches as $index => $row ) {
+			if ( 4 === $row['batch_id'] ) {
+				$this->batches[ $index ]['status'] = 'undone';
+			}
+		}
+		$this->batches[] = array_merge(
+			$this->batches[3],
+			[
+				'batch_id'     => 5,
+				'uuid'         => '00000000-0000-4000-8000-000000000005',
+				'user_id'      => 3,
+				'status'       => 'complete',
+				'undo_of'      => 4,
+				'created_gmt'  => '2026-09-25 10:00:00',
+				'finished_gmt' => '2026-09-25 10:05:00',
+			]
+		);
+		$this->serve(
+			self::get(
+				[
+					'source'  => 'batches',
+					'columns' => [ 'batch_id', 'status', 'undone_by', 'redone_by' ],
+				]
+			)
+		);
+		$this->assertSame(
+			[
+				'"Change number","Outcome","Put back by","Done again by"',
+				'"5","Complete","",""',
+				'"4","Undone","#5 by Sam Shop on 2026-09-25 10:05:00 UTC",""',
+				'"3","Redone","#4 by =Rosa on 2026-09-24 10:05:00 UTC","#5 by Sam Shop on 2026-09-25 10:05:00 UTC"',
+				'"2","Completed with errors","",""',
+				'"1","Complete","",""',
+			],
+			self::lines(),
+			'The original reads Redone, with the undo that put it back and the redo that made it again.'
+		);
 	}
 
 	public function test_a_history_export_does_not_call_skipped_rows_errors(): void {

@@ -868,6 +868,34 @@ describe( 'following a change in progress (FRONTEND-8)', () => {
 		);
 		expect( reads() ).toBe( 1 );
 	} );
+
+	it( 'says the reads stopped and offers Check again, which reads once more', async () => {
+		serve( {
+			...DEFAULT_ROUTES(),
+			'GET bulkcat/v1/batches/3': () => {
+				throw Object.assign( new Error( 'Not logged in.' ), {
+					code: 'rest_not_logged_in',
+					data: { status: 401 },
+				} );
+			},
+		} );
+		await renderHistory();
+		const reads = () =>
+			calls.filter( ( call ) => call.route === 'bulkcat/v1/batches/3' )
+				.length;
+		await waitFor( () =>
+			expect(
+				within( card( 3 ) ).getByText(
+					/The progress can no longer be read/
+				)
+			).toBeTruthy()
+		);
+		expect( reads() ).toBe( 1 );
+		fireEvent.click(
+			within( card( 3 ) ).getByRole( 'button', { name: 'Check again' } )
+		);
+		await waitFor( () => expect( reads() ).toBe( 2 ) );
+	} );
 } );
 
 describe( 'history wire-ins', () => {

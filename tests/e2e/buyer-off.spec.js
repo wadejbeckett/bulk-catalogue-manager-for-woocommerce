@@ -16,7 +16,12 @@ const fs = require( 'fs' );
 const path = require( 'path' );
 const { execFileSync } = require( 'child_process' );
 const { test, expect } = require( '@playwright/test' );
-const { SEED, openScreen, rest, productByName } = require( './helpers' );
+const {
+	SEED,
+	openScreen,
+	patchProduct,
+	productByName,
+} = require( './helpers' );
 
 const CUSTOMER = 'bulkcat_e2e_customer';
 const OPTIONS = {
@@ -75,9 +80,8 @@ function seedPassword() {
  */
 async function setStatus( page, ids, value ) {
 	for ( const id of ids ) {
-		const { status, json } = await rest( page, `products/${ id }`, {
-			method: 'PATCH',
-			data: { status: value },
+		const { status, json } = await patchProduct( page, id, {
+			status: value,
 		} );
 		expect( status, JSON.stringify( json ) ).toBe( 200 );
 		expect( json.status ).toBe( 'complete' );

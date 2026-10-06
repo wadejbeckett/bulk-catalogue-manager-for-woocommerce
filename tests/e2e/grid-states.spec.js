@@ -13,6 +13,7 @@ const {
 	runQueue,
 	untilVisible,
 	productByName,
+	patchProduct,
 	tabTo,
 	tabFromContent,
 } = require( './helpers' );
@@ -194,30 +195,14 @@ test( 'a change in progress: pending rows, Cancel and View in History, then read
 	const after = ( await productByName( page, name ) ).regular_price;
 	expect( Number( after ) ).toBeCloseTo( Number( before ) + 2, 2 );
 
-	// Put it back directly, as the bulk journey's undo is covered elsewhere.
-	await page.evaluate(
-		async ( args ) => {
-			const s = window.bulkcatSettings;
-			const found = await (
-				await window.fetch(
-					`${ s.root }products?search=${ encodeURIComponent( args.name ) }&fields[]=name`,
-					{ headers: { 'X-WP-Nonce': s.nonce } }
-				)
-			).json();
-			const id = found.items.find(
-				( item ) => item.name === args.name
-			).id;
-			await window.fetch( `${ s.root }products/${ id }`, {
-				method: 'PATCH',
-				headers: {
-					'X-WP-Nonce': s.nonce,
-					'Content-Type': 'application/json',
-				},
-				body: JSON.stringify( { regular_price: args.price } ),
-			} );
-		},
-		{ name, price: before }
-	);
+	// Put it back directly, as the bulk journey's undo is covered elsewhere:
+	// one ordinary save, with the receipt the screen sends.
+	const { id } = await productByName( page, name );
+	const restored = await patchProduct( page, id, {
+		regular_price: before,
+	} );
+	expect( restored.status, JSON.stringify( restored.json ) ).toBe( 200 );
+	expect( restored.json.status ).toBe( 'complete' );
 	expect( ( await productByName( page, name ) ).regular_price ).toBe(
 		before
 	);

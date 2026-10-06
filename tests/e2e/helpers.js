@@ -133,6 +133,45 @@ function rest( page, path, { method = 'GET', data } = {} ) {
 }
 
 /**
+ * PATCH /products/{id} as the screen sends it since 1.2.0 (assets/src/panels/
+ * catalogue/edit/receipts.js and requests.js): a `product.inline` grant from
+ * POST /requests, then the values with that grant's envelope. The route
+ * refuses a PATCH without one (409 bulkcat_invalid_request). A refused grant
+ * is answered as the PATCH would be.
+ *
+ * @param {import('@playwright/test').Page} page         Page on the screen.
+ * @param {number}                          id           Product or variation id.
+ * @param {Object}                          values       Field key => typed value.
+ * @param {Object}                          options      Options.
+ * @param {boolean}                         options.keep Send keep_changed_status.
+ * @return {Promise<Object>} { status, json }.
+ */
+async function patchProduct( page, id, values, { keep = false } = {} ) {
+	const intent = { object_id: Number( id ), source: 'inline', values };
+	if ( keep ) {
+		intent.keep_changed_status = true;
+	}
+	const grant = await rest( page, 'requests', {
+		method: 'POST',
+		data: { operation: 'product.inline', intent },
+	} );
+	if ( grant.status !== 200 || ! grant.json?.uuid ) {
+		return grant;
+	}
+	return rest( page, `products/${ Number( id ) }`, {
+		method: 'PATCH',
+		data: {
+			...values,
+			source: 'inline',
+			...( keep ? { keep_changed_status: true } : {} ),
+			uuid: grant.json.uuid,
+			request_proof: grant.json.request_proof,
+			intent: grant.json.intent,
+		},
+	} );
+}
+
+/**
  * One product row from GET /products, found by its exact name.
  *
  * @param {import('@playwright/test').Page} page   Page on the screen.
@@ -262,6 +301,7 @@ module.exports = {
 	tabFromContent,
 	focused,
 	rest,
+	patchProduct,
 	productByName,
 	expectAxeClean,
 };

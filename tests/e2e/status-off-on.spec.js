@@ -6,7 +6,7 @@
  */
 const { randomUUID } = require( 'crypto' );
 const { test, expect } = require( '@playwright/test' );
-const { openScreen, rest } = require( './helpers' );
+const { openScreen, rest, patchProduct } = require( './helpers' );
 const { php, fixtureCheck } = require( './lifecycle/support' );
 
 test( 'legacy saved filters stay exact and a new edit ignores a remembered target', async ( {
@@ -88,15 +88,16 @@ test( 'legacy saved filters stay exact and a new edit ignores a remembered targe
 				).view
 			).toEqual( saved.json.item.view );
 		}
-		const refused = await rest( page, `products/${ ids.changed_outside }`, {
-			method: 'PATCH',
-			data: { status: 'publish', keep_changed_status: true },
-		} );
+		const refused = await patchProduct(
+			page,
+			ids.changed_outside,
+			{ status: 'publish' },
+			{ keep: true }
+		);
 		expect( refused.status ).toBe( 400 );
 		expect( refused.json.message ).toMatch( /Reload|review/ );
-		const changed = await rest( page, `products/${ ids.off }`, {
-			method: 'PATCH',
-			data: { status: 'publish' },
+		const changed = await patchProduct( page, ids.off, {
+			status: 'publish',
 		} );
 		expect( changed.status ).toBe( 200 );
 		expect( changed.json.item.status ).toBe( 'publish' );

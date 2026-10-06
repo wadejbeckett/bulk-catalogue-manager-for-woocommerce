@@ -402,7 +402,7 @@ final class ChunkRunner {
 		$this->batches->reset_stale_working( $batch_id, $stale );
 
 		$manifest = $batch['extensions'] ?? null;
-		$blocked  = is_array( $manifest ) ? Manifest::blocked( $manifest, $this->actions->providers() ) : null;
+		$blocked  = is_array( $manifest ) ? Manifest::blocked( $manifest, $this->actions->providers(), true, 'undo' !== $batch['source'] ) : null;
 		if ( null !== $blocked ) {
 			return $this->stop( $batch, $blocked );
 		}

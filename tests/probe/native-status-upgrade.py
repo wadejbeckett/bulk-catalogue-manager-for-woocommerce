@@ -6,11 +6,13 @@ State contains signed synthetic grants; keep --evidence outside Git, mode 0700.
 import argparse
 import base64
 import hashlib
+import http.cookiejar
 import json
 import os
 from pathlib import Path
 import subprocess
 import time
+import urllib.parse
 import uuid
 import zipfile
 
@@ -167,9 +169,28 @@ def main():
             # The supplied path is visible to the existing fixture's WP-CLI wrapper.
             output['installer'] = p.wp('plugin', 'install', args.candidate_install_path, '--force')
             after = native('identity')
-            output['identity_after'] = after
             check('installed_candidate_all_files_exact', after['files'] == archives['candidate'])
             check('upgrade_preserves_all_existing_data', before['baseline'] == after['baseline'])
+            # An update's tables migrate on the first admin request after it (src/Data/Migrator.php,
+            # Plugin::migrate() on admin_init), as on a site updated from its Plugins screen; until
+            # then the request routes refuse (bulkcat_request_storage). It is made as the run's own
+            # administrator, whose user rows cleanup removes, so the baseline can still be exact.
+            schema = 'bulkcat_out( array( get_option( "bulkcat_db_version" ), ( new \\BulkCatalogueManager\\Data\\Migrator( \\BulkCatalogueManager\\Data\\Registry::plugin() ) )->is_current() ) );'
+            output['schema_before_admin_request'] = p.wp_eval(schema)
+            jar = http.cookiejar.CookieJar()
+            opener = p._opener(jar)
+            p._raw(opener, 'GET', '/wp-login.php')
+            form = urllib.parse.urlencode({'log': state['users']['admin']['login'], 'pwd': p.seed['password'],
+                                           'wp-submit': 'Log In', 'testcookie': '1'}).encode()
+            p._raw(opener, 'POST', '/wp-login.php', form, {'Content-Type': 'application/x-www-form-urlencoded'})
+            output['first_admin_request'] = p._raw(opener, 'GET', '/wp-admin/').status
+            output['schema_after_admin_request'] = p.wp_eval(schema)
+            check('first_admin_request_migrates_to_current_schema',
+                  output['first_admin_request'] == 200 and output['schema_after_admin_request'][1] is True)
+            migrated = native('identity')
+            output['identity_migrated'] = migrated
+            check('migration_preserves_catalogue_and_configuration',
+                  all(migrated['baseline'][k] == before['baseline'][k] for k in before['baseline'] if k != 'usermeta_hash'))
             state['upgraded'] = True
             save()
         elif args.phase in ['verify', 'verify-history', 'verify-native']:

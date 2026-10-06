@@ -843,7 +843,12 @@ bash tests/probe/native-status-upgrade.sh seed \
 ```
 
 Run `seed` while the actual released archive is installed, then `upgrade`,
-`verify`, and `cleanup` with the same arguments. Released RequestService creates
+`verify`, and `cleanup` with the same arguments. `upgrade` makes the first
+admin request after the native installer, as a site updated from its Plugins
+screen does: the tables migrate there (`Plugin::migrate()` on `admin_init`),
+and until then the request routes refuse with `bulkcat_request_storage`. The
+row `first_admin_request_migrates_to_current_schema` checks the schema is
+current afterwards (1.1.x is schema 8, 1.3 and later 9). Released RequestService creates
 accepted pending work, work interrupted after its native save but before journal
 completion, an unaccepted signed grant, completed Draft and restore history,
 and saved legacy views. UUID product/account IDs, fingerprints, mapped permissions,

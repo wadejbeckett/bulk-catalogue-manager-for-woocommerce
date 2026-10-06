@@ -96,11 +96,25 @@ web() {
 	docker run -d --name "$WEB" --network "$NET" -p "127.0.0.1:$PORT:80" -e WORDPRESS_DB_HOST="$DB" \
 		-e WORDPRESS_DB_USER=wordpress -e WORDPRESS_DB_PASSWORD=wordpress -e WORDPRESS_DB_NAME=wordpress \
 		-e WORDPRESS_DEBUG=1 -v "$VOL":/var/www/html "${mount[@]}" wordpress:php8.3-apache > /dev/null
-	for _ in $(seq 1 60); do
-		curl -s -o /dev/null "$URL/wp-login.php" && return 0
+	# The first start copies WordPress into the volume; wait for it and for an answer.
+	for _ in $(seq 1 90); do
+		if docker exec "$WEB" test -f /var/www/html/wp-includes/version.php &&
+			curl -s -o /dev/null "$URL/wp-login.php"; then
+			return 0
+		fi
 		sleep 1
 	done
 	echo "the web container did not answer on $URL" >&2
+	return 1
+}
+
+# mariadb:11 takes a while to accept connections on its first start.
+database() {
+	for _ in $(seq 1 90); do
+		docker exec "$DB" mariadb-admin ping -h 127.0.0.1 -uwordpress -pwordpress --silent > /dev/null 2>&1 && return 0
+		sleep 1
+	done
+	echo "the database container did not accept connections" >&2
 	return 1
 }
 
@@ -132,6 +146,7 @@ up() {
 	docker volume create "$VOL" > /dev/null
 	docker run -d --name "$DB" --network "$NET" -e MARIADB_ROOT_PASSWORD=root -e MARIADB_DATABASE=wordpress \
 		-e MARIADB_USER=wordpress -e MARIADB_PASSWORD=wordpress mariadb:11 > /dev/null
+	database || return 1
 	web || return 1
 	"$WP" core install --url="$URL" --title=BULKCAT-GATE --admin_user=admin --admin_password=password \
 		--admin_email=admin@example.com --skip-email > /dev/null || return 1
@@ -171,6 +186,11 @@ upgrade_phase() {
 
 upgrade() {
 	wrapper
+	if ! "$WP" core is-installed > /dev/null 2>&1; then
+		say "FAIL upgrade: no installed site on $URL (run up first)"
+		FAILED=1
+		return
+	fi
 	step seed env WP_CMD="$WP" SEED_JSON="$WORK/seed.json" bash "$ROOT/tests/probe/seed.sh"
 	for phase in seed upgrade verify cleanup; do
 		step "upgrade-$phase" upgrade_phase "$phase"
@@ -226,6 +246,11 @@ providers() {
 
 native() {
 	wrapper tests
+	if ! "$WP" core is-installed > /dev/null 2>&1; then
+		say "FAIL native: no installed site on $URL (run up, upgrade and mount first)"
+		FAILED=1
+		return
+	fi
 	for file in exact-selection exact-selection-routes exact-selection-cleanup exact-selection-capacity \
 		selection-lifecycle selection-lifecycle-routes exact-batch exact-batch-routes exact-batch-faults; do
 		step "$file" probe "$file.php"

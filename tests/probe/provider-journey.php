@@ -1003,11 +1003,12 @@ try {
 	$shop_manager->add_cap( 'edit_products' );
 	$shop_manager->add_cap( 'edit_others_products' );
 
-	// ---- E16: migration 7 → 8 ----
+	// ---- E16: migration from 7 (before manifests) to the current schema ----
 	$native_null = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM %i WHERE extensions IS NOT NULL AND actions NOT LIKE %s AND actions <> ',restore_external,'", $wpdb->prefix . 'bulkcat_batches', '%,x\_%' ) );
 	$rows_before = (int) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM %i', $wpdb->prefix . 'bulkcat_changes' ) );
 	update_option( Migrator::VERSION_OPTION, '7' );
-	$check( ( new Migrator( Registry::plugin() ) )->run() && '8' === get_option( Migrator::VERSION_OPTION ), 'E16: migration 7 → 8 runs.' );
+	// It runs to the code's schema (8 when this was written; 9 since 1.3), not a fixed number.
+	$check( ( new Migrator( Registry::plugin() ) )->run() && Migrator::SCHEMA_VERSION === get_option( Migrator::VERSION_OPTION ), 'E16: migration from 7 to the current schema runs.' );
 	$check( ( new Migrator( Registry::plugin() ) )->run(), 'E16: and again, idempotent.' );
 	$columns = $wpdb->get_col( $wpdb->prepare( 'SHOW COLUMNS FROM %i', $wpdb->prefix . 'bulkcat_batches' ) );
 	$check( 1 === count( array_keys( $columns, 'extensions', true ) ), 'E16: one extensions column.' );

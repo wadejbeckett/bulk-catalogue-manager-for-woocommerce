@@ -649,12 +649,13 @@ export function CatalogueGrid( {
 	const filtered = isFiltered( view ) || !! category;
 	// FRONTEND-1: what the panel says while nothing is selected; the count
 	// is the settled view's, read for exactly the query on screen.
-	const counted =
-		viewSettled &&
+	// FRONTEND-14: the total answers exactly the query on screen.
+	const totalCurrent =
 		catalogue.hasLoaded &&
 		! catalogue.isLoading &&
 		! catalogue.error &&
 		catalogue.loadedKey === JSON.stringify( catalogue.query );
+	const counted = viewSettled && totalCurrent;
 	const emptyPrompt = (
 		<NothingSelected
 			ready={ counted }
@@ -776,7 +777,9 @@ export function CatalogueGrid( {
 				<SelectionBar
 					selection={ selection }
 					pageCount={ catalogue.items.length }
-					total={ catalogue.pagination.totalItems }
+					// FRONTEND-14: Select all N matching is offered only
+					// with the count read for the query on screen.
+					total={ totalCurrent ? catalogue.pagination.totalItems : 0 }
 					filtered={ filtered }
 					mode={ modeOf( view ) }
 					onMakeChange={ () => openBulk() }

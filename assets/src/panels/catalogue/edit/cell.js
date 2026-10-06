@@ -21,6 +21,7 @@ import { __, sprintf } from '@wordpress/i18n';
 import { isUncertain } from '../../../requests';
 import { announce } from '../../categories/announce';
 import { CellContext } from '../cells';
+import { ROW } from '../defaults';
 import {
 	comparable,
 	failureText,
@@ -62,13 +63,6 @@ function typedValue( descriptor, text ) {
 }
 
 /**
- * The cell (row id and field) whose trigger takes focus back after a save
- * that redraws its row, such as a variation's row read again after its edit
- * (T75): the redrawn cell is a new component, so it looks here on mount.
- */
-let focusAfterSave = null;
-
-/**
  * An inline-editable cell.
  *
  * @param {Object}  props            Props.
@@ -103,20 +97,22 @@ export default function InlineCell( { item, descriptor, display } ) {
 		name
 	);
 
-	const cellKey = `${ item.id }:${ descriptor.key }`;
+	// The trigger keeps keyboard focus while its row is drawn again after a
+	// save or a close (T75): the scope holds it and gives it back to the
+	// redrawn cell, a new component, once it is drawn (1.4.3).
+	const holdFocus = () =>
+		scope?.holdFocus?.( {
+			id: item.id,
+			key: descriptor.key,
+			parent: Number( item[ ROW.parentId ] ) || 0,
+		} );
 	useEffect( () => {
-		// Only when the redraw left focus nowhere: the owner may have moved on.
-		const doc = trigger.current?.ownerDocument;
-		if (
-			focusAfterSave === cellKey &&
-			( ! doc?.activeElement || doc.activeElement === doc.body )
-		) {
-			trigger.current?.focus();
-		}
+		// A redrawn cell: focus left on nothing may be this cell's to take.
+		scope?.settleFocus?.();
 		return () => {
 			live.current = false;
 		};
-		// On mount only: a redrawn cell picks up the focus its save left.
+		// On mount only.
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [] );
 
@@ -161,6 +157,9 @@ export default function InlineCell( { item, descriptor, display } ) {
 	const close = ( focusTrigger ) => {
 		closing.current = true;
 		refocus.current = focusTrigger;
+		if ( focusTrigger ) {
+			holdFocus();
+		}
 		setError( '' );
 
 		setEditing( false );
@@ -197,7 +196,7 @@ export default function InlineCell( { item, descriptor, display } ) {
 		setSaving( true );
 		setError( '' );
 		if ( focusTrigger ) {
-			focusAfterSave = cellKey;
+			holdFocus();
 		}
 		scope
 			.commit(
@@ -209,13 +208,7 @@ export default function InlineCell( { item, descriptor, display } ) {
 				{}
 			)
 			.then( ( answer ) => {
-				// The row may be read again and redrawn after this answer;
-				// the redrawn cell keeps the focus for a moment (T75).
-				setTimeout( () => {
-					if ( focusAfterSave === cellKey ) {
-						focusAfterSave = null;
-					}
-				}, 3000 );
+				// A redrawn cell takes the focus back through the scope.
 				if ( ! live.current ) {
 					return;
 				}
@@ -247,8 +240,8 @@ export default function InlineCell( { item, descriptor, display } ) {
 				);
 			} )
 			.catch( ( failure ) => {
-				if ( focusAfterSave === cellKey ) {
-					focusAfterSave = null;
+				if ( focusTrigger ) {
+					scope.holdFocus?.( null );
 				}
 				if ( ! live.current ) {
 					return;
@@ -360,6 +353,7 @@ export default function InlineCell( { item, descriptor, display } ) {
 					'bulkcat-inline is-editing' + ( error ? ' has-error' : '' )
 				}
 				data-bulkcat-row={ item.id }
+				data-bulkcat-field={ descriptor.key }
 			>
 				{ control }
 				{ error && (
@@ -376,7 +370,11 @@ export default function InlineCell( { item, descriptor, display } ) {
 	}
 
 	return (
-		<span className="bulkcat-inline" data-bulkcat-row={ item.id }>
+		<span
+			className="bulkcat-inline"
+			data-bulkcat-row={ item.id }
+			data-bulkcat-field={ descriptor.key }
+		>
 			<button
 				ref={ trigger }
 				type="button"

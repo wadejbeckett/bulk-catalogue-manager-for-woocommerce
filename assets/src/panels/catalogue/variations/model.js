@@ -28,6 +28,15 @@ export const KINDS = {
 export const INITIAL = { open: [], entries: {} };
 
 const without = ( list, id ) => list.filter( ( each ) => each !== id );
+
+/**
+ * Whether an entry draws rows: loaded, or stale and waiting for its new read.
+ *
+ * @param {Object} entry A product's entry.
+ * @return {boolean} Draws rows.
+ */
+const drawsRows = ( entry ) =>
+	entry?.status === 'loaded' || entry?.status === 'stale' || !! entry?.stale;
 const withId = ( list, id ) => ( list.includes( id ) ? list : [ ...list, id ] );
 
 /**
@@ -39,8 +48,11 @@ const withId = ( list, id ) => ( list.includes( id ) ? list : [ ...list, id ] );
  *   and `fail` { id, error } settle it.
  * - `retry` { id } forgets a failed entry so it is fetched again.
  * - `close` { id }; `close_all`.
- * - `refresh` { ids } forgets every fetched entry (the page was read again)
- *   and keeps open only the given products still on the page.
+ * - `refresh` { ids } marks every fetched entry stale (the page was read
+ *   again) and keeps open only the given products still on the page. A
+ *   stale entry is fetched again and keeps drawing its rows until the new
+ *   answer replaces them, so a save never takes its row (and the keyboard
+ *   focus on it) out of the grid and back (1.4.3).
  * - `reset` goes back to nothing open (a mode change).
  *
  * @param {Object} state  State.
@@ -60,14 +72,24 @@ export function reducer( state, action ) {
 			return { ...state, open: without( state.open, action.id ) };
 		case 'close_all':
 			return { ...state, open: [] };
-		case 'request':
+		case 'request': {
+			const was = state.entries[ action.id ];
 			return {
 				...state,
 				entries: {
 					...state.entries,
-					[ action.id ]: { status: 'loading', items: [], total: 0 },
+					[ action.id ]:
+						drawsRows( was ) && was.status !== 'loading'
+							? {
+									status: 'loading',
+									stale: true,
+									items: was.items,
+									total: was.total,
+								}
+							: { status: 'loading', items: [], total: 0 },
 				},
 			};
+		}
 		case 'receive':
 			return {
 				...state,
@@ -98,11 +120,23 @@ export function reducer( state, action ) {
 			delete entries[ action.id ];
 			return { ...state, entries };
 		}
-		case 'refresh':
-			return {
-				open: state.open.filter( ( id ) => action.ids.includes( id ) ),
-				entries: {},
-			};
+		case 'refresh': {
+			const open = state.open.filter( ( id ) =>
+				action.ids.includes( id )
+			);
+			const entries = {};
+			open.forEach( ( id ) => {
+				const was = state.entries[ id ];
+				if ( drawsRows( was ) ) {
+					entries[ id ] = {
+						status: 'stale',
+						items: was.items,
+						total: was.total,
+					};
+				}
+			} );
+			return { open, entries };
+		}
 		case 'reset':
 			return INITIAL;
 		default:
@@ -111,14 +145,17 @@ export function reducer( state, action ) {
 }
 
 /**
- * The open products that still need their variations fetched: no entry yet.
- * A failed entry waits for Try again (`retry` drops it).
+ * The open products that still need their variations fetched: no entry yet,
+ * or a stale one. A failed entry waits for Try again (`retry` drops it).
  *
  * @param {Object} state Row tree state.
  * @return {Array<number>} Product ids.
  */
 export function toFetch( state ) {
-	return state.open.filter( ( id ) => ! state.entries[ id ] );
+	return state.open.filter(
+		( id ) =>
+			! state.entries[ id ] || state.entries[ id ].status === 'stale'
+	);
 }
 
 /**
@@ -129,7 +166,7 @@ export function toFetch( state ) {
  * @return {Array<Object>} Rows.
  */
 export function shownOf( entry ) {
-	return entry?.status === 'loaded' ? entry.items.slice( 0, CAP ) : [];
+	return drawsRows( entry ) ? entry.items.slice( 0, CAP ) : [];
 }
 
 /**
@@ -231,10 +268,9 @@ export function buildRows( items, state, roles, mode ) {
 				parent: row,
 				entry,
 				shown: shown.length,
-				total:
-					entry?.status === 'loaded'
-						? entry.total
-						: countOf( row, roles ) || 0,
+				total: drawsRows( entry )
+					? entry.total
+					: countOf( row, roles ) || 0,
 			},
 		} );
 	} );

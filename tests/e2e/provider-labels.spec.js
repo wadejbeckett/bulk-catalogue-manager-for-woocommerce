@@ -23,6 +23,11 @@ const {
 	rest,
 	expectAxeClean,
 } = require( './helpers' );
+const {
+	fixtureCheck,
+	installMuPlugins,
+	removeMuPlugins,
+} = require( './lifecycle/support' );
 
 /**
  * A seeded simple product's SKU (tests/probe/seed.sh).
@@ -57,6 +62,18 @@ const labelsOf = ( n ) =>
 			n
 		) }" ), "_sample_labels", true );`
 	);
+
+// On the disposable fixture the spec brings its provider's must-use plugin
+// itself (and removes it again); elsewhere it runs only where one is installed.
+let copied = [];
+test.beforeAll( () => {
+	if ( ! fixtureCheck() ) {
+		copied = installMuPlugins( [ 'bulkcat-sample-provider.php' ] );
+	}
+} );
+test.afterAll( () => {
+	expect( removeMuPlugins( copied ) ).toEqual( [] );
+} );
 
 test( 'an add-on action by keyboard: two SKU searches, Add labels, preview, Apply, History and Undo', async ( {
 	page,

@@ -11,6 +11,8 @@
  * plugin), from a throwaway must-use plugin the specs install and remove on
  * the test site only (installLeaseProbe()). It is not part of the plugin.
  */
+const fs = require( 'fs' );
+const { join } = require( 'path' );
 const { execSync } = require( 'child_process' );
 const { expect } = require( '@playwright/test' );
 const { SCREEN, runQueue } = require( '../helpers' );
@@ -119,6 +121,54 @@ function removeLeaseProbe() {
 	php(
 		`$f = WPMU_PLUGIN_DIR . '/' . $in; if ( file_exists( $f ) ) { unlink( $f ); } echo wp_json_encode( ! file_exists( $f ) );`,
 		LEASE_PROBE
+	);
+}
+
+/**
+ * Copy test providers' must-use plugins (tests/fixtures/mu-plugins) onto the
+ * fixture site, each only when the site lacks it. They load their classes
+ * from the plugin's own tests/ directory, so the site's plugin must be this
+ * checkout (wp-env, or the docker stack of tests/probe/README.md).
+ *
+ * @param {Array<string>} names File names in tests/fixtures/mu-plugins.
+ * @return {Array<string>} The names copied, for removeMuPlugins().
+ */
+function installMuPlugins( names ) {
+	const dir = join( __dirname, '..', '..', 'fixtures', 'mu-plugins' );
+	return php(
+		`wp_mkdir_p( WPMU_PLUGIN_DIR );
+		$copied = array();
+		foreach ( $in as $name => $source ) {
+			$file = WPMU_PLUGIN_DIR . '/' . $name;
+			if ( ! file_exists( $file ) ) {
+				file_put_contents( $file, $source );
+				$copied[] = $name;
+			}
+		}
+		echo wp_json_encode( $copied );`,
+		Object.fromEntries(
+			names.map( ( name ) => [
+				name,
+				fs.readFileSync( join( dir, name ), 'utf8' ),
+			] )
+		)
+	);
+}
+
+/**
+ * Remove must-use plugins installMuPlugins() copied, and only those.
+ *
+ * @param {Array<string>} names What installMuPlugins() answered.
+ * @return {Array<string>} Any still present (none, normally).
+ */
+function removeMuPlugins( names ) {
+	if ( ! names.length ) {
+		return [];
+	}
+	return php(
+		`foreach ( $in as $name ) { $file = WPMU_PLUGIN_DIR . '/' . $name; if ( file_exists( $file ) ) { unlink( $file ); } }
+		echo wp_json_encode( array_values( array_filter( $in, fn( $name ) => file_exists( WPMU_PLUGIN_DIR . '/' . $name ) ) ) );`,
+		names
 	);
 }
 
@@ -654,6 +704,8 @@ module.exports = {
 	write,
 	installLeaseProbe,
 	removeLeaseProbe,
+	installMuPlugins,
+	removeMuPlugins,
 	makeProducts,
 	deleteProducts,
 	prices,

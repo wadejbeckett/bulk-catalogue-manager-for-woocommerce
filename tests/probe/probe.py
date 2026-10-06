@@ -316,6 +316,22 @@ class Probe:
         grant = self.http(user, "POST", "/requests", body={"operation": "batch.undo", "intent": intent}).json() or {}
         return {key: grant.get(key) for key in ("uuid", "request_proof", "intent")}
 
+    def patch_product(self, user: str, pid: int, values: dict, params: list | None = None, keep: bool = False, source: str = "inline") -> Response:
+        """PATCH /products/{id} as the screen sends it since 1.2.0: a `product.inline` grant from
+        POST /requests first, then the values with that grant's envelope (assets/src/panels/catalogue/
+        edit/receipts.js and requests.js). A refused grant is answered as the PATCH would be."""
+        intent: dict = {"object_id": pid, "source": source, "values": values}
+        if keep:
+            intent["keep_changed_status"] = True
+        grant = self.http(user, "POST", "/requests", body={"operation": "product.inline", "intent": intent})
+        held = grant.json() or {}
+        if grant.status != 200 or not held.get("uuid"):
+            return grant
+        body = {**values, "source": source, "uuid": held["uuid"], "request_proof": held["request_proof"], "intent": held["intent"]}
+        if keep:
+            body["keep_changed_status"] = True
+        return self.http(user, "PATCH", f"/products/{pid}", params=params, body=body)
+
     # ---- shared fixtures ---------------------------------------------------------
 
     def simple(self, n: int) -> dict:
@@ -979,12 +995,12 @@ def check_write_inline(p: Probe) -> None:
     target = p.simple(2)
 
     def patch() -> None:
-        r = p.http("manager", "PATCH", f"/products/{target['id']}", body={"regular_price": "99.00"})
+        r = p.patch_product("manager", target["id"], {"regular_price": "99.00"})
         d = r.json() or {}
         live = p.prices([target["id"]])[str(target["id"])]
         ok = r.status == 200 and d.get("status") == "complete" and (d.get("item") or {}).get("regular_price") == "99.00" and live == "99.00"
         p.row("write", "write:patch-product", ok, f"{r.brief()} status {d.get('status')} batch {d.get('batch_id')} live {live}")
-        back = p.http("manager", "PATCH", f"/products/{target['id']}", body={"regular_price": target["regular_price"]})
+        back = p.patch_product("manager", target["id"], {"regular_price": target["regular_price"]})
         live = p.prices([target["id"]])[str(target["id"])]
         p.row("write", "write:patch-product-back", back.status == 200 and live == target["regular_price"], f"{back.brief()} live {live}")
 

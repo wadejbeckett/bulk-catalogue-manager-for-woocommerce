@@ -380,7 +380,7 @@ def check_engine(p: Any) -> None:
         pushed = switch(p, [v["id"]], "draft", variations=True)
         items = p.http("manager", "GET", f"/batches/{pushed['batch']}").json() or {}
         var_rows = [r for r in pushed["preview"].get("sample", []) if r.get("object_type") == "variation"]
-        chosen = p.http("manager", "PATCH", f"/products/{v['small']}", body={"status": "draft"})
+        chosen = p.patch_product("manager", v["small"], {"status": "draft"})
         after = snap(p, [v["id"]])[str(v["id"])]
         var_status = {int(k): s["status"] for k, s in after["variations"].items()}
         # The parent is Off; its variations were never written, and none carries a record.
@@ -475,7 +475,7 @@ def check_engine(p: Any) -> None:
             "bulkcat_out( true === rest_validate_value_from_schema( 'future', $f->rest_schema(), 'status' ) );"
         )
         filtered = p.http("manager", "GET", "/products", params=[("status[operator]", "isAny"), ("status[value][]", "future"), ("search", SKU + "sched-read")]).json() or {}
-        refused = p.http("manager", "PATCH", f"/products/{pid}", body={"status": "future"})
+        refused = p.patch_product("manager", pid, {"status": "future"})
         ok = (labels.get("future") == "Scheduled" and "future" not in (status.get("writableChoices") or []) and "future" in schema_enum
               and found.get("status") == "future" and valid is True and [i.get("id") for i in filtered.get("items", [])] == [pid]
               and refused.status == 400 and statuses(p, [pid])[str(pid)] == "future")
@@ -701,9 +701,9 @@ def check_preview(p: Any) -> None:
 # ---------------------------------------------------------------------------
 
 def patch(p: Any, pid: int, body: dict, fields: list[str] | None = None) -> dict:
-    """PATCH /products/{id} as the grid's cell or drawer sends it: {status, json}."""
+    """PATCH /products/{id} as the grid's cell or drawer sends it, with its product.inline receipt: {status, json}."""
     params = [("fields[]", f) for f in (fields or [])]
-    reply = p.http("manager", "PATCH", f"/products/{pid}", params=params or None, body=body)
+    reply = p.patch_product("manager", pid, body, params=params or None)
     return {"status": reply.status, "json": reply.json() or {}}
 
 

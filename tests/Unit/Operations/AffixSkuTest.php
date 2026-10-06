@@ -1,8 +1,9 @@
 <?php
 /**
  * Prefix or suffix (T25; SPEC §6): text added at the chosen end of each SKU,
- * multibyte-safe; a SKU already carrying the text is already, so a batch run
- * twice never doubles it; an object with no SKU is skipped with a reason; a
+ * multibyte-safe; every SKU gets the text, even one that already starts or
+ * ends with it (ENGINE-10: "1" on "123" is "1123"; a retry is protected by
+ * the journal, not by guessing); an object with no SKU is skipped with a reason; a
  * result over the field's length fails with the field's rule; compute()
  * writes nothing and apply() writes only the SKU.
  *
@@ -48,11 +49,15 @@ final class AffixSkuTest extends TestCase {
 		$cases = [
 			[ 'SHOE-42', 'prefix', 'NEW-', 'NEW-SHOE-42' ],
 			[ 'SHOE-42', 'suffix', '-B', 'SHOE-42-B' ],
-			[ 'NEW-SHOE-42', 'prefix', 'NEW-', null ],
-			[ 'SHOE-42-B', 'suffix', '-B', null ],
+			// ENGINE-10: a SKU that happens to start or end with the text still gets it ("1" on "123" is "1123").
+			[ 'NEW-SHOE-42', 'prefix', 'NEW-', 'NEW-NEW-SHOE-42' ],
+			[ 'SHOE-42-B', 'suffix', '-B', 'SHOE-42-B-B' ],
+			[ '123', 'prefix', '1', '1123' ],
+			[ '456', 'prefix', '1', '1456' ],
+			[ 'AB-7', 'prefix', 'AB', 'ABAB-7' ],
 			[ 'NEW-1', 'prefix', 'new-', 'new-NEW-1' ],
 			[ 'SHOE-42', 'suffix', 'NEW-', 'SHOE-42NEW-' ],
-			[ '0', 'prefix', '0', null ],
+			[ '0', 'prefix', '0', '00' ],
 			[ '0', 'suffix', '1', '01' ],
 			[ 'CAFÉ-1', 'suffix', '-É', 'CAFÉ-1-É' ],
 			[ '茶-1', 'prefix', '日本-', '日本-茶-1' ],

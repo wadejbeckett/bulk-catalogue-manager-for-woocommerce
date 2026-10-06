@@ -81,7 +81,7 @@ final class CategoriesRouteTest extends TestCase {
 		$this->assertSame( 'bulkcat_forbidden', $result->get_error_code() );
 		$this->assertSame( 401, $result->get_error_data()['status'] );
 		$this->assertSame( [], $GLOBALS['bulkcat_test']['get_terms_calls'] ?? [] );
-		$this->assertSame( [], $GLOBALS['wpdb']->queries );
+		$this->assertSame( [], self::counted() );
 	}
 
 	public function test_a_subscriber_is_refused_403_before_any_work(): void {
@@ -91,7 +91,7 @@ final class CategoriesRouteTest extends TestCase {
 		$this->assertSame( 'bulkcat_forbidden', $result->get_error_code() );
 		$this->assertSame( 403, $result->get_error_data()['status'] );
 		$this->assertSame( [], $GLOBALS['bulkcat_test']['get_terms_calls'] ?? [] );
-		$this->assertSame( [], $GLOBALS['wpdb']->queries );
+		$this->assertSame( [], self::counted() );
 	}
 
 	public function test_a_shop_manager_gets_the_nested_tree_with_counts(): void {
@@ -104,12 +104,12 @@ final class CategoriesRouteTest extends TestCase {
 		foreach ( CatalogueFixture::naive() as $id => [ $own, $total ] ) {
 			$this->assertSame( [ $own, $total ], [ $flat[ $id ]['count'], $flat[ $id ]['countWithDescendants'] ], "Counts of $id." );
 		}
-		$this->assertCount( 1, $GLOBALS['bulkcat_test']['get_terms_calls'] );
-		$this->assertCount( 1, $GLOBALS['wpdb']->queries );
+		$this->assertSame( 1, self::term_reads() );
+		$this->assertCount( 1, self::counted() );
 
 		$this->assertSame( $tree, self::get()->get_data() );
-		$this->assertCount( 1, $GLOBALS['bulkcat_test']['get_terms_calls'], 'The second read is served from the cache.' );
-		$this->assertCount( 1, $GLOBALS['wpdb']->queries );
+		$this->assertSame( 1, self::term_reads(), 'The second read is served from the cache.' );
+		$this->assertCount( 1, self::counted() );
 	}
 
 	public function test_counts_follow_the_grid_filters_but_not_its_category_filter(): void {
@@ -131,9 +131,9 @@ final class CategoriesRouteTest extends TestCase {
 		foreach ( CatalogueFixture::naive( [ 'draft' ] ) as $id => [ $own, $total ] ) {
 			$this->assertSame( [ $own, $total ], [ $flat[ $id ]['count'], $flat[ $id ]['countWithDescendants'] ], "Draft counts of $id." );
 		}
-		$this->assertCount( 1, $GLOBALS['wpdb']->queries );
-		$this->assertStringContainsString( "(p.post_status = 'draft' AND NOT EXISTS", $GLOBALS['wpdb']->queries[0] );
-		$this->assertStringNotContainsString( 'tt.term_id IN', $GLOBALS['wpdb']->queries[0], 'The category filter does not narrow the counts.' );
+		$this->assertCount( 1, self::counted() );
+		$this->assertStringContainsString( "(p.post_status = 'draft' AND NOT EXISTS", self::counted()[0] );
+		$this->assertStringNotContainsString( 'tt.term_id IN', self::counted()[0], 'The category filter does not narrow the counts.' );
 	}
 
 	public function test_a_malformed_filter_is_refused_400_before_any_query(): void {
@@ -149,7 +149,7 @@ final class CategoriesRouteTest extends TestCase {
 		$this->assertSame( 'rest_invalid_param', $result->get_error_code() );
 		$this->assertSame( 400, $result->get_error_data()['status'] );
 		$this->assertSame( [], $GLOBALS['bulkcat_test']['get_terms_calls'] ?? [] );
-		$this->assertSame( [], $GLOBALS['wpdb']->queries );
+		$this->assertSame( [], self::counted() );
 	}
 
 	public function test_registering_the_routes_adds_the_cache_hooks(): void {
@@ -162,5 +162,26 @@ final class CategoriesRouteTest extends TestCase {
 		$controller = new CategoriesController( new Registry() );
 		$this->assertSame( 'object', $controller->get_item_schema()['type'] );
 		$this->assertTrue( $controller->get_item_schema()['properties']['id']['required'] );
+	}
+	/**
+	 * The statements run, apart from the read of the term tables and its
+	 * meta cache priming (1.4.2: the tree reads every category unfiltered,
+	 * through $wpdb, not get_terms()).
+	 *
+	 * @return list<string>
+	 */
+	private static function counted(): array {
+		return array_values( array_filter( $GLOBALS['wpdb']->queries, static fn( string $sql ): bool => ! self::is_term_read( $sql ) ) );
+	}
+
+	/**
+	 * How many times the term tables were read for the tree.
+	 */
+	private static function term_reads(): int {
+		return count( array_filter( $GLOBALS['wpdb']->queries, static fn( string $sql ): bool => str_starts_with( $sql, 'SELECT t.term_id, t.name' ) ) );
+	}
+
+	private static function is_term_read( string $sql ): bool {
+		return str_starts_with( $sql, 'SELECT t.term_id, t.name' ) || str_starts_with( $sql, '/* update_meta_cache */' );
 	}
 }

@@ -97,14 +97,16 @@ final class Manifest {
 	 * The first provider a manifest names that cannot work on it now, and
 	 * why (Blocked): not registered (missing); or registered but not
 	 * available (its own reason), of a contract this core does not support,
-	 * or unable to read a recorded format (a field gone, or a format newer
-	 * than its own) (unavailable). Null when every one can.
+	 * unable to read a recorded format (a field gone, or a format newer
+	 * than its own), or, for a forward chunk, no longer offering an action
+	 * the change used (EXT-5) (unavailable). Null when every one can.
 	 *
 	 * @param array<string, mixed> $manifest  A batch's manifest.
 	 * @param Providers            $providers The providers now.
 	 * @param bool                 $formats   Whether a format it cannot read blocks it too (a chunk); an undo skips such objects one by one instead.
+	 * @param bool                 $actions   Whether an action the change used that the provider no longer offers blocks it too (a forward chunk, EXT-5); an undo writes values back through the core's own step and needs none.
 	 */
-	public static function blocked( array $manifest, Providers $providers, bool $formats = true ): ?Blocked {
+	public static function blocked( array $manifest, Providers $providers, bool $formats = true, bool $actions = false ): ?Blocked {
 		foreach ( $manifest as $id => $entry ) {
 			$label    = self::label( $manifest, (string) $id );
 			$provider = $providers->get( (string) $id );
@@ -129,6 +131,20 @@ final class Manifest {
 				$meta = $provider->field_meta( (string) $key );
 				if ( null === $meta || (int) ( $field['format'] ?? 0 ) > $meta['format'] ) {
 					return $other;
+				}
+			}
+			foreach ( $actions ? (array) ( $entry['actions'] ?? [] ) : [] as $action => $action_label ) {
+				if ( null === $provider->described( (string) $action ) ) {
+					// EXT-5: removed or renamed by an update after Apply; the job stops with this one reason instead of failing every object.
+					return Blocked::unavailable(
+						$label,
+						sprintf(
+							/* translators: 1: the name of an add-on, such as "Example add-on"; 2: the name of the action the change used, such as "Add labels". */
+							__( 'The version of %1$s active now no longer offers the action this change used (%2$s).', 'bulk-catalogue-manager-for-woocommerce' ),
+							$label,
+							Text::plain( $action_label, Text::LABEL )
+						)
+					);
 				}
 			}
 		}

@@ -145,7 +145,8 @@ final class Access {
 		}
 		$id = $request instanceof \WP_REST_Request ? (int) $request->get_param( 'id' ) : 0;
 		if ( $id > 0 ) {
-			$allowed = ! is_object( get_term( $id, self::TERMS_TAXONOMY ) ) || current_user_can( 'edit_term', $id );
+			// Whether it exists from the term tables (1.4.2): a category hidden from this viewer's term reads still needs edit_term.
+			$allowed = null === \BulkCatalogueManager\Categories\CategoryTree::stored_term( $id ) || current_user_can( 'edit_term', $id );
 		} else {
 			$taxonomy = get_taxonomy( self::TERMS_TAXONOMY );
 			$allowed  = is_object( $taxonomy ) && isset( $taxonomy->cap->edit_terms ) && current_user_can( (string) $taxonomy->cap->edit_terms );

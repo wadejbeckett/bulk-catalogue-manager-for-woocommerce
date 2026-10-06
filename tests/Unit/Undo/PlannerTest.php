@@ -119,7 +119,7 @@ final class PlannerTest extends TestCase {
 	 * The normalised form of a raw operation list, as BatchFactory stores it.
 	 */
 	private static function normalised( array $operations ): array {
-		$list = ( new Registry( new Fields() ) )->validate_list( $operations );
+		$list = ( new Registry( new Fields() ) )->validate_list( $operations, true );
 		self::assertTrue( is_array( $list ), $list instanceof \WP_Error ? $list->get_error_message() : '' );
 		return $list;
 	}
@@ -458,7 +458,8 @@ final class PlannerTest extends TestCase {
 						],
 					],
 					[
-						'action' => 'set_value',
+						// A price goes back exactly as it was stored (1.4.2).
+						'action' => 'restore_value',
 						'args'   => [
 							'field' => 'regular_price',
 							'value' => '20.00',
@@ -468,7 +469,7 @@ final class PlannerTest extends TestCase {
 			),
 			self::item( $plan, 1002 )['operations']
 		);
-		$this->assertSame( [ 'clear', 'set_value' ], array_column( self::item( $plan, 1001 )['operations'], 'action' ) );
+		$this->assertSame( [ 'clear', 'restore_value' ], array_column( self::item( $plan, 1001 )['operations'], 'action' ) );
 		$this->assertSame( [ 'sale_price', 'regular_price' ], array_column( array_column( self::item( $plan, 1001 )['operations'], 'args' ), 'field' ) );
 		foreach ( $plan->items() as $item ) {
 			$this->assertSame( Plan::REVERTIBLE, $item['state'] );
@@ -478,6 +479,22 @@ final class PlannerTest extends TestCase {
 		}
 		$this->assertSame( self::BATCH, $plan->to_array()['batch_id'] );
 		$this->assertSame( [ 'batch_id', 'items', 'counts', 'hash' ], array_keys( $plan->to_array() ) );
+	}
+
+	public function test_a_price_goes_back_as_the_exact_string_it_was_stored_as(): void {
+		// The shop stored "100" (WooCommerce keeps a price as given); the batch wrote 110.00.
+		$this->change( 1001, 'regular_price', '100', '110.00' );
+		$this->change( 1001, 'weight', '1.50', '2' );
+		self::product(
+			1001,
+			[
+				'regular_price' => '110.00',
+				'weight'        => '2',
+			]
+		);
+		$operations = self::item( $this->plan(), 1001 )['operations'];
+		$this->assertSame( [ 'restore_value', 'restore_value' ], array_column( $operations, 'action' ) );
+		$this->assertSame( [ '1.50', '100' ], array_column( array_column( $operations, 'args' ), 'value' ), 'Not "100.00" or "1.5".' );
 	}
 
 	public function test_the_price_pair_goes_back_in_an_order_valid_at_each_step(): void {

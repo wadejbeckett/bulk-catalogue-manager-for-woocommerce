@@ -32,6 +32,27 @@ if ( ! class_exists( WpdbStub::class ) ) {
 
 		public string $options = 'wp_options';
 
+		/**
+		 * ENGINE-9: table => the body dbDelta() was given (set by the dbDelta() stub).
+		 *
+		 * @var array<string, string>
+		 */
+		public array $bodies = [];
+
+		/**
+		 * ENGINE-9: table => column names SHOW COLUMNS leaves out (an ALTER that failed silently).
+		 *
+		 * @var array<string, list<string>>
+		 */
+		public array $dropped_columns = [];
+
+		/**
+		 * ENGINE-9: table => index names SHOW INDEX leaves out.
+		 *
+		 * @var array<string, list<string>>
+		 */
+		public array $dropped_indexes = [];
+
 		public string $terms = 'wp_terms';
 
 		public string $term_taxonomy = 'wp_term_taxonomy';
@@ -253,8 +274,24 @@ if ( ! class_exists( WpdbStub::class ) ) {
 		 *
 		 * @return string[]
 		 */
-		public function get_col( string $query ): array {
+		public function get_col( string $query, int $x = 0 ): array {
 			$this->queries[] = $query;
+			// ENGINE-9: a table's columns and index names as dbDelta() was given them, less any the test dropped.
+			if ( 1 === preg_match( '/^SHOW (COLUMNS|INDEX) FROM `([^`]+)`$/', $query, $m ) && isset( $this->bodies[ $m[2] ] ) && ! array_key_exists( $query, $this->responses ) ) {
+				$names = [];
+				foreach ( explode( "\n", $this->bodies[ $m[2] ] ) as $line ) {
+					$line = trim( $line );
+					if ( 'INDEX' === $m[1] && 1 === preg_match( '/^PRIMARY KEY/i', $line ) ) {
+						$names[] = 'PRIMARY';
+					} elseif ( 'INDEX' === $m[1] && 1 === preg_match( '/^(?:UNIQUE\s+)?(?:KEY|INDEX)\s+(\w+)/i', $line, $key ) ) {
+						$names[] = $key[1];
+					} elseif ( 'COLUMNS' === $m[1] && 1 === preg_match( '/^(\w+)\s/', $line, $column ) && ! in_array( strtoupper( $column[1] ), [ 'PRIMARY', 'KEY', 'UNIQUE', 'INDEX' ], true ) ) {
+						$names[] = $column[1];
+					}
+				}
+				$dropped = 'INDEX' === $m[1] ? ( $this->dropped_indexes[ $m[2] ] ?? [] ) : ( $this->dropped_columns[ $m[2] ] ?? [] );
+				return array_values( array_diff( $names, $dropped ) );
+			}
 			if ( 1 !== preg_match( "/^SELECT option_name FROM wp_options WHERE option_name LIKE '(.*)%'$/", $query, $m ) ) {
 				return $this->respond( $query, [] );
 			}

@@ -248,6 +248,50 @@ final class CategoriesWriteRouteTest extends TestCase {
 		$this->assertSame( [ 'tree', 'tree' ], array_column( $this->store->batches, 'source' ) );
 	}
 
+	public function test_categories_hidden_from_term_queries_are_listed_read_and_written_with_their_rights_checked(): void {
+		// A site plugin filters term queries for the viewer and hides 2 and 3; the term tables still hold them.
+		$GLOBALS['bulkcat_test']['hidden_terms'] = [ 2, 3 ];
+		$GLOBALS['wpdb']->responses              = [ '/^SELECT a\.ancestor AS term_id, /' => CatalogueFixture::answer() ] + $GLOBALS['wpdb']->responses;
+		$tree                                    = self::send( 'GET', '/categories' );
+		$this->assertInstanceOf( \WP_REST_Response::class, $tree );
+		$this->assertSame( [ 5, 2 ], array_column( $tree->get_data()[0]['children'], 'id' ), 'The tab lists every category, hidden ones included.' );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['get_terms_calls'] ?? [], 'No filtered term query.' );
+
+		$details = self::send( 'GET', '/categories/3' );
+		$this->assertInstanceOf( \WP_REST_Response::class, $details, $details instanceof \WP_Error ? $details->get_error_message() : '' );
+		$this->assertSame( 3, $details->get_data()['item']['id'] );
+
+		$edit = self::send( 'PATCH', '/categories/3', [ 'name' => 'Tops' ] );
+		$this->assertInstanceOf( \WP_REST_Response::class, $edit, $edit instanceof \WP_Error ? $edit->get_error_message() : '' );
+		$this->assertSame( 'Tops', $edit->get_data()['item']['name'] );
+		$move = self::send(
+			'POST',
+			'/categories/2/move',
+			[
+				'parent'   => 1,
+				'position' => 0,
+			]
+		);
+		$this->assertInstanceOf( \WP_REST_Response::class, $move, $move instanceof \WP_Error ? $move->get_error_message() : '' );
+		$this->assertSame( [ 2, 5 ], CategoryTree::complete()->children( 1 ) );
+		$this->assertSame(
+			[
+				[ 3, 'term_name', 'Shirts', 'Tops', 'applied' ],
+				[ 2, 'term_menu_order', 2, 0, 'applied' ],
+			],
+			$this->store->journal(),
+			'Both writes journalled as applied, read back from the term tables.'
+		);
+	}
+
+	public function test_a_category_hidden_from_term_queries_still_needs_edit_term(): void {
+		$GLOBALS['bulkcat_test']['hidden_terms'] = [ 3 ];
+		// A filter that hides a category from get_term() too must not skip the per-term check.
+		$GLOBALS['bulkcat_test']['term_list_get_term_hidden'] = true;
+		$GLOBALS['bulkcat_test']['caps']['edit_term:3']       = false;
+		$this->assert_refused( self::send( 'PATCH', '/categories/3', [ 'name' => 'Tops' ] ), 'bulkcat_forbidden', 403 );
+	}
+
 	public function test_a_visitor_is_refused_401(): void {
 		$GLOBALS['bulkcat_test']['logged_in'] = false;
 		$GLOBALS['bulkcat_test']['caps']      = [];

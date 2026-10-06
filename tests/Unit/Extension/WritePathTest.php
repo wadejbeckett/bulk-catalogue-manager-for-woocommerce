@@ -491,6 +491,16 @@ final class WritePathTest extends TestCase {
 		);
 	}
 
+	public function test_a_chunk_stops_with_one_reason_when_its_action_was_removed_after_apply(): void {
+		// EXT-5: an add-on update removed (or renamed) the action after Apply; the job stops, it does not fail every object.
+		$this->stops(
+			true,
+			[ 'dropped' => [ 'x_sample_add' ] ],
+			'Sample labels cannot run now, so this was left alone. The version of Sample labels active now no longer offers the action this change used (Add labels).',
+			'Stopped because Sample labels cannot run. 0 products were changed; the rest were left alone. The version of Sample labels active now no longer offers the action this change used (Add labels).'
+		);
+	}
+
 	public function test_a_mixed_list_reaching_a_chunk_is_refused_there_too(): void {
 		$mixed  = [
 			...$this->steps( [ self::add( 'red' ) ] ),

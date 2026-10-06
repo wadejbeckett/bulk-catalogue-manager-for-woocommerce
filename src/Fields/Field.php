@@ -721,6 +721,44 @@ final class Field {
 	}
 
 	/**
+	 * A money or decimal value exactly as it was stored, when it is a plain
+	 * decimal this field accepts ("100", "5.5", "100.00"); null for any
+	 * other type or value. Undo writes it so (Operations\RestoreValue,
+	 * 1.4.2): WooCommerce keeps a price as given, so "100" stays "100".
+	 *
+	 * @param mixed $value A value as the journal holds it.
+	 */
+	public function stored_form( mixed $value ): ?string {
+		if ( ! in_array( $this->type, [ self::MONEY, self::DECIMAL ], true ) || ! is_string( $value ) || 1 !== preg_match( '/^-?\d+(\.\d+)?$/', $value ) ) {
+			return null;
+		}
+		$clean = $this->clean( $value );
+		return $clean instanceof \WP_Error || '' === $clean ? null : $value;
+	}
+
+	/**
+	 * write(), but a money or decimal value is set exactly as stored
+	 * (stored_form()) rather than in its canonical form; any other value as
+	 * write() sets it.
+	 *
+	 * @param object $product A WooCommerce product or variation.
+	 * @param mixed  $value   The value to put back.
+	 * @return mixed The value set, or a WP_Error saying why nothing was set.
+	 */
+	public function write_exact( object $product, mixed $value ): mixed {
+		$exact = $this->stored_form( $value );
+		if ( null === $exact || self::ADAPTER_OFF_RECORD === $this->adapter || self::ADAPTER_SWITCH === $this->adapter ) {
+			return $this->write( $product, $value );
+		}
+		$refusal = $this->refusal( $product, $value );
+		if ( null !== $refusal ) {
+			return $refusal;
+		}
+		$product->{$this->setter}( $exact );
+		return $exact;
+	}
+
+	/**
 	 * The REST schema fragment for the value as the API returns it.
 	 *
 	 * @return array<string, mixed>

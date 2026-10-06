@@ -867,6 +867,91 @@ describe( 'following a change in progress (FRONTEND-8)', () => {
 			() => new Promise( ( resolve ) => setTimeout( resolve, 3500 ) )
 		);
 		expect( reads() ).toBe( 1 );
+		// SILENT-FAILURES-8: and says so, with a way to try again.
+		const three = within( card( 3 ) );
+		expect(
+			three.getByText(
+				'The progress of this change could not be read, so it is no longer shown here. Try again, or reload the page.'
+			)
+		).toBeTruthy();
+		serve( DEFAULT_ROUTES() );
+		fireEvent.click( three.getByRole( 'button', { name: 'Try again' } ) );
+		await waitFor( () => expect( reads() ).toBe( 2 ) );
+	} );
+
+	it( 'stops after five failed reads in a row and says so (SILENT-FAILURES-8)', async () => {
+		serve( {
+			...DEFAULT_ROUTES(),
+			'GET bulkcat/v1/batches/3': () => {
+				throw Object.assign( new Error( 'Server error.' ), {
+					code: 'internal_server_error',
+					data: { status: 500 },
+				} );
+			},
+		} );
+		jest.useFakeTimers();
+		try {
+			await renderHistory();
+			const reads = () =>
+				calls.filter(
+					( call ) => call.route === 'bulkcat/v1/batches/3'
+				).length;
+			for ( let i = 0; i < 8; i++ ) {
+				await act( async () => {
+					jest.advanceTimersByTime( 3000 );
+				} );
+			}
+			expect( reads() ).toBe( 5 );
+			expect(
+				within( card( 3 ) ).getByText(
+					'The progress of this change could not be read, so it is no longer shown here. Try again, or reload the page.'
+				)
+			).toBeTruthy();
+		} finally {
+			jest.useRealTimers();
+		}
+	} );
+
+	it( 'says when the reasons of a change with errors could not be loaded (SILENT-FAILURES-8)', async () => {
+		let fail = true;
+		serve( {
+			...DEFAULT_ROUTES(),
+			'GET bulkcat/v1/batches/4': () => {
+				if ( fail ) {
+					throw Object.assign( new Error( 'Server error.' ), {
+						code: 'internal_server_error',
+						data: { status: 500 },
+					} );
+				}
+				return DEFAULT_ROUTES()[ 'GET bulkcat/v1/batches/4' ];
+			},
+		} );
+		await renderHistory();
+		const four = within( card( 4 ) );
+		fireEvent.click(
+			four.getByRole( 'button', { name: 'See every change' } )
+		);
+		await waitFor( () =>
+			expect(
+				four.getByText(
+					'The reasons for this change could not be loaded. Try again, or reload the page.'
+				)
+			).toBeTruthy()
+		);
+		fail = false;
+		fireEvent.click( four.getByRole( 'button', { name: 'Try again' } ) );
+		await waitFor( () =>
+			expect(
+				four.getByText(
+					'2 products: Another user was editing this product.'
+				)
+			).toBeTruthy()
+		);
+		expect(
+			four.queryByText(
+				'The reasons for this change could not be loaded. Try again, or reload the page.'
+			)
+		).toBeNull();
 	} );
 
 	it( 'says the reads stopped and offers Check again, which reads once more', async () => {
@@ -949,6 +1034,50 @@ describe( 'history wire-ins', () => {
 			)
 		).toBeTruthy();
 		expect( within( card( 1 ) ).queryByText( /Put back by/ ) ).toBeNull();
+	} );
+
+	it( 'reads a change undone and then redone as Redone, with who put it back and who made it again', async () => {
+		const seven = BATCHES[ 6 ];
+		BATCHES[ 6 ] = {
+			...seven,
+			undone_by: {
+				batch_id: 42,
+				user_id: 2,
+				user_name: 'Sam Naidoo',
+				finished_gmt: '2026-09-23 12:00:00',
+			},
+			redone_by: {
+				batch_id: 43,
+				user_id: 9,
+				user_name: 'Lee Adams',
+				finished_gmt: '2026-09-23 13:00:00',
+			},
+		};
+		try {
+			await renderHistory();
+			const row = within( card( 7 ) );
+			// The outcome and the settled Undo button both say Redone.
+			expect( row.getAllByText( 'Redone' ) ).toHaveLength( 2 );
+			expect( row.queryByText( 'Undone' ) ).toBeNull();
+			expect(
+				row.getByText( /^Put back by Sam Naidoo in change #42 on / )
+			).toBeTruthy();
+			expect(
+				row.getByText( /^Done again by Lee Adams in change #43 on / )
+			).toBeTruthy();
+		} finally {
+			BATCHES[ 6 ] = seven;
+		}
+	} );
+
+	it( 'exports who made an undone change again', async () => {
+		await renderHistory();
+		await act( async () =>
+			fireEvent.click(
+				screen.getByRole( 'button', { name: 'Export log (CSV)' } )
+			)
+		);
+		expect( exportForm().columns ).toContain( 'redone_by' );
 	} );
 
 	it( 'downloads the list by posting /export with source=batches and its filters, the nonce in the body (SECURITY-1)', async () => {

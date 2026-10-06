@@ -1,8 +1,8 @@
 <?php
 /**
  * The category tree with counts for a set of grid conditions (SPEC §7): one
- * cached answer per set, and on a miss exactly one `get_terms()` call and
- * one grouped count statement for the whole tree.
+ * cached answer per set, and on a miss exactly one read of the term tables
+ * (unfiltered, terms()) and one grouped count statement for the whole tree.
  *
  * The counts honour every active grid condition except a category filter:
  * the tree summarises the result the other filters give, so choosing a
@@ -94,8 +94,9 @@ final class CategoryTree {
 	}
 
 	/**
-	 * Every product category, from one get_terms() call that also primes the
-	 * term meta cache WooCommerce's order is read from.
+	 * Every product category, from one read of the term tables that also
+	 * primes the term meta cache WooCommerce's order is read from; never
+	 * filtered for the viewer (terms(), 1.4.2).
 	 */
 	public static function tree(): Tree {
 		return self::tree_of( self::terms() );
@@ -108,15 +109,16 @@ final class CategoryTree {
 	 * for the viewer (another plugin may hide categories from someone, or
 	 * from a background run with no user), so this reads the tables
 	 * directly and is never filtered. Its order is WooCommerce's stored
-	 * `order` meta, as tree() reads it.
+	 * `order` meta, then the database's name order, as tree() reads it.
 	 */
 	public static function complete(): Tree {
 		return self::tree_of( self::stored_terms() );
 	}
 
 	/**
-	 * Every product category straight from the term tables, unfiltered,
-	 * with the term meta cache primed for their order.
+	 * Every product category straight from the term tables, unfiltered, in
+	 * the database's name order (ORDER BY t.name, which WooCommerce's own
+	 * order falls back to), with the term meta cache primed for their order.
 	 *
 	 * @return list<object> Objects with term_id, name, slug, taxonomy, description and parent.
 	 */
@@ -143,23 +145,17 @@ final class CategoryTree {
 	}
 
 	/**
-	 * Every product category as get_terms() returns them, in one call that
-	 * primes the term meta cache.
+	 * Every product category the Categories tab lists, reads and writes:
+	 * the term tables read directly, in the database's name order, with the
+	 * term meta cache primed (1.4.2). A term query is filtered for the
+	 * viewer, so another plugin hiding categories from it would hide them
+	 * from the tab, its details and its moves, even for an administrator;
+	 * the routes still check the person's term capabilities.
 	 *
 	 * @return list<object>
 	 */
 	public static function terms(): array {
-		$terms = get_terms(
-			[
-				'taxonomy'               => Counts::TAXONOMY,
-				'hide_empty'             => false,
-				// The names in the database's order (ORDER BY t.name), which WooCommerce's own order falls back to (1.3.4).
-				'orderby'                => 'name',
-				'order'                  => 'ASC',
-				'update_term_meta_cache' => true,
-			]
-		);
-		return is_array( $terms ) ? array_values( array_filter( $terms, 'is_object' ) ) : [];
+		return self::stored_terms();
 	}
 
 	/**

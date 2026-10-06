@@ -553,12 +553,17 @@ export function skippedOnly( batch ) {
 
 /**
  * A batch's outcome, in words: its status's label, except that a partial
- * batch says whether rows failed or were only skipped.
+ * batch says whether rows failed or were only skipped, and an undone batch
+ * that a Redo made again says Redone.
  *
  * @param {Object} batch Batch report.
  * @return {string} Label.
  */
 export function outcomeLabel( batch ) {
+	if ( batch?.status === 'undone' && batch?.redone_by ) {
+		// Undone, then made again by a Redo (`redone_by`, 1.4.2).
+		return __( 'Redone', 'bulk-catalogue-manager-for-woocommerce' );
+	}
 	if ( batch?.status === 'partial' ) {
 		return skippedOnly( batch )
 			? __(

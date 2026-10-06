@@ -137,7 +137,8 @@ final class Computer {
 	public function may( int $user, array $step ): bool {
 		if ( RestoreExternal::ID !== $step['action'] ) {
 			$described = $this->provider->described( (string) $step['action'] );
-			return null === $described || user_can( $user, $described['capability'] );
+			// An action the provider no longer offers may not be made (EXT-5): fail closed.
+			return null !== $described && user_can( $user, $described['capability'] );
 		}
 		foreach ( $this->provider->all_described() as $described ) {
 			if ( ( $step['args']['field'] ?? '' ) === $described['field'] && ! user_can( $user, $described['capability'] ) ) {

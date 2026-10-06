@@ -55,12 +55,18 @@ final class HistoryColumns {
 	private const PARTIAL_SKIPPED = 'partial_skipped';
 
 	/**
+	 * The outcome label of a change undone and then made again by a Redo
+	 * (an undone row with `redone_by`), not a stored status.
+	 */
+	private const REDONE = 'redone';
+
+	/**
 	 * Column keys per source, in the default order.
 	 */
 	public const KEYS = [
 		self::CHANGES => [ 'applied_gmt', 'name', 'object_id', 'object_type', 'field_label', 'old_value', 'new_value', 'result', 'message' ],
 		self::AUDIT   => [ 'applied_gmt', 'batch_id', 'user_name', 'name', 'object_id', 'object_type', 'field_label', 'old_value', 'new_value', 'result', 'message' ],
-		self::BATCHES => [ 'batch_id', 'created_gmt', 'finished_gmt', 'user_name', 'actions', 'status', 'total_items', 'changed_items', 'failed_items', 'variations_included', 'reversibility', 'undo', 'undone_by' ],
+		self::BATCHES => [ 'batch_id', 'created_gmt', 'finished_gmt', 'user_name', 'actions', 'status', 'total_items', 'changed_items', 'failed_items', 'variations_included', 'reversibility', 'undo', 'undone_by', 'redone_by' ],
 	];
 
 	/**
@@ -106,6 +112,7 @@ final class HistoryColumns {
 			'reversibility'       => __( 'Can be undone', 'bulk-catalogue-manager-for-woocommerce' ),
 			'undo'                => __( 'Undo of', 'bulk-catalogue-manager-for-woocommerce' ),
 			'undone_by'           => __( 'Put back by', 'bulk-catalogue-manager-for-woocommerce' ),
+			'redone_by'           => __( 'Done again by', 'bulk-catalogue-manager-for-woocommerce' ),
 		];
 		$labels  = [];
 		foreach ( self::KEYS[ $source ] as $key ) {
@@ -129,6 +136,10 @@ final class HistoryColumns {
 		if ( isset( $cells['status'] ) && 'partial' === ( $row['status'] ?? null ) && ! Reversibility::with_errors( $row ) ) {
 			// 1.3.4: rows skipped by design are not errors; History says the same.
 			$cells['status'] = self::map( 'status' )[ self::PARTIAL_SKIPPED ];
+		}
+		if ( isset( $cells['status'] ) && 'undone' === ( $row['status'] ?? null ) && is_array( $row['redone_by'] ?? null ) ) {
+			// 1.4.2: undone, then made again by a Redo; History says the same.
+			$cells['status'] = self::map( 'status' )[ self::REDONE ];
 		}
 		if ( isset( $cells['actions'] ) && is_array( $row['external']['actions'] ?? null ) ) {
 			// T108: an add-on's action by the label its manifest kept, even after the add-on has gone.
@@ -175,14 +186,24 @@ final class HistoryColumns {
 			case 'undo':
 				return is_array( $value ) ? (string) ( $value['label'] ?? '' ) : '';
 			case 'undone_by':
+			case 'redone_by':
 				if ( ! is_array( $value ) ) {
 					return '';
 				}
+				if ( empty( $value['finished_gmt'] ) ) {
+					return sprintf(
+						/* translators: 1: the number of the undo or redo, 2: the name of the user who ran it. */
+						__( '#%1$d by %2$s', 'bulk-catalogue-manager-for-woocommerce' ),
+						(int) ( $value['batch_id'] ?? 0 ),
+						(string) ( $value['user_name'] ?? '' )
+					);
+				}
 				return sprintf(
-					/* translators: 1: the number of the undo, 2: the name of the user who ran it. */
-					__( '#%1$d by %2$s', 'bulk-catalogue-manager-for-woocommerce' ),
+					/* translators: 1: the number of the undo or redo, 2: the name of the user who ran it, 3: when it finished, in UTC, such as "2026-10-06 14:05:00". */
+					__( '#%1$d by %2$s on %3$s UTC', 'bulk-catalogue-manager-for-woocommerce' ),
 					(int) ( $value['batch_id'] ?? 0 ),
-					(string) ( $value['user_name'] ?? '' )
+					(string) ( $value['user_name'] ?? '' ),
+					(string) $value['finished_gmt']
 				);
 			default:
 				return $value;
@@ -221,6 +242,7 @@ final class HistoryColumns {
 					'cancelled'           => __( 'Cancelled', 'bulk-catalogue-manager-for-woocommerce' ),
 					'undoing'             => __( 'Being undone', 'bulk-catalogue-manager-for-woocommerce' ),
 					'undone'              => __( 'Undone', 'bulk-catalogue-manager-for-woocommerce' ),
+					self::REDONE          => __( 'Redone', 'bulk-catalogue-manager-for-woocommerce' ),
 				],
 				'reversibility' => [
 					Reversibility::REVERSIBLE            => __( 'Yes', 'bulk-catalogue-manager-for-woocommerce' ),

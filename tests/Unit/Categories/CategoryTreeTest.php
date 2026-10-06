@@ -194,7 +194,7 @@ final class CategoryTreeTest extends TestCase {
 		}
 	}
 
-	public function test_a_200_term_tree_costs_one_get_terms_and_one_query_then_none_when_warm(): void {
+	public function test_a_200_term_tree_costs_one_term_read_and_one_query_then_none_when_warm(): void {
 		$terms = [];
 		foreach ( range( 1, 200 ) as $id ) {
 			$terms[ $id ] = [ "Category $id", "category-$id", $id > 4 ? intdiv( $id, 4 ) : 0 ];
@@ -206,20 +206,10 @@ final class CategoryTreeTest extends TestCase {
 		$criteria                                    = CategoryTree::criteria( [] );
 
 		$cold = $service->get( $criteria );
-		$this->assertSame(
-			[
-				[
-					'taxonomy'               => 'product_cat',
-					'hide_empty'             => false,
-					'orderby'                => 'name',
-					'order'                  => 'ASC',
-					'update_term_meta_cache' => true,
-				],
-			],
-			$GLOBALS['bulkcat_test']['get_terms_calls']
-		);
-		$this->assertCount( 1, $GLOBALS['wpdb']->queries );
-		$this->assertSame( 1, preg_match( self::GROUPED, $GLOBALS['wpdb']->queries[0] ), 'The one query is the grouped count.' );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['get_terms_calls'] ?? [], 'No term query, which another plugin may filter for the viewer (1.4.2).' );
+		$this->assertSame( 1, self::term_reads(), 'One read of the term tables.' );
+		$this->assertCount( 1, self::counted() );
+		$this->assertSame( 1, preg_match( self::GROUPED, self::counted()[0] ), 'The one query is the grouped count.' );
 		$flat = CatalogueFixture::flatten( $cold );
 		$this->assertCount( 200, $flat );
 		$this->assertSame( [ 7, 7 ], [ $flat[48]['count'], $flat[49]['count'] ] );
@@ -229,8 +219,8 @@ final class CategoryTreeTest extends TestCase {
 
 		$warm = ( new CategoryTree() )->get( CategoryTree::criteria( [] ) );
 		$this->assertSame( $cold, $warm );
-		$this->assertCount( 1, $GLOBALS['bulkcat_test']['get_terms_calls'], 'A warm read calls get_terms() no more.' );
-		$this->assertCount( 1, $GLOBALS['wpdb']->queries, 'A warm read runs no query.' );
+		$this->assertSame( 1, self::term_reads(), 'A warm read reads the term tables no more.' );
+		$this->assertCount( 1, self::counted(), 'A warm read runs no query.' );
 	}
 
 	public function test_siblings_follow_woocommerce_order_then_the_database_name_order(): void {
@@ -264,7 +254,7 @@ final class CategoryTreeTest extends TestCase {
 		foreach ( CatalogueFixture::naive( [ 'draft' ] ) as $id => [ $own, $total ] ) {
 			$this->assertSame( [ $own, $total ], [ $draft[ $id ]['count'], $draft[ $id ]['countWithDescendants'] ], "Draft counts of $id." );
 		}
-		$this->assertCount( 2, $GLOBALS['wpdb']->queries, 'Each set of conditions has its own entry.' );
+		$this->assertCount( 2, self::counted(), 'Each set of conditions has its own entry.' );
 	}
 
 	public function test_a_product_in_hundreds_of_categories_counts_on_every_one(): void {
@@ -284,7 +274,7 @@ final class CategoryTreeTest extends TestCase {
 
 		$flat = CatalogueFixture::flatten( ( new CategoryTree() )->get( CategoryTree::criteria( [] ) ) );
 
-		$this->assertStringNotContainsString( 'GROUP_CONCAT', $GLOBALS['wpdb']->queries[0], 'Nothing is concatenated, so nothing can be cut short.' );
+		$this->assertStringNotContainsString( 'GROUP_CONCAT', self::counted()[0], 'Nothing is concatenated, so nothing can be cut short.' );
 		$this->assertSame( [ 1, 1 ], [ $flat[1000]['count'], $flat[1000]['countWithDescendants'] ] );
 		$this->assertSame( [ 2, 2 ], [ $flat[1299]['count'], $flat[1299]['countWithDescendants'] ], 'The last category, past 1024 bytes of ids.' );
 		$this->assertSame( [ 0, 2 ], [ $flat[1]['count'], $flat[1]['countWithDescendants'] ], 'Each product once on the parent.' );
@@ -293,7 +283,7 @@ final class CategoryTreeTest extends TestCase {
 	public function test_no_categories_skips_the_count_query(): void {
 		$GLOBALS['bulkcat_test']['term_list'] = [];
 		$this->assertSame( [], ( new CategoryTree() )->get( CategoryTree::criteria( [] ) ) );
-		$this->assertSame( [], $GLOBALS['wpdb']->queries );
+		$this->assertSame( [], self::counted() );
 	}
 
 	public function test_the_transient_is_prefixed_registered_and_short_lived(): void {
@@ -336,8 +326,8 @@ final class CategoryTreeTest extends TestCase {
 		];
 		$this->assertSame( $first, ( new CategoryTree() )->get( $criteria ) );
 
-		$this->assertCount( 1, $GLOBALS['wpdb']->queries, 'The grouped statement runs once.' );
-		$this->assertCount( 1, $GLOBALS['bulkcat_test']['get_terms_calls'], 'The terms are read once.' );
+		$this->assertCount( 1, self::counted(), 'The grouped statement runs once.' );
+		$this->assertSame( 1, self::term_reads(), 'The terms are read once.' );
 		$this->assertCount( 2, $GLOBALS['bulkcat_test']['transients'], 'The version and one tree; no new row per request.' );
 	}
 
@@ -348,15 +338,15 @@ final class CategoryTreeTest extends TestCase {
 
 		$service->get( $criteria );
 		$service->get( $criteria );
-		$this->assertCount( 1, $GLOBALS['wpdb']->queries, 'Unchanged, the stored tree is read.' );
+		$this->assertCount( 1, self::counted(), 'Unchanged, the stored tree is read.' );
 
 		wp_cache_set_last_changed( 'terms' );
 		$service->get( $criteria );
-		$this->assertCount( 2, $GLOBALS['wpdb']->queries, 'A terms last-changed bump misses.' );
+		$this->assertCount( 2, self::counted(), 'A terms last-changed bump misses.' );
 
 		wp_cache_set_last_changed( 'posts' );
 		$service->get( $criteria );
-		$this->assertCount( 3, $GLOBALS['wpdb']->queries, 'A posts last-changed bump misses.' );
+		$this->assertCount( 3, self::counted(), 'A posts last-changed bump misses.' );
 	}
 
 	public function test_the_invalidation_hooks_are_registered(): void {
@@ -380,7 +370,7 @@ final class CategoryTreeTest extends TestCase {
 		];
 		foreach ( $calls as $hook => $args ) {
 			$service->get( $criteria );
-			$queries = count( $GLOBALS['wpdb']->queries );
+			$queries = count( self::counted() );
 			$key     = ( new Cache() )->key( $criteria->conditions() );
 
 			$other = $args;
@@ -391,7 +381,28 @@ final class CategoryTreeTest extends TestCase {
 			do_action( $hook, ...$args );
 			$this->assertNotSame( $key, ( new Cache() )->key( $criteria->conditions() ), "$hook busts the key." );
 			$service->get( $criteria );
-			$this->assertCount( $queries + 1, $GLOBALS['wpdb']->queries, "After $hook the tree is read again." );
+			$this->assertCount( $queries + 1, self::counted(), "After $hook the tree is read again." );
 		}
+	}
+	/**
+	 * The statements run, apart from the read of the term tables and its
+	 * meta cache priming (1.4.2: the tree reads every category unfiltered,
+	 * through $wpdb, not get_terms()).
+	 *
+	 * @return list<string>
+	 */
+	private static function counted(): array {
+		return array_values( array_filter( $GLOBALS['wpdb']->queries, static fn( string $sql ): bool => ! self::is_term_read( $sql ) ) );
+	}
+
+	/**
+	 * How many times the term tables were read for the tree.
+	 */
+	private static function term_reads(): int {
+		return count( array_filter( $GLOBALS['wpdb']->queries, static fn( string $sql ): bool => str_starts_with( $sql, 'SELECT t.term_id, t.name' ) ) );
+	}
+
+	private static function is_term_read( string $sql ): bool {
+		return str_starts_with( $sql, 'SELECT t.term_id, t.name' ) || str_starts_with( $sql, '/* update_meta_cache */' );
 	}
 }

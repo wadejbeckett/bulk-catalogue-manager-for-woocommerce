@@ -133,6 +133,10 @@ function RenameForm( { tree, id, name, onDone } ) {
 		} catch ( failure ) {
 			setBusy( false );
 			setError( failure || {} );
+			if ( failure?.data?.applied ) {
+				// Made but not recorded (SILENT-FAILURES-9): show the tree as it now is.
+				tree.reload();
+			}
 			announce(
 				errorMessage(
 					failure,

@@ -367,7 +367,7 @@ final class PlanStreamTest extends TestCase {
 		$header = $this->store->other( $result['batch_id'] );
 		$this->assertSame( $count, (int) $header['total_items'], 'The header completed with the item count.' );
 		$this->assertSame( $count, json_decode( (string) $header['selection'], true )['materialised'] );
-		$this->assertSame( ',set_value,', $header['actions'] );
+		$this->assertSame( ',restore_value,', $header['actions'], 'Prices go back exactly as stored (1.4.2).' );
 		$held = $peak - $before;
 		$this->assertLessThan( 32 * 1048576, $held, sprintf( 'Recording 100,000 items held %.1f MB.', $held / 1048576 ) );
 	}

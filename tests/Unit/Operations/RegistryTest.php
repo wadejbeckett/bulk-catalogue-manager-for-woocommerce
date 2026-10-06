@@ -413,7 +413,24 @@ final class RegistryTest extends TestCase {
 		$registry = self::registry();
 		$this->assertTrue( $registry->has( 'restore_status' ), 'get() resolves it, so the writer runs stored undo items.' );
 		$this->assertInstanceOf( \BulkCatalogueManager\Operations\RestoreStatus::class, $registry->get( 'restore_status' ) );
-		$this->assertSame( [ 'restore_status', 'restore_stock', 'restore_external' ], $registry->internal_ids(), 'T108 adds the external restore step beside it; TESTS-1 the Manage stock one.' );
+		$this->assertSame( [ 'restore_status', 'restore_stock', 'restore_value', 'restore_external' ], $registry->internal_ids(), 'T108 adds the external restore step beside it; TESTS-1 the Manage stock one; 1.4.2 the exact price one.' );
+		$this->assertNotContains( 'restore_value', $registry->ids() );
+		$this->assertTrue(
+			is_wp_error(
+				$registry->validate_list(
+					[
+						[
+							'action' => 'restore_value',
+							'args'   => [
+								'field' => 'regular_price',
+								'value' => '1',
+							],
+						],
+					]
+				)
+			),
+			'No client may send the exact price step.'
+		);
 		$this->assertNotContains( 'restore_status', $registry->ids() );
 		$this->assertArrayNotHasKey( 'restore_status', $registry->descriptors() );
 		$this->assertNotContains( 'restore_status', array_column( $registry->to_client(), 'id' ) );

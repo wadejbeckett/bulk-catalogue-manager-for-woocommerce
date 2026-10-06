@@ -867,15 +867,16 @@ describe( 'following a change in progress (FRONTEND-8)', () => {
 			() => new Promise( ( resolve ) => setTimeout( resolve, 3500 ) )
 		);
 		expect( reads() ).toBe( 1 );
-		// SILENT-FAILURES-8: and says so, with a way to try again.
+		// SILENT-FAILURES-8 / FRONTEND-8: a sign-out says so in the progress
+		// notice the banner and panel use, with Check again.
 		const three = within( card( 3 ) );
 		expect(
 			three.getByText(
-				'The progress of this change could not be read, so it is no longer shown here. Try again, or reload the page.'
+				'The progress can no longer be read. If you have been signed out, sign in again, then check again.'
 			)
 		).toBeTruthy();
 		serve( DEFAULT_ROUTES() );
-		fireEvent.click( three.getByRole( 'button', { name: 'Try again' } ) );
+		fireEvent.click( three.getByRole( 'button', { name: 'Check again' } ) );
 		await waitFor( () => expect( reads() ).toBe( 2 ) );
 	} );
 

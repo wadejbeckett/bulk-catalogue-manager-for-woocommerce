@@ -394,7 +394,6 @@ export default function BatchCard( {
 		state === STATES.IN_PROGRESS && ! running ? batch.batch_id : null,
 		useCallback( () => onChanged(), [ onChanged ] )
 	);
-	const progress = following.report;
 
 	// The undo batch this card started, followed to its end.
 	const undoFollowing = useFollow(
@@ -419,10 +418,9 @@ export default function BatchCard( {
 			[ what, isRedo, onChanged, onNotice ]
 		)
 	);
-	const undoReport = undoFollowing.report;
 
 	// The read this card shows: the undo it started, else the batch itself.
-	const following = running ? undoReport : progress;
+	const shown = running ? undoFollowing : following;
 
 	// A batch with errors, or with rows skipped by design (1.3.4), shows its
 	// grouped reasons from the single read and opens on those rows.
@@ -702,19 +700,15 @@ export default function BatchCard( {
 				</p>
 			) }
 
-			{ ! permanentReadError(
-				running ? undoFollowing.failure : following.failure
-			) && (
+			{ ! permanentReadError( shown.failure ) && (
 				<FollowFailure
-					failure={
-						running ? undoFollowing.failure : following.failure
-					}
-					retry={ running ? undoFollowing.retry : following.retry }
+					failure={ shown.failure }
+					retry={ shown.retry }
 				/>
 			) }
 			{ inProgress && (
 				<div className="bulkcat-batch__progress">
-					<BatchProgress report={ following.report || batch } />
+					<BatchProgress report={ shown.report || batch } />
 					{ following.failure &&
 						permanentReadError( following.failure ) && (
 							<ProgressStopped onCheckAgain={ following.retry } />

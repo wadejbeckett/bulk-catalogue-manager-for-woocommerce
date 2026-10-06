@@ -67,6 +67,7 @@ if ( ! function_exists( 'bulkcat_export_probe' ) ) {
 		$args = is_array( $args ) ? $args : [];
 		$out  = match ( $action ) {
 			'fixtures'     => bulkcat_export_probe_fixtures(),
+			'cleanup'      => bulkcat_export_probe_cleanup(),
 			'snapshot'     => bulkcat_export_probe_snapshot( array_map( 'intval', (array) ( $args['ids'] ?? [] ) ) ),
 			'mapping'      => bulkcat_export_probe_mapping( bulkcat_export_probe_headers( (string) ( $args['csv'] ?? '' ), (string) ( $args['delimiter'] ?? ',' ) ), (string) ( $args['locale'] ?? '' ), ! empty( $args['raw'] ) ),
 			'import'       => bulkcat_export_probe_import( (string) ( $args['csv'] ?? '' ), (string) ( $args['delimiter'] ?? ',' ), isset( $args['mapping'] ) ? array_map( 'strval', (array) $args['mapping'] ) : null ),
@@ -408,6 +409,53 @@ if ( ! function_exists( 'bulkcat_export_probe' ) ) {
 				'token'     => $token,
 			],
 			'max_id'     => (int) $wpdb->get_var( "SELECT MAX(ID) FROM {$wpdb->posts}" ),
+		];
+	}
+
+	/**
+	 * Remove what the fixtures action made, so later chapters and the browser
+	 * specs see the seeded catalogue only: every product and variation keyed
+	 * `_bulkcat_probe_key` (variations first, through WooCommerce CRUD, any
+	 * status including the bin), the probe page and the probe's own terms.
+	 *
+	 * @return array<string, int>
+	 */
+	function bulkcat_export_probe_cleanup(): array {
+		global $wpdb;
+		$keyed   = static fn(): array => array_map(
+			'intval',
+			$wpdb->get_col( "SELECT p.ID FROM {$wpdb->posts} p JOIN {$wpdb->postmeta} m ON m.post_id = p.ID AND m.meta_key = '_bulkcat_probe_key' WHERE p.post_type IN ( 'product', 'product_variation' ) ORDER BY p.post_type = 'product', p.ID DESC" )
+		);
+		$deleted = 0;
+		foreach ( $keyed() as $id ) {
+			$product = wc_get_product( $id );
+			if ( $product ) {
+				$product->delete( true );
+				++$deleted;
+			}
+		}
+		$page = get_page_by_path( 'bulkcat-csv-probe-page', OBJECT, 'page' );
+		if ( $page ) {
+			wp_delete_post( (int) $page->ID, true );
+		}
+		$terms = 0;
+		foreach ( [
+			[ 'product_cat', 'bulkcat-probe-roundtrip' ],
+			[ 'product_cat', 'bulkcat-probe-recorded' ],
+			[ 'product_cat', 'bulkcat-probe-token' ],
+			[ 'product_tag', 'bulkcat-rt-tag' ],
+			[ 'product_shipping_class', 'bulkcat-rt-ship' ],
+		] as [ $taxonomy, $slug ] ) {
+			$term = get_term_by( 'slug', $slug, $taxonomy );
+			if ( $term && true === wp_delete_term( (int) $term->term_id, $taxonomy ) ) {
+				++$terms;
+			}
+		}
+		wc_delete_product_transients();
+		return [
+			'deleted'   => $deleted,
+			'terms'     => $terms,
+			'remaining' => count( $keyed() ),
 		];
 	}
 

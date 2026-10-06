@@ -1285,4 +1285,44 @@ def check_outside(p: Any) -> None:
 OFF_JSON = '{"id":%d,"status":"%s","at":"2026-09-01T08:00:00Z","batch":1}'
 
 
-CHECKS = [check_engine, check_undo, check_preview, check_grid, check_listing, check_outside, check_buyer]
+CLEANUP_PHP = r"""
+global $wpdb;
+$like = $wpdb->esc_like( 'bulkcat-offon-' ) . '%';
+$owned = function () use ( $wpdb, $like ) {
+	return array_map( 'intval', $wpdb->get_col( $wpdb->prepare(
+		"SELECT p.ID FROM {$wpdb->posts} p JOIN {$wpdb->postmeta} m ON m.post_id = p.ID AND m.meta_key = '_sku'
+		 WHERE m.meta_value LIKE %s AND p.post_type IN ( 'product', 'product_variation' ) ORDER BY p.post_type = 'product', p.ID DESC",
+		$like
+	) ) );
+};
+$deleted = 0;
+foreach ( $owned() as $id ) {
+	$product = wc_get_product( $id );
+	if ( $product ) { $product->delete( true ); ++$deleted; }
+}
+$terms = 0;
+foreach ( array( 'product_cat', 'product_tag' ) as $tax ) {
+	foreach ( get_terms( array( 'taxonomy' => $tax, 'hide_empty' => false, 'fields' => 'id=>slug' ) ) as $term_id => $slug ) {
+		if ( 0 === strpos( $slug, 'bulkcat-offon' ) && true === wp_delete_term( $term_id, $tax ) ) { ++$terms; }
+	}
+}
+wc_delete_product_transients();
+bulkcat_out( array( 'deleted' => $deleted, 'terms' => $terms, 'left' => count( $owned() ) ) );
+"""
+
+
+def check_cleanup(p: Any) -> None:
+    """The chapter's own products (SKUs bulkcat-offon-*, variations first, through WooCommerce CRUD)
+    and its categories and tag go once every row has run: they are dated after the seed and would
+    otherwise fill the grid's first page for the browser specs that run next. Orders and customers
+    stay with the throwaway stack, as before."""
+
+    def run() -> None:
+        done = p.wp_eval(CLEANUP_PHP)
+        row(p, "cleanup", done["left"] == 0 and done["deleted"] > 0,
+            f"{done['deleted']} products and variations deleted through CRUD, {done['terms']} terms; {done['left']} left")
+
+    guard(p, "cleanup", run)
+
+
+CHECKS = [check_engine, check_undo, check_preview, check_grid, check_listing, check_outside, check_buyer, check_cleanup]

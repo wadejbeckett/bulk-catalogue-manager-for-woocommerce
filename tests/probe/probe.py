@@ -1570,6 +1570,19 @@ def check_variations(p: Probe) -> None:
             continue
         p.guard("variations", f"variations:{name}", fn)
 
+    def cleanup() -> None:
+        # Its own product only, found by SKU, variations with it (WooCommerce deletes a variable
+        # product's children with it): later chapters and the browser specs see the seed alone.
+        gone = p.wp_eval(
+            f"$id = wc_get_product_id_by_sku( '{SIXTY_SKU}' ); $p = $id ? wc_get_product( $id ) : null; "
+            "if ( $p ) { $p->delete( true ); } "
+            f"bulkcat_out( array( 'deleted' => (int) $id, 'left' => (int) wc_get_product_id_by_sku( '{SIXTY_SKU}' ) "
+            f"+ ( $id ? count( get_posts( array( 'post_type' => 'product_variation', 'post_status' => 'any', 'post_parent' => (int) $id, 'fields' => 'ids' ) ) ) : 0 ) ) );"
+        )
+        p.row("variations", "variations:cleanup", gone["left"] == 0, f"product {gone['deleted']} and its variations deleted through CRUD; {gone['left']} left")
+
+    p.guard("variations", "variations:cleanup", cleanup)
+
 # ---------------------------------------------------------------------------
 # read: the catalogue export by POST (ticket 10: T101 rows; T102 round trip)
 # ---------------------------------------------------------------------------
@@ -2144,9 +2157,20 @@ def check_read_export_roundtrip(p: Probe) -> None:
               f"disable_functions {before.get('disable_functions')!r}; Apache Timeout {before.get('apache_timeout')} s; no PHP-FPM (mod_php) and no proxy in front; "
               f"the probe's must-use plugin removed {found.get('removed')}")
 
+    def cleanup() -> None:
+        # The fixtures are newer than the seed and would push the seeded rows off the grid's first
+        # page for whatever runs next (the browser specs): remove them, as every probe does its own.
+        done = export_native(p, "cleanup")
+        p.row("read", "read:export:cleanup", done.get("remaining") == 0 and done.get("deleted", 0) > 0,
+              f"{done.get('deleted')} fixture products and variations deleted through CRUD, {done.get('terms')} terms; {done.get('remaining')} left")
+
     steps = [("roundtrip-fixtures", fixtures), ("importer-mapping", mapping), ("importer-mapping-guard", mapping_guard), ("native-import-roundtrip", roundtrip),
-             ("product-post-parent", product_post_parent), ("native-import-edited", edited), ("recorded", recorded), ("time-limit", time_limit)]
+             ("product-post-parent", product_post_parent), ("native-import-edited", edited), ("recorded", recorded), ("time-limit", time_limit),
+             ("cleanup", cleanup)]
     for name, fn in steps:
+        if name == "cleanup":
+            p.guard("read", "read:export:cleanup", fn)
+            continue
         if name != "roundtrip-fixtures" and "fx" not in state:
             p.row("read", f"read:export:{name}", False, "no fixtures from the fixtures step")
             continue

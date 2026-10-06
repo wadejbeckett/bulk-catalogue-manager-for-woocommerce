@@ -36,7 +36,12 @@ import { __ } from '@wordpress/i18n';
 import { request } from '../../api';
 import { ShellContext } from '../../shell';
 import BulkChangePanel from '../bulk';
-import { FINISHED, resumeApply, useBatchProgress } from '../bulk/hooks';
+import {
+	FINISHED,
+	checkApply,
+	resumeApply,
+	useBatchProgress,
+} from '../bulk/hooks';
 import { useProgressAnnouncer } from '../bulk/announce';
 import { ProgressStopped, doneSentence } from '../bulk/progress';
 import { announce } from '../categories/announce';
@@ -110,6 +115,110 @@ function useCurrentSettings( settings ) {
 			settings: { ...( settings?.settings || {} ), ...values },
 		} ),
 		[ settings, values ]
+	);
+}
+
+/**
+ * FRONTEND-12: an Apply whose answer never came, kept in view after the bulk
+ * panel closed. Check again asks the server what became of it with the same
+ * grant, which never makes the change: when it had been made, its progress
+ * is followed as for any Apply (onMade); when it was not, that is said
+ * plainly; when the check fails too, it can be asked again.
+ *
+ * @param {Object}   props           Props.
+ * @param {Function} props.onMade    Receives the change found made.
+ * @param {Function} props.onDismiss Remove the notice.
+ * @return {Element} Notice.
+ */
+export function UnconfirmedApply( { onMade, onDismiss } ) {
+	// checking, not_made, failed, or '' before the first check.
+	const [ state, setState ] = useState( '' );
+	const live = useRef( true );
+	useEffect(
+		() => () => {
+			live.current = false;
+		},
+		[]
+	);
+	const check = () => {
+		setState( 'checking' );
+		checkApply().then(
+			( outcome ) => {
+				if ( ! live.current ) {
+					return;
+				}
+				if ( outcome?.batch_id ) {
+					onMade( outcome );
+					return;
+				}
+				if ( outcome?.status === 'none' ) {
+					onDismiss();
+					return;
+				}
+				// The alert's own words change, which is said.
+				setState( 'not_made' );
+			},
+			() => live.current && setState( 'failed' )
+		);
+	};
+	let text = __(
+		'The connection dropped before the answer arrived, so the change may or may not have been made. Check again to find out: checking never makes the change.',
+		'bulk-catalogue-manager-for-woocommerce'
+	);
+	if ( state === 'not_made' ) {
+		text = __(
+			'Your last bulk change was not made. To make it, open Bulk change and apply it again.',
+			'bulk-catalogue-manager-for-woocommerce'
+		);
+	} else if ( state === 'failed' ) {
+		text = __(
+			'We still could not check. Try again in a moment.',
+			'bulk-catalogue-manager-for-woocommerce'
+		);
+	}
+	return (
+		<div
+			className="bulkcat-bulk__notice is-warn bulkcat-catalogue__unconfirmed"
+			role="alert"
+			aria-labelledby="bulkcat-unconfirmed-apply"
+		>
+			<strong id="bulkcat-unconfirmed-apply">
+				{ __(
+					'We could not confirm whether your last bulk change was applied.',
+					'bulk-catalogue-manager-for-woocommerce'
+				) }
+			</strong>
+			<p>{ text }</p>
+			<span className="bulkcat-catalogue__progress-acts">
+				{ state !== 'not_made' && (
+					<Button
+						variant="secondary"
+						size="compact"
+						onClick={ check }
+						disabled={ state === 'checking' }
+						accessibleWhenDisabled
+					>
+						{ state === 'checking'
+							? __(
+									'Checking…',
+									'bulk-catalogue-manager-for-woocommerce'
+								)
+							: __(
+									'Check again',
+									'bulk-catalogue-manager-for-woocommerce'
+								) }
+					</Button>
+				) }
+				{ state === 'not_made' && (
+					<Button variant="link" onClick={ onDismiss }>
+						{ __(
+							'Dismiss',
+							'bulk-catalogue-manager-for-woocommerce'
+						) }
+					</Button>
+				) }
+			</span>
+		</div>
 	);
 }
 
@@ -366,6 +475,8 @@ export function CatalogueGrid( {
 	// T41, T42: the bulk panel opens on the selection, with any quick action's step.
 	const [ bulk, setBulk ] = useState( null );
 	const [ applied, setApplied ] = useState( null );
+	// FRONTEND-12: an Apply sent with no definite answer.
+	const [ unconfirmed, setUnconfirmed ] = useState( false );
 	// T84: the rows drawn, for inspecting which are selected; the review.
 	const [ drawn, setDrawn ] = useState( [] );
 	const onDrawn = useCallback(
@@ -575,6 +686,7 @@ export function CatalogueGrid( {
 					? scope.ids.map( Number )
 					: ( scope ? tableSelection : [] ).map( Number );
 			setPending( covered.current, true );
+			setUnconfirmed( false );
 			setApplied( {
 				id,
 				replayed: !! answer.replayed,
@@ -589,6 +701,7 @@ export function CatalogueGrid( {
 		},
 		[ bulk, tableSelection, setPending, session ]
 	);
+	const onUncertain = useCallback( () => setUnconfirmed( true ), [] );
 	// T85: after a reload, an Apply whose answer was never known is resolved
 	// with its own grant (never a new one). When it had gone through, its
 	// progress is shown as for any Apply and the snapshot it was applied to
@@ -793,6 +906,22 @@ export function CatalogueGrid( {
 					onRestore={ restore }
 					draggable
 				/>
+				{ unconfirmed && ! bulk && (
+					<UnconfirmedApply
+						onMade={ ( earlier ) =>
+							onApplied( earlier.batch_id, {
+								selection: earlier.selectionKey
+									? {
+											kind: 'snapshot',
+											key: earlier.selectionKey,
+										}
+									: null,
+								replayed: true,
+							} )
+						}
+						onDismiss={ () => setUnconfirmed( false ) }
+					/>
+				) }
 				{ /* FRONTEND-3: a change applied earlier is still followed while
 				   a later bulk panel covers its banner. */ }
 				{ applied && bulk?.appliedId !== applied.id && (
@@ -846,6 +975,7 @@ export function CatalogueGrid( {
 					categories={ tree.nodes }
 					onClose={ () => setBulk( null ) }
 					onApplied={ onApplied }
+					onUncertain={ onUncertain }
 					onFinished={ finished }
 					onReview={
 						bulk.live && hasSelection

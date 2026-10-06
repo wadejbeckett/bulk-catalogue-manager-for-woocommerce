@@ -4,7 +4,12 @@
  * with the reason, and a fresh GET /products shows what was saved.
  */
 const { test, expect } = require( '@playwright/test' );
-const { SEED, openScreen, tabTo, productByName } = require( './helpers' );
+const {
+	SEED,
+	openScreen,
+	tabToProduct,
+	productByName,
+} = require( './helpers' );
 
 test( 'inline edit commits on Enter and reverts on Escape', async ( {
 	page,
@@ -16,9 +21,7 @@ test( 'inline edit commits on Enter and reverts on Escape', async ( {
 	const cell = page.getByRole( 'button', {
 		name: `Edit Regular price, ${ name }`,
 	} );
-	await keys.press( 'Tab' );
-	await keys.press( 'Enter' ); // Skip to main content.
-	await tabTo( page, cell );
+	await tabToProduct( page, name, cell );
 	const input = page.getByRole( 'textbox', { name: /Regular price/ } );
 
 	// A value the registry refuses stays in the cell with the reason.

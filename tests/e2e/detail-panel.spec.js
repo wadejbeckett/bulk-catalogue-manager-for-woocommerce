@@ -6,7 +6,13 @@
  * that GET /products shows, and categories read as names, not ids.
  */
 const { test, expect } = require( '@playwright/test' );
-const { SEED, openScreen, tabTo, productByName } = require( './helpers' );
+const {
+	SEED,
+	openScreen,
+	tabTo,
+	tabToProduct,
+	productByName,
+} = require( './helpers' );
 
 /**
  * Open a row's Edit details from its menu by keyboard.
@@ -43,8 +49,7 @@ test( 'detail drawer: open, trap, Escape, focus return, save', async ( {
 	const before = await productByName( page, name, [ 'stock_quantity' ] );
 	const row = page.getByRole( 'row', { name: new RegExp( `^${ name }` ) } );
 	const menu = row.getByRole( 'button', { name: 'Actions' } );
-	await keys.press( 'Tab' );
-	await keys.press( 'Enter' ); // Skip to main content.
+	await tabToProduct( page, name, menu );
 
 	let drawer = await openDetails( page, menu );
 	await expect(

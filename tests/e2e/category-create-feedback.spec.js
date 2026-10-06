@@ -12,7 +12,7 @@ const {
 	openScreen,
 	SEED,
 	tabTo,
-	tabFromContent,
+	tabToProduct,
 	expectAxeClean,
 	focused,
 } = require( './helpers' );
@@ -361,7 +361,7 @@ for ( const width of [ 1280, 900 ] ) {
 				name: SEED.simple( 1 ),
 				exact: true,
 			} );
-			await tabFromContent( page, selected );
+			await tabToProduct( page, SEED.simple( 1 ), selected );
 			await page.keyboard.press( 'Space' );
 			await expect(
 				page.getByRole( 'region', { name: 'Selection' } )

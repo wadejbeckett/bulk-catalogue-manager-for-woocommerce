@@ -6,7 +6,7 @@
  * with Enter and reaches GET /products/{id}/variations.
  */
 const { test, expect } = require( '@playwright/test' );
-const { SEED, openScreen, tabTo, rest } = require( './helpers' );
+const { SEED, openScreen, tabTo, tabToProduct, rest } = require( './helpers' );
 
 const variationPrice = async ( page, parentId, sku ) => {
 	const { json } = await rest(
@@ -25,9 +25,7 @@ test( 'expand a variable product and edit a variation by keyboard', async ( {
 	const disclosure = page.getByRole( 'button', {
 		name: `Show the variations of ${ SEED.variable }`,
 	} );
-	await keys.press( 'Tab' );
-	await keys.press( 'Enter' ); // Skip to main content.
-	await tabTo( page, disclosure );
+	await tabToProduct( page, SEED.variable, disclosure );
 	await expect( disclosure ).toHaveAttribute( 'aria-expanded', 'false' );
 	await keys.press( 'Enter' );
 	const hide = page.getByRole( 'button', {
@@ -84,6 +82,8 @@ test( 'expand a variable product and edit a variation by keyboard', async ( {
 	await expect
 		.poll( () => variationPrice( page, parentId, sku ) )
 		.toBe( before );
+	await expect( cell ).toContainText( before );
+	await expect( cell ).toBeFocused();
 
 	// Collapsing is announced state too.
 	await tabTo( page, hide, { back: true } );

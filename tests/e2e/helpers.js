@@ -84,6 +84,38 @@ async function tabFromContent( page, target ) {
 }
 
 /**
+ * Reach one product's row by keyboard alone, however many rows and columns
+ * the catalogue shows before it: from the content (tabFromContent()), Tab to
+ * the catalogue's search, type the product's exact name, wait for that one
+ * row, then Tab to the control. Counting Tab presses through every cell of
+ * every row above it broke when the default layout gained columns (ticket
+ * 19) and depends on the catalogue's order and size.
+ *
+ * @param {import('@playwright/test').Page}    page   Page on the catalogue.
+ * @param {string}                             name   Exact product name.
+ * @param {import('@playwright/test').Locator} target Control in its row.
+ */
+async function tabToProduct( page, name, target ) {
+	await tabFromContent(
+		page,
+		page.getByRole( 'searchbox', {
+			name: 'Search by name or SKU',
+			exact: true,
+		} )
+	);
+	await page.keyboard.type( name );
+	await expect(
+		page
+			.locator( '.dataviews-view-table tbody tr' )
+			.filter( { hasText: name } )
+	).toHaveCount( 1 );
+	await expect(
+		page.locator( '.dataviews-view-table tbody tr' )
+	).toHaveCount( 1 );
+	await tabTo( page, target );
+}
+
+/**
  * The element with focus, described for assertions and messages.
  *
  * @param {import('@playwright/test').Page} page Page.
@@ -299,6 +331,7 @@ module.exports = {
 	openScreen,
 	tabTo,
 	tabFromContent,
+	tabToProduct,
 	focused,
 	rest,
 	patchProduct,

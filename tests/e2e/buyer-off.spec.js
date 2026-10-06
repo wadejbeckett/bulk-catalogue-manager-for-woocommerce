@@ -156,16 +156,29 @@ test.describe( 'a buyer after Off (B6)', () => {
 			const shop = await buyer.newPage();
 			try {
 				if ( who === 'customer' ) {
-					await shop.goto( '/wp-login.php' );
-					await shop.fill( '#user_login', CUSTOMER );
-					await shop.fill( '#user_pass', password );
-					await Promise.all( [
-						shop.waitForURL(
-							( url ) =>
-								! url.toString().includes( 'wp-login.php' )
-						),
-						shop.click( '#wp-submit' ),
-					] );
+					// Log in through wp-login.php's form post, as global-setup.js does, into
+					// this context's cookies. Filling the form raced wp-login.php's own
+					// delayed focus of the username field, which could take the password.
+					await buyer.request.get( '/wp-login.php' );
+					const login = await buyer.request.post( '/wp-login.php', {
+						form: {
+							log: CUSTOMER,
+							pwd: password,
+							'wp-submit': 'Log In',
+							testcookie: '1',
+							redirect_to: `${ baseURL }/my-account/`,
+						},
+						headers: {
+							Cookie: 'wordpress_test_cookie=WP%20Cookie%20check',
+						},
+						maxRedirects: 0,
+					} );
+					expect( login.status() ).toBe( 302 );
+					expect(
+						( await buyer.cookies() ).some( ( cookie ) =>
+							cookie.name.startsWith( 'wordpress_logged_in_' )
+						)
+					).toBe( true );
 				}
 
 				// While On: both in the cart, and the checkout offers Place order.

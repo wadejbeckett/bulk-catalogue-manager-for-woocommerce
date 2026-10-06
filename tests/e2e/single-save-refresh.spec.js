@@ -21,6 +21,14 @@ const baseline = process.env.BULKCAT_SINGLE_SAVE_BASELINE === '1';
 const evidence = process.env.BULKCAT_E2E_OWNED_EVIDENCE;
 const state = { run, baseline, measurements: [], journeys: [], views: [] };
 
+// A qualification run of its own (tests/probe/README.md): with an owned, private
+// evidence directory and its own Playwright configuration. The ordinary suite
+// (`npm run e2e`) has neither, so it skips this file rather than fail its setup.
+test.skip(
+	! evidence,
+	'Needs BULKCAT_E2E_OWNED_EVIDENCE and its own configuration (tests/probe/README.md).'
+);
+
 function record() {
 	if ( ! evidence ) {
 		throw new Error( 'An owned evidence directory is required.' );

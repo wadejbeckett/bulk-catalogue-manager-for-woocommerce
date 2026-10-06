@@ -11,11 +11,12 @@
  * click at or above the threshold, or when the add-on always asks.
  */
 import { Button, CheckboxControl, Modal, Notice } from '@wordpress/components';
-import { useMemo, useRef, useState } from '@wordpress/element';
+import { useContext, useMemo, useRef, useState } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 
 import { request } from '../../../api';
 import { envelope, keptHolder, sendWithGrant } from '../../../requests';
+import { ShellContext } from '../../../shell';
 import { tabScope, tabStore } from '../../../tab-store';
 import { useConfirmApply, DEFAULT_THRESHOLD } from '../../bulk/confirm';
 import {
@@ -96,6 +97,8 @@ export default function ProviderActionDialog( {
 	const [ batchId, setBatchId ] = useState( 0 );
 	const announced = useRef( false );
 	const progress = useBatchProgress( batchId );
+	// As after a product change, the change can be opened in History.
+	const navigate = useContext( ShellContext )?.navigate || null;
 	const report = progress.report;
 	const finished = !! report && FINISHED.includes( report.status );
 
@@ -328,16 +331,32 @@ export default function ProviderActionDialog( {
 			) }
 			<div className="bulkcat-cat-confirm__buttons">
 				{ batchId > 0 ? (
-					<Button
-						variant="primary"
-						onClick={ () => onDone( ids ) }
-						__next40pxDefaultSize
-					>
-						{ __(
-							'Close',
-							'bulk-catalogue-manager-for-woocommerce'
+					<>
+						{ navigate && (
+							<Button
+								variant="secondary"
+								onClick={ () =>
+									navigate( 'history', { batch: batchId } )
+								}
+								__next40pxDefaultSize
+							>
+								{ __(
+									'View in History',
+									'bulk-catalogue-manager-for-woocommerce'
+								) }
+							</Button>
 						) }
-					</Button>
+						<Button
+							variant="primary"
+							onClick={ () => onDone( ids ) }
+							__next40pxDefaultSize
+						>
+							{ __(
+								'Close',
+								'bulk-catalogue-manager-for-woocommerce'
+							) }
+						</Button>
+					</>
 				) : (
 					<>
 						<Button

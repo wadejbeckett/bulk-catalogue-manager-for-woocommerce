@@ -239,14 +239,17 @@ function routes() {
 	} );
 }
 
+let navigate;
+
 async function renderTab() {
+	navigate = jest.fn();
 	render(
 		<ShellContext.Provider
 			value={ {
 				exportSlot: null,
 				bulkRequested: false,
 				consumeBulk: () => {},
-				navigate: jest.fn(),
+				navigate,
 			} }
 		>
 			<CategoriesTab settings={ MANAGER } />
@@ -455,6 +458,11 @@ describe( 'category actions: the workspace', () => {
 				"1 of 3 categories changed. Each category's result is in History, where you can undo it."
 			)
 		).toBeTruthy();
+		// As after a product change: View in History opens this change.
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'View in History' } )
+		);
+		expect( navigate ).toHaveBeenCalledWith( 'history', { batch: 9 } );
 	} );
 
 	it( 'previews several chosen categories and asks again when the preview went stale', async () => {

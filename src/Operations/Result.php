@@ -10,6 +10,13 @@
  * Field::clean()), so they compare directly and round-trip through the
  * journal's value codec.
  *
+ * External actions (T106, docs/EXTENSIONS.md §4): a Result may also carry
+ * up to three plain notes shown under its preview row (with_notes()) and at
+ * most one warning the preview aggregates by code (with_warning()); an
+ * external result's code may start `x_<provider id>_` as well as
+ * `bulkcat_`. A Result with neither notes nor a warning is exactly what it
+ * was before, in every array it gives.
+ *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
  */
@@ -50,6 +57,23 @@ final class Result {
 	public const STATES = [ self::CHANGED, self::ALREADY, self::SKIPPED, self::FAILED ];
 
 	/**
+	 * The keys a note's context may carry, in the order it keeps them (T89):
+	 * the status an Off record saves or saved, the status an On restores, the
+	 * product's status now, and a scheduled time (GMT, `Y-m-d H:i:s`).
+	 */
+	public const CONTEXT_KEYS = [ 'saved', 'restores', 'current', 'scheduled_gmt', 'requested_status', 'effective_status' ];
+
+	/**
+	 * A code a Result may carry: the plugin's own, or an external provider's (T106).
+	 */
+	private const CODE = '/^(bulkcat|x_[a-z][a-z0-9]{2,19})_[a-z0-9_]+$/';
+
+	/**
+	 * Most notes one Result carries (T106).
+	 */
+	public const MAX_NOTES = 3;
+
+	/**
 	 * Build through changed(), already(), skipped() or failed().
 	 *
 	 * @param string $field     Field key.
@@ -59,6 +83,10 @@ final class Result {
 	 * @param string $reason    Plain-English sentence (SPEC §4.8) for skipped and failed; '' otherwise.
 	 * @param string $code      `bulkcat_` code for the technical details line, or ''.
 	 * @param bool   $replaces  Whether the change replaces a whole list, which the preview states in bold (SPEC §6).
+	 * @param string $note      An outcome code the step carries (the Status switch's, T89), or ''.
+	 * @param array<string, string|int|float|bool> $context What the note names, keyed by CONTEXT_KEYS.
+	 * @param list<string>                         $notes   Plain notes for the preview row (T106).
+	 * @param array{code: string, sentence: string, confirm: bool}|null $warning The one warning the preview aggregates (T106).
 	 * @throws \InvalidArgumentException When the parts are inconsistent.
 	 */
 	private function __construct(
@@ -68,18 +96,28 @@ final class Result {
 		private readonly string $state,
 		private readonly string $reason,
 		private readonly string $code,
-		private readonly bool $replaces
+		private readonly bool $replaces,
+		private readonly string $note = '',
+		private readonly array $context = [],
+		private readonly array $notes = [],
+		private readonly ?array $warning = null
 	) {
 		$needs_reason = self::SKIPPED === $state || self::FAILED === $state;
+		$plain        = [] === array_filter( $context, static fn( mixed $value ): bool => ! is_scalar( $value ) );
+		$short_note   = (bool) preg_match( '/^[a-z_]{0,40}$/', $note );
+		$known_keys   = [] === array_diff( array_keys( $context ), self::CONTEXT_KEYS );
 		$problem      = match ( true ) {
 			1 !== preg_match( '/^[a-z][a-z0-9_]{0,63}$/', $field )  => 'the field key is invalid',
 			! in_array( $state, self::STATES, true )                => 'the state is unknown',
 			$needs_reason && '' === trim( $reason )                 => 'a skipped or failed result needs a reason',
 			! $needs_reason && ( '' !== $reason || '' !== $code )   => 'only a skipped or failed result carries a reason',
-			'' !== $code && ! str_starts_with( $code, 'bulkcat_' )      => 'the code must start with bulkcat_',
+			'' !== $code && 1 !== preg_match( self::CODE, $code )    => 'the code must start with bulkcat_ or an external provider\'s x_ prefix',
 			str_contains( $reason, 'bulkcat_' )                         => 'the reason is shown to people, so its code belongs in the code field',
 			self::CHANGED === $state && $old === $new_value               => 'a change must change the value; use already()',
 			$replaces && self::CHANGED !== $state                   => 'only a change can replace a list',
+			! $short_note                                           => 'a note is a short lower-case code',
+			! $known_keys                                           => 'its context names an unknown key',
+			! $plain                                                => 'its context holds only plain values',
 			default                                                 => '',
 		};
 		if ( '' !== $problem ) {
@@ -134,6 +172,94 @@ final class Result {
 	}
 
 	/**
+	 * The same Result carrying an outcome code and what it names (T89): a new
+	 * Result, this one left as it is. Context keys come back in CONTEXT_KEYS order.
+	 *
+	 * @param string                               $note    A short lower-case code, or ''.
+	 * @param array<string, string|int|float|bool> $context Keyed by CONTEXT_KEYS.
+	 */
+	public function with_note( string $note, array $context = [] ): self {
+		$ordered = [];
+		foreach ( self::CONTEXT_KEYS as $key ) {
+			if ( array_key_exists( $key, $context ) ) {
+				$ordered[ $key ] = $context[ $key ];
+			}
+		}
+		return new self( $this->field, $this->old, $this->new_value, $this->state, $this->reason, $this->code, $this->replaces, $note, $ordered + $context, $this->notes, $this->warning );
+	}
+
+	/**
+	 * The same Result carrying plain notes for its preview row (T106): at most
+	 * MAX_NOTES non-empty strings, kept in order; a new Result, this one left as it is.
+	 *
+	 * @param list<string> $notes Plain sentences.
+	 * @throws \InvalidArgumentException When a note is not a non-empty string, or there are too many.
+	 */
+	public function with_notes( array $notes ): self {
+		$notes = array_values( $notes );
+		if ( count( $notes ) > self::MAX_NOTES || [] !== array_filter( $notes, static fn( mixed $note ): bool => ! is_string( $note ) || '' === trim( $note ) ) ) {
+			throw new \InvalidArgumentException( esc_html( sprintf( 'Result is invalid: at most %d notes, each a sentence.', self::MAX_NOTES ) ) );
+		}
+		return new self( $this->field, $this->old, $this->new_value, $this->state, $this->reason, $this->code, $this->replaces, $this->note, $this->context, $notes, $this->warning );
+	}
+
+	/**
+	 * The same Result carrying one warning the preview aggregates by code with
+	 * a count (T106); `$confirm` makes Apply need the second click. A new
+	 * Result, this one left as it is.
+	 *
+	 * @param string $code     `bulkcat_` or `x_<provider id>_` code.
+	 * @param string $sentence Plain sentence.
+	 * @param bool   $confirm  Whether it always asks before Apply.
+	 * @throws \InvalidArgumentException When the code or the sentence is invalid.
+	 */
+	public function with_warning( string $code, string $sentence, bool $confirm = false ): self {
+		if ( 1 !== preg_match( self::CODE, $code ) || '' === trim( $sentence ) || str_contains( $sentence, 'bulkcat_' ) ) {
+			throw new \InvalidArgumentException( esc_html( 'Result is invalid: a warning needs a known code and a plain sentence.' ) );
+		}
+		$warning = [
+			'code'     => $code,
+			'sentence' => $sentence,
+			'confirm'  => $confirm,
+		];
+		return new self( $this->field, $this->old, $this->new_value, $this->state, $this->reason, $this->code, $this->replaces, $this->note, $this->context, $this->notes, $warning );
+	}
+
+	/**
+	 * The notes, in order (T106).
+	 *
+	 * @return list<string>
+	 */
+	public function notes(): array {
+		return $this->notes;
+	}
+
+	/**
+	 * The warning, or null (T106).
+	 *
+	 * @return array{code: string, sentence: string, confirm: bool}|null
+	 */
+	public function warning(): ?array {
+		return $this->warning;
+	}
+
+	/**
+	 * The outcome code this Result carries, or ''.
+	 */
+	public function note(): string {
+		return $this->note;
+	}
+
+	/**
+	 * What the note names, keyed by CONTEXT_KEYS.
+	 *
+	 * @return array<string, string|int|float|bool>
+	 */
+	public function context(): array {
+		return $this->context;
+	}
+
+	/**
 	 * The field key.
 	 */
 	public function field(): string {
@@ -176,7 +302,7 @@ final class Result {
 	}
 
 	/**
-	 * The `bulkcat_` code behind a skipped or failed result, or ''.
+	 * The `bulkcat_` (or, for an external result, `x_<provider id>_`) code behind a skipped or failed result, or ''.
 	 */
 	public function code(): string {
 		return $this->code;
@@ -192,17 +318,26 @@ final class Result {
 	/**
 	 * The result as a preview row or journal entry carries it.
 	 *
-	 * @return array{field: string, old: mixed, new: mixed, state: string, reason: string, code: string, replaces: bool}
+	 * @return array{field: string, old: mixed, new: mixed, state: string, reason: string, code: string, replaces: bool, note: string, context: array<string, mixed>, notes?: list<string>, warning?: array<string, mixed>}
 	 */
 	public function to_array(): array {
+		$extra = [];
+		if ( [] !== $this->notes ) {
+			$extra['notes'] = $this->notes;
+		}
+		if ( null !== $this->warning ) {
+			$extra['warning'] = $this->warning;
+		}
 		return [
 			'field'    => $this->field,
-			'old'      => $this->old,
-			'new'      => $this->new_value,
+			'old'      => \BulkCatalogueManager\Publishing\PublicationPassword::FIELD === $this->field ? \BulkCatalogueManager\Publishing\PublicationPassword::display( $this->old ) : $this->old,
+			'new'      => \BulkCatalogueManager\Publishing\PublicationPassword::FIELD === $this->field ? \BulkCatalogueManager\Publishing\PublicationPassword::display( $this->new_value ) : $this->new_value,
 			'state'    => $this->state,
 			'reason'   => $this->reason,
 			'code'     => $this->code,
 			'replaces' => $this->replaces,
-		];
+			'note'     => $this->note,
+			'context'  => $this->context,
+		] + $extra;
 	}
 }

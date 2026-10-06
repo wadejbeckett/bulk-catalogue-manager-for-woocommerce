@@ -30,7 +30,8 @@ $bulkcat-bad-line: #f3c3c4;
 	right: 0;
 	bottom: 0;
 	z-index: 9990;
-	width: min(860px, 100vw);
+	// T113: set with the catalogue, which reflows beside it (catalogue/style.scss).
+	width: var(--bulkcat-slide-over, min(860px, 100vw));
 	container-type: inline-size;
 	display: flex;
 	flex-direction: column;
@@ -300,6 +301,10 @@ $bulkcat-bad-line: #f3c3c4;
 			box-shadow: inset 0 0 0 1px $bulkcat-blue;
 		}
 
+		&.is-preset .bulkcat-bulk__cbody {
+			padding-left: 12px;
+		}
+
 		> label {
 			display: flex;
 			align-items: flex-start;
@@ -307,6 +312,23 @@ $bulkcat-bad-line: #f3c3c4;
 			padding: 11px 12px;
 			cursor: pointer;
 		}
+	}
+
+	// 1.4.1: a preset change shows its own card first; the chooser is folded.
+	&__presethead {
+		margin: 0;
+		padding: 11px 12px;
+	}
+
+	&__presetgroup {
+		display: block;
+		margin-bottom: 2px;
+		font-size: 12px;
+		color: $bulkcat-ink-2;
+	}
+
+	&__unfold {
+		margin: 0;
 	}
 
 	&__ct {
@@ -397,7 +419,10 @@ $bulkcat-bad-line: #f3c3c4;
 		border: 1px solid $bulkcat-rule;
 		border-radius: 3px;
 
+		// WCAG 2.2 target size (2.5.8): neighbouring checkboxes sit at least
+		// 24px apart, centre to centre.
 		li {
+			min-height: 24px;
 			margin: 0 0 4px;
 		}
 	}
@@ -649,4 +674,29 @@ $bulkcat-bad-line: #f3c3c4;
 		gap: 8px;
 		margin-top: 9px;
 	}
+}
+
+// An add-on's words under a preview row (T106): the change and its notes.
+.bulkcat-bulk__change {
+	display: block;
+	color: #50575e;
+	font-size: 12px;
+}
+
+.bulkcat-bulk__notes {
+	margin: 4px 0 0 16px;
+	padding: 0;
+	list-style: disc;
+	color: #50575e;
+	font-size: 12px;
+}
+
+// The empty-selection prompt's Select all button wraps inside the side box
+// instead of running past it (a long count and wording at desktop widths).
+.bulkcat-bulk__nothing .components-button {
+	height: auto;
+	min-height: 32px;
+	max-width: 100%;
+	white-space: normal;
+	text-align: left;
 }

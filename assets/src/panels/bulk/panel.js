@@ -21,15 +21,19 @@ import {
 } from './confirm';
 import {
 	MAX_OPERATIONS,
+	actionById,
 	fieldByKey,
+	mixedSentence,
+	mixesKinds,
 	offersVariations,
 	operationProblem,
 	settingsValues,
 	toRequestOperations,
+	unavailableReason,
 } from './descriptors';
 import {
 	PREVIEW_STALE,
-	isFilterSelection,
+	RENEW_REQUIRED,
 	selectionArgs,
 	useApply,
 	usePreview,
@@ -41,9 +45,11 @@ import {
 	chooseAction,
 	emptyOperation,
 } from './operations';
+import { plainMessage } from '../../errors';
 import { PreviewResult } from './preview';
 import { DoneStep } from './progress';
-import { formatNumber, productsPhrase } from './words';
+import { formatNumber } from './words';
+import { countPhrase } from '../catalogue/selection/model';
 import './style.scss';
 
 /** Elements a Tab press may land on inside the panel. */
@@ -51,37 +57,57 @@ const FOCUSABLE =
 	'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /**
- * How many products a selection holds.
+ * The first argument control of a step opened with its change chosen
+ * (1.4.1): the first control a person can use in the folded step, passing
+ * over a field list that offers only one field.
+ *
+ * @param {Element|null} panel The panel.
+ * @return {Element|null} The control, or null when no step is folded.
+ */
+export function firstArgument( panel ) {
+	const body = panel?.querySelector(
+		'.bulkcat-bulk__choices.is-preset .bulkcat-bulk__cbody'
+	);
+	if ( ! body ) {
+		return null;
+	}
+	return (
+		Array.from( body.querySelectorAll( FOCUSABLE ) ).find(
+			( element ) =>
+				! (
+					element.matches( 'select.bulkcat-bulk__field' ) &&
+					element.options.length < 2
+				)
+		) || null
+	);
+}
+
+/**
+ * How many products and variations a selection holds.
  *
  * @param {Object} selection Panel selection.
  * @return {number} Count.
  */
 export function selectionCount( selection ) {
-	if ( isFilterSelection( selection ) ) {
-		return Number( selection.count ) || 0;
-	}
 	return Number( selection?.count ?? selection?.ids?.length ) || 0;
 }
 
 /**
- * The scope line: "24 selected products" or "All 4,312 products matching
- * the current filter".
+ * The scope line (SPEC §4.3): the total exact selection, "24 selected
+ * products", or "1,200 products and 50 variations selected" when it holds
+ * both. A combined selection is never called all matches of a filter.
  *
  * @param {Object} selection Panel selection.
  * @return {string} Line.
  */
 export function scopeLine( selection ) {
 	const count = selectionCount( selection );
-	if ( isFilterSelection( selection ) ) {
+	const byType = selection?.byType || {};
+	if ( Number( byType.variations ) > 0 ) {
 		return sprintf(
-			/* translators: %s: a number of products, such as "4,312". */
-			_n(
-				'All %s product matching the current filter',
-				'All %s products matching the current filter',
-				count,
-				'bulk-catalogue-manager-for-woocommerce'
-			),
-			formatNumber( count )
+			/* translators: %s: what is selected, such as "1,200 products and 50 variations". */
+			__( '%s selected', 'bulk-catalogue-manager-for-woocommerce' ),
+			countPhrase( count, byType )
 		);
 	}
 	return sprintf(
@@ -102,9 +128,13 @@ export function scopeLine( selection ) {
  * @param {Object}        registry   The `/fields` payload.
  * @param {Array<Object>} operations Panel operations.
  * @param {number}        count      Products selected.
+ * @param {string}        waiting    Why the selection is not settled yet (T84), or ''.
  * @return {string} Reason.
  */
-export function blockedReason( registry, operations, count ) {
+export function blockedReason( registry, operations, count, waiting = '' ) {
+	if ( waiting ) {
+		return waiting;
+	}
 	if ( count < 1 ) {
 		return __(
 			'Nothing is selected. Go back to Products and tick what you want to change.',
@@ -129,6 +159,20 @@ export function blockedReason( registry, operations, count ) {
 				index + 1
 			);
 		}
+		const unavailable = unavailableReason(
+			actionById( registry, operation.action )
+		);
+		if ( unavailable ) {
+			return sprintf(
+				/* translators: 1: the step's position, such as 2; 2: why its action cannot be used now. */
+				__(
+					'Step %1$d: %2$s',
+					'bulk-catalogue-manager-for-woocommerce'
+				),
+				index + 1,
+				unavailable
+			);
+		}
 		const problem = operationProblem( registry, operation );
 		if ( problem ) {
 			return sprintf(
@@ -141,6 +185,10 @@ export function blockedReason( registry, operations, count ) {
 				problem.reason
 			);
 		}
+	}
+	// T105: one change holds native steps or one add-on's steps, never both.
+	if ( mixesKinds( registry, operations ) ) {
+		return mixedSentence();
 	}
 	return '';
 }
@@ -180,7 +228,7 @@ export function panelState( facts ) {
  * The bulk action panel.
  *
  * @param {Object}        props                   Props (see README.md).
- * @param {Object}        props.selection         `{ kind: 'ids', ids }` or `{ kind: 'filter', token, count, filters }`.
+ * @param {Object}        props.selection         `{ kind: 'snapshot', token, key, count, byType, waiting }` or `{ kind: 'ids', ids }`.
  * @param {Object}        props.registry          The `/fields` payload `{ fields, actions, groups }`.
  * @param {Object}        props.settings          The `bulkcat_settings` values (or the screen settings carrying them).
  * @param {Function}      props.onClose           Close the panel.
@@ -194,6 +242,12 @@ export function panelState( facts ) {
  * @param {Function}      props.renderStalled     Receives a stalled batch report (T44).
  * @param {number}        props.pollInterval      Milliseconds between progress reads.
  * @param {Array<Object>} props.initialOperations Steps to open with (the selection bar's quick actions, T42).
+ * @param {Function}      props.onFinished        Receives the finished batch's report (T84).
+ * @param {Function}      props.onReview          Open Review selected products, or null.
+ * @param {Function}      props.onRenewSelection  Restore a selection whose lease lapsed, or null.
+ * @param {Element}       props.emptyPrompt       What to show in place of the scope while nothing is selected (FRONTEND-1), or null.
+ * @param {string}        props.applyHeld         Why Apply must wait (another change is still running, FRONTEND-3), or ''.
+ * @param {string}        props.object            A row entry's object key, such as "product:42" (contract version 2 row entry), or ''.
  * @return {Element} Panel.
  */
 export default function BulkChangePanel( {
@@ -211,6 +265,12 @@ export default function BulkChangePanel( {
 	renderStalled = null,
 	pollInterval = 2000,
 	initialOperations = null,
+	onFinished = null,
+	onReview = null,
+	onRenewSelection = null,
+	emptyPrompt = null,
+	applyHeld = '',
+	object = '',
 } ) {
 	const panelRef = useRef( null );
 	const headingRef = useRef( null );
@@ -226,9 +286,31 @@ export default function BulkChangePanel( {
 			: [ emptyOperation( 1 ) ]
 	);
 	const [ active, setActive ] = useState( 0 );
+	// 1.4.1: a step opened with its change chosen (a row entry, a quick
+	// action) shows only that change's arguments until the operator asks
+	// for the whole chooser.
+	const [ folded, setFolded ] = useState(
+		() =>
+			new Set(
+				opening
+					.map( ( operation, index ) =>
+						operation?.action ? index + 1 : 0
+					)
+					.filter( Boolean )
+			)
+	);
+	const unfold = ( key ) =>
+		setFolded( ( was ) => {
+			const next = new Set( was );
+			next.delete( key );
+			return next;
+		} );
 	const [ sampleSize, setSampleSize ] = useState( 25 );
 	const [ changedOnly, setChangedOnly ] = useState( false );
 	const [ batch, setBatch ] = useState( null );
+	// What the change was applied to: the live selection moves on (a change
+	// that finished in full clears it), the Done step's scope does not.
+	const [ applied, setApplied ] = useState( null );
 	const [ reran, setReran ] = useState( false );
 	const [ details, setDetails ] = useState( false );
 	const preview = usePreview();
@@ -253,7 +335,12 @@ export default function BulkChangePanel( {
 		selection: selectionArgs( selection ),
 		settings: values,
 	} );
-	const reason = blockedReason( registry, operations, count );
+	const reason = blockedReason(
+		registry,
+		operations,
+		count,
+		selection?.waiting || ''
+	);
 	const response = preview.response;
 	const current =
 		preview.status === 'ready' && preview.signature === signature;
@@ -261,6 +348,20 @@ export default function BulkChangePanel( {
 		( preview.status === 'ready' && ! current ) ||
 		applier.status === 'stale';
 	const changes = Number( response?.totals?.would_change ) || 0;
+	// What the preview says of products and variations apart (ticket 11), or null.
+	const types = response?.totals?.by_type;
+	const changeTypes = types
+		? {
+				products: Number( types.product?.would_change ) || 0,
+				variations: Number( types.variation?.would_change ) || 0,
+			}
+		: null;
+	const reachTypes = types
+		? {
+				products: Number( types.product?.matched ) || 0,
+				variations: Number( types.variation?.matched ) || 0,
+			}
+		: null;
 	const state = panelState( {
 		batchId: batch?.batch_id,
 		applying: applier.status === 'applying',
@@ -272,20 +373,41 @@ export default function BulkChangePanel( {
 		changes,
 	} );
 
-	// Focus: into the panel on open, back to whatever opened it on close (§14).
+	// Focus: into the panel on open — at a preset change's first argument
+	// (1.4.1), else the heading — back to whatever opened it on close (§14),
+	// or, when that is gone (a change that finished in full clears the
+	// selection and its bar), to the screen's panel (FRONTEND-7).
 	useEffect( () => {
-		const opener = panelRef.current?.ownerDocument?.activeElement;
-		headingRef.current?.focus();
+		const doc = panelRef.current?.ownerDocument;
+		const opener = doc?.activeElement;
+		const first = firstArgument( panelRef.current );
+		if ( first ) {
+			first.focus();
+			first.scrollIntoView?.( { block: 'nearest' } );
+		} else {
+			headingRef.current?.focus();
+		}
 		return () => {
-			if ( opener && typeof opener.focus === 'function' ) {
+			if (
+				opener &&
+				opener.isConnected &&
+				typeof opener.focus === 'function'
+			) {
 				opener.focus();
+				return;
 			}
+			doc?.querySelector( '.bulkcat-app__panel' )?.focus();
 		};
 	}, [] );
 
 	const check = useCallback(
 		( size = sampleSize ) => {
 			setReran( false );
+			// A new preview starts a new attempt on screen; the grant of an
+			// unresolved Apply stays held by useApply() (T84).
+			if ( ! [ 'applying', 'applied' ].includes( applier.status ) ) {
+				applier.reset();
+			}
 			// Fold the steps to their one-line summaries so the preview is in view.
 			setActive( -1 );
 			preview.run( {
@@ -295,7 +417,14 @@ export default function BulkChangePanel( {
 				signature,
 			} );
 		},
-		[ preview, requestOperations, selection, sampleSize, signature ]
+		[
+			preview,
+			applier,
+			requestOperations,
+			selection,
+			sampleSize,
+			signature,
+		]
 	);
 
 	// Bring the preview into view as it starts computing.
@@ -317,20 +446,22 @@ export default function BulkChangePanel( {
 		}
 	}, [ applier, check ] );
 
-	const apply = ( confirmChanged = false ) =>
-		applier
-			.apply( {
-				operations: requestOperations,
-				selection,
-				preview: response,
-				confirmChanged,
-			} )
-			.then( ( created ) => {
-				if ( created?.batch_id ) {
-					setBatch( created );
-					onApplied( created.batch_id );
-				}
-			} );
+	// T84: a durable request; a retry of the same change sends the same grant.
+	const apply = () =>
+		applier.apply( { selection, preview: response } ).then( ( created ) => {
+			if ( created?.batch_id ) {
+				setApplied( selection );
+				setBatch( created );
+				// An earlier attempt that turned out to have gone through
+				// belongs to whatever it was applied to, not this selection.
+				onApplied( created.batch_id, {
+					selection: created.earlier ? null : selection,
+					replayed: !! created.replayed,
+					// What the preview reached, for the banner's words (FRONTEND-6).
+					byType: created.earlier ? null : reachTypes,
+				} );
+			}
+		} );
 
 	const update = ( index, change ) =>
 		setOperations( ( list ) =>
@@ -419,7 +550,19 @@ export default function BulkChangePanel( {
 	];
 	const threshold = values.confirm_threshold ?? DEFAULT_THRESHOLD;
 	const reasons = current
-		? alwaysConfirmReasons( registry, requestOperations, changes )
+		? [
+				...new Set( [
+					...alwaysConfirmReasons(
+						registry,
+						requestOperations,
+						changes
+					),
+					// An add-on's change that always confirms, or a warning asking for it (T106).
+					...( response?.external?.confirm
+						? response.external.reasons || []
+						: [] ),
+				] ),
+			]
 		: [];
 	const worthKnowing =
 		current &&
@@ -428,9 +571,6 @@ export default function BulkChangePanel( {
 			const field = fieldByKey( registry, operation.args?.field );
 			return offersVariations( field ) && ! operation.variations;
 		} );
-	const filters = Array.isArray( selection?.filters )
-		? selection.filters
-		: [];
 
 	return (
 		// The slide-over's own keys: Escape closes it and Tab stays inside it (§14).
@@ -508,24 +648,32 @@ export default function BulkChangePanel( {
 										'bulk-catalogue-manager-for-woocommerce'
 									) }
 						</h3>
-						<p className="bulkcat-bulk__big">
-							{ scopeLine( selection ) }
-						</p>
-						{ filters.length > 0 && (
-							<dl className="bulkcat-bulk__filters">
-								{ filters.map( ( filter, index ) => (
-									<div
-										className="bulkcat-bulk__kv"
-										key={ index }
-									>
-										<dt>{ filter.label }</dt>
-										<dd>{ filter.value }</dd>
-									</div>
-								) ) }
-							</dl>
+						{ ! batch &&
+						emptyPrompt &&
+						count < 1 &&
+						! selection?.waiting ? (
+							emptyPrompt
+						) : (
+							<p className="bulkcat-bulk__big">
+								{ scopeLine(
+									batch && applied ? applied : selection
+								) }
+							</p>
 						) }
 						{ ! batch && (
-							<p>
+							<p className="bulkcat-bulk__acts">
+								{ onReview && (
+									<button
+										type="button"
+										className="button button-small"
+										onClick={ onReview }
+									>
+										{ __(
+											'Review selected products',
+											'bulk-catalogue-manager-for-woocommerce'
+										) }
+									</button>
+								) }
 								<button
 									type="button"
 									className="button button-small"
@@ -559,10 +707,14 @@ export default function BulkChangePanel( {
 						<DoneStep
 							batchId={ batch.batch_id }
 							count={ batch.total_items ?? changes }
+							byType={ reachTypes }
 							interval={ pollInterval }
 							onUndo={ onUndo }
 							onViewHistory={ onViewHistory }
 							renderStalled={ renderStalled }
+							onFinished={ onFinished }
+							replayed={ !! batch.replayed }
+							earlier={ !! batch.earlier }
 						/>
 					) : (
 						<>
@@ -608,8 +760,16 @@ export default function BulkChangePanel( {
 												<ActionChooser
 													registry={ registry }
 													operation={ operation }
+													operations={ operations }
 													index={ index }
 													terms={ terms }
+													object={ object }
+													folded={ folded.has(
+														operation.key
+													) }
+													onUnfold={ () =>
+														unfold( operation.key )
+													}
 													onChoose={ ( id, group ) =>
 														update(
 															index,
@@ -715,6 +875,13 @@ export default function BulkChangePanel( {
 											error={ preview.error }
 											details={ details }
 											onDetails={ setDetails }
+											onRenew={
+												preview.error?.code ===
+													RENEW_REQUIRED &&
+												onRenewSelection
+													? onRenewSelection
+													: null
+											}
 										/>
 									) }
 									{ reran && current && (
@@ -815,63 +982,18 @@ export default function BulkChangePanel( {
 								</section>
 							) }
 
-							{ applier.status === 'changed' && (
-								<div
-									className="bulkcat-bulk__notice is-warn"
-									role="alert"
-									data-block="selection-changed"
-								>
-									<strong>
-										{ __(
-											'The filter now matches a different number of products',
-											'bulk-catalogue-manager-for-woocommerce'
-										) }
-									</strong>
-									<p>
-										{ sprintf(
-											/* translators: 1: products when previewed, such as "1,284 products"; 2: products now, such as "1,290 products". */
-											__(
-												'When you checked the change it matched %1$s. It matches %2$s now.',
-												'bulk-catalogue-manager-for-woocommerce'
-											),
-											productsPhrase( applier.previewed ),
-											productsPhrase( applier.current )
-										) }
-									</p>
-									<div className="bulkcat-bulk__acts">
-										<button
-											type="button"
-											className="button button-primary button-small"
-											onClick={ () => apply( true ) }
-										>
-											{ __(
-												'Apply anyway',
-												'bulk-catalogue-manager-for-woocommerce'
-											) }
-										</button>
-										<button
-											type="button"
-											className="button button-small"
-											onClick={ () => {
-												applier.reset();
-												check();
-											} }
-										>
-											{ __(
-												'Preview again',
-												'bulk-catalogue-manager-for-woocommerce'
-											) }
-										</button>
-									</div>
-								</div>
-							) }
-							{ applier.status === 'error' && (
-								<ErrorNotice
-									error={ applier.error }
-									details={ details }
-									onDetails={ setDetails }
-								/>
-							) }
+							<ApplyOutcome
+								applier={ applier }
+								details={ details }
+								onDetails={ setDetails }
+								onRetry={ apply }
+								onPreviewAgain={ () => {
+									applier.reset();
+									check();
+								} }
+								onViewHistory={ onViewHistory }
+								onRenew={ onRenewSelection }
+							/>
 						</>
 					) }
 				</div>
@@ -883,12 +1005,16 @@ export default function BulkChangePanel( {
 						state={ state }
 						reason={ reason }
 						check={ () => check() }
-						apply={ () => apply( false ) }
+						apply={ apply }
 						count={ changes }
+						byType={ changeTypes }
 						threshold={ threshold }
 						reasons={ reasons }
 						busy={ applier.status === 'applying' }
-						changed={ applier.status === 'changed' }
+						changed={ [ 'changed', 'legacy', 'renew' ].includes(
+							applier.status
+						) }
+						held={ applyHeld }
 					/>
 				) }
 				<button type="button" className="button" onClick={ onClose }>
@@ -927,10 +1053,12 @@ export default function BulkChangePanel( {
  * @param {Function}      props.check     Runs the preview.
  * @param {Function}      props.apply     Runs the apply.
  * @param {number}        props.count     Products that would change.
+ * @param {Object|null}   props.byType    `{ products, variations }` of that count, or null.
  * @param {number}        props.threshold The confirm threshold.
  * @param {Array<string>} props.reasons   Always-confirm sentences.
  * @param {boolean}       props.busy      Whether an apply is running.
- * @param {boolean}       props.changed   Whether the apply is waiting on the selection-changed answer.
+ * @param {boolean}       props.changed   Whether the last Apply was refused in a way only a new preview or a reload can fix.
+ * @param {string}        props.held      Why Apply must wait, or ''.
  * @return {Element} Control.
  */
 function FooterAction( {
@@ -939,28 +1067,33 @@ function FooterAction( {
 	check,
 	apply,
 	count,
+	byType = null,
 	threshold,
 	reasons,
 	busy,
 	changed,
+	held = '',
 } ) {
 	if ( state === 'ready' || state === 'empty' || state === 'applying' ) {
+		let disabledReason = held;
+		if ( state === 'empty' ) {
+			disabledReason = __(
+				'Nothing would change, so there is nothing to apply.',
+				'bulk-catalogue-manager-for-woocommerce'
+			);
+		}
 		return (
 			<ConfirmApply
 				count={ count }
+				byType={ byType }
 				threshold={ threshold }
 				reasons={ reasons }
 				onApply={ apply }
 				busy={ busy }
-				disabled={ state === 'empty' || changed }
-				disabledReason={
-					state === 'empty'
-						? __(
-								'Nothing would change, so there is nothing to apply.',
-								'bulk-catalogue-manager-for-woocommerce'
-							)
-						: ''
+				disabled={
+					state === 'empty' || changed || ( !! held && ! busy )
 				}
+				disabledReason={ disabledReason }
 			/>
 		);
 	}
@@ -994,44 +1127,215 @@ function FooterAction( {
 }
 
 /**
+ * What became of an Apply that did not give a batch (T84, SPEC §4.8): the
+ * server's own sentence for each refusal, with what can be done next.
+ *
+ * - An unknown outcome (offline, a server error): Try again sends the same
+ *   request, so the change can only be made once.
+ * - `bulkcat_selection_changed`: the selection moved on; Preview again.
+ * - `bulkcat_legacy_request`: an older page's request; History, then reload.
+ * - `bulkcat_selection_renew_required`: Restore the selection, then preview.
+ * - Anything else (`bulkcat_request_gone`, expired, conflicting): the
+ *   sentence, and Show details for the code.
+ *
+ * @param {Object}   props                Props.
+ * @param {Object}   props.applier        useApply().
+ * @param {boolean}  props.details        Whether the details show.
+ * @param {Function} props.onDetails      Receives the toggle's position.
+ * @param {Function} props.onRetry        Send the same request again.
+ * @param {Function} props.onPreviewAgain Preview the change again.
+ * @param {Function} props.onViewHistory  Open a batch in History, or null.
+ * @param {Function} props.onRenew        Restore the selection, or null.
+ * @return {Element|null} Notice.
+ */
+function ApplyOutcome( {
+	applier,
+	details,
+	onDetails,
+	onRetry,
+	onPreviewAgain,
+	onViewHistory,
+	onRenew,
+} ) {
+	const { status, error } = applier;
+	if ( status === 'uncertain' ) {
+		return (
+			<div
+				className="bulkcat-bulk__notice is-warn"
+				role="alert"
+				data-block="uncertain"
+			>
+				<strong>
+					{ __(
+						'We could not confirm whether the change was applied',
+						'bulk-catalogue-manager-for-woocommerce'
+					) }
+				</strong>
+				<p>
+					{ __(
+						'The connection dropped before the answer arrived. Try again: the same request is sent again, so the change can only be made once.',
+						'bulk-catalogue-manager-for-woocommerce'
+					) }
+				</p>
+				<div className="bulkcat-bulk__acts">
+					<button
+						type="button"
+						className="button button-primary button-small"
+						onClick={ onRetry }
+					>
+						{ __(
+							'Try again',
+							'bulk-catalogue-manager-for-woocommerce'
+						) }
+					</button>
+				</div>
+				<Details
+					error={ error }
+					details={ details }
+					onDetails={ onDetails }
+				/>
+			</div>
+		);
+	}
+	if ( status === 'changed' ) {
+		return (
+			<div
+				className="bulkcat-bulk__notice is-warn"
+				role="alert"
+				data-block="selection-changed"
+			>
+				<p>{ error?.message }</p>
+				<div className="bulkcat-bulk__acts">
+					<button
+						type="button"
+						className="button button-small"
+						onClick={ onPreviewAgain }
+					>
+						{ __(
+							'Preview again',
+							'bulk-catalogue-manager-for-woocommerce'
+						) }
+					</button>
+				</div>
+			</div>
+		);
+	}
+	if ( status === 'legacy' ) {
+		const earlier = Number( error?.data?.batch_ids?.[ 0 ] ) || 0;
+		return (
+			<div
+				className="bulkcat-bulk__notice is-error"
+				role="alert"
+				data-block="legacy"
+			>
+				<p>{ error?.message }</p>
+				{ earlier > 0 && onViewHistory && (
+					<div className="bulkcat-bulk__acts">
+						<button
+							type="button"
+							className="button button-small"
+							onClick={ () => onViewHistory( earlier ) }
+						>
+							{ __(
+								'View in History',
+								'bulk-catalogue-manager-for-woocommerce'
+							) }
+						</button>
+					</div>
+				) }
+				<Details
+					error={ error }
+					details={ details }
+					onDetails={ onDetails }
+				/>
+			</div>
+		);
+	}
+	if ( status === 'renew' || status === 'error' ) {
+		return (
+			<ErrorNotice
+				error={ error }
+				details={ details }
+				onDetails={ onDetails }
+				onRenew={ status === 'renew' ? onRenew : null }
+			/>
+		);
+	}
+	return null;
+}
+
+/**
+ * Show details: the technical line behind a toggle.
+ *
+ * @param {Object}   props           Props.
+ * @param {Object}   props.error     The REST error.
+ * @param {boolean}  props.details   Whether the details show.
+ * @param {Function} props.onDetails Receives the toggle's position.
+ * @return {Element|null} Toggle.
+ */
+function Details( { error, details, onDetails } ) {
+	if ( ! error?.code ) {
+		return null;
+	}
+	return (
+		<>
+			<button
+				type="button"
+				className="button-link"
+				aria-expanded={ details }
+				onClick={ () => onDetails( ! details ) }
+			>
+				{ __(
+					'Show details',
+					'bulk-catalogue-manager-for-woocommerce'
+				) }
+			</button>
+			{ details && (
+				<p className="bulkcat-bulk__hint">
+					<code>{ error.code }</code>
+				</p>
+			) }
+		</>
+	);
+}
+
+/**
  * A §4.8 error: the plain sentence, the technical line behind Show details.
  *
  * @param {Object}   props           Props.
  * @param {Object}   props.error     The REST error.
  * @param {boolean}  props.details   Whether the details show.
  * @param {Function} props.onDetails Receives the toggle's position.
+ * @param {Function} props.onRenew   Restore the selection (a lapsed lease), or null.
  * @return {Element} Notice.
  */
-function ErrorNotice( { error, details, onDetails } ) {
+function ErrorNotice( { error, details, onDetails, onRenew = null } ) {
+	// Only the plugin's own refusals are sentences written for people
+	// (§4.8); anything else — a server's error page, a proxy's text — is
+	// the plain fallback, its code behind Show details (T85; the shared
+	// rule in ../../errors.js since ticket 11).
 	return (
 		<div className="bulkcat-bulk__notice is-error" role="alert">
-			<p>
-				{ error?.message ||
-					__(
-						'Something went wrong. Try again in a moment.',
-						'bulk-catalogue-manager-for-woocommerce'
-					) }
-			</p>
-			{ error?.code && (
-				<>
+			<p>{ plainMessage( error ) }</p>
+			{ onRenew && (
+				<div className="bulkcat-bulk__acts">
 					<button
 						type="button"
-						className="button-link"
-						aria-expanded={ details }
-						onClick={ () => onDetails( ! details ) }
+						className="button button-small"
+						onClick={ onRenew }
 					>
 						{ __(
-							'Show details',
+							'Restore the selection',
 							'bulk-catalogue-manager-for-woocommerce'
 						) }
 					</button>
-					{ details && (
-						<p className="bulkcat-bulk__hint">
-							<code>{ error.code }</code>
-						</p>
-					) }
-				</>
+				</div>
 			) }
+			<Details
+				error={ error }
+				details={ details }
+				onDetails={ onDetails }
+			/>
 		</div>
 	);
 }

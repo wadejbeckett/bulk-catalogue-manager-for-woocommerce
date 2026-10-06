@@ -86,7 +86,8 @@ export function confirmThreshold( values ) {
 
 /**
  * Whether Apply restates the count and needs one more click (SPEC §4.5):
- * above the threshold, or always for a change that drafts, hides or empties.
+ * at or above the threshold, as confirmPolicy() decides, or always for a
+ * change that drafts, hides or empties.
  *
  * @param {number}  count         Rows the change will touch.
  * @param {Object}  values        Settings values.
@@ -94,7 +95,7 @@ export function confirmThreshold( values ) {
  * @return {boolean} Whether to ask again.
  */
 export function needsSecondClick( count, values, alwaysConfirm = false ) {
-	return alwaysConfirm || count > confirmThreshold( values );
+	return alwaysConfirm || count >= confirmThreshold( values );
 }
 
 /**

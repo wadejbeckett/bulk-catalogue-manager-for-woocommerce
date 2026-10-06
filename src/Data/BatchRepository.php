@@ -45,6 +45,11 @@ final class BatchRepository {
 	public const LEASE_SECONDS = 300;
 
 	/**
+	 * Seconds with_schedule_lock() waits for another request queueing the same batch.
+	 */
+	public const SCHEDULE_LOCK_WAIT = 10;
+
+	/**
 	 * claim_chunk(): any pending item.
 	 */
 	public const CLAIM_ANY = 'any';
@@ -109,11 +114,12 @@ final class BatchRepository {
 	 * @param int      $total_items Number of items to materialise.
 	 * @param int|null $undo_of     The batch this one undoes, for source `undo`.
 	 * @param int|null $previewed   The count the preview of a filter selection showed (T38), or null.
+	 * @param array|null $extensions The provider manifest of a batch with external steps (T107), or null.
 	 * @return int The new batch_id.
 	 * @throws \InvalidArgumentException On an invalid argument.
 	 * @throws \RuntimeException When the row is not written.
 	 */
-	public function create( string $uuid, int $user_id, string $source, array $operations, array $selection, int $total_items, ?int $undo_of = null, ?int $previewed = null ): int {
+	public function create( string $uuid, int $user_id, string $source, array $operations, array $selection, int $total_items, ?int $undo_of = null, ?int $previewed = null, ?array $extensions = null ): int {
 		global $wpdb;
 		if ( 1 !== preg_match( '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $uuid ) ) {
 			throw new \InvalidArgumentException( 'The request id must be a UUID.' );
@@ -148,11 +154,87 @@ final class BatchRepository {
 			$data['previewed_items'] = $previewed;
 			$format[]                = '%d';
 		}
+		if ( null !== $extensions ) {
+			$data['extensions'] = self::json( $extensions );
+			$format[]           = '%s';
+		}
 		// insert() prepares the statement from $format.
-		if ( false === $wpdb->insert( $this->registry->table( Schema::BATCHES ), $data, $format ) ) {
+		if ( 1 !== $wpdb->insert( $this->registry->table( Schema::BATCHES ), $data, $format ) ) {
 			throw new \RuntimeException( 'The batch could not be recorded.' );
 		}
 		return (int) $wpdb->insert_id;
+	}
+
+	/**
+	 * Strict atomic bookkeeping and immutable closure after a definite native outcome.
+	 *
+	 * @param int $batch_id Accepted batch.
+	 * @param array $closure Confirmed item outcome and safe receipt projection.
+	 */
+	public function close_inline( int $batch_id, array $closure ): void {
+		FoundationStorage::atomic(
+			function () use ( $batch_id, $closure ): void {
+				global $wpdb;
+				$this->lock( $batch_id );
+				$batch = $this->find_strict( $batch_id );
+				if ( null === $batch || 'running' !== $batch['status'] || 1 !== ( $batch['selection']['inline_receipt']['version'] ?? null ) || isset( $batch['selection']['inline_receipt']['closure'] ) ) {
+						throw new \RuntimeException( 'Inline closure cannot be replaced.' );
+				}
+				if ( 1 !== $this->mark_items( $batch_id, [ $closure['item_id'] ], $closure['state'], $closure['message'] )
+				|| ! $this->increment_counters( $batch_id, 1, $closure['saved'] ? 1 : 0, 'failed' === $closure['state'] ? 1 : 0 )
+				|| ! $this->transition( $batch_id, 'running', $closure['write_status'] ) ) {
+					throw new \RuntimeException( 'Inline bookkeeping could not be confirmed.' );
+				}
+				$selection                              = $batch['selection'];
+				$selection['inline_receipt']['closure'] = [
+					'write_status' => $closure['write_status'],
+					'steps'        => $closure['steps'],
+				];
+				if ( 1 !== $wpdb->update( $this->registry->table( Schema::BATCHES ), [ 'selection' => self::json( $selection ) ], [ 'batch_id' => $batch_id ], [ '%s' ], [ '%d' ] ) ) {
+					throw new \RuntimeException( 'Inline closure could not be confirmed.' );
+				}
+			}
+		);
+	}
+
+	/**
+	 * Complete the header of a batch recorded before all its items were
+	 * known (T111: an undo batch is recorded while its plan is walked, so
+	 * the plan is never held whole): its operation list, the `actions`
+	 * derived from it as create() derives them, its selection summary and
+	 * its item count. Only a batch still queued; the request that created it
+	 * completes it, in the same transaction.
+	 *
+	 * @param int   $batch_id    Batch.
+	 * @param array $operations  Operation list, stored as JSON.
+	 * @param array $selection   Selection summary, stored as JSON.
+	 * @param int   $total_items Items recorded.
+	 * @throws \InvalidArgumentException On an invalid id or count.
+	 * @throws \RuntimeException When the header is not updated.
+	 */
+	public function complete_header( int $batch_id, array $operations, array $selection, int $total_items ): void {
+		global $wpdb;
+		self::assert_ids( [ $batch_id ], 'batch id' );
+		self::assert_ids( [ $total_items ], 'item count', true );
+		// update() prepares the statement from the formats.
+		$updated = $wpdb->update(
+			$this->registry->table( Schema::BATCHES ),
+			[
+				'operations'  => self::json( $operations ),
+				'selection'   => self::json( $selection ),
+				'total_items' => $total_items,
+				'actions'     => self::actions( $operations ),
+			],
+			[
+				'batch_id' => $batch_id,
+				'status'   => 'queued',
+			],
+			[ '%s', '%s', '%d', '%s' ],
+			[ '%d', '%s' ]
+		);
+		if ( 1 !== $updated ) {
+			throw new \RuntimeException( 'The batch could not be completed.' );
+		}
 	}
 
 	/**
@@ -162,8 +244,37 @@ final class BatchRepository {
 	 * @return array{batch_id: int, uuid: string, user_id: int, created_gmt: string, finished_gmt: ?string, status: string, source: string, undo_of: ?int, operations: array, selection: array, total_items: int, previewed_items: ?int, done_items: int, changed_items: int, failed_items: int, chunk_size: int, note: string, actions: list<string>, pruned_gmt: ?string}|null
 	 */
 	public function find( int $batch_id ): ?array {
+		return $this->read( $batch_id, false );
+	}
+
+	/**
+	 * find(), except that a read the database fails throws instead of
+	 * answering null (T83): a durable request receipt names its batch, and a
+	 * transient read failure must never be taken for a removed batch and
+	 * turned into a gone tombstone.
+	 *
+	 * @param int $batch_id Batch.
+	 * @return array<string, mixed>|null The batch as find() types it, or null when no such row exists.
+	 * @throws \RuntimeException When the read fails.
+	 */
+	public function find_strict( int $batch_id ): ?array {
+		return $this->read( $batch_id, true );
+	}
+
+	/**
+	 * One batch row, typed.
+	 *
+	 * @param int  $batch_id Batch.
+	 * @param bool $strict   Whether a failed read throws.
+	 * @return array<string, mixed>|null
+	 * @throws \RuntimeException When $strict and the read fails.
+	 */
+	private function read( int $batch_id, bool $strict ): ?array {
 		global $wpdb;
 		$row = $wpdb->get_row( $wpdb->prepare( 'SELECT * FROM %i WHERE batch_id = %d', $this->registry->table( Schema::BATCHES ), $batch_id ), ARRAY_A );
+		if ( $strict && '' !== $wpdb->last_error ) {
+			throw new \RuntimeException( 'The batch could not be read.' );
+		}
 		return is_array( $row ) ? self::typed( $row ) : null;
 	}
 
@@ -360,15 +471,102 @@ final class BatchRepository {
 	}
 
 	/**
+	 * Settle every item of a batch claimed MAX_ATTEMPTS times whose last
+	 * claim is older than `$stale_before` (ENGINE-2), from what the journal
+	 * and the item hold rather than as one failure:
+	 *
+	 * - an item whose object has an `applied` journal row for the batch was
+	 *   written, though its run died before marking it: done, with no message;
+	 * - an item still `working` was being written when its run died, each
+	 *   time: failed with `$stopped`;
+	 * - an item still `pending` was claimed but never reached: failed with
+	 *   `$unreached`.
+	 *
+	 * Call it before reset_stale_working(), which would otherwise put the
+	 * working items back to pending.
+	 *
+	 * @param int    $batch_id     Batch.
+	 * @param string $stale_before GMT `Y-m-d H:i:s`: claims before it are stale.
+	 * @param string $stopped      The plain reason for an item whose write stopped the run.
+	 * @param string $unreached    The plain reason for an item never reached.
+	 * @return array{done: int, failed: int} Items marked done, items marked failed.
+	 * @throws \RuntimeException When a statement fails.
+	 */
+	public function give_up_exhausted( int $batch_id, string $stale_before, string $stopped, string $unreached ): array {
+		global $wpdb;
+		$table = $this->registry->table( Schema::ITEMS );
+		$done  = $wpdb->query( $wpdb->prepare( "UPDATE %i AS i SET i.state = 'done', i.message = '' WHERE i.batch_id = %d AND i.state IN (%s, %s) AND i.attempts >= %d AND (i.claimed_gmt IS NULL OR i.claimed_gmt < %s) AND EXISTS (SELECT c.change_id FROM %i AS c WHERE c.batch_id = i.batch_id AND c.object_id = i.object_id AND c.result = 'applied')", $table, $batch_id, 'pending', Schema::ITEM_WORKING, self::MAX_ATTEMPTS, $stale_before, $this->registry->table( Schema::CHANGES ) ) );
+		if ( false === $done ) {
+			throw new \RuntimeException( 'The batch items could not be updated.' );
+		}
+		$failed = $wpdb->query( $wpdb->prepare( "UPDATE %i SET state = 'failed', message = %s WHERE batch_id = %d AND state = %s AND attempts >= %d AND claimed_gmt < %s", $table, self::cut( $stopped ), $batch_id, Schema::ITEM_WORKING, self::MAX_ATTEMPTS, $stale_before ) );
+		if ( false === $failed ) {
+			throw new \RuntimeException( 'The batch items could not be updated.' );
+		}
+		return [
+			'done'   => (int) $done,
+			'failed' => (int) $failed + $this->fail_exhausted( $batch_id, $stale_before, $unreached ),
+		];
+	}
+
+	/**
+	 * Mark one item a run claimed for itself (claim_item()) with its outcome
+	 * and count it in the batch's progress, in one statement, so a run killed
+	 * after any item loses neither its mark nor its count (ENGINE-2). Only
+	 * while the item is still working under this run's claim (ENGINE-5): an
+	 * item another run has taken over is left to that run, and an item is
+	 * counted once, by the one move out of working.
+	 *
+	 * @param int    $batch_id Batch.
+	 * @param int    $item_id  Item.
+	 * @param string $token    The claim token of the run marking it.
+	 * @param string $state    One of Schema::ITEM_STATES other than pending.
+	 * @param string $message  The plain reason stored with the item (cut to MESSAGE_LENGTH).
+	 * @param bool   $changed  Whether the item counts as changed.
+	 * @return bool Whether the item was still this run's to mark, and was marked and counted.
+	 * @throws \InvalidArgumentException On an invalid state.
+	 * @throws \RuntimeException When the statement fails.
+	 */
+	public function finish_item( int $batch_id, int $item_id, string $token, string $state, string $message, bool $changed ): bool {
+		global $wpdb;
+		self::assert_in( $state, [ 'done', 'skipped', 'failed' ], 'item state' );
+		$result = $wpdb->query( $wpdb->prepare( 'UPDATE %i AS i INNER JOIN %i AS b ON b.batch_id = i.batch_id SET i.state = %s, i.message = %s, b.done_items = b.done_items + 1, b.changed_items = b.changed_items + %d, b.failed_items = b.failed_items + %d WHERE i.batch_id = %d AND i.item_id = %d AND i.claim_token = %s AND i.state = %s', $this->registry->table( Schema::ITEMS ), $this->registry->table( Schema::BATCHES ), $state, self::cut( $message ), $changed ? 1 : 0, 'failed' === $state ? 1 : 0, $batch_id, $item_id, $token, Schema::ITEM_WORKING ) );
+		if ( false === $result ) {
+			throw new \RuntimeException( 'The batch item could not be updated.' );
+		}
+		return (int) $result > 0;
+	}
+
+	/**
 	 * Number of a batch's items in a state.
 	 *
 	 * @param int    $batch_id Batch.
 	 * @param string $state    One of Schema::ITEM_STATES.
+	 * @param bool   $strict   Whether a failed read throws instead of counting 0 (SILENT-FAILURES-5).
+	 * @throws \RuntimeException When $strict and the read fails.
 	 */
-	public function count_items( int $batch_id, string $state ): int {
+	public function count_items( int $batch_id, string $state, bool $strict = false ): int {
 		global $wpdb;
 		self::assert_in( $state, Schema::ITEM_STATES, 'item state' );
-		return (int) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM %i WHERE batch_id = %d AND state = %s', $this->registry->table( Schema::ITEMS ), $batch_id, $state ) );
+		return self::counted( $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM %i WHERE batch_id = %d AND state = %s', $this->registry->table( Schema::ITEMS ), $batch_id, $state ) ), $strict );
+	}
+
+	/**
+	 * A COUNT(*) read as a number. A failed read answers no value and
+	 * records the error; strict, it throws rather than count 0, so a batch
+	 * is never finalised on a count the database did not give
+	 * (SILENT-FAILURES-5).
+	 *
+	 * @param mixed $value  What get_var() returned.
+	 * @param bool  $strict Whether a failed read throws.
+	 * @throws \RuntimeException When $strict and the read failed.
+	 */
+	public static function counted( mixed $value, bool $strict ): int {
+		global $wpdb;
+		if ( $strict && ( null === $value || '' !== $wpdb->last_error ) ) {
+			throw new \RuntimeException( 'The batch items could not be counted.' );
+		}
+		return (int) $value;
 	}
 
 	/**
@@ -488,11 +686,13 @@ final class BatchRepository {
 	/**
 	 * Number of a batch's items not yet finished: pending, or working under a run.
 	 *
-	 * @param int $batch_id Batch.
+	 * @param int  $batch_id Batch.
+	 * @param bool $strict   Whether a failed read throws instead of counting 0 (SILENT-FAILURES-5).
+	 * @throws \RuntimeException When $strict and the read fails.
 	 */
-	public function count_open( int $batch_id ): int {
+	public function count_open( int $batch_id, bool $strict = false ): int {
 		global $wpdb;
-		return (int) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM %i WHERE batch_id = %d AND state IN (%s, %s)', $this->registry->table( Schema::ITEMS ), $batch_id, 'pending', Schema::ITEM_WORKING ) );
+		return self::counted( $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM %i WHERE batch_id = %d AND state IN (%s, %s)', $this->registry->table( Schema::ITEMS ), $batch_id, 'pending', Schema::ITEM_WORKING ) ), $strict );
 	}
 
 	/**
@@ -518,11 +718,13 @@ final class BatchRepository {
 	 * skipped, or done with a message (a step refused on an object whose other
 	 * changes were applied). Zero means the batch is complete (§12.6).
 	 *
-	 * @param int $batch_id Batch.
+	 * @param int  $batch_id Batch.
+	 * @param bool $strict   Whether a failed read throws instead of counting 0 (SILENT-FAILURES-5).
+	 * @throws \RuntimeException When $strict and the read fails.
 	 */
-	public function count_reported( int $batch_id ): int {
+	public function count_reported( int $batch_id, bool $strict = false ): int {
 		global $wpdb;
-		return (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM %i WHERE batch_id = %d AND state <> 'pending' AND (state <> 'done' OR message <> '')", $this->registry->table( Schema::ITEMS ), $batch_id ) );
+		return self::counted( $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM %i WHERE batch_id = %d AND state <> 'pending' AND (state <> 'done' OR message <> '')", $this->registry->table( Schema::ITEMS ), $batch_id ) ), $strict );
 	}
 
 	/**
@@ -576,6 +778,24 @@ final class BatchRepository {
 	}
 
 	/**
+	 * Mark skipped, with a plain reason, every item of a batch still pending
+	 * (T107: a chunk whose provider is not active stops, leaving them alone).
+	 *
+	 * @param int    $batch_id Batch.
+	 * @param string $message  The plain reason stored with each item.
+	 * @return int Items marked.
+	 * @throws \RuntimeException When the statement fails.
+	 */
+	public function skip_pending( int $batch_id, string $message ): int {
+		global $wpdb;
+		$result = $wpdb->query( $wpdb->prepare( "UPDATE %i SET state = 'skipped', message = %s WHERE batch_id = %d AND state = 'pending'", $this->registry->table( Schema::ITEMS ), self::cut( $message ), $batch_id ) );
+		if ( false === $result ) {
+			throw new \RuntimeException( 'The batch items could not be updated.' );
+		}
+		return (int) $result;
+	}
+
+	/**
 	 * Mark failed, with a plain reason, every item of a batch still pending,
 	 * claimed or not (T38: an inline batch whose request died mid-write).
 	 *
@@ -618,19 +838,113 @@ final class BatchRepository {
 	}
 
 	/**
-	 * The earliest batch before `$before_id` that the same user created with
-	 * the same request id since a moment, or null (T31: two submissions of
-	 * one request that raced past the replay check; the earlier one wins).
+	 * The batches a user created under one request id, at any age, oldest
+	 * first and at most two (T83). This is the durable legacy lookup: a
+	 * request id with no server-issued grant is resolved against the batch
+	 * headers the history keeps, never against a time window, and two
+	 * answers mean the id is ambiguous. Old request ids were never unique,
+	 * so no unique index backs this and callers must never create a batch
+	 * on the strength of an empty answer from an old screen.
 	 *
-	 * @param string $uuid      Client request id.
-	 * @param int    $user_id   Initiating user.
-	 * @param int    $before_id Only batches with a lower id.
-	 * @param string $since_gmt Only batches created at or after this GMT time, `Y-m-d H:i:s`.
+	 * @param string $uuid    Request id.
+	 * @param int    $user_id The user who sent it.
+	 * @return list<int>
+	 * @throws \RuntimeException When the read fails.
 	 */
-	public function earlier_request( string $uuid, int $user_id, int $before_id, string $since_gmt ): ?int {
+	public function request_candidates( string $uuid, int $user_id ): array {
 		global $wpdb;
-		$id = $wpdb->get_var( $wpdb->prepare( 'SELECT batch_id FROM %i WHERE uuid = %s AND user_id = %d AND batch_id < %d AND created_gmt >= %s ORDER BY batch_id ASC LIMIT 1', $this->registry->table( Schema::BATCHES ), strtolower( $uuid ), $user_id, $before_id, $since_gmt ) );
-		return null === $id ? null : (int) $id;
+		$ids = $wpdb->get_col( $wpdb->prepare( 'SELECT batch_id FROM %i WHERE uuid = %s AND user_id = %d ORDER BY batch_id ASC LIMIT 2', $this->registry->table( Schema::BATCHES ), strtolower( $uuid ), $user_id ) );
+		if ( '' !== $wpdb->last_error ) {
+			throw new \RuntimeException( 'The earlier request could not be looked up.' );
+		}
+		return array_map( 'intval', $ids );
+	}
+
+	/**
+	 * Lock one batch row for the rest of the caller's transaction (T83): a
+	 * durable undo holds the batch it undoes while it plans, records the undo
+	 * and moves the batch to undoing, so two undos of one batch serialise.
+	 *
+	 * @param int $batch_id The batch undone.
+	 * @throws \RuntimeException When the lock cannot be taken.
+	 */
+	public function lock( int $batch_id ): void {
+		global $wpdb;
+		$wpdb->get_var( $wpdb->prepare( 'SELECT batch_id FROM %i WHERE batch_id = %d LIMIT 1 FOR UPDATE', $this->registry->table( Schema::BATCHES ), $batch_id ) );
+		if ( '' !== $wpdb->last_error ) {
+			throw new \RuntimeException( 'The batch could not be locked.' );
+		}
+	}
+
+	/**
+	 * Run $work under a MySQL named lock for one batch's scheduling (T83):
+	 * two requests answering the same accepted batch at once — the one that
+	 * committed it and a concurrent retry — must queue one first chunk, and
+	 * Action Scheduler's unique enqueue does not serialise concurrent
+	 * inserts. The lock is per site table and batch, is held only around
+	 * $work, and writes nothing. When it cannot be taken — the server
+	 * refuses named locks (NULL) or another request holds it past
+	 * SCHEDULE_LOCK_WAIT seconds — $work still runs, unlocked: scheduling
+	 * must never stop, and the worst an unserialised run can do is queue a
+	 * duplicate chunk action, which is harmless because items are claimed
+	 * one by one.
+	 *
+	 * @param int      $batch_id The batch.
+	 * @param callable $work     What to run.
+	 * @return mixed What $work answered.
+	 */
+	public function with_schedule_lock( int $batch_id, callable $work ): mixed {
+		global $wpdb;
+		$name   = 'bulkcat_schedule_' . md5( $this->registry->table( Schema::BATCHES ) . '|' . $batch_id );
+		$locked = '1' === (string) $wpdb->get_var( $wpdb->prepare( 'SELECT GET_LOCK(%s, %d)', $name, self::SCHEDULE_LOCK_WAIT ) );
+		try {
+			return $work();
+		} finally {
+			if ( $locked ) {
+				$wpdb->get_var( $wpdb->prepare( 'SELECT RELEASE_LOCK(%s)', $name ) );
+			}
+		}
+	}
+
+	/**
+	 * Record a batch's still pending items for some objects as failed, with
+	 * a plain reason (T83): the members an exact scope found unavailable are
+	 * recorded with the batch so its outcome names them, but must never be
+	 * written, whatever becomes of the object before the chunk runs. Only
+	 * pending items of exactly these objects and kinds are touched.
+	 *
+	 * @param int                            $batch_id Batch.
+	 * @param list<array{0: int, 1: string}> $objects  [ object_id, object_type ] pairs.
+	 * @param string                         $message  The plain reason.
+	 * @return int Items marked.
+	 * @throws \InvalidArgumentException On a malformed pair.
+	 * @throws \RuntimeException When a statement fails.
+	 */
+	public function fail_objects( int $batch_id, array $objects, string $message ): int {
+		global $wpdb;
+		self::assert_ids( [ $batch_id ], 'batch id' );
+		$by_type = [];
+		foreach ( $objects as $object ) {
+			if ( ! is_array( $object ) || ! is_int( $object[0] ?? null ) || ! is_string( $object[1] ?? null ) ) {
+				throw new \InvalidArgumentException( 'Each object is an [ object_id, object_type ] pair.' );
+			}
+			self::assert_ids( [ $object[0] ], 'object id' );
+			self::assert_in( $object[1], Schema::OBJECT_TYPES, 'object type' );
+			$by_type[ $object[1] ][] = $object[0];
+		}
+		$marked = 0;
+		foreach ( $by_type as $type => $ids ) {
+			foreach ( array_chunk( $ids, self::INSERT_CHUNK ) as $chunk ) {
+				$in     = implode( ', ', array_fill( 0, count( $chunk ), '%d' ) );
+				$args   = [ $this->registry->table( Schema::ITEMS ), self::cut( $message ), $batch_id, $type, ...$chunk ];
+				$result = $wpdb->query( $wpdb->prepare( "UPDATE %i SET state = 'failed', message = %s WHERE batch_id = %d AND state = 'pending' AND object_type = %s AND object_id IN ({$in})", $args ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in is only placeholders; every value is an argument.
+				if ( false === $result ) {
+					throw new \RuntimeException( 'The batch items could not be updated.' );
+				}
+				$marked += (int) $result;
+			}
+		}
+		return $marked;
 	}
 
 	/**
@@ -668,8 +982,9 @@ final class BatchRepository {
 
 	/**
 	 * The reasons of a batch's failed and skipped items that the journal
-	 * holds no row for (T36: an item given up on after three tries, a write
-	 * that threw, a category item), grouped by message with the number of
+	 * holds no settled row for (T36: an item given up on after three tries,
+	 * a write that threw, a category item; ENGINE-2: an item whose write
+	 * stopped its run, leaving only intent rows), grouped by message with the number of
 	 * items carrying each, most first.
 	 *
 	 * @param int $batch_id Batch.
@@ -680,10 +995,11 @@ final class BatchRepository {
 		global $wpdb;
 		$rows = $wpdb->get_results(
 			$wpdb->prepare(
-				"SELECT i.message AS message, COUNT(*) AS objects FROM %i AS i WHERE i.batch_id = %d AND i.state IN ('failed', 'skipped') AND i.message <> '' AND NOT EXISTS (SELECT c.change_id FROM %i AS c WHERE c.batch_id = i.batch_id AND c.object_id = i.object_id) GROUP BY i.message ORDER BY objects DESC LIMIT %d",
+				"SELECT i.message AS message, COUNT(*) AS objects FROM %i AS i WHERE i.batch_id = %d AND i.state IN ('failed', 'skipped') AND i.message <> '' AND NOT EXISTS (SELECT c.change_id FROM %i AS c WHERE c.batch_id = i.batch_id AND c.object_id = i.object_id AND c.result <> %s) GROUP BY i.message ORDER BY objects DESC LIMIT %d",
 				$this->registry->table( Schema::ITEMS ),
 				$batch_id,
 				$this->registry->table( Schema::CHANGES ),
+				Schema::CHANGE_INTENT,
 				max( 1, min( 100, $limit ) )
 			),
 			ARRAY_A
@@ -733,7 +1049,8 @@ final class BatchRepository {
 	}
 
 	/**
-	 * The undo batch that completed undoing a batch, or null (T54, §4.6:
+	 * The undo batch that finished undoing a batch (complete, or partial with
+	 * items left alone; Undo\Original::UNDONE_BY), or null (T54, §4.6:
 	 * "already undone"). A redo is an undo of the undo batch, so it names the
 	 * undo batch, never the original.
 	 *
@@ -745,8 +1062,9 @@ final class BatchRepository {
 
 	/**
 	 * For a page of batches in one read, the latest undo batch that
-	 * completed undoing each: batch id => undo batch id, batches without one
-	 * left out.
+	 * finished undoing each (complete or partial, having put something back:
+	 * an undo whose every item was changed again first undid nothing, F2):
+	 * batch id => undo batch id, batches without one left out.
 	 *
 	 * @param list<int> $batch_ids Batches.
 	 * @return array<int, int>
@@ -762,7 +1080,7 @@ final class BatchRepository {
 		$in   = implode( ', ', array_fill( 0, count( $batch_ids ), '%d' ) );
 		$args = array_merge( [ $this->registry->table( Schema::BATCHES ) ], $batch_ids );
 		// $in holds only %d placeholders, one per id; every id is a prepared argument.
-		$rows   = $wpdb->get_results( $wpdb->prepare( "SELECT batch_id, undo_of FROM %i WHERE undo_of IN ({$in}) AND source = 'undo' AND status = 'complete' ORDER BY batch_id ASC", $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in is only %d placeholders; every id is an argument.
+		$rows   = $wpdb->get_results( $wpdb->prepare( "SELECT batch_id, undo_of FROM %i WHERE undo_of IN ({$in}) AND source = 'undo' AND status IN ('complete', 'partial') AND changed_items > 0 ORDER BY batch_id ASC", $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in is only %d placeholders; every id is an argument.
 		$undone = [];
 		foreach ( is_array( $rows ) ? $rows : [] as $row ) {
 			$undone[ (int) $row['undo_of'] ] = (int) $row['batch_id'];
@@ -772,7 +1090,8 @@ final class BatchRepository {
 
 	/**
 	 * For a page of batches in one read, the latest undo batch that
-	 * completed undoing each, with its user: batch id => [ batch_id,
+	 * finished undoing each (complete or partial, having put something back),
+	 * with its user: batch id => [ batch_id,
 	 * user_id ] of the undo batch, batches without one left out (the
 	 * history's "put back by").
 	 *
@@ -790,7 +1109,7 @@ final class BatchRepository {
 		$in   = implode( ', ', array_fill( 0, count( $batch_ids ), '%d' ) );
 		$args = array_merge( [ $this->registry->table( Schema::BATCHES ) ], $batch_ids );
 		// $in holds only %d placeholders, one per id; every id is a prepared argument.
-		$rows   = $wpdb->get_results( $wpdb->prepare( "SELECT batch_id, undo_of, user_id FROM %i WHERE undo_of IN ({$in}) AND source = 'undo' AND status = 'complete' ORDER BY batch_id ASC", $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in is only %d placeholders; every id is an argument.
+		$rows   = $wpdb->get_results( $wpdb->prepare( "SELECT batch_id, undo_of, user_id FROM %i WHERE undo_of IN ({$in}) AND source = 'undo' AND status IN ('complete', 'partial') AND changed_items > 0 ORDER BY batch_id ASC", $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in is only %d placeholders; every id is an argument.
 		$undone = [];
 		foreach ( is_array( $rows ) ? $rows : [] as $row ) {
 			$undone[ (int) $row['undo_of'] ] = [
@@ -839,6 +1158,19 @@ final class BatchRepository {
 		global $wpdb;
 		$rows = $wpdb->get_results( $wpdb->prepare( 'SELECT user_id FROM %i WHERE user_id > 0 GROUP BY user_id ORDER BY user_id ASC LIMIT %d', $this->registry->table( Schema::BATCHES ), max( 1, min( 1000, $limit ) ) ), ARRAY_A );
 		return array_map( static fn( array $row ): int => (int) $row['user_id'], is_array( $rows ) ? $rows : [] );
+	}
+
+	/**
+	 * The ids of batches still queued or running, oldest first: the ones a
+	 * deactivation may have interrupted (Engine\ChunkRunner::resume_interrupted()).
+	 *
+	 * @param int $limit Most ids returned, 1 to 1000.
+	 * @return list<int>
+	 */
+	public function active_ids( int $limit = 100 ): array {
+		global $wpdb;
+		$ids = $wpdb->get_col( $wpdb->prepare( "SELECT batch_id FROM %i WHERE status IN ('queued', 'running') ORDER BY batch_id ASC LIMIT %d", $this->registry->table( Schema::BATCHES ), max( 1, min( 1000, $limit ) ) ) );
+		return array_map( 'intval', is_array( $ids ) ? array_values( $ids ) : [] );
 	}
 
 	/**
@@ -915,7 +1247,53 @@ final class BatchRepository {
 			'note'            => (string) ( $row['note'] ?? '' ),
 			'actions'         => array_values( array_filter( explode( ',', (string) ( $row['actions'] ?? '' ) ), static fn( string $id ): bool => '' !== $id ) ),
 			'pruned_gmt'      => null === ( $row['pruned_gmt'] ?? null ) ? null : (string) $row['pruned_gmt'],
+			'extensions'      => self::manifest( $row['extensions'] ?? null ),
 		];
+	}
+
+	/**
+	 * A stored provider manifest decoded, or null for none or an unreadable one (T107).
+	 *
+	 * @param mixed $stored The column's value.
+	 * @return array<string, mixed>|null
+	 */
+	private static function manifest( mixed $stored ): ?array {
+		if ( ! is_string( $stored ) || '' === $stored ) {
+			return null;
+		}
+		try {
+			$manifest = ValueCodec::decode( $stored );
+		} catch ( \UnexpectedValueException $e ) {
+			return null;
+		}
+		return is_array( $manifest ) && [] !== $manifest ? $manifest : null;
+	}
+
+	/**
+	 * The provider manifests of some batches, by batch id, for those that have
+	 * one (T108: history and audit rows render external values from them).
+	 *
+	 * @param list<int> $batch_ids Batches.
+	 * @return array<int, array<string, mixed>>
+	 */
+	public function manifests( array $batch_ids ): array {
+		global $wpdb;
+		$batch_ids = array_values( array_unique( array_filter( array_map( 'intval', $batch_ids ), static fn( int $id ): bool => $id > 0 ) ) );
+		if ( [] === $batch_ids ) {
+			return [];
+		}
+		$in   = implode( ', ', array_fill( 0, count( $batch_ids ), '%d' ) );
+		$args = array_merge( [ $this->registry->table( Schema::BATCHES ) ], $batch_ids );
+		// $in holds only %d placeholders, one per id; every id is a prepared argument.
+		$rows      = $wpdb->get_results( $wpdb->prepare( "SELECT batch_id, extensions FROM %i WHERE batch_id IN ({$in}) AND extensions IS NOT NULL", $args ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in is only %d placeholders; every id is an argument.
+		$manifests = [];
+		foreach ( is_array( $rows ) ? $rows : [] as $row ) {
+			$manifest = self::manifest( $row['extensions'] ?? null );
+			if ( null !== $manifest ) {
+				$manifests[ (int) $row['batch_id'] ] = $manifest;
+			}
+		}
+		return $manifests;
 	}
 
 	/**
@@ -1071,18 +1449,20 @@ final class BatchRepository {
 
 	/**
 	 * The undo batches recorded against a batch (T55), newest first, as
-	 * `{ batch_id, status }`, so the planner can refuse one already undone.
+	 * `{ batch_id, status, changed_items }`, so the planner can refuse one
+	 * already undone (an undo that put nothing back does not count, F2).
 	 *
 	 * @param int $batch_id The batch undone.
-	 * @return list<array{batch_id: int, status: string}>
+	 * @return list<array{batch_id: int, status: string, changed_items: int}>
 	 */
 	public function undos_of( int $batch_id ): array {
 		global $wpdb;
-		$rows = $wpdb->get_results( $wpdb->prepare( 'SELECT batch_id, status FROM %i WHERE undo_of = %d ORDER BY batch_id DESC LIMIT %d', $this->registry->table( Schema::BATCHES ), $batch_id, self::MAX_CLAIM ), ARRAY_A );
+		$rows = $wpdb->get_results( $wpdb->prepare( 'SELECT batch_id, status, changed_items FROM %i WHERE undo_of = %d ORDER BY batch_id DESC LIMIT %d', $this->registry->table( Schema::BATCHES ), $batch_id, self::MAX_CLAIM ), ARRAY_A );
 		return array_map(
 			static fn( array $row ): array => [
-				'batch_id' => (int) $row['batch_id'],
-				'status'   => (string) $row['status'],
+				'batch_id'      => (int) $row['batch_id'],
+				'status'        => (string) $row['status'],
+				'changed_items' => (int) ( $row['changed_items'] ?? 0 ),
 			],
 			is_array( $rows ) ? $rows : []
 		);

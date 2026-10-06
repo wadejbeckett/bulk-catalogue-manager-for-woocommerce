@@ -95,6 +95,32 @@ describe( 'confirmation policy', () => {
 		}
 	);
 
+	it( 'keeps focus on Apply while the confirmed change is sent (FRONTEND-7)', () => {
+		const onApply = jest.fn();
+		const { rerender } = render(
+			<ConfirmApply count={ 300 } threshold={ 200 } onApply={ onApply } />
+		);
+		fireEvent.click( applyButton( 300 ) );
+		fireEvent.click(
+			screen.getByRole( 'button', { name: /^Yes, change/ } )
+		);
+		expect( onApply ).toHaveBeenCalledTimes( 1 );
+		rerender(
+			<ConfirmApply
+				count={ 300 }
+				threshold={ 200 }
+				onApply={ onApply }
+				busy
+			/>
+		);
+		const apply = applyButton( 300 );
+		expect( document.activeElement ).toBe( apply );
+		expect( apply.getAttribute( 'aria-disabled' ) ).toBe( 'true' );
+		fireEvent.click( apply );
+		expect( onApply ).toHaveBeenCalledTimes( 1 );
+		expect( screen.queryByRole( 'group' ) ).toBeNull();
+	} );
+
 	it( 'uses the default threshold of 200 when none is set', () => {
 		expect( confirmPolicy( { count: 199 } ).required ).toBe( false );
 		expect( confirmPolicy( { count: 200 } ).required ).toBe( true );
@@ -105,25 +131,16 @@ describe( 'confirmation policy', () => {
 		args: { skip_already: true, ...args },
 	} );
 	it.each( [
+		// T93: a listing control hides a product from the shop and search; it stays on sale.
 		[
-			'status to draft',
-			op( 'set_value', { field: 'status', value: 'draft' } ),
-			'This sets Status to Draft on 1 product, which takes them off the site.',
-		],
-		[
-			'status to pending',
-			op( 'set_value', { field: 'status', value: 'pending' } ),
-			'This sets Status to Pending review on 1 product, which takes them off the site.',
-		],
-		[
-			'Visible on site off',
+			'Shown in shop and search off',
 			op( 'set_value', { field: 'visible_on_site', value: 'off' } ),
-			'This sets Visible on site to Hidden on 1 product, hiding them from the shop and from search.',
+			'This sets Shown in shop and search to Hidden on 1 product: they leave the shop and search results, but can still be opened by link and bought. To take them off sale, set Status to Draft.',
 		],
 		[
 			'catalogue visibility hidden',
 			op( 'set_value', { field: 'catalog_visibility', value: 'hidden' } ),
-			'This sets Catalogue visibility to Hidden on 1 product, hiding them from the shop and from search.',
+			'This sets Catalogue visibility to Hidden on 1 product: they leave the shop and search results, but can still be opened by link and bought. To take them off sale, set Status to Draft.',
 		],
 		[
 			'clearing a field',
@@ -223,7 +240,7 @@ describe( 'confirmation policy', () => {
 		expect( onApply ).toHaveBeenCalledTimes( 1 );
 	} );
 
-	it( 'never confirms a preview, even for a large always-confirm change', async () => {
+	it( 'never confirms a preview and confirms a large native Status change only by count', async () => {
 		apiFetch.mockReset();
 		routeApi( apiFetch, {
 			'POST preview': previewResponse( {
@@ -240,12 +257,9 @@ describe( 'confirmation policy', () => {
 		const heading = screen.getByRole( 'heading', { name: 'Publishing' } );
 		fireEvent.click(
 			within( heading.parentElement ).getByRole( 'radio', {
-				name: /^Set a value/,
+				name: /^Set Status/,
 			} )
 		);
-		fireEvent.change( screen.getByLabelText( 'Field' ), {
-			target: { value: 'status' },
-		} );
 		fireEvent.change( screen.getByLabelText( 'New value' ), {
 			target: { value: 'draft' },
 		} );
@@ -257,22 +271,64 @@ describe( 'confirmation policy', () => {
 			screen.queryByRole( 'group', { name: /Apply it\?/ } )
 		).toBeNull();
 
-		// Apply, on the other hand, asks, naming the draft.
 		fireEvent.click(
 			await screen.findByRole( 'button', {
 				name: 'Apply to 5,000 products',
 			} )
 		);
 		expect(
-			screen.getByText(
-				'This sets Status to Draft on 5,000 products, which takes them off the site.'
-			)
+			screen.getByText( 'This will change 5,000 products. Apply it?' )
 		).toBeVisible();
+		expect( document.body.textContent ).not.toContain( 'switches' );
 		expect( callsTo( apiFetch, 'POST batches' ) ).toHaveLength( 0 );
 		await waitFor( () =>
 			expect(
 				screen.getByRole( 'group', { name: /Apply it\?/ } )
 			).toBeVisible()
 		);
+	} );
+} );
+
+describe( 'native Status confirmation', () => {
+	// FRONTEND-4: as the Settings help says, a change that drafts always asks,
+	// whatever the count and whatever old availability counts say.
+	it.each( [ 'set_status', 'set_value' ] )(
+		'always asks before a %s Status request drafts, naming it',
+		( action ) => {
+			const reasons = alwaysConfirmReasons(
+				REGISTRY,
+				[ { action, args: { field: 'status', value: 'draft' } } ],
+				1,
+				{ counts: { off: 1, on_restores: 1, conflict: 1 } }
+			);
+			expect( reasons ).toEqual( [
+				'This sets Status to Draft on 1 product, which takes them off the site.',
+			] );
+			const onApply = renderApply( {
+				count: 1,
+				threshold: 200,
+				reasons,
+			} );
+			fireEvent.click( applyButton( 1 ) );
+			expect( onApply ).not.toHaveBeenCalled();
+			expect( screen.getByText( reasons[ 0 ] ) ).toBeVisible();
+		}
+	);
+
+	it( 'applies a publish in one click below the threshold', () => {
+		const reasons = alwaysConfirmReasons(
+			REGISTRY,
+			[
+				{
+					action: 'set_status',
+					args: { field: 'status', value: 'publish' },
+				},
+			],
+			1
+		);
+		expect( reasons ).toEqual( [] );
+		const onApply = renderApply( { count: 1, threshold: 200, reasons } );
+		fireEvent.click( applyButton( 1 ) );
+		expect( onApply ).toHaveBeenCalledTimes( 1 );
 	} );
 } );

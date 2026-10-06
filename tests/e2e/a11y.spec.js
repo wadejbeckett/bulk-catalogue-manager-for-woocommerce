@@ -30,11 +30,22 @@ test.describe( 'axe-core on each screen', () => {
 	test( 'bulk panel and preview', async ( { page } ) => {
 		await openScreen( page );
 		await page.getByRole( 'checkbox', { name: SEED.simple( 1 ) } ).check();
+		// T84: the server holds the selection before the change is checked.
+		await expect(
+			page.getByRole( 'region', { name: 'Selection' } )
+		).toContainText( '1 product selected' );
 		await page
 			.getByRole( 'button', { name: 'Make a change to these' } )
 			.click();
 		const panel = page.getByRole( 'dialog', { name: 'Bulk change' } );
 		await expect( panel ).toBeVisible();
+		expect(
+			( await page.locator( '.bulkcat-catalogue__main' ).boundingBox() )
+				.width
+		).toBeGreaterThan( 360 );
+		await expect(
+			page.locator( '.bulkcat-cat-panel.is-narrow' )
+		).toBeVisible();
 		await expectAxeClean( page, 'the bulk panel' );
 		await panel
 			.getByRole( 'radio', { name: /^Increase or decrease/ } )
@@ -192,6 +203,32 @@ for ( const [ label, size ] of [
 	} );
 }
 
+// T113 (WCAG 2.4.11 Focus Not Obscured): a control that takes the focus is
+// scrolled clear of the sticky selection bar, never left beneath it.
+test( 'a focused row is never hidden under the sticky selection bar', async ( {
+	page,
+} ) => {
+	await page.setViewportSize( { width: 1440, height: 520 } );
+	await openScreen( page );
+	await page.getByRole( 'checkbox', { name: SEED.simple( 1 ) } ).check();
+	const bar = page.getByRole( 'region', { name: 'Selection' } );
+	await expect( bar ).toContainText( '1 product selected' );
+	const target = page.getByRole( 'checkbox', { name: SEED.variable } );
+	// Scroll until the row sits just under the admin bar, behind the sticky bar.
+	await target.evaluate( ( node ) =>
+		window.scrollBy( 0, node.getBoundingClientRect().top - 40 )
+	);
+	const hidden = await bar.boundingBox();
+	const before = await target.boundingBox();
+	expect( before.y ).toBeLessThan( hidden.y + hidden.height );
+	// Keyboard focus reaches it: it is scrolled into the clear.
+	await target.evaluate( ( node ) => node.focus() );
+	await expect( target ).toBeFocused();
+	const shown = await bar.boundingBox();
+	const after = await target.boundingBox();
+	expect( after.y ).toBeGreaterThanOrEqual( shown.y + shown.height );
+} );
+
 test( 'animation stops for reduced motion', async ( { page } ) => {
 	await page.emulateMedia( { reducedMotion: 'reduce' } );
 	// Hold the products until the skeleton has been measured.
@@ -206,14 +243,17 @@ test( 'animation stops for reduced motion', async ( { page } ) => {
 	);
 	const skeleton = page.locator( '.bulkcat-skel' ).first();
 	await expect( skeleton ).toBeVisible();
-	// toHaveCSS re-resolves the locator on each try: the skeleton can be
-	// remounted while the screen loads, and a detached node's computed
-	// animation-name reads as "".
-	try {
-		await expect( skeleton ).toHaveCSS( 'animation-name', 'none' );
-	} finally {
-		release();
-	}
+	// Found and measured in one task of the page (T85): a redraw between
+	// finding the node and reading its style would measure a detached node,
+	// whose computed style is empty.
+	const animation = await page.evaluate( () => {
+		const node = document.querySelector( '.bulkcat-skel' );
+		return node && node.isConnected
+			? window.getComputedStyle( node ).animationName
+			: null;
+	} );
+	release();
+	expect( animation ).toBe( 'none' );
 } );
 
 // SPEC §14: text 4.5:1 and components 3:1 in both admin colour schemes. The
@@ -255,6 +295,24 @@ test.describe( 'in the Default admin colour scheme', () => {
 			1
 		);
 		await page.getByRole( 'checkbox', { name: SEED.simple( 1 ) } ).check();
+		await expect(
+			page.getByRole( 'region', { name: 'Selection' } )
+		).toContainText( '1 product selected' );
+		// Checking a row near the bottom scrolls the toolbar under the sticky
+		// actions. Keyboard focus must reveal its controls too, before the scan.
+		const options = page.getByRole( 'button', {
+			name: 'View options',
+			exact: true,
+		} );
+		await options.focus();
+		await expect
+			.poll( async () => {
+				const bar = await page
+					.getByRole( 'region', { name: 'Selection' } )
+					.boundingBox();
+				return ( await options.boundingBox() ).y >= bar.y + bar.height;
+			} )
+			.toBe( true );
 		await expectAxeClean( page, 'the catalogue in Default colours' );
 		await page
 			.getByRole( 'button', { name: 'Make a change to these' } )

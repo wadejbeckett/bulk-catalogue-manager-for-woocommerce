@@ -3,13 +3,27 @@
  * SPEC §6, §12.1): the chooser, the argument controls and the operation list
  * are all generated from the action descriptors, so no action, argument or
  * group is listed here by hand.
+ *
+ * External actions (T105, docs/EXTENSIONS.md §5.3) come from the same
+ * descriptors: an entry with a `provider` belongs to a separately installed
+ * add-on, one without is native. The add-on's groups follow the native ones
+ * in the registry's `groups`, an action it cannot offer now carries
+ * `available: false` with its reason, and one change holds either native
+ * steps or one add-on's steps (mixesKinds()).
  */
+import { lookupIds } from '../../components/lookup-picker';
+import { __ } from '@wordpress/i18n';
 
 /** Most steps one change may hold (Operations\Registry::validate_list()). */
 export const MAX_OPERATIONS = 20;
 
 /** Arguments with a control of their own rather than the generic one. */
-export const SPECIAL_ARGS = [ 'field', 'skip_already', 'apply_to_variations' ];
+export const SPECIAL_ARGS = [
+	'field',
+	'skip_already',
+	'apply_to_variations',
+	'keep_changed_status',
+];
 
 /**
  * A field descriptor by key.
@@ -48,7 +62,10 @@ export function actionById( registry, id ) {
  * @return {Array<{id: string, label: string, actions: Array<Object>}>} Groups with actions.
  */
 export function groupedActions( registry ) {
-	const actions = registry?.actions || [];
+	// An add-on's actions on categories belong to the Categories workspace, never to products.
+	const actions = ( registry?.actions || [] ).filter(
+		( action ) => ! action.target || action.target === 'product'
+	);
 	return ( registry?.groups || [] )
 		.map( ( group ) => ( {
 			...group,
@@ -96,9 +113,13 @@ export function isChoice( property ) {
  *
  * @param {string} name     Argument name.
  * @param {Object} property JSON Schema property.
- * @return {string} boolean, choice, integer, decimal, text, ids or value.
+ * @return {string} boolean, choice, lookup, integer, decimal, text, ids or value.
  */
 export function propertyKind( name, property ) {
+	if ( property?.lookup ) {
+		// Contract version 2: an add-on's searchable, paged choices (EXTENSIONS-v2 §4.6).
+		return 'lookup';
+	}
 	const type = property?.type;
 	const types = Array.isArray( type ) ? type : [ type ];
 	if ( isChoice( property ) ) {
@@ -111,7 +132,7 @@ export function propertyKind( name, property ) {
 		return 'boolean';
 	}
 	if ( types.includes( 'array' ) ) {
-		return 'ids';
+		return Array.isArray( property?.items?.enum ) ? 'multichoice' : 'ids';
 	}
 	if ( types.includes( 'integer' ) ) {
 		return 'integer';
@@ -280,6 +301,20 @@ function inRange( number, property ) {
 }
 
 /**
+ * A step's number as typed, with one decimal comma read as a point, as an
+ * inline edit reads it (FRONTEND-10): "2,5" is "2.5". Anything else is left
+ * as it is, so "1.000,5" or "2,5,1" is still refused.
+ *
+ * @param {*} value The typed value.
+ * @return {*} The value, a decimal comma made a point.
+ */
+export function decimalPoint( value ) {
+	return typeof value === 'string' && /^\s*-?\d*,\d+\s*$/.test( value )
+		? value.replace( ',', '.' )
+		: value;
+}
+
+/**
  * The first problem with a step, as the argument it concerns and the
  * server's own sentence for it (the schema's `description` is the rule), or
  * null when the step can be checked.
@@ -321,7 +356,7 @@ export function operationProblem( registry, operation ) {
 			return { arg: name, reason };
 		}
 		if ( kind === 'integer' || kind === 'decimal' ) {
-			const number = Number( value );
+			const number = Number( decimalPoint( value ) );
 			if (
 				! Number.isFinite( number ) ||
 				( kind === 'integer' && ! Number.isInteger( number ) ) ||
@@ -344,6 +379,29 @@ export function operationProblem( registry, operation ) {
 			kind === 'ids' &&
 			property.maxItems &&
 			value.length > property.maxItems
+		) {
+			return { arg: name, reason };
+		}
+		if (
+			kind === 'lookup' &&
+			( ! Array.isArray( value ) ||
+				( property.lookup.multiple
+					? ( property.maxItems &&
+							value.length > property.maxItems ) ||
+						( property.minItems &&
+							value.length < property.minItems )
+					: value.length > 1 ) )
+		) {
+			return { arg: name, reason };
+		}
+		if (
+			kind === 'multichoice' &&
+			( ! Array.isArray( value ) ||
+				( property.maxItems && value.length > property.maxItems ) ||
+				( property.minItems && value.length < property.minItems ) ||
+				value.some(
+					( each ) => ! property.items.enum.includes( each )
+				) )
 		) {
 			return { arg: name, reason };
 		}
@@ -379,7 +437,22 @@ export function toRequestOperations( registry, operations ) {
 				) {
 					return;
 				}
-				args[ name ] = value;
+				const kind = propertyKind( name, properties[ name ] );
+				if ( kind === 'lookup' ) {
+					// The panel keeps chosen items with their labels; the server takes their ids.
+					const ids = lookupIds(
+						value,
+						properties[ name ].lookup.multiple
+					);
+					if ( ids !== undefined ) {
+						args[ name ] = ids;
+					}
+					return;
+				}
+				args[ name ] =
+					kind === 'integer' || kind === 'decimal'
+						? decimalPoint( value )
+						: value;
 			} );
 			if (
 				properties.apply_to_variations &&
@@ -459,4 +532,64 @@ export function variationsDefault( field, settings ) {
 	}
 	const key = variationsSetting( field );
 	return !! key && !! settingsValues( settings )[ key ];
+}
+
+/**
+ * Why an action cannot be chosen now: its add-on is unavailable, or the user
+ * may not use it (the server's own sentence); '' when it can.
+ *
+ * @param {Object|null} action Action descriptor.
+ * @return {string} Reason.
+ */
+export function unavailableReason( action ) {
+	if ( ! action?.provider || action.available !== false ) {
+		return '';
+	}
+	return (
+		action.unavailableReason ||
+		__(
+			'This action is not available right now.',
+			'bulk-catalogue-manager-for-woocommerce'
+		)
+	);
+}
+
+/**
+ * The kind of change a step makes: '' for a native action, else its add-on's id.
+ *
+ * @param {Object} registry  The `/fields` payload.
+ * @param {Object} operation Panel operation.
+ * @return {string} Kind.
+ */
+export function changeKind( registry, operation ) {
+	return actionById( registry, operation?.action )?.provider || '';
+}
+
+/**
+ * Whether the chosen steps mix kinds of change: native steps with an
+ * add-on's, or two add-ons' (version 1 of the contract keeps one kind per change).
+ *
+ * @param {Object}        registry   The `/fields` payload.
+ * @param {Array<Object>} operations Panel operations.
+ * @return {boolean} True when mixed.
+ */
+export function mixesKinds( registry, operations ) {
+	const kinds = new Set(
+		( operations || [] )
+			.filter( ( operation ) => operation.action )
+			.map( ( operation ) => changeKind( registry, operation ) )
+	);
+	return kinds.size > 1;
+}
+
+/**
+ * The sentence shown in place when a change mixes kinds (the server's own words).
+ *
+ * @return {string} Sentence.
+ */
+export function mixedSentence() {
+	return __(
+		"This action can't be combined with other kinds of change. Make it a separate change.",
+		'bulk-catalogue-manager-for-woocommerce'
+	);
 }

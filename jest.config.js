@@ -11,5 +11,8 @@ const base = require( '@wordpress/scripts/config/jest-unit.config.js' );
 module.exports = {
 	...base,
 	testTimeout: 30000,
-	setupFilesAfterEnv: [ '<rootDir>/tests/js/setup-timeouts.js' ],
+	setupFilesAfterEnv: [
+		'<rootDir>/tests/js/setup-timeouts.js',
+		'<rootDir>/tests/js/setup-selection.js',
+	],
 };

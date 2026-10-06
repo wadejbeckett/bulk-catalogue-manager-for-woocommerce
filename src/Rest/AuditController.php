@@ -112,18 +112,36 @@ final class AuditController implements ReadController {
 				],
 				'intval'
 			),
-			'field'   => self::arg(
-				[
-					'description' => __( 'Only changes to this field.', 'bulk-catalogue-manager-for-woocommerce' ),
-					'type'        => 'string',
-					'enum'        => $this->fields->keys(),
-				],
-				'strval'
-			),
+			'field'   => $this->field_arg(),
 			'user'    => BatchesController::user_arg(),
 			'after'   => BatchesController::date_arg( __( 'Only changes written at or after this time (UTC unless it names a zone).', 'bulk-catalogue-manager-for-woocommerce' ) ),
 			'before'  => BatchesController::date_arg( __( 'Only changes written before this time (UTC unless it names a zone).', 'bulk-catalogue-manager-for-woocommerce' ) ),
 		];
+	}
+
+	/**
+	 * The field filter. The listed choices are the native fields; T108: the
+	 * external fields of the providers registered now are accepted too,
+	 * checked when a request is validated, so booting the REST server never
+	 * collects providers.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function field_arg(): array {
+		$schema                   = [
+			'description' => __( 'Only changes to this field.', 'bulk-catalogue-manager-for-woocommerce' ),
+			'type'        => 'string',
+			'enum'        => $this->fields->keys(),
+		];
+		$arg                      = self::arg( $schema, 'strval' );
+		$arg['validate_callback'] = static function ( mixed $value, mixed $request = null, string $param = '' ) use ( $schema ): bool|\WP_Error {
+			unset( $request );
+			if ( is_string( $value ) && \BulkCatalogueManager\External\Providers::is_external( $value ) ) {
+				$schema['enum'] = \BulkCatalogueManager\External\Providers::field_keys( \BulkCatalogueManager\Operations\Registry::instance()->providers() );
+			}
+			return rest_validate_value_from_schema( $value, $schema, $param );
+		};
+		return $arg;
 	}
 
 	/**
@@ -171,6 +189,7 @@ final class AuditController implements ReadController {
 	public function rows( array $filters, int $page, int $size, bool $count = true ): array {
 		$rows = $this->changes->audit( $filters, $page, $size );
 		BatchChangesController::prime_names( $rows );
+		$this->rows->prime_manifests( $rows );
 		$names = BatchesController::user_names( array_column( $rows, 'user_id' ) );
 		$items = [];
 		foreach ( $rows as $row ) {

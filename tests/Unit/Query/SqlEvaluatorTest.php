@@ -87,6 +87,16 @@ final class SqlEvaluatorTest extends TestCase {
 		);
 	}
 
+	public function test_concat_joins_text_and_a_column_and_null_makes_it_null(): void {
+		// T92: the Off filter matches a meta value by the prefix CONCAT( '{"id":', p.ID, ',%' ).
+		$this->assertSame( [ 1 ], self::ids( "CONCAT('Blue', '_', 'Shirt') = a.name" ) );
+		// As a LIKE pattern the joined text keeps its wildcards: '_' is any one character.
+		$this->assertSame( [ 1, 2 ], self::ids( "a.name LIKE CONCAT('Blue', '_', 'Shirt')" ) );
+		$this->assertSame( [ 3 ], self::ids( "'id10' = CONCAT('id', a.n)" ) );
+		$this->assertSame( [], self::ids( "CONCAT('x', a.n) IS NULL AND a.id = 1" ) );
+		$this->assertSame( [ 2 ], self::ids( "CONCAT('x', a.n) IS NULL" ) );
+	}
+
 	public function test_an_optimiser_hint_changes_nothing(): void {
 		$plain = 'SELECT COUNT(*) FROM `wp_a` AS a LEFT JOIN `wp_b` AS b ON b.a_id = a.id WHERE b.tag IS NULL OR b.tag = \'x\' LIMIT 1';
 		$this->assertSame( self::db()->value( $plain ), self::db()->value( str_replace( 'SELECT ', 'SELECT /*+ JOIN_PREFIX(a) */ ', $plain ) ) );
@@ -98,8 +108,23 @@ final class SqlEvaluatorTest extends TestCase {
 		}
 	}
 
+	public function test_between_nullif_cast_and_ordering_by_an_alias(): void {
+		$this->assertSame( [ 1, 3 ], self::ids( 'a.n BETWEEN 5 AND 10' ) );
+		$this->assertSame( [ 1 ], self::ids( 'a.n BETWEEN 1 AND 7' ) );
+		$this->assertSame( [], self::ids( 'NULLIF(a.n, 5) = 5' ) );
+		$this->assertSame( [ 3 ], self::ids( 'NULLIF(a.n, 5) IS NOT NULL' ) );
+		$this->assertSame( [ 2, 3 ], self::ids( 'NULLIF(a.n, 10) IS NULL' ) );
+		$this->assertSame( [ 3 ], self::ids( 'CAST(a.name AS DECIMAL(19, 4)) = 50' ), 'The leading number of a text.' );
+		$this->assertSame( [ 1, 2 ], self::ids( 'CAST(a.name AS DECIMAL(19, 4)) = 0' ), 'No leading number reads 0.' );
+		$this->assertSame( [ 2 ], self::ids( "CAST(NULLIF(a.name, 'Bluexshirt') AS DECIMAL(19, 4)) IS NULL" ) );
+		$this->assertSame( '2026-09-30 08:00:00', self::db()->value( "SELECT DATE_SUB('2026-09-30 10:00:00', INTERVAL 7200 SECOND) AS d FROM `wp_a` AS a LIMIT 1" ) );
+		$this->assertSame( '2026-09-30 12:00:00', self::db()->value( "SELECT DATE_SUB('2026-09-30 10:00:00', INTERVAL -7200 SECOND) AS d FROM `wp_a` AS a LIMIT 1" ) );
+		$rows = self::db()->rows( 'SELECT a.id AS id, (CASE WHEN a.n IS NULL THEN 7 ELSE a.n END) AS k FROM `wp_a` AS a ORDER BY k DESC, a.id ASC LIMIT 10' );
+		$this->assertSame( [ '3', '2', '1' ], array_column( $rows, 'id' ), 'An alias orders by its column.' );
+	}
+
 	public function test_anything_outside_the_dialect_throws(): void {
-		foreach ( [ 'SELECT a.id FROM `wp_a` AS a WHERE a.id BETWEEN 1 AND 2', 'SELECT a.id FROM `wp_missing` AS a', 'SELECT a.nope AS x FROM `wp_a` AS a' ] as $sql ) {
+		foreach ( [ 'SELECT a.id FROM `wp_a` AS a WHERE a.id + 1 = 2', 'SELECT a.id FROM `wp_missing` AS a', 'SELECT a.nope AS x FROM `wp_a` AS a' ] as $sql ) {
 			try {
 				self::db()->rows( $sql );
 				$this->fail( "Accepted: $sql" );

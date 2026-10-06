@@ -1,0 +1,5 @@
+﻿"Name","Status","Catalogue visibility","Shown in shop and search","Featured","Categories","Tags","Regular price","Sale price","Stock status","Manage stock","Stock quantity","SKU","Weight","Length","Width","Height","Shipping class","Tax status","Tax class","Sold individually","Reviews","ID","Type","Price","Date created","Last modified","Total sales","Variations"
+"'  =SUM(A1) Mug","publish","visible","on","Yes","12, 15","","10.50","","instock","No","","'	TAB-1","1.5","10","0","","0","taxable","","No","Yes","101","simple","<span class=""woocommerce-Price-amount amount""><bdi>R10.50</bdi></span>","2026-09-01 08:00:00","2026-09-02 09:30:00","0","0"
+"He said ""hi"", then; left
+line two","draft","hidden","off","No","12","30, 31","","","outofstock","Yes","0","'CR-2","","","","","40","shipping","reduced-rate","Yes","No","102","variable","","2026-08-15 12:00:00","","12","2"
+"Crème brûlée – Large","private","","partly","","","","12.00","9.99","onbackorder","Yes","'-2","Bad ? byte","0.250","'-1","'+5","'@3","0","taxable","parent","","","201","variation","","2026-08-15 12:05:00","2026-09-03 10:00:00","3",""

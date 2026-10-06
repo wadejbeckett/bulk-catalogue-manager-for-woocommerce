@@ -3,7 +3,10 @@
  * existing one's name, slug, description and parent (SPEC §4.7; T63), through
  * POST /categories and PATCH /categories/{id}. Refusals (a duplicate name, a
  * slug in use, a parent inside the category) show in §4.8 wording with the
- * technical line behind Show details; a save refreshes the tree.
+ * technical line behind Show details; a save refreshes the tree. Ticket 22:
+ * WooCommerce's own Display type and category image, read for an existing
+ * category through GET /categories/{id}; the image is chosen in the media
+ * library and only changed values are sent.
  */
 import {
 	Button,
@@ -11,12 +14,12 @@ import {
 	TextControl,
 	TextareaControl,
 } from '@wordpress/components';
-import { useMemo, useState } from '@wordpress/element';
+import { useEffect, useMemo, useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 
 import { announce } from './announce';
 import ErrorNotice, { errorMessage } from './error-notice';
-import { createCategory, updateCategory } from './requests';
+import { createCategory, fetchCategory, updateCategory } from './requests';
 import { parentOptions } from './tree-model';
 
 /**
@@ -45,6 +48,61 @@ export function validateCategory( form ) {
 		};
 	}
 	return null;
+}
+
+/**
+ * WooCommerce's display types; '' is Default.
+ *
+ * @return {Array<Object>} Options.
+ */
+function displayTypes() {
+	return [
+		{
+			value: '',
+			label: __( 'Default', 'bulk-catalogue-manager-for-woocommerce' ),
+		},
+		{
+			value: 'products',
+			label: __( 'Products', 'bulk-catalogue-manager-for-woocommerce' ),
+		},
+		{
+			value: 'subcategories',
+			label: __(
+				'Subcategories',
+				'bulk-catalogue-manager-for-woocommerce'
+			),
+		},
+		{
+			value: 'both',
+			label: __( 'Both', 'bulk-catalogue-manager-for-woocommerce' ),
+		},
+	];
+}
+
+/**
+ * Open the media library to choose one image.
+ *
+ * @param {Function} onChoose Called with { id, url }.
+ */
+function chooseImage( onChoose ) {
+	const frame = window.wp.media( {
+		title: __( 'Category image', 'bulk-catalogue-manager-for-woocommerce' ),
+		button: {
+			text: __( 'Use image', 'bulk-catalogue-manager-for-woocommerce' ),
+		},
+		library: { type: 'image' },
+		multiple: false,
+	} );
+	frame.on( 'select', () => {
+		const chosen = frame.state().get( 'selection' ).first()?.toJSON();
+		if ( chosen && Number.isInteger( chosen.id ) && chosen.id > 0 ) {
+			onChoose( {
+				id: chosen.id,
+				url: chosen.sizes?.thumbnail?.url || chosen.url || '',
+			} );
+		}
+	} );
+	frame.open();
 }
 
 /**
@@ -84,6 +142,47 @@ export default function CategoryManager( {
 		[ categoryId ]
 	);
 	const [ form, setForm ] = useState( initial );
+	// Ticket 22: native display type and image. A new category starts at
+	// Default with no image; an existing one's are read before they can change.
+	const fresh = { display_type: '', thumbnail_id: 0, thumbnail_url: null };
+	const [ details, setDetails ] = useState( () =>
+		categoryId && canManage
+			? { state: 'loading' }
+			: { state: 'ready', ...fresh }
+	);
+	const [ chosen, setChosen ] = useState( fresh );
+	useEffect( () => {
+		if ( ! categoryId || ! canManage ) {
+			return undefined;
+		}
+		let live = true;
+		setDetails( { state: 'loading' } );
+		Promise.resolve()
+			.then( () => fetchCategory( categoryId ) )
+			.then(
+				( answer ) => {
+					const item = answer?.item;
+					if ( ! live ) {
+						return;
+					}
+					if ( typeof item?.display_type !== 'string' ) {
+						setDetails( { state: 'failed' } );
+						return;
+					}
+					const read = {
+						display_type: item.display_type,
+						thumbnail_id: Number( item.thumbnail_id ) || 0,
+						thumbnail_url: item.thumbnail_url || null,
+					};
+					setDetails( { state: 'ready', ...read } );
+					setChosen( read );
+				},
+				() => live && setDetails( { state: 'failed' } )
+			);
+		return () => {
+			live = false;
+		};
+	}, [ categoryId, canManage ] );
 	const [ error, setError ] = useState( null );
 	const [ saving, setSaving ] = useState( false );
 	const options = useMemo(
@@ -111,6 +210,9 @@ export default function CategoryManager( {
 
 	const submit = async ( event ) => {
 		event.preventDefault();
+		if ( saving ) {
+			return;
+		}
 		const refusal = validateCategory( form );
 		if ( refusal ) {
 			setError( refusal );
@@ -128,6 +230,14 @@ export default function CategoryManager( {
 		if ( ! categoryId || form.parent !== initial.parent ) {
 			data.parent = Number( form.parent ) || 0;
 		}
+		if ( details.state === 'ready' ) {
+			if ( chosen.display_type !== details.display_type ) {
+				data.display_type = chosen.display_type;
+			}
+			if ( chosen.thumbnail_id !== details.thumbnail_id ) {
+				data.thumbnail_id = chosen.thumbnail_id;
+			}
+		}
 		if ( categoryId && ! Object.keys( data ).length ) {
 			onCancel?.();
 			return;
@@ -138,27 +248,26 @@ export default function CategoryManager( {
 				? await updateCategory( categoryId, data )
 				: await createCategory( data );
 			const item = answer?.item || {};
-			tree.remember?.( item );
-			tree.reload();
-			announce(
-				categoryId
-					? sprintf(
-							/* translators: %s: a category name. */
-							__(
-								'Category "%s" saved.',
-								'bulk-catalogue-manager-for-woocommerce'
-							),
-							item.name || form.name.trim()
-						)
-					: sprintf(
-							/* translators: %s: a category name. */
-							__(
-								'Category "%s" created.',
-								'bulk-catalogue-manager-for-woocommerce'
-							),
-							item.name || form.name.trim()
-						)
-			);
+			if ( categoryId && details.state === 'ready' ) {
+				setDetails( { state: 'ready', ...chosen } );
+			}
+			if ( categoryId ) {
+				tree.remember?.( item );
+				tree.reload();
+				announce(
+					sprintf(
+						/* translators: %s: a category name. */
+						__(
+							'Category "%s" saved.',
+							'bulk-catalogue-manager-for-woocommerce'
+						),
+						item.name || form.name.trim()
+					)
+				);
+			} else if ( Number.isInteger( item.id ) && item.id > 0 ) {
+				// The tree owner refreshes once and its visible notice announces the result.
+				tree.recordCreated( item, form.name.trim() );
+			}
 			setSaving( false );
 			onSaved( item, answer );
 		} catch ( failure ) {
@@ -259,12 +368,116 @@ export default function CategoryManager( {
 				onChange={ change( 'description' ) }
 				rows={ 3 }
 			/>
+			{ details.state === 'failed' && (
+				<p className="bulkcat-cat-manager__note">
+					{ __(
+						'The display type and image could not be loaded, so they are left as they are.',
+						'bulk-catalogue-manager-for-woocommerce'
+					) }
+				</p>
+			) }
+			{ details.state === 'ready' && (
+				<>
+					<SelectControl
+						__next40pxDefaultSize
+						__nextHasNoMarginBottom
+						label={ __(
+							'Display type',
+							'bulk-catalogue-manager-for-woocommerce'
+						) }
+						help={ __(
+							'What the category page shows: products, its subcategories, or both.',
+							'bulk-catalogue-manager-for-woocommerce'
+						) }
+						value={ chosen.display_type }
+						options={ displayTypes() }
+						onChange={ ( value ) =>
+							setChosen( ( current ) => ( {
+								...current,
+								display_type: value,
+							} ) )
+						}
+					/>
+					<fieldset className="bulkcat-cat-manager__image">
+						<legend>
+							{ __(
+								'Image',
+								'bulk-catalogue-manager-for-woocommerce'
+							) }
+						</legend>
+						{ chosen.thumbnail_id > 0 && chosen.thumbnail_url && (
+							<img
+								src={ chosen.thumbnail_url }
+								alt={ __(
+									'Category image',
+									'bulk-catalogue-manager-for-woocommerce'
+								) }
+								width="60"
+								height="60"
+							/>
+						) }
+						{ chosen.thumbnail_id > 0 && ! chosen.thumbnail_url && (
+							<span>
+								{ __(
+									'An image is set.',
+									'bulk-catalogue-manager-for-woocommerce'
+								) }
+							</span>
+						) }
+						{ typeof window.wp?.media === 'function' && (
+							<Button
+								variant="secondary"
+								onClick={ () =>
+									chooseImage( ( image ) =>
+										setChosen( ( current ) => ( {
+											...current,
+											thumbnail_id: image.id,
+											thumbnail_url: image.url,
+										} ) )
+									)
+								}
+								__next40pxDefaultSize
+							>
+								{ chosen.thumbnail_id > 0
+									? __(
+											'Replace image',
+											'bulk-catalogue-manager-for-woocommerce'
+										)
+									: __(
+											'Choose image',
+											'bulk-catalogue-manager-for-woocommerce'
+										) }
+							</Button>
+						) }
+						{ chosen.thumbnail_id > 0 && (
+							<Button
+								variant="tertiary"
+								isDestructive
+								onClick={ () =>
+									setChosen( ( current ) => ( {
+										...current,
+										thumbnail_id: 0,
+										thumbnail_url: null,
+									} ) )
+								}
+								__next40pxDefaultSize
+							>
+								{ __(
+									'Remove image',
+									'bulk-catalogue-manager-for-woocommerce'
+								) }
+							</Button>
+						) }
+					</fieldset>
+				</>
+			) }
 			<div className="bulkcat-cat-manager__actions">
 				<Button
 					variant="primary"
 					type="submit"
 					isBusy={ saving }
 					disabled={ saving }
+					accessibleWhenDisabled
 					__next40pxDefaultSize
 				>
 					{ categoryId

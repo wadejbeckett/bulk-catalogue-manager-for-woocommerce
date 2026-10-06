@@ -23,31 +23,59 @@ import {
 	formatAgo,
 	formatValue,
 	formatWhen,
+	outcomeLabel,
 	reasonSentence,
 	rowsLabel,
+	skippedOnly,
 	sourceLabel,
-	statusLabel,
 } from './describe';
 import ErrorNotice from './error-notice';
-import { BatchProgress } from './stalled-notice';
+import { BatchProgress, isUnclosedInline } from './stalled-notice';
 import { userName } from './users';
 import {
 	applyUndo,
 	confirmSentence,
-	newUuid,
 	previewUndo,
 	putBackCount,
+	putBackTypes,
 	readBatch,
+	undoHolder,
 	undoneNotice,
 	valueKind,
 } from './undo';
+import { isUncertain } from '../../requests';
+import { permanentReadError } from '../bulk/hooks';
+import { countPhrase } from '../catalogue/selection/model';
 
 /** How often a running batch is read again, in milliseconds. */
 export const POLL_MS = 3000;
 
 /**
+ * The objects an undo preview found changed since, in words: products,
+ * variations or both, from its `by_type` (T114).
+ *
+ * @param {Object} plan       The undo preview.
+ * @param {number} conflicted How many.
+ * @return {string} Phrase, such as "2 products and 1 variation".
+ */
+function conflictPhrase( plan, conflicted ) {
+	const byType = plan?.by_type;
+	return countPhrase(
+		conflicted,
+		byType
+			? {
+					products: Number( byType.product?.conflicted ) || 0,
+					variations: Number( byType.variation?.conflicted ) || 0,
+				}
+			: {}
+	);
+}
+
+/**
  * Follow a batch while it is being worked: read it every POLL_MS until
  * its status is no longer active, then call onDone with the last report.
+ * A failed read is tried again, unless it will fail the same way however
+ * often it is asked (signed out, not allowed, gone: FRONTEND-8).
  *
  * @param {number|null} batchId Batch to follow, or null.
  * @param {Function}    onDone  Called with the finished report.
@@ -78,8 +106,8 @@ function useFollow( batchId, onDone ) {
 						done.current( next );
 					}
 				} )
-				.catch( () => {
-					if ( live ) {
+				.catch( ( error ) => {
+					if ( live && ! permanentReadError( error ) ) {
 						timer = setTimeout( read, POLL_MS );
 					}
 				} );
@@ -240,7 +268,9 @@ export default function BatchCard( {
 	onNotice,
 	linked = null,
 } ) {
-	const state = batch.reversibility?.state || STATES.REVERSIBLE;
+	const state = isUnclosedInline( batch )
+		? STATES.IN_PROGRESS
+		: batch.reversibility?.state || STATES.REVERSIBLE;
 	const isRedo = batch.source === 'undo';
 	const [ open, setOpen ] = useState( false );
 	const [ plan, setPlan ] = useState( null );
@@ -252,7 +282,9 @@ export default function BatchCard( {
 	const [ details, setDetails ] = useState( null );
 	const undoButton = useRef( null );
 	const cardRef = useRef( null );
-	const uuid = useRef( null );
+	// T84: the undo's grant, kept until its answer is definite.
+	const grant = undoHolder( batch.batch_id );
+	const [ uncertain, setUncertain ] = useState( null );
 
 	// A batch in progress is followed until it finishes, then the list is read again.
 	const progress = useFollow(
@@ -284,9 +316,11 @@ export default function BatchCard( {
 		)
 	);
 
-	// A batch with errors shows its grouped reasons, from the single read.
+	// A batch with errors, or with rows skipped by design (1.3.4), shows its
+	// grouped reasons from the single read and opens on those rows.
+	const problems = state === STATES.WITH_ERRORS || skippedOnly( batch );
 	useEffect( () => {
-		if ( state !== STATES.WITH_ERRORS || ! open || details ) {
+		if ( ! problems || ! open || details ) {
 			return;
 		}
 		let live = true;
@@ -296,7 +330,7 @@ export default function BatchCard( {
 		return () => {
 			live = false;
 		};
-	}, [ state, open, details, batch.batch_id ] );
+	}, [ problems, open, details, batch.batch_id ] );
 
 	const startUndo = async () => {
 		setBusy( true );
@@ -304,7 +338,6 @@ export default function BatchCard( {
 		try {
 			const preview = await previewUndo( batch.batch_id );
 			setPlan( preview );
-			uuid.current = newUuid();
 			if ( ( Number( preview?.counts?.conflicted ) || 0 ) === 0 ) {
 				setConfirm( { force: false } );
 			}
@@ -319,19 +352,24 @@ export default function BatchCard( {
 		setPlan( null );
 		setConfirm( null );
 		setSeeConflicts( false );
+		setUncertain( null );
 		undoButton.current?.focus();
 	};
 
-	const apply = async () => {
-		const force = !! confirm?.force;
+	// The durable undo (T84). An unknown outcome keeps the plan and offers
+	// Try again, which sends the same grant; a refusal ends this attempt, so
+	// Undo starts again from a new preview.
+	const send = async ( force ) => {
 		setConfirm( null );
 		setBusy( true );
+		setError( null );
+		setUncertain( null );
 		try {
 			const answer = await applyUndo(
+				grant,
 				batch.batch_id,
 				plan,
-				force,
-				uuid.current
+				force
 			);
 			setPlan( null );
 			setSeeConflicts( false );
@@ -341,11 +379,18 @@ export default function BatchCard( {
 			window.requestAnimationFrame( () => cardRef.current?.focus() );
 		} catch ( caught ) {
 			setError( caught );
+			if ( isUncertain( caught ) ) {
+				setUncertain( { force } );
+			} else {
+				setPlan( null );
+				setSeeConflicts( false );
+			}
 			undoButton.current?.focus();
 		} finally {
 			setBusy( false );
 		}
 	};
+	const apply = () => send( !! confirm?.force );
 
 	const conflicted = Number( plan?.counts?.conflicted ) || 0;
 	const revertible = Number( plan?.counts?.revertible ) || 0;
@@ -464,9 +509,11 @@ export default function BatchCard( {
 					{ rowsLabel( batch.total_items ) }
 				</span>
 				<span
-					className={ `bulkcat-pill bulkcat-pill--${ batch.status }` }
+					className={ `bulkcat-pill bulkcat-pill--${
+						skippedOnly( batch ) ? 'skipped' : batch.status
+					}` }
 				>
-					{ statusLabel( batch.status ) }
+					{ outcomeLabel( batch ) }
 				</span>
 				{ state === STATES.PARTIAL && knownConflicts > 0 && (
 					<span className="bulkcat-pill bulkcat-pill--warn">
@@ -480,22 +527,23 @@ export default function BatchCard( {
 						) }
 					</span>
 				) }
-				{ state === STATES.WITH_ERRORS && (
-					<span className="bulkcat-pill bulkcat-pill--warn">
-						{ sprintf(
-							/* translators: %s: number of products that failed, such as "3". */
-							_n(
-								'%s failed',
-								'%s failed',
-								Number( batch.failed_items ) || 0,
-								'bulk-catalogue-manager-for-woocommerce'
-							),
-							(
-								Number( batch.failed_items ) || 0
-							).toLocaleString()
-						) }
-					</span>
-				) }
+				{ state === STATES.WITH_ERRORS &&
+					Number( batch.failed_items ) > 0 && (
+						<span className="bulkcat-pill bulkcat-pill--warn">
+							{ sprintf(
+								/* translators: %s: number of products that failed, such as "3". */
+								_n(
+									'%s failed',
+									'%s failed',
+									Number( batch.failed_items ) || 0,
+									'bulk-catalogue-manager-for-woocommerce'
+								),
+								(
+									Number( batch.failed_items ) || 0
+								).toLocaleString()
+							) }
+						</span>
+					) }
 				{ batch.variations_included && (
 					<span className="bulkcat-pill">
 						{ __(
@@ -518,7 +566,11 @@ export default function BatchCard( {
 
 			{ state === STATES.NOT_REVERSIBLE && ! settled && (
 				<p className="bulkcat-batch__reason">
-					{ reasonSentence( batch.reversibility?.reason ) }
+					{ reasonSentence(
+						batch.reversibility?.reason,
+						batch.reversibility?.provider || '',
+						batch.reversibility?.provider_reason || ''
+					) }
 				</p>
 			) }
 
@@ -540,12 +592,41 @@ export default function BatchCard( {
 				<div className="bulkcat-batch__error">
 					<ErrorNotice
 						error={ error }
+						message={
+							uncertain
+								? __(
+										'We could not confirm whether the undo started. Try again: the same request is sent again, so it can only happen once.',
+										'bulk-catalogue-manager-for-woocommerce'
+									)
+								: ''
+						}
 						fallback={ __(
 							'The undo could not be started. Reload the page and try again.',
 							'bulk-catalogue-manager-for-woocommerce'
 						) }
-						onRemove={ () => setError( null ) }
+						onRemove={ uncertain ? null : () => setError( null ) }
 					/>
+					{ uncertain && plan && (
+						<p className="bulkcat-batch__retry">
+							<Button
+								variant="secondary"
+								size="small"
+								disabled={ busy }
+								onClick={ () => send( uncertain.force ) }
+							>
+								{ __(
+									'Try again',
+									'bulk-catalogue-manager-for-woocommerce'
+								) }
+							</Button>
+							<Button variant="link" onClick={ cancelUndo }>
+								{ __(
+									'Cancel',
+									'bulk-catalogue-manager-for-woocommerce'
+								) }
+							</Button>
+						</p>
+					) }
 				</div>
 			) }
 
@@ -560,14 +641,14 @@ export default function BatchCard( {
 				>
 					<h4>
 						{ sprintf(
-							/* translators: %s: number of products changed again since, such as "3". */
+							/* translators: %s: what changed again since, such as "3 products" or "2 products and 1 variation". */
 							_n(
-								'%s of these products has changed since',
-								'%s of these products have changed since',
+								'%s has changed since',
+								'%s have changed since',
 								conflicted,
 								'bulk-catalogue-manager-for-woocommerce'
 							),
-							conflicted.toLocaleString()
+							conflictPhrase( plan, conflicted )
 						) }
 					</h4>
 					<p>
@@ -617,13 +698,10 @@ export default function BatchCard( {
 							size="small"
 							onClick={ () => setConfirm( { force: true } ) }
 						>
-							{ sprintf(
-								/* translators: %s: number of products, such as "120". */
-								__(
-									'Undo all %s anyway',
-									'bulk-catalogue-manager-for-woocommerce'
-								),
-								( revertible + conflicted ).toLocaleString()
+							{ /* The same words as the sentence above it and the guide. */ }
+							{ __(
+								'Revert anyway',
+								'bulk-catalogue-manager-for-woocommerce'
 							) }
 						</Button>
 						<Button variant="link" onClick={ cancelUndo }>
@@ -658,34 +736,35 @@ export default function BatchCard( {
 					<p>
 						{ confirmSentence(
 							putBackCount( plan, confirm.force ),
-							valueKind( batch, byKey )
+							valueKind( batch, byKey ),
+							putBackTypes( plan, confirm.force )
 						) }
 					</p>
 					{ confirm.force && conflicted > 0 && (
 						<p className="bulkcat-confirm__warning">
 							{ sprintf(
-								/* translators: %s: number of products changed again since, such as "3". */
+								/* translators: %s: what changed again since, such as "3 products" or "2 products and 1 variation". */
 								_n(
-									'This includes %s product someone edited after this change; that later edit will be overwritten.',
-									'This includes %s products someone edited after this change; those later edits will be overwritten.',
+									'This includes %s someone edited after this change; that later edit will be overwritten.',
+									'This includes %s someone edited after this change; those later edits will be overwritten.',
 									conflicted,
 									'bulk-catalogue-manager-for-woocommerce'
 								),
-								conflicted.toLocaleString()
+								conflictPhrase( plan, conflicted )
 							) }
 						</p>
 					) }
 					{ ! confirm.force && conflicted > 0 && (
 						<p>
 							{ sprintf(
-								/* translators: %s: number of products changed again since, such as "3". */
+								/* translators: %s: what changed again since, such as "3 products" or "2 products and 1 variation". */
 								_n(
-									'The %s product that changed since will be left alone.',
-									'The %s products that changed since will be left alone.',
+									'The %s that changed since will be left alone.',
+									'The %s that changed since will be left alone.',
 									conflicted,
 									'bulk-catalogue-manager-for-woocommerce'
 								),
-								conflicted.toLocaleString()
+								conflictPhrase( plan, conflicted )
 							) }
 						</p>
 					) }
@@ -715,20 +794,18 @@ export default function BatchCard( {
 				</Modal>
 			) }
 
-			{ open &&
-				state === STATES.WITH_ERRORS &&
-				details?.summary?.length > 0 && (
-					<ul className="bulkcat-batch__reasons">
-						{ details.summary.map( ( reason ) => (
-							<li key={ reason.message }>{ reason.sentence }</li>
-						) ) }
-					</ul>
-				) }
+			{ open && problems && details?.summary?.length > 0 && (
+				<ul className="bulkcat-batch__reasons">
+					{ details.summary.map( ( reason ) => (
+						<li key={ reason.message }>{ reason.sentence }</li>
+					) ) }
+				</ul>
+			) }
 			{ open && (
 				<Changes
 					batch={ batch }
 					byKey={ byKey }
-					problemsOnly={ state === STATES.WITH_ERRORS }
+					problemsOnly={ problems }
 					onNotice={ onNotice }
 				/>
 			) }

@@ -195,6 +195,20 @@ final class HistoryExportTest extends TestCase {
 	}
 
 	/**
+	 * A history export as the screen's form posts it (SECURITY-1): every
+	 * value in the body, lists as one comma-separated field.
+	 *
+	 * @param array<string, mixed> $body  Form body.
+	 * @param array<string, mixed> $query Query string.
+	 */
+	private static function post( array $body, array $query = [] ): \WP_REST_Response|\WP_Error {
+		$request = new \WP_REST_Request( 'POST', '/bulkcat/v1/export' );
+		$request->set_body_params( $body );
+		$request->set_query_params( $query );
+		return rest_get_server()->dispatch( $request );
+	}
+
+	/**
 	 * The plugin's export controller, as registered.
 	 */
 	private static function controller(): ExportController {
@@ -498,5 +512,114 @@ final class HistoryExportTest extends TestCase {
 			)
 		);
 		$this->assertSame( [ '"Change number"', '"3"', '"1"' ], self::lines() );
+	}
+
+	public function test_a_history_export_does_not_call_skipped_rows_errors(): void {
+		// Batch 2 finished partial with nothing failed: its only problems were rows skipped as previewed.
+		$this->batches[1]['failed_items'] = 0;
+		$this->serve(
+			self::get(
+				[
+					'source'  => 'batches',
+					'status'  => 'partial',
+					'columns' => [ 'batch_id', 'status', 'failed_items', 'reversibility' ],
+				]
+			)
+		);
+		$this->assertSame( [ '"Change number","Outcome","Failed","Can be undone"', '"2","Completed, some rows skipped","0","Yes"' ], self::lines() );
+	}
+
+	public function test_a_history_export_is_posted_with_its_filters_in_the_body(): void {
+		$headers = $this->serve(
+			self::post(
+				[
+					'source'  => 'batches',
+					'status'  => 'partial',
+					'columns' => 'batch_id,status',
+				]
+			)
+		);
+		$this->assertSame( 'attachment; filename="change-history-2026-09-23.csv"', $headers['Content-Disposition'] );
+		$this->assertSame( [ '"Change number","Outcome"', '"2","Completed with errors"' ], self::lines(), 'status is the outcome for a posted history list too.' );
+
+		$this->serve(
+			self::post(
+				[
+					'source'  => 'changes',
+					'batch'   => 2,
+					'result'  => 'failed',
+					'columns' => 'result,name',
+				]
+			)
+		);
+		$this->assertSame( [ '"Result","Product"', '"Failed","Product 20002"' ], self::lines() );
+
+		$this->serve(
+			self::post(
+				[
+					'source'  => 'audit',
+					'product' => 20001,
+					'columns' => 'object_id,name',
+				]
+			)
+		);
+		$this->assertSame( [ '"ID","Product"', '"20001","Shoe - Blue"' ], self::lines() );
+
+		$refused = self::post(
+			[
+				'source'  => 'audit',
+				'field'   => '_regular_price',
+				'columns' => 'name',
+			]
+		);
+		$this->assertSame( [ 'rest_invalid_param', 400 ], [ $refused->get_error_code(), $refused->get_error_data()['status'] ], 'A posted history export is validated as the history.' );
+	}
+
+	public function test_a_nonce_in_the_export_address_is_refused_before_any_row_is_read(): void {
+		$get = new \WP_REST_Request( 'GET', '/bulkcat/v1/export' );
+		$get->set_query_params(
+			[
+				'source'   => 'audit',
+				'columns'  => [ 'name' ],
+				'_wpnonce' => 'abc123def0',
+			]
+		);
+		$result = rest_get_server()->dispatch( $get );
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( [ 'bulkcat_invalid_value', 400, '_wpnonce' ], [ $result->get_error_code(), $result->get_error_data()['status'], $result->get_error_data()['param'] ] );
+
+		$result = self::post(
+			[
+				'source'  => 'audit',
+				'columns' => 'name',
+			],
+			[ '_wpnonce' => 'abc123def0' ]
+		);
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( [ 'bulkcat_invalid_value', 400 ], [ $result->get_error_code(), $result->get_error_data()['status'] ] );
+
+		$result = self::post(
+			[
+				'columns'     => 'name',
+				'confirm_all' => '1',
+			],
+			[ '_wpnonce' => 'abc123def0' ]
+		);
+		$this->assertInstanceOf( \WP_Error::class, $result, 'The catalogue export refuses it too.' );
+		$this->assertSame( 'bulkcat_invalid_value', $result->get_error_code() );
+		$this->assertSame( [], preg_grep( '/wp_bulkcat_changes/', $GLOBALS['wpdb']->queries ) );
+
+		// In the body, where the form sends it, it is fine.
+		$this->serve(
+			self::post(
+				[
+					'source'   => 'audit',
+					'product'  => 20001,
+					'columns'  => 'object_id',
+					'_wpnonce' => 'abc123def0',
+				]
+			)
+		);
+		$this->assertSame( [ '"ID"', '"20001"' ], self::lines() );
 	}
 }

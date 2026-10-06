@@ -4,6 +4,7 @@
  * in its range, a boolean a checkbox, a term list a picker over the options
  * the panel was given, and `value` is typed by the chosen field.
  */
+import { LookupPicker } from '../../components/lookup-picker';
 import { useMemo, useState } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 
@@ -332,6 +333,8 @@ export function ValueControl( {
  * @param {Object}   props.field    The chosen field's descriptor.
  * @param {Object}   props.terms    Term options by source.
  * @param {string}   props.reason   Reason it is blocked, or ''.
+ * @param {string}   props.action   The step's action id (for an add-on's lookup).
+ * @param {string}   props.object   A row's object key, or '' for a bulk change.
  * @return {Element} Control.
  */
 export function ArgControl( {
@@ -343,9 +346,29 @@ export function ArgControl( {
 	field,
 	terms,
 	reason,
+	action = '',
+	object = '',
 } ) {
 	const kind = propertyKind( name, property );
 	const label = property.title || name;
+
+	if ( kind === 'lookup' ) {
+		// Contract version 2: an add-on's choices, searched and paged (EXTENSIONS-v2 §4).
+		return (
+			<LookupPicker
+				action={ action }
+				argument={ name }
+				label={ label }
+				help={ property.description || '' }
+				multiple={ !! property.lookup?.multiple }
+				maxItems={ property.maxItems || 1 }
+				value={ Array.isArray( value ) ? value : [] }
+				onChange={ onChange }
+				object={ object }
+				reason={ reason }
+			/>
+		);
+	}
 
 	if ( kind === 'value' ) {
 		return (
@@ -367,6 +390,23 @@ export function ArgControl( {
 				id={ id }
 				label={ field?.label || label }
 				options={ termOptions( field, terms ) }
+				value={ value }
+				onChange={ onChange }
+				reason={ reason }
+			/>
+		);
+	}
+
+	if ( kind === 'multichoice' ) {
+		// An add-on's list of choices (T105): a checkbox per choice, sent as a list of values.
+		return (
+			<TermsPicker
+				id={ id }
+				label={ label }
+				options={ ( property.choices || [] ).map( ( choice ) => ( {
+					id: choice.value,
+					label: choice.label,
+				} ) ) }
 				value={ value }
 				onChange={ onChange }
 				reason={ reason }

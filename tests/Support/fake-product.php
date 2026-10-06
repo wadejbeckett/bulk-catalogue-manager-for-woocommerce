@@ -30,6 +30,37 @@ final class FakeProduct {
 
 	public function __construct( private string $type = 'simple', public array $props = [] ) {}
 
+	/**
+	 * Product meta by key (T88): get_meta(), update_meta_data() and
+	 * delete_meta_data() over this map, as WooCommerce's meta API does before save().
+	 *
+	 * @var array<string, mixed>
+	 */
+	public array $meta = [];
+
+	/**
+	 * Meta calls, in order: [ 'update' | 'delete', key, value ].
+	 *
+	 * @var array<int, array{0: string, 1: string, 2: mixed}>
+	 */
+	public array $meta_calls = [];
+
+	public function get_meta( string $key = '', bool $single = true, string $context = 'view' ): mixed {
+		unset( $single, $context );
+		return $this->meta[ $key ] ?? '';
+	}
+
+	public function update_meta_data( string $key, mixed $value, int $meta_id = 0 ): void {
+		unset( $meta_id );
+		$this->meta_calls[] = [ 'update', $key, $value ];
+		$this->meta[ $key ] = $value;
+	}
+
+	public function delete_meta_data( string $key ): void {
+		$this->meta_calls[] = [ 'delete', $key, null ];
+		unset( $this->meta[ $key ] );
+	}
+
 	public function is_type( string $type ): bool {
 		return $type === $this->type;
 	}
@@ -86,6 +117,37 @@ final class SavedProduct {
 
 	public function __construct( private string $type = 'simple', public array $props = [] ) {}
 
+	/**
+	 * Product meta by key (T88): get_meta(), update_meta_data() and
+	 * delete_meta_data() over this map, as WooCommerce's meta API does before save().
+	 *
+	 * @var array<string, mixed>
+	 */
+	public array $meta = [];
+
+	/**
+	 * Meta calls, in order: [ 'update' | 'delete', key, value ].
+	 *
+	 * @var array<int, array{0: string, 1: string, 2: mixed}>
+	 */
+	public array $meta_calls = [];
+
+	public function get_meta( string $key = '', bool $single = true, string $context = 'view' ): mixed {
+		unset( $single, $context );
+		return $this->meta[ $key ] ?? '';
+	}
+
+	public function update_meta_data( string $key, mixed $value, int $meta_id = 0 ): void {
+		unset( $meta_id );
+		$this->meta_calls[] = [ 'update', $key, $value ];
+		$this->meta[ $key ] = $value;
+	}
+
+	public function delete_meta_data( string $key ): void {
+		$this->meta_calls[] = [ 'delete', $key, null ];
+		unset( $this->meta[ $key ] );
+	}
+
 	public function is_type( string $type ): bool {
 		return $type === $this->type;
 	}
@@ -94,8 +156,65 @@ final class SavedProduct {
 		return $this->type;
 	}
 
+	/**
+	 * The meta at each save().
+	 *
+	 * @var array<int, array<string, mixed>>
+	 */
+	public array $saved_meta = [];
+
+	/**
+	 * Whether save() runs WooCommerce's stock rules first (validate_props()).
+	 */
+	public bool $native_stock = false;
+
+	/**
+	 * WooCommerce's WC_Product::validate_props() (11.1), when $native_stock is
+	 * on: unmanaged stock empties the quantity, backorders and low stock
+	 * amount; managed stock works the stock status out from the quantity and
+	 * backorders. Off, it does nothing, as the other doubles do.
+	 */
+	public function validate_props(): void {
+		if ( ! $this->native_stock ) {
+			return;
+		}
+		if ( true !== ( $this->props['manage_stock'] ?? false ) ) {
+			$this->props['stock_quantity']   = null;
+			$this->props['backorders']       = 'no';
+			$this->props['low_stock_amount'] = '';
+			return;
+		}
+		$backorders                  = $this->props['backorders'] ?? 'no';
+		$this->props['stock_status'] = (float) ( $this->props['stock_quantity'] ?? 0 ) > 0 ? 'instock' : ( 'no' !== $backorders ? 'onbackorder' : 'outofstock' );
+	}
+
+	/**
+	 * Ticket 133 bug 2: whether save() leaves a list prop as WooCommerce's
+	 * WC_Data::apply_changes() does, array_replace_recursive( stored, set ):
+	 * a shorter list set keeps the stored list's tail in the object (the
+	 * stored terms are right; the object is not).
+	 */
+	public bool $merge_lists = false;
+
+	/**
+	 * Props as last saved (or as given), for $merge_lists.
+	 *
+	 * @var array<string, mixed>|null
+	 */
+	private ?array $stored = null;
+
 	public function save(): int {
-		$this->saves[] = $this->props;
+		$this->validate_props();
+		$this->saves[]      = $this->props;
+		$this->saved_meta[] = $this->meta;
+		if ( $this->merge_lists ) {
+			foreach ( $this->props as $key => $value ) {
+				if ( is_array( $value ) && array_is_list( $value ) && is_array( $this->stored[ $key ] ?? null ) ) {
+					$this->props[ $key ] = array_replace_recursive( $this->stored[ $key ], $value );
+				}
+			}
+		}
+		$this->stored = $this->props;
 		return (int) ( $this->props['id'] ?? 0 );
 	}
 
@@ -107,6 +226,7 @@ final class SavedProduct {
 			if ( isset( $this->refuse[ $method ] ) ) {
 				throw new \WC_Data_Exception( 'product_invalid_value', $this->refuse[ $method ] );
 			}
+			$this->stored                      ??= $this->props;
 			$this->sets[]                        = [ $method, $args[0] ];
 			$this->props[ substr( $method, 4 ) ] = $args[0];
 			return null;
@@ -133,6 +253,37 @@ final class WatchedProduct {
 	public array $refuse = [];
 
 	public function __construct( private string $type = 'simple', public array $props = [] ) {}
+
+	/**
+	 * Product meta by key (T88): get_meta(), update_meta_data() and
+	 * delete_meta_data() over this map, as WooCommerce's meta API does before save().
+	 *
+	 * @var array<string, mixed>
+	 */
+	public array $meta = [];
+
+	/**
+	 * Meta calls, in order: [ 'update' | 'delete', key, value ].
+	 *
+	 * @var array<int, array{0: string, 1: string, 2: mixed}>
+	 */
+	public array $meta_calls = [];
+
+	public function get_meta( string $key = '', bool $single = true, string $context = 'view' ): mixed {
+		unset( $single, $context );
+		return $this->meta[ $key ] ?? '';
+	}
+
+	public function update_meta_data( string $key, mixed $value, int $meta_id = 0 ): void {
+		unset( $meta_id );
+		$this->meta_calls[] = [ 'update', $key, $value ];
+		$this->meta[ $key ] = $value;
+	}
+
+	public function delete_meta_data( string $key ): void {
+		$this->meta_calls[] = [ 'delete', $key, null ];
+		unset( $this->meta[ $key ] );
+	}
 
 	public function __clone() {
 		$GLOBALS['bulkcat_test']['watched'][] = [ 'clone', (int) ( $this->props['id'] ?? 0 ), null ];

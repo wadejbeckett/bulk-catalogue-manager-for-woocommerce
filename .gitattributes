@@ -1,5 +1,7 @@
 # Release archives always use LF, whatever the checkout's autocrlf.
 * text=auto eol=lf
+# The CSV export's golden files (T96) are byte-exact: a byte-order mark, CRLF line ends, an invalid byte.
+tests/Unit/Export/golden/** -text
 
 # Kept out of `git archive` (bin/build-zip.sh, GitHub release zips), SPEC §15.
 # The archive ships the main file, src/, uninstall.php, readme.txt, LICENSE,
@@ -33,3 +35,5 @@ phpunit.xml.dist    export-ignore
 scratch/**          export-ignore
 tests/**            export-ignore
 vendor/**           export-ignore
+
+.superpowers/**     export-ignore

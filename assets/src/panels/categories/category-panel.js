@@ -18,8 +18,10 @@ import { useCallback, useEffect, useRef, useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 
 import { announce } from './announce';
+import useCategoryActions from './category-actions';
 import CategoryManager from './category-manager';
 import CategoryTree, { ALL } from './category-tree';
+import CreationNotice from './creation-notice';
 import ErrorNotice, { errorMessage } from './error-notice';
 import MoveDialog from './move-dialog';
 import { moveCategory, updateCategory } from './requests';
@@ -92,6 +94,7 @@ function useNarrow( width ) {
  * @param {number}   props.total           Optional count for the All products row.
  * @param {Function} props.onDropSelection Called with a category id when the product selection is dropped on it.
  * @param {number}   props.narrowWidth     Breakpoint for the sheet; 960 by default.
+ * @param {boolean}  props.compact         Use the sheet while the bulk panel needs the space.
  * @return {Element} The panel.
  */
 export default function CategoryPanel( {
@@ -104,6 +107,7 @@ export default function CategoryPanel( {
 	total,
 	onDropSelection,
 	narrowWidth = NARROW_WIDTH,
+	compact = false,
 } ) {
 	const ownTree = useCategoryTree( query, { enabled: ! sharedTree } );
 	const tree = sharedTree || ownTree;
@@ -114,6 +118,19 @@ export default function CategoryPanel( {
 	const userId = settings?.user?.id || 0;
 	const openDefault = settings?.settings?.category_panel !== false;
 
+	const bodyElement = useRef( null );
+	const emptyOpener = useRef( null );
+	const emptyOpenerRef = useCallback( ( button ) => {
+		const previous = emptyOpener.current;
+		// Readback can remove the first-category opener after Modal restored
+		// focus to it. Rescue only that focused removal, never a background
+		// read while the user works elsewhere. Keep this ref callback stable.
+		if ( ! button && previous === previous?.ownerDocument.activeElement ) {
+			bodyElement.current?.querySelector( '[role="status"]' )?.focus();
+		}
+		emptyOpener.current = button;
+	}, [] );
+
 	const [ layout, setLayout ] = useState( () =>
 		readPanelState( userId, openDefault )
 	);
@@ -122,6 +139,7 @@ export default function CategoryPanel( {
 		value?.includeChildren ?? true
 	);
 	const [ editing, setEditing ] = useState( null );
+	const [ incompleteCreation, setIncompleteCreation ] = useState( false );
 	const [ moving, setMoving ] = useState( null );
 	const [ failure, setFailure ] = useState( null );
 	// T75: when Move to… closes, focus goes back into the tree — the moved
@@ -197,6 +215,8 @@ export default function CategoryPanel( {
 		setFailure( { error, fallback } );
 		announce( errorMessage( error, fallback ), 'assertive' );
 	};
+
+	const actions = useCategoryActions( { tree, value, onFail: fail } );
 
 	const rename = async ( id, name ) => {
 		setFailure( null );
@@ -304,10 +324,29 @@ export default function CategoryPanel( {
 	const setCollapsed = ( collapsed ) =>
 		setLayout( ( current ) => ( { ...current, collapsed } ) );
 
+	const addCategory = ( event ) => {
+		// Some pointer activations do not focus buttons. Give the native Modal
+		// a reliable focus-return target before it captures the active element.
+		event.currentTarget.focus();
+		setEditing( { id: null } );
+	};
+
+	const saved = ( item ) => {
+		if ( ! editing.id ) {
+			const complete = Number.isInteger( item?.id ) && item.id > 0;
+			setIncompleteCreation( ! complete );
+			if ( ! complete ) {
+				// A prior receipt cannot confirm this new, incomplete response.
+				tree.dismissCreation();
+			}
+		}
+		setEditing( null );
+	};
+
 	const sentence = categorySentence( value, tree.byId );
 
 	const body = ( toggle = null ) => (
-		<div className="bulkcat-cat-panel__body">
+		<div ref={ bodyElement } className="bulkcat-cat-panel__body">
 			<div className="bulkcat-cat-panel__head">
 				<div className="bulkcat-cat-panel__row">
 					<h2 className="bulkcat-cat-panel__title">
@@ -357,6 +396,13 @@ export default function CategoryPanel( {
 					onChange={ toggleChildren }
 				/>
 			</div>
+			<CreationNotice
+				creation={ tree.creation }
+				incomplete={ incompleteCreation }
+				loading={ tree.loading }
+				onRetry={ tree.reload }
+				onDismiss={ tree.dismissCreation }
+			/>
 			{ failure && (
 				<ErrorNotice
 					error={ failure.error }
@@ -365,7 +411,7 @@ export default function CategoryPanel( {
 				/>
 			) }
 			<div className="bulkcat-cat-panel__scroll">
-				{ tree.error && ! tree.loaded && (
+				{ tree.error && (
 					<div className="bulkcat-cat-panel__state">
 						<ErrorNotice
 							error={ tree.error }
@@ -374,12 +420,14 @@ export default function CategoryPanel( {
 								'bulk-catalogue-manager-for-woocommerce'
 							) }
 						/>
-						<Button variant="secondary" onClick={ tree.reload }>
-							{ __(
-								'Try again',
-								'bulk-catalogue-manager-for-woocommerce'
-							) }
-						</Button>
+						{ ! tree.creation && ! incompleteCreation && (
+							<Button variant="secondary" onClick={ tree.reload }>
+								{ __(
+									'Try again',
+									'bulk-catalogue-manager-for-woocommerce'
+								) }
+							</Button>
+						) }
 					</div>
 				) }
 				{ ! tree.loaded && ! tree.error && (
@@ -400,8 +448,9 @@ export default function CategoryPanel( {
 						</p>
 						{ canManage && (
 							<Button
+								ref={ emptyOpenerRef }
 								variant="primary"
-								onClick={ () => setEditing( { id: null } ) }
+								onClick={ addCategory }
 							>
 								{ __(
 									'Create your first category',
@@ -425,6 +474,7 @@ export default function CategoryPanel( {
 						onEdit={ ( id ) => setEditing( { id } ) }
 						onMoveDialog={ setMoving }
 						onDropSelection={ onDropSelection }
+						moreActions={ actions.menuItems }
 					/>
 				) }
 			</div>
@@ -435,7 +485,7 @@ export default function CategoryPanel( {
 						<Button
 							variant="secondary"
 							size="compact"
-							onClick={ () => setEditing( { id: null } ) }
+							onClick={ addCategory }
 						>
 							{ __(
 								'+ Add category',
@@ -457,6 +507,7 @@ export default function CategoryPanel( {
 
 	const dialogs = (
 		<>
+			{ actions.dialogs }
 			{ editing && (
 				<Modal
 					title={
@@ -477,7 +528,7 @@ export default function CategoryPanel( {
 						tree={ tree }
 						categoryId={ editing.id }
 						canManage={ canManage }
-						onSaved={ () => setEditing( null ) }
+						onSaved={ saved }
 						onCancel={ () => setEditing( null ) }
 					/>
 				</Modal>
@@ -496,7 +547,7 @@ export default function CategoryPanel( {
 		</>
 	);
 
-	if ( narrow ) {
+	if ( narrow || compact ) {
 		return (
 			<div className="bulkcat-cat-panel is-narrow">
 				<Button
@@ -520,9 +571,9 @@ export default function CategoryPanel( {
 						className="bulkcat-cat-sheet"
 					>
 						{ body() }
+						{ dialogs }
 					</Modal>
 				) }
-				{ dialogs }
 			</div>
 		);
 	}

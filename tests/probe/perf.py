@@ -45,8 +45,39 @@ Metrics (``--only`` takes these group names, comma separated, default all):
              (INFO; the query count must not grow with the page size).
   export     GET /export of 20,000 rows: first byte < 2 s, complete < 60 s,
              memory flat (peak at 20,000 rows within 8 MB of the peak at 2,000).
+  export_post  POST /export as the export dialog posts it, identifier switch
+             on (ticket 10): 20,000 rows by filter and 20,000 selected
+             members by token, each with first byte < 2 s (token resolution
+             included), complete < 60 s, every row, and memory flat (peak
+             within 8 MB of the same source's 2,000-row export).
+  export_scale A 100,000-member selection exported by token with the switch
+             on: completes under the web request's 128 MB memory limit
+             (first byte and total time recorded). Needs the scale category
+             at 100,000 products and variations: seed.sh 22223.
   prune      The history prune over 50,000 journal rows in batches past the
              retention limit, run to the end through Action Scheduler (INFO).
+  undo_scale T111 (ticket 11 item 1), opt-in, hours long: the undo of a
+             100,000-object change, streamed. The change (Weight set to
+             0.777 on the scale category's 100,000 products and variations,
+             seed.sh 22223) is made through the durable routes and run with
+             ``wp action-scheduler run``, or an existing finished change is
+             named with --undo-batch. Then, each a web request at the site's
+             memory limit: the undo preview (first and last page), the
+             single batch read counting conflicts, the undo accepted through a
+             /requests grant, and the undo batch run to its end through Action
+             Scheduler's runner inside web requests (the measurement
+             mu-plugin's runner; the stack sets WP_MAX_MEMORY_LIMIT to 128M so
+             the runner's raise stays at 128 MB). Budget: every request's
+             and every chunk's peak < 96 MB under a 128M limit; the undo
+             complete, the change undone, no object left at the new weight.
+  offon      Ticket 04 (SPEC §5.5), through the durable routes (a captured
+             selection, an exact preview, a /requests grant): Status set to
+             Draft (Off) on 5,000 simple products, the undo of that Off, Off
+             again, then Published (On): each >= 300 products a minute at the
+             default chunk, every chunk's peak < 96 MB; while 5,000 are Off,
+             the grid's default columns (Status among them) with the Off
+             filter, 25 rows: p95 < 400 ms and <= 20 queries, and its cold
+             count < 500 ms.
 
 Usage (after the stack, seed and mu-plugin of tests/probe/README.md):
     WP_CMD="..." python3 tests/probe/perf.py --base-url http://localhost:8896 \
@@ -73,9 +104,12 @@ import uuid
 from typing import Any
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from probe import NS, SIXTY, SIXTY_SEED_PHP, Probe, filter_params  # noqa: E402
+from probe import NS, SIXTY, SIXTY_SEED_PHP, Probe, export_fixture, filter_params  # noqa: E402
 
-GROUPS = ["grid", "categories", "selection", "preview", "write", "history", "export", "prune"]
+GROUPS = ["grid", "categories", "selection", "preview", "write", "history", "export", "export_post", "export_scale", "prune", "offon", "undo_scale"]
+# undo_scale runs a 100,000-object change and its undo (hours): only when named.
+DEFAULT_GROUPS = [group for group in GROUPS if group != "undo_scale"]
+SCALE_WEIGHT = "0.777"
 ADJUST = [{"action": "adjust", "args": {"field": "regular_price", "direction": "increase", "by": "percent", "amount": "10"}}]
 PERF_SIXTY_SKU = "bulkcat-perf-sixty"
 LIST_BATCHES = 200
@@ -117,6 +151,7 @@ class Perf:
         self.verbose = args.verbose
         self.rows: list[dict[str, Any]] = []
         self.scale_cat = 0
+        self.undo_batch = getattr(args, "undo_batch", 0)
 
     # ---- reporting -----------------------------------------------------------
 
@@ -309,11 +344,12 @@ class Perf:
                     f"{reply['perf']['dispatch_queries']} queries, peak {reply['perf']['peak_mb']} MB")
 
     def write(self) -> None:
+        # Through the durable routes (T83): a captured selection, an exact preview, a /requests grant.
         body = self.simple_filter({"stock_quantity": {"operator": "between", "value": [1, 19]}})
-        sel = self.json_of(self.call("POST", "/selection", body=body)) or {}
+        sel = self.p.capture("manager", {"query": body})
+        assert sel.get("token"), f"capture {sel}"
         pre = self.json_of(self.call("POST", "/preview", body={"token": sel["token"], "operations": ADJUST})) or {}
-        reply = self.call("POST", "/batches", body={"uuid": str(uuid.uuid4()), "token": sel["token"], "operations": ADJUST,
-                                                     "preview_hash": pre.get("hash"), "preview_count": sel["count"]})
+        reply = self.call("POST", "/batches", body=self.p.apply_body("manager", pre, {"token": sel["token"]}))
         created = self.json_of(reply) or {}
         assert reply["status"] == 201, f"POST /batches {reply['status']} {created}"
         self.metric("write", f"queue a {sel['count']}-product batch", reply["perf"]["server_ms"], "ms", "", None,
@@ -322,12 +358,12 @@ class Perf:
 
         undo_route = f"/batches/{created['batch_id']}/undo"
         plan = self.json_of(self.call("POST", undo_route, body={"preview": True})) or {}
-        reply = self.call("POST", undo_route, body={"uuid": str(uuid.uuid4()), "plan_hash": plan.get("plan_hash")})
+        reply = self.call("POST", undo_route, body=self.p.undo_body("manager", created["batch_id"], plan.get("plan_hash")))
         undo = self.json_of(reply) or {}
         assert reply["status"] == 201, f"undo {reply['status']} {undo}"
         self.batch_budget("undo", undo["batch_id"])
 
-    def batch_budget(self, label: str, batch_id: int) -> None:
+    def batch_budget(self, label: str, batch_id: int, group: str = "write") -> None:
         # A web runner starts each request from WordPress's own footprint; under WP-CLI
         # WooCommerce's commands alone hold about 110 MB, so a chunk's peak is read as
         # what the chunk adds to the memory it started with, on top of a light REST
@@ -340,16 +376,81 @@ class Perf:
         rate = done / (wall / 60) if wall else 0.0
         in_chunks = sum(c["ms"] for c in chunks) / 1000
         ok_status = report.get("status") in ("complete", "partial") and not report.get("failed_items")
-        self.metric("write", f"{label}: products a minute", rate, "/min", ">= 300", ok_status and rate >= BUDGET["write_per_minute"],
+        self.metric(group, f"{label}: products a minute", rate, "/min", ">= 300", ok_status and rate >= BUDGET["write_per_minute"],
                     f"{done} items ({report.get('changed_items')} changed, {report.get('failed_items')} failed) in {wall:.0f} s wall, "
                     f"{in_chunks:.0f} s in {len(chunks)} chunks, status {report.get('status')}")
         own = max((c["peak_mb"] - c["start_mb"] for c in chunks), default=0.0)
         peak = base + own
-        self.metric("write", f"{label}: peak memory per chunk", peak, "MB", "< 96 MB", bool(chunks) and peak < BUDGET["chunk_peak_mb"],
+        self.metric(group, f"{label}: peak memory per chunk", peak, "MB", "< 96 MB", bool(chunks) and peak < BUDGET["chunk_peak_mb"],
                     f"a request's {base} MB + at most {own:.2f} MB a chunk adds; queries a chunk median {median([c['queries'] for c in chunks]) if chunks else 0}")
         drift = (chunks[-1]["end_mb"] - chunks[0]["start_mb"]) if chunks else 0.0
-        self.metric("write", f"{label}: memory kept across chunks", drift, "MB", "flat (+<8 MB)", drift < EXPORT_FLAT_MB,
+        self.metric(group, f"{label}: memory kept across chunks", drift, "MB", "flat (+<8 MB)", drift < EXPORT_FLAT_MB,
                     f"one WP-CLI process: {chunks[0]['start_mb'] if chunks else 0} MB before the first chunk, {chunks[-1]['end_mb'] if chunks else 0} MB after the last")
+
+    # ---- ticket 04: Status as the global Off/On switch (branch codex/global-off-on) ----
+
+    OFFON_FIELDS = ["name", "status", "category_ids", "regular_price", "sale_price", "stock_status", "manage_stock",
+                    "stock_quantity", "sku", "id", "type", "thumbnail", "price_html", "variation_count"]
+
+    def offon_switch(self, label: str, token: str, value: str) -> int:
+        """Preview and Apply Status set to a value over the captured selection, through a grant; run and measure it."""
+        # Long queue runs can outlive the authorization lease. Renew the same
+        # retained membership before each fresh preview, never recapture a query.
+        renewal = self.call("POST", "/selection/renew", body={"token": token})
+        renewed = self.json_of(renewal) or {}
+        assert renewal["status"] == 200 and renewed.get("token"), f"selection renewal {renewal['status']}"
+        token = renewed["token"]
+        operations = [{"action": "set_value", "args": {"field": "status", "value": value, "apply_to_variations": False}}]
+        pre = self.json_of(self.call("POST", "/preview", body={"token": token, "operations": operations})) or {}
+        reply = self.call("POST", "/batches", body=self.p.apply_body("manager", pre, {"token": token}))
+        created = self.json_of(reply) or {}
+        assert reply["status"] == 201, f"POST /batches {reply['status']} {created}"
+        counts = (pre.get("availability") or {}).get("counts")
+        self.metric("offon", f"{label}: queue", reply["perf"]["server_ms"], "ms", "", None, f"preview counts {counts}; {reply['perf']['dispatch_queries']} queries")
+        self.batch_budget(label, created["batch_id"], "offon")
+        return int(created["batch_id"])
+
+    def offon_undo(self, label: str, batch_id: int) -> None:
+        route = f"/batches/{batch_id}/undo"
+        plan = self.json_of(self.call("POST", route, body={"preview": True})) or {}
+        reply = self.call("POST", route, body=self.p.undo_body("manager", batch_id, plan.get("plan_hash")))
+        undo = self.json_of(reply) or {}
+        assert reply["status"] == 201, f"undo {reply['status']} {undo}"
+        self.batch_budget(label, undo["batch_id"], "offon")
+
+    def offon_grid(self) -> None:
+        params = [("per_page", "25"), ("status[operator]", "isAny"), ("status[value][]", "off")] + [("fields[]", f) for f in self.OFFON_FIELDS]
+        self.clear_transients("bulkcat_count_")
+        cold = self.call("GET", "/products", params)
+        assert cold["status"] == 200, f"GET /products {cold['status']} {cold['body'][:200]!r}"
+        data = self.json_of(cold) or {}
+        total = (data.get("pagination") or {}).get("total")
+        shown = sum(1 for item in data.get("items", []) if (item.get("off_state") or {}).get("state") == "off")
+        self.metric("offon", "Off filter cold (page + count)", cold["perf"]["server_ms"], "ms", "< 500 ms", cold["perf"]["server_ms"] < BUDGET["count_cold_ms"],
+                    f"{total} Off products, {cold['perf']['dispatch_queries']} queries")
+        warm = [self.call("GET", "/products", params) for _ in range(self.runs)]
+        server = [w["perf"]["server_ms"] for w in warm]
+        self.metric("offon", "grid with Status and the Off filter, 25 rows, warm p95", p95(server), "ms", "< 400 ms", p95(server) < BUDGET["grid_p95_ms"],
+                    f"median {median(server):.0f} ms; {shown} of 25 rows read Off")
+        q = max(w["perf"]["dispatch_queries"] for w in warm)
+        self.metric("offon", "grid with Status and the Off filter, queries", q, "queries", "<= 20", q <= BUDGET["grid_queries"], f"request total {warm[-1]['perf']['queries']}")
+
+    def offon(self) -> None:
+        body = self.simple_filter({"stock_quantity": {"operator": "between", "value": [1, 19]}})
+        sel = self.p.capture("manager", {"query": body})
+        assert sel.get("token"), f"capture {sel}"
+        self.metric("offon", "selection", sel.get("count", 0), "products", "", None, "simple products in the scale category with stock 1 to 19")
+        off = self.offon_switch("Off", sel["token"], "draft")
+        self.offon_grid()
+        self.offon_undo("undo of the Off", off)
+        self.offon_switch("Off again", sel["token"], "draft")
+        self.offon_switch("On", sel["token"], "publish")
+        left = self.p.wp_eval(
+            "global $wpdb; bulkcat_out( (int) $wpdb->get_var( $wpdb->prepare( \"SELECT COUNT(*) FROM {$wpdb->postmeta} AS m"
+            " INNER JOIN {$wpdb->term_relationships} AS tr ON tr.object_id = m.post_id INNER JOIN {$wpdb->term_taxonomy} AS tt ON tt.term_taxonomy_id = tr.term_taxonomy_id"
+            " WHERE m.meta_key = %%s AND tt.term_id = %%d\", '_bulkcat_availability_off', %d ) ) );" % self.scale_cat
+        )
+        self.metric("offon", "Off records left after On", left, "records", "0", left == 0, "in the scale category")
 
     def history(self) -> None:
         have = self.p.wp_eval(
@@ -374,27 +475,197 @@ class Perf:
         self.metric("history", "GET /batches query count constant", "yes" if flat else "no", "", "25 = 100", flat, str(counts))
 
     def export(self) -> None:
+        # T103: the catalogue is exported by POST, as the export dialog's form posts it, switch off (the file the
+        # retired catalogue GET wrote, byte for byte: T96); the same rows, columns and budgets as before.
         peaks = {}
         for rows in (2000, 20000):
-            params = filter_params("category_ids", "isAny", [self.scale_cat]) + [("columns[]", c) for c in ("name", "sku", "regular_price", "stock_quantity", "stock_status")]
+            fields = filter_params("category_ids", "isAny", [self.scale_cat]) + [("columns", "name,sku,regular_price,stock_quantity,stock_status")]
             if rows == 2000:
-                params += filter_params("type", "isAny", ["simple"]) + filter_params("stock_quantity", "between", ["1", "8"])
-            log_id = f"export-{rows}-{uuid.uuid4().hex[:8]}"
-            reply = self.call("GET", "/export", params, log=log_id)
-            lines = reply["body"].count(b"\n") - 1
-            logged = next((r for r in self.perf_log() if r.get("id") == log_id), {})
-            peaks[rows] = logged.get("peak_mb", 0.0)
+                fields += filter_params("type", "isAny", ["simple"]) + filter_params("stock_quantity", "between", ["1", "8"])
+            reply = self.post_export(fields, f"export-{rows}-{uuid.uuid4().hex[:8]}")
+            lines = reply["lines"]
+            peaks[rows] = reply["peak_mb"]
             if rows == 20000:
                 self.metric("export", "20,000 rows: first byte", reply["ttfb_ms"], "ms", "< 2 s", reply["status"] == 200 and reply["ttfb_ms"] < BUDGET["export_ttfb_ms"],
                             f"{len(reply['body']) / 1048576:.1f} MB")
                 self.metric("export", "20,000 rows: complete", reply["total_ms"], "ms", "< 60 s, every row",
                             lines == rows and reply["total_ms"] < BUDGET["export_total_ms"],
-                            f"{lines} data rows; server {logged.get('total_ms')} ms, {logged.get('queries')} queries")
+                            f"{lines} data rows; server {reply['server_ms']} ms, {reply['queries']} queries")
             else:
                 self.metric("export", f"{rows} rows: peak memory", peaks[rows], "MB", "", None, f"{lines} data rows in {reply['total_ms']:.0f} ms")
         grew = peaks[20000] - peaks[2000]
         self.metric("export", "20,000 rows: peak memory", peaks[20000], "MB", "flat (+<8 MB)", grew < EXPORT_FLAT_MB,
                     f"{grew:+.2f} MB over the 2,000-row export")
+
+    # ---- ticket 10: POST /export ------------------------------------------------------
+
+    def post_export(self, fields: list[tuple[str, str]], log: str) -> dict[str, Any]:
+        """POST /export as the dialog's form posts it (the nonce in the body), timed at first byte and in full."""
+        opener, nonce = self.p.session("manager")
+        data = urllib.parse.urlencode(list(fields) + [("_wpnonce", nonce)]).encode()
+        headers = {"Content-Type": "application/x-www-form-urlencoded", "X-BULKCAT-Perf-Log": log}
+        request = urllib.request.Request(self.p.base + NS + "/export", data=data, method="POST", headers=headers)
+        start = time.perf_counter()
+        try:
+            reply = opener.open(request, timeout=600)
+        except urllib.error.HTTPError as error:
+            reply = error
+        first = time.perf_counter()
+        payload = reply.read()
+        end = time.perf_counter()
+        status = reply.status if hasattr(reply, "status") else reply.code
+        logged = next((r for r in self.perf_log() if r.get("id") == log), {})
+        return {"status": status, "ttfb_ms": (first - start) * 1000, "total_ms": (end - start) * 1000, "body": payload,
+                "lines": payload.count(b"\n") - 1, "peak_mb": logged.get("peak_mb", 0.0), "server_ms": logged.get("total_ms"), "queries": logged.get("queries")}
+
+    def capture_token(self, query: dict) -> tuple[str, int, float]:
+        """A v2 selection of a query, captured under a grant: its token, its count and the capture's seconds."""
+        start = time.perf_counter()
+        sel = self.p.capture("manager", {"query": query})
+        return sel.get("token", ""), int(sel.get("count") or 0), time.perf_counter() - start
+
+    def export_post(self) -> None:
+        export_fixture(self.p)  # refuses unless WP_CMD reaches the declared local fixture (BULKCAT_FIXTURE_URL)
+        columns = [("columns", "name,sku,regular_price,stock_quantity,stock_status"), ("identifiers", "1")]
+        scale = {"category_ids": {"operator": "isAny", "value": [self.scale_cat]}}
+        small = {**scale, "type": {"operator": "isAny", "value": ["simple"]}, "stock_quantity": {"operator": "between", "value": [1, 8]}}
+        as_form = lambda query: [(f"{k}[{sub}]" + ("[]" if isinstance(v, list) else ""), str(item))  # noqa: E731
+                                 for k, spec in query.items() for sub, v in spec.items() for item in (v if isinstance(v, list) else [v])]
+        for source in ("filter", "selection"):
+            peaks = {}
+            for rows, query in ((2000, small), (20000, scale)):
+                if source == "filter":
+                    fields, want, capture = columns + as_form(query), None, 0.0
+                else:
+                    token, want, capture = self.capture_token(query)
+                    fields = columns + [("selection", token)]
+                reply = self.post_export(fields, f"export-post-{source}-{rows}-{uuid.uuid4().hex[:8]}")
+                peaks[rows] = reply["peak_mb"]
+                name = f"export-{source}-20000-identifiers"
+                if rows == 20000:
+                    every = reply["lines"] == (want if want is not None else 20000)
+                    self.metric("export_post", f"{name}: first byte", reply["ttfb_ms"], "ms", "< 2 s", reply["status"] == 200 and reply["ttfb_ms"] < BUDGET["export_ttfb_ms"],
+                                f"{len(reply['body']) / 1048576:.1f} MB" + (f"; the capture before it took {capture:.1f} s" if source == "selection" else ""))
+                    self.metric("export_post", f"{name}: complete", reply["total_ms"], "ms", "< 60 s, every row", every and reply["total_ms"] < BUDGET["export_total_ms"],
+                                f"{reply['lines']} data rows; server {reply['server_ms']} ms, {reply['queries']} queries")
+                else:
+                    self.metric("export_post", f"{name}: 2,000-row peak memory", peaks[rows], "MB", "", None, f"{reply['lines']} data rows in {reply['total_ms']:.0f} ms")
+            grew = peaks[20000] - peaks[2000]
+            self.metric("export_post", f"export-{source}-20000-identifiers: peak memory", peaks[20000], "MB", "flat (+<8 MB)", grew < EXPORT_FLAT_MB,
+                        f"{grew:+.2f} MB over the 2,000-row export")
+
+    def export_scale(self) -> None:
+        export_fixture(self.p)
+        token, count, capture = self.capture_token({"category_ids": {"operator": "isAny", "value": [self.scale_cat]}, "mode": "products_and_variations"})
+        if count != 100000:
+            raise RuntimeError(f"the scale category holds {count} products and variations (want 100,000: seed.sh 22223)")
+        reply = self.post_export([("columns", "name,sku,regular_price,stock_status"), ("identifiers", "1"), ("selection", token)],
+                                 f"export-scale-100000-{uuid.uuid4().hex[:8]}")
+        self.metric("export_scale", "export-selection-100000: complete under 128 MB", reply["peak_mb"], "MB", "< 128 MB",
+                    reply["status"] == 200 and reply["lines"] == 100000 and 0 < reply["peak_mb"] < 128,
+                    f"{reply['lines']} data rows; first byte {reply['ttfb_ms']:.0f} ms, total {reply['total_ms'] / 1000:.1f} s, server {reply['server_ms']} ms, "
+                    f"{reply['queries']} queries; capture {capture:.1f} s; the web request's memory_limit is 128M (read:export:time-limit)")
+        # The dialog's summary with the switch on: presence and the guarded counts, measured rather than assumed.
+        scale = {"category_ids": {"operator": "isAny", "value": [self.scale_cat]}}
+        for label, body in (("100,000 selected members", {"selection": token}), ("the scale category by filter", {**scale})):
+            answer = self.call("POST", "/export", body={"columns": ["name", "sku"], "identifiers": True, "summary": True, **body})
+            data = self.json_of(answer) or {}
+            self.metric("export_scale", f"summary with identifiers: {label}", answer["perf"].get("server_ms", 0.0), "ms", "", None,
+                        f"rows {data.get('rows')}, left out {data.get('left_out')}, guarded {data.get('guarded_identifiers')}/{data.get('guarded_names')}; "
+                        f"{answer['perf'].get('dispatch_queries')} queries in the dispatch, peak {answer['perf'].get('peak_mb')} MB")
+
+    def run_batch_web(self, batch_id: int) -> tuple[float, dict, list[dict[str, Any]]]:
+        """Runs Action Scheduler's queue in web requests (the measurement mu-plugin's runner) until the batch finishes."""
+        key = self.p.wp_eval("$k = wp_generate_password( 32, false, false ); update_option( 'bulkcat_perf_queue_key', $k, false ); bulkcat_out( $k );")
+        runs: list[dict[str, Any]] = []
+        report: dict = {}
+        start = time.perf_counter()
+        try:
+            for _ in range(5000):
+                request = urllib.request.Request(self.p.base + "/", data=b"", method="POST", headers={"X-BULKCAT-Perf-Queue": key})
+                try:
+                    reply = urllib.request.urlopen(request, timeout=600)
+                    answer = json.loads(reply.read().decode("utf-8") or "{}")
+                except (urllib.error.HTTPError, ValueError) as error:
+                    runs.append({"error": str(error)[:200]})
+                    break
+                runs.append(answer)
+                report = self.json_of(self.call("GET", f"/batches/{batch_id}")) or {}
+                if report.get("status") not in ("queued", "running"):
+                    break
+        finally:
+            self.p.wp_eval("delete_option( 'bulkcat_perf_queue_key' ); bulkcat_out( true );")
+        return time.perf_counter() - start, report, runs
+
+    def undo_scale(self) -> None:
+        batch_id = self.undo_batch
+        if not batch_id:
+            token, count, capture = self.capture_token({"category_ids": {"operator": "isAny", "value": [self.scale_cat]}, "mode": "products_and_variations"})
+            if count != 100000:
+                raise RuntimeError(f"the scale category holds {count} products and variations (want 100,000: seed.sh 22223)")
+            operations = [{"action": "set_value", "args": {"field": "weight", "value": SCALE_WEIGHT, "apply_to_variations": False}}]
+            pre = self.json_of(self.call("POST", "/preview", body={"token": token, "operations": operations})) or {}
+            reply = self.call("POST", "/batches", body=self.p.apply_body("manager", pre, {"token": token}))
+            created = self.json_of(reply) or {}
+            assert reply["status"] == 201, f"POST /batches {reply['status']} {created}"
+            batch_id = int(created["batch_id"])
+            self.metric("undo_scale", "the change: 100,000 accepted", reply["perf"]["peak_mb"], "MB", "", None,
+                        f"batch {batch_id}; capture {capture:.1f} s; {reply['perf']['server_ms']} ms")
+            wall, report = self.run_batch(batch_id)
+            self.metric("undo_scale", "the change: run with wp action-scheduler run", wall, "s", "", None,
+                        f"status {report.get('status')}, {report.get('changed_items')} changed")
+        facts = self.p.wp_eval(
+            "global $wpdb; $b = %d; bulkcat_out( array("
+            " 'status' => $wpdb->get_var( $wpdb->prepare( \"SELECT status FROM {$wpdb->prefix}bulkcat_batches WHERE batch_id = %%d\", $b ) ),"
+            " 'objects' => (int) $wpdb->get_var( $wpdb->prepare( \"SELECT COUNT(DISTINCT object_id) FROM {$wpdb->prefix}bulkcat_changes WHERE batch_id = %%d\", $b ) ) ) );" % batch_id
+        )
+        if facts["objects"] < 100000:
+            raise RuntimeError(f"batch {batch_id} journalled {facts['objects']} objects (want 100,000)")
+        route = f"/batches/{batch_id}/undo"
+
+        def budget(name: str, reply: dict[str, Any], detail: str) -> None:
+            # The limit the web request itself ran under, from the mu-plugin's header.
+            peak = float(reply["perf"].get("peak_mb", 0.0))
+            limit = reply["perf"].get("memory_limit")
+            ok = reply["status"] in (200, 201) and 0 < peak < BUDGET["chunk_peak_mb"] and limit == "128M"
+            self.metric("undo_scale", name, peak, "MB", "< 96 MB", ok,
+                        f"under the request's {limit} limit; HTTP {reply['status']}, {reply['perf'].get('server_ms')} ms server, {reply['perf'].get('dispatch_queries')} queries; {detail}")
+
+        first = self.call("POST", route, body={"preview": True, "per_page": 25})
+        plan = self.json_of(first) or {}
+        budget("undo preview, page 1 (100,000 objects)", first, f"counts {plan.get('counts')}, {len(plan.get('items') or [])} items")
+        pages = int((plan.get("pagination") or {}).get("totalPages") or 1)
+        last = self.call("POST", route, body={"preview": True, "per_page": 25, "page": pages})
+        budget(f"undo preview, last page ({pages})", last, f"{len((self.json_of(last) or {}).get('items') or [])} items")
+        count = self.call("GET", f"/batches/{batch_id}", [("reversibility", "count")])
+        budget("single batch read counting conflicts", count, f"reversibility {(self.json_of(count) or {}).get('reversibility')}")
+        accepted = self.call("POST", route, body=self.p.undo_body("manager", batch_id, plan.get("plan_hash")))
+        undo = self.json_of(accepted) or {}
+        budget("undo accepted (every item recorded)", accepted, f"{undo.get('total_items')} items, status {undo.get('status')}")
+        assert accepted["status"] == 201, f"undo {accepted['status']} {undo}"
+
+        self.reset_log()
+        wall, report, runs = self.run_batch_web(int(undo["batch_id"]))
+        chunks = [row for row in self.perf_log() if row["kind"] == "bulkcat_run_chunk"]
+        peak = max((c["peak_mb"] for c in chunks), default=0.0)
+        limits = sorted({r.get("memory_limit") for r in runs if "memory_limit" in r})
+        failed = [r for r in runs if "error" in r]
+        done = int(report.get("done_items") or 0)
+        self.metric("undo_scale", "undo run in web requests: peak per chunk", peak, "MB", "< 96 MB",
+                    bool(chunks) and peak < BUDGET["chunk_peak_mb"] and limits == ["128M"] and not failed,
+                    f"{len(chunks)} chunks in {len(runs)} web requests (limit {limits}); a chunk starts at up to {max((c['start_mb'] for c in chunks), default=0.0)} MB; "
+                    f"requests' own peak up to {max((r.get('peak_mb', 0.0) for r in runs), default=0.0)} MB; {len(failed)} failed requests")
+        self.metric("undo_scale", "undo run: objects a minute", done / (wall / 60) if wall else 0.0, "/min", ">= 300",
+                    report.get("status") == "complete" and done / (wall / 60) >= BUDGET["write_per_minute"] if wall else False,
+                    f"{done} items, {report.get('changed_items')} changed, {report.get('failed_items')} failed, status {report.get('status')}, {wall / 60:.1f} min wall")
+        after = self.p.wp_eval(
+            "global $wpdb; $b = %d; bulkcat_out( array("
+            " 'undone' => $wpdb->get_var( $wpdb->prepare( \"SELECT status FROM {$wpdb->prefix}bulkcat_batches WHERE batch_id = %%d\", $b ) ),"
+            " 'left' => (int) $wpdb->get_var( $wpdb->prepare( \"SELECT COUNT(*) FROM {$wpdb->postmeta} m INNER JOIN {$wpdb->prefix}bulkcat_batch_items i ON i.object_id = m.post_id AND i.batch_id = %%d WHERE m.meta_key = '_weight' AND m.meta_value = %%s\", $b, '%s' ) ) ) );"
+            % (batch_id, SCALE_WEIGHT)
+        )
+        self.metric("undo_scale", "the change undone", after["left"], "objects", "0 left", after["undone"] == "undone" and after["left"] == 0,
+                    f"batch {batch_id} reads {after['undone']}; objects still at weight {SCALE_WEIGHT}: {after['left']}")
 
     def prune(self) -> None:
         made = self.p.wp_eval(
@@ -450,7 +721,8 @@ def main() -> int:
     parser.add_argument("--seed", default=os.path.join(here, "seed.json"))
     parser.add_argument("--wp-cmd", default=os.environ.get("WP_CMD", "wp"))
     parser.add_argument("--runs", type=int, default=20, help="warm requests per read metric (default 20)")
-    parser.add_argument("--only", default=",".join(GROUPS), help="comma-separated groups: " + ",".join(GROUPS))
+    parser.add_argument("--only", default=",".join(DEFAULT_GROUPS), help="comma-separated groups: " + ",".join(GROUPS) + " (undo_scale only when named)")
+    parser.add_argument("--undo-batch", type=int, default=0, help="undo_scale: undo this finished 100,000-object batch instead of making one")
     parser.add_argument("--json", default="", help="also write the metrics to this JSON file")
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()

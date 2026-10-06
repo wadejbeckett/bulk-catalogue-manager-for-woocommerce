@@ -15,6 +15,10 @@
 #   1 variable product  bulkcat-probe-variable with Size Small/Medium/Large
 #                       (bulkcat-probe-variable-small ..) at 30.00 / 31.00 / 32.00
 #   1 draft product     bulkcat-probe-draft at 5.00
+# On sale (category "Probe Sale", outside the probe catalogue):
+#   1 simple product    bulkcat-probe-onsale, regular 150.00 on sale at 80.00
+#   1 variable product  bulkcat-probe-onsale-variable with Wood Oak (regular
+#                       120.00 on sale at 60.00) and Pine (regular 40.00)
 # Users (password $PROBE_PASSWORD): bulkcat_probe_admin (administrator),
 # bulkcat_probe_manager (shop_manager), bulkcat_probe_subscriber (subscriber).
 #
@@ -164,6 +168,47 @@ $draft->set_category_ids( array( $root ) );
 $draft->set_tag_ids( array() );
 $draft_id = (int) $draft->save();
 
+// On sale: the lookup's price is the sale price, the Regular price cell is not (SQR-1).
+$sale    = $term( 'product_cat', 'bulkcat-probe-sale', 'Probe Sale' );
+$onsale  = $upsert( 'WC_Product_Simple', 'bulkcat-probe-onsale' );
+$onsale->set_name( 'Probe On Sale' );
+$onsale->set_status( 'publish' );
+$onsale->set_regular_price( '150.00' );
+$onsale->set_sale_price( '80.00' );
+$onsale->set_date_on_sale_from( null );
+$onsale->set_date_on_sale_to( null );
+$onsale->set_category_ids( array( $sale ) );
+$onsale->set_tag_ids( array() );
+$onsale_id = (int) $onsale->save();
+
+$wood = new WC_Product_Attribute();
+$wood->set_name( 'Wood' );
+$wood->set_options( array( 'Oak', 'Pine' ) );
+$wood->set_position( 0 );
+$wood->set_visible( true );
+$wood->set_variation( true );
+$sale_variable = $upsert( 'WC_Product_Variable', 'bulkcat-probe-onsale-variable' );
+$sale_variable->set_name( 'Probe On Sale Variable' );
+$sale_variable->set_status( 'publish' );
+$sale_variable->set_attributes( array( $wood ) );
+$sale_variable->set_category_ids( array( $sale ) );
+$sale_variable->set_tag_ids( array() );
+$sale_variable_id = (int) $sale_variable->save();
+$sale_variations  = array();
+foreach ( array( 'Oak' => array( '120.00', '60.00' ), 'Pine' => array( '40.00', '' ) ) as $option => list( $regular, $sale_price ) ) {
+	$vsku      = 'bulkcat-probe-onsale-variable-' . strtolower( $option );
+	$variation = $upsert( 'WC_Product_Variation', $vsku );
+	$variation->set_parent_id( $sale_variable_id );
+	$variation->set_status( 'publish' );
+	$variation->set_attributes( array( 'wood' => $option ) );
+	$variation->set_regular_price( $regular );
+	$variation->set_sale_price( $sale_price );
+	$variation->set_manage_stock( false );
+	$variation->set_stock_status( 'instock' );
+	$sale_variations[] = array( 'id' => (int) $variation->save(), 'sku' => $vsku, 'regular_price' => $regular, 'sale_price' => $sale_price );
+}
+WC_Product_Variable::sync( $sale_variable_id );
+
 $users = array();
 foreach ( array( 'admin' => 'bulkcat_probe_admin', 'manager' => 'bulkcat_probe_manager', 'subscriber' => 'bulkcat_probe_subscriber' ) as $role => $login ) {
 	$users[ $role ] = array( 'login' => $login, 'id' => (int) get_user_by( 'login', $login )->ID );
@@ -176,6 +221,11 @@ $seed = array(
 	'simple'     => $simple,
 	'variable'   => array( 'id' => $variable_id, 'sku' => 'bulkcat-probe-variable', 'variations' => $variations ),
 	'draft'      => array( 'id' => $draft_id, 'sku' => 'bulkcat-probe-draft' ),
+	'on_sale'    => array(
+		'category'   => $sale,
+		'simple'     => array( 'id' => $onsale_id, 'sku' => 'bulkcat-probe-onsale', 'regular_price' => '150.00', 'sale_price' => '80.00' ),
+		'variable'   => array( 'id' => $sale_variable_id, 'sku' => 'bulkcat-probe-onsale-variable', 'variations' => $sale_variations ),
+	),
 );
 echo "BULKCAT_SEED_BEGIN\n" . wp_json_encode( $seed ) . "\nBULKCAT_SEED_END\n";
 PHP
@@ -203,7 +253,9 @@ for ( $n = $from; $n <= $to; $n++ ) {
 	$skus[ $n ] = sprintf( 'bulkcat-scale-%05d', $n );
 }
 $have = array_flip( $wpdb->get_col( "SELECT sku FROM {$wpdb->wc_product_meta_lookup} WHERE sku IN ('" . implode( "','", array_map( 'esc_sql', $skus ) ) . "')" ) );
-$todo = array_diff_key( $skus, array_flip( array_map( fn( $s ) => (int) substr( $s, 10 ), array_keys( $have ) ) ) );
+// The number after 'bulkcat-scale-' (14 characters; T85 found this read at 10, so a rerun
+// found none of the existing products and inserted the whole scale catalogue again).
+$todo = array_diff_key( $skus, array_flip( array_map( fn( $s ) => (int) substr( $s, strlen( 'bulkcat-scale-' ) ), array_keys( $have ) ) ) );
 if ( ! $todo ) {
 	echo "BULKCAT_SCALE_MADE 0\n";
 	return;

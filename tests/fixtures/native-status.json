@@ -1,0 +1,722 @@
+{
+  "schema": 1,
+  "oracle": {
+    "wordpress": "7.1",
+    "woocommerce": "11.1.2",
+    "php": "8.3.33",
+    "manager": "1.1.0",
+    "evidence": "Native HTTP post.php editor and woocommerce_save_variations AJAX; PHP helper is fixture setup/readback only. Source-derived boundaries use injected time, not wall-clock acceptance.",
+    "source": {
+      "wp-includes/post.php": "wp_insert_post: >=60 seconds => future; private clears password",
+      "wp-admin/includes/post.php": "edit_post + _wp_translate_postdata: publication capability and resave exceptions",
+      "woocommerce/includes/abstracts/abstract-wc-product.php": "get/set_post_password and get/set_date_created exist; native reflection is recorded separately",
+      "woocommerce/includes/class-wc-ajax.php": "save_variations checks edit_products; parent edit gate is separate manager policy"
+    }
+  },
+  "clock": 1790683200,
+  "id": 501,
+  "writable": [
+    "publish",
+    "pending",
+    "private",
+    "draft"
+  ],
+  "rows": [
+    {
+      "case": "publish-to-publish",
+      "initial": "publish",
+      "requested": [
+        "publish"
+      ],
+      "record": "none",
+      "date": "past",
+      "effective": "publish"
+    },
+    {
+      "case": "publish-to-pending",
+      "initial": "publish",
+      "requested": [
+        "pending"
+      ],
+      "record": "none",
+      "date": "past",
+      "effective": "pending"
+    },
+    {
+      "case": "publish-to-private",
+      "initial": "publish",
+      "requested": [
+        "private"
+      ],
+      "record": "none",
+      "date": "past",
+      "effective": "private"
+    },
+    {
+      "case": "publish-to-draft",
+      "initial": "publish",
+      "requested": [
+        "draft"
+      ],
+      "record": "none",
+      "date": "past",
+      "effective": "draft"
+    },
+    {
+      "case": "pending-to-publish",
+      "initial": "pending",
+      "requested": [
+        "publish"
+      ],
+      "record": "none",
+      "date": "past",
+      "effective": "publish"
+    },
+    {
+      "case": "pending-to-pending",
+      "initial": "pending",
+      "requested": [
+        "pending"
+      ],
+      "record": "none",
+      "date": "past",
+      "effective": "pending"
+    },
+    {
+      "case": "pending-to-private",
+      "initial": "pending",
+      "requested": [
+        "private"
+      ],
+      "record": "none",
+      "date": "past",
+      "effective": "private"
+    },
+    {
+      "case": "pending-to-draft",
+      "initial": "pending",
+      "requested": [
+        "draft"
+      ],
+      "record": "none",
+      "date": "past",
+      "effective": "draft"
+    },
+    {
+      "case": "private-to-publish",
+      "initial": "private",
+      "requested": [
+        "publish"
+      ],
+      "record": "none",
+      "date": "past",
+      "effective": "publish"
+    },
+    {
+      "case": "private-to-pending",
+      "initial": "private",
+      "requested": [
+        "pending"
+      ],
+      "record": "none",
+      "date": "past",
+      "effective": "pending"
+    },
+    {
+      "case": "private-to-private",
+      "initial": "private",
+      "requested": [
+        "private"
+      ],
+      "record": "none",
+      "date": "past",
+      "effective": "private"
+    },
+    {
+      "case": "private-to-draft",
+      "initial": "private",
+      "requested": [
+        "draft"
+      ],
+      "record": "none",
+      "date": "past",
+      "effective": "draft"
+    },
+    {
+      "case": "draft-to-publish",
+      "initial": "draft",
+      "requested": [
+        "publish"
+      ],
+      "record": "none",
+      "date": "past",
+      "effective": "publish"
+    },
+    {
+      "case": "draft-to-pending",
+      "initial": "draft",
+      "requested": [
+        "pending"
+      ],
+      "record": "none",
+      "date": "past",
+      "effective": "pending"
+    },
+    {
+      "case": "draft-to-private",
+      "initial": "draft",
+      "requested": [
+        "private"
+      ],
+      "record": "none",
+      "date": "past",
+      "effective": "private"
+    },
+    {
+      "case": "draft-to-draft",
+      "initial": "draft",
+      "requested": [
+        "draft"
+      ],
+      "record": "none",
+      "date": "past",
+      "effective": "draft"
+    },
+    {
+      "case": "future-to-publish",
+      "initial": "future",
+      "requested": [
+        "publish"
+      ],
+      "record": "none",
+      "date": "ahead",
+      "effective": "future"
+    },
+    {
+      "case": "future-to-pending",
+      "initial": "future",
+      "requested": [
+        "pending"
+      ],
+      "record": "none",
+      "date": "ahead",
+      "effective": "pending"
+    },
+    {
+      "case": "future-to-private",
+      "initial": "future",
+      "requested": [
+        "private"
+      ],
+      "record": "none",
+      "date": "ahead",
+      "effective": "private"
+    },
+    {
+      "case": "future-to-draft",
+      "initial": "future",
+      "requested": [
+        "draft"
+      ],
+      "record": "none",
+      "date": "ahead",
+      "effective": "draft"
+    },
+    {
+      "case": "private-draft-publish-none",
+      "initial": "private",
+      "requested": [
+        "draft",
+        "publish"
+      ],
+      "record": "none",
+      "date": "past",
+      "effective": "publish"
+    },
+    {
+      "case": "private-draft-publish-own",
+      "initial": "private",
+      "requested": [
+        "draft",
+        "publish"
+      ],
+      "record": "own",
+      "date": "past",
+      "effective": "publish"
+    },
+    {
+      "case": "private-draft-publish-foreign",
+      "initial": "private",
+      "requested": [
+        "draft",
+        "publish"
+      ],
+      "record": "foreign",
+      "date": "past",
+      "effective": "publish"
+    },
+    {
+      "case": "private-draft-publish-malformed",
+      "initial": "private",
+      "requested": [
+        "draft",
+        "publish"
+      ],
+      "record": "malformed",
+      "date": "past",
+      "effective": "publish"
+    },
+    {
+      "case": "pending-draft-publish-none",
+      "initial": "pending",
+      "requested": [
+        "draft",
+        "publish"
+      ],
+      "record": "none",
+      "date": "past",
+      "effective": "publish"
+    },
+    {
+      "case": "pending-draft-publish-own",
+      "initial": "pending",
+      "requested": [
+        "draft",
+        "publish"
+      ],
+      "record": "own",
+      "date": "past",
+      "effective": "publish"
+    },
+    {
+      "case": "pending-draft-publish-foreign",
+      "initial": "pending",
+      "requested": [
+        "draft",
+        "publish"
+      ],
+      "record": "foreign",
+      "date": "past",
+      "effective": "publish"
+    },
+    {
+      "case": "pending-draft-publish-malformed",
+      "initial": "pending",
+      "requested": [
+        "draft",
+        "publish"
+      ],
+      "record": "malformed",
+      "date": "past",
+      "effective": "publish"
+    },
+    {
+      "case": "draft-publish-future",
+      "initial": "draft",
+      "requested": [
+        "publish"
+      ],
+      "record": "none",
+      "date": "ahead",
+      "effective": "future"
+    },
+    {
+      "case": "password-to-private",
+      "initial": "publish",
+      "requested": [
+        "private"
+      ],
+      "record": "none",
+      "date": "past",
+      "password": "synthetic-password",
+      "effective": "private"
+    },
+    {
+      "case": "password-stays-draft",
+      "initial": "publish",
+      "requested": [
+        "draft"
+      ],
+      "record": "none",
+      "date": "past",
+      "password": "synthetic-password",
+      "effective": "draft"
+    },
+    {
+      "case": "UTC-gmt-zero",
+      "initial": "draft",
+      "requested": [
+        "publish"
+      ],
+      "record": "none",
+      "date": "dst",
+      "timezone": "UTC",
+      "gmt": "zero",
+      "effective": "publish",
+      "date_effect": "floating draft resets to each save time (wp_update_post), not the apparent future local date"
+    },
+    {
+      "case": "UTC-gmt-missing",
+      "initial": "draft",
+      "requested": [
+        "publish"
+      ],
+      "record": "none",
+      "date": "dst",
+      "timezone": "UTC",
+      "gmt": "missing",
+      "effective": "publish",
+      "date_effect": "floating draft resets to each save time (wp_update_post), not the apparent future local date"
+    },
+    {
+      "case": "America-New_York-gmt-zero",
+      "initial": "draft",
+      "requested": [
+        "publish"
+      ],
+      "record": "none",
+      "date": "dst",
+      "timezone": "America/New_York",
+      "gmt": "zero",
+      "effective": "publish",
+      "date_effect": "floating draft resets to each save time (wp_update_post), not the apparent future local date"
+    },
+    {
+      "case": "America-New_York-gmt-missing",
+      "initial": "draft",
+      "requested": [
+        "publish"
+      ],
+      "record": "none",
+      "date": "dst",
+      "timezone": "America/New_York",
+      "gmt": "missing",
+      "effective": "publish",
+      "date_effect": "floating draft resets to each save time (wp_update_post), not the apparent future local date"
+    },
+    {
+      "case": "publisher-draft-publish",
+      "actor": "publisher",
+      "initial": "draft",
+      "requested": [
+        "publish"
+      ],
+      "record": "none",
+      "date": "past",
+      "effective": "publish",
+      "allowed": true
+    },
+    {
+      "case": "editor-draft-publish",
+      "actor": "editor",
+      "initial": "draft",
+      "requested": [
+        "publish"
+      ],
+      "record": "none",
+      "date": "past",
+      "effective": "pending",
+      "allowed": false
+    },
+    {
+      "case": "editor-draft-private",
+      "actor": "editor",
+      "initial": "draft",
+      "requested": [
+        "private"
+      ],
+      "record": "none",
+      "date": "past",
+      "effective": "draft",
+      "allowed": false
+    },
+    {
+      "case": "editor-publish-publish",
+      "actor": "editor",
+      "initial": "publish",
+      "requested": [
+        "publish"
+      ],
+      "record": "none",
+      "date": "past",
+      "effective": "publish",
+      "allowed": true
+    },
+    {
+      "case": "editor-future-publish",
+      "actor": "editor",
+      "initial": "future",
+      "requested": [
+        "publish"
+      ],
+      "record": "none",
+      "date": "ahead",
+      "effective": "future",
+      "allowed": true
+    },
+    {
+      "case": "other-draft-publish",
+      "actor": "other",
+      "initial": "draft",
+      "requested": [
+        "publish"
+      ],
+      "record": "none",
+      "date": "past",
+      "effective": "draft",
+      "allowed": false
+    },
+    {
+      "case": "removed-draft-publish",
+      "actor": "removed",
+      "initial": "draft",
+      "requested": [
+        "publish"
+      ],
+      "record": "none",
+      "date": "past",
+      "effective": "draft",
+      "allowed": false
+    },
+    {
+      "case": "variation-admin-private",
+      "kind": "variation",
+      "actor": "admin",
+      "initial": "publish",
+      "requested": [
+        "private"
+      ],
+      "record": "none",
+      "date": "past",
+      "effective": "private",
+      "allowed": true
+    },
+    {
+      "case": "variation-admin-publish",
+      "kind": "variation",
+      "actor": "admin",
+      "initial": "private",
+      "requested": [
+        "publish"
+      ],
+      "record": "none",
+      "date": "past",
+      "effective": "publish",
+      "allowed": true
+    },
+    {
+      "case": "variation-editor-private",
+      "kind": "variation",
+      "actor": "editor",
+      "initial": "publish",
+      "requested": [
+        "private"
+      ],
+      "record": "none",
+      "date": "past",
+      "effective": "private",
+      "allowed": false,
+      "manager_policy": "Native AJAX checks edit_products; manager additionally requires variation edit_post, mapped to singular edit_product on this pinned registration."
+    },
+    {
+      "case": "variation-editor-publish",
+      "kind": "variation",
+      "actor": "editor",
+      "initial": "private",
+      "requested": [
+        "publish"
+      ],
+      "record": "none",
+      "date": "past",
+      "effective": "publish",
+      "allowed": false,
+      "manager_policy": "Native AJAX checks edit_products; manager additionally requires variation edit_post, mapped to singular edit_product on this pinned registration."
+    },
+    {
+      "case": "variation-other-private",
+      "kind": "variation",
+      "actor": "other",
+      "initial": "publish",
+      "requested": [
+        "private"
+      ],
+      "record": "none",
+      "date": "past",
+      "effective": "publish",
+      "allowed": false,
+      "manager_policy": "Actor has edit_product for the child, but cannot edit its other-author parent; native parent editor and manager refuse."
+    },
+    {
+      "case": "variation-other-publish",
+      "kind": "variation",
+      "actor": "other",
+      "initial": "private",
+      "requested": [
+        "publish"
+      ],
+      "record": "none",
+      "date": "past",
+      "effective": "private",
+      "allowed": false,
+      "manager_policy": "Actor has edit_product for the child, but cannot edit its other-author parent; native parent editor and manager refuse."
+    },
+    {
+      "case": "stored-date-utc",
+      "initial": "draft",
+      "requested": [
+        "publish"
+      ],
+      "record": "none",
+      "date": "dst",
+      "fixed_gmt": "2026-11-01 05:30:00",
+      "timezone": "UTC",
+      "effective": "future"
+    },
+    {
+      "case": "stored-date-dst-before-fallback",
+      "initial": "draft",
+      "requested": [
+        "publish"
+      ],
+      "record": "none",
+      "date": "dst",
+      "fixed_gmt": "2026-11-01 05:30:00",
+      "timezone": "America/New_York",
+      "effective": "future"
+    },
+    {
+      "case": "stored-date-dst-after-fallback",
+      "initial": "draft",
+      "requested": [
+        "publish"
+      ],
+      "record": "none",
+      "date": "dst",
+      "fixed_gmt": "2026-11-01 06:30:00",
+      "timezone": "America/New_York",
+      "effective": "future"
+    },
+    {
+      "case": "draft-noop-own",
+      "initial": "draft",
+      "requested": [
+        "draft"
+      ],
+      "record": "own",
+      "remembered": "private",
+      "date": "past",
+      "effective": "draft"
+    },
+    {
+      "case": "draft-noop-foreign",
+      "initial": "draft",
+      "requested": [
+        "draft"
+      ],
+      "record": "foreign",
+      "remembered": "private",
+      "date": "past",
+      "effective": "draft"
+    },
+    {
+      "case": "draft-noop-malformed",
+      "initial": "draft",
+      "requested": [
+        "draft"
+      ],
+      "record": "malformed",
+      "remembered": "private",
+      "date": "past",
+      "effective": "draft"
+    },
+    {
+      "case": "variation-variation_editor-private",
+      "kind": "variation",
+      "actor": "variation_editor",
+      "initial": "publish",
+      "requested": [
+        "private"
+      ],
+      "record": "none",
+      "date": "past",
+      "effective": "private",
+      "allowed": true
+    },
+    {
+      "case": "variation-variation_editor-publish",
+      "kind": "variation",
+      "actor": "variation_editor",
+      "initial": "private",
+      "requested": [
+        "publish"
+      ],
+      "record": "none",
+      "date": "past",
+      "effective": "publish",
+      "allowed": true
+    },
+    {
+      "case": "variation-private-future-publish",
+      "kind": "variation",
+      "actor": "variation_editor",
+      "initial": "private",
+      "requested": [
+        "publish"
+      ],
+      "record": "none",
+      "date": "ahead",
+      "effective": "future",
+      "allowed": true
+    },
+    {
+      "case": "deleted-draft-publish",
+      "actor": "deleted",
+      "initial": "draft",
+      "requested": [
+        "publish"
+      ],
+      "record": "none",
+      "date": "past",
+      "effective": "draft",
+      "allowed": false
+    }
+  ],
+  "boundaries": [
+    {
+      "offset": -1,
+      "effective": "publish"
+    },
+    {
+      "offset": 59,
+      "effective": "publish"
+    },
+    {
+      "offset": 60,
+      "effective": "future"
+    },
+    {
+      "offset": 61,
+      "effective": "future"
+    }
+  ],
+  "date_cases": [
+    {
+      "case": "utc",
+      "timezone": "UTC",
+      "local": "2026-11-01 05:30:00",
+      "gmt": "2026-11-01 05:30:00"
+    },
+    {
+      "case": "dst-before-fallback",
+      "timezone": "America/New_York",
+      "local": "2026-11-01 01:30:00",
+      "gmt": "2026-11-01 05:30:00"
+    },
+    {
+      "case": "dst-after-fallback",
+      "timezone": "America/New_York",
+      "local": "2026-11-01 01:30:00",
+      "gmt": "2026-11-01 06:30:00"
+    }
+  ]
+}

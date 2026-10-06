@@ -165,10 +165,19 @@ final class ProductsRouteTest extends TestCase {
 			[
 				'items'      => [
 					[
-						'id'        => 41,
-						'parent_id' => 0,
-						'name'      => 'Blue shirt',
-						'status'    => 'draft',
+						'id'             => 41,
+						'parent_id'      => 0,
+						'name'           => 'Blue shirt',
+						'status'         => 'draft',
+						'off_state'      => null,
+						'native_actions' => [
+							'details'     => false,
+							'editor'      => null,
+							'view'        => null,
+							'duplicate'   => null,
+							'trash'       => null,
+							'unavailable' => 'Your account cannot move this product to Trash.',
+						],
 					],
 				],
 				'pagination' => [
@@ -184,6 +193,7 @@ final class ProductsRouteTest extends TestCase {
 		$this->assertTrue( rest_validate_value_from_schema( $response->get_data()['items'][0], $schema, 'item' ) );
 		$this->assertSame( 'integer', $schema['properties']['parent_id']['type'] );
 		$this->assertSame( 'string', $schema['properties']['thumbnail_url']['type'] );
+		$this->assertSame( [ 'object', 'null' ], $schema['properties']['off_state']['type'], 'T92: a product row carries its Off state with the Status column.' );
 	}
 
 	public function test_defaults_fill_paging_and_mode(): void {

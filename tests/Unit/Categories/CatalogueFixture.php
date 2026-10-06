@@ -140,7 +140,8 @@ final class CatalogueFixture {
 	 * ancestor) pairs are read back from it, and each product counts once as
 	 * `own` on every category it carries and once in `total` on every
 	 * ancestor one of its categories pairs with. A statement filtered to
-	 * drafts counts only draft products.
+	 * drafts (the Draft filter's genuine-draft form, SPEC §5.5) counts only
+	 * draft products; none here is switched Off.
 	 *
 	 * @param array<int, array{0: list<int>, 1: string}> $products Products: id => [ category ids, status ]; PRODUCTS by default.
 	 * @return \Closure( string ): list<array{term_id: string, own: string, total: string}>
@@ -152,7 +153,7 @@ final class CatalogueFixture {
 			}
 			preg_match_all( '/ UNION ALL SELECT (\d+), (\d+)/', $m[3], $more, PREG_SET_ORDER );
 			$pairs    = array_merge( [ [ (int) $m[1], (int) $m[2] ] ], array_map( static fn( array $x ): array => [ (int) $x[1], (int) $x[2] ], $more ) );
-			$statuses = str_contains( $sql, "p.post_status IN ('draft')" ) ? [ 'draft' ] : null;
+			$statuses = str_contains( $sql, "(p.post_status = 'draft' AND NOT EXISTS" ) ? [ 'draft' ] : null;
 			$own      = [];
 			$total    = [];
 			foreach ( $products as [ $ids, $status ] ) {

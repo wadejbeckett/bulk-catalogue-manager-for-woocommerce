@@ -121,6 +121,18 @@ export function useVariationRows( {
 	);
 	const live = useRef( true );
 	const inflight = useRef( new Set() );
+	const generation = useRef( 0 );
+	const source = useRef( { items, fieldsKey, mode } );
+	// A reconciled parent page invalidates every child read synchronously.
+	if (
+		source.current.items !== items ||
+		source.current.fieldsKey !== fieldsKey ||
+		source.current.mode !== mode
+	) {
+		generation.current++;
+		inflight.current.clear();
+		source.current = { items, fieldsKey, mode };
+	}
 	const speakFor = useRef( new Set() );
 	const known = useRef( new Set() );
 
@@ -131,14 +143,14 @@ export function useVariationRows( {
 		};
 	}, [] );
 
-	// The page was read again: fetched variations may be stale, and a product
-	// no longer on the page is no longer open.
+	// The page or requested fields changed: fetched variations may be stale,
+	// and a product no longer on the page is no longer open.
 	useEffect( () => {
 		dispatch( {
 			type: 'refresh',
 			ids: items.map( ( row ) => Number( row.id ) ),
 		} );
-	}, [ items ] );
+	}, [ items, fieldsKey ] );
 
 	// A mode change closes everything (expansion is never carried over).
 	const firstMode = useRef( mode );
@@ -157,6 +169,7 @@ export function useVariationRows( {
 			}
 			inflight.current.add( id );
 			dispatch( { type: 'request', id } );
+			const ticket = generation.current;
 			request( `products/${ id }/variations`, {
 				query: {
 					page: 1,
@@ -165,10 +178,10 @@ export function useVariationRows( {
 				},
 			} )
 				.then( ( answer ) => {
-					inflight.current.delete( id );
-					if ( ! live.current ) {
+					if ( ! live.current || ticket !== generation.current ) {
 						return;
 					}
+					inflight.current.delete( id );
 					const rows = Array.isArray( answer?.items )
 						? answer.items
 						: [];
@@ -197,6 +210,9 @@ export function useVariationRows( {
 					}
 				} )
 				.catch( ( error ) => {
+					if ( ticket !== generation.current ) {
+						return;
+					}
 					inflight.current.delete( id );
 					if ( live.current ) {
 						dispatch( { type: 'fail', id, error } );

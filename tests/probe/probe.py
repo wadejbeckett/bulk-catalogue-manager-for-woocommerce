@@ -9,7 +9,7 @@ rest-nonce`` where the admin page carries none, as for a subscriber), and
 prints one PASS, FAIL or SKIP row per surface. It exits 1 on any FAIL, 0
 otherwise.
 
-Chapters (``--chapters``, comma separated, default all, run in this order):
+Chapters (``--chapters``, comma separated, default all except native-status, run in this order):
 
   screen     T8. The Products -> Bulk Catalogue Manager screen renders its
              one mount element, the localised settings, the bundle and its
@@ -26,14 +26,30 @@ Chapters (``--chapters``, comma separated, default all, run in this order):
              T52/T53: a saved view created, marked default and read back
              unchanged (page aside), unreachable to another user (404), the
              schema refusals, deleted; the export with the nonce as a
-             ``_wpnonce`` query argument instead of the header.
-  write      The engine live: selection -> preview (nothing saved) -> batch
-             (apply, replay) -> Action Scheduler run through ``wp
-             action-scheduler run`` -> progress until complete -> values
-             checked with wc_get_product() -> undo preview -> undo apply ->
-             run -> values restored; a skip-already batch leaving
-             post_modified_gmt alone; PATCH /products/{id}; category create,
-             edit and move; the write routes' refusals.
+             ``_wpnonce`` query argument instead of the header. Ticket 10:
+             POST /export as the screen's form posts it (explicit ids, a
+             captured and composed selection token, the filter), its
+             refusals before any CSV byte, the identifier block against
+             WooCommerce's own exporter, nothing written, fixed queries per
+             page; T102: the switch-on file through WooCommerce's own
+             importer (Update existing products, the mapping as the import
+             screen builds it, as the shop manager) changes nothing and
+             creates nothing, for both separators and both row sources;
+             an edited file changes only its edits; guarded values, parents
+             and a custom variation title recorded; the host's time limits.
+             Its PHP runs through export-probe.php and only when
+             BULKCAT_FIXTURE_URL equals --base-url, names a local host and
+             is the site WP_CMD reaches.
+  write      The engine live: a captured selection (grant -> /selection)
+             -> exact preview (nothing saved) -> durable batch under a
+             /requests grant (apply, replay; a 1.0 body refused) -> Action
+             Scheduler run through ``wp action-scheduler run`` -> progress
+             until complete -> values checked with wc_get_product() -> undo
+             preview -> durable undo -> run -> values restored; a product
+             that starts matching after capture stays out of the batch; a
+             skip-already batch leaving post_modified_gmt alone; PATCH
+             /products/{id}; category create, edit and move; the write
+             routes' refusals.
   access     The administrators-only setting flips a shop manager to 403
              while an administrator keeps 200.
   variations T72. A variable product with 60 variations (upserted by the
@@ -46,6 +62,12 @@ Chapters (``--chapters``, comma separated, default all, run in this order):
              and the prices and lookup row compared with the snapshot; the
              variations list, preview and batches refuse anonymous 401 and a
              subscriber 403.
+  offon      Historical chapter name (tests/probe/offon.py): ordinary native
+             Status writes, buyer reachability, explicit Undo and preserved
+             legacy records/filters. Old accepted-work semantics are separately
+             qualified by native-status-upgrade.py against actual archives.
+  native-status  Guarded native editor/variation comparison against the installed
+             archive (tests/probe/native-status.py); private evidence path required.
   lifecycle  Activation created the three tables with every documented
              index; WooCommerce lists the plugin compatible with HPOS and the
              Cart and Checkout Blocks; a bulkcat_db_version bump re-runs dbDelta on
@@ -80,9 +102,12 @@ Standard library only, on purpose: it has to run anywhere with Python 3.
 from __future__ import annotations
 
 import argparse
+import base64
 import csv
+import hashlib
 import http.cookiejar
 import io
+import importlib.util
 import json
 import os
 import re
@@ -96,6 +121,13 @@ import urllib.request
 import uuid
 from dataclasses import dataclass
 from typing import Any, Callable
+
+import offon  # ticket 04: the offon chapter lives in tests/probe/offon.py
+
+# The chapter filename follows the documented CLI chapter name.
+_native_spec = importlib.util.spec_from_file_location("native_status", os.path.join(os.path.dirname(__file__), "native-status.py"))
+native_status = importlib.util.module_from_spec(_native_spec)
+_native_spec.loader.exec_module(native_status)
 
 TIMEOUT_SECONDS = 60
 NS = "/wp-json/bulkcat/v1"
@@ -260,6 +292,29 @@ class Probe:
                 return report
             time.sleep(1)
         return report
+
+    # ---- durable requests (T83) ---------------------------------------------------
+
+    def capture(self, user: str, intent: dict) -> dict:
+        """A v2 snapshot captured under a server grant: `intent` is `{"ids": [...]}` or `{"query": {...}}`."""
+        grant = self.http(user, "POST", "/requests", body={"operation": "selection.capture", "intent": intent}).json() or {}
+        body = {key: grant.get(key) for key in ("uuid", "request_proof", "intent")}
+        return self.http(user, "POST", "/selection", body=body).json() or {}
+
+    def apply_body(self, user: str, preview: dict, selection: dict) -> dict:
+        """The durable POST /batches body for an exact preview: `selection` is `{"token": ...}` or `{"ids": [...]}`."""
+        intent = {**selection, "operations": preview.get("operations"), "scope_hash": preview.get("scope_hash")}
+        grant = self.http(user, "POST", "/requests", body={"operation": "batch.apply", "intent": intent}).json() or {}
+        body = {"uuid": grant.get("uuid"), "request_proof": grant.get("request_proof"), "intent": grant.get("intent"), "preview_hash": preview.get("hash")}
+        if "token" in selection:
+            body["token"] = selection["token"]
+        return body
+
+    def undo_body(self, user: str, batch_id: int, plan_hash: str | None, force: bool = False) -> dict:
+        """The durable POST /batches/{id}/undo body for an undo preview's plan."""
+        intent = {"batch_id": batch_id, "plan_hash": plan_hash, "force": force}
+        grant = self.http(user, "POST", "/requests", body={"operation": "batch.undo", "intent": intent}).json() or {}
+        return {key: grant.get(key) for key in ("uuid", "request_proof", "intent")}
 
     # ---- shared fixtures ---------------------------------------------------------
 
@@ -468,7 +523,8 @@ def read_routes(p: Probe) -> list[tuple[str, str, str, Any, Any, Callable[[Respo
         ("variations", "GET", f"/products/{variable}/variations", None, None, list_shape),
         ("selection", "POST", "/selection", None, {"category_ids": {"operator": "isAny", "value": [root]}}, selection_shape),
         ("categories", "GET", "/categories", None, None, tree_shape),
-        ("export", "GET", "/export", cat + [("columns[]", c) for c in cols], None, export_shape),
+        # T103: the catalogue is exported by POST (the export dialog's route); a catalogue GET is refused.
+        ("export", "POST", "/export", None, {"category_ids": {"operator": "isAny", "value": [root]}, "columns": cols}, export_shape),
         # T54's history and audit routes carry the same four legs.
         ("batches", "GET", "/batches", None, None, paged_shape),
         ("audit", "GET", "/audit", None, None, paged_shape),
@@ -556,6 +612,29 @@ def check_read_queries(p: Probe) -> None:
         want = sorted(p.simple(n)["id"] for n in range(2, 6))
         p.row("read", "read:products:filter-price", sorted(ids) == want, f"{ids} want {want}")
 
+    def regular_price_on_sale() -> None:
+        # SQR-1: a product on sale is filtered and sorted by the regular price its cell shows,
+        # not by the sale price WooCommerce keeps in its lookup table. A variable product has
+        # no regular price of its own; its variations have theirs.
+        sale = p.seed["on_sale"]
+        simple, variable = sale["simple"]["id"], sale["variable"]["id"]
+        oak, pine = (v["id"] for v in sale["variable"]["variations"])
+        in_sale = filter_params("category_ids", "isAny", [sale["category"]])
+        lookup = p.wp_eval(f"global $wpdb; bulkcat_out( $wpdb->get_row( $wpdb->prepare( 'SELECT min_price, max_price, onsale FROM ' . $wpdb->wc_product_meta_lookup . ' WHERE product_id = %d', {simple} ), ARRAY_A ) );")
+        at_least, _ = all_ids(p, in_sale + filter_params("regular_price", "greaterThanOrEqual", "100"))
+        at_most, _ = all_ids(p, in_sale + filter_params("regular_price", "lessThanOrEqual", "100"))
+        r = p.http("manager", "GET", "/products", in_sale + [("orderby", "regular_price"), ("order", "desc"), ("per_page", "10")])
+        rows = [(row["id"], row.get("regular_price")) for row in r.json()["items"]]
+        ok = at_least == [simple] and at_most == [] and rows[:1] == [(simple, "150.00")] and [i for i, _ in rows] == [simple, variable]
+        ok = ok and float(lookup["min_price"]) == 80 and str(lookup["onsale"]) == "1"
+        p.row("read", "read:products:regular-price-on-sale", ok,
+              f"lookup {lookup}; at least 100 {at_least}, at most 100 {at_most} (want [{simple}] and []); sorted {rows}")
+        mode = [("mode", "variations")]
+        v_least, _ = all_ids(p, mode + in_sale + filter_params("regular_price", "greaterThanOrEqual", "100"))
+        v_sorted, _ = all_ids(p, mode + in_sale + [("orderby", "regular_price"), ("order", "desc")])
+        p.row("read", "read:variations:regular-price-on-sale", v_least == [oak] and v_sorted == [oak, pine],
+              f"at least 100 {v_least} (want [{oak}]); sorted {v_sorted} (want [{oak}, {pine}])")
+
     def status() -> None:
         ids, _ = all_ids(p, cat + filter_params("status", "isAny", ["draft"]))
         p.row("read", "read:products:filter-status", ids == [p.seed["draft"]["id"]], f"{ids}")
@@ -598,14 +677,16 @@ def check_read_queries(p: Probe) -> None:
         p.row("read", "read:categories:counts", node is not None and want in count.values(), f"shirts {count}, WooCommerce {want}")
 
     def export_diff() -> None:
+        # T103: posted as the export dialog's form posts it (the catalogue GET is retired).
         cols = ["id", "sku", "name", "regular_price"]
-        r = p.http("manager", "GET", "/export", cat + [("columns[]", c) for c in cols] + [("per_page", "4")])
+        r = export_form(p, "manager", cat + [("columns", ",".join(cols))])
         lines = list(csv.reader(io.StringIO(r.body.decode("utf-8-sig"))))
         rows = [[p_ for p_ in line] for line in lines[1:]]
         grid: list[list[str]] = []
         page = 1
         while True:
-            d = p.http("manager", "GET", "/products", cat + [("per_page", "4"), ("page", str(page))]).json()
+            # SQR-3: a filtered export writes its rows in ID order, whatever the view's sort.
+            d = p.http("manager", "GET", "/products", cat + [("per_page", "4"), ("page", str(page)), ("orderby", "id"), ("order", "asc")]).json()
             grid += [[str(item["id"]), item["sku"], item["name"], item["regular_price"] or ""] for item in d["items"]]
             if page >= d["pagination"]["totalPages"]:
                 break
@@ -659,11 +740,16 @@ def check_read_queries(p: Probe) -> None:
         default = [f["key"] for f in sorted((f for f in fields if f.get("defaultColumn")), key=lambda f: f["defaultOrder"])]
         hiding = {f["key"]: sorted(c["value"] for c in f.get("choices", []) if c.get("hidesProduct")) for f in fields}
         hiding = {k: v for k, v in hiding.items() if v}
-        want_hiding = {"status": ["draft", "pending"], "catalog_visibility": ["hidden"], "visible_on_site": ["off"]}
-        ok = default == ["sku", "category_ids", "regular_price", "stock_status", "status", "visible_on_site"] and hiding == want_hiding
+        want_hiding = {"status": ["draft", "future", "pending"], "catalog_visibility": ["hidden"], "visible_on_site": ["off"]}
+        # T93: Shown in shop and search (visible_on_site) is a listing control an owner may add, not a default column.
+        status = next(f for f in fields if f["key"] == "status")
+        # T114: Scheduled can be read and filtered, but never selected as a new status.
+        ok = default == ["sku", "category_ids", "regular_price", "stock_status", "status"] and hiding == want_hiding
+        ok = ok and "future" not in status["writableChoices"]
         p.row("read", "read:fields:flags", ok, f"default columns {default}; hiding choices {hiding}")
 
     for name, fn in [("hydration", hydration), ("filter-category", category), ("search", search), ("filter-price", price_range),
+                     ("regular-price-on-sale", regular_price_on_sale),
                      ("filter-status", status), ("sort", sort), ("paging", paging), ("variations", variations),
                      ("selection-ids", selection_ids), ("categories-counts", categories_counts), ("export-diff", export_diff),
                      ("filter-category-only", include_children), ("search-variation-sku", variation_sku),
@@ -716,13 +802,13 @@ def check_saved_views(p: Probe) -> None:
         p.row("read", "read:views:schema", bad.code() == "bulkcat_invalid_view" and dup.code() == "bulkcat_view_exists", f"{bad.brief()}; {dup.brief()}")
 
     def export_query_nonce() -> None:
-        _, nonce = p.session("manager")
-        params = filter_params("category_ids", "isAny", [p.seed["categories"]["root"]]) + [
-            ("columns[]", "name"), ("columns[]", "sku"), ("_wpnonce", nonce)]
-        r = p.http("manager", "GET", "/export", params, nonce="none")
+        # T103: the nonce travels as the export form sends it, `_wpnonce` in the POST body with no X-WP-Nonce header
+        # (core reads $_REQUEST['_wpnonce']); the row keeps its name from the GET era.
+        fields = filter_params("category_ids", "isAny", [p.seed["categories"]["root"]]) + [("columns", "name,sku")]
+        r = export_form(p, "manager", fields, nonce="body")
         ctype = r.headers.get("Content-Type", "")
         rows = list(csv.reader(io.StringIO(r.body.decode("utf-8-sig")))) if "text/csv" in ctype else []
-        p.row("read", "read:export:query-nonce", r.status == 200 and len(rows) == 13, f"{r.status} {ctype}; {len(rows)} lines")
+        p.row("read", "read:export:query-nonce", r.status == 200 and len(rows) == 13, f"POST, _wpnonce in the body: {r.status} {ctype}; {len(rows)} lines")
 
     def cleanup() -> None:
         r = p.http("manager", "DELETE", f"/views/{state['id']}")
@@ -762,18 +848,21 @@ def check_write_engine(p: Probe) -> None:
 
     def preview() -> None:
         before = p.modified(ids)
-        sel = p.http("manager", "POST", "/selection", body={"category_ids": {"operator": "isAny", "value": [shirts]}}).json()
+        sel = p.capture("manager", {"query": {"category_ids": {"operator": "isAny", "value": [shirts]}}})
         r = p.http("manager", "POST", "/preview", body={"token": sel["token"], "operations": ADJUST})
         d = r.json() or {}
-        state.update(token=sel["token"], hash=d.get("hash"), count=sel["count"])
+        state.update(token=sel["token"], hash=d.get("hash"), count=sel["count"], preview=d)
         totals = d.get("totals", {})
         untouched = p.modified(ids) == before and p.prices(ids) == {str(t["id"]): t["regular_price"] for t in targets}
-        ok = r.status == 200 and totals.get("would_change") == 5 and re.fullmatch(r"[0-9a-f]{64}", d.get("hash") or "") and untouched
+        ok = (r.status == 200 and totals.get("would_change") == 5 and re.fullmatch(r"[0-9a-f]{64}", d.get("hash") or "")
+              and re.fullmatch(r"[0-9a-f]{64}", d.get("scope_hash") or "") and sel["token"].startswith("v2.") and untouched)
         p.row("write", "write:preview", bool(ok), f"{r.status} would_change {totals.get('would_change')} matched {totals.get('matched')}, nothing saved: {untouched}")
 
     def apply() -> None:
-        body = {"uuid": str(uuid.uuid4()), "token": state["token"], "operations": ADJUST,
-                "preview_hash": state["hash"], "preview_count": state["count"]}
+        legacy = p.http("manager", "POST", "/batches", body={"uuid": str(uuid.uuid4()), "token": state["token"], "operations": ADJUST,
+                                                             "preview_hash": state["hash"], "preview_count": state["count"]})
+        p.row("write", "write:legacy-request-refused", legacy.status == 409 and legacy.code() == "bulkcat_legacy_request", f"a 1.0 body: {legacy.brief()}")
+        body = p.apply_body("manager", state["preview"], {"token": state["token"]})
         r = p.http("manager", "POST", "/batches", body=body)
         d = r.json() or {}
         again = p.http("manager", "POST", "/batches", body=body).json() or {}
@@ -805,7 +894,7 @@ def check_write_engine(p: Probe) -> None:
         d = pre.json() or {}
         p.row("write", "write:undo-preview", pre.status == 200 and d.get("preview") is True and re.fullmatch(r"[0-9a-f]{64}", d.get("plan_hash") or "") is not None,
               f"{pre.brief()} counts {d.get('counts')}")
-        r = p.http("manager", "POST", route, body={"uuid": str(uuid.uuid4()), "plan_hash": d.get("plan_hash")})
+        r = p.http("manager", "POST", route, body=p.undo_body("manager", state["batch"], d.get("plan_hash")))
         u = r.json() or {}
         p.row("write", "write:undo-apply", r.status == 201 and bool(u.get("batch_id")), f"{r.brief()} {u.get('batch_id')}")
         report = p.run_queue(u["batch_id"])
@@ -817,23 +906,25 @@ def check_write_engine(p: Probe) -> None:
         p.row("write", "write:undo-values", got == want, f"{got} want {want}")
 
     def ids_need_preview() -> None:
-        # Security review m6: ticked rows are held to their preview as a filter is.
+        # Security review m6: ticked rows are held to their preview as a filter is; T83: through a grant.
         target = p.simple(2)
         ops = [{"action": "set_value", "args": {"field": "regular_price", "value": target["regular_price"]}}]
         before = p.modified([target["id"]])
         bare = p.http("manager", "POST", "/batches", body={"uuid": str(uuid.uuid4()), "ids": [target["id"]], "operations": ops})
-        wrong = p.http("manager", "POST", "/batches", body={"uuid": str(uuid.uuid4()), "ids": [target["id"]], "operations": ops, "preview_hash": "0" * 64})
+        pre = p.http("manager", "POST", "/preview", body={"ids": [target["id"]], "operations": ops}).json() or {}
+        body = p.apply_body("manager", pre, {"ids": [target["id"]]})
+        body["preview_hash"] = "0" * 64
+        wrong = p.http("manager", "POST", "/batches", body=body)
         untouched = p.modified([target["id"]]) == before
-        ok = bare.status == 409 and bare.code() == "bulkcat_preview_stale" and wrong.status == 409 and wrong.code() == "bulkcat_preview_stale" and untouched
-        p.row("write", "write:ids-need-preview", ok, f"no hash {bare.brief()}, wrong hash {wrong.brief()}, nothing written: {untouched}")
+        ok = bare.status == 409 and bare.code() == "bulkcat_legacy_request" and wrong.status == 409 and wrong.code() == "bulkcat_preview_stale" and untouched
+        p.row("write", "write:ids-need-preview", ok, f"a 1.0 body {bare.brief()}, wrong hash {wrong.brief()}, nothing written: {untouched}")
 
     def skip_already() -> None:
         target = p.simple(4)
         before = p.modified([target["id"]])
         ops = [{"action": "set_value", "args": {"field": "regular_price", "value": target["regular_price"]}}]
         pre = p.http("manager", "POST", "/preview", body={"ids": [target["id"]], "operations": ops}).json() or {}
-        body = {"uuid": str(uuid.uuid4()), "ids": [target["id"]], "operations": ops, "preview_hash": pre.get("hash")}
-        d = p.http("manager", "POST", "/batches", body=body).json() or {}
+        d = p.http("manager", "POST", "/batches", body=p.apply_body("manager", pre, {"ids": [target["id"]]})).json() or {}
         report = p.run_queue(d.get("batch_id", 0))
         same = p.modified([target["id"]]) == before
         p.row("write", "write:skip-already", report.get("status") in ("complete", "partial") and report.get("changed_items") == 0 and same,
@@ -858,23 +949,19 @@ def check_write_stale(p: Probe) -> None:
     grid = filter_params("category_ids", "isAny", [hats])
 
     def run() -> None:
-        sel = p.http("manager", "POST", "/selection", body=hat_filter).json()
+        # T83: a captured selection is exact; a product that starts matching later never enters it.
+        sel = p.capture("manager", {"query": hat_filter})
         pre = p.http("manager", "POST", "/preview", body={"token": sel["token"], "operations": ops}).json()
         total_before = p.http("manager", "GET", "/products", grid).json()["pagination"]["total"]
         p.wp_eval(f"$p = wc_get_product( {draft} ); $p->set_category_ids( array( {hats} ) ); $p->save(); bulkcat_out( 1 );")
         try:
             total_after = p.http("manager", "GET", "/products", grid).json()["pagination"]["total"]
             p.row("write", "write:count-cache-renewed", total_after == total_before + 1, f"hats total {total_before} -> {total_after} after a product save")
-            body = {"uuid": str(uuid.uuid4()), "token": sel["token"], "operations": ops, "preview_hash": pre["hash"], "preview_count": sel["count"]}
-            first = p.http("manager", "POST", "/batches", body=body)
-            p.row("write", "write:stale-selection-refused", first.status == 409 and first.code() == "bulkcat_selection_changed", first.brief())
-            body["uuid"] = str(uuid.uuid4())
-            body["confirm_changed"] = True
-            second = p.http("manager", "POST", "/batches", body=body)
+            second = p.http("manager", "POST", "/batches", body=p.apply_body("manager", pre, {"token": sel["token"]}))
             d = second.json() or {}
             report = p.http("manager", "GET", f"/batches/{d.get('batch_id', 0)}").json() or {}
-            p.row("write", "write:stale-selection-confirmed", second.status == 201 and report.get("previewed_count") == sel["count"] and report.get("total_items") == sel["count"] + 1,
-                  f"{second.brief()} previewed {report.get('previewed_count')} total {report.get('total_items')}: {report.get('selection_difference')}")
+            p.row("write", "write:snapshot-excludes-new-match", second.status == 201 and report.get("total_items") == sel["count"] == pre["totals"]["matched"],
+                  f"{second.brief()} captured {sel['count']} total {report.get('total_items')} (the new match stays out)")
             before = p.modified([t["id"] for t in p.seed["simple"]] + [draft])
             cancel = p.http("manager", "POST", f"/batches/{d.get('batch_id', 0)}/cancel")
             p.run_queue(d.get("batch_id", 0), rounds=2)
@@ -1150,11 +1237,39 @@ def set_remove_data(p: Probe, on: bool) -> None:
     )
 
 
+# SPEC §9.2 and §15 since T81: five tables and three recurring actions (history, selections, requests).
+LIFECYCLE_TABLES = 5
+LIFECYCLE_RECURRING = 3
+
+# --- ticket 04 (global Off/On): lifecycle:uninstall-off-record -------------
+# A draft product carrying its own Off record (SPEC §5.5), made with WooCommerce CRUD:
+# uninstall keeps the record with "Remove all data" off, removes it with it on, and
+# never changes the status (the product stays a draft).
+OFF_RECORD_SKU = "bulkcat-probe-off-record"
+OFF_RECORD_SETUP_PHP = r"""
+$id = wc_get_product_id_by_sku( '%s' );
+$p  = $id ? wc_get_product( $id ) : new WC_Product_Simple();
+$p->set_sku( '%s' );
+$p->set_name( 'Probe Off record' );
+$p->set_regular_price( '9.00' );
+$p->set_status( 'draft' );
+$id = $p->save();
+$p->update_meta_data( '_bulkcat_availability_off', wp_json_encode( array( 'id' => $id, 'status' => 'publish', 'at' => gmdate( 'Y-m-d\TH:i:s\Z' ), 'batch' => 1 ), JSON_UNESCAPED_SLASHES ) );
+$p->save();
+bulkcat_out( $id );
+""" % (OFF_RECORD_SKU, OFF_RECORD_SKU)
+
+
+def off_record_state(p: "Probe", pid: int) -> dict:
+    return p.wp_eval(f"clean_post_cache( {pid} ); bulkcat_out( array( 'record' => get_post_meta( {pid}, '_bulkcat_availability_off', true ), 'status' => get_post_status( {pid} ) ) );")
+# --- end ticket 04 ------------------------------------------------------------
+
+
 def check_lifecycle(p: Probe) -> None:
     def tables() -> None:
         found = p.wp_eval(INDEXES_PHP)
         bad = [f"{n}: want {t['want']} have {t['have']}" for n, t in found.items() if not t["exists"] or t["want"] != t["have"]]
-        p.row("lifecycle", "lifecycle:tables-and-indexes", len(found) == 3 and not bad, "; ".join(bad) or f"{sorted(found)} with every documented index")
+        p.row("lifecycle", "lifecycle:tables-and-indexes", len(found) == LIFECYCLE_TABLES and not bad, "; ".join(bad) or f"{sorted(found)} with every documented index")
 
     def compat() -> None:
         found = p.wp_eval(COMPAT_PHP)
@@ -1177,15 +1292,20 @@ def check_lifecycle(p: Probe) -> None:
         p.wp("plugin", "activate", PLUGIN)
         p.wp("plugin", "activate", PLUGIN, check=False)  # activating an active plugin is a no-op
         after = p.wp_eval(FOOTPRINT_PHP)
-        ok = after == before and mid["actions"] == 0 and mid["tables"] == before["tables"] and before["actions"] == 1
+        ok = after == before and mid["actions"] == 0 and mid["tables"] == before["tables"] and before["actions"] == LIFECYCLE_RECURRING
         p.row("lifecycle", "lifecycle:deactivate-activate-idempotent", ok,
               f"prune actions {before['actions']} -> {mid['actions']} -> {after['actions']}; rows kept {after['tables'] == before['tables']}")
 
+    off_record: dict = {}
+
     def uninstall(on: bool) -> None:
         set_remove_data(p, on)
+        if "id" not in off_record:
+            off_record["id"] = int(p.wp_eval(OFF_RECORD_SETUP_PHP))
         before = p.wp_eval(FOOTPRINT_PHP)
         p.wp("plugin", "uninstall", PLUGIN, "--deactivate", "--skip-delete")
         after = p.wp_eval(FOOTPRINT_PHP)
+        off_record["on" if on else "off"] = off_record_state(p, off_record["id"])
         if on:
             ok = not after["tables"] and not after["options"] and after["usermeta"] == 0 and after["termmeta"] == 0 and after["actions"] == 0
             surface, detail = "lifecycle:uninstall-remove-data-on", f"left {after}"
@@ -1196,11 +1316,19 @@ def check_lifecycle(p: Probe) -> None:
         p.row("lifecycle", surface, ok, detail)
         p.wp("plugin", "activate", PLUGIN)
         again = p.wp_eval(FOOTPRINT_PHP)
-        p.row("lifecycle", surface + ":reinstalled", len(again["tables"]) == 3 and again["version"] is not None and again["actions"] == 1,
+        p.row("lifecycle", surface + ":reinstalled", len(again["tables"]) == LIFECYCLE_TABLES and again["version"] is not None and again["actions"] == LIFECYCLE_RECURRING,
               f"tables {sorted(again['tables'])} version {again['version']} prune actions {again['actions']}")
 
+    def off_record_kept_then_removed() -> None:
+        off, on = off_record.get("off", {}), off_record.get("on", {})
+        ok = (str(off.get("record", "")).startswith('{"id":%d,' % off_record.get("id", 0)) and off.get("status") == "draft"
+              and on.get("record") == "" and on.get("status") == "draft")
+        p.row("lifecycle", "lifecycle:uninstall-off-record", ok, f"remove data off: {off}; on: {on}")
+        p.wp("post", "delete", str(off_record.get("id", 0)), "--force", check=False)
+
     for name, fn in [("tables-and-indexes", tables), ("woocommerce-compatibility", compat), ("version-bump", bump),
-                     ("reactivate", reactivate), ("uninstall-off", lambda: uninstall(False)), ("uninstall-on", lambda: uninstall(True))]:
+                     ("reactivate", reactivate), ("uninstall-off", lambda: uninstall(False)), ("uninstall-on", lambda: uninstall(True)),
+                     ("uninstall-off-record", off_record_kept_then_removed)]:
         p.guard("lifecycle", f"lifecycle:{name}", fn)
     p.guard("lifecycle", "lifecycle:remove-data-reset", lambda: set_remove_data(p, False))
 
@@ -1323,6 +1451,7 @@ def check_variations(p: Probe) -> None:
         r = p.http("manager", "POST", "/preview", body={"ids": [state["parent"]], "operations": increase, "sample_size": "all"})
         d = r.json() or {}
         state["hash"] = d.get("hash")
+        state["preview"] = d
         totals = d.get("totals", {})
         by = totals.get("by_type", {})
         sample_ids = {row["object_id"] for row in d.get("sample", [])}
@@ -1334,7 +1463,7 @@ def check_variations(p: Probe) -> None:
         p.row("variations", "variations:preview", ok, f"{r.brief()} matched {totals.get('matched')} by_type {by} summary {d.get('summary')!r}, nothing saved: {untouched}")
 
     def apply() -> None:
-        r = p.http("manager", "POST", "/batches", body={"uuid": str(uuid.uuid4()), "ids": [state["parent"]], "operations": increase, "preview_hash": state["hash"]})
+        r = p.http("manager", "POST", "/batches", body=p.apply_body("manager", state["preview"], {"ids": [state["parent"]]}))
         d = r.json() or {}
         state["batch"] = d.get("batch_id")
         p.row("variations", "variations:batch-create", r.status == 201 and d.get("total_items") == SIXTY, f"{r.brief()} total_items {d.get('total_items')}")
@@ -1358,7 +1487,7 @@ def check_variations(p: Probe) -> None:
     def undo() -> None:
         route = f"/batches/{state['batch']}/undo"
         pre = p.http("manager", "POST", route, body={"preview": True}).json() or {}
-        r = p.http("manager", "POST", route, body={"uuid": str(uuid.uuid4()), "plan_hash": pre.get("plan_hash")})
+        r = p.http("manager", "POST", route, body=p.undo_body("manager", state["batch"], pre.get("plan_hash")))
         u = r.json() or {}
         report = p.run_queue(u.get("batch_id", 0))
         original = p.http("manager", "GET", f"/batches/{state['batch']}").json() or {}
@@ -1380,16 +1509,604 @@ def check_variations(p: Probe) -> None:
         p.guard("variations", f"variations:{name}", fn)
 
 # ---------------------------------------------------------------------------
+# read: the catalogue export by POST (ticket 10: T101 rows; T102 round trip)
+# ---------------------------------------------------------------------------
+
+EXPORT_PROBE = f"wp-content/plugins/{PLUGIN}/tests/probe/export-probe.php"
+LOCAL_HOST = re.compile(r"^(localhost|127\.0\.0\.1|::1|[a-z0-9.-]+\.localhost|[a-z0-9.-]+\.test)$", re.I)
+RESELECT = "This selection has expired or can no longer be used. Choose the products again and try again."
+
+
+class FixtureRefused(WpCliError):
+    """WP_CMD does not reach the declared local fixture."""
+
+
+def export_fixture(p: Probe) -> str:
+    """The fixture's URL, once proven: BULKCAT_FIXTURE_URL is set, equals --base-url, names a local
+    development host, and is the siteurl WP_CMD reaches. Every PHP or SQL statement the export rows
+    send through WP_CMD comes after this check; export-probe.php checks the siteurl again inside
+    WordPress before it does anything."""
+    known = getattr(p, "export_fixture_url", "")
+    if known:
+        return known
+    want = os.environ.get("BULKCAT_FIXTURE_URL", "").rstrip("/")
+    host = urllib.parse.urlsplit(want).hostname or ""
+    if not want or want != p.base or not LOCAL_HOST.match(host):
+        raise FixtureRefused(f"refused: BULKCAT_FIXTURE_URL ({want or 'unset'}) must equal --base-url ({p.base}) on a local development host")
+    site = p.wp("option", "get", "siteurl").strip().rstrip("/")
+    if site != want:
+        raise FixtureRefused(f"refused: WP_CMD reaches {site}, not the fixture {want}")
+    p.export_fixture_url = want  # type: ignore[attr-defined]
+    return want
+
+
+def export_native(p: Probe, action: str, args: dict | None = None, user: str | None = None) -> Any:
+    """One export-probe.php action on the proven fixture, optionally as a probe user (wp eval --user)."""
+    url = export_fixture(p)
+    encoded = base64.b64encode(json.dumps(args or {}).encode()).decode()
+    code = f'require "{EXPORT_PROBE}"; bulkcat_export_probe( "{url}", "{action}", "{encoded}" );'
+    extra = [f"--user={p.seed['users'][user]['login']}"] if user else []
+    out = p.wp("eval", code, *extra)
+    for line in out.splitlines():
+        if line.startswith("BULKCAT_OUT "):
+            return json.loads(line[len("BULKCAT_OUT "):])
+    raise WpCliError(f"no BULKCAT_OUT from {action}: {out.strip()[-300:]}")
+
+
+def export_eval(p: Probe, php: str) -> Any:
+    """p.wp_eval() behind the fixture check."""
+    export_fixture(p)
+    return p.wp_eval(php)
+
+
+def export_form(p: Probe, user: str | None, fields: list[tuple[str, str]], query: dict | None = None, nonce: str = "body") -> Response:
+    """POST /export as the screen's form does: application/x-www-form-urlencoded with `_wpnonce` in the
+    body (nonce "body", or "stale-body"), lists as one comma-separated field, switches as 1/0."""
+    path = NS + "/export" + ("?" + urllib.parse.urlencode(query, doseq=True) if query else "")
+    headers = {"Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded"}
+    fields = list(fields)
+    if user is None:
+        opener = p._opener(None)
+    else:
+        opener, valid = p.session(user)
+        if nonce == "body":
+            fields.append(("_wpnonce", valid))
+        elif nonce == "stale-body":
+            fields.append(("_wpnonce", STALE_NONCE))
+        elif nonce == "header":
+            headers["X-WP-Nonce"] = valid
+    reply = p._raw(opener, "POST", path, urllib.parse.urlencode(fields).encode(), headers)
+    if p.verbose:
+        print(f"  {user or 'anonymous'} POST(form) {path} -> {reply.brief()}", file=sys.stderr)
+    return reply
+
+
+def export_summary(p: Probe, user: str, body: dict) -> Response:
+    """The dialog's summary: a JSON POST, as apiFetch sends it."""
+    return p.http(user, "POST", "/export", body={**body, "summary": True})
+
+
+def csv_table(r: Response, sep: str = ",") -> list[list[str]]:
+    if "text/csv" not in r.headers.get("Content-Type", ""):
+        return []
+    return list(csv.reader(io.StringIO(r.body.decode("utf-8-sig"), newline=""), delimiter=sep))
+
+
+def attachment(r: Response) -> str:
+    match = re.search(r'filename="([^"]+)"', r.headers.get("Content-Disposition", ""))
+    return match.group(1) if match else ""
+
+
+def compose(p: Probe, user: str, token: str, mutation: dict) -> dict:
+    """A composed successor under a selection.compose grant: `mutation` is one of add_ids, remove_ids."""
+    grant = p.http(user, "POST", "/requests", body={"operation": "selection.compose", "intent": {"token": token, **mutation}}).json() or {}
+    body = {key: grant.get(key) for key in ("uuid", "request_proof", "intent")}
+    return p.http(user, "POST", "/selection/compose", body={**body, "token": token}).json() or {}
+
+
+def t96_views(p: Probe) -> dict[str, tuple[list[str], list[tuple[str, str]], str]]:
+    """T96's three live views: (columns, filter arguments, separator). The default view's columns come from the
+    registry's defaultColumn/defaultOrder as the screen exports them (the name first, no image)."""
+    fields = (p.http("manager", "GET", "/fields").json() or {}).get("fields", [])
+    defaults = sorted((f for f in fields if f.get("defaultColumn") and f.get("type") != "image"), key=lambda f: f.get("defaultOrder") or 0)
+    default = ["name", *[f["key"] for f in defaults if f["key"] != "name"]]
+    # As exportColumns() does, leave out images and add-on fields without a DataViews column.
+    every = [f["key"] for f in fields if f.get("type") != "image" and f.get("dataviews")]
+    return {
+        "default view": (default, [("mode", "products")], "comma"),
+        "every column, products and variations": (every, [("mode", "products_and_variations")], "comma"),
+        "filtered, semicolons": (default, [("mode", "products")] + filter_params("category_ids", "isAny", [p.seed["categories"]["root"]]), "semicolon"),
+    }
+
+
+def check_read_export_post(p: Probe) -> None:
+    """T101: POST /export's row sources, refusals and footprint, on the live fixture."""
+    if p.wp_cmd is None:
+        p.skip("read", "read:export:post:*", "documented: --no-wp given, the export rows need fixtures and ground truth through WP-CLI")
+        return
+    state: dict[str, Any] = {}
+    root = p.seed["categories"]["root"]
+    cat = filter_params("category_ids", "isAny", [root])
+    s1, s2 = p.simple(1)["id"], p.simple(2)["id"]
+    variation = p.seed["variable"]["variations"][0]["id"]
+
+    def fixtures() -> None:
+        state["fx"] = export_native(p, "fixtures")
+        ids = state["fx"]["ids"]
+        p.row("read", "read:export:fixtures", len(ids) >= 30, f"{len(ids)} fixtures upserted through CRUD on {export_fixture(p)}")
+
+    def post_auth() -> None:
+        token = p.capture("manager", {"ids": [s1, s2]}).get("token", "")
+        bodies = {
+            "filter": [("columns", "id,name")] + cat,
+            "ids": [("columns", "id,name"), ("ids", f"{s1},{s2}")],
+            "token": [("columns", "id,name"), ("selection", token)],
+        }
+        seen = []
+        ok = bool(token)
+        for name, body in bodies.items():
+            anon = export_form(p, None, body)
+            sub = export_form(p, "subscriber", body)
+            man = export_form(p, "manager", body)
+            good = anon.status == 401 and sub.status == 403 and man.status == 200 and "text/csv" in man.headers.get("Content-Type", "")
+            ok = ok and good
+            seen.append(f"{name} {anon.status}/{sub.status}/{man.status}")
+        stale = export_form(p, "manager", bodies["filter"], nonce="stale-body")
+        ok = ok and stale.status == 403 and stale.code() == "rest_cookie_invalid_nonce"
+        p.row("read", "read:export:post-auth", ok, f"anonymous/subscriber/manager {'; '.join(seen)}; stale body nonce {stale.brief()}; the nonce only in the body answered the manager")
+
+    def ids_exact() -> None:
+        missing = state["fx"]["max_id"] + 100000
+        page = state["fx"]["ids"]["page"]
+        body = [("columns", "id,name"), ("ids", f"{variation},{s1},{missing},{page}")]
+        r = export_form(p, "manager", body)
+        got = [int(row[0]) for row in csv_table(r)[1:]]
+        summary = export_summary(p, "manager", {"columns": ["id", "name"], "ids": [variation, s1, missing, page]}).json() or {}
+        ok = got == sorted([s1, variation]) and summary.get("rows") == 2 and summary.get("left_out") == 2 and attachment(r).startswith("catalogue-selected-")
+        p.row("read", "read:export:ids-exact", ok, f"rows {got} (want {sorted([s1, variation])}); summary rows {summary.get('rows')} left_out {summary.get('left_out')}; {attachment(r)}")
+
+    def token_exact() -> None:
+        ids = state["fx"]["ids"]
+        a, b, c, d, e = (ids[k] for k in ("tok-a", "tok-b", "tok-c", "tok-d", "tok-e"))
+        base = p.capture("manager", {"query": {"search": "CSV Token", "mode": "products"}})
+        added = compose(p, "manager", base.get("token", ""), {"add_ids": [c]})
+        removed = compose(p, "manager", added.get("token", ""), {"remove_ids": [b]})
+        export_native(p, "sql", {"what": "trash", "id": e})
+        export_native(p, "sql", {"what": "rename", "id": d, "name": "CSV Token D"})
+        token = removed.get("token", "")
+        state["token"] = token
+        r = export_form(p, "manager", [("columns", "id,name"), ("selection", token)])
+        got = [int(row[0]) for row in csv_table(r)[1:]]
+        summary = export_summary(p, "manager", {"columns": ["id"], "selection": token}).json() or {}
+        ok = base.get("count") == 3 and got == [a, c] and summary.get("left_out") == 1 and summary.get("rows") == 2 and d not in got
+        p.row("read", "read:export:token-exact", ok,
+              f"captured {base.get('count')} (A, B, E), +C, -B, E binned, D renamed to match: rows {got} (want {[a, c]}), left_out {summary.get('left_out')}")
+
+    def token_not_in_url() -> None:
+        r = export_form(p, "manager", [("columns", "name"), ("search", "Probe")], query={"selection": state.get("token", "v2.x")})
+        both = export_form(p, "manager", [("columns", "name"), ("selection", state.get("token", ""))], query={"selection": state.get("token", "v2.x")})
+        ok = r.status == 400 and r.code() == "bulkcat_invalid_value" and both.status == 400 and "text/csv" not in r.headers.get("Content-Type", "")
+        p.row("read", "read:export:token-not-in-url", ok, f"query only {r.brief()}; query and body {both.brief()}")
+
+    def token_refusals() -> None:
+        mine = p.capture("manager", {"ids": [s1]}).get("token", "")
+        other = export_form(p, "admin", [("columns", "name"), ("selection", mine)])
+        legacy = export_form(p, "manager", [("columns", "name"), ("selection", "abc123.0123456789")])
+        lapsed_token = p.capture("manager", {"ids": [s2]}).get("token", "")
+        export_native(p, "sql", {"what": "lapse", "snapshot": lapsed_token.split(".")[1]})
+        lapsed = export_form(p, "manager", [("columns", "name"), ("selection", lapsed_token)])
+        renewed = p.http("manager", "POST", "/selection/renew", body={"token": lapsed_token}).json() or {}
+        after = export_form(p, "manager", [("columns", "name"), ("selection", renewed.get("token", ""))])
+        gone_token = p.capture("manager", {"ids": [s1]}).get("token", "")
+        export_native(p, "sql", {"what": "expire", "snapshot": gone_token.split(".")[1]})
+        gone = export_form(p, "manager", [("columns", "name"), ("selection", gone_token)])
+        legacy_message = (legacy.json() or {}).get("message", "")
+        ok = (other.status == 403 and other.code() == "bulkcat_invalid_selection"
+              and legacy.status == 403 and legacy_message == RESELECT
+              and lapsed.status == 409 and lapsed.code() == "bulkcat_selection_renew_required"
+              and renewed.get("requires_preview") is True and after.status == 200 and len(csv_table(after)) == 2
+              and gone.status == 410 and gone.code() == "bulkcat_selection_expired")
+        p.row("read", "read:export:token-refusals", ok,
+              f"another user's {other.brief()}; 1.0 {legacy.brief()} \"{legacy_message}\"; lapsed {lapsed.brief()} then renewed {after.brief()}; expired {gone.brief()}")
+
+    def whole_catalogue() -> None:
+        refused = export_form(p, "manager", [("columns", "name")])
+        p.row("read", "read:export:whole-catalogue-refused",
+              refused.status == 400 and refused.code() == "bulkcat_export_confirm_all" and "text/csv" not in refused.headers.get("Content-Type", ""),
+              refused.brief())
+        confirmed = export_form(p, "manager", [("columns", "id"), ("confirm_all", "1")])
+        rows = csv_table(confirmed)[1:]
+        want = export_eval(p, "bulkcat_out( count( wc_get_products( array( 'limit' => -1, 'return' => 'ids', 'type' => array_keys( wc_get_product_types() ), 'status' => array( 'publish', 'future', 'draft', 'pending', 'private' ) ) ) ) );")
+        p.row("read", "read:export:whole-catalogue-confirmed", confirmed.status == 200 and len(rows) == want and attachment(confirmed).startswith("catalogue-all-"),
+              f"{len(rows)} rows, WooCommerce {want}; {attachment(confirmed)}")
+
+    def identifiers_header() -> None:
+        r = export_form(p, "manager", [("columns", "name,sku,regular_price,type,id,stock_status"), ("identifiers", "1")] + cat)
+        header = csv_table(r)[0] if csv_table(r) else []
+        want = ["ID", "SKU", "Parent", "Type", "Name", "Regular price", "Stock status"]
+        p.row("read", "read:export:identifiers-header", header == want and attachment(r).startswith("catalogue-filtered-with-ids-"), f"en_US: {header}")
+        p.skip("read", "read:export:identifiers-header:de_DE", "de_DE language packs are not installed on the fixture (a download this run is not authorised to make); ColumnPlanTest covers the headings under a translation")
+
+    def roundtrip_cells() -> dict[int, list[str]]:
+        cat_rt = filter_params("category_ids", "isAny", [state["fx"]["categories"]["roundtrip"]])
+        r = export_form(p, "manager", [("columns", "name"), ("identifiers", "1"), ("mode", "products_and_variations")] + cat_rt)
+        table = csv_table(r)
+        return {int(row[0]): row for row in table[1:]}
+
+    def type_and_parent() -> None:
+        cells = roundtrip_cells()
+        native = export_native(p, "exporter", {"ids": list(cells)})
+        types = {i: (cells[i][3], (native.get(str(i)) or {}).get("type")) for i in cells}
+        parents = {i: (cells[i][2], (native.get(str(i)) or {}).get("parent")) for i in cells}
+        bad_types = {i: v for i, v in types.items() if v[0] != v[1]}
+        bad_parents = {i: v for i, v in parents.items() if v[0] != v[1]}
+        flags = sorted({v[0] for v in types.values()})
+        p.row("read", "read:export:type-flags", bool(cells) and not bad_types, f"{len(cells)} rows; forms {flags}; differing {bad_types}")
+        with_parent = sum(1 for v in parents.values() if v[0])
+        p.row("read", "read:export:parent-id-fallback", bool(cells) and not bad_parents and any(v[0].startswith("id:") for v in parents.values()),
+              f"{with_parent} rows with a Parent, {sum(1 for v in parents.values() if v[0].startswith('id:'))} as id:N; differing {bad_parents}")
+
+    def get_retired() -> None:
+        # T103 (ruling R9): T96's three live views. The catalogue GET is refused 400 with the reload sentence and no CSV
+        # byte, whatever it carries (confirm_all included); the switch-off POST streams the view (its bytes were proven
+        # equal to the GET's at T96, and PHPUnit's golden files pin them since); History's GET exports still stream.
+        views = t96_views(p)
+        sentence = "The catalogue is now exported from the Export dialog. Reload the page and export again."
+        rows, ok = [], True
+        for name, (columns, filters, separator) in views.items():
+            export_native(p, "sql", {"what": "separator", "value": separator})
+            try:
+                get = p.http("manager", "GET", "/export", [("columns[]", c) for c in columns] + filters + [("confirm_all", "1")])
+                post = export_form(p, "manager", [("columns", ",".join(columns))] + filters + ([("confirm_all", "1")] if len(filters) == 1 else []))  # only the mode: the whole catalogue
+            finally:
+                export_native(p, "sql", {"what": "separator", "value": "comma"})
+            refused = (get.status == 400 and get.code() == "bulkcat_invalid_value" and (get.json() or {}).get("message") == sentence
+                       and "text/csv" not in get.headers.get("Content-Type", ""))
+            streamed = post.status == 200 and "text/csv" in post.headers.get("Content-Type", "") and len(post.body) > 100
+            ok = ok and refused and streamed
+            rows.append(f"{name}: GET {get.brief()}; POST {len(csv_table(post, ';' if separator == 'semicolon' else ','))} lines, "
+                        f"sha256 {hashlib.sha256(post.body).hexdigest()[:16]}, {attachment(post)}")
+        history = p.http("manager", "GET", "/export", [("source", "audit"), ("columns[]", "batch_id")])
+        ok = ok and history.status == 200 and "text/csv" in history.headers.get("Content-Type", "")
+        rows.append(f"history GET (source=audit) {history.status} {history.headers.get('Content-Type', '')}")
+        p.row("read", "read:export:get-retired", ok, "; ".join(rows))
+
+    def writes_nothing() -> None:
+        tokens = [p.capture("manager", {"ids": [s1, s2, variation]}).get("token", ""),
+                  p.capture("manager", {"query": {"category_ids": {"operator": "isAny", "value": [root]}}}).get("token", "")]
+        before = export_native(p, "footprint")
+        calls = 0
+        for identifiers in ("0", "1"):
+            for body in ([("columns", "name,sku")] + cat, [("columns", "name,sku"), ("ids", f"{s1},{variation}")],
+                         [("columns", "name,sku"), ("selection", tokens[0])], [("columns", "name,sku"), ("selection", tokens[1])]):
+                calls += int(export_form(p, "manager", body + [("identifiers", identifiers)]).status == 200)
+                form = {k: v for k, v in body if k in ("columns", "ids", "selection")}
+                summary = {"columns": form["columns"].split(","), "identifiers": identifiers == "1"}
+                if "ids" in form:
+                    summary["ids"] = [int(i) for i in form["ids"].split(",")]
+                if "selection" in form:
+                    summary["selection"] = form["selection"]
+                if "ids" not in form and "selection" not in form:
+                    summary["category_ids"] = {"operator": "isAny", "value": [root]}
+                calls += int(export_summary(p, "manager", summary).status == 200)
+        after = export_native(p, "footprint")
+        changed = sorted(k for k in before if before[k] != after[k])
+        options = sorted(k for k in set(before["options"]) | set(after["options"]) if before["options"].get(k) != after["options"].get(k))
+        p.row("read", "read:export:writes-nothing", calls == 16 and not changed,
+              f"{calls}/16 exports and summaries answered; changed {changed or 'nothing'}{'; options ' + str(options) if options else ''}")
+
+    def query_count() -> None:
+        found = export_native(p, "query_counts", {"user": p.seed["users"]["manager"]["id"]})
+        spread = {f"{mode}/{source}": sorted({v["queries"] - v["parent_reads"] for v in sizes.values()}) for mode, sources in found.items() for source, sizes in sources.items()}
+        raw = {f"{mode}/{source}": [v["queries"] for v in sizes.values()] for mode, sources in found.items() for source, sizes in sources.items()}
+        rows = {f"{mode}/{source}": [v["rows"] for v in sizes.values()] for mode, sources in found.items() for source, sizes in sources.items()}
+        p.row("read", "read:export:fixed-query-count-identifiers", all(len(q) == 1 for q in spread.values()),
+              f"base queries per page at 25/50/100 rows, switch on, cold cache: {spread}; raw {raw}; rows {rows}; "
+              "a page with parents outside its rows needs two additional grouped reads, independent of parent count")
+
+    steps = [("fixtures", fixtures), ("post-auth", post_auth), ("ids-exact", ids_exact), ("token-exact", token_exact),
+             ("token-not-in-url", token_not_in_url), ("token-refusals", token_refusals), ("whole-catalogue", whole_catalogue),
+             ("identifiers-header", identifiers_header), ("type-flags", type_and_parent), ("get-retired", get_retired),
+             ("writes-nothing", writes_nothing), ("fixed-query-count-identifiers", query_count)]
+    for name, fn in steps:
+        if name != "fixtures" and "fx" not in state:
+            p.row("read", f"read:export:{name}", False, "no fixtures from the fixtures step")
+            continue
+        p.guard("read", f"read:export:{name}", fn)
+
+
+def own_off_record(raw: str, pid: int) -> dict | None:
+    """Ticket 04's Off record when it is this product's own ({id, status, at, batch}), else None."""
+    try:
+        data = json.loads(raw) if raw else None
+    except ValueError:
+        return None
+    return data if isinstance(data, dict) and data.get("id") == pid and list(data) == ["id", "status", "at", "batch"] else None
+
+
+# The version 1 headings with the switch on, as the importer must map them (T102).
+IMPORTER_MAPPED = {
+    "ID": "id", "SKU": "sku", "Parent": "parent_id", "Type": "type", "Name": "name", "Featured": "featured",
+    "Regular price": "regular_price", "Sale price": "sale_price", "Tax status": "tax_status", "Tax class": "tax_class",
+    "Weight": "weight", "Length": "length", "Width": "width", "Height": "height",
+}
+
+
+def check_read_export_roundtrip(p: Probe) -> None:
+    """T102: the switch-on file through WooCommerce's own importer changes nothing, creates nothing."""
+    if p.wp_cmd is None:
+        p.skip("read", "read:export:roundtrip:*", "documented: --no-wp given, the importer round trip runs through WP-CLI")
+        return
+    state: dict[str, Any] = {}
+
+    def columns(image: bool = False) -> list[str]:
+        keys = [f["key"] for f in (p.http("manager", "GET", "/fields").json() or {}).get("fields", [])]
+        return [k for k in keys if image or k != "thumbnail"]
+
+    def export(category: int, source: str, sep: str = ",") -> tuple[Response, list[list[str]]]:
+        cat = filter_params("category_ids", "isAny", [category])
+        head = [("columns", ",".join(columns())), ("identifiers", "1")]
+        if source == "filter":
+            r = export_form(p, "manager", head + [("mode", "products_and_variations")] + cat)
+        else:
+            token = p.capture("manager", {"query": {"category_ids": {"operator": "isAny", "value": [category]}, "mode": "products_and_variations"}}).get("token", "")
+            r = export_form(p, "manager", head + [("selection", token)])
+        return r, csv_table(r, sep)
+
+    def import_file(body: bytes, sep: str) -> dict:
+        return export_native(p, "import", {"csv": base64.b64encode(body).decode(), "delimiter": sep}, user="manager")
+
+    def diff(before: dict, after: dict) -> list[str]:
+        out = []
+        for i, row in before["rows"].items():
+            other = after["rows"].get(i) or {}
+            out += [f"{i}.{k}: {row[k]!r} -> {other.get(k)!r}" for k in row if row[k] != other.get(k)]
+        for key in ("max_id", "importing", "terms"):
+            if before[key] != after[key]:
+                out.append(f"{key}: {before[key]} -> {after[key]}")
+        return out
+
+    def fixtures() -> None:
+        state["fx"] = export_native(p, "fixtures")
+        p.row("read", "read:export:roundtrip-fixtures", True, f"round trip category {state['fx']['categories']['roundtrip']}, recorded {state['fx']['categories']['recorded']}")
+
+    def mapping() -> None:
+        # The headings as WooCommerce's own reader takes them from the file (byte-order mark and quotes included).
+        r = export_form(p, "manager", [("columns", ",".join(columns(image=True))), ("identifiers", "1"), ("search", "RT ")])
+        header = csv_table(r)[0]
+        want = [IMPORTER_MAPPED.get(h, "") for h in header]
+        found = {}
+        for locale in ("", "de_DE"):
+            got = export_native(p, "mapping", {"csv": base64.b64encode(r.body).decode(), "delimiter": ",", "locale": locale}, user="manager")
+            found[got["locale"]] = got["mapping"]
+        wrong = {loc: [f"{h} -> {m!r}" for h, m, w in zip(header, got_map, want) if m != w] for loc, got_map in found.items()}
+        mapped = [f"{h}->{m}" for h, m in zip(header, want) if m]
+        p.row("read", "read:export:importer-mapping", set(found) == {"en_US", "de_DE"} and not any(wrong.values()),
+              f"{len(header)} headings; mapped {mapped}; everything else Do not import, including {[h for h in header if '(for reference)' in h]}, Status and the listing control; "
+              f"importing user locales {sorted(found)} (de_DE without language packs: WooCommerce's English fallback path); differing {wrong}")
+
+    def mapping_guard() -> None:
+        # Main Build minor: the import helper refuses a mapping that is not the screen's (amendment 8).
+        r, table = export(state["fx"]["categories"]["roundtrip"], "filter")
+        ids = [int(row[0]) for row in table[1:]]
+        raw = export_native(p, "mapping", {"csv": base64.b64encode(r.body).decode(), "delimiter": ",", "raw": True}, user="manager")["mapping"]
+        before = export_native(p, "snapshot", {"ids": ids})
+        result = export_native(p, "import", {"csv": base64.b64encode(r.body).decode(), "delimiter": ",", "mapping": raw}, user="manager")
+        after = export_native(p, "snapshot", {"ids": ids})
+        unfiltered = [m for m in raw if m and m not in IMPORTER_MAPPED.values()]
+        p.row("read", "read:export:importer-mapping-guard",
+              bool(unfiltered) and bool(result.get("refused")) and "updated" not in result and not diff(before, after),
+              f"auto_map_columns() alone maps {unfiltered[:6]}; the import helper answered {result.get('refused') or result}; nothing changed: {not diff(before, after)}")
+
+    def roundtrip() -> None:
+        category = state["fx"]["categories"]["roundtrip"]
+        fixture = state["fx"]["ids"]
+        off, off_vars = fixture["rt-off"], [fixture["rt-off-s"], fixture["rt-off-m"]]
+        # Ordinary native Draft does not create a legacy record. Then seed a
+        # labelled synthetic old record so the existing import/export exclusion
+        # checks still prove legacy compatibility. Actual released work is in
+        # native-status-upgrade.py; this fixture does not substitute for it.
+        switched = offon.switch(p, [off], "draft")
+        native_draft = export_native(p, "snapshot", {"ids": [off]})["rows"][str(off)]
+        p.row("read", "read:export:native-draft-no-record", native_draft["post_status"] == "draft" and native_draft["off_record"] == "",
+              "New native Draft made no legacy record before the explicit legacy export fixture was seeded")
+        offon.put_record(p, off, "publish")
+        start = export_native(p, "snapshot", {"ids": [off, *off_vars]})["rows"]
+        record = own_off_record(start[str(off)]["off_record"], off)
+        state["off"] = {"switched": f"batch {switched['batch']} {switched['report'].get('status')}", "status": start[str(off)]["post_status"], "record": record,
+                        "variations": [start[str(v)]["post_status"] for v in off_vars], "legs": []}
+        legs = []
+        ok = True
+        for setting, sep in (("comma", ","), ("semicolon", ";")):
+            export_native(p, "sql", {"what": "separator", "value": setting})
+            for source in ("filter", "selection"):
+                r, table = export(category, source, sep)
+                ids = [int(row[0]) for row in table[1:]]
+                before = export_native(p, "snapshot", {"ids": ids})
+                result = import_file(r.body, sep)
+                after = export_native(p, "snapshot", {"ids": ids})
+                changed = diff(before, after)
+                if off in ids:
+                    b, a = before["rows"][str(off)], after["rows"][str(off)]
+                    state["off"]["legs"].append(
+                        f"{setting}/{source}: {b['post_status']} -> {a['post_status']}, record kept {bool(b['off_record']) and a['off_record'] == b['off_record']}, "
+                        f"variations {[after['rows'][str(v)]['post_status'] for v in off_vars]}")
+                good = (r.status == 200 and len(ids) >= 16 and result.get("updated") == len(ids) and result.get("imported") == 0
+                        and not result.get("failed") and not result.get("skipped") and result.get("new_posts") == 0
+                        and result.get("importing") == 0 and not changed)
+                ok = ok and good
+                legs.append(f"{setting}/{source}: {len(ids)} rows, updated {result.get('updated')}, failed {len(result.get('failed') or [])}, "
+                            f"skipped {len(result.get('skipped') or [])}, new posts {result.get('new_posts')}, placeholders {result.get('importing')}, "
+                            f"changed {changed[:6] or 'nothing'}")
+                state.setdefault("files", {})[(setting, source)] = (r.body, table)
+        export_native(p, "sql", {"what": "separator", "value": "comma"})
+        p.row("read", "read:export:native-import-roundtrip", ok, "; ".join(legs))
+        o = state["off"]
+        off_ok = (o["status"] == "draft" and o["record"] is not None and o["record"].get("status") == "publish" and o["variations"] == ["publish", "publish"]
+                  and len(o["legs"]) == 4 and all(leg.split(": ", 1)[1].startswith("draft -> draft, record kept True, variations ['publish', 'publish']") for leg in o["legs"]))
+        p.row("read", "read:export:native-import-roundtrip:off-product", ok and off_ok,
+              f"variable product {off} set to native Draft ({o['switched']}), then explicit synthetic legacy record: status {o['status']}, its own Off record saving {(o['record'] or {}).get('status')}, "
+              f"variations left {o['variations']}; through each import: {'; '.join(o['legs'])}; nothing published")
+        # T103 (ticket 04's review): the saved status never reaches the catalogue CSV, whatever columns are chosen.
+        keys = [f["key"] for f in (p.http("manager", "GET", "/fields").json() or {}).get("fields", [])]
+        raw = start[str(off)]["off_record"]
+        absent, notes = True, []
+        for identifiers in ("0", "1"):
+            for source, rows in (("ids", [("ids", ",".join(str(i) for i in [off, *off_vars]))]), ("selection", [("selection", p.capture("manager", {"ids": [off, *off_vars]}).get("token", ""))])):
+                r = export_form(p, "manager", [("columns", ",".join(keys)), ("identifiers", identifiers)] + rows)
+                table = csv_table(r)
+                head = table[0] if table else []
+                id_at = head.index("ID") if "ID" in head else -1
+                status_at = head.index("Status") if "Status" in head else -1
+                status = next((row[status_at] for row in table[1:] if min(id_at, status_at) >= 0 and row[id_at] == str(off)), None)
+                text = r.body.decode("utf-8-sig", "replace")
+                needles = ["_bulkcat_availability_off", "availability_off", "Status before Off", raw, raw.replace('"', '""'), (record or {}).get("at") or ""]
+                leaked = [n for n in needles if n and n in text]
+                good = r.status == 200 and len(table) == 4 and not leaked and status == "draft"
+                absent = absent and good
+                notes.append(f"{source}, identifiers {identifiers}: {r.status}, {len(table) - 1} rows, {len(head)} columns, Status {status}, leaked {leaked or 'nothing'}")
+        refused = export_form(p, "manager", [("columns", "availability_off"), ("ids", str(off))])
+        absent = absent and refused.status == 400 and refused.code() == "rest_invalid_param"
+        notes.append(f"columns=availability_off {refused.brief()}")
+        p.row("read", "read:export:off-record-absent", bool(raw) and absent, f"product {off} Off with its own record; every column ({len(keys)}): " + "; ".join(notes))
+        back = offon.switch(p, [off], "publish")  # back On, so other rows' pages keep their make-up
+        if back["report"].get("status") != "complete":
+            raise AssertionError(f"switching the Off product back On: {back['report']}")
+
+    def product_post_parent() -> None:
+        ids = state["fx"]["ids"]
+        body, table = state["files"][("comma", "filter")]
+        row = next(r for r in table[1:] if int(r[0]) == ids["rt-child"])
+        after = export_native(p, "snapshot", {"ids": [ids["rt-child"]]})["rows"][str(ids["rt-child"])]
+        p.row("read", "read:export:product-post-parent", row[2] == "bulkcat-rt-grouped" and after["post_parent"] == ids["rt-grouped"],
+              f"simple product {ids['rt-child']} exported Parent {row[2]!r}; post_parent after the round trip {after['post_parent']} (want {ids['rt-grouped']})")
+
+    def edited() -> None:
+        ids = state["fx"]["ids"]
+        simple, variation = ids["rt-simple-plain"], ids["rt-var-s"]
+        body, table = state["files"][("comma", "filter")]
+        header = table[0]
+        reg, sale = header.index("Regular price"), header.index("Sale price")
+        edits = {simple: ("12.34", "11.11"), variation: ("25.00", "24.00")}
+        for row in table[1:]:
+            if int(row[0]) in edits:
+                row[reg], row[sale] = edits[int(row[0])]
+        # Saved as a spreadsheet saves CSV UTF-8: a byte-order mark and minimal quoting.
+        buffer = io.StringIO()
+        csv.writer(buffer, quoting=csv.QUOTE_MINIMAL, lineterminator="\r\n").writerows(table)
+        ids_all = [int(row[0]) for row in table[1:]]
+        before = export_native(p, "snapshot", {"ids": ids_all})
+        result = import_file(b"\xef\xbb\xbf" + buffer.getvalue().encode("utf-8"), ",")
+        after = export_native(p, "snapshot", {"ids": ids_all})
+        changed = diff(before, after)
+        # WooCommerce derives the rendered price of the edited items, of the variable product whose variation
+        # was edited, and of the grouped product holding the edited simple product.
+        allowed = {f"{i}.{k}" for i in (simple, variation) for k in ("regular_price", "sale_price", "price_html")} \
+            | {f"{ids['rt-var']}.price_html", f"{ids['rt-grouped']}.price_html"}
+        keys = {c.split(":")[0] for c in changed}
+        values_ok = (after["rows"][str(simple)]["regular_price"], after["rows"][str(simple)]["sale_price"]) == edits[simple] \
+            and (after["rows"][str(variation)]["regular_price"], after["rows"][str(variation)]["sale_price"]) == edits[variation]
+        edited_four = {f"{i}.{k}" for i in (simple, variation) for k in ("regular_price", "sale_price")}
+        p.row("read", "read:export:native-import-edited",
+              values_ok and edited_four <= keys and keys <= allowed and not result.get("failed") and not result.get("skipped") and result.get("new_posts") == 0,
+              f"changed {sorted(keys)} (the four edited values, and the rendered prices WooCommerce derives from them); updated {result.get('updated')}, skipped {len(result.get('skipped') or [])}")
+        export_native(p, "fixtures")  # put the prices back
+
+    def recorded() -> None:
+        ids = state["fx"]["ids"]
+        category = state["fx"]["categories"]["recorded"]
+        titled = ids["rec-titled-one"]
+        binned, child = ids["rec-binned-group"], ids["rec-binned-child"]
+        export_native(p, "sql", {"what": "title", "id": titled, "title": "A custom variation title"})
+        export_native(p, "sql", {"what": "trash", "id": binned})  # taken back out of the bin by the fixtures run below
+        stored = export_native(p, "sql", {"what": "read_title", "id": titled})["title"]
+        r, table = export(category, "filter")
+        header = table[0]
+        sku_i, name_i = header.index("SKU"), header.index("Name")
+        by_id = {int(row[0]): row for row in table[1:]}
+        summary = export_summary(p, "manager", {"columns": columns(), "identifiers": True, "mode": "products_and_variations",
+                                                "category_ids": {"operator": "isAny", "value": [category]}}).json() or {}
+        guarded_skus = sum(1 for row in table[1:] if row[sku_i].startswith("'"))
+        guarded_names = sum(1 for row in table[1:] if row[name_i].startswith("'"))
+        # The snapshot reads through CRUD, which would regenerate the custom title: it is left out, and read in SQL.
+        ids_all = [i for i in by_id if i != titled]
+        before = export_native(p, "snapshot", {"ids": ids_all})
+        result = import_file(r.body, ",")
+        after = export_native(p, "snapshot", {"ids": ids_all})
+        imported_title = export_native(p, "sql", {"what": "read_title", "id": titled})["title"]
+        state["recorded"] = (by_id, before, after, result)
+        sku_after = after["rows"][str(ids["rec-guarded-sku"])]["sku"]
+        v1_after = after["rows"][str(ids["rec-v1"])]["sku"]
+        p.row("read", "read:export:guarded-sku", summary.get("guarded_identifiers") == guarded_skus == 2,
+              f"guarded_identifiers {summary.get('guarded_identifiers')}, SKU cells with an apostrophe {guarded_skus}; "
+              f"recorded: WooCommerce imported '-P1 as {sku_after!r} and '=V1 as {v1_after!r} (the apostrophe is kept in a SKU)")
+        name_after = after["rows"][str(ids["rec-at-home"])]["name"]
+        p.row("read", "read:export:guarded-name", summary.get("guarded_names") == guarded_names == 1,
+              f"guarded_names {summary.get('guarded_names')}, Name cells with an apostrophe {guarded_names}; recorded: '@home imported as {name_after!r}")
+        v1_child = ids["rec-v1-one"]
+        cell = by_id[v1_child][2]
+        kept = after["rows"][str(v1_child)]["post_parent"] == ids["rec-v1"]
+        p.row("read", "read:export:guarded-parent", cell == f"id:{ids['rec-v1']}" and kept and result.get("new_posts") == 0 and result.get("importing") == 0,
+              f"=V1 variation's Parent {cell!r}; post_parent kept {kept}; new posts {result.get('new_posts')}, placeholders {result.get('importing')}")
+        zero, idsku = ids["rec-zero-one"], ids["rec-id-sku-one"]
+        cells = (by_id[zero][2], by_id[idsku][2])
+        kept = (after["rows"][str(zero)]["post_parent"], after["rows"][str(idsku)]["post_parent"]) == (ids["rec-zero"], ids["rec-id-sku"])
+        p.row("read", "read:export:parent-zero-and-id-sku", cells == (f"id:{ids['rec-zero']}", f"id:{ids['rec-id-sku']}") and kept and result.get("new_posts") == 0,
+              f"Parent cells {cells}; parents kept {kept}; no placeholder ({result.get('importing')})")
+        kept = after["rows"][str(child)]["post_parent"] == binned
+        binned_status = export_eval(p, f"bulkcat_out( get_post_status( {binned} ) );")
+        p.row("read", "read:export:binned-parent",
+              binned_status == "trash" and binned not in by_id and by_id[child][2] == f"id:{binned}" and kept and result.get("new_posts") == 0 and result.get("importing") == 0,
+              f"parent {binned} in the bin ({binned_status}); its child's Parent {by_id[child][2]!r} (WooCommerce's exporter writes the SKU, which its SKU lookup "
+              f"would not find); post_parent kept {kept}; new posts {result.get('new_posts')}, placeholders {result.get('importing')}")
+        p.row("read", "read:export:variation-title", stored == "A custom variation title" and by_id[titled][name_i] == stored,
+              f"recorded: stored {stored!r}, exported {by_id[titled][name_i]!r}, after the import {imported_title!r} "
+              f"({'WooCommerce regenerated the generated title' if imported_title != stored else 'the custom title was kept'}); "
+              f"import updated {result.get('updated')}, skipped {len(result.get('skipped') or [])}")
+        export_native(p, "fixtures")  # put the recorded products back
+
+    def time_limit() -> None:
+        installed = export_native(p, "time_limit", {"step": "install"})
+        if not installed.get("installed"):
+            raise AssertionError("the fixture could not install its temporary time-limit observer; check mu-plugins ownership")
+        opener, nonce = p.session("manager")
+        fields = urllib.parse.urlencode([("columns", "name"), ("confirm_all", "1"), ("_wpnonce", nonce)]).encode()
+        r = p._raw(opener, "POST", NS + "/export", fields, {"Content-Type": "application/x-www-form-urlencoded", "X-Bulkcat-Time-Limit": "1"})
+        found = export_native(p, "time_limit", {"step": "read"})
+        records = {rec.get("when"): rec for rec in found.get("records", []) if isinstance(rec, dict)}
+        before, after = records.get("before", {}), records.get("after", {})
+        raised = str(after.get("max_execution_time")) == "0"
+        p.row("read", "read:export:time-limit", r.status == 200 and raised and found.get("removed"),
+              f"recorded: web PHP ({before.get('sapi')}) max_execution_time {before.get('max_execution_time')} before the export streams, "
+              f"{after.get('max_execution_time')} after (wc_set_time_limit( 0 ) {'took effect' if raised else 'did not take effect'}); memory_limit {before.get('memory_limit')}; "
+              f"disable_functions {before.get('disable_functions')!r}; Apache Timeout {before.get('apache_timeout')} s; no PHP-FPM (mod_php) and no proxy in front; "
+              f"the probe's must-use plugin removed {found.get('removed')}")
+
+    steps = [("roundtrip-fixtures", fixtures), ("importer-mapping", mapping), ("importer-mapping-guard", mapping_guard), ("native-import-roundtrip", roundtrip),
+             ("product-post-parent", product_post_parent), ("native-import-edited", edited), ("recorded", recorded), ("time-limit", time_limit)]
+    for name, fn in steps:
+        if name != "roundtrip-fixtures" and "fx" not in state:
+            p.row("read", f"read:export:{name}", False, "no fixtures from the fixtures step")
+            continue
+        if name in ("product-post-parent", "native-import-edited") and "files" not in state:
+            p.row("read", f"read:export:{name}", False, "no file from the round trip step")
+            continue
+        p.guard("read", f"read:export:{name}", fn)
+
+
+# ---------------------------------------------------------------------------
 
 CHAPTERS: dict[str, list[Callable[[Probe], None]]] = {
     "screen": [check_screen],
-    "read": [check_read_matrix, check_read_queries, check_saved_views],
+    "read": [check_read_matrix, check_read_queries, check_saved_views, check_read_export_post, check_read_export_roundtrip],
     "write": [check_write_engine, check_write_stale, check_write_inline, check_write_categories, check_write_history],
     "access": [check_access, check_settings],
     "variations": [check_variations],
+    "offon": offon.CHECKS,  # ticket 04
+    "native-status": native_status.CHECKS,  # plan 14: native oracle and release RED
     "lifecycle": [check_lifecycle],
 }
-NEEDS_WP = {"write", "access", "variations", "lifecycle"}
+NEEDS_WP = {"write", "access", "variations", "offon", "native-status", "lifecycle"}
 
 
 def main() -> int:
@@ -1398,7 +2115,7 @@ def main() -> int:
     parser.add_argument("--seed", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "seed.json"))
     parser.add_argument("--wp-cmd", default=os.environ.get("WP_CMD", "wp"))
     parser.add_argument("--no-wp", action="store_true", help="skip every surface that needs WP-CLI (documented SKIP)")
-    parser.add_argument("--chapters", default=",".join(CHAPTERS))
+    parser.add_argument("--chapters", default=",".join(c for c in CHAPTERS if c != "native-status"))
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
 

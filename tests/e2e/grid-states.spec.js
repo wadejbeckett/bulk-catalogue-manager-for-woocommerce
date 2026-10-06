@@ -14,6 +14,7 @@ const {
 	untilVisible,
 	productByName,
 	tabTo,
+	tabFromContent,
 } = require( './helpers' );
 
 const PRODUCTS = /\/bulkcat\/v1\/products(\?|%3F|$)/;
@@ -82,7 +83,7 @@ test( 'no matches lists the filters and clears them', async ( { page } ) => {
 	const search = page.getByRole( 'searchbox', {
 		name: 'Search by name or SKU',
 	} );
-	await tabTo( page, search );
+	await tabFromContent( page, search );
 	await page.keyboard.type( 'zzz-no-such-product' );
 	await expect(
 		page.getByText( 'No products match these filters.' )
@@ -113,7 +114,7 @@ test( 'a failed read says what failed and keeps the rows', async ( {
 	const search = page.getByRole( 'searchbox', {
 		name: 'Search by name or SKU',
 	} );
-	await tabTo( page, search );
+	await tabFromContent( page, search );
 	await page.keyboard.type( 'Probe' );
 	await expect(
 		page
@@ -143,6 +144,10 @@ test( 'a change in progress: pending rows, Cancel and View in History, then read
 	const name = SEED.simple( 5 );
 	const before = ( await productByName( page, name ) ).regular_price;
 	await page.getByRole( 'checkbox', { name } ).press( 'Space' );
+	// T84: the server holds the selection before the change is checked.
+	await expect(
+		page.getByRole( 'region', { name: 'Selection' } )
+	).toContainText( '1 product selected' );
 	await page
 		.getByRole( 'button', { name: 'Make a change to these' } )
 		.press( 'Enter' );
@@ -167,7 +172,7 @@ test( 'a change in progress: pending rows, Cancel and View in History, then read
 	const banner = page.getByRole( 'group', { name: 'Change in progress' } );
 	await expect( banner ).toBeVisible();
 	await expect(
-		banner.getByRole( 'button', { name: 'Cancel' } )
+		banner.getByRole( 'button', { name: 'Stop this change' } )
 	).toBeVisible();
 	await expect(
 		banner.getByRole( 'button', { name: 'View in History' } )
@@ -225,6 +230,10 @@ test( 'Cancel stops a queued change', async ( { page } ) => {
 	const name = SEED.simple( 6 );
 	const before = ( await productByName( page, name ) ).regular_price;
 	await page.getByRole( 'checkbox', { name } ).press( 'Space' );
+	// T84: the server holds the selection before the change is checked.
+	await expect(
+		page.getByRole( 'region', { name: 'Selection' } )
+	).toContainText( '1 product selected' );
 	await page
 		.getByRole( 'button', { name: 'Make a change to these' } )
 		.press( 'Enter' );
@@ -245,7 +254,13 @@ test( 'Cancel stops a queued change', async ( { page } ) => {
 		.getByRole( 'button', { name: 'Back to products' } )
 		.press( 'Enter' );
 	const banner = page.getByRole( 'group', { name: 'Change in progress' } );
-	await banner.getByRole( 'button', { name: 'Cancel' } ).press( 'Enter' );
+	// FRONTEND-13: stopping a change is asked about first.
+	await banner
+		.getByRole( 'button', { name: 'Stop this change' } )
+		.press( 'Enter' );
+	await banner
+		.getByRole( 'button', { name: 'Yes, stop it' } )
+		.press( 'Enter' );
 	await expect( banner ).toBeHidden( { timeout: 20_000 } );
 	runQueue();
 	expect( ( await productByName( page, name ) ).regular_price ).toBe(

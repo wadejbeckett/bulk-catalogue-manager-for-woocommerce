@@ -48,17 +48,27 @@ final class Descriptor {
 	) {
 		$problem = match ( true ) {
 			1 !== preg_match( '/^[a-z][a-z0-9_]{0,63}$/', $id )   => 'its id is not a lower-case action id',
-			! in_array( $group, Group::ALL, true )                => 'its group is unknown',
+			! in_array( $group, Group::ALL, true ) && ! self::external_group( $group ) => 'its group is unknown',
 			'' === trim( $label )                                 => 'it has no label',
 			'' === trim( $description )                           => 'it has no description',
 			[] === $edit_kinds || [] !== array_diff( $edit_kinds, Field::EDIT_KINDS ) => 'it names no edit kind or an unknown one',
-			[] !== array_diff( $groups, Group::ALL )              => 'a field group is unknown',
+			[] !== array_filter( array_diff( $groups, Group::ALL ), static fn( string $group ): bool => ! self::external_group( $group ) ) => 'a field group is unknown',
 			'object' !== ( $args['type'] ?? '' )                  => 'its argument schema is not an object',
 			default                                               => '',
 		};
 		if ( '' !== $problem ) {
 			throw new \InvalidArgumentException( esc_html( sprintf( 'Action "%s" is invalid: %s.', $id, $problem ) ) );
 		}
+	}
+
+	/**
+	 * Whether a group id is an external provider's chooser group (T106,
+	 * docs/EXTENSIONS.md §5.3): `x_<provider id>_<name>`.
+	 *
+	 * @param string $group A group id.
+	 */
+	public static function external_group( string $group ): bool {
+		return 1 === preg_match( '/^x_[a-z][a-z0-9]{2,19}_[a-z0-9][a-z0-9_]*$/', $group );
 	}
 
 	/**
@@ -132,6 +142,17 @@ final class Descriptor {
 	 */
 	public function args(): array {
 		return $this->args;
+	}
+
+	/**
+	 * Copy with a different field surface, leaving the runtime descriptor intact.
+	 *
+	 * @param string[]             $fields Accepted fields.
+	 * @param string[]             $groups Groups of those fields.
+	 * @param array<string, mixed> $args Argument schema.
+	 */
+	public function with_fields( array $fields, array $groups, array $args ): self {
+		return new self( $this->id, $this->group, $this->label, $this->description, $this->edit_kinds, $fields, $groups, $args );
 	}
 
 	/**

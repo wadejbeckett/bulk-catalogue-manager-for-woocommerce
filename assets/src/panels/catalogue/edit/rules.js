@@ -10,6 +10,7 @@
  */
 import { __, _n, sprintf } from '@wordpress/i18n';
 
+import { plainMessage } from '../../../errors';
 import { choiceLabel } from '../cells';
 import { REQUIRES, ROW, VARIABLE_TYPE, VISIBILITY } from '../defaults';
 
@@ -45,7 +46,7 @@ export function isVariation( item ) {
 }
 
 /**
- * Whether a field is the "Visible on site" switch.
+ * Whether a field is the "Shown in shop and search" switch.
  *
  * @param {Object} descriptor Registry descriptor.
  * @return {boolean} The switch.
@@ -428,18 +429,15 @@ export function fieldErrors( error, keys ) {
 }
 
 /**
- * The plain sentence of a failed write that names no field (SPEC §4.8).
+ * The plain sentence of a failed write that names no field (SPEC §4.8),
+ * by the rule every panel follows (errors.js, T114): the plugin's own
+ * refusal in its words, anything else — a server's or a proxy's page,
+ * WordPress's own JSON message, whatever the status — as the fallback.
  *
  * @param {*}      error    The rejection.
- * @param {string} fallback Sentence when the error carries none.
+ * @param {string} fallback The sentence for anything but the plugin's refusal.
  * @return {string} Sentence.
  */
 export function failureText( error, fallback ) {
-	const status = Number( error?.data?.status ) || 0;
-	if ( status === 0 || status >= 500 || error?.code === 'fetch_error' ) {
-		return fallback;
-	}
-	return typeof error?.message === 'string' && error.message
-		? error.message
-		: fallback;
+	return plainMessage( error, fallback );
 }

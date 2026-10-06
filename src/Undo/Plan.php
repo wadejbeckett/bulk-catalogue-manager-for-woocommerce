@@ -5,7 +5,10 @@
  * fields back and how it stands now — revertible, conflicted ("changed
  * since this batch ran") or skipped with its reason — plus the counts and a
  * hash binding the plan to the batch, its contents and the settings.
- * Immutable; Undo\Planner is the only producer.
+ * Immutable; Undo\Planner is the only producer. This is the whole plan held
+ * in memory (Planner::plan(), for tests, probes and BatchFactory::
+ * create_undo()); the routes walk the plan instead (Planner::walk(), T111),
+ * holding a page at a time, and keep only its Undo\PlanSummary.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -120,7 +123,19 @@ final class Plan {
 	public function to_array(): array {
 		return [
 			'batch_id' => $this->batch_id,
-			'items'    => $this->items,
+			'items'    => array_map(
+				static function ( array $item ): array {
+					$item['operations'] = \BulkCatalogueManager\Publishing\PublicationPassword::operations( $item['operations'] );
+					foreach ( $item['conflicts'] as &$conflict ) {
+						if ( \BulkCatalogueManager\Publishing\PublicationPassword::FIELD === $conflict['field'] ) {
+							$conflict['expected'] = \BulkCatalogueManager\Publishing\PublicationPassword::display( $conflict['expected'] );
+							$conflict['current']  = \BulkCatalogueManager\Publishing\PublicationPassword::display( $conflict['current'] );
+						}
+					}
+					return $item;
+				},
+				$this->items
+			),
 			'counts'   => $this->counts,
 			'hash'     => $this->hash,
 		];

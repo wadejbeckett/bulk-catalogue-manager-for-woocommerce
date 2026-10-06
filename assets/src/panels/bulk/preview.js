@@ -1,12 +1,20 @@
 /**
  * The preview (SPEC §4.4, T50), rendered from the POST /preview answer in
- * order: the summary sentence, the counts, the sample table, the warnings;
- * then the sample controls. Nothing here writes.
+ * order: the summary sentence, the counts, retained legacy outcomes when present, the sample table, the warnings; then the sample
+ * controls. Nothing here writes.
  */
 import { __, _n, sprintf } from '@wordpress/i18n';
 
 import { termOptions } from './controls';
 import { fieldByKey } from './descriptors';
+import { groupSample } from './sample-rows';
+import {
+	availabilityLines,
+	outcomeLabel,
+	publicationSentence,
+	statusName,
+} from './availability';
+import { countPhrase } from '../catalogue/selection/model';
 import {
 	formatNumber,
 	listPhrase,
@@ -58,12 +66,46 @@ export function formatValue( field, value, terms ) {
 }
 
 /**
- * The warning sentences, in the block's order (Engine\Preview::WARNINGS).
+ * An add-on's warnings (T106, docs/EXTENSIONS.md §10), aggregated by the
+ * server by code, each object once: each its own sentence with its count,
+ * as "<sentence> — 1,200 products", or products and variations apart when
+ * variations carry it (ticket 11: a count that can include variations says so).
  *
- * @param {Object} warnings Counts by kind.
+ * @param {Object|null} external The preview's `external` block.
+ * @return {Array<{kind: string, text: string}>} Warnings.
+ */
+export function externalWarnings( external ) {
+	return ( external?.warnings || [] ).map( ( warning ) => {
+		const count = Number( warning.count ) || 0;
+		const variations = Number( warning.by_type?.variation ) || 0;
+		return {
+			kind: warning.code,
+			text: sprintf(
+				/* translators: 1: an add-on's warning, such as "Some products will carry more than three labels."; 2: how many products, such as "1,200 products", or products and variations, such as "1,200 products and 50 variations". */
+				__( '%1$s — %2$s', 'bulk-catalogue-manager-for-woocommerce' ),
+				warning.sentence,
+				variations > 0
+					? countPhrase( count, {
+							products: Number( warning.by_type?.product ) || 0,
+							variations,
+						} )
+					: productsPhrase( count )
+			),
+		};
+	} );
+}
+
+/**
+ * The warning sentences, in the block's order (Engine\Preview::WARNINGS).
+ * Negative stock is counted in the words of what the change reaches
+ * (ticket 11's counting rule, T114): products, variations, or items when it
+ * reaches both, from the preview's `totals.by_type`.
+ *
+ * @param {Object}      warnings Counts by kind.
+ * @param {Object|null} byType   The preview's `totals.by_type`, or null.
  * @return {Array<{kind: string, text: string}>} Sentences for the kinds counted.
  */
-export function warningSentences( warnings ) {
+export function warningSentences( warnings, byType = null ) {
 	const count = ( kind ) => Number( warnings?.[ kind ] ) || 0;
 	const out = [];
 	const add = ( kind, text ) => {
@@ -97,19 +139,8 @@ export function warningSentences( warnings ) {
 			formatNumber( count( 'price_not_positive' ) )
 		)
 	);
-	add(
-		'stock_negative',
-		sprintf(
-			/* translators: %s: a number, such as "3". */
-			_n(
-				'Stock would go below zero on %s product.',
-				'Stock would go below zero on %s products.',
-				count( 'stock_negative' ),
-				'bulk-catalogue-manager-for-woocommerce'
-			),
-			formatNumber( count( 'stock_negative' ) )
-		)
-	);
+	add( 'stock_negative', negativeStock( count( 'stock_negative' ), byType ) );
+	add( 'stock_cleared', stockCleared( count( 'stock_cleared' ), byType ) );
 	add(
 		'sku_duplicate',
 		sprintf(
@@ -123,7 +154,115 @@ export function warningSentences( warnings ) {
 			formatNumber( count( 'sku_duplicate' ) )
 		)
 	);
+	add(
+		'publication_password_cleared',
+		sprintf(
+			/* translators: %s: the number of products whose publication passwords will be cleared. */
+			_n(
+				'The publication password will be cleared on %s product.',
+				'Publication passwords will be cleared on %s products.',
+				count( 'publication_password_cleared' ),
+				'bulk-catalogue-manager-for-woocommerce'
+			),
+			formatNumber( count( 'publication_password_cleared' ) )
+		)
+	);
 	return out;
+}
+
+/**
+ * "Stock would go below zero on 3 products." — or variations, or items when
+ * the change reaches both.
+ *
+ * @param {number}      count  How many.
+ * @param {Object|null} byType The preview's `totals.by_type`, or null.
+ * @return {string} Sentence.
+ */
+function negativeStock( count, byType ) {
+	const products = Number( byType?.product?.matched ) || 0;
+	const variations = Number( byType?.variation?.matched ) || 0;
+	if ( products > 0 && variations > 0 ) {
+		return sprintf(
+			/* translators: %s: a number of products and variations together, such as "3". */
+			_n(
+				'Stock would go below zero on %s item.',
+				'Stock would go below zero on %s items.',
+				count,
+				'bulk-catalogue-manager-for-woocommerce'
+			),
+			formatNumber( count )
+		);
+	}
+	if ( variations > 0 ) {
+		return sprintf(
+			/* translators: %s: a number of variations, such as "3". */
+			_n(
+				'Stock would go below zero on %s variation.',
+				'Stock would go below zero on %s variations.',
+				count,
+				'bulk-catalogue-manager-for-woocommerce'
+			),
+			formatNumber( count )
+		);
+	}
+	return sprintf(
+		/* translators: %s: a number, such as "3". */
+		_n(
+			'Stock would go below zero on %s product.',
+			'Stock would go below zero on %s products.',
+			count,
+			'bulk-catalogue-manager-for-woocommerce'
+		),
+		formatNumber( count )
+	);
+}
+
+/**
+ * "Turning off Manage stock clears the stock quantity, backorders and low
+ * stock threshold on 3 products. Undo puts them back." — or variations, or
+ * items when the change reaches both.
+ *
+ * @param {number}      count  How many.
+ * @param {Object|null} byType The preview's `totals.by_type`, or null.
+ * @return {string} Sentence.
+ */
+function stockCleared( count, byType ) {
+	const products = Number( byType?.product?.matched ) || 0;
+	const variations = Number( byType?.variation?.matched ) || 0;
+	if ( products > 0 && variations > 0 ) {
+		return sprintf(
+			/* translators: %s: a number of products and variations together, such as "3". */
+			_n(
+				'Turning off Manage stock clears the stock quantity, backorders and low stock threshold on %s item. Undo puts them back.',
+				'Turning off Manage stock clears the stock quantity, backorders and low stock threshold on %s items. Undo puts them back.',
+				count,
+				'bulk-catalogue-manager-for-woocommerce'
+			),
+			formatNumber( count )
+		);
+	}
+	if ( variations > 0 ) {
+		return sprintf(
+			/* translators: %s: a number of variations, such as "3". */
+			_n(
+				'Turning off Manage stock clears the stock quantity, backorders and low stock threshold on %s variation. Undo puts them back.',
+				'Turning off Manage stock clears the stock quantity, backorders and low stock threshold on %s variations. Undo puts them back.',
+				count,
+				'bulk-catalogue-manager-for-woocommerce'
+			),
+			formatNumber( count )
+		);
+	}
+	return sprintf(
+		/* translators: %s: a number, such as "3". */
+		_n(
+			'Turning off Manage stock clears the stock quantity, backorders and low stock threshold on %s product. Undo puts them back.',
+			'Turning off Manage stock clears the stock quantity, backorders and low stock threshold on %s products. Undo puts them back.',
+			count,
+			'bulk-catalogue-manager-for-woocommerce'
+		),
+		formatNumber( count )
+	);
 }
 
 /**
@@ -168,15 +307,49 @@ export function summarySentence( response, fieldNames ) {
 }
 
 /**
+ * A sample row's current value as text: an add-on's own words (T106, never a
+ * raw value), or the stored value formatted by its field.
+ *
+ * @param {Object|null} field Field descriptor.
+ * @param {Object}      row   Sample row.
+ * @param {Object}      terms Term options by source.
+ * @return {string} Text.
+ */
+function nowText( field, row, terms ) {
+	if ( row.external ) {
+		return row.current || '—';
+	}
+	return formatValue( field, row.current, terms );
+}
+
+/**
  * One sample row's After cell.
  *
- * @param {Object} props       Props.
- * @param {Object} props.row   Sample row.
- * @param {Object} props.field Field descriptor.
- * @param {Object} props.terms Term options by source.
+ * @param {Object} props          Props.
+ * @param {Object} props.row      Sample row.
+ * @param {Object} props.field    Field descriptor.
+ * @param {Object} props.terms    Term options by source.
+ * @param {Object} props.registry The `/fields` payload, for a Status row's Off/On words.
  * @return {Element} Cell content.
  */
-function AfterCell( { row, field, terms } ) {
+function AfterCell( { row, field, terms, registry } ) {
+	// A Status step's Off/On outcome (T91) says what happens in its own words.
+	const outcome = row.note
+		? outcomeLabel( registry, row.note, row.context || {} )
+		: '';
+	if ( outcome ) {
+		return (
+			<span
+				className={
+					row.state === 'changed'
+						? 'bulkcat-bulk__to'
+						: 'bulkcat-bulk__note'
+				}
+			>
+				{ outcome }
+			</span>
+		);
+	}
 	if ( row.state === 'already' ) {
 		return (
 			<span className="bulkcat-bulk__note">
@@ -212,9 +385,95 @@ function AfterCell( { row, field, terms } ) {
 				</strong>
 			) }
 			<strong className="bulkcat-bulk__to">
-				{ formatValue( field, row.new, terms ) }
+				{ row.external
+					? row.new
+					: formatValue( field, row.new, terms ) }
 			</strong>
+			{ publicationSentence( registry, row.context ) && (
+				<span className="bulkcat-bulk__note">
+					{ publicationSentence( registry, row.context ) }
+				</span>
+			) }
+			{ row.password_cleared === true && (
+				<span className="bulkcat-bulk__note">
+					{ __(
+						'The publication password will be cleared.',
+						'bulk-catalogue-manager-for-woocommerce'
+					) }
+				</span>
+			) }
+			{ row.external && row.change && (
+				<span className="bulkcat-bulk__change">{ row.change }</span>
+			) }
+			{ row.external && ( row.notes || [] ).length > 0 && (
+				<ul className="bulkcat-bulk__notes">
+					{ row.notes.map( ( note, index ) => (
+						<li key={ index }>{ note }</li>
+					) ) }
+				</ul>
+			) }
 		</>
+	);
+}
+
+/**
+ * The preview's Off and On block (T91, SPEC §9.1): each counted outcome in
+ * words, conflicts first, then the variations a Published step leaves as they
+ * are, and the products changed elsewhere while Off by name.
+ *
+ * @param {Object}      props          Props.
+ * @param {Object}      props.registry The `/fields` payload.
+ * @param {Object|null} props.block    The preview's `availability` block.
+ * @return {Element|null} The block, or nothing when no step sets Status.
+ */
+function AvailabilityBlock( { registry, block } ) {
+	const lines = availabilityLines( registry, block );
+	const conflicts = Array.isArray( block?.conflicts ) ? block.conflicts : [];
+	if ( ! block || ( lines.length === 0 && conflicts.length === 0 ) ) {
+		return null;
+	}
+	return (
+		<div className="bulkcat-bulk__card" data-block="availability">
+			<h3>
+				{ __(
+					'Legacy Status outcomes',
+					'bulk-catalogue-manager-for-woocommerce'
+				) }
+			</h3>
+			<ul className="bulkcat-bulk__lines">
+				{ lines.map( ( line ) => (
+					<li key={ line.code } className={ 'is-' + line.code }>
+						{ line.text }
+					</li>
+				) ) }
+			</ul>
+			{ conflicts.length > 0 && (
+				<>
+					<p className="bulkcat-bulk__lbl">
+						{ __(
+							'Changed by someone else while Off',
+							'bulk-catalogue-manager-for-woocommerce'
+						) }
+					</p>
+					<ul className="bulkcat-bulk__conflicts">
+						{ conflicts.map( ( conflict ) => (
+							<li key={ conflict.object_id }>
+								{ sprintf(
+									/* translators: 1: a product's name; 2: its status now, such as "Private"; 3: the status saved before Off, such as "Published". */
+									__(
+										'%1$s: now %2$s, saved as %3$s',
+										'bulk-catalogue-manager-for-woocommerce'
+									),
+									conflict.name,
+									statusName( registry, conflict.current ),
+									statusName( registry, conflict.saved )
+								) }
+							</li>
+						) ) }
+					</ul>
+				</>
+			) }
+		</div>
 	);
 }
 
@@ -250,18 +509,24 @@ export function PreviewResult( {
 	const byType = totals.by_type || {};
 	const variationRows = Number( byType.variation?.matched ) || 0;
 	const sample = Array.isArray( response?.sample ) ? response.sample : [];
+	// Ticket 133 bug 4: one row per product or variation, with all its steps.
+	const objects = groupSample( sample );
 	const rows = changedOnly
-		? sample.filter( ( row ) => row.state === 'changed' )
-		: sample;
+		? objects.filter( ( row ) => row.state === 'changed' )
+		: objects;
 	const failures = Object.entries( totals.would_fail || {} );
-	const warnings = warningSentences( response?.warnings );
+	const warnings = [
+		...warningSentences( response?.warnings, byType ),
+		...externalWarnings( response?.external ),
+	];
 	const unreadable = Array.isArray( response?.unreadable )
 		? response.unreadable
 		: [];
-	const allRows = Object.values( totals.rows || {} ).reduce(
-		( sum, each ) => sum + ( Number( each ) || 0 ),
-		0
-	);
+	// T83: every chosen object that cannot be changed now, even beyond the
+	// listed ones; they stay in the change and are recorded as not changed.
+	const unavailable =
+		Number( response?.unavailable_count ?? unreadable.length ) || 0;
+	const allRows = Math.max( Number( totals.matched ) || 0, objects.length );
 	const fieldNames = [
 		...new Set(
 			operations
@@ -379,6 +644,11 @@ export function PreviewResult( {
 				</dl>
 			</div>
 
+			<AvailabilityBlock
+				registry={ registry }
+				block={ response?.availability || null }
+			/>
+
 			<div className="bulkcat-bulk__samplebar">
 				<fieldset className="bulkcat-bulk__seg">
 					<legend className="bulkcat-bulk__lbl">
@@ -488,56 +758,77 @@ export function PreviewResult( {
 						</tr>
 					</thead>
 					<tbody>
-						{ rows.map( ( row, index ) => {
-							const field = fieldByKey( registry, row.field );
+						{ rows.map( ( group ) => {
 							const classes = [
-								row.object_type === 'variation'
+								group.object_type === 'variation'
 									? 'is-variation'
 									: '',
-								[ 'skipped', 'failed' ].includes( row.state )
+								[ 'skipped', 'failed' ].includes( group.state )
 									? 'is-skip'
 									: '',
-								row.state === 'already' ? 'is-already' : '',
+								group.state === 'already' ? 'is-already' : '',
 							]
 								.filter( Boolean )
 								.join( ' ' );
+							const fieldOf = ( line ) =>
+								fieldByKey( registry, line.field );
 							return (
 								<tr
-									key={
-										row.object_id +
-										':' +
-										row.field +
-										':' +
-										index
-									}
+									key={ group.key }
 									className={ classes || undefined }
-									data-state={ row.state }
+									data-state={ group.state }
 								>
-									<th scope="row">{ row.name }</th>
-									<td>{ field?.label || row.field }</td>
+									<th scope="row">{ group.name }</th>
+									<td>
+										{ group.lines.map( ( line, index ) => (
+											<div
+												key={ index }
+												className="bulkcat-bulk__step"
+											>
+												{ line.fieldLabel ||
+													fieldOf( line )?.label ||
+													line.field }
+											</div>
+										) ) }
+									</td>
 									<td className="bulkcat-bulk__from">
-										{ row.state === 'changed' ? (
-											<del>
-												{ formatValue(
-													field,
-													row.current,
-													terms
+										{ group.lines.map( ( line, index ) => (
+											<div
+												key={ index }
+												className="bulkcat-bulk__step"
+											>
+												{ line.state === 'changed' ? (
+													<del>
+														{ nowText(
+															fieldOf( line ),
+															line,
+															terms
+														) }
+													</del>
+												) : (
+													nowText(
+														fieldOf( line ),
+														line,
+														terms
+													)
 												) }
-											</del>
-										) : (
-											formatValue(
-												field,
-												row.current,
-												terms
-											)
-										) }
+											</div>
+										) ) }
 									</td>
 									<td>
-										<AfterCell
-											row={ row }
-											field={ field }
-											terms={ terms }
-										/>
+										{ group.lines.map( ( line, index ) => (
+											<div
+												key={ index }
+												className="bulkcat-bulk__step"
+											>
+												<AfterCell
+													row={ line }
+													field={ fieldOf( line ) }
+													terms={ terms }
+													registry={ registry }
+												/>
+											</div>
+										) ) }
 									</td>
 								</tr>
 							);
@@ -546,14 +837,14 @@ export function PreviewResult( {
 				</table>
 			</div>
 			<p className="bulkcat-bulk__hint">
-				{ sample.length < allRows
+				{ objects.length < allRows
 					? sprintf(
 							/* translators: 1: rows shown, such as "25"; 2: rows in all, such as "1,284". */
 							__(
 								'The first %1$s of %2$s rows are shown. The same change applies to the rest.',
 								'bulk-catalogue-manager-for-woocommerce'
 							),
-							formatNumber( sample.length ),
+							formatNumber( objects.length ),
 							formatNumber( allRows )
 						)
 					: __(
@@ -586,7 +877,7 @@ export function PreviewResult( {
 				</div>
 			) }
 
-			{ unreadable.length > 0 && (
+			{ unavailable > 0 && (
 				<div
 					className="bulkcat-bulk__notice is-warn"
 					data-block="unreadable"
@@ -595,12 +886,12 @@ export function PreviewResult( {
 						{ sprintf(
 							/* translators: %s: a number, such as "3". */
 							_n(
-								'%s product could not be read and is left out of this change.',
-								'%s products could not be read and are left out of this change.',
-								unreadable.length,
+								'%s chosen product cannot be changed now. It stays in this change and will be recorded as not changed.',
+								'%s chosen products cannot be changed now. They stay in this change and will be recorded as not changed.',
+								unavailable,
 								'bulk-catalogue-manager-for-woocommerce'
 							),
-							formatNumber( unreadable.length )
+							formatNumber( unavailable )
 						) }
 					</strong>
 					<p>

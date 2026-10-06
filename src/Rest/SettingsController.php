@@ -290,7 +290,7 @@ final class SettingsController implements ReadController {
 			Schema::BATCH_SIZE            => __( 'How many products each background run saves, from 10 to 100. Lower this if your host is slow; it is also lowered automatically when a run nears the time limit.', 'bulk-catalogue-manager-for-woocommerce' ),
 			Schema::VARIATION_BATCH_SIZE  => __( 'How many variations each background run saves after its products, from 10 to 100. Variations are lighter to save than products, so this can usually stay higher.', 'bulk-catalogue-manager-for-woocommerce' ),
 			Schema::HISTORY_DAYS          => __( 'Older changes are removed from the history, along with what is needed to undo them.', 'bulk-catalogue-manager-for-woocommerce' ),
-			Schema::CONFIRM_THRESHOLD     => __( 'Above this many rows, Apply shows the count again and needs one more click. Changes that draft, hide or empty a field always ask.', 'bulk-catalogue-manager-for-woocommerce' ),
+			Schema::CONFIRM_THRESHOLD     => __( 'At or above this many rows, Apply shows the count again and needs one more click. Changes that set Status to Draft or Pending Review, hide products or empty a field always ask.', 'bulk-catalogue-manager-for-woocommerce' ),
 			Schema::VARIATIONS_STATUS,
 			Schema::VARIATIONS_VISIBILITY,
 			Schema::VARIATIONS_PRICE,

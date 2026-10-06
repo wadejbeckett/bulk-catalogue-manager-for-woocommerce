@@ -41,3 +41,89 @@
 .bulkcat-selection__bar.is-draggable {
 	cursor: grab;
 }
+
+.bulkcat-selection__notice p {
+	margin: 0 0 4px;
+}
+
+.bulkcat-selection__state {
+	color: #50575e;
+	font-size: 12px;
+}
+
+// T84: Review selected products, in the details drawer's slide-over.
+.bulkcat-review__count {
+	margin: 0 0 4px;
+	font-weight: 600;
+}
+
+.bulkcat-review__error {
+	color: #b32d2e;
+}
+
+.bulkcat-review__list {
+	margin: 12px 0;
+	padding: 0;
+	list-style: none;
+	border-top: 1px solid #dcdcde;
+}
+
+.bulkcat-review__item {
+	display: grid;
+	grid-template-columns: 1fr auto;
+	gap: 2px 10px;
+	align-items: center;
+	margin: 0;
+	padding: 8px 0;
+	border-bottom: 1px solid #dcdcde;
+
+	.button {
+		grid-row: 1 / span 2;
+		grid-column: 2;
+	}
+}
+
+.bulkcat-review__name {
+	font-weight: 600;
+	overflow-wrap: anywhere;
+}
+
+.bulkcat-review__meta {
+	color: #50575e;
+	font-size: 12px;
+}
+
+.bulkcat-review__item.is-unavailable .bulkcat-review__name {
+	font-weight: 400;
+	font-style: italic;
+	color: #50575e;
+}
+
+.bulkcat-review__pages {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin: 8px 0 16px;
+}
+
+// T110: while another page loads, the rows listed stay but cannot be removed.
+.bulkcat-review__list.is-loading {
+	opacity: 0.6;
+}
+
+// The pager waits with aria-disabled, so a pressed button keeps the focus.
+.bulkcat-review__pages .button[aria-disabled="true"] {
+	color: #646970;
+	background: #f6f7f7;
+	border-color: #dcdcde;
+	cursor: default;
+}
+
+.bulkcat-review__loading {
+	margin: 0 0 8px;
+	color: #50575e;
+
+	&:empty {
+		margin: 0;
+	}
+}

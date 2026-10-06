@@ -57,6 +57,7 @@ final class PreviewTest extends TestCase {
 		bulkcat_test_reset();
 		$GLOBALS['bulkcat_test']['caps']  = [
 			'edit_post'            => true,
+			'publish_products'     => true,
 			'assign_product_terms' => true,
 		];
 		$GLOBALS['bulkcat_test']['terms'] = [
@@ -102,6 +103,123 @@ final class PreviewTest extends TestCase {
 		}
 		foreach ( $this->products as $id => $product ) {
 			$this->assertSame( $this->seeded[ $id ], $product->props, "Object $id was changed." );
+		}
+	}
+
+	public function test_native_password_clear_projection_is_redacted_and_counted_beyond_the_sample(): void {
+		$secret = "  <synthetic> ' \\ opaque password  ";
+		foreach ( [ 101, 102 ] as $id ) {
+			$this->load(
+				$id,
+				'simple',
+				[
+					'name'          => 'Preview subject',
+					'status'        => 'publish',
+					'post_password' => $secret,
+				]
+			);
+		}
+		$answer = self::preview()->run(
+			Selection::of_ids( [ 101, 102 ] ),
+			self::ops(
+				[
+					[
+						'set_status',
+						[
+							'field'               => 'status',
+							'value'               => 'private',
+							'apply_to_variations' => false,
+						],
+					],
+				]
+			),
+			1
+		);
+		$this->assertTrue( is_array( $answer ) );
+		$this->assertCount( 1, $answer['sample'] );
+		$this->assertTrue( $answer['sample'][0]['password_cleared'] ?? false );
+		$this->assertSame( 2, $answer['warnings']['publication_password_cleared'] ?? 0 );
+		$this->assertStringNotContainsString( 'opaque password', wp_json_encode( $answer ), 'The marker remains searchable even when JSON escapes password punctuation.' );
+		$this->assertStringNotContainsString( hash( 'sha256', $secret ), wp_json_encode( $answer ) );
+		$this->assertSame( 'private', $answer['operations'][0]['args']['value'] );
+	}
+
+	public function test_native_password_projection_preserves_request_and_hash_compatibility(): void {
+		$actions    = new Actions( new Fields() );
+		$preview    = new Preview( $actions, new BatchFactory( $actions ), Preview::CAP, static fn(): int => 1790899200 );
+		$operations = self::ops(
+			[
+				[
+					'set_status',
+					[
+						'field'               => 'status',
+						'value'               => 'private',
+						'apply_to_variations' => false,
+					],
+				],
+			]
+		);
+		$answers    = [];
+		foreach ( [ '', 'synthetic opaque password' ] as $password ) {
+			$this->load(
+				101,
+				'simple',
+				[
+					'name'          => 'Preview subject',
+					'status'        => 'publish',
+					'post_password' => $password,
+				]
+			);
+			$answers[] = $preview->run( Selection::of_ids( [ 101 ] ), $operations );
+		}
+		$this->assertTrue( $answers[1]['sample'][0]['password_cleared'] );
+		$this->assertSame( 1, $answers[1]['warnings']['publication_password_cleared'] );
+		unset( $answers[1]['sample'][0]['password_cleared'], $answers[1]['warnings']['publication_password_cleared'] );
+		$this->assertSame( $answers[0], $answers[1], 'Only the redacted consequence projection changes; operations, hash and old response properties remain identical.' );
+	}
+
+	public function test_native_password_projection_never_claims_an_unperformed_clear(): void {
+		foreach ( [ 'blank', 'denied', 'already', 'variation', 'failed_status', 'failed_password' ] as $case ) {
+			$id      = 'variation' === $case ? 201 : 101;
+			$subject = $this->load(
+				$id,
+				'variation' === $case ? 'variation' : 'simple',
+				[
+					'name'          => 'Preview subject',
+					'parent_id'     => 201 === $id ? 103 : 0,
+					'status'        => 'already' === $case ? 'private' : 'publish',
+					'post_password' => 'blank' === $case ? '' : 'nonempty synthetic password',
+				]
+			);
+			$GLOBALS['bulkcat_test']['caps']['edit_post'] = 'denied' !== $case;
+			if ( 'variation' === $case ) {
+				$GLOBALS['bulkcat_test']['post_fields'][201]['post_password'] = 'nonempty synthetic password';
+			}
+			if ( str_starts_with( $case, 'failed_' ) ) {
+				$subject->refuse[ 'failed_status' === $case ? 'set_status' : 'set_post_password' ] = 'Synthetic projection refusal.';
+			}
+			$answer = self::preview()->run(
+				Selection::of_ids( [ $id ] ),
+				self::ops(
+					[
+						[
+							'set_status',
+							[
+								'field'               => 'status',
+								'value'               => 'private',
+								'apply_to_variations' => false,
+							],
+						],
+					]
+				)
+			);
+			$this->assertTrue( is_array( $answer ), $case );
+			$this->assertArrayNotHasKey( 'publication_password_cleared', $answer['warnings'], $case );
+			$this->assertArrayNotHasKey( 'password_cleared', $answer['sample'][0], $case );
+			$this->assertSame( array_fill_keys( Preview::WARNINGS, 0 ), $answer['warnings'], 'Existing warning shape without a clear: ' . $case );
+			if ( 'variation' === $case ) {
+				$this->assertSame( 'bulkcat_variation_password_unsupported', $answer['sample'][0]['code'] );
+			}
 		}
 	}
 
@@ -184,6 +302,33 @@ final class PreviewTest extends TestCase {
 		return array_map( static fn( array $r ): array => [ $r['object_id'], $r['field'], $r['current'], $r['new'], $r['state'] ], $result['sample'] );
 	}
 
+	public function test_the_sample_holds_whole_products_with_every_step(): void {
+		// Ticket 133 bug 4: a sample of 2 with two steps shows two products, each with both steps, not one product twice.
+		$result = $this->answer(
+			Selection::of_ids( [ 101, 104, 201 ] ),
+			self::ops(
+				[
+					[
+						'set_value',
+						[
+							'field' => 'regular_price',
+							'value' => '30',
+						],
+					],
+					[
+						'set_value',
+						[
+							'field' => 'regular_price',
+							'value' => '35',
+						],
+					],
+				]
+			),
+			2
+		);
+		$this->assertSame( [ 101, 101, 104, 104 ], array_column( $result['sample'], 'object_id' ) );
+	}
+
 	public function test_set_value_totals_and_sample(): void {
 		$result = $this->answer( Selection::of_ids( [ 101, 102, 103, 104, 201 ] ), self::set( 'regular_price', '25' ) );
 
@@ -241,8 +386,11 @@ final class PreviewTest extends TestCase {
 				'reason'      => '',
 				'code'        => '',
 				'replaces'    => false,
+				'note'        => '',
+				'context'     => [],
 			],
-			$first
+			$first,
+			'T89: every sample row carries the Status switch\'s note and context, empty for any other step.'
 		);
 		$this->assertSame( 'variation', $result['sample'][4]['object_type'] );
 		$this->assertSame( self::VARIABLE_PRICE, $result['sample'][2]['reason'] );
@@ -254,6 +402,7 @@ final class PreviewTest extends TestCase {
 				'count'            => 5,
 				'variations_added' => 0,
 				'parents_left_out' => 0,
+				'variations_kept'  => 0,
 			],
 			$result['selection']
 		);
@@ -300,6 +449,7 @@ final class PreviewTest extends TestCase {
 				'current_count'    => 7,
 				'variations_added' => 0,
 				'parents_left_out' => 0,
+				'variations_kept'  => 0,
 			],
 			$result['selection'],
 			'A filter selection answers the count when chosen and the count now.'
@@ -458,6 +608,12 @@ final class PreviewTest extends TestCase {
 
 		$quiet = $this->answer( Selection::of_ids( [ 101, 106 ] ), self::set( 'regular_price', '99' ) );
 		$this->assertSame( $none, $quiet['warnings'] );
+
+		// TESTS-1: turning stock management off clears the quantities WooCommerce holds (still undoable).
+		$off = $this->answer( Selection::of_ids( [ 101, 106, 107 ] ), self::set( 'manage_stock', false ) );
+		$this->assertSame( array_merge( $none, [ 'stock_cleared' => 2 ] ), $off['warnings'], '107 does not manage stock, so nothing of it is cleared.' );
+		$on = $this->answer( Selection::of_ids( [ 107 ] ), self::set( 'manage_stock', true ) );
+		$this->assertSame( $none, $on['warnings'] );
 	}
 
 	public function test_sample_sizes(): void {
@@ -606,6 +762,29 @@ final class PreviewTest extends TestCase {
 		$this->assertSame( [ 'changed', 'skipped' ], array_column( $result['sample'], 'state' ) );
 		$this->assertSame( 'bulkcat_cannot_edit', $result['sample'][1]['code'] );
 		$this->assertSame( 1, $result['totals']['would_change'] );
+		// T83: nothing of an object the user may not edit is shown — no name, no current or new value.
+		$this->assertSame( [ 104, 'regular_price', null, null, 'skipped' ], self::rows( $result )[1] );
+		$this->assertSame( '', $result['sample'][1]['name'] );
+		$this->assertSame( 0, $result['warnings']['stock_negative'], 'Its stock is not read for a warning either.' );
+	}
+
+	public function test_an_exact_scope_member_that_changed_kind_is_unreadable_and_never_computed(): void {
+		// Chosen as a variation, 104 is a simple product now; 999 no longer exists.
+		$selection = Selection::of_members(
+			[
+				'products'   => [ 101 ],
+				'variations' => [ 104, 999 ],
+			]
+		);
+		$result    = self::preview()->run( $selection, self::set( 'regular_price', '25' ), 1000, '', new Settings( [] ), true );
+		$this->assertTrue( is_array( $result ) );
+		$this->assertSame( [ 104, 999 ], $result['unreadable'] );
+		$this->assertSame( 2, $result['unavailable_count'] );
+		$this->assertSame( [ 101 ], array_column( $result['sample'], 'object_id' ), 'The changed member is not computed under the kind it was chosen as.' );
+		$this->assertSame( 1, $result['totals']['would_change'] );
+		$this->assertSame( 3, $result['totals']['matched'], 'Unavailable members stay in the scope.' );
+		$this->assertSame( 1, $result['totals']['computed'] );
+		$this->assertSame( 1, preg_match( '/^[a-f0-9]{64}$/', (string) $result['scope_hash'] ) );
 	}
 
 	public function test_refusals_come_before_anything_is_read(): void {
@@ -702,6 +881,7 @@ final class PreviewTest extends TestCase {
 				'count'            => 2,
 				'variations_added' => 2,
 				'parents_left_out' => 0,
+				'variations_kept'  => 0,
 			],
 			$result['selection']
 		);
@@ -713,6 +893,179 @@ final class PreviewTest extends TestCase {
 
 		$one = $this->answer( Selection::of_ids( [ 103 ] ), self::set( 'regular_price', '70' ) );
 		$this->assertSame( 1, $one['totals']['matched'], 'With the price default off, a parent alone reaches nothing.' );
+	}
+
+	/**
+	 * A seeded product given a status and, when named, its own Off record (T91).
+	 *
+	 * @param string      $status Its status.
+	 * @param string|null $saved  The status its record saved, or null for none.
+	 */
+	private function off_state( int $id, string $status, ?string $saved = null, string $type = 'simple' ): void {
+		$props           = $this->seeded[ $id ];
+		$props['status'] = $status;
+		unset( $props['id'] );
+		$product = $this->load( $id, $type, $props );
+		if ( null !== $saved ) {
+			$product->meta['_bulkcat_availability_off'] = \BulkCatalogueManager\Availability\OffRecord::create( $id, $saved, '2026-09-01T08:00:00Z', 7 )->to_json();
+		}
+	}
+
+	public function test_new_status_preview_has_no_legacy_restores_or_conflicts(): void {
+		$this->off_state( 101, 'publish' );
+		$this->off_state( 102, 'draft', 'publish' );
+		$this->off_state( 104, 'draft', 'private' );
+		$this->off_state( 106, 'private', 'publish' );
+		$this->off_state( 105, 'draft', null, 'grouped' );
+		$result = $this->answer( Selection::of_ids( [ 101, 102, 104, 105, 106 ] ), self::set( 'status', 'publish' ) );
+		$this->assertSame( 'set_status', $result['operations'][0]['action'] );
+		$this->assertSame( [ 'totals', 'summary', 'sample', 'warnings', 'unreadable', 'selection', 'hash', 'unavailable_count', 'scope_hash', 'operations', 'availability' ], array_keys( $result ) );
+		$block = $result['availability'];
+		$this->assertSame( [ 'counts', 'restores', 'variations_kept', 'conflicts' ], array_keys( $block ) );
+		$this->assertSame( \BulkCatalogueManager\Availability\Outcome::CODES, array_keys( $block['counts'] ) );
+		$this->assertSame( [], array_filter( $block['counts'] ) );
+		$this->assertSame(
+			[
+				'private' => 0,
+				'pending' => 0,
+			],
+			$block['restores']
+		);
+		$this->assertSame( 0, $block['variations_kept'] );
+		$this->assertSame( [], $block['conflicts'] );
+		$this->assertSame(
+			[
+				[ 101, 'status', 'publish', 'publish', 'already' ],
+				[ 102, 'status', 'draft', 'publish', 'changed' ],
+				[ 104, 'status', 'draft', 'publish', 'changed' ],
+				[ 105, 'status', 'draft', 'publish', 'changed' ],
+				[ 106, 'status', 'private', 'publish', 'changed' ],
+			],
+			self::rows( $result )
+		);
+		$this->assertSame( 4, $result['totals']['would_change'] );
+		$this->assertSame( 5, array_sum( $result['totals']['rows'] ), 'One row per product: its status.' );
+		$this->assertSame( 'Status will change on 4 products.', $result['summary'] );
+		foreach ( $result['sample'] as $row ) {
+			$this->assertSame( '', $row['note'] );
+			$this->assertArrayNotHasKey( 'restores', $row['context'] );
+		}
+	}
+
+	public function test_preview_refuses_explicit_legacy_keep_intent(): void {
+		$this->off_state( 106, 'private', 'publish' );
+		$result = self::preview()->run(
+			Selection::of_ids( [ 106 ] ),
+			self::ops(
+				[
+					[
+						'set_value',
+						[
+							'field'               => 'status',
+							'value'               => 'publish',
+							'keep_changed_status' => true,
+						],
+					],
+				]
+			)
+		);
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertStringContainsString( 'Reload and review', $result->get_error_message() );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['watched'] ?? [] );
+	}
+
+	public function test_draft_preview_counts_native_changes_and_noops_without_off_outcomes(): void {
+		$this->off_state( 101, 'publish' );
+		$this->off_state( 102, 'draft', 'publish' );
+		$this->off_state( 104, 'draft' );
+		$this->off_state( 106, 'pending', 'publish' );
+		$result = $this->answer( Selection::of_ids( [ 101, 102, 104, 106 ] ), self::set( 'status', 'draft' ) );
+		$this->assertSame(
+			[
+				[ 101, 'status', 'publish', 'draft', 'changed' ],
+				[ 102, 'status', 'draft', 'draft', 'already' ],
+				[ 104, 'status', 'draft', 'draft', 'already' ],
+				[ 106, 'status', 'pending', 'draft', 'changed' ],
+			],
+			self::rows( $result )
+		);
+		$this->assertSame( [ 2, 2 ], [ $result['totals']['would_change'], $result['totals']['already'] ] );
+		$this->assertSame( [], array_filter( $result['availability']['counts'] ) );
+		$this->assertSame( [], $result['availability']['conflicts'] );
+	}
+
+	public function test_no_status_step_gives_no_block_and_counts_scale_when_estimated(): void {
+		$this->assertNull( $this->answer( Selection::of_ids( [ 101 ] ), self::set( 'regular_price', '12' ) )['availability'] );
+		foreach ( [ 101, 102, 104, 106 ] as $id ) {
+			$this->off_state( $id, 'publish' );
+		}
+		$estimated = $this->answer( Selection::of_ids( [ 101, 102, 104, 106 ] ), self::set( 'status', 'draft' ), 1000, self::preview( 2 ) );
+		$this->assertTrue( $estimated['totals']['estimated'] );
+		$this->assertSame( 4, $estimated['totals']['would_change'], '2 computed, scaled to 4.' );
+		$this->assertSame( [], array_filter( $estimated['availability']['counts'] ) );
+	}
+
+	public function test_estimated_parts_add_up_to_the_totals_they_split(): void {
+		// T114 (ticket 11): each scaled part rounded on its own could exceed the scaled total
+		// (1 product and 1 variation of 2 computed, scaled 1.5 times: 2 + 2 of 3).
+		$split = $this->answer( Selection::of_ids( [ 106, 201, 202 ] ), self::set( 'regular_price', '25' ), 1000, self::preview( 2 ) );
+		$this->assertTrue( $split['totals']['estimated'] );
+		$this->assertSame( 3, $split['totals']['would_change'] );
+		$this->assertSame( 3, $split['totals']['by_type']['product']['would_change'] + $split['totals']['by_type']['variation']['would_change'], 'Products and variations add up to the total shown.' );
+		$this->assertSame( array_sum( $split['totals']['rows'] ), (int) round( 2 * 1.5 ), 'Rows scaled as one.' );
+
+		// New Publish ignores remembered Private/Pending even for estimated totals.
+		$this->off_state( 101, 'draft', 'private' );
+		$this->off_state( 102, 'draft', 'pending' );
+		$this->off_state( 104, 'draft', 'private' );
+		$on = $this->answer( Selection::of_ids( [ 101, 102, 104 ] ), self::set( 'status', 'publish' ), 1000, self::preview( 2 ) );
+		$this->assertTrue( $on['totals']['estimated'] );
+		$this->assertSame( 3, $on['totals']['would_change'] );
+		$this->assertSame( 3, $on['totals']['by_type']['product']['would_change'] );
+		$this->assertSame( 0, array_sum( $on['availability']['restores'] ) );
+		$this->assertSame( 0, array_sum( $on['availability']['counts'] ) );
+	}
+
+	public function test_native_changes_keep_sample_size_and_object_order_without_legacy_conflicts(): void {
+		foreach ( [ 101, 102, 104, 106 ] as $id ) {
+			$this->off_state( $id, 'private', 'publish' );
+		}
+		$result = $this->answer( Selection::of_ids( [ 106, 101, 104, 102 ] ), self::set( 'status', 'publish' ), 2 );
+		$this->assertSame( 4, $result['totals']['would_change'] );
+		$this->assertSame( [], $result['availability']['conflicts'] );
+		$this->assertSame( [ 106, 101 ], array_column( $result['sample'], 'object_id' ), 'In computation order, bounded by sample size.' );
+	}
+
+	public function test_new_status_cascade_is_not_kept_back_by_a_legacy_parent_record(): void {
+		$this->off_state( 103, 'draft', 'publish', 'variable' );
+		$GLOBALS['wpdb']->responses = [
+			'/^SELECT post_id, meta_value FROM `wp_postmeta`/' => static fn(): array => [
+				[
+					'post_id'    => '103',
+					'meta_value' => \BulkCatalogueManager\Availability\OffRecord::create( 103, 'publish', '2026-09-01T08:00:00Z', 7 )->to_json(),
+				],
+			],
+		] + $GLOBALS['wpdb']->responses;
+		$result                     = $this->answer(
+			Selection::of_ids( [ 103 ] ),
+			self::ops(
+				[
+					[
+						'set_value',
+						[
+							'field'               => 'status',
+							'value'               => 'publish',
+							'apply_to_variations' => true,
+						],
+					],
+				]
+			)
+		);
+		$this->assertSame( 0, $result['availability']['variations_kept'] );
+		$this->assertSame( 0, $result['selection']['variations_kept'] );
+		$this->assertSame( 2, $result['selection']['variations_added'] );
+		$this->assertSame( 3, $result['totals']['matched'] );
+		$this->assertSame( 0, $result['availability']['counts']['on'] );
 	}
 
 	public function test_the_summary_names_one_field_and_each_kind_it_changes(): void {

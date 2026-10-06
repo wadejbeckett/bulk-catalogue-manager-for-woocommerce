@@ -18,6 +18,7 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Tests\Unit\Query;
 
+use BulkCatalogueManager\Availability\OffRecord;
 use BulkCatalogueManager\Fields\Registry;
 use BulkCatalogueManager\Query\Catalogue;
 use BulkCatalogueManager\Query\CountCache;
@@ -374,7 +375,7 @@ final class HydratorTest extends TestCase {
 
 		$by_id = array_column( self::catalogue()->page( Criteria::from_array( [ 'per_page' => 3 ] ), [] )['items'], null, 'id' );
 		$item  = $by_id[3];
-		$this->assertSame( array_merge( [ 'id', 'parent_id' ], array_diff( ( new Registry() )->keys(), [ 'id' ] ), [ Hydrator::THUMBNAIL_URL ] ), array_keys( $item ) );
+		$this->assertSame( array_merge( [ 'id', 'parent_id' ], array_diff( ( new Registry() )->keys(), [ 'id' ] ), [ Hydrator::THUMBNAIL_URL, Hydrator::OFF_STATE ] ), array_keys( $item ) );
 		$expected = [
 			'id'                 => 3,
 			'parent_id'          => 0,
@@ -455,6 +456,21 @@ final class HydratorTest extends TestCase {
 	}
 
 	public function test_only_the_visible_columns_sources_are_read(): void {
+		$items = self::catalogue()->page( Criteria::from_array( [ 'per_page' => 100 ] ), [ 'name' ] )['items'];
+		$this->assertSame(
+			[
+				'id'        => 1,
+				'parent_id' => 0,
+				'name'      => 'Product 1',
+			],
+			$items[0]
+		);
+		$this->assertSame( [ '_prime_post_caches' ], array_values( array_diff( array_unique( array_column( $GLOBALS['bulkcat_test']['calls'], 0 ) ), [ 'wp_cache_set' ] ) ) );
+		$this->assertSame( 3, bulkcat_test_query_count(), 'Count, page and posts only.' );
+
+		// T92: Status carries Off/On, read from the page's meta in one more query at most.
+		bulkcat_test_reset();
+		self::seed();
 		$items = self::catalogue()->page( Criteria::from_array( [ 'per_page' => 100 ] ), [ 'name', 'status' ] )['items'];
 		$this->assertSame(
 			[
@@ -462,11 +478,12 @@ final class HydratorTest extends TestCase {
 				'parent_id' => 0,
 				'name'      => 'Product 1',
 				'status'    => 'publish',
+				'off_state' => null,
 			],
 			$items[0]
 		);
-		$this->assertSame( [ '_prime_post_caches' ], array_values( array_diff( array_unique( array_column( $GLOBALS['bulkcat_test']['calls'], 0 ) ), [ 'wp_cache_set' ] ) ) );
-		$this->assertSame( 3, bulkcat_test_query_count(), 'Count, page and posts only.' );
+		$this->assertSame( [ '_prime_post_caches', 'update_meta_cache' ], array_values( array_diff( array_unique( array_column( $GLOBALS['bulkcat_test']['calls'], 0 ) ), [ 'wp_cache_set' ] ) ) );
+		$this->assertSame( 4, bulkcat_test_query_count(), 'Count, page, posts and one meta prime.' );
 
 		bulkcat_test_reset();
 		self::seed();
@@ -475,6 +492,49 @@ final class HydratorTest extends TestCase {
 		$this->assertSame( [ '_prime_post_caches', 'update_meta_cache', 'wp_get_object_terms' ], $calls );
 		$terms = array_values( array_filter( $GLOBALS['bulkcat_test']['calls'], static fn( array $call ): bool => 'wp_get_object_terms' === $call[0] ) )[0][1];
 		$this->assertSame( [ 'product_cat' ], $terms[1] );
+	}
+
+	public function test_a_product_row_carries_its_off_state(): void {
+		// T92 (SPEC §5.5): Off, changed outside this screen, or null; a copied record is none.
+		$state                                   = &$GLOBALS['bulkcat_test'];
+		$state['posts'][1]['post_status']        = 'draft';
+		$state['meta'][1][ OffRecord::META_KEY ] = OffRecord::create( 1, 'publish', '2026-09-28T14:03:11Z', 418 )->to_json();
+		$state['meta'][2][ OffRecord::META_KEY ] = OffRecord::create( 2, 'private', '2026-09-28T14:03:11Z', 420 )->to_json();
+		$state['posts'][4]['post_status']        = 'draft';
+		$state['meta'][4][ OffRecord::META_KEY ] = OffRecord::create( 5, 'publish', '2026-09-28T14:03:11Z', 418 )->to_json();
+		$state['posts'][5]['post_status']        = 'draft';
+		$state['posts'][5]['post_date_gmt']      = '2026-10-04 09:30:00';
+		$state['meta'][5][ OffRecord::META_KEY ] = OffRecord::create( 5, 'future', '2026-09-28T14:03:11Z', 421 )->to_json();
+
+		$items = array_column( self::catalogue()->page( Criteria::from_array( [ 'per_page' => 10 ] ), [ 'status' ] )['items'], null, 'id' );
+		$this->assertSame(
+			[
+				'state'            => 'off',
+				'saved'            => 'publish',
+				'saved_label'      => 'Published',
+				'switched_off_gmt' => '2026-09-28 14:03:11',
+				'batch_id'         => 418,
+			],
+			$items[1]['off_state']
+		);
+		$this->assertSame( [ 'changed_outside', 'private', 'Private' ], [ $items[2]['off_state']['state'], $items[2]['off_state']['saved'], $items[2]['off_state']['saved_label'] ] );
+		$this->assertNull( $items[3]['off_state'] );
+		$this->assertNull( $items[4]['off_state'], 'A record naming another product is no record.' );
+		$this->assertSame( [ 'off', 'Scheduled', '2026-10-04 09:30:00' ], [ $items[5]['off_state']['state'], $items[5]['off_state']['saved_label'], $items[5]['off_state']['scheduled_gmt'] ] );
+		$this->assertArrayNotHasKey( 'scheduled_gmt', $items[1]['off_state'], 'Only a saved schedule carries its time.' );
+	}
+
+	public function test_the_status_column_adds_one_meta_prime_at_most_and_only_with_status(): void {
+		// Each read starts cold: the count and the page cache would otherwise answer the second.
+		$without = self::queries_for( [ 'per_page' => 100 ], [ 'name', 'sku' ] );
+		$this->setUp();
+		$with = self::queries_for( [ 'per_page' => 100 ], [ 'name', 'sku', 'status' ] );
+		$this->assertSame( $without, $with, 'A meta column already primed the page: Status adds nothing.' );
+		$this->setUp();
+		$this->assertTrue( self::queries_for( [ 'per_page' => 100 ], [] ) <= 20, 'Every column, inside the SPEC §12.5 budget.' );
+		$this->setUp();
+		$items = self::catalogue()->page( Criteria::from_array( [ 'per_page' => 5 ] ), [ 'name', 'sku' ] )['items'];
+		$this->assertArrayNotHasKey( 'off_state', $items[0], 'No Status column, no Off state.' );
 	}
 
 	public function test_unknown_keys_are_dropped_and_id_is_always_kept(): void {

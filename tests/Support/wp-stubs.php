@@ -67,6 +67,10 @@ if ( ! function_exists( 'add_filter' ) ) {
 		return true === ( $GLOBALS['bulkcat_test']['multisite'] ?? false );
 	}
 
+	function is_main_site(): bool {
+		return ! is_multisite() || 1 === ( $GLOBALS['bulkcat_test']['site'] ?? 1 );
+	}
+
 	function get_sites( array $args = [] ): array {
 		$GLOBALS['bulkcat_test']['get_sites_args'][] = $args;
 		return $GLOBALS['bulkcat_test']['sites'] ?? [];
@@ -117,6 +121,13 @@ if ( ! function_exists( 'add_filter' ) ) {
 	function add_filter( string $hook, mixed $callback, int $priority = 10, int $accepted_args = 1 ): bool {
 		$GLOBALS['bulkcat_test']['filters'][ $hook ][] = [ $callback, $priority, $accepted_args ];
 		return true;
+	}
+
+	/** Remove exactly the named callback/priority, preserving other hooks. */
+	function remove_filter( string $hook, mixed $callback, int $priority = 10 ): bool {
+		$before                                      = $GLOBALS['bulkcat_test']['filters'][ $hook ] ?? [];
+		$GLOBALS['bulkcat_test']['filters'][ $hook ] = array_values( array_filter( $before, static fn( array $entry ): bool=>$entry[0] !== $callback || $entry[1] !== $priority ) );
+		return count( $before ) !== count( $GLOBALS['bulkcat_test']['filters'][ $hook ] );
 	}
 
 	function add_action( string $hook, mixed $callback, int $priority = 10, int $accepted_args = 1 ): bool {
@@ -234,6 +245,21 @@ if ( ! function_exists( 'add_filter' ) ) {
 		function as_enqueue_async_action( string $hook, array $args = [], string $group = '', bool $unique = false, int $priority = 10 ): int {
 			$GLOBALS['bulkcat_test']['scheduled'][] = [ 'enqueue', $hook, $args, $group, null ];
 			return count( $GLOBALS['bulkcat_test']['scheduled'] );
+		}
+
+		/**
+		 * T83: whether an enqueued or single action with this hook (and args
+		 * and group, when given) was recorded and not unscheduled since.
+		 */
+		function as_has_scheduled_action( string $hook, ?array $args = null, string $group = '' ): bool {
+			$found = false;
+			foreach ( $GLOBALS['bulkcat_test']['scheduled'] ?? [] as [ $kind, $entry_hook, $entry_args, $entry_group ] ) {
+				if ( $hook !== $entry_hook || ( null !== $args && $args !== $entry_args ) || ( '' !== $group && $group !== $entry_group ) ) {
+					continue;
+				}
+				$found = in_array( $kind, [ 'enqueue', 'single' ], true ) ? true : ( 'unschedule' === $kind ? false : $found );
+			}
+			return $found;
 		}
 
 		function as_schedule_single_action( int $timestamp, string $hook, array $args = [], string $group = '', bool $unique = false, int $priority = 10 ): int {
@@ -377,8 +403,55 @@ if ( ! function_exists( 'add_filter' ) ) {
 		return $response instanceof WP_REST_Response || $response instanceof WP_Error ? $response : new WP_REST_Response( $response );
 	}
 
+	function wp_unslash( mixed $value ): mixed {
+		return is_string( $value ) ? stripslashes( $value ) : $value;
+	}
+
 	function sanitize_text_field( string $text ): string {
 		return trim( (string) preg_replace( '/\s+/', ' ', strip_tags( $text ) ) );
+	}
+
+	/**
+	 * Core's `_sanitize_text_fields()` without new lines kept (WordPress
+	 * 7.1, wp-includes/formatting.php), for wc_clean(): invalid UTF-8 reads
+	 * as '', a lone `<` is escaped and tags (with script and style bodies)
+	 * stripped, line breaks, tabs and runs of spaces become one space, the
+	 * ends are trimmed and percent-encoded octets removed. The simpler
+	 * sanitize_text_field() stub above stays as other tests expect it.
+	 */
+	function bulkcat_test_sanitize_text_fields( string $text ): string {
+		$filtered = '' === $text || 1 !== preg_match( '//u', $text ) ? '' : $text;
+		if ( str_contains( $filtered, '<' ) ) {
+			$filtered = (string) preg_replace_callback( '%<[^>]*?((?=<)|>|$)%', static fn( array $m ): string => str_contains( $m[0], '>' ) ? $m[0] : esc_html( $m[0] ), $filtered );
+			$filtered = trim( strip_tags( (string) preg_replace( '@<(script|style)[^>]*?>.*?</\\1>@si', '', $filtered ) ) );
+			$filtered = str_replace( "<\n", "&lt;\n", $filtered );
+		}
+		$filtered = trim( (string) preg_replace( '/[\r\n\t ]+/', ' ', $filtered ) );
+		$found    = false;
+		while ( 1 === preg_match( '/%[a-f0-9]{2}/i', $filtered, $match ) ) {
+			$filtered = str_replace( $match[0], '', $filtered );
+			$found    = true;
+		}
+		return $found ? trim( (string) preg_replace( '/ +/', ' ', $filtered ) ) : $filtered;
+	}
+
+	/**
+	 * WooCommerce's `wc_set_time_limit()`: records each limit asked for, with
+	 * the bytes a spying stream had received by then (`time_limit_bytes`).
+	 */
+	function wc_set_time_limit( int $limit = 0 ): void {
+		$GLOBALS['bulkcat_test']['time_limits'][] = [ $limit, $GLOBALS['bulkcat_test']['time_limit_bytes'] ?? null ];
+	}
+
+	/**
+	 * WooCommerce's `wc_clean()` (includes/wc-formatting-functions.php), as
+	 * its importer cleans a SKU, over core's real cleaning.
+	 */
+	function wc_clean( mixed $value ): mixed {
+		if ( is_array( $value ) ) {
+			return array_map( 'wc_clean', $value );
+		}
+		return is_scalar( $value ) ? bulkcat_test_sanitize_text_fields( (string) $value ) : $value;
 	}
 
 	function wp_kses_post( string $text ): string {
@@ -515,7 +588,9 @@ if ( ! function_exists( 'add_filter' ) ) {
 // T21: terms, term meta and transients for the category tree. State lives
 // under bulkcat_test keys that bulkcat_test_reset() drops: 'term_list' (what
 // get_terms() returns), 'get_terms_calls' (each call's arguments),
-// 'term_meta' (term id => key => value), 'transients' (name => value),
+// 'term_meta' (term id => key => value), 'hidden_terms' (ids get_terms()
+// leaves out, as a visibility filter on term queries would; the term tables
+// read directly, through $wpdb, still hold them), 'transients' (name => value),
 // 'transient_ttl' (name => expiration) and 'ext_object_cache' (whether a
 // persistent object cache is in use). wp_cache_get_last_changed() is the one
 // in read-stubs.php, reading and writing 'last_changed' (group => value), so
@@ -523,10 +598,28 @@ if ( ! function_exists( 'add_filter' ) ) {
 if ( ! function_exists( 'get_terms' ) ) {
 	function get_terms( array|string $args = [], mixed $deprecated = '' ): array|WP_Error {
 		$GLOBALS['bulkcat_test']['get_terms_calls'][] = $args;
-		return $GLOBALS['bulkcat_test']['term_list'] ?? [];
+		// 'hidden_terms' (ids): what another plugin's filtering of term queries hides from the viewer.
+		$hidden = $GLOBALS['bulkcat_test']['hidden_terms'] ?? [];
+		$terms  = array_values( array_filter( $GLOBALS['bulkcat_test']['term_list'] ?? [], static fn( object $term ): bool => ! in_array( (int) $term->term_id, $hidden, true ) ) );
+		return 'name' === ( ( (array) $args )['orderby'] ?? '' ) ? bulkcat_test_by_name( $terms ) : $terms;
+	}
+
+	/**
+	 * Terms as ORDER BY t.name puts them under a case-insensitive collation: by character, without case, then id.
+	 *
+	 * @param list<object> $terms Terms.
+	 * @return list<object>
+	 */
+	function bulkcat_test_by_name( array $terms ): array {
+		usort( $terms, static fn( object $a, object $b ): int => [ strcmp( mb_strtolower( (string) $a->name ), mb_strtolower( (string) $b->name ) ), (int) $a->term_id ] <=> [ 0, (int) $b->term_id ] );
+		return $terms;
 	}
 
 	function get_term_meta( int $term_id, string $key = '', bool $single = false ): mixed {
+		if ( '' === $key ) {
+			// Every key, each as a list of values, as core answers.
+			return array_map( static fn( mixed $value ): array => [ $value ], $GLOBALS['bulkcat_test']['term_meta'][ $term_id ] ?? [] );
+		}
 		$value = $GLOBALS['bulkcat_test']['term_meta'][ $term_id ][ $key ] ?? null;
 		return null === $value ? ( $single ? '' : [] ) : ( $single ? $value : [ $value ] );
 	}
@@ -543,6 +636,13 @@ if ( ! function_exists( 'get_terms' ) ) {
 
 	function wp_using_ext_object_cache( ?bool $using = null ): bool {
 		return (bool) ( $GLOBALS['bulkcat_test']['ext_object_cache'] ?? false );
+	}
+}
+
+// SQR-2: the site's time zone, from $GLOBALS['bulkcat_test']['timezone'] (a zone name) when set, else UTC.
+if ( ! function_exists( 'wp_timezone' ) ) {
+	function wp_timezone(): DateTimeZone {
+		return new DateTimeZone( $GLOBALS['bulkcat_test']['timezone'] ?? 'UTC' );
 	}
 }
 
@@ -594,7 +694,16 @@ if ( ! function_exists( 'wp_set_object_terms' ) ) {
 	 */
 	function wp_set_object_terms( int $object_id, string|int|array $terms, string $taxonomy, bool $append = false ): array|\WP_Error {
 		$GLOBALS['bulkcat_test']['set_object_terms'][] = [ $object_id, $terms, $taxonomy, $append ];
-		return $GLOBALS['bulkcat_test']['set_object_terms_error'] ?? array_values( (array) $terms );
+		if ( isset( $GLOBALS['bulkcat_test']['set_object_terms_error'] ) ) {
+			return $GLOBALS['bulkcat_test']['set_object_terms_error'];
+		}
+		// What the object then holds, for the read stubs' wp_get_object_terms() (tickets 24 and 133 bug 2).
+		$kept = $append ? ( $GLOBALS['bulkcat_test']['object_terms'][ $object_id ] ?? [] ) : array_values( array_filter( $GLOBALS['bulkcat_test']['object_terms'][ $object_id ] ?? [], static fn( array $held ): bool => $held[0] !== $taxonomy ) );
+		foreach ( array_values( (array) $terms ) as $term_id ) {
+			$kept[] = [ $taxonomy, (int) $term_id, '' ];
+		}
+		$GLOBALS['bulkcat_test']['object_terms'][ $object_id ] = $kept;
+		return array_values( (array) $terms );
 	}
 }
 
@@ -667,6 +776,42 @@ if ( ! function_exists( 'wp_generate_uuid4' ) ) {
 	}
 }
 
+if ( ! function_exists( 'wp_date' ) ) {
+	/**
+	 * T90: a time formatted in the site's time zone; the test site's zone is UTC.
+	 */
+	function wp_date( string $format, ?int $timestamp = null, mixed $timezone = null ): string|false {
+		unset( $timezone );
+		return gmdate( $format, $timestamp ?? time() );
+	}
+}
+
+if ( ! function_exists( 'get_post_field' ) ) {
+	/**
+	 * T89: a post field as the database holds it. post_status answers
+	 * $GLOBALS['bulkcat_test']['stored_status'][ $id ] when a test sets it
+	 * (WordPress stored something other than what was set, as it does for a
+	 * publish whose date is ahead), else the status of the product a test
+	 * registered, else ''.
+	 */
+	function get_post_field( string $field, int|object $post, string $context = 'display' ): mixed {
+		unset( $context );
+		$id = is_object( $post ) ? (int) $post->ID : $post;
+		if ( isset( $GLOBALS['bulkcat_test']['post_fields'][ $id ][ $field ] ) ) {
+			return $GLOBALS['bulkcat_test']['post_fields'][ $id ][ $field ];}
+		if ( 'post_status' === $field && isset( $GLOBALS['bulkcat_test']['stored_status'][ $id ] ) ) {
+			return $GLOBALS['bulkcat_test']['stored_status'][ $id ];
+		}
+		$product = $GLOBALS['bulkcat_test']['products'][ $id ] ?? null;
+		if ( 'post_status' === $field && is_object( $product ) && isset( $product->props['status'] ) ) {
+			return $product->props['status'];
+		}
+		if ( 'post_password' === $field && is_object( $product ) ) {
+			return $product->get_post_password( 'edit' );}
+		return '';
+	}
+}
+
 if ( ! function_exists( 'clean_post_cache' ) ) {
 	/**
 	 * T37: forgets a post's primed post and meta caches and moves the posts'
@@ -710,6 +855,18 @@ if ( ! defined( 'BULKCAT_TEST_NO_ACTION_SCHEDULER' ) && ! function_exists( 'as_s
 			return $entry[4];
 		}
 		return false;
+	}
+}
+
+if ( ! function_exists( 'wp_unslash' ) ) {
+	/**
+	 * T88: core's wp_unslash(), which add_metadata() applies to what it stores.
+	 */
+	function wp_unslash( mixed $value ): mixed {
+		if ( is_array( $value ) ) {
+			return array_map( 'wp_unslash', $value );
+		}
+		return is_string( $value ) ? stripslashes( $value ) : $value;
 	}
 }
 
@@ -811,9 +968,109 @@ if ( ! function_exists( 'wp_insert_term' ) ) {
 		return true;
 	}
 
+	/**
+	 * As core does (ticket 24): the term's children move up to its parent,
+	 * and each object holding it is given its other terms of the taxonomy
+	 * through wp_set_object_terms(), or the `default` argument's term when it
+	 * had no other. Answers the WP_Error or false in
+	 * 'delete_term_error' when a test sets one.
+	 */
 	function wp_delete_term( int $term, string $taxonomy, array|string $args = [] ): bool|int|WP_Error {
 		$GLOBALS['bulkcat_test']['deleted_terms'][] = [ $term, $taxonomy ];
-		$GLOBALS['bulkcat_test']['term_list']       = array_values( array_filter( $GLOBALS['bulkcat_test']['term_list'] ?? [], static fn( object $t ): bool => (int) $t->term_id !== $term ) );
+		if ( isset( $GLOBALS['bulkcat_test']['delete_term_error'][ $term ] ) ) {
+			return $GLOBALS['bulkcat_test']['delete_term_error'][ $term ];
+		}
+		$deleted = get_term( $term, $taxonomy );
+		foreach ( $GLOBALS['bulkcat_test']['term_list'] ?? [] as $candidate ) {
+			if ( null !== $deleted && (int) $candidate->parent === $term ) {
+				$candidate->parent = (int) $deleted->parent;
+			}
+		}
+		$GLOBALS['bulkcat_test']['term_list'] = array_values( array_filter( $GLOBALS['bulkcat_test']['term_list'] ?? [], static fn( object $t ): bool => (int) $t->term_id !== $term ) );
+		foreach ( $GLOBALS['bulkcat_test']['object_terms'] ?? [] as $object => $held ) {
+			$ids = [];
+			$had = false;
+			foreach ( $held as [ $held_taxonomy, $term_id ] ) {
+				if ( $held_taxonomy === $taxonomy ) {
+					$had = $had || (int) $term_id === $term;
+					if ( (int) $term_id !== $term ) {
+						$ids[] = (int) $term_id;
+					}
+				}
+			}
+			if ( $had ) {
+				// Core's `default` argument: an object whose only term this was gets the default.
+				$default = (int) ( ( (array) $args )['default'] ?? 0 );
+				wp_set_object_terms( (int) $object, [] === $ids && $default > 0 ? [ $default ] : $ids, $taxonomy );
+			}
+		}
 		return true;
+	}
+
+	/**
+	 * Ticket 133: removes a term meta value from 'term_meta', recording the call in 'term_meta_deletes'.
+	 */
+	function delete_term_meta( int $term_id, string $meta_key, mixed $meta_value = '' ): bool {
+		$GLOBALS['bulkcat_test']['term_meta_deletes'][] = [ $term_id, $meta_key ];
+		unset( $GLOBALS['bulkcat_test']['term_meta'][ $term_id ][ $meta_key ] );
+		return true;
+	}
+
+	/**
+	 * Ticket 24: the objects holding any of some terms, from the read stubs' 'object_terms'.
+	 */
+	function get_objects_in_term( int|array $term_ids, string|array $taxonomies, array|string $args = [] ): array|WP_Error {
+		$found = [];
+		foreach ( $GLOBALS['bulkcat_test']['object_terms'] ?? [] as $object => $held ) {
+			foreach ( $held as [ $taxonomy, $term_id ] ) {
+				if ( in_array( $taxonomy, (array) $taxonomies, true ) && in_array( (int) $term_id, array_map( 'intval', (array) $term_ids ), true ) ) {
+					$found[] = (string) $object;
+					break;
+				}
+			}
+		}
+		return $found;
+	}
+}
+
+if ( ! function_exists( 'add_option' ) ) {
+	function add_option( string $name, mixed $value = '', string $deprecated = '', mixed $autoload = null ): bool {
+		if ( array_key_exists( $name, $GLOBALS['bulkcat_test']['options'] ) ) {
+			return false;
+		}
+		$GLOBALS['bulkcat_test']['options'][ $name ] = $value;
+		return true;
+	}
+}
+
+if ( ! function_exists( 'get_current_blog_id' ) ) {
+	function get_current_blog_id(): int {
+		return 1; }
+}
+
+if ( ! function_exists( 'get_post_type_object' ) ) {
+	function get_post_type_object( string $post_type ): ?object {
+		if ( ! in_array( $post_type, [ 'product','product_variation' ], true ) ) {
+			return null;}
+		return (object) [
+			'name' => $post_type,
+			'cap'  => (object) [
+				'create_posts'  => 'edit_products',
+				'publish_posts' => 'publish_products',
+				'edit_post'     => 'edit_product',
+			],
+		];
+	}
+}
+
+// 1.3.4: the request context, read from 'is_admin' and 'doing_ajax' (false unless a test sets them).
+if ( ! function_exists( 'is_admin' ) ) {
+	function is_admin(): bool {
+		return (bool) ( $GLOBALS['bulkcat_test']['is_admin'] ?? false );
+	}
+}
+if ( ! function_exists( 'wp_doing_ajax' ) ) {
+	function wp_doing_ajax(): bool {
+		return (bool) ( $GLOBALS['bulkcat_test']['doing_ajax'] ?? false );
 	}
 }

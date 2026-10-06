@@ -14,11 +14,13 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Engine;
 
+use BulkCatalogueManager\Availability\StatusSwitch;
 use BulkCatalogueManager\Data\BatchRepository;
 use BulkCatalogueManager\Data\ChangeRepository;
 use BulkCatalogueManager\Fields\Field;
 use BulkCatalogueManager\Fields\Values;
 use BulkCatalogueManager\Operations\Registry as Actions;
+use BulkCatalogueManager\Operations\BaseOperation;
 use BulkCatalogueManager\Operations\Result;
 use BulkCatalogueManager\Rest\Access;
 use BulkCatalogueManager\Rest\Refusal;
@@ -38,7 +40,7 @@ defined( 'ABSPATH' ) || exit;
  *    (`current_user_can( 'edit_post', $id )`, through Access::can_edit_object());
  * 3. turns the submitted values into an operation list, one step per field
  *    in the field registry's order (operations()): the action that sets the
- *    field (set_value, or replace_terms for a term list), or `clear` for an
+ *    field (set_status, set_value, or replace_terms for a term list), or `clear` for an
  *    empty value on a nullable field that allows clearing. When two prices
  *    arrive together the regular price's step clears a sale price it would
  *    leave not below it, so the later sale price step decides the pair.
@@ -61,6 +63,10 @@ defined( 'ABSPATH' ) || exit;
  *
  * A write that throws (the journal refusing a row) still finalises the batch
  * as failed and is answered 500 `bulkcat_save_failed`.
+ *
+ * Status emits set_status explicitly. Obsolete Keep current status intent is
+ * refused with reload/review guidance; accepted legacy batches resolve through
+ * their stored operation instead of this new-write entry point.
  */
 final class InlineWrite {
 	/**
@@ -131,10 +137,59 @@ final class InlineWrite {
 	 * @param array<string, mixed> $values  Field key => value, for any of the registry's editable fields.
 	 * @param string               $source  One of SOURCES.
 	 * @param int                  $user_id The user the batch is recorded for (the current user).
+	 * @param bool                 $keep_changed_status Obsolete explicit legacy intent; true is refused for new writes.
 	 * @return array{batch_id: int, status: string, outcome: WriteOutcome}|\WP_Error
 	 * @throws \InvalidArgumentException On a source outside SOURCES: a programming error.
 	 */
-	public function write( int $id, array $values, string $source, int $user_id ): array|\WP_Error {
+	public function write( int $id, array $values, string $source, int $user_id, bool $keep_changed_status = false ): array|\WP_Error {
+		$prepared = $this->preflight( $id, $values, $source, $user_id, $keep_changed_status );
+		if ( is_wp_error( $prepared ) ) {
+			return $prepared; }
+		$batch_id = $this->factory->open( $user_id, $prepared['operations'], $prepared['objects'], $source );
+		return is_wp_error( $batch_id ) ? $batch_id : $this->run( $batch_id, $id, $prepared['operations'] );
+	}
+
+	/**
+	 * Live native preflight; receipt transport calls this only after the unique new claim.
+	 *
+	 * @param int $id Object id.
+	 * @param array $values Submitted native values.
+	 * @param string $source Display source.
+	 * @param int $user_id Current owner.
+	 * @param bool $keep_changed_status Obsolete explicit intent.
+	 * @return array|\WP_Error
+	 */
+	public function prepare( int $id, array $values, string $source, int $user_id, bool $keep_changed_status = false ): array|\WP_Error {
+		$editable = $this->actions->fields()->editable();
+		foreach ( $values as $key => $value ) {
+			if ( \BulkCatalogueManager\External\Providers::is_external( (string) $key ) ) {
+				return \BulkCatalogueManager\External\Refusals::not_inline(); }
+			if ( ! isset( $editable[ $key ] ) ) {
+				return \BulkCatalogueManager\Rest\RequestsController::unknown(); }
+			$valid = $editable[ $key ]->validate( $value );
+			if ( is_wp_error( $valid ) ) {
+				return Refusal::native_validation(
+					$valid->get_error_message(),
+					[ $key => $valid->get_error_message() ],
+					$key
+				);
+			}
+			$values[ $key ] = $editable[ $key ]->sanitise( $value );
+		}
+		return $this->preflight( $id, $values, $source, $user_id, $keep_changed_status );
+	}
+
+	/**
+	 * Shared engine preflight, preserving the internal write API's validation contract.
+	 *
+	 * @param int $id Object id.
+	 * @param array $values Native values.
+	 * @param string $source Display source.
+	 * @param int $user_id Current owner.
+	 * @param bool $keep_changed_status Obsolete explicit intent.
+	 * @return array|\WP_Error
+	 */
+	private function preflight( int $id, array $values, string $source, int $user_id, bool $keep_changed_status ): array|\WP_Error {
 		if ( ! in_array( $source, self::SOURCES, true ) ) {
 			throw new \InvalidArgumentException( 'A single-object write is recorded as inline or bulk.' );
 		}
@@ -150,7 +205,7 @@ final class InlineWrite {
 			);
 		}
 
-		$operations = $this->operations( $values );
+		$operations = $this->operations( $values, $keep_changed_status );
 		if ( $operations instanceof \WP_Error ) {
 			return $operations;
 		}
@@ -159,11 +214,80 @@ final class InlineWrite {
 			return $refused;
 		}
 
-		$batch_id = $this->factory->open( $user_id, $operations, $objects, $source );
-		if ( $batch_id instanceof \WP_Error ) {
-			return $batch_id;
+		return [
+			'object_id'  => $id,
+			'source'     => $source,
+			'owner'      => $user_id,
+			'objects'    => $objects,
+			'operations' => $operations,
+		];
+	}
+
+	/**
+	 * Execute only in the original invocation after confirmed acceptance. No replay entry point.
+	 *
+	 * @param int $batch_id Committed batch.
+	 * @param array $prepared Live preflight held only in this invocation.
+	 * @return array|\WP_Error
+	 */
+	public function run_accepted( int $batch_id, array $prepared ): array|\WP_Error {
+		if ( true !== Access::can_write() ) {
+			throw new \RuntimeException( 'Current inline execution rights cannot be confirmed.' );
 		}
-		return $this->run( $batch_id, $id, $operations );
+		$batch = $this->batches->find_strict( $batch_id );
+		if ( null === $batch || get_current_user_id() !== $batch['user_id'] || $batch['user_id'] !== $prepared['owner'] || 'running' !== $batch['status']
+			|| $batch['source'] !== $prepared['source'] || $batch['operations'] !== $prepared['operations'] || [ $prepared['object_id'] ] !== $batch['selection']['ids'] || 1 !== $batch['total_items'] || ( $batch['selection']['inline_receipt']['object_id'] ?? null ) !== $prepared['object_id']
+			|| ! \BulkCatalogueManager\Requests\InlineReceipt::unclosed( $batch ) ) {
+			throw new \RuntimeException( 'Accepted inline identity cannot be confirmed.' );
+		}
+		$receipt = ( new \BulkCatalogueManager\Requests\RequestRepository() )->read( $batch['user_id'], $batch['uuid'] );
+		if ( null === $receipt || 'product.inline' !== $receipt['operation'] || 'accepted' !== $receipt['state'] || 'batch' !== $receipt['result_kind'] || (int) $receipt['result_id'] !== $batch_id ) {
+			throw new \RuntimeException( 'Accepted inline receipt cannot be confirmed.' );
+		}
+		$now   = time();
+		$items = $this->batches->claim_chunk( $batch_id, 1, bin2hex( random_bytes( 16 ) ), gmdate( 'Y-m-d H:i:s', $now ), gmdate( 'Y-m-d H:i:s', $now - BatchRepository::LEASE_SECONDS ) );
+		global $wpdb;
+		if ( '' !== $wpdb->last_error || 1 !== count( $items ) || $items[0]['object_id'] !== $prepared['object_id'] || $items[0]['object_type'] !== $prepared['objects'][0][1] || 1 !== $items[0]['attempts'] || $items[0]['item_id'] < 1 ) {
+			throw new \RuntimeException( 'Exact inline item claim cannot be confirmed.' );
+		}
+		// Preflight may have primed this PHP process before acceptance waited.
+		// Only the confirmed original executor may reload current native state.
+		clean_post_cache( $prepared['object_id'] );
+		$post = get_post( $prepared['object_id'] );
+		if ( $post && 'product_variation' === $post->post_type && $post->post_parent > 0 ) {
+			// Native variation reads also consume the current parent's post/meta/terms.
+			clean_post_cache( (int) $post->post_parent );
+		}
+		$writer  = Writer::for_batch( $this->actions, Journal::from_settings( $this->actions->fields(), $this->settings(), new ChangeRepository( strict: true ) ), $batch_id );
+		$outcome = $writer->run( static fn( Writer $w ): WriteOutcome => $w->write( $prepared['object_id'], $prepared['operations'], $items[0]['object_type'] ) );
+		foreach ( $outcome->results() as $result ) {
+			// Writer catches save Exceptions: they cannot prove that a save hook had no effects.
+			if ( in_array( $result->code(), [ Writer::SAVE_FAILED, Writer::SAVE_UNCERTAIN ], true ) ) {
+				throw new \RuntimeException( 'Inline save outcome is uncertain.' ); }
+		}
+		[ $state, $message ] = ChunkRunner::item_state( $outcome );
+		$failed              = 'failed' === $state ? 1 : 0;
+		$status              = ChunkRunner::final_status( 'done' !== $state || '' !== $message ? 1 : 0, $failed, $outcome->saved() ? 1 : 0 );
+		$this->batches->close_inline(
+			$batch_id,
+			[
+				'item_id'      => $items[0]['item_id'],
+				'state'        => $state,
+				'message'      => $message,
+				'saved'        => $outcome->saved(),
+				'write_status' => $status,
+				'steps'        => \BulkCatalogueManager\Requests\InlineReceipt::safe_steps( $outcome ),
+			]
+		);
+		return [
+			'receipt_state' => 'closed',
+			'batch_id'      => $batch_id,
+			'write_status'  => $status,
+			'steps'         => \BulkCatalogueManager\Requests\InlineReceipt::safe_steps( $outcome ),
+			'replayed'      => false,
+			'status'        => $status,
+			'outcome'       => $outcome,
+		];
 	}
 
 	/**
@@ -171,13 +295,21 @@ final class InlineWrite {
 	 * per editable field present, in the registry's order, or the refusal
 	 * of the first field that cannot be set, naming it.
 	 *
-	 * @param array<string, mixed> $values Field key => value.
+	 * @param array<string, mixed> $values              Field key => value.
+	 * @param bool                 $keep_changed_status Obsolete explicit legacy intent, refused when true.
 	 * @return list<array{action: string, args: array<string, mixed>}>|\WP_Error
 	 */
-	public function operations( array $values ): array|\WP_Error {
+	public function operations( array $values, bool $keep_changed_status = false ): array|\WP_Error {
 		$editable = array_intersect_key( $this->actions->fields()->editable(), $values );
 		if ( [] === $editable ) {
 			return $this->actions->validate_list( [] );
+		}
+		if ( $keep_changed_status ) {
+			return Refusal::invalid(
+				self::INVALID,
+				__( 'Status controls have changed. Reload and review the change again.', 'bulk-catalogue-manager-for-woocommerce' ),
+				[ 'field' => 'keep_changed_status' ]
+			);
 		}
 		$prices     = array_filter( $editable, static fn( Field $field ): bool => Field::MONEY === $field->type() );
 		$operations = [];
@@ -189,9 +321,26 @@ final class InlineWrite {
 				$code    = $list instanceof \WP_Error ? (string) $list->get_error_code() : self::INVALID;
 				return Refusal::invalid( $code, $message, [ 'field' => $key ] );
 			}
-			$operations[] = $list[0];
+			$operations[] = self::this_object_only( $list[0] );
 		}
 		return $operations;
+	}
+
+	/**
+	 * A step as the write runs it: on the one object only. BatchFactory::open()
+	 * takes the object alone, so Also apply to variations is off whatever the
+	 * settings' default, and the dry run (which previews through expand())
+	 * checks what is written: an inline Off of a variable product is not
+	 * refused for variations it never touches (T94).
+	 *
+	 * @param array{action: string, args: array<string, mixed>} $step A normalised step.
+	 * @return array{action: string, args: array<string, mixed>}
+	 */
+	private static function this_object_only( array $step ): array {
+		if ( array_key_exists( BaseOperation::APPLY_TO_VARIATIONS, $step['args'] ) ) {
+			$step['args'][ BaseOperation::APPLY_TO_VARIATIONS ] = false;
+		}
+		return $step;
 	}
 
 	/**
@@ -214,10 +363,11 @@ final class InlineWrite {
 			$args += Field::TERMS === $field->type() ? [ 'terms' => $value ] : [ 'value' => $empty ? '' : $value ];
 		}
 		if ( Field::SET === $kind && Field::MONEY === $field->type() ) {
-			$args['clear_invalid_sale'] = $price_pair;
+			// With both prices, the regular price step may clear the old sale price; a typed sale price is never cleared (ENGINE-6).
+			$args['clear_invalid_sale'] = $price_pair && $field->accepts( Field::COPY_FROM_SALE );
 		}
 		return [
-			'action' => $ids[0],
+			'action' => StatusSwitch::governs( $field ) ? 'set_status' : $ids[0],
 			'args'   => $args,
 		];
 	}
@@ -250,13 +400,19 @@ final class InlineWrite {
 		if ( null === $first ) {
 			return null;
 		}
+		$data = [
+			'field'  => $first['field'],
+			'fields' => $refused,
+		];
+		if ( '' !== (string) ( $first['note'] ?? '' ) ) {
+			// The Status switch's outcome (a conflict), so the grid can offer Keep current status.
+			$data['outcome'] = (string) $first['note'];
+			$data['context'] = (array) ( $first['context'] ?? [] );
+		}
 		return Refusal::invalid(
 			str_starts_with( (string) $first['code'], Refusal::PREFIX ) ? (string) $first['code'] : self::INVALID,
 			(string) $first['reason'],
-			[
-				'field'  => $first['field'],
-				'fields' => $refused,
-			]
+			$data
 		);
 	}
 

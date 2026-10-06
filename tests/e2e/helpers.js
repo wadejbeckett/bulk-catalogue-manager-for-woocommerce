@@ -65,6 +65,25 @@ async function tabTo( page, target, { back = false, max = 120 } = {} ) {
 }
 
 /**
+ * Reach a control in the screen by keyboard alone, however long the admin
+ * menu before it is (T85): the first Tab lands on WordPress's own "Skip to
+ * main content" link, Enter moves focus past the menu to the content, and Tab
+ * goes on from there to the control. Counting Tab presses from the top of the
+ * page broke on a site with a longer admin menu and more notices.
+ *
+ * @param {import('@playwright/test').Page}    page   Page.
+ * @param {import('@playwright/test').Locator} target Control to reach.
+ */
+async function tabFromContent( page, target ) {
+	await page.keyboard.press( 'Tab' );
+	await expect(
+		page.getByRole( 'link', { name: 'Skip to main content' } )
+	).toBeFocused();
+	await page.keyboard.press( 'Enter' );
+	await tabTo( page, target );
+}
+
+/**
  * The element with focus, described for assertions and messages.
  *
  * @param {import('@playwright/test').Page} page Page.
@@ -153,6 +172,19 @@ async function expectAxeClean(
 		'.bulkcat-drawer',
 	]
 ) {
+	// Read final colours and hit areas, rather than an opening modal's fade.
+	await page.evaluate( () =>
+		Promise.all(
+			document
+				.getAnimations()
+				.filter( ( animation ) =>
+					Number.isFinite(
+						animation.effect.getComputedTiming().iterations
+					)
+				)
+				.map( ( animation ) => animation.finished.catch( () => {} ) )
+		)
+	);
 	let builder = new AxeBuilder( { page } ).withTags( [
 		'wcag2a',
 		'wcag2aa',
@@ -234,6 +266,7 @@ module.exports = {
 	SEED,
 	openScreen,
 	tabTo,
+	tabFromContent,
 	focused,
 	rest,
 	productByName,

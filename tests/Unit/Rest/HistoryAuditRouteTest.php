@@ -374,10 +374,10 @@ final class HistoryAuditRouteTest extends TestCase {
 		$this->assertCount( 1, preg_grep( '/^SELECT batch_id, undo_of, user_id FROM .* undo_of IN \(/', $queries ), 'The list row\'s "put back by", for the undone rows only.' );
 		$this->assertCount( 1, preg_grep( "/result = 'applied' GROUP BY batch_id/", $queries ) );
 
-		// The single read counts them, only where undo is still possible.
+		// The single read counts them when asked (T85), only where undo is still possible.
 		$states = [];
 		foreach ( range( 1, 14 ) as $id ) {
-			$states[ $id ] = array_values( $this->ok( self::dispatch( "/batches/$id" ) )['reversibility'] );
+			$states[ $id ] = array_values( $this->ok( self::dispatch( "/batches/$id", [ 'reversibility' => 'count' ] ) )['reversibility'] );
 		}
 		$this->assertSame( [ 'partially_reversible', 3, null ], $states[2], 'Three objects changed again since.' );
 		$this->assertSame( [ 'in_progress', 0, null ], $states[3] );
@@ -391,7 +391,7 @@ final class HistoryAuditRouteTest extends TestCase {
 			2 => 3,
 			5 => 1,
 		];
-		$read            = fn( int $id ): array => $this->ok( self::dispatch( "/batches/$id" ) )['reversibility'];
+		$read            = fn( int $id ): array => $this->ok( self::dispatch( "/batches/$id", [ 'reversibility' => 'count' ] ) )['reversibility'];
 		$this->assertSame(
 			[
 				'state'     => 'partially_reversible',
@@ -413,6 +413,17 @@ final class HistoryAuditRouteTest extends TestCase {
 		$this->assertSame( 'in_progress', $read( 3 )['state'] );
 		$this->assertSame( 'pruned', $read( 9 )['reason'] );
 		$this->assertSame( [ 'adjust' ], $this->ok( self::dispatch( '/batches/1' ) )['actions'] );
+	}
+
+	public function test_rows_skipped_as_previewed_are_not_errors(): void {
+		// A step the preview said would be skipped (not applicable here), on a change where nothing failed: stored partial.
+		$this->batch( 18, 'partial', [ 'adjust' ], [ 'failed_items' => 0 ] );
+		$this->change( 18, 1001, 'regular_price', '10', '11', 'applied', '2026-09-20 10:01:00' );
+		$this->change( 18, 1002, 'stock_quantity', null, null, 'skipped', '2026-09-20 10:01:00' );
+
+		$this->assertSame( [ 'reversible', null, null ], $this->states()[18], 'The list does not call a change with nothing failed "with errors".' );
+		$this->assertSame( 'reversible', $this->ok( self::dispatch( '/batches/18', [ 'reversibility' => 'count' ] ) )['reversibility']['state'], 'Nor does the single read.' );
+		$this->assertSame( 'completed_with_errors', $this->states()[5][0], 'A partial change with a failed row still is.' );
 	}
 
 	public function test_retention_follows_the_setting_and_never_applies_when_kept_indefinitely(): void {
@@ -475,6 +486,18 @@ final class HistoryAuditRouteTest extends TestCase {
 				'user_id' => 5,
 			]
 		);
+		// Batch 16 was undone by 17, a partial undo (an item left alone): it is undone, and says by whom.
+		$this->batch( 16, 'undone', [ 'set_value' ] );
+		$this->batch(
+			17,
+			'partial',
+			[ 'set_value' ],
+			[
+				'source'  => 'undo',
+				'undo_of' => 16,
+				'user_id' => 4,
+			]
+		);
 		$before = count( $GLOBALS['wpdb']->queries );
 		$items  = array_column( $this->ok( self::dispatch( '/batches', [ 'per_page' => 100 ] ) )['items'], null, 'batch_id' );
 		$this->assertSame( [ 'Sam Shop', 'Rosa Admin', 'User 5' ], [ $items[1]['user_name'], $items[2]['user_name'], $items[15]['user_name'] ], 'A removed account reads as "User 5".' );
@@ -487,7 +510,10 @@ final class HistoryAuditRouteTest extends TestCase {
 			],
 			$items[13]['undone_by']
 		);
-		$this->assertSame( [ 13 ], array_keys( array_filter( array_column( $items, 'undone_by', 'batch_id' ) ) ), 'Only an undone row says who put it back.' );
+		$put_back = array_keys( array_filter( array_column( $items, 'undone_by', 'batch_id' ) ) );
+		sort( $put_back );
+		$this->assertSame( [ 13, 16 ], $put_back, 'Only an undone row says who put it back.' );
+		$this->assertSame( 17, $items[16]['undone_by']['batch_id'], 'A partial undo undoes its batch (Undo\\Original::UNDONE_BY), so it names it too.' );
 		$this->assertCount( 1, $GLOBALS['bulkcat_test']['get_users_calls'], 'Every name on the page from one get_users() call.' );
 		$this->assertSame( [ 3, 4, 5 ], $GLOBALS['bulkcat_test']['get_users_calls'][0]['include'] );
 		$queries = array_slice( $GLOBALS['wpdb']->queries, $before );
@@ -601,6 +627,31 @@ final class HistoryAuditRouteTest extends TestCase {
 		$this->refused( self::dispatch( '/audit', [ 'user' => 'me' ] ), 'rest_invalid_param', 400 );
 		$this->refused( self::dispatch( '/audit', [ 'before' => 'yesterday' ] ), 'rest_invalid_param', 400 );
 		$this->refused( self::dispatch( '/audit', [ 'per_page' => 0 ] ), 'rest_invalid_param', 400 );
+	}
+
+	public function test_the_off_record_row_is_labelled_and_shown_as_a_saved_status_never_as_json(): void {
+		// T90 (SPEC §9.4): History, the audit log and their CSV show "Status before Off" readably.
+		$record = \BulkCatalogueManager\Availability\OffRecord::create( 1001, 'private', '2026-09-28T14:03:11Z', 2 )->to_json();
+		$this->change( 2, 1001, 'status', 'private', 'draft', 'applied', '2026-09-23 08:00:10' );
+		$this->change( 2, 1001, 'availability_off', '', $record, 'applied', '2026-09-23 08:00:10' );
+		$items = $this->ok(
+			self::dispatch(
+				'/audit',
+				[
+					'product'  => 1001,
+					'per_page' => 2,
+				]
+			)
+		)['items'];
+		$this->assertSame( [ 'availability_off', 'status' ], array_column( $items, 'field' ) );
+		$this->assertSame( 'Status before Off', $items[0]['field_label'] );
+		$this->assertSame( '—', $items[0]['old_value'] );
+		$this->assertSame( 'Private, saved 28 Sep 2026 14:03', $items[0]['new_value'] );
+		$this->assertStringNotContainsString( '{\\"id\\"', (string) wp_json_encode( $items[0] ), 'No record JSON reaches the screen.' );
+		$this->assertSame( [ 'Status', 'private', 'draft' ], [ $items[1]['field_label'], $items[1]['old_value'], $items[1]['new_value'] ], 'The status row is as it was.' );
+
+		// The audit's field filter still names the public fields only.
+		$this->refused( self::dispatch( '/audit', [ 'field' => 'availability_off' ] ), 'rest_invalid_param', 400 );
 	}
 
 	public function test_per_page_is_capped_at_100(): void {

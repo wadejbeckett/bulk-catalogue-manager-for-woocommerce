@@ -3,7 +3,10 @@
  * one-line summary or, while it is being edited, the action chooser — the
  * descriptors' actions grouped as the registry groups them, each a card with
  * its plain description that expands in place to its generated controls.
+ * A step opened with its change chosen shows that change alone, the chooser
+ * folded behind "Choose a different change" (1.4.1).
  */
+import { useEffect, useRef } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 
 import { ArgControl } from './controls';
@@ -16,8 +19,11 @@ import {
 	fieldsFor,
 	groupedActions,
 	isArgShown,
+	mixedSentence,
+	mixesKinds,
 	offersVariations,
 	operationProblem,
+	unavailableReason,
 	variationsDefault,
 } from './descriptors';
 
@@ -123,6 +129,7 @@ export function operationTitle( registry, operation ) {
  * @param {Object}   props.terms        Term options by source.
  * @param {Function} props.onArg        Receives ( name, value ).
  * @param {Function} props.onVariations Receives the switch position.
+ * @param {string}   props.object       A row's object key, or '' for a bulk change.
  * @return {Element} Controls.
  */
 function OperationControls( {
@@ -132,6 +139,7 @@ function OperationControls( {
 	terms,
 	onArg,
 	onVariations,
+	object = '',
 } ) {
 	const action = actionById( registry, operation.action );
 	const properties = action?.args?.properties || {};
@@ -184,6 +192,8 @@ function OperationControls( {
 						field={ field }
 						terms={ terms }
 						reason={ reasonFor( name ) }
+						action={ operation.action }
+						object={ object }
 					/>
 				) ) }
 			<div className="bulkcat-bulk__varbox is-full">
@@ -252,14 +262,18 @@ function OperationControls( {
 /**
  * The action chooser for the step being edited.
  *
- * @param {Object}   props              Props.
- * @param {Object}   props.registry     The `/fields` payload.
- * @param {Object}   props.operation    The step.
- * @param {number}   props.index        Its position.
- * @param {Object}   props.terms        Term options by source.
- * @param {Function} props.onChoose     Receives ( actionId, group ).
- * @param {Function} props.onArg        Receives ( name, value ).
- * @param {Function} props.onVariations Receives the switch position.
+ * @param {Object}        props              Props.
+ * @param {Object}        props.registry     The `/fields` payload.
+ * @param {Object}        props.operation    The step.
+ * @param {number}        props.index        Its position.
+ * @param {Object}        props.terms        Term options by source.
+ * @param {Function}      props.onChoose     Receives ( actionId, group ).
+ * @param {Function}      props.onArg        Receives ( name, value ).
+ * @param {Function}      props.onVariations Receives the switch position.
+ * @param {Array<Object>} props.operations   Every step of the change, to say in place when kinds are mixed (T105).
+ * @param {string}        props.object       A row's object key, or '' for a bulk change.
+ * @param {boolean}       props.folded       Show only the chosen action and its arguments (a preset change, 1.4.1).
+ * @param {Function}      props.onUnfold     Unfold the whole chooser.
  * @return {Element} Chooser.
  */
 export function ActionChooser( {
@@ -270,10 +284,103 @@ export function ActionChooser( {
 	onChoose,
 	onArg,
 	onVariations,
+	operations = [],
+	object = '',
+	folded = false,
+	onUnfold = () => {},
 } ) {
 	const idBase = 'bulkcat-op-' + operation.key;
+	const rootRef = useRef( null );
+	const groups = groupedActions( registry );
+	const presetGroup = folded
+		? groups.find(
+				( group ) =>
+					group.id === operation.group &&
+					group.actions.some(
+						( action ) => action.id === operation.action
+					)
+			)
+		: null;
+	const isFolded = !! presetGroup;
+	// Unfolding keeps the chosen action chosen and puts focus on it.
+	const wasFolded = useRef( isFolded );
+	useEffect( () => {
+		if ( wasFolded.current && ! isFolded ) {
+			rootRef.current
+				?.querySelector( 'input[type="radio"]:checked' )
+				?.focus();
+		}
+		wasFolded.current = isFolded;
+	}, [ isFolded ] );
+	// T105: a step of another kind than the rest of the change says so in place.
+	const mixed =
+		operation.action &&
+		mixesKinds(
+			registry,
+			operations.map( ( each ) =>
+				each.key === operation.key ? operation : each
+			)
+		)
+			? mixedSentence()
+			: '';
+	if ( isFolded ) {
+		const action = presetGroup.actions.find(
+			( each ) => each.id === operation.action
+		);
+		const titleId = idBase + '-preset';
+		return (
+			<div
+				ref={ rootRef }
+				className="bulkcat-bulk__choices is-preset"
+				role="group"
+				aria-labelledby={ titleId }
+			>
+				<div className="bulkcat-bulk__choice is-on is-preset">
+					<p className="bulkcat-bulk__presethead">
+						<span className="bulkcat-bulk__presetgroup">
+							{ presetGroup.label }
+						</span>
+						<span className="bulkcat-bulk__ct" id={ titleId }>
+							{ action.label }
+							<span className="bulkcat-bulk__cd">
+								{ action.description }
+							</span>
+						</span>
+					</p>
+					{ mixed && (
+						<p className="bulkcat-bulk__reason" role="alert">
+							{ mixed }
+						</p>
+					) }
+					<OperationControls
+						registry={ registry }
+						operation={ operation }
+						idBase={ idBase }
+						terms={ terms }
+						onArg={ onArg }
+						onVariations={ onVariations }
+						object={ object }
+					/>
+				</div>
+				<p className="bulkcat-bulk__unfold">
+					<button
+						type="button"
+						className="button-link"
+						aria-expanded="false"
+						onClick={ onUnfold }
+					>
+						{ __(
+							'Choose a different change',
+							'bulk-catalogue-manager-for-woocommerce'
+						) }
+					</button>
+				</p>
+			</div>
+		);
+	}
 	return (
 		<div
+			ref={ rootRef }
 			className="bulkcat-bulk__choices"
 			role="radiogroup"
 			aria-label={ sprintf(
@@ -285,7 +392,7 @@ export function ActionChooser( {
 				index + 1
 			) }
 		>
-			{ groupedActions( registry ).map( ( group ) => (
+			{ groups.map( ( group ) => (
 				<div className="bulkcat-bulk__group" key={ group.id }>
 					<h4 className="bulkcat-bulk__grouphead">{ group.label }</h4>
 					{ group.actions.map( ( action ) => {
@@ -293,12 +400,14 @@ export function ActionChooser( {
 							operation.action === action.id &&
 							operation.group === group.id;
 						const id = idBase + '-' + group.id + '-' + action.id;
+						const unavailable = unavailableReason( action );
 						return (
 							<div
 								key={ action.id }
 								className={
 									'bulkcat-bulk__choice' +
-									( on ? ' is-on' : '' )
+									( on ? ' is-on' : '' ) +
+									( unavailable ? ' is-disabled' : '' )
 								}
 							>
 								<label htmlFor={ id }>
@@ -308,6 +417,12 @@ export function ActionChooser( {
 										name={ idBase }
 										value={ group.id + ':' + action.id }
 										checked={ on }
+										disabled={ !! unavailable && ! on }
+										aria-describedby={
+											unavailable
+												? id + '-unavailable'
+												: undefined
+										}
 										onChange={ () =>
 											onChoose( action.id, group.id )
 										}
@@ -319,6 +434,22 @@ export function ActionChooser( {
 										</span>
 									</span>
 								</label>
+								{ unavailable && (
+									<p
+										className="bulkcat-bulk__reason"
+										id={ id + '-unavailable' }
+									>
+										{ unavailable }
+									</p>
+								) }
+								{ on && mixed && (
+									<p
+										className="bulkcat-bulk__reason"
+										role="alert"
+									>
+										{ mixed }
+									</p>
+								) }
 								{ on && (
 									<OperationControls
 										registry={ registry }
@@ -327,6 +458,7 @@ export function ActionChooser( {
 										terms={ terms }
 										onArg={ onArg }
 										onVariations={ onVariations }
+										object={ object }
 									/>
 								) }
 							</div>

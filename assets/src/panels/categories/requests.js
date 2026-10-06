@@ -16,6 +16,16 @@ export function fetchTree( query = {} ) {
 }
 
 /**
+ * GET /categories/{id}: one category's details for its editor (ticket 22).
+ *
+ * @param {number} id Category id.
+ * @return {Promise<Object>} { item }.
+ */
+export function fetchCategory( id ) {
+	return request( `categories/${ Number( id ) }` );
+}
+
+/**
  * POST /categories.
  *
  * @param {Object} data { name, slug?, description?, parent? }.

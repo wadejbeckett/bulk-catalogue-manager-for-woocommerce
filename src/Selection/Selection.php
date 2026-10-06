@@ -37,7 +37,8 @@ final class Selection {
 	private function __construct(
 		public readonly ?Criteria $criteria,
 		public readonly array $ids,
-		public readonly int $count
+		public readonly int $count,
+		public readonly ?array $members = null
 	) {}
 
 	/**
@@ -77,6 +78,32 @@ final class Selection {
 			$clean[ $id ] = $id;
 		}
 		return new self( null, array_values( $clean ), count( $clean ) );
+	}
+
+	/**
+	 * Frozen typed identities, including members no longer present in the catalogue.
+	 *
+	 * @param array<string,int[]> $members Immutable membership.
+	 */
+	public static function of_members( array $members ): self {
+		$members = Membership::union(
+			$members,
+			[
+				'products'   => [],
+				'variations' => [],
+			]
+		);
+		$objects = [];
+		foreach ( [
+			'products'   => 'product',
+			'variations' => 'variation',
+		] as $key => $type ) {
+			foreach ( $members[ $key ] as $id ) {
+				$objects[] = [ $id, $type ];
+			}
+		}
+		usort( $objects, static fn( array $a, array $b ): int => $a[0] <=> $b[0] );
+		return new self( null, array_column( $objects, 0 ), count( $objects ), $objects );
 	}
 
 	/**

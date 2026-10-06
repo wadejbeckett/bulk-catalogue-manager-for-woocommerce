@@ -262,7 +262,7 @@ final class ChangeRepositoryTest extends TestCase {
 			'/^SELECT COUNT/'        => '41',
 		];
 		$rows            = $repo->audit( $filters, 3, 20 );
-		$this->assertSame( "SELECT c.change_id, c.batch_id, c.object_id, c.object_type, c.prop, c.old_value, c.new_value, c.modified_gmt, c.applied_gmt, c.result, c.message, b.user_id FROM `wp_bulkcat_changes` AS c INNER JOIN `wp_bulkcat_batches` AS b ON b.batch_id = c.batch_id WHERE c.change_id > 0 AND c.object_id = 1001 AND b.user_id = 4 AND c.prop = 'regular_price' AND c.applied_gmt >= '2026-09-01 00:00:00' AND c.applied_gmt < '2026-10-01 00:00:00' ORDER BY c.change_id DESC LIMIT 20 OFFSET 40", end( $wpdb->queries ) );
+		$this->assertSame( "SELECT c.change_id, c.batch_id, c.object_id, c.object_type, c.prop, c.old_value, c.new_value, c.modified_gmt, c.applied_gmt, c.result, c.message, b.user_id FROM `wp_bulkcat_changes` AS c INNER JOIN `wp_bulkcat_batches` AS b ON b.batch_id = c.batch_id WHERE c.change_id > 0 AND c.object_id = 1001 AND c.object_type IN ('product', 'variation') AND b.user_id = 4 AND c.prop = 'regular_price' AND c.applied_gmt >= '2026-09-01 00:00:00' AND c.applied_gmt < '2026-10-01 00:00:00' ORDER BY c.change_id DESC LIMIT 20 OFFSET 40", end( $wpdb->queries ) );
 		$this->assertSame( [ 5, 2, '10', '11', 4 ], [ $rows[0]['change_id'], $rows[0]['batch_id'], $rows[0]['old_value'], $rows[0]['new_value'], $rows[0]['user_id'] ] );
 		$this->assertSame( 41, $repo->audit_count( [] ) );
 		$this->assertSame( 'SELECT COUNT(*) FROM `wp_bulkcat_changes` AS c INNER JOIN `wp_bulkcat_batches` AS b ON b.batch_id = c.batch_id WHERE c.change_id > 0', end( $wpdb->queries ) );

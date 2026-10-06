@@ -1,8 +1,8 @@
 <?php
 /**
  * Saved views (SPEC §4.1, §10, §12.1, §13; T52). Each user's views are JSON
- * in their own `bulkcat_views` user meta, so one user's views are never listed
- * or readable by another: an id that is not in the current user's list is
+ * in their own `bulkcat_views` user meta, kept per site (meta_key()), so one
+ * user's views are never listed or readable by another: an id that is not in the current user's list is
  * 404, whoever else holds it.
  *
  * - `GET /bulkcat/v1/views` answers `{ items, default, max }`: the views in the
@@ -49,9 +49,22 @@ final class ViewsController implements ReadController {
 	public const ROUTE = '/views';
 
 	/**
-	 * The user meta key holding a user's views as JSON (registered in Data\Registry).
+	 * The name of the user meta holding a user's views as JSON (registered in
+	 * Data\Registry). It is stored under the site's table prefix, as
+	 * update_user_option() does (meta_key()), so each site of a network keeps
+	 * its own views. Before 1.3.1 it was stored unprefixed, network-wide; the
+	 * main site reads that old value once and moves it to its own key.
 	 */
 	public const META_KEY = 'bulkcat_views';
+
+	/**
+	 * The current site's user meta key for saved views: the site's table
+	 * prefix plus META_KEY, the key update_user_option() would use.
+	 */
+	public static function meta_key(): string {
+		global $wpdb;
+		return $wpdb->prefix . self::META_KEY;
+	}
 
 	/**
 	 * The most views one user may keep.
@@ -403,7 +416,17 @@ final class ViewsController implements ReadController {
 	 * @return array{default: string|null, views: list<array{id: string, name: string, view: array<string, mixed>, category: array<string, mixed>|null}>}
 	 */
 	public static function load(): array {
-		$raw     = get_user_meta( get_current_user_id(), self::META_KEY, true );
+		$user = get_current_user_id();
+		$raw  = get_user_meta( $user, self::meta_key(), true );
+		if ( ( ! is_string( $raw ) || '' === $raw ) && is_main_site() ) {
+			// Views saved before they were kept per site: the main site takes them over once.
+			$legacy = get_user_meta( $user, self::META_KEY, true );
+			if ( is_string( $legacy ) && '' !== $legacy ) {
+				update_user_meta( $user, self::meta_key(), wp_slash( $legacy ) );
+				delete_user_meta( $user, self::META_KEY );
+				$raw = $legacy;
+			}
+		}
 		$decoded = is_string( $raw ) && '' !== $raw ? json_decode( $raw, true ) : null;
 		$views   = [];
 		foreach ( is_array( $decoded['views'] ?? null ) ? $decoded['views'] : [] as $record ) {
@@ -439,7 +462,7 @@ final class ViewsController implements ReadController {
 			]
 		);
 		// update_user_meta() unslashes its value; slash it so a backslash in the JSON survives.
-		update_user_meta( get_current_user_id(), self::META_KEY, wp_slash( (string) $json ) );
+		update_user_meta( get_current_user_id(), self::meta_key(), wp_slash( (string) $json ) );
 	}
 
 	/**

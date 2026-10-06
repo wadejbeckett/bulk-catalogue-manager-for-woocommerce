@@ -3,9 +3,14 @@
 # jobs here rather than weakening it; Plugin Check and the release job are T78.
 name: CI
 
+# Runs on the branches that are released from and on pull requests to main,
+# not on every working branch: the full suites run locally first (tests/probe/README.md).
 on:
   push:
+    branches: [ main, codex/integration ]
   pull_request:
+    branches: [ main ]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -69,9 +74,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Current and previous supported WordPress; current WooCommerce and the last 10.x.
+        # Current and previous supported WordPress; current WooCommerce and the minimum (11.1.0, ticket 04).
         wp: [ '7.1.2', '7.0.6' ]
-        wc: [ '11.1.2', '10.9.4' ]
+        wc: [ '11.1.2', '11.1.0' ]
     env:
       WP_CMD: npx wp-env run cli wp
     steps:
@@ -108,6 +113,8 @@ jobs:
     env:
       WP_CMD: npx wp-env run cli wp
       BULKCAT_E2E_BASE_URL: http://localhost:8888
+      # This job creates its own disposable wp-env fixture; run guarded native/lifecycle checks.
+      BULKCAT_E2E_FIXTURE: '1'
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5

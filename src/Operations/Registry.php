@@ -12,6 +12,14 @@
  * naming the step — and otherwise returns the list with every entry's
  * arguments normalised, as preview, batches and the journal store it.
  *
+ * Internal actions (T90): `restore_status`, undo's step for a status and its
+ * Off record, and `restore_stock`, undo's step for Manage stock and the stock
+ * values WooCommerce changed with it, are resolved by get() so the writer
+ * runs stored undo items, but ids(), descriptors(), to_client() and
+ * actions_for() leave them out, and validate_list() refuses them as unknown
+ * actions for every caller except
+ * the undo planner, which asks with `$internal` true.
+ *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
  */
@@ -20,6 +28,12 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Operations;
 
+use BulkCatalogueManager\Availability\StatusSwitch;
+use BulkCatalogueManager\External\ExternalOperation;
+use BulkCatalogueManager\External\Providers;
+use BulkCatalogueManager\External\Refusals;
+use BulkCatalogueManager\External\Registered;
+use BulkCatalogueManager\External\RestoreExternal;
 use BulkCatalogueManager\Fields\Registry as Fields;
 use BulkCatalogueManager\Rest\Refusal;
 
@@ -27,6 +41,21 @@ defined( 'ABSPATH' ) || exit;
 
 /**
  * Every action.
+ *
+ * External providers (T104, docs/EXTENSIONS.md §3.1): the shared registry
+ * fires `bulkcat_register_providers` once per request, the first time it is
+ * built on or after `init`, and keeps the providers that registered
+ * (External\Providers). Built before `init` it holds none and is rebuilt,
+ * with the action fired, the first time it is asked for after `init`. With
+ * no provider nothing else changes.
+ *
+ * External actions (T106): get() and has() also resolve each registered
+ * provider's actions (External\ExternalOperation), validated here like any
+ * step; ids(), descriptors(), to_client() and actions_for() list native
+ * actions only, and external_ids() lists the others. validate_list() refuses,
+ * before any step is validated, a change mixing native steps with a
+ * provider's or two providers' steps (400 `bulkcat_mixed_change`), and an
+ * action of a provider that is not registered (409 `bulkcat_provider_unavailable`).
  */
 final class Registry {
 	/**
@@ -50,11 +79,23 @@ final class Registry {
 	public const UNKNOWN_ACTION = 'bulkcat_unknown_action';
 
 	/**
+	 * Actions only the engine itself may list (T90).
+	 */
+	public const INTERNAL = [ RestoreStatus::ID, RestoreStock::ID, RestoreExternal::ID ];
+
+	/**
 	 * The instance runtime code shares.
 	 *
 	 * @var self|null
 	 */
 	private static ?self $instance = null;
+
+	/**
+	 * Whether the shared instance was built after `init`, with the providers it fired.
+	 *
+	 * @var bool
+	 */
+	private static bool $fired = false;
 
 	/**
 	 * Operations by id, in panel order.
@@ -64,20 +105,42 @@ final class Registry {
 	private array $operations = [];
 
 	/**
+	 * The external providers.
+	 *
+	 * @var Providers
+	 */
+	private readonly Providers $providers;
+
+	/**
+	 * External actions by id, provider by provider (T106).
+	 *
+	 * @var array<string, ExternalOperation>
+	 */
+	private array $external = [];
+
+	/**
 	 * Build every action over a field registry. Code outside tests passes no
 	 * list; a test double passes its own operations.
 	 *
 	 * @param Fields               $fields     Field registry the actions resolve their fields from.
 	 * @param list<Operation>|null $operations The operations, or null for every version 1 action.
+	 * @param Providers|null       $providers  The external providers; none by default.
 	 * @throws \LogicException When two operations share an id.
 	 */
-	public function __construct( private readonly Fields $fields, ?array $operations = null ) {
-		foreach ( $operations ?? self::defaults( $fields ) as $operation ) {
+	public function __construct( private readonly Fields $fields, ?array $operations = null, ?Providers $providers = null ) {
+		$this->providers = $providers ?? Providers::none();
+		$list            = $operations ?? [ ...self::defaults( $fields ), new RestoreExternal( $this->providers ) ];
+		foreach ( $list as $operation ) {
 			$id = $operation->describe()->id();
 			if ( isset( $this->operations[ $id ] ) ) {
 				throw new \LogicException( esc_html( sprintf( 'Action "%s" is registered twice.', $id ) ) );
 			}
 			$this->operations[ $id ] = $operation;
+		}
+		foreach ( $this->providers->all() as $provider ) {
+			foreach ( array_keys( $provider->all_described() ) as $id ) {
+				$this->external[ $id ] = new ExternalOperation( $provider, $id );
+			}
 		}
 	}
 
@@ -85,10 +148,19 @@ final class Registry {
 	 * The shared registry, over the shared field registry.
 	 */
 	public static function instance(): self {
-		if ( null === self::$instance ) {
-			self::$instance = new self( Fields::instance() );
+		if ( null === self::$instance || ( ! self::$fired && did_action( 'init' ) > 0 ) ) {
+			$fire           = did_action( 'init' ) > 0;
+			self::$instance = new self( Fields::instance(), null, $fire ? Providers::fire() : null );
+			self::$fired    = $fire;
 		}
 		return self::$instance;
+	}
+
+	/**
+	 * The external providers this registry holds (T104).
+	 */
+	public function providers(): Providers {
+		return $this->providers;
 	}
 
 	/**
@@ -99,12 +171,21 @@ final class Registry {
 	}
 
 	/**
-	 * Every action id, in panel order.
+	 * Every public action id, in panel order.
 	 *
 	 * @return string[]
 	 */
 	public function ids(): array {
-		return array_keys( $this->operations );
+		return array_values( array_diff( array_keys( $this->operations ), self::INTERNAL ) );
+	}
+
+	/**
+	 * The internal action ids registered here.
+	 *
+	 * @return string[]
+	 */
+	public function internal_ids(): array {
+		return array_values( array_intersect( array_keys( $this->operations ), self::INTERNAL ) );
 	}
 
 	/**
@@ -113,7 +194,49 @@ final class Registry {
 	 * @param string $id Action id.
 	 */
 	public function has( string $id ): bool {
-		return isset( $this->operations[ $id ] );
+		return isset( $this->operations[ $id ] ) || isset( $this->external[ $id ] );
+	}
+
+	/**
+	 * Every registered external action id, provider by provider (T106).
+	 *
+	 * @return list<string>
+	 */
+	public function external_ids(): array {
+		return array_keys( $this->external );
+	}
+
+	/**
+	 * The kinds of change a list's steps make, each once (T107): '' for
+	 * native steps, else a provider id. A list the writer is given holds one
+	 * kind; more than one means it mixes kinds.
+	 *
+	 * @param array<mixed> $operations An operation list.
+	 * @return list<string>
+	 */
+	public function kinds( array $operations ): array {
+		$kinds = [];
+		foreach ( $operations as $step ) {
+			$kinds[ is_array( $step ) ? self::kind( $step ) : '' ] = true;
+		}
+		return array_map( 'strval', array_keys( $kinds ) );
+	}
+
+	/**
+	 * The provider of a change with external steps, or null for a native one
+	 * (a normalised list holds one provider's steps at most). An internal
+	 * external step names its provider through its field.
+	 *
+	 * @param array<mixed> $operations A normalised operation list.
+	 */
+	public function external_provider( array $operations ): ?Registered {
+		foreach ( $operations as $step ) {
+			$kind = is_array( $step ) ? self::kind( $step ) : '';
+			if ( '' !== $kind ) {
+				return $this->providers->get( $kind );
+			}
+		}
+		return null;
 	}
 
 	/**
@@ -122,7 +245,7 @@ final class Registry {
 	 * @param string $id Action id.
 	 */
 	public function get( string $id ): ?Operation {
-		return $this->operations[ $id ] ?? null;
+		return $this->operations[ $id ] ?? $this->external[ $id ] ?? null;
 	}
 
 	/**
@@ -137,12 +260,24 @@ final class Registry {
 	}
 
 	/**
-	 * Every action's descriptor, by id, in panel order.
+	 * Every public action's descriptor, by id, in panel order.
 	 *
 	 * @return array<string, Descriptor>
 	 */
 	public function descriptors(): array {
-		return array_map( static fn( Operation $operation ): Descriptor => $operation->describe(), $this->operations );
+		$descriptors = array_map( static fn( Operation $operation ): Descriptor => $operation->describe(), array_diff_key( $this->operations, array_flip( self::INTERNAL ) ) );
+		if ( isset( $descriptors['set_value'] ) ) {
+			// Discovery hides legacy Status; get()->describe() must still accept stored work.
+			$legacy                                 = $descriptors['set_value'];
+			$fields                                 = array_values( array_filter( $legacy->fields(), fn( string $key ): bool => ! StatusSwitch::governs( $this->fields->get( $key ) ) ) );
+			$groups                                 = array_values( array_intersect( Group::ALL, array_map( fn( string $key ): string => $this->fields->get( $key )->group(), $fields ) ) );
+			$args                                   = $legacy->args();
+			$args['properties']['field']['enum']    = $fields;
+			$args['properties']['field']['choices'] = array_values( array_filter( $args['properties']['field']['choices'], static fn( array $choice ): bool => in_array( $choice['value'], $fields, true ) ) );
+			unset( $args['properties']['keep_changed_status'] );
+			$descriptors['set_value'] = $legacy->with_fields( $fields, $groups, $args );
+		}
+		return $descriptors;
 	}
 
 	/**
@@ -176,9 +311,10 @@ final class Registry {
 	 * Validate an ordered operation list before any object is read.
 	 *
 	 * @param mixed $operations The list as submitted: `[ { action, args }, ... ]`.
+	 * @param bool  $internal   Whether the internal actions are accepted: the undo planner only (T90).
 	 * @return list<array{action: string, args: array<string, mixed>}>|\WP_Error The normalised list, or the refusal.
 	 */
-	public function validate_list( mixed $operations ): array|\WP_Error {
+	public function validate_list( mixed $operations, bool $internal = false ): array|\WP_Error {
 		if ( ! is_array( $operations ) || ! array_is_list( $operations ) ) {
 			return self::refusal( BaseOperation::INVALID, __( 'The list of changes could not be read. Choose the changes again and try again.', 'bulk-catalogue-manager-for-woocommerce' ) );
 		}
@@ -202,7 +338,21 @@ final class Registry {
 			);
 		}
 
-		$valid = [];
+		$kinds = [];
+		foreach ( $operations as $entry ) {
+			$kinds[ is_array( $entry ) ? self::kind( $entry ) : '' ] = true;
+		}
+		if ( count( $kinds ) > 1 ) {
+			// T106: one change holds native steps or one provider's steps, never both.
+			return Refusals::mixed();
+		}
+		$external = (string) array_key_first( $kinds );
+		if ( '' !== $external && null === $this->providers->get( $external ) ) {
+			return Refusals::missing();
+		}
+
+		$valid   = [];
+		$targets = null;
 		foreach ( $operations as $index => $entry ) {
 			$step = $index + 1;
 			if ( ! is_array( $entry ) || ! is_string( $entry['action'] ?? null ) || ! is_array( $entry['args'] ?? [] ) || [] !== array_diff_key(
@@ -214,12 +364,45 @@ final class Registry {
 			) ) {
 				return self::step_refusal( $step, $count, BaseOperation::INVALID, __( 'This step could not be read. Choose the action again and try again.', 'bulk-catalogue-manager-for-woocommerce' ) );
 			}
-			$operation = $this->get( $entry['action'] );
+			$operation = $internal || ! in_array( $entry['action'], self::INTERNAL, true ) ? $this->get( $entry['action'] ) : null;
 			if ( null === $operation ) {
 				return self::step_refusal( $step, $count, self::UNKNOWN_ACTION, __( 'This step asks for an action that is not available. Choose an action from the list and try again.', 'bulk-catalogue-manager-for-woocommerce' ), [ 'action' => $entry['action'] ] );
 			}
 			$args  = $entry['args'] ?? [];
 			$field = $args['field'] ?? null;
+			if ( $operation instanceof ExternalOperation || $operation instanceof RestoreExternal ) {
+				$validation = $operation->validate( $args );
+				$error      = $validation->error();
+				if ( null !== $error ) {
+					$data = (array) $error->get_error_data();
+					return in_array( (int) ( $data['status'] ?? 400 ), [ 400 ], true )
+						? self::step_refusal( $step, $count, (string) $error->get_error_code(), $error->get_error_message(), $data )
+						: $error;
+				}
+				$valid[] = [
+					'action' => $entry['action'],
+					'args'   => $validation->args(),
+				];
+				$target  = $this->providers->get( $external )?->category_change( [ end( $valid ) ] ) ? 'product_cat' : 'product';
+				if ( null !== $targets && $targets !== $target ) {
+					// Contract version 2: one change acts on products or on categories, never both (docs/EXTENSIONS-v2.md §5.3).
+					return Refusals::mixed();
+				}
+				$targets = $target;
+				continue;
+			}
+			$resolved = is_string( $field ) ? $this->fields->get( $field ) : null;
+			if ( 'set_value' === $entry['action'] && null !== $resolved && StatusSwitch::governs( $resolved ) ) {
+				if ( array_key_exists( 'keep_changed_status', $args ) && false !== $args['keep_changed_status'] ) {
+					return self::step_refusal( $step, $count, BaseOperation::INVALID, __( 'Status controls have changed. Reload and review the change again.', 'bulk-catalogue-manager-for-woocommerce' ) );
+				}
+				$entry['action'] = 'set_status';
+				unset( $args['keep_changed_status'] );
+				$operation = $this->get( 'set_status' );
+				if ( null === $operation ) {
+					return self::step_refusal( $step, $count, self::UNKNOWN_ACTION, __( 'This step asks for an action that is not available. Choose an action from the list and try again.', 'bulk-catalogue-manager-for-woocommerce' ) );
+				}
+			}
 			if ( is_string( $field ) && '' !== $field && ! $operation->describe()->accepts( $field ) ) {
 				$refusal = $operation instanceof BaseOperation
 					? $operation->field_refusal( $field )
@@ -240,6 +423,22 @@ final class Registry {
 	}
 
 	/**
+	 * The kind of change a step makes (T106): '' for a native action, else
+	 * the provider id its action (or, for an internal external step, its
+	 * field) names.
+	 *
+	 * @param array<mixed> $step A step as submitted.
+	 */
+	private static function kind( array $step ): string {
+		$action = is_string( $step['action'] ?? null ) ? $step['action'] : '';
+		if ( Providers::is_external( $action ) ) {
+			return (string) Providers::owner( $action );
+		}
+		$field = is_array( $step['args'] ?? null ) && is_string( $step['args']['field'] ?? null ) ? $step['args']['field'] : '';
+		return Providers::is_external( $field ) ? (string) Providers::owner( $field ) : '';
+	}
+
+	/**
 	 * Every version 1 action, in the order the panel lists them.
 	 *
 	 * @param Fields $fields Field registry.
@@ -248,6 +447,7 @@ final class Registry {
 	private static function defaults( Fields $fields ): array {
 		return [
 			new SetValue( $fields ),
+			new SetStatus( $fields ),
 			new Clear( $fields ),
 			new Adjust( $fields ),
 			new Round( $fields ),
@@ -257,6 +457,8 @@ final class Registry {
 			new Terms( $fields, Terms::ADD ),
 			new Terms( $fields, Terms::REMOVE ),
 			new Terms( $fields, Terms::REPLACE ),
+			new RestoreStatus( $fields ),
+			new RestoreStock( $fields ),
 		];
 	}
 

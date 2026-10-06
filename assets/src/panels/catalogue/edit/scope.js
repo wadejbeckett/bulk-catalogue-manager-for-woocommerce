@@ -4,8 +4,8 @@
  * with a write in flight, the notice for a write that failed outside a cell,
  * and the detail panel with the control that opened it.
  *
- * table.js calls useEditScope() and wraps the table in its `wrap()`; the
- * cells reach the scope through EditContext.
+ * The catalogue layout owns this scope across table/cards changes; standalone
+ * tables/cards own one themselves. Cells reach it through EditContext.
  */
 import {
 	createContext,
@@ -16,9 +16,12 @@ import {
 	useState,
 } from '@wordpress/element';
 
+import { __ } from '@wordpress/i18n';
+import { createInlineReceipts } from './receipts';
+import { SaveNotice } from './reconciliation';
 import ErrorNotice from '../../history/error-notice';
 import DetailDrawer from './drawer';
-import { patchProduct } from './requests';
+import { readProduct } from './requests';
 
 /** The row action that opens the detail panel (actions.js). */
 const EDIT_DETAILS = 'edit-details';
@@ -51,6 +54,8 @@ export function rowFields( item, descriptors, extra = [] ) {
  * @param {Array<Object>} props.actions            Row actions.
  * @param {Set}           props.pending            Rows the catalogue already holds pending.
  * @param {Function}      props.onExpandVariations Show a product's variations in the grid (T67), if wired.
+ * @param {Object}        props.settings           Localised site/user storage scope.
+ * @param {Function}      props.onCommitted        Reconcile the current query after a write.
  * @return {Object} { items, actions, pending, wrap }.
  */
 export function useEditScope( {
@@ -59,11 +64,27 @@ export function useEditScope( {
 	actions,
 	pending,
 	onExpandVariations,
+	onCommitted,
+	settings,
 } ) {
+	const root = settings?.root || '';
+	const userId = Number( settings?.user?.id ) || 0;
+	const receipts = useMemo(
+		() => createInlineReceipts( { root, user: { id: userId } } ),
+		[ root, userId ]
+	);
 	const [ written, setWritten ] = useState( () => new Map() );
-	const [ busy, setBusy ] = useState( () => new Set() );
+	const [ busy, setBusy ] = useState( () => new Set( receipts.heldIds() ) );
 	const [ failure, setFailure ] = useState( null );
 	const [ drawer, setDrawer ] = useState( null );
+	const [ outcomes, setOutcomes ] = useState( () => new Map() );
+	const inflight = useRef( new Map() );
+	const recovery = useRef( new Set() );
+	const generations = useRef( new Map() );
+	const committed = useRef( onCommitted );
+	committed.current = onCommitted;
+	const wrapper = useRef( null );
+	const lostFocus = useRef( null );
 	const opener = useRef( null );
 	const returnFocus = useRef( null );
 
@@ -126,31 +147,310 @@ export function useEditScope( {
 		} );
 	}, [] );
 
+	// A read recovery for an older save cannot replace a newer outcome.
+	const record = useCallback( ( id, outcome ) => {
+		setOutcomes( ( current ) => {
+			if (
+				outcome &&
+				outcome.generation !== generations.current.get( id )
+			) {
+				return current;
+			}
+			const next = new Map( current );
+			if ( outcome ) {
+				next.set( id, outcome );
+			} else {
+				next.delete( id );
+			}
+			return next;
+		} );
+	}, [] );
+
+	const refresh = useCallback( async ( answer ) => {
+		try {
+			await committed.current?.( answer );
+			return { state: 'complete' };
+		} catch {
+			return {
+				state: 'failed',
+				message: __(
+					'The results could not be refreshed.',
+					'bulk-catalogue-manager-for-woocommerce'
+				),
+			};
+		}
+	}, [] );
+
+	// Adopt immutable evidence first; a current row is an independent strict read.
+	const adopt = useCallback(
+		async ( receipt, outcome ) => {
+			const id = outcome.item.id;
+			const currentGeneration = () =>
+				generations.current.get( id ) === outcome.generation;
+			if ( ! [ 'closed', 'refused' ].includes( receipt.receipt_state ) ) {
+				const unconfirmed = {
+					...outcome,
+					state: 'uncertain',
+					answer: receipt,
+					readFailed: receipt.readFailed,
+					reading: false,
+					held: true,
+				};
+				record( id, unconfirmed );
+				return unconfirmed;
+			}
+			let item = receipt.recovered ? undefined : receipt.item;
+			let rowFailed = false;
+			if ( receipt.recovered && receipt.receipt_state === 'closed' ) {
+				try {
+					item = await readProduct(
+						id,
+						rowFields(
+							outcome.item,
+							descriptors,
+							Object.keys( outcome.values || {} )
+						)
+					);
+				} catch {
+					rowFailed = true;
+				}
+			}
+			if ( currentGeneration() && item ) {
+				replace( item );
+			}
+			const answer = {
+				...receipt,
+				status: receipt.write_status,
+				...( item ? { item } : {} ),
+			};
+			if ( receipt.recovered ) {
+				delete answer.item;
+				delete answer.results;
+				if ( item ) {
+					answer.item = item;
+				}
+			}
+			const readback =
+				receipt.receipt_state === 'closed'
+					? await refresh( answer )
+					: { state: 'complete' };
+			if ( rowFailed ) {
+				readback.state = 'failed';
+			}
+			answer.refresh = readback;
+			const state =
+				receipt.write_status === 'complete'
+					? 'saved'
+					: receipt.write_status;
+			const result = {
+				...outcome,
+				state: receipt.receipt_state === 'refused' ? 'refused' : state,
+				answer,
+				refresh: readback,
+				reading: false,
+				rowFailed,
+				readFailed: readback.state === 'failed',
+				held: receipt.held,
+				clearFailed: receipt.clearFailed,
+			};
+			record( id, result );
+			if ( currentGeneration() ) {
+				mark( id, receipts.isHeld( id ) );
+			}
+			return result;
+		},
+		[ descriptors, mark, receipts, record, refresh, replace ]
+	);
+
+	// The constructor has already locked restored objects. Mount makes one
+	// read-only pass; StrictMode effect replay shares that same pass.
+	const latest = useRef();
+	latest.current = { items, adopt };
+	useEffect( () => {
+		let live = true;
+		const ids = receipts.heldIds();
+		ids.forEach( ( id ) => {
+			generations.current.set(
+				id,
+				( generations.current.get( id ) || 0 ) + 1
+			);
+			mark( id, true );
+		} );
+		const versions = new Map( generations.current );
+		receipts
+			.restore()
+			.then( async ( answers ) => {
+				for ( const answer of answers ) {
+					if ( ! live ) {
+						return;
+					}
+					const id = answer.object_id;
+					await latest.current.adopt( answer, {
+						item: latest.current.items?.find(
+							( row ) => row.id === id
+						) || { id },
+						generation: versions.get( id ),
+					} );
+				}
+			} )
+			.catch( ( error ) => {
+				if ( live ) {
+					setFailure( { error, message: error.message } );
+				}
+			} );
+		return () => {
+			live = false;
+		};
+	}, [ receipts, mark ] );
+
 	/**
-	 * Write values to a row: pending until the answer, whose item replaces
-	 * the row. Rejects with the refusal, leaving the row as it was.
+	 * One Save: issue, strictly keep identity, PATCH once, adopt, reconcile.
+	 * The public answer/error contracts remain usable by cells and drawers.
 	 *
-	 * @param {Object}        item   Row.
-	 * @param {Object}        values Field key => value.
-	 * @param {Array<string>} extra  Further fields the answer should carry.
-	 * @return {Promise<Object>} The answer.
+	 * @param {Object} item    Current row.
+	 * @param {Object} values  Typed field values.
+	 * @param {Array}  extra   Further read fields.
+	 * @param {Object} options Legacy keep flag.
+	 * @return {Promise<Object>} Answer with a separate refresh outcome.
 	 */
 	const commit = useCallback(
-		( item, values, extra = [] ) => {
-			mark( item.id, true );
-			return patchProduct(
-				item.id,
-				values,
-				rowFields( item, descriptors, extra )
-			)
-				.then( ( answer ) => {
-					replace( answer?.item );
-					return answer;
-				} )
-				.finally( () => mark( item.id, false ) );
+		( item, values, extra = [], options = {} ) => {
+			const id = item.id;
+			const intent = JSON.stringify( [
+				Object.keys( values )
+					.sort()
+					.map( ( key ) => [ key, values[ key ] ] ),
+				!! options.keep,
+			] );
+			const existing = inflight.current.get( id );
+			if ( existing ) {
+				return existing.intent === intent
+					? existing.promise
+					: Promise.reject( {
+							code: 'edit_in_flight',
+							message: __(
+								'This product is already saving. Wait for its outcome before saving another edit.',
+								'bulk-catalogue-manager-for-woocommerce'
+							),
+							data: { status: 409 },
+						} );
+			}
+			if ( receipts.isHeld( id ) ) {
+				return Promise.reject( { code: 'invalid_json' } );
+			}
+			const generation = ( generations.current.get( id ) || 0 ) + 1;
+			generations.current.set( id, generation );
+			setFailure( null );
+			const submitted = JSON.parse( JSON.stringify( values ) );
+			const doc = wrapper.current?.ownerDocument;
+			const focused = doc?.activeElement;
+			if ( focused && wrapper.current?.contains( focused ) ) {
+				lostFocus.current = focused;
+			}
+			mark( id, true );
+			record( id, null );
+			const outcome = { generation, item, values: submitted };
+			const promise = receipts
+				.save(
+					id,
+					submitted,
+					rowFields( item, descriptors, extra ),
+					options
+				)
+				.then(
+					async ( receipt ) => {
+						const result = await adopt( receipt, outcome );
+						if ( result.state === 'uncertain' ) {
+							throw { code: 'invalid_json', data: { receipt } };
+						}
+						if ( result.state === 'refused' && receipt.refusal ) {
+							throw receipt.refusal;
+						}
+						if ( result.state !== 'saved' ) {
+							const refusal =
+								receipt.refusal ||
+								result.answer.results?.find( ( step ) =>
+									[ 'skipped', 'failed' ].includes(
+										step.state
+									)
+								);
+							throw {
+								code: refusal?.code || result.state,
+								message:
+									refusal?.message || refusal?.reason || '',
+								data: {
+									...refusal?.data,
+									field:
+										refusal?.field || refusal?.data?.field,
+									answer: result.answer,
+								},
+							};
+						}
+						return result.answer;
+					},
+					( error ) => {
+						if ( receipts.isHeld( id ) ) {
+							record( id, {
+								...outcome,
+								state: 'uncertain',
+								held: true,
+								readFailed: true,
+							} );
+						}
+						throw error;
+					}
+				)
+				.finally( () => {
+					inflight.current.delete( id );
+					mark( id, receipts.isHeld( id ) );
+				} );
+			inflight.current.set( id, { intent, promise } );
+			return promise;
 		},
-		[ descriptors, mark, replace ]
+		[ adopt, descriptors, mark, receipts, record ]
 	);
+
+	const recover = async ( outcome ) => {
+		const id = outcome.item.id;
+		if ( recovery.current.has( id ) ) {
+			return;
+		}
+		recovery.current.add( id );
+		record( id, { ...outcome, reading: true, readFailed: false } );
+		try {
+			if ( receipts.isHeld( id ) ) {
+				await adopt( await receipts.resolve( id ), outcome );
+			} else {
+				// Retry a failed current read without reinterpreting the closure.
+				await adopt(
+					{
+						...outcome.answer,
+						recovered: true,
+					},
+					outcome
+				);
+			}
+		} catch {
+			record( id, { ...outcome, reading: false, readFailed: true } );
+		} finally {
+			recovery.current.delete( id );
+		}
+	};
+
+	// A removed row must not strand keyboard focus. Never steal focus after
+	// the user moves elsewhere, or from a drawer that is still open.
+	useEffect( () => {
+		const element = lostFocus.current;
+		const doc = wrapper.current?.ownerDocument;
+		if ( element && ! element.isConnected ) {
+			lostFocus.current = null;
+			if ( doc?.activeElement === doc.body && ! drawer ) {
+				wrapper.current
+					?.querySelector( 'input[type="search"]' )
+					?.focus();
+			}
+		}
+	} );
 
 	const openDrawer = useCallback( ( item ) => {
 		const doc = typeof document !== 'undefined' ? document : null;
@@ -185,7 +485,10 @@ export function useEditScope( {
 		const buttons = cell
 			?.closest( 'tr' )
 			?.querySelectorAll( 'button[aria-haspopup]' );
-		buttons?.[ buttons.length - 1 ]?.focus();
+		const target =
+			buttons?.[ buttons.length - 1 ] ||
+			wrapper.current?.querySelector( 'input[type="search"]' );
+		target?.focus();
 	}, [ drawer ] );
 
 	const withDrawer = useMemo(
@@ -222,27 +525,49 @@ export function useEditScope( {
 			? null
 			: rows.find( ( item ) => item.id === drawer.id ) || drawer;
 
+	const notices = ( id ) =>
+		[ ...outcomes.values() ]
+			.filter( ( outcome ) =>
+				id === undefined
+					? outcome.item.id !== drawer?.id
+					: outcome.item.id === id
+			)
+			.map( ( outcome ) => (
+				<SaveNotice
+					key={ outcome.item.id }
+					outcome={ outcome }
+					descriptors={ descriptors }
+					onRefresh={ () => recover( outcome ) }
+					onRemove={ () => record( outcome.item.id, null ) }
+				/>
+			) );
 	const wrap = ( children ) => (
 		<EditContext.Provider value={ context }>
-			{ failure && (
-				<div className="bulkcat-edit__notice">
-					<ErrorNotice
-						error={ failure.error }
-						fallback={ failure.message }
-						onRemove={ () => setFailure( null ) }
+			<div ref={ wrapper }>
+				{ notices() }
+				{ failure && (
+					<div className="bulkcat-edit__notice">
+						<ErrorNotice
+							error={ failure.error }
+							fallback={ failure.message }
+							onRemove={ () => setFailure( null ) }
+						/>
+					</div>
+				) }
+				{ children }
+				{ drawerItem && (
+					<DetailDrawer
+						item={ drawerItem }
+						key={ drawerItem.id }
+						blocked={ receipts.isHeld( drawerItem.id ) }
+						notice={ notices( drawerItem.id ) }
+						descriptors={ descriptors }
+						commit={ commit }
+						onClose={ closeDrawer }
+						onExpandVariations={ onExpandVariations }
 					/>
-				</div>
-			) }
-			{ children }
-			{ drawerItem && (
-				<DetailDrawer
-					item={ drawerItem }
-					descriptors={ descriptors }
-					commit={ commit }
-					onClose={ closeDrawer }
-					onExpandVariations={ onExpandVariations }
-				/>
-			) }
+				) }
+			</div>
 		</EditContext.Provider>
 	);
 

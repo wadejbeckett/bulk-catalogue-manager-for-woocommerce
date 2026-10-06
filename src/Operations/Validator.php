@@ -40,7 +40,8 @@ defined( 'ABSPATH' ) || exit;
  *    stock quantity where the object does not manage stock, a value the
  *    field refuses (a price below zero among them), and a SKU another
  *    object holds (wc_product_has_unique_sku(), products and variations
- *    together). The row fails with the field's sentence, except stock
+ *    together). A stock status where stock is managed is skipped first, since
+ *    WooCommerce sets it from the quantity on save. The row fails with the field's sentence, except stock
  *    quantity on unmanaged stock and a value below zero, which are skipped
  *    (SPEC §5.4, §8).
  * 3. The cross-field rules. A SKU another object in this same run has
@@ -122,6 +123,21 @@ final class Validator {
 	}
 
 	/**
+	 * For a change to a term field (categories, tags, shipping class): the
+	 * refusal when the user lacks the taxonomy's `assign_terms` capability,
+	 * as core requires; null otherwise, and for any other field.
+	 *
+	 * @param Field $field The field changed.
+	 */
+	public function term_refusal( Field $field ): ?\WP_Error {
+		if ( ! self::assigns_terms( $field ) ) {
+			return null;
+		}
+		$allowed = Access::can_assign_terms( $this->user_id, $field->storage()->key(), $field->label() );
+		return true === $allowed ? null : $allowed;
+	}
+
+	/**
 	 * Check one computed Result for one object: the Results to apply, in
 	 * order. The first is the verdict on this Result; a second, clearing the
 	 * sale price, follows only when a regular price change leaves the sale
@@ -139,8 +155,18 @@ final class Validator {
 			return [ Result::skipped( $result->field(), $result->old(), $denied->get_error_message(), (string) $denied->get_error_code() ) ];
 		}
 		$field = $this->fields->get( $result->field() );
+		if ( null !== $field && \BulkCatalogueManager\Availability\StatusSwitch::governs( $field ) && in_array( $result->state(), [ Result::CHANGED,Result::ALREADY ], true ) ) {
+			$denied   = \BulkCatalogueManager\Publishing\StatusPermission::check( $this->user_id, $subject, (string) $result->new() );
+			$denied ??= \BulkCatalogueManager\Publishing\PublicationPassword::variation_refusal( $subject, (string) $result->new(), array_key_exists( 'password', $args ) );
+			if ( null !== $denied ) {
+				return [ Result::skipped( $result->field(), $result->old(), $denied->get_error_message(), (string) $denied->get_error_code() ) ]; }
+		}
 		if ( null !== $field && $field->requires_managed_stock() && self::is( $subject, 'variation' ) && true !== $subject->get_manage_stock( 'edit' ) ) {
 			return [ Result::skipped( $result->field(), $result->old(), self::unmanaged_stock_reason(), self::NOT_AVAILABLE ) ];
+		}
+		if ( null !== $field && 'stock_status' === $field->key() && $result->is_changed() && self::manages_stock( $subject ) ) {
+			// WooCommerce works the stock status out from the quantity on save: never reported as a change it reverts.
+			return [ Result::skipped( $result->field(), $result->old(), self::managed_status_reason(), self::NOT_AVAILABLE ) ];
 		}
 		$pushed = true === ( $args[ BaseOperation::APPLY_TO_VARIATIONS ] ?? null );
 		if ( $pushed && Result::FAILED === $result->state() && self::NOT_AVAILABLE === $result->code() && self::is( $subject, 'variable' ) ) {
@@ -152,11 +178,9 @@ final class Validator {
 		if ( null === $field ) {
 			throw new \LogicException( esc_html( sprintf( 'Field "%s" is not in the registry.', $result->field() ) ) );
 		}
-		if ( self::assigns_terms( $field ) ) {
-			$denied = Access::can_assign_terms( $this->user_id, $field->storage()->key(), $field->label() );
-			if ( true !== $denied ) {
-				return [ Result::skipped( $result->field(), $result->old(), $denied->get_error_message(), (string) $denied->get_error_code() ) ];
-			}
+		$denied = $this->term_refusal( $field );
+		if ( null !== $denied ) {
+			return [ Result::skipped( $result->field(), $result->old(), $denied->get_error_message(), (string) $denied->get_error_code() ) ];
 		}
 
 		$refusal = $field->refusal( $subject, $result->new() );
@@ -169,6 +193,30 @@ final class Validator {
 			return [ $clash ];
 		}
 		return $this->check_prices( $field, $subject, $result, ! empty( $args['clear_invalid_sale'] ) );
+	}
+
+	/**
+	 * The Results that follow a checked step on the same object (T89): what
+	 * the operation's follow() returns, but only for a Result this check left
+	 * changed or already. A step refused here — permission among the reasons —
+	 * never changes anything else, so a skipped Status step never touches the
+	 * Off record.
+	 *
+	 * @param Operation            $operation The step's operation.
+	 * @param object               $subject   The object, before anything is applied.
+	 * @param Result               $checked   The first Result check() returned.
+	 * @param array<string, mixed> $args      The step's normalised arguments.
+	 * @return list<Result>
+	 */
+	public function follow( Operation $operation, object $subject, Result $checked, array $args ): array {
+		if ( ! in_array( $checked->state(), [ Result::CHANGED, Result::ALREADY ], true ) ) {
+			return [];
+		}
+		$follow = $operation->follow( $subject, $checked, $args );
+		$field  = $this->fields->get( $checked->field() );
+		if ( 'set_value' === $operation->id() && null !== $field && \BulkCatalogueManager\Availability\StatusSwitch::governs( $field ) ) {
+			$follow = array_merge( $follow, \BulkCatalogueManager\Publishing\PublicationPassword::clearing( $subject, $checked ) ); }
+		return $follow;
 	}
 
 	/**
@@ -298,6 +346,25 @@ final class Validator {
 	 */
 	public static function unmanaged_stock_reason(): string {
 		return __( 'This variation does not manage its own stock, so its stock quantity was not changed. Turn on Manage stock for the variation first.', 'bulk-catalogue-manager-for-woocommerce' );
+	}
+
+	/**
+	 * The reason a stock status is not changed where stock is managed:
+	 * WooCommerce sets it from the stock quantity on save.
+	 */
+	public static function managed_status_reason(): string {
+		return __( 'Stock status is set by the stock quantity when stock is managed, so it was not changed. Change the stock quantity, or turn off Manage stock first.', 'bulk-catalogue-manager-for-woocommerce' );
+	}
+
+	/**
+	 * Whether WooCommerce manages the object's stock as it saves it: its own,
+	 * or, for a variation, its parent's.
+	 *
+	 * @param object $subject A product or variation.
+	 */
+	private static function manages_stock( object $subject ): bool {
+		$managed = $subject->get_manage_stock();
+		return true === $managed || 'parent' === $managed;
 	}
 
 	/**

@@ -46,6 +46,10 @@ defined( 'ABSPATH' ) || exit;
  * item's own operation list as JSON, for a batch whose objects each take
  * their own operations (an undo batch puts each object's own old values
  * back); NULL for every other item, which takes the batch's list.
+ * Schema version 7 (T81) adds the selection and request tables.
+ * Schema version 8 (T107, docs/EXTENSIONS.md §8.2) adds a nullable
+ * `extensions` on batches: the provider manifest of a batch with external
+ * steps (External\Manifest), NULL for every other batch.
  * Bump Migrator::SCHEMA_VERSION whenever a body here changes.
  */
 final class Schema {
@@ -77,7 +81,7 @@ final class Schema {
 	/**
 	 * Object types an item or change refers to.
 	 */
-	public const OBJECT_TYPES = [ 'product', 'variation', 'term' ];
+	public const OBJECT_TYPES = [ 'product', 'variation', 'term', 'product_cat' ];
 
 	/**
 	 * Item states.
@@ -126,6 +130,7 @@ chunk_size smallint(5) unsigned NOT NULL DEFAULT 0,
 note varchar(255) NOT NULL DEFAULT \'\',
 actions varchar(255) NOT NULL DEFAULT \'\',
 pruned_gmt datetime NULL,
+extensions longtext NULL,
 PRIMARY KEY  (batch_id),
 KEY created_gmt (created_gmt),
 KEY status (status),
@@ -167,12 +172,49 @@ KEY batch_id (batch_id),
 KEY object_prop (object_id,prop),
 KEY applied_gmt (applied_gmt)';
 
+	/** Immutable selection payload storage. */
+	public const SELECTIONS = 'bulkcat_selections';
+
+	/** Durable request results, independent of payload lifetime. */
+	public const REQUESTS = 'bulkcat_requests';
+
+	/** Selection payload and separately renewable authorization. */
+	public const SELECTIONS_BODY = 'id char(32) NOT NULL,
+user_id bigint(20) unsigned NOT NULL,
+members mediumtext NOT NULL,
+object_count int(10) unsigned NOT NULL,
+created_at datetime NOT NULL,
+authorization_epoch int(10) unsigned NOT NULL,
+authorization_expires_at datetime NOT NULL,
+retained_until datetime NOT NULL,
+released_at datetime NULL,
+PRIMARY KEY  (id),
+KEY retained_until (retained_until),
+KEY owner_retention (user_id,retained_until)';
+
+	/** One accepted identity per owner, across operation kinds. */
+	public const REQUESTS_BODY = 'user_id bigint(20) unsigned NOT NULL,
+uuid char(36) NOT NULL,
+operation varchar(32) NOT NULL,
+fingerprint char(64) NOT NULL,
+issued_at datetime NOT NULL,
+accept_until datetime NOT NULL,
+state varchar(16) NOT NULL,
+result_kind varchar(16) NOT NULL,
+result_id varchar(32) NOT NULL,
+retain_until datetime NULL,
+PRIMARY KEY  (user_id,uuid),
+KEY retain_until (retain_until),
+KEY result_identity (result_kind,result_id)';
+
 	/**
 	 * The three tables, unprefixed name => CREATE TABLE body, for the registry.
 	 */
 	public const TABLES = [
-		self::BATCHES => self::BATCHES_BODY,
-		self::ITEMS   => self::ITEMS_BODY,
-		self::CHANGES => self::CHANGES_BODY,
+		self::BATCHES    => self::BATCHES_BODY,
+		self::ITEMS      => self::ITEMS_BODY,
+		self::CHANGES    => self::CHANGES_BODY,
+		self::SELECTIONS => self::SELECTIONS_BODY,
+		self::REQUESTS   => self::REQUESTS_BODY,
 	];
 }

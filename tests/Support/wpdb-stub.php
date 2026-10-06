@@ -32,9 +32,21 @@ if ( ! class_exists( WpdbStub::class ) ) {
 
 		public string $options = 'wp_options';
 
+		public string $terms = 'wp_terms';
+
+		public string $term_taxonomy = 'wp_term_taxonomy';
+
+		/** As MySQL with lower_case_table_names=1: names are stored and answered in lower case. */
+		public bool $lower_case_names = false;
+
 		public int $insert_id = 0;
 
 		public string $last_error = '';
+
+		public int $reconnect_retries = 5;
+
+		/** Native connection metadata is supplied only by transaction fault tests. */
+		public mixed $dbh = null;
 
 		/**
 		 * Every statement run, in order.
@@ -72,6 +84,9 @@ if ( ! class_exists( WpdbStub::class ) ) {
 		 * @var string[]
 		 */
 		public array $failing = [];
+
+		/** Explicit affected-row acknowledgements for strict receipt fault tests. */
+		public array $write_results = [];
 
 		/**
 		 * Existing tables, full name => true.
@@ -156,18 +171,43 @@ if ( ! class_exists( WpdbStub::class ) ) {
 				return false;
 			}
 			++$this->insert_id;
-			return 1;
+			return $this->write_results[ 'insert:' . $table ] ?? 1;
 		}
 
 		public function update( string $table, array $data, array $where, array|string|null $format = null, array|string|null $where_format = null ): int|false {
 			$this->writes[] = [ 'update', $table, $data, $format, $where, $where_format ];
-			return in_array( 'update', $this->failing, true ) ? false : 1;
+			return $this->update_fails( $table, $data ) ? false : ( $this->write_results[ 'update:' . $table ] ?? 1 );
+		}
+
+		/**
+		 * Whether an update() fails: every update with 'update' in $failing,
+		 * or one writing a column named in 'update:<table>:<column>' (T111: a
+		 * lost race to move a batch's status, while its other updates land).
+		 *
+		 * @param string               $table Table.
+		 * @param array<string, mixed> $data  Columns written.
+		 */
+		public function update_fails( string $table, array $data ): bool {
+			if ( in_array( 'update', $this->failing, true ) ) {
+				return true;
+			}
+			foreach ( array_keys( $data ) as $column ) {
+				if ( in_array( 'update:' . $table . ':' . $column, $this->failing, true ) ) {
+					return true;
+				}
+			}
+			return false;
 		}
 
 		public function get_var( string $query, int $x = 0, int $y = 0 ): ?string {
 			$this->queries[] = $query;
+			// MySQL named locks (T83's scheduling lock) are granted unless a test answers that exact statement.
+			if ( 1 === preg_match( '/^SELECT (GET_LOCK|RELEASE_LOCK)\(/', $query ) && ! array_key_exists( $query, $this->responses ) ) {
+				return '1';
+			}
 			if ( 1 === preg_match( "/^SHOW TABLES LIKE '(.*)'$/", $query, $m ) ) {
 				$name = self::unlike( stripslashes( $m[1] ) );
+				$name = $this->lower_case_names ? strtolower( $name ) : $name;
 				return isset( $this->tables[ $name ] ) ? $name : null;
 			}
 			$value = $this->respond( $query, null );
@@ -181,7 +221,30 @@ if ( ! class_exists( WpdbStub::class ) ) {
 
 		public function get_results( string $query, string $output = OBJECT ): array {
 			$this->queries[] = $query;
-			return $this->respond( $query, [] );
+			// The term tables are the term stubs' own list, unless a test answers this exact statement.
+			$terms = array_key_exists( $query, $this->responses ) ? null : $this->stored_terms( $query );
+			return $terms ?? $this->respond( $query, [] );
+		}
+
+		/**
+		 * The product categories as the term tables hold them: every term in
+		 * the stubs' 'term_list', whatever a filter on term queries hides
+		 * ('hidden_terms'), for a direct read of `wp_terms` joined to
+		 * `wp_term_taxonomy` by taxonomy and, optionally, one term id.
+		 *
+		 * @return list<object>|null Null for any other statement.
+		 */
+		private function stored_terms( string $query ): ?array {
+			if ( 1 !== preg_match( "/FROM `wp_terms` AS t INNER JOIN `wp_term_taxonomy` AS tt ON tt\\.term_id = t\\.term_id WHERE tt\\.taxonomy = '([^']+)'(?: AND t\\.term_id = (\\d+))?/", $query, $m ) ) {
+				return null;
+			}
+			$rows = [];
+			foreach ( $GLOBALS['bulkcat_test']['term_list'] ?? [] as $term ) {
+				if ( ( $term->taxonomy ?? 'product_cat' ) === $m[1] && ( ! isset( $m[2] ) || (int) $term->term_id === (int) $m[2] ) ) {
+					$rows[] = $term;
+				}
+			}
+			return str_contains( $query, 'ORDER BY t.name' ) ? bulkcat_test_by_name( $rows ) : $rows;
 		}
 
 		/**

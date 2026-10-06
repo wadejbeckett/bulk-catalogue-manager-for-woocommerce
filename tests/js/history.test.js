@@ -2,8 +2,9 @@
  * The History panel (T57): the list's filter-to-query mapping, every §4.6
  * state rendered from the route's own fields, a batch expanding to its
  * changes in place, and the undo flow — preview first, conflicts first
- * with the three-way choice, Revert anyway off by default, apply with
- * uuid, plan_hash and force, and the notice when it finishes.
+ * with the three-way choice, Revert anyway off by default, apply as a
+ * durable request (a batch.undo grant over the batch, plan_hash and force,
+ * T84), a retry with the same grant, and the notice when it finishes.
  */
 import {
 	act,
@@ -21,6 +22,13 @@ jest.mock( '@wordpress/api-fetch', () => {
 	return { __esModule: true, default: apiFetch };
 } );
 
+import {
+	coreJson,
+	expectNoRawText,
+	expectPlain,
+	html500,
+} from './error-fixtures';
+
 const apiFetch = require( '@wordpress/api-fetch' ).default;
 const { configureApi } = require( '../../assets/src/api' );
 const History = require( '../../assets/src/panels/history/index.js' ).default;
@@ -35,7 +43,9 @@ const {
 } = require( '../../assets/src/panels/history/describe.js' );
 const {
 	confirmSentence,
-	newUuid,
+	putBackTypes,
+	undoKey,
+	undoneNotice,
 } = require( '../../assets/src/panels/history/undo.js' );
 
 const ROOT = 'https://example.test/wp-json/bulkcat/v1/';
@@ -272,7 +282,23 @@ function serve( table ) {
 	} );
 }
 
+let grants = 0;
+
 const DEFAULT_ROUTES = () => ( {
+	// T84: every undo is a durable request, issued a grant first.
+	'POST bulkcat/v1/requests': ( query, data ) => {
+		grants += 1;
+		return {
+			uuid: `00000000-0000-4000-8000-${ String( grants ).padStart(
+				12,
+				'0'
+			) }`,
+			request_proof: `proof.${ grants }`,
+			accept_until: 1790000000,
+			operation: data.operation,
+			intent: { version: 1, ...data.intent },
+		};
+	},
 	'GET bulkcat/v1/fields': FIELDS,
 	'GET bulkcat/v1/batches/users': {
 		items: [
@@ -468,9 +494,111 @@ describe( 'history words', () => {
 		);
 	} );
 
-	it( 'makes a v4 request id', () => {
-		expect( newUuid() ).toMatch(
-			/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+	it( 'says what an undo puts back: products, variations or both (T114)', () => {
+		const plan = {
+			counts: { revertible: 120, conflicted: 5, skipped: 1 },
+			by_type: {
+				product: { revertible: 100, conflicted: 5, skipped: 1 },
+				variation: { revertible: 20, conflicted: 0, skipped: 0 },
+			},
+		};
+		expect( putBackTypes( plan, false ) ).toEqual( {
+			products: 100,
+			variations: 20,
+			categories: 0,
+		} );
+		expect( putBackTypes( plan, true ) ).toEqual( {
+			products: 105,
+			variations: 20,
+			categories: 0,
+		} );
+		// Ticket 133: an undo of category changes says categories.
+		expect(
+			confirmSentence(
+				2,
+				'values',
+				putBackTypes(
+					{
+						by_type: {
+							term: {
+								revertible: 2,
+								conflicted: 0,
+								skipped: 0,
+							},
+						},
+					},
+					false
+				)
+			)
+		).toBe( 'This puts 2 categories back as they were before. Continue?' );
+		expect( putBackTypes( { counts: plan.counts }, false ) ).toBeNull();
+		expect(
+			confirmSentence( 120, 'prices', putBackTypes( plan, false ) )
+		).toBe(
+			'This puts 100 products and 20 variations back to their old prices. Continue?'
+		);
+		expect(
+			confirmSentence( 1, 'stock', { products: 0, variations: 1 } )
+		).toBe( 'This puts 1 variation back to its old stock. Continue?' );
+
+		const report = ( byType ) => ( {
+			changed_items: 120,
+			undo: {
+				undo_of: 1,
+				label: 'Undo of #1',
+				sentence: '',
+				by_type: byType,
+			},
+		} );
+		expect(
+			undoneNotice(
+				'Increased the regular price by 8%',
+				report( { products: 100, variations: 20 } )
+			)
+		).toBe(
+			'Undone: Increased the regular price by 8%. 120 items were put back.'
+		);
+		expect(
+			undoneNotice(
+				'Set the stock',
+				report( { products: 0, variations: 120 } ),
+				true
+			)
+		).toBe( 'Redone. 120 variations were put back.' );
+		expect(
+			undoneNotice(
+				'Set the stock',
+				report( { products: 120, variations: 0 } )
+			)
+		).toBe( 'Undone: Set the stock. 120 products were put back.' );
+		// An undo recorded before the split was kept: it may hold either.
+		expect( undoneNotice( 'Set the stock', report( undefined ) ) ).toBe(
+			'Undone: Set the stock. 120 items were put back.'
+		);
+		// Main Build's F2: an undo that put nothing back is not called done.
+		const sentence =
+			'Nothing was put back, because everything had been changed again by the time the undo reached it. The change can still be undone: choose Revert anyway to put the old values back regardless.';
+		expect(
+			undoneNotice( 'Set the stock', {
+				changed_items: 0,
+				done_items: 3,
+				undo: {
+					undo_of: 1,
+					sentence,
+					by_type: { products: 3, variations: 0 },
+				},
+			} )
+		).toBe( sentence );
+	} );
+
+	it( 'names one undo by its batch, plan and force, so a retry keeps its grant', () => {
+		const plan = { plan_hash: 'a'.repeat( 64 ) };
+		expect( undoKey( 1, plan, false ) ).toBe( undoKey( '1', plan, false ) );
+		expect( undoKey( 1, plan, true ) ).not.toBe(
+			undoKey( 1, plan, false )
+		);
+		expect( undoKey( 1, { plan_hash: 'b'.repeat( 64 ) }, false ) ).not.toBe(
+			undoKey( 1, plan, false )
 		);
 	} );
 } );
@@ -485,7 +613,8 @@ describe( 'history states', () => {
 			false
 		);
 		expect( one.getByText( 'Mia Fourie' ) ).toBeTruthy();
-		expect( one.getByText( '120 products' ) ).toBeTruthy();
+		// The row's count holds products and variations together (ticket 11).
+		expect( one.getByText( '120 items' ) ).toBeTruthy();
 
 		// Partially reversible with its conflict count.
 		const two = within( card( 2 ) );
@@ -613,28 +742,155 @@ describe( 'history states', () => {
 	} );
 } );
 
+describe( 'rows skipped as previewed (1.3.4)', () => {
+	const SKIPPED = base( 8, {
+		status: 'partial',
+		total_items: 2,
+		done_items: 2,
+		changed_items: 2,
+		failed_items: 0,
+		reversibility: { state: 'reversible', conflicts: null, reason: null },
+	} );
+	const SKIP_REASON = {
+		message: 'Stock quantity only applies where stock is managed.',
+		count: 1,
+		sentence:
+			'1 product: Stock quantity only applies where stock is managed.',
+	};
+
+	it( 'shows a change with nothing failed as done with rows skipped, never with errors, and opens on its skipped rows', async () => {
+		serve( {
+			...DEFAULT_ROUTES(),
+			'GET bulkcat/v1/batches': {
+				items: [ base( 1 ), SKIPPED, BATCHES[ 3 ] ],
+				pagination: { page: 1, perPage: 25, total: 3, totalPages: 1 },
+			},
+			'GET bulkcat/v1/batches/8': {
+				...SKIPPED,
+				summary: [ SKIP_REASON ],
+			},
+			'GET bulkcat/v1/batches/8/changes': {
+				items: [
+					{
+						...FAILED.items[ 0 ],
+						change_id: 31,
+						field: 'stock_quantity',
+						field_label: 'Stock quantity',
+						result: 'skipped',
+						message: SKIP_REASON.message,
+					},
+				],
+				pagination: { page: 1, perPage: 25, total: 1, totalPages: 1 },
+			},
+		} );
+		await renderHistory();
+		const eight = within( card( 8 ) );
+		expect( eight.getByText( 'Done, some rows skipped' ) ).toBeTruthy();
+		expect( eight.queryByText( 'Done with errors' ) ).toBeNull();
+		expect( eight.queryByText( /failed/ ) ).toBeNull();
+		expect( eight.getByRole( 'button', { name: 'Undo' } ).disabled ).toBe(
+			false
+		);
+		// A change that did fail still says so.
+		const four = within( card( 4 ) );
+		expect( four.getByText( 'Done with errors' ) ).toBeTruthy();
+		expect( four.getByText( '2 failed' ) ).toBeTruthy();
+
+		fireEvent.click(
+			eight.getByRole( 'button', { name: 'See every change' } )
+		);
+		await waitFor( () =>
+			expect( eight.getByText( SKIP_REASON.sentence ) ).toBeTruthy()
+		);
+		const request = calls.find(
+			( c ) => c.route === 'bulkcat/v1/batches/8/changes'
+		);
+		expect( request.query.result ).toEqual( [ 'failed', 'skipped' ] );
+	} );
+
+	it( 'filters on both kinds of partial outcome by a name that says so', () => {
+		const {
+			statusElements,
+		} = require( '../../assets/src/panels/history/describe.js' );
+		expect(
+			statusElements().find( ( each ) => each.value === 'partial' ).label
+		).toBe( 'Done with skipped or failed rows' );
+	} );
+} );
+
 /**
  * The hidden export frame's URL, and its `columns[]` in order.
  *
  * @return {{url: URL, columns: Array<string>}} URL and columns.
  */
-function exportFrame() {
-	const frame = document.querySelector( 'iframe.bulkcat-export__frame' );
-	const url = new URL( frame.src );
-	const columns = [];
-	url.searchParams.forEach( ( value, key ) => {
-		if ( key.startsWith( 'columns[' ) ) {
-			columns.push( value );
-		}
-	} );
-	return { url, columns };
+/**
+ * The export form the screen posted (SECURITY-1): its address, which must
+ * carry nothing, and its fields, the nonce among them.
+ *
+ * @return {Object} `{ url, params, columns }`: `url` is the form's address,
+ *                  `params` its fields.
+ */
+function exportForm() {
+	const form = document.querySelector( 'form.bulkcat-export__form' );
+	const url = new URL( form.getAttribute( 'action' ) );
+	const params = new URLSearchParams();
+	form.querySelectorAll( 'input' ).forEach( ( input ) =>
+		params.append( input.name, input.value )
+	);
+	expect( form.method ).toBe( 'post' );
+	expect( url.search ).toBe( '' );
+	expect( params.get( '_wpnonce' ) ).toBeTruthy();
+	return {
+		url,
+		params,
+		columns: ( params.get( 'columns' ) || '' ).split( ',' ),
+	};
 }
 
+describe( 'following a change in progress (FRONTEND-8)', () => {
+	it( 'stops reading a running change after a sign-out', async () => {
+		serve( {
+			...DEFAULT_ROUTES(),
+			'GET bulkcat/v1/batches/3': () => {
+				throw Object.assign( new Error( 'Not logged in.' ), {
+					code: 'rest_not_logged_in',
+					data: { status: 401 },
+				} );
+			},
+		} );
+		await renderHistory();
+		const reads = () =>
+			calls.filter( ( call ) => call.route === 'bulkcat/v1/batches/3' )
+				.length;
+		await waitFor( () => expect( reads() ).toBe( 1 ) );
+		await act(
+			() => new Promise( ( resolve ) => setTimeout( resolve, 3500 ) )
+		);
+		expect( reads() ).toBe( 1 );
+	} );
+} );
+
 describe( 'history wire-ins', () => {
+	beforeEach( () => {
+		// jsdom cannot send a form; the posted form is read back instead.
+		jest.spyOn(
+			window.HTMLFormElement.prototype,
+			'submit'
+		).mockImplementation( () => {} );
+		// The nonce apiFetch's middleware holds (currentNonce()).
+		require( '@wordpress/api-fetch' ).default.nonceMiddleware = {
+			nonce: 'n0nce12345',
+		};
+	} );
+
 	afterEach( () => {
+		jest.restoreAllMocks();
+		delete require( '@wordpress/api-fetch' ).default.nonceMiddleware;
 		document
-			.querySelectorAll( 'iframe.bulkcat-export__frame' )
-			.forEach( ( frame ) => frame.remove() );
+			.querySelectorAll(
+				'iframe.bulkcat-export__frame, form.bulkcat-export__form'
+			)
+			.forEach( ( element ) => element.remove() );
 	} );
 
 	it( "names who from the row, else from GET /batches/users, never core's users route", async () => {
@@ -667,17 +923,17 @@ describe( 'history wire-ins', () => {
 		expect( within( card( 1 ) ).queryByText( /Put back by/ ) ).toBeNull();
 	} );
 
-	it( 'downloads the list from GET /export?source=batches with its filters', async () => {
+	it( 'downloads the list by posting /export with source=batches and its filters, the nonce in the body (SECURITY-1)', async () => {
 		await renderHistory();
 		const button = screen.getByRole( 'button', {
 			name: 'Export log (CSV)',
 		} );
 		await act( async () => fireEvent.click( button ) );
-		const { url, columns } = exportFrame();
+		const { url, params, columns } = exportForm();
 		expect( url.pathname ).toBe( '/wp-json/bulkcat/v1/export' );
-		expect( url.searchParams.get( 'source' ) ).toBe( 'batches' );
-		expect( url.searchParams.get( 'after' ) ).toMatch( /Z$/ );
-		expect( url.searchParams.get( 'page' ) ).toBeNull();
+		expect( params.get( 'source' ) ).toBe( 'batches' );
+		expect( params.get( 'after' ) ).toMatch( /Z$/ );
+		expect( params.get( 'page' ) ).toBeNull();
 		expect( columns ).toContain( 'user_name' );
 		expect( columns ).toContain( 'undone_by' );
 		expect( button.getAttribute( 'aria-disabled' ) ).toBe( 'true' );
@@ -693,11 +949,11 @@ describe( 'history wire-ins', () => {
 			name: 'Download these changes (CSV)',
 		} );
 		await act( async () => fireEvent.click( link ) );
-		const { url, columns } = exportFrame();
-		expect( url.searchParams.get( 'source' ) ).toBe( 'changes' );
-		expect( url.searchParams.get( 'batch' ) ).toBe( '4' );
+		const { params, columns } = exportForm();
+		expect( params.get( 'source' ) ).toBe( 'changes' );
+		expect( params.get( 'batch' ) ).toBe( '4' );
 		const result = [];
-		url.searchParams.forEach( ( value, key ) => {
+		params.forEach( ( value, key ) => {
 			if ( key.startsWith( 'result[' ) ) {
 				result.push( value );
 			}
@@ -713,12 +969,12 @@ describe( 'history wire-ins', () => {
 		} = require( '../../assets/src/panels/history/export.js' );
 		const notices = [];
 		let hook;
-		let started = '';
+		let started = [];
 		function Probe() {
 			hook = useHistoryExport( ( n ) => notices.push( n ), {
 				getNonce: () => 'abc',
-				start: ( url, { onError } ) => {
-					started = url;
+				start: ( fields, { onError } ) => {
+					started = fields;
 					onError(
 						Object.assign( new Error( 'Too many rows.' ), {
 							code: 'bulkcat_export_too_large',
@@ -732,10 +988,12 @@ describe( 'history wire-ins', () => {
 		render( <Probe /> );
 		await act( async () => hook.run( 'audit', { user: 2, page: 3 } ) );
 		expect( notices[ 0 ].error.message ).toBe( 'Too many rows.' );
-		const url = new URL( started );
-		expect( url.searchParams.get( '_wpnonce' ) ).toBe( 'abc' );
-		expect( url.searchParams.get( 'user' ) ).toBe( '2' );
-		expect( url.searchParams.get( 'page' ) ).toBeNull();
+		const posted = new URLSearchParams( started );
+		expect( started[ 0 ] ).toEqual( [ '_wpnonce', 'abc' ] );
+		expect( posted.get( 'source' ) ).toBe( 'audit' );
+		expect( posted.get( 'user' ) ).toBe( '2' );
+		expect( posted.get( 'page' ) ).toBeNull();
+		expect( posted.get( 'confirm_all' ) ).toBeNull();
 	} );
 } );
 
@@ -768,7 +1026,13 @@ describe( 'undo flow', () => {
 				undo_of: 1,
 				status: 'complete',
 				changed_items: 120,
-				undo: { undo_of: 1, label: 'Undo of #1', sentence: '' },
+				undo: {
+					undo_of: 1,
+					label: 'Undo of #1',
+					sentence: '',
+					// T114: the route says what the undo held.
+					by_type: { products: 120, variations: 0 },
+				},
 			} ),
 		} );
 		await renderHistory();
@@ -797,13 +1061,34 @@ describe( 'undo flow', () => {
 			)
 		);
 
+		// A batch.undo grant, then the durable body: no 1.0 keys.
+		const issued = calls.find(
+			( c ) => c.method === 'POST' && c.route === 'bulkcat/v1/requests'
+		);
+		expect( issued.data ).toEqual( {
+			operation: 'batch.undo',
+			intent: {
+				source: 'undo',
+				batch_id: 1,
+				plan_hash: PLAN.plan_hash,
+				force: false,
+			},
+		} );
 		const applied = calls.filter(
 			( c ) =>
 				c.method === 'POST' && c.route === 'bulkcat/v1/batches/1/undo'
 		)[ 1 ];
-		expect( applied.data.plan_hash ).toBe( PLAN.plan_hash );
-		expect( applied.data.force ).toBe( false );
-		expect( applied.data.uuid ).toMatch( /^[0-9a-f-]{36}$/ );
+		expect( applied.data ).toEqual( {
+			uuid: expect.stringMatching( /^[0-9a-f-]{36}$/ ),
+			request_proof: expect.any( String ),
+			intent: {
+				version: 1,
+				source: 'undo',
+				batch_id: 1,
+				plan_hash: PLAN.plan_hash,
+				force: false,
+			},
+		} );
 
 		await waitFor( () =>
 			expect( noticeText() ).toBe(
@@ -818,6 +1103,81 @@ describe( 'undo flow', () => {
 			screen.getByRole( 'button', { name: /Close|Dismiss/ } )
 		);
 		expect( noticeText() ).toBeNull();
+	} );
+
+	it( 'offers and runs the undo of a 100,000-object change (T112: no size limit, the undo is streamed)', async () => {
+		const large = base( 1, {
+			variations_included: true,
+			total_items: 100000,
+			done_items: 100000,
+			changed_items: 100000,
+		} );
+		serve( {
+			...DEFAULT_ROUTES(),
+			'GET bulkcat/v1/batches': {
+				items: [ large ],
+				pagination: { page: 1, perPage: 25, total: 1, totalPages: 1 },
+			},
+			'POST bulkcat/v1/batches/1/undo': ( query, data ) =>
+				data.preview
+					? {
+							...PLAN,
+							counts: {
+								revertible: 100000,
+								conflicted: 0,
+								skipped: 0,
+							},
+							total: 100000,
+						}
+					: {
+							batch_id: 99,
+							status: 'queued',
+							total_items: 100000,
+							replayed: false,
+							undo: { undo_of: 1, label: 'Undo of #1' },
+						},
+			'GET bulkcat/v1/batches/99': base( 99, {
+				source: 'undo',
+				undo_of: 1,
+				status: 'queued',
+				total_items: 100000,
+				done_items: 0,
+				changed_items: 0,
+				undo: { undo_of: 1, label: 'Undo of #1', sentence: '' },
+			} ),
+		} );
+		await renderHistory();
+		const undo = within( card( 1 ) ).getByRole( 'button', {
+			name: 'Undo',
+		} );
+		expect( undo.disabled ).toBe( false );
+		expect( card( 1 ).textContent ).not.toContain( 'not yet supported' );
+		await act( async () => fireEvent.click( undo ) );
+		const dialog = await screen.findByRole( 'dialog', {
+			name: 'Undo this change?',
+		} );
+		await act( async () =>
+			fireEvent.click(
+				within( dialog ).getByRole( 'button', { name: 'Undo' } )
+			)
+		);
+		const applied = calls.filter(
+			( c ) =>
+				c.method === 'POST' && c.route === 'bulkcat/v1/batches/1/undo'
+		);
+		expect( applied ).toHaveLength( 2 );
+		expect( applied[ 1 ].data.intent ).toEqual( {
+			version: 1,
+			source: 'undo',
+			batch_id: 1,
+			plan_hash: PLAN.plan_hash,
+			force: false,
+		} );
+		await waitFor( () =>
+			expect(
+				calls.some( ( c ) => c.route === 'bulkcat/v1/batches/99' )
+			).toBe( true )
+		);
 	} );
 
 	it( 'lists conflicts first and offers the three-way choice, Revert anyway off by default', async () => {
@@ -871,6 +1231,7 @@ describe( 'undo flow', () => {
 					label: 'Undo of #2',
 					sentence:
 						'3 of 120 were changed again after this batch and were left alone.',
+					by_type: { products: 117, variations: 0 },
 				},
 			} ),
 		} );
@@ -884,7 +1245,7 @@ describe( 'undo flow', () => {
 		expect( screen.queryByRole( 'dialog' ) ).toBeNull();
 		expect(
 			two.getByRole( 'heading', {
-				name: '3 of these products have changed since',
+				name: '3 products have changed since',
 			} )
 		).toBeTruthy();
 		expect( two.getByText( plan.sentence ) ).toBeTruthy();
@@ -898,7 +1259,7 @@ describe( 'undo flow', () => {
 		expect( within( table ).getByText( 'Out of stock' ) ).toBeTruthy();
 		expect( within( table ).queryByText( 'Plain Tee' ) ).toBeNull();
 		expect(
-			two.getByRole( 'button', { name: 'Undo all 120 anyway' } )
+			two.getByRole( 'button', { name: 'Revert anyway' } )
 		).toBeTruthy();
 
 		// The safe choice: force stays off.
@@ -925,7 +1286,8 @@ describe( 'undo flow', () => {
 			( c ) =>
 				c.method === 'POST' && c.route === 'bulkcat/v1/batches/2/undo'
 		)[ 1 ];
-		expect( applied.data.force ).toBe( false );
+		expect( applied.data.intent.force ).toBe( false );
+		expect( applied.data.force ).toBeUndefined();
 		await waitFor( () =>
 			expect( noticeText() ).toBe(
 				'Undone: Set the stock status to In stock. 117 products were put back. 3 of 120 were changed again after this batch and were left alone.'
@@ -933,7 +1295,7 @@ describe( 'undo flow', () => {
 		);
 	} );
 
-	it( 'sends force only when the owner chooses to undo all anyway', async () => {
+	it( 'sends force only when the owner chooses Revert anyway', async () => {
 		const plan = {
 			...PLAN,
 			counts: { revertible: 117, conflicted: 3, skipped: 0 },
@@ -950,9 +1312,7 @@ describe( 'undo flow', () => {
 		await act( async () =>
 			fireEvent.click( two.getByRole( 'button', { name: 'Undo' } ) )
 		);
-		fireEvent.click(
-			two.getByRole( 'button', { name: 'Undo all 120 anyway' } )
-		);
+		fireEvent.click( two.getByRole( 'button', { name: 'Revert anyway' } ) );
 		const dialog = await screen.findByRole( 'dialog' );
 		expect(
 			within( dialog ).getByText(
@@ -968,8 +1328,141 @@ describe( 'undo flow', () => {
 			( c ) =>
 				c.method === 'POST' && c.route === 'bulkcat/v1/batches/2/undo'
 		)[ 1 ];
-		expect( applied.data.force ).toBe( true );
-		expect( applied.data.plan_hash ).toBe( plan.plan_hash );
+		expect( applied.data.intent ).toMatchObject( {
+			force: true,
+			plan_hash: plan.plan_hash,
+			batch_id: 2,
+		} );
+	} );
+
+	it( 'resends the same undo grant after a lost answer, and follows the undo it made', async () => {
+		let sends = 0;
+		serve( {
+			...DEFAULT_ROUTES(),
+			'POST bulkcat/v1/batches/1/undo': ( query, data ) => {
+				if ( data.preview ) {
+					return PLAN;
+				}
+				sends += 1;
+				return sends === 1
+					? Object.assign( new Error( 'x' ), {
+							code: 'fetch_error',
+							message: 'You are probably offline.',
+						} )
+					: {
+							batch_id: 96,
+							status: 'queued',
+							total_items: 120,
+							replayed: true,
+						};
+			},
+			'GET bulkcat/v1/batches/96': base( 96, {
+				source: 'undo',
+				undo_of: 1,
+				status: 'complete',
+				changed_items: 120,
+				undo: {
+					undo_of: 1,
+					label: 'Undo of #1',
+					sentence: '',
+					// T114: the route says what the undo held.
+					by_type: { products: 120, variations: 0 },
+				},
+			} ),
+		} );
+		await renderHistory();
+		const one = within( card( 1 ) );
+		await act( async () =>
+			fireEvent.click( one.getByRole( 'button', { name: 'Undo' } ) )
+		);
+		const dialog = await screen.findByRole( 'dialog' );
+		await act( async () =>
+			fireEvent.click(
+				within( dialog ).getByRole( 'button', { name: 'Undo' } )
+			)
+		);
+		expect(
+			await one.findByText(
+				'We could not confirm whether the undo started. Try again: the same request is sent again, so it can only happen once.'
+			)
+		).toBeTruthy();
+		await act( async () =>
+			fireEvent.click( one.getByRole( 'button', { name: 'Try again' } ) )
+		);
+		const sent = calls.filter(
+			( c ) =>
+				c.method === 'POST' &&
+				c.route === 'bulkcat/v1/batches/1/undo' &&
+				! c.data.preview
+		);
+		expect( sent ).toHaveLength( 2 );
+		expect( sent[ 1 ].data.uuid ).toBe( sent[ 0 ].data.uuid );
+		expect( sent[ 1 ].data.request_proof ).toBe(
+			sent[ 0 ].data.request_proof
+		);
+		expect(
+			calls.filter( ( c ) => c.route === 'bulkcat/v1/requests' )
+		).toHaveLength( 1 );
+		await waitFor( () =>
+			expect( noticeText() ).toBe(
+				'Undone: Increased the regular price by 8%. 120 products were put back.'
+			)
+		);
+	} );
+
+	it( 'ends the attempt on a refusal, so Undo starts again from a new preview and grant', async () => {
+		let previews = 0;
+		serve( {
+			...DEFAULT_ROUTES(),
+			'POST bulkcat/v1/batches/1/undo': ( query, data ) => {
+				if ( data.preview ) {
+					previews += 1;
+					return {
+						...PLAN,
+						plan_hash: ( previews === 1 ? 'a' : 'b' ).repeat( 64 ),
+					};
+				}
+				return data.intent.plan_hash === 'a'.repeat( 64 )
+					? Object.assign( new Error( 'x' ), {
+							code: 'bulkcat_preview_stale',
+							message:
+								'This undo no longer matches its preview: the products or the settings have changed since. Preview the undo again, then confirm it.',
+							data: { status: 409 },
+						} )
+					: new Promise( () => {} );
+			},
+		} );
+		await renderHistory();
+		const one = within( card( 1 ) );
+		await act( async () =>
+			fireEvent.click( one.getByRole( 'button', { name: 'Undo' } ) )
+		);
+		const first = await screen.findByRole( 'dialog' );
+		await act( async () =>
+			fireEvent.click(
+				within( first ).getByRole( 'button', { name: 'Undo' } )
+			)
+		);
+		expect(
+			await one.findByText(
+				'This undo no longer matches its preview: the products or the settings have changed since. Preview the undo again, then confirm it.'
+			)
+		).toBeTruthy();
+		expect( one.queryByRole( 'button', { name: 'Try again' } ) ).toBeNull();
+		await act( async () =>
+			fireEvent.click( one.getByRole( 'button', { name: 'Undo' } ) )
+		);
+		const second = await screen.findByRole( 'dialog' );
+		await act( async () =>
+			fireEvent.click(
+				within( second ).getByRole( 'button', { name: 'Undo' } )
+			)
+		);
+		const issued = calls.filter(
+			( c ) => c.route === 'bulkcat/v1/requests'
+		);
+		expect( issued ).toHaveLength( 2 );
+		expect( issued[ 1 ].data.intent.plan_hash ).toBe( 'b'.repeat( 64 ) );
 	} );
 
 	it( 'reports a refused undo in plain words with the code behind Show details', async () => {
@@ -994,4 +1487,151 @@ describe( 'undo flow', () => {
 		fireEvent.click( one.getByRole( 'button', { name: 'Show details' } ) );
 		expect( one.getByText( /bulkcat_not_reversible/ ) ).toBeTruthy();
 	} );
+} );
+
+describe( 'plain messages (ticket 11)', () => {
+	it( 'says a server’s HTML error page in plain words, never its text', async () => {
+		serve( {
+			...DEFAULT_ROUTES(),
+			'GET bulkcat/v1/batches': () => {
+				throw html500();
+			},
+		} );
+		render( <History settings={ SETTINGS } /> );
+		const sentence =
+			'The history could not be loaded. Try again in a moment.';
+		const box = (
+			await screen.findByText( sentence, { selector: 'p' } )
+		).closest( '.components-notice' );
+		expectPlain( box, sentence );
+		fireEvent.click(
+			within( box ).getByRole( 'button', { name: 'Show details' } )
+		);
+		expect(
+			within( box ).getByText( /internal_server_error/ )
+		).toBeTruthy();
+		expectNoRawText();
+	} );
+
+	it( 'says a JSON error that is not the plugin’s own refusal in plain words', async () => {
+		serve( {
+			...DEFAULT_ROUTES(),
+			'POST bulkcat/v1/batches/1/undo': () => {
+				throw coreJson();
+			},
+		} );
+		await renderHistory();
+		const one = within( card( 1 ) );
+		await act( async () =>
+			fireEvent.click( one.getByRole( 'button', { name: 'Undo' } ) )
+		);
+		expectPlain(
+			card( 1 ),
+			'The undo could not be started. Reload the page and try again.'
+		);
+		fireEvent.click( one.getByRole( 'button', { name: 'Show details' } ) );
+		expect( one.getByText( /rest_forbidden/ ) ).toBeTruthy();
+		expectNoRawText();
+	} );
+} );
+
+it( 'distinguishes native Status requests from accepted legacy Status actions', () => {
+	const {
+		describeOperation,
+		fieldsByKey,
+	} = require( '../../assets/src/panels/history/describe' );
+	const registry = require( '../Unit/Fields/fields.snapshot.json' );
+	const fields = fieldsByKey( registry.fields );
+	expect(
+		describeOperation(
+			{
+				action: 'set_status',
+				args: { field: 'status', value: 'publish' },
+			},
+			fields
+		)
+	).toBe( 'Set the status to Published' );
+	expect(
+		describeOperation(
+			{
+				action: 'set_value',
+				args: { field: 'status', value: 'publish' },
+			},
+			fields
+		)
+	).toBe( 'Legacy Status change requested Published' );
+	const {
+		formatValue,
+	} = require( '../../assets/src/panels/history/describe' );
+	expect( formatValue( 'future', fields.status ) ).toBe( 'Scheduled' );
+	expect( formatValue( 'Private, saved 28 Sep 2026 14:03' ) ).toBe(
+		'Private, saved 28 Sep 2026 14:03'
+	);
+	expect( formatValue( 'Password protected' ) ).toBe( 'Password protected' );
+} );
+
+it.each( [
+	{ source: 'inline', status: 'running', finished_gmt: null },
+	{
+		source: 'bulk',
+		status: 'failed',
+		inline_receipt: {
+			receipt_state: 'unclosed',
+			batch_id: 80,
+			replayed: true,
+		},
+	},
+] )(
+	'unclosed inline History suppresses queue advice and Undo even with stale reversibility: %j',
+	async ( extra ) => {
+		const BatchCard =
+			require( '../../assets/src/panels/history/batch-card' ).default;
+		render(
+			<BatchCard
+				batch={ base( 80, { ...extra, stalled: true } ) }
+				what="Change"
+				who="Mia"
+				byKey={ {} }
+				onChanged={ () => {} }
+				onNotice={ () => {} }
+			/>
+		);
+		expect( screen.getByText( /save outcome.*unconfirmed/i ) ).toBeTruthy();
+		expect(
+			screen.queryByRole( 'button', { name: /undo|replay|cancel/i } )
+		).toBeNull();
+		expect(
+			screen.queryByRole( 'link', { name: /Scheduled Actions/i } )
+		).toBeNull();
+		expect( screen.queryByRole( 'progressbar' ) ).toBeNull();
+	}
+);
+
+it( 'a closed inline History receipt retains supported Undo', () => {
+	const BatchCard =
+		require( '../../assets/src/panels/history/batch-card' ).default;
+	render(
+		<BatchCard
+			batch={ base( 80, {
+				source: 'inline',
+				inline_receipt: {
+					receipt_state: 'closed',
+					write_status: 'complete',
+					steps: [],
+					batch_id: 80,
+					replayed: true,
+				},
+			} ) }
+			what="Change"
+			who="Mia"
+			byKey={ {} }
+			onChanged={ () => {} }
+			onNotice={ () => {} }
+		/>
+	);
+	expect(
+		screen
+			.getByRole( 'button', { name: 'Undo', exact: true } )
+			.getAttribute( 'aria-disabled' )
+	).not.toBe( 'true' );
 } );

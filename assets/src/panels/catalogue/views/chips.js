@@ -28,10 +28,30 @@ import {
 } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 
+import { plainMessage } from '../../../errors';
 import { ErrorNotice } from '../states';
 import { applyBuiltIn, builtInViews, showsBuiltIn } from './presets';
 import { fromSaved, showsSaved } from './serialize';
 import { moved, useSavedViews } from './use-saved-views';
+
+/**
+ * What the name dialog says when saving or renaming fails: the plugin's own
+ * refusal in its words (a name already used), anything else in plain words.
+ *
+ * @param {*} error The failure, or null.
+ * @return {string} Sentence, or '' for none.
+ */
+function dialogError( error ) {
+	return error
+		? plainMessage(
+				error,
+				__(
+					'The view could not be saved. Try again in a moment.',
+					'bulk-catalogue-manager-for-woocommerce'
+				)
+			)
+		: '';
+}
 
 /**
  * The name dialog for saving and renaming.
@@ -285,6 +305,7 @@ function ViewMenu( { item, isFirst, isLast, isOnScreen, onAction } ) {
  * @param {Function}    props.onApply      Called with ( view, category ) to show a view.
  * @param {boolean}     props.applyDefault Apply the default view once the list arrives.
  * @param {Object}      props.saved        useSavedViews() result, for tests or a shared hook.
+ * @param {Function}    props.onReady      Called once the list has arrived and any default view is applied (FRONTEND-1).
  * @return {Element} Row.
  */
 export default function SavedViewsBar( {
@@ -295,6 +316,7 @@ export default function SavedViewsBar( {
 	onApply,
 	applyDefault = true,
 	saved: given,
+	onReady = null,
 } ) {
 	const own = useSavedViews();
 	const saved = given || own;
@@ -304,6 +326,8 @@ export default function SavedViewsBar( {
 	const opened = useRef( false );
 	const apply = useRef( onApply );
 	apply.current = onApply;
+	const ready = useRef( onReady );
+	ready.current = onReady;
 
 	const { hasLoaded, items, defaultId } = saved;
 	useEffect( () => {
@@ -314,8 +338,9 @@ export default function SavedViewsBar( {
 		const first = items.find( ( item ) => item.id === defaultId );
 		if ( applyDefault && first ) {
 			const state = fromSaved( first, baseView );
-			apply.current( state.view, state.category );
+			apply.current( state.view, state.category, { opening: true } );
 		}
+		ready.current?.();
 	}, [ hasLoaded, items, defaultId, applyDefault, baseView ] );
 
 	const ids = items.map( ( item ) => item.id );
@@ -362,16 +387,27 @@ export default function SavedViewsBar( {
 		<div className="bulkcat-views">
 			{ saved.error && ! dialog && (
 				<ErrorNotice
-					message={
-						saved.error?.message && saved.error?.code
-							? saved.error.message
+					message={ plainMessage(
+						saved.error,
+						__(
+							'Your saved views could not be loaded or changed. Check your connection and try again.',
+							'bulk-catalogue-manager-for-woocommerce'
+						)
+					) }
+					error={ saved.error }
+					onRetry={
+						saved.loadFailed && saved.reload
+							? saved.reload
+							: saved.clearError
+					}
+					retryLabel={
+						saved.loadFailed && saved.reload
+							? ''
 							: __(
-									'Your saved views could not be loaded or changed. Check your connection and try again.',
+									'Dismiss',
 									'bulk-catalogue-manager-for-woocommerce'
 								)
 					}
-					error={ saved.error }
-					onRetry={ saved.clearError }
 				/>
 			) }
 			<div
@@ -472,7 +508,7 @@ export default function SavedViewsBar( {
 						'bulk-catalogue-manager-for-woocommerce'
 					) }
 					busy={ saved.busy }
-					error={ saved.error?.message || '' }
+					error={ dialogError( saved.error ) }
 					onClose={ close }
 					onSubmit={ ( name ) =>
 						quietly(
@@ -493,7 +529,7 @@ export default function SavedViewsBar( {
 						'bulk-catalogue-manager-for-woocommerce'
 					) }
 					busy={ saved.busy }
-					error={ saved.error?.message || '' }
+					error={ dialogError( saved.error ) }
 					onClose={ close }
 					onSubmit={ ( name ) =>
 						quietly(

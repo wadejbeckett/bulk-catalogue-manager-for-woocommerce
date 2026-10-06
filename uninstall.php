@@ -3,8 +3,9 @@
  * Runs when the plugin is deleted. With "Remove all data when the plugin is
  * deleted" off, the default, nothing is removed, so history and undo records
  * survive a reinstall. With it on, every table, option, user meta, term meta,
- * transient and scheduled action in the registry is removed (SPEC §11, §15),
- * on every site of a network.
+ * post meta (the Off record), transient and scheduled action in the registry
+ * is removed (SPEC §11, §15), on every site of a network; no product's status
+ * is changed, so a product switched Off stays a draft.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later

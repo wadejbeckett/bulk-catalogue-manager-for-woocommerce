@@ -12,8 +12,12 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Engine;
 
+use BulkCatalogueManager\Requests\InlineReceipt;
 use BulkCatalogueManager\Data\BatchRepository;
 use BulkCatalogueManager\Data\ChangeRepository;
+use BulkCatalogueManager\External\Disclosure;
+use BulkCatalogueManager\External\Providers;
+use BulkCatalogueManager\Operations\Registry as Actions;
 use BulkCatalogueManager\Undo\Original;
 use BulkCatalogueManager\Undo\Planner;
 
@@ -22,8 +26,8 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Batch progress, the stalled check, the grouped reasons and cancellation.
  *
- * report() answers a batch's status, counters (updated by the chunk runner at
- * the end of every chunk, so a polling client counts up), its times, and:
+ * report() answers a batch's status, counters (updated by the chunk runner as
+ * each item finishes, so a polling client counts up), its times, and:
  * - `stalled`: the batch is queued or running with items still pending, and
  *   no chunk has claimed anything for STALL_SECONDS (five minutes) — the
  *   latest claimed_gmt of its items, or its creation time when none was
@@ -42,16 +46,13 @@ defined( 'ABSPATH' ) || exit;
  *   "Also apply to variations" added: the snapshot's `selected`), one §4.8 sentence stating both numbers and
  *   the difference; '' otherwise. The history list carries both too.
  *
- * Stale inline batches (T38, from T37): an inline batch is written in the
- * request that opened it, with no runner behind it, so one whose request
- * died stays `running`. Reading it (the progress read or the history list)
- * with no activity for INLINE_STALE_SECONDS (ten minutes) sweeps it: it moves
- * running -> failed, its pending items are marked failed with a plain
- * reason and counted, and its note says why. Nothing else is written.
+ * Inline batches have no background executor. Unclosed receipts (and legacy
+ * unfinished inline batches) stay uncertain regardless of age: reads cannot
+ * fail, cancel, queue or undo them. Only the original invocation may finish.
  *
  * - `reversibility` (T54, §4.6): `{ state, conflicts, reason }` from
- *   Reversibility, computed after the sweep so a swept batch reads as
- *   finished; reports() answers a page of the history list with one grouped
+ *   Reversibility, overridden to in_progress for unclosed inline work;
+ *   reports() answers a page of history with one grouped
  *   pair of reads for every row's state and no plan (`conflicts: null`,
  *   T56), and report() counts the one batch's conflicts with the planner.
  *   `actions` lists the action ids the batch's operations use, for the
@@ -121,14 +122,23 @@ final class Progress {
 	private Reversibility $reversibility;
 
 	/**
+	 * The providers registered now, for which external arguments a reader may see; read when first needed.
+	 *
+	 * @var Providers|null
+	 */
+	private ?Providers $providers;
+
+	/**
 	 * Build over the repositories.
 	 *
 	 * @param BatchRepository|null  $batches       Batches; the plugin's by default.
 	 * @param ChangeRepository|null $changes       The journal; the plugin's by default.
 	 * @param \Closure|null         $clock         Returns the Unix time; time() by default.
-	 * @param Reversibility|null    $reversibility The reversibility state; by default one over the same repositories and clock, counting conflicts with the undo planner (T55).
+	 * @param Reversibility|null    $reversibility The reversibility state; by default one over the same repositories and clock, able to count conflicts with the undo planner (T55) when a report asks for them.
+	 * @param Providers|null        $providers     The providers; the request's by default.
 	 */
-	public function __construct( ?BatchRepository $batches = null, ?ChangeRepository $changes = null, ?\Closure $clock = null, ?Reversibility $reversibility = null ) {
+	public function __construct( ?BatchRepository $batches = null, ?ChangeRepository $changes = null, ?\Closure $clock = null, ?Reversibility $reversibility = null, ?Providers $providers = null ) {
+		$this->providers     = $providers;
 		$this->batches       = $batches ?? new BatchRepository();
 		$this->changes       = $changes ?? new ChangeRepository();
 		$this->clock         = $clock ?? static fn(): int => time();
@@ -136,14 +146,19 @@ final class Progress {
 	}
 
 	/**
-	 * A batch's full report, or null for no such batch.
+	 * A batch's full report, or null for no such batch. Every open screen
+	 * reads this until a change finishes, so conflicts are not counted
+	 * (`null`) unless `$count` asks: counting builds the whole undo plan —
+	 * every journal row and every object — which for a whole-catalogue
+	 * change costs a web request most of its memory (T85).
 	 *
-	 * @param int $batch_id Batch.
+	 * @param int  $batch_id Batch.
+	 * @param bool $count    Whether to count conflicts with the undo planner.
 	 * @return array<string, mixed>|null
 	 */
-	public function report( int $batch_id ): ?array {
+	public function report( int $batch_id, bool $count = false ): ?array {
 		$batch = $this->batches->find( $batch_id );
-		return null === $batch ? null : $this->report_for( $batch );
+		return null === $batch ? null : $this->report_for( $this->repaired( $batch ), true, null, $count );
 	}
 
 	/**
@@ -154,9 +169,24 @@ final class Progress {
 	 * @return list<array<string, mixed>>
 	 */
 	public function reports( array $batches ): array {
-		$batches = array_map( [ $this, 'sweep' ], $batches );
+		$batches = array_map( [ $this, 'repaired' ], $batches );
 		$states  = $this->reversibility->for_page( $batches );
 		return array_map( fn( array $batch ): array => $this->report_for( $batch, false, $states[ $batch['batch_id'] ] ), $batches );
+	}
+
+	/**
+	 * A batch row read as `undoing`, with its status settled when its undo
+	 * has finished but the run died before moving it on (SILENT-FAILURES-4).
+	 *
+	 * @param array<string, mixed> $batch Typed batch row.
+	 * @return array<string, mixed>
+	 */
+	private function repaired( array $batch ): array {
+		if ( 'undoing' !== $batch['status'] || ! Original::repair( $this->batches, $this->changes, (int) $batch['batch_id'] ) ) {
+			return $batch;
+		}
+		$batch['status'] = $this->batches->status( (int) $batch['batch_id'] ) ?? $batch['status'];
+		return $batch;
 	}
 
 	/**
@@ -164,16 +194,17 @@ final class Progress {
 	 *
 	 * @param array<string, mixed>                                   $batch         Typed batch row (BatchRepository::find()).
 	 * @param bool                                                   $summary       Whether to add the grouped reasons (two grouped reads).
-	 * @param array{state: string, conflicts: int, reason: ?string}|null $reversibility The batch's state when already read for its page; read here otherwise.
+	 * @param array{state: string, conflicts: ?int, reason: ?string}|null $reversibility The batch's state when already read for its page; read here otherwise.
+	 * @param bool                                                    $count         When read here, whether to count conflicts (builds the undo plan); null otherwise.
 	 * @return array<string, mixed>
 	 */
-	public function report_for( array $batch, bool $summary = true, ?array $reversibility = null ): array {
-		$batch   = $this->sweep( $batch );
-		$active  = in_array( $batch['status'], self::ACTIVE, true );
-		$pending = $active ? $this->batches->count_items( $batch['batch_id'], 'pending' ) : 0;
-		$last    = $active ? $this->last_activity( $batch ) : null;
-		$stalled = $active && $pending > 0 && null !== $last && self::seconds( $last ) < (int) ( $this->clock )() - self::STALL_SECONDS;
-		$report  = [
+	public function report_for( array $batch, bool $summary = true, ?array $reversibility = null, bool $count = false ): array {
+		$unclosed = InlineReceipt::unclosed( $batch );
+		$active   = in_array( $batch['status'], self::ACTIVE, true );
+		$pending  = $active ? $this->batches->count_items( $batch['batch_id'], 'pending' ) : 0;
+		$last     = $active ? $this->last_activity( $batch ) : null;
+		$stalled  = ! $unclosed && $active && $pending > 0 && null !== $last && self::seconds( $last ) < (int) ( $this->clock )() - self::STALL_SECONDS;
+		$report   = [
 			'batch_id'             => $batch['batch_id'],
 			'status'               => $batch['status'],
 			'source'               => $batch['source'],
@@ -188,8 +219,9 @@ final class Progress {
 			'pending_items'        => $pending,
 			'chunk_size'           => $batch['chunk_size'],
 			'note'                 => $batch['note'],
-			'operations'           => $batch['operations'],
-			'cancellable'          => $active,
+			// An add-on's own argument values only for a reader holding the step's capability (EXTENSIONS §18.20).
+			'operations'           => Disclosure::operations( $batch['operations'], get_current_user_id(), $this->providers ??= Actions::instance()->providers() ),
+			'cancellable'          => $active && ! InlineReceipt::is_inline( $batch ),
 			'stalled'              => $stalled,
 			'stalled_message'      => $stalled ? self::stalled_message() : '',
 			'last_activity_gmt'    => $last,
@@ -197,9 +229,35 @@ final class Progress {
 			// The selection's own objects, before any variations "Also apply to variations" added (T69).
 			'selection_difference' => self::difference( $batch['previewed_items'] ?? null, (int) ( $batch['selection']['selected'] ?? $batch['total_items'] ) ),
 			'actions'              => $batch['actions'] ?? [],
-			'reversibility'        => $reversibility ?? $this->reversibility->of( $batch ),
+			// Ticket 133 bug 3: what a category change did, in words with names; null where History describes it itself.
+			'headline'             => \BulkCatalogueManager\Categories\HistoryText::headline( $batch ),
+			'reversibility'        => $unclosed ? [
+				'state'     => 'in_progress',
+				'conflicts' => null,
+				'reason'    => null,
+			] : ( $reversibility ?? ( $count ? $this->reversibility->of( $batch ) : $this->reversibility->for_page( [ $batch ] )[ $batch['batch_id'] ] ) ),
 			'undo'                 => self::undo_summary( $batch ),
 		];
+		if ( array_key_exists( 'inline_receipt', $batch['selection'] ) || $unclosed ) {
+			$id     = (int) ( $batch['selection']['inline_receipt']['object_id'] ?? $batch['selection']['ids'][0] ?? 0 );
+			$post   = $id > 0 ? get_post( $id ) : null;
+			$parent = is_object( $post ) && 'product_variation' === $post->post_type ? (int) $post->post_parent : 0;
+			if ( ! isset( $batch['selection']['inline_receipt'] ) || ( get_current_user_id() === $batch['user_id'] && true === \BulkCatalogueManager\Rest\Access::can_read() && true === \BulkCatalogueManager\Rest\Access::can_edit_object( $id, $parent ) ) ) {
+				$report['inline_receipt'] = InlineReceipt::read( $batch );
+			}
+		}
+		if ( $unclosed ) {
+			$report['reversibility'] = [
+				'state'     => 'in_progress',
+				'conflicts' => null,
+				'reason'    => null,
+			];
+			$report['note']          = self::uncertain_message();
+		}
+		if ( is_array( $batch['extensions'] ?? null ) ) {
+			// T108: an external change's add-on and labels, from its manifest; absent for a native change.
+			$report['external'] = \BulkCatalogueManager\External\Manifest::client( $batch['extensions'], is_array( $report['operations'] ?? null ) ? $report['operations'] : [] );
+		}
 		if ( $summary ) {
 			$report['summary'] = $this->summary( $batch['batch_id'] );
 		}
@@ -212,7 +270,7 @@ final class Progress {
 	 * any other batch.
 	 *
 	 * @param array<string, mixed> $batch Typed batch row.
-	 * @return array{undo_of: int, label: string, forced: ?bool, counts: ?array<string, int>, left_alone: ?int, not_undone: ?int, sentence: string, reasons: list<array{message: string, count: int, sentence: string}>}|null
+	 * @return array{undo_of: int, label: string, forced: ?bool, counts: ?array<string, int>, left_alone: ?int, not_undone: ?int, sentence: string, reasons: list<array{message: string, count: int, sentence: string}>, by_type: ?array{products: int, variations: int, categories: int}}|null
 	 */
 	public static function undo_summary( array $batch ): ?array {
 		if ( 'undo' !== ( $batch['source'] ?? '' ) || null === ( $batch['undo_of'] ?? null ) ) {
@@ -235,7 +293,10 @@ final class Progress {
 		$conflicted = (int) ( $counts['conflicted'] ?? 0 );
 		$total      = (int) ( $counts['revertible'] ?? 0 ) + $conflicted;
 		$sentence   = '';
-		if ( null !== $left && $left > 0 ) {
+		if ( 'partial' === ( $batch['status'] ?? '' ) && 0 === (int) ( $batch['changed_items'] ?? 0 ) && 0 === (int) ( $batch['failed_items'] ?? 0 ) && (int) ( $batch['done_items'] ?? 0 ) > 0 ) {
+			// Main Build's F2: every item was changed again before the undo reached it; the batch stays undoable.
+			$sentence = __( 'Nothing was put back, because everything had been changed again by the time the undo reached it. The change can still be undone: choose Revert anyway to put the old values back regardless.', 'bulk-catalogue-manager-for-woocommerce' );
+		} elseif ( null !== $left && $left > 0 ) {
 			$sentence = sprintf(
 				/* translators: 1: number of products left alone, such as "12"; 2: number of products the batch changed, such as "1,284". */
 				_n( '%1$s of %2$s was changed again after this batch and was left alone.', '%1$s of %2$s were changed again after this batch and were left alone.', $left, 'bulk-catalogue-manager-for-woocommerce' ),
@@ -263,6 +324,14 @@ final class Progress {
 			'not_undone' => null === $snapshot ? null : (int) ( $snapshot['not_undone'] ?? 0 ),
 			'sentence'   => $sentence,
 			'reasons'    => $reasons,
+			// T114: how many products and variations the undo holds, null for an undo recorded before it was kept.
+			'by_type'    => is_array( $snapshot['by_type'] ?? null )
+				? [
+					'products'   => (int) ( $snapshot['by_type']['products'] ?? 0 ),
+					'variations' => (int) ( $snapshot['by_type']['variations'] ?? 0 ),
+					'categories' => (int) ( $snapshot['by_type']['categories'] ?? 0 ),
+				]
+				: null,
 		];
 	}
 
@@ -328,6 +397,8 @@ final class Progress {
 		if ( null === $batch ) {
 			return 'missing';
 		}
+		if ( InlineReceipt::unclosed( $batch ) ) {
+			return 'unclosed'; }
 		// Each move is conditional on the status read; a batch that started meanwhile is caught by the second.
 		if ( 'queued' === $batch['status'] ) {
 			$this->batches->transition( $batch_id, 'queued', 'cancelled' );
@@ -344,33 +415,9 @@ final class Progress {
 		return 'cancelled' === $batch['status'] ? $this->report_for( $batch ) : 'finished';
 	}
 
-	/**
-	 * A running inline batch with no activity for INLINE_STALE_SECONDS, given
-	 * up on: moved to failed (only if still running), its pending items
-	 * failed with a plain reason and counted, and a note saying why. Any other
-	 * batch is answered as it is.
-	 *
-	 * @param array<string, mixed> $batch Typed batch row.
-	 * @return array<string, mixed> The row as it stands after the sweep.
-	 */
-	private function sweep( array $batch ): array {
-		if ( 'running' !== $batch['status'] || 'inline' !== $batch['source'] ) {
-			return $batch;
-		}
-		$last = $this->last_activity( $batch );
-		if ( null === $last || self::seconds( $last ) >= (int) ( $this->clock )() - self::INLINE_STALE_SECONDS ) {
-			return $batch;
-		}
-		$batch_id = $batch['batch_id'];
-		if ( ! $this->batches->transition( $batch_id, 'running', 'failed' ) ) {
-			return $this->batches->find( $batch_id ) ?? $batch;
-		}
-		$failed = $this->batches->fail_pending( $batch_id, __( 'This edit stopped before it was saved. Check the product and make the edit again.', 'bulk-catalogue-manager-for-woocommerce' ) );
-		if ( $failed > 0 ) {
-			$this->batches->increment_counters( $batch_id, $failed, 0, $failed );
-		}
-		$this->batches->record_note( $batch_id, __( 'This edit stopped before it finished and nothing happened for ten minutes, so it was marked as failed. Check the product and make the edit again if it is not right.', 'bulk-catalogue-manager-for-woocommerce' ) );
-		return $this->batches->find( $batch_id ) ?? $batch;
+	/** A timeout cannot establish that a synchronous invocation has stopped. */
+	public static function uncertain_message(): string {
+		return __( 'This save has no confirmed result yet. Check its result again; it cannot be retried, cancelled or undone while its outcome is uncertain.', 'bulk-catalogue-manager-for-woocommerce' );
 	}
 
 	/**

@@ -26,11 +26,13 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Rest;
 
+use BulkCatalogueManager\Export\ExportRequest;
 use BulkCatalogueManager\Fields\Field;
 use BulkCatalogueManager\Fields\Registry;
 use BulkCatalogueManager\Query\Criteria;
 use BulkCatalogueManager\Query\Hydrator;
 use BulkCatalogueManager\Query\Sort;
+use BulkCatalogueManager\Requests\RequestService;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -161,11 +163,35 @@ final class RouteSchema {
 	 * @return array<string, array<string, mixed>>
 	 */
 	public static function row_extras(): array {
-		$read_only = [
+		$read_only                           = [
 			'context'  => [ 'view', 'edit' ],
 			'readonly' => true,
 		];
+		$native_link                         = [
+			'type'                 => [ 'object', 'null' ],
+			'properties'           => [
+				'url' => [
+					'type'   => 'string',
+					'format' => 'uri',
+				],
+			],
+			'additionalProperties' => false,
+		] + $read_only;
+		$trash_link                          = $native_link;
+		$trash_link['properties']['confirm'] = [ 'type' => 'string' ];
 		return [
+			'native_actions'            => [
+				'type'                 => 'object',
+				'additionalProperties' => false,
+				'properties'           => [
+					'details'     => [ 'type' => 'boolean' ],
+					'editor'      => $native_link,
+					'view'        => $native_link,
+					'duplicate'   => $native_link,
+					'trash'       => $trash_link,
+					'unavailable' => [ 'type' => 'string' ],
+				],
+			] + $read_only,
 			Hydrator::PARENT_ID         => [
 				'description' => __( 'The product a variation belongs to; 0 for a product.', 'bulk-catalogue-manager-for-woocommerce' ),
 				'type'        => 'integer',
@@ -183,6 +209,21 @@ final class RouteSchema {
 			Hydrator::ATTRIBUTE_SUMMARY => [
 				'description' => __( 'On a variation, its attribute values, such as "Blue / Large".', 'bulk-catalogue-manager-for-woocommerce' ),
 				'type'        => 'string',
+			] + $read_only,
+			Hydrator::OFF_STATE         => [
+				'description' => __( 'On a product with its own saved status before Off: whether it is Off or was changed outside this screen, the status saved and when; null otherwise.', 'bulk-catalogue-manager-for-woocommerce' ),
+				'type'        => [ 'object', 'null' ],
+				'properties'  => [
+					'state'            => [
+						'type' => 'string',
+						'enum' => [ 'off', 'changed_outside' ],
+					],
+					'saved'            => [ 'type' => 'string' ],
+					'saved_label'      => [ 'type' => 'string' ],
+					'switched_off_gmt' => [ 'type' => 'string' ],
+					'batch_id'         => [ 'type' => 'integer' ],
+					'scheduled_gmt'    => [ 'type' => 'string' ],
+				],
 			] + $read_only,
 			Hydrator::ATTRIBUTES        => [
 				'type'  => 'array',
@@ -273,7 +314,7 @@ final class RouteSchema {
 	 * @return array<string, array<string, mixed>>
 	 */
 	public function selection_args(): array {
-		return array_intersect_key( $this->query_args(), array_flip( [ 'search', 'mode', 'parent' ] ) ) + $this->filter_args() + [
+		$args = array_intersect_key( $this->query_args(), array_flip( [ 'search', 'mode', 'parent' ] ) ) + $this->filter_args() + [
 			'ids' => self::arg(
 				[
 					'description' => __( 'The chosen products or variations, by id, instead of a filter.', 'bulk-catalogue-manager-for-woocommerce' ),
@@ -287,6 +328,104 @@ final class RouteSchema {
 				static fn( mixed $value ): array => array_map( 'intval', self::as_list( $value ) )
 			),
 		];
+		unset( $args['mode']['default'] );
+		return $args + $this->request_args( false, false );
+	}
+
+	/**
+	 * Durable request envelope; deeper immutable intent is checked by its service.
+	 *
+	 * @param bool $issue Whether this endpoint issues a new grant.
+	 * @param bool $required Whether this standalone endpoint requires the envelope.
+	 * @return array<string,array<string,mixed>>
+	 */
+	public function request_args( bool $issue, bool $required = true ): array {
+		$args = [
+			'intent' => [
+				'type'     => 'object',
+				'required' => $required,
+			],
+		];
+		if ( $issue ) {
+			$args['operation'] = [
+				'type'     => 'string',
+				'enum'     => RequestService::OPERATIONS,
+				'required' => true,
+			];
+		} else {
+			$args['uuid']          = [
+				'type'     => 'string',
+				'pattern'  => '^[a-f0-9-]{36}$',
+				'required' => $required,
+			];
+			$args['request_proof'] = [
+				'type'      => 'string',
+				'maxLength' => 4096,
+				'required'  => $required,
+			];
+		}
+		return $args;
+	}
+
+	/**
+	 * Snapshot lifecycle/composition arguments, bounded before service work.
+	 *
+	 * @param string $operation Endpoint operation.
+	 * @return array<string,array<string,mixed>>
+	 */
+	public function selection_handle_args( string $operation ): array {
+		$token = [
+			'type'      => 'string',
+			'maxLength' => 120,
+			'required'  => true,
+		];
+		if ( 'release' === $operation ) {
+			return [
+				'tokens' => [
+					'type'     => 'array',
+					'items'    => [
+						'type'      => 'string',
+						'maxLength' => 120,
+					],
+					'minItems' => 1,
+					'maxItems' => 4,
+					'required' => true,
+				],
+			];
+		}
+		$args = [ 'token' => $token ];
+		if ( 'inspect' === $operation ) {
+			$args += [
+				'page'      => [
+					'type'    => 'integer',
+					'minimum' => 1,
+					'maximum' => 100000,
+					'default' => 1,
+				],
+				'per_page'  => [
+					'type'    => 'integer',
+					'minimum' => 1,
+					'maximum' => 100,
+					'default' => 25,
+				],
+				'probe_ids' => [
+					'type'     => 'array',
+					'items'    => [
+						'type'    => 'integer',
+						'minimum' => 1,
+					],
+					'maxItems' => 100,
+				],
+			];
+		} elseif ( 'compose' === $operation ) {
+			$args             += $this->request_args( false );
+			$token['required'] = false;
+			$args             += [
+				'add_token'    => $token,
+				'remove_token' => $token,
+			];
+		}
+		return $args;
 	}
 
 	/**
@@ -474,7 +613,7 @@ final class RouteSchema {
 				'type'     => 'array',
 				'items'    => [
 					'type' => 'string',
-					'enum' => array_map( 'strval', array_keys( $field->choices() ) ),
+					'enum' => array_map( 'strval', array_keys( $field->choices() + $field->filter_choices() ) ),
 				],
 				'maxItems' => Criteria::MAX_VALUES,
 			],
@@ -513,6 +652,99 @@ final class RouteSchema {
 			default                    => [ 'type' => 'string' ],
 		};
 	}
+
+	/*
+	 * CSV export (ticket 10, T99): the arguments of `POST /export`.
+	 */
+
+	/**
+	 * The arguments of `POST /export` (SPEC §10, §12.1): every `GET /products`
+	 * argument except paging and `fields`, used only for a filter export;
+	 * the columns, registry keys in order; the identifier switch; the row
+	 * source, a selection token or at most 1,000 ids (a list or one
+	 * comma-separated field); the whole-catalogue confirmation; the summary
+	 * switch; and `source`, taken only so that anything but the catalogue
+	 * can be refused in plain words. The token is checked here for shape
+	 * only; Export\ExportRequest reads it from the body, never the address.
+	 *
+	 * @return array<string, array<string, mixed>>
+	 */
+	public function export_args(): array {
+		$columns                      = $this->fields_arg()['fields'];
+		$columns['description']       = __( 'Columns to export, in order: the visible columns of the view.', 'bulk-catalogue-manager-for-woocommerce' );
+		$columns['required']          = true;
+		$columns['minItems']          = 1;
+		$columns['validate_callback'] = static function ( mixed $value, mixed $request = null, string $param = '' ) use ( $columns ): bool|\WP_Error {
+			unset( $request );
+			$schema = array_diff_key( $columns, array_flip( [ 'validate_callback', 'sanitize_callback' ] ) );
+			return rest_validate_value_from_schema( self::as_list( $value ), $schema, $param );
+		};
+		$switch                       = static fn( string $description ): array => self::arg(
+			[
+				'description' => $description,
+				'type'        => 'boolean',
+				'default'     => false,
+			],
+			[ self::class, 'flag' ]
+		);
+		return array_diff_key( $this->query_args(), array_flip( [ ...self::PAGING, 'fields' ] ) ) + [
+			'columns'     => $columns,
+			'identifiers' => $switch( __( 'Whether ID, SKU, Parent and Type come first, so the file can go back through WooCommerce\'s product importer.', 'bulk-catalogue-manager-for-woocommerce' ) ),
+			'selection'   => self::arg(
+				[
+					'description' => __( 'The selected products, as the selection routes issue them. Sent in the request body, never in the address.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'type'        => 'string',
+					'maxLength'   => 120,
+				],
+				'strval'
+			),
+			'ids'         => self::export_ids_arg(),
+			'confirm_all' => $switch( __( 'Confirms an export of the whole catalogue, needed when no search, filter or category is set.', 'bulk-catalogue-manager-for-woocommerce' ) ),
+			'summary'     => $switch( __( 'Whether to answer only the row counts and the file name, without exporting.', 'bulk-catalogue-manager-for-woocommerce' ) ),
+			'source'      => self::arg(
+				[
+					'description' => __( 'What is exported: only the catalogue is posted.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'type'        => 'string',
+				],
+				'strval'
+			),
+		];
+	}
+
+	/**
+	 * `POST /export`'s `ids`: at most ExportRequest::MAX_IDS positive ids, as
+	 * a list or one comma-separated field. The schema's maxItems caps the list
+	 * before the handler runs; past it the argument answers with the export's
+	 * own plain refusal, which core carries in its `rest_invalid_param` details.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private static function export_ids_arg(): array {
+		$arg                      = self::arg(
+			[
+				'description' => __( 'At most 1,000 products or variations, by id, instead of a selection or a filter.', 'bulk-catalogue-manager-for-woocommerce' ),
+				'type'        => 'array',
+				'items'       => [
+					'type'    => 'integer',
+					'minimum' => 1,
+				],
+				'maxItems'    => ExportRequest::MAX_IDS,
+			],
+			static fn( mixed $value ): array => array_map( 'intval', self::as_list( $value ) )
+		);
+		$schema                   = $arg['validate_callback'];
+		$arg['validate_callback'] = static function ( mixed $value, mixed $request = null, string $param = '' ) use ( $schema ): bool|\WP_Error {
+			if ( count( self::as_list( $value ) ) > ExportRequest::MAX_IDS ) {
+				return ExportRequest::rows_refusal( true );
+			}
+			return $schema( self::as_list( $value ), $request, $param );
+		};
+		return $arg;
+	}
+
+	/*
+	 * End of CSV export arguments.
+	 */
 
 	/**
 	 * An argument: its schema, a validator checking a value against that

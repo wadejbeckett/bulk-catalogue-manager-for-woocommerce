@@ -1,0 +1,606 @@
+{
+	"description": "The Status switch (SPEC \u00a75.5): every row of the decision table as { status, record, target, keep } -> { status result, record result, outcome code }. record: 'none', {status} (the product's own record), 'foreign' (a record naming another product) or 'unreadable'. schedule: for a scheduled product or saved status, whether its date is 'ahead' (a minute or more) or 'passed'. record_result: 'none', 'clear' (the record is removed) or {save: status} (a new record saving that status). Both StatusSwitchTest (PHPUnit) and status-switch.test.js (Jest) run it, so the grid's mirror cannot drift from the server.",
+	"codes": [
+		"off",
+		"off_recapture",
+		"already_off",
+		"already_draft",
+		"on",
+		"on_restores",
+		"on_scheduled",
+		"on_schedule_passed",
+		"publishes_not_off",
+		"conflict",
+		"conflict_kept",
+		"record_dropped"
+	],
+	"confirms": [
+		"off",
+		"off_recapture",
+		"on_restores",
+		"on_scheduled",
+		"on_schedule_passed",
+		"publishes_not_off",
+		"record_dropped",
+		"conflict"
+	],
+	"rows": [
+		{
+			"case": "Draft on a genuine draft saves nothing",
+			"status": "draft",
+			"record": "none",
+			"target": "draft",
+			"keep": false,
+			"result": {
+				"state": "already",
+				"old": "draft",
+				"new": "draft"
+			},
+			"record_result": "none",
+			"code": "already_draft"
+		},
+		{
+			"case": "Draft on a never-Off publish product switches it Off and saves publish",
+			"status": "publish",
+			"record": "none",
+			"target": "draft",
+			"keep": false,
+			"result": {
+				"state": "changed",
+				"old": "publish",
+				"new": "draft"
+			},
+			"record_result": {
+				"save": "publish"
+			},
+			"code": "off"
+		},
+		{
+			"case": "Draft on a never-Off future product switches it Off and saves future",
+			"status": "future",
+			"record": "none",
+			"target": "draft",
+			"keep": false,
+			"schedule": "ahead",
+			"result": {
+				"state": "changed",
+				"old": "future",
+				"new": "draft"
+			},
+			"record_result": {
+				"save": "future"
+			},
+			"code": "off"
+		},
+		{
+			"case": "Draft on a never-Off pending product switches it Off and saves pending",
+			"status": "pending",
+			"record": "none",
+			"target": "draft",
+			"keep": false,
+			"result": {
+				"state": "changed",
+				"old": "pending",
+				"new": "draft"
+			},
+			"record_result": {
+				"save": "pending"
+			},
+			"code": "off"
+		},
+		{
+			"case": "Draft on a never-Off private product switches it Off and saves private",
+			"status": "private",
+			"record": "none",
+			"target": "draft",
+			"keep": false,
+			"result": {
+				"state": "changed",
+				"old": "private",
+				"new": "draft"
+			},
+			"record_result": {
+				"save": "private"
+			},
+			"code": "off"
+		},
+		{
+			"case": "Draft on an Off product is already Off",
+			"status": "draft",
+			"record": {
+				"status": "publish"
+			},
+			"target": "draft",
+			"keep": false,
+			"result": {
+				"state": "already",
+				"old": "draft",
+				"new": "draft"
+			},
+			"record_result": "none",
+			"code": "already_off"
+		},
+		{
+			"case": "Draft on an Off product that was scheduled is already Off",
+			"status": "draft",
+			"record": {
+				"status": "future"
+			},
+			"target": "draft",
+			"keep": false,
+			"schedule": "ahead",
+			"result": {
+				"state": "already",
+				"old": "draft",
+				"new": "draft"
+			},
+			"record_result": "none",
+			"code": "already_off"
+		},
+		{
+			"case": "Draft on a product changed to Private while Off saves Private again",
+			"status": "private",
+			"record": {
+				"status": "publish"
+			},
+			"target": "draft",
+			"keep": false,
+			"result": {
+				"state": "changed",
+				"old": "private",
+				"new": "draft"
+			},
+			"record_result": {
+				"save": "private"
+			},
+			"code": "off_recapture"
+		},
+		{
+			"case": "Draft on a product changed to Published while Off saves Published again",
+			"status": "publish",
+			"record": {
+				"status": "private"
+			},
+			"target": "draft",
+			"keep": false,
+			"result": {
+				"state": "changed",
+				"old": "publish",
+				"new": "draft"
+			},
+			"record_result": {
+				"save": "publish"
+			},
+			"code": "off_recapture"
+		},
+		{
+			"case": "Published on an Off product that was Published switches it back On",
+			"status": "draft",
+			"record": {
+				"status": "publish"
+			},
+			"target": "publish",
+			"keep": false,
+			"result": {
+				"state": "changed",
+				"old": "draft",
+				"new": "publish"
+			},
+			"record_result": "clear",
+			"code": "on"
+		},
+		{
+			"case": "Published on an Off product that was Private restores Private",
+			"status": "draft",
+			"record": {
+				"status": "private"
+			},
+			"target": "publish",
+			"keep": false,
+			"result": {
+				"state": "changed",
+				"old": "draft",
+				"new": "private"
+			},
+			"record_result": "clear",
+			"code": "on_restores"
+		},
+		{
+			"case": "Published on an Off product that was Pending review restores Pending review",
+			"status": "draft",
+			"record": {
+				"status": "pending"
+			},
+			"target": "publish",
+			"keep": false,
+			"result": {
+				"state": "changed",
+				"old": "draft",
+				"new": "pending"
+			},
+			"record_result": "clear",
+			"code": "on_restores"
+		},
+		{
+			"case": "Published on an Off product that was scheduled, time ahead, writes publish for WordPress to schedule",
+			"status": "draft",
+			"record": {
+				"status": "future"
+			},
+			"target": "publish",
+			"keep": false,
+			"schedule": "ahead",
+			"result": {
+				"state": "changed",
+				"old": "draft",
+				"new": "publish"
+			},
+			"record_result": "clear",
+			"code": "on_scheduled"
+		},
+		{
+			"case": "Published on an Off product that was scheduled, time passed, publishes it",
+			"status": "draft",
+			"record": {
+				"status": "future"
+			},
+			"target": "publish",
+			"keep": false,
+			"schedule": "passed",
+			"result": {
+				"state": "changed",
+				"old": "draft",
+				"new": "publish"
+			},
+			"record_result": "clear",
+			"code": "on_schedule_passed"
+		},
+		{
+			"case": "Published on a product changed to Private while Off is a conflict, left alone",
+			"status": "private",
+			"record": {
+				"status": "publish"
+			},
+			"target": "publish",
+			"keep": false,
+			"result": {
+				"state": "skipped",
+				"old": "private",
+				"new": "private",
+				"code": "bulkcat_availability_conflict"
+			},
+			"record_result": "none",
+			"code": "conflict"
+		},
+		{
+			"case": "Published on a product changed to Published while Off is a conflict, left alone",
+			"status": "publish",
+			"record": {
+				"status": "private"
+			},
+			"target": "publish",
+			"keep": false,
+			"result": {
+				"state": "skipped",
+				"old": "publish",
+				"new": "publish",
+				"code": "bulkcat_availability_conflict"
+			},
+			"record_result": "none",
+			"code": "conflict"
+		},
+		{
+			"case": "Keep current status on a product changed to Private while Off clears the record",
+			"status": "private",
+			"record": {
+				"status": "publish"
+			},
+			"target": "publish",
+			"keep": true,
+			"result": {
+				"state": "already",
+				"old": "private",
+				"new": "private"
+			},
+			"record_result": "clear",
+			"code": "conflict_kept"
+		},
+		{
+			"case": "Keep current status on a product changed to Published while Off clears the record",
+			"status": "publish",
+			"record": {
+				"status": "pending"
+			},
+			"target": "publish",
+			"keep": true,
+			"result": {
+				"state": "already",
+				"old": "publish",
+				"new": "publish"
+			},
+			"record_result": "clear",
+			"code": "conflict_kept"
+		},
+		{
+			"case": "Keep current status on an Off product is an ordinary On",
+			"status": "draft",
+			"record": {
+				"status": "private"
+			},
+			"target": "publish",
+			"keep": true,
+			"result": {
+				"state": "changed",
+				"old": "draft",
+				"new": "private"
+			},
+			"record_result": "clear",
+			"code": "on_restores"
+		},
+		{
+			"case": "Published on a never-Off published product is already Published",
+			"status": "publish",
+			"record": "none",
+			"target": "publish",
+			"keep": false,
+			"result": {
+				"state": "already",
+				"old": "publish",
+				"new": "publish"
+			},
+			"record_result": "none",
+			"code": ""
+		},
+		{
+			"case": "Published on a never-Off draft product publishes it, with no record",
+			"status": "draft",
+			"record": "none",
+			"target": "publish",
+			"keep": false,
+			"result": {
+				"state": "changed",
+				"old": "draft",
+				"new": "publish"
+			},
+			"record_result": "none",
+			"code": "publishes_not_off"
+		},
+		{
+			"case": "Published on a never-Off private product publishes it, with no record",
+			"status": "private",
+			"record": "none",
+			"target": "publish",
+			"keep": false,
+			"result": {
+				"state": "changed",
+				"old": "private",
+				"new": "publish"
+			},
+			"record_result": "none",
+			"code": "publishes_not_off"
+		},
+		{
+			"case": "Published on a never-Off pending product publishes it, with no record",
+			"status": "pending",
+			"record": "none",
+			"target": "publish",
+			"keep": false,
+			"result": {
+				"state": "changed",
+				"old": "pending",
+				"new": "publish"
+			},
+			"record_result": "none",
+			"code": "publishes_not_off"
+		},
+		{
+			"case": "Published on a never-Off scheduled product writes publish; WordPress keeps it scheduled",
+			"status": "future",
+			"record": "none",
+			"target": "publish",
+			"keep": false,
+			"schedule": "ahead",
+			"result": {
+				"state": "changed",
+				"old": "future",
+				"new": "publish"
+			},
+			"record_result": "none",
+			"code": "publishes_not_off"
+		},
+		{
+			"case": "Keep current status on a never-Off draft is an ordinary publication",
+			"status": "draft",
+			"record": "none",
+			"target": "publish",
+			"keep": true,
+			"result": {
+				"state": "changed",
+				"old": "draft",
+				"new": "publish"
+			},
+			"record_result": "none",
+			"code": "publishes_not_off"
+		},
+		{
+			"case": "Pending review on an Off product clears the record",
+			"status": "draft",
+			"record": {
+				"status": "publish"
+			},
+			"target": "pending",
+			"keep": false,
+			"result": {
+				"state": "changed",
+				"old": "draft",
+				"new": "pending"
+			},
+			"record_result": "clear",
+			"code": "record_dropped"
+		},
+		{
+			"case": "Private on an Off product clears the record",
+			"status": "draft",
+			"record": {
+				"status": "publish"
+			},
+			"target": "private",
+			"keep": false,
+			"result": {
+				"state": "changed",
+				"old": "draft",
+				"new": "private"
+			},
+			"record_result": "clear",
+			"code": "record_dropped"
+		},
+		{
+			"case": "Private on a product changed to Private while Off clears the record",
+			"status": "private",
+			"record": {
+				"status": "publish"
+			},
+			"target": "private",
+			"keep": false,
+			"result": {
+				"state": "already",
+				"old": "private",
+				"new": "private"
+			},
+			"record_result": "clear",
+			"code": "record_dropped"
+		},
+		{
+			"case": "Pending review on a product changed to Published while Off clears the record",
+			"status": "publish",
+			"record": {
+				"status": "private"
+			},
+			"target": "pending",
+			"keep": false,
+			"result": {
+				"state": "changed",
+				"old": "publish",
+				"new": "pending"
+			},
+			"record_result": "clear",
+			"code": "record_dropped"
+		},
+		{
+			"case": "Pending review on a never-Off draft is an ordinary change",
+			"status": "draft",
+			"record": "none",
+			"target": "pending",
+			"keep": false,
+			"result": {
+				"state": "changed",
+				"old": "draft",
+				"new": "pending"
+			},
+			"record_result": "none",
+			"code": ""
+		},
+		{
+			"case": "Private on a never-Off published product is an ordinary change",
+			"status": "publish",
+			"record": "none",
+			"target": "private",
+			"keep": false,
+			"result": {
+				"state": "changed",
+				"old": "publish",
+				"new": "private"
+			},
+			"record_result": "none",
+			"code": ""
+		},
+		{
+			"case": "Private on a never-Off private product is already Private",
+			"status": "private",
+			"record": "none",
+			"target": "private",
+			"keep": false,
+			"result": {
+				"state": "already",
+				"old": "private",
+				"new": "private"
+			},
+			"record_result": "none",
+			"code": ""
+		},
+		{
+			"case": "Published on a draft carrying another product's record is an ordinary publication",
+			"status": "draft",
+			"record": "foreign",
+			"target": "publish",
+			"keep": false,
+			"result": {
+				"state": "changed",
+				"old": "draft",
+				"new": "publish"
+			},
+			"record_result": "none",
+			"code": "publishes_not_off"
+		},
+		{
+			"case": "Draft on a draft carrying another product's record is already Draft",
+			"status": "draft",
+			"record": "foreign",
+			"target": "draft",
+			"keep": false,
+			"result": {
+				"state": "already",
+				"old": "draft",
+				"new": "draft"
+			},
+			"record_result": "none",
+			"code": "already_draft"
+		},
+		{
+			"case": "Draft on a published product carrying another product's record saves its own",
+			"status": "publish",
+			"record": "foreign",
+			"target": "draft",
+			"keep": false,
+			"result": {
+				"state": "changed",
+				"old": "publish",
+				"new": "draft"
+			},
+			"record_result": {
+				"save": "publish"
+			},
+			"code": "off"
+		},
+		{
+			"case": "Published on a draft carrying an unreadable record is an ordinary publication",
+			"status": "draft",
+			"record": "unreadable",
+			"target": "publish",
+			"keep": false,
+			"result": {
+				"state": "changed",
+				"old": "draft",
+				"new": "publish"
+			},
+			"record_result": "none",
+			"code": "publishes_not_off"
+		},
+		{
+			"case": "Draft on a private product carrying an unreadable record saves its own",
+			"status": "private",
+			"record": "unreadable",
+			"target": "draft",
+			"keep": false,
+			"result": {
+				"state": "changed",
+				"old": "private",
+				"new": "draft"
+			},
+			"record_result": {
+				"save": "private"
+			},
+			"code": "off"
+		}
+	]
+}

@@ -355,3 +355,52 @@ $bulkcat-bad-tint: #fcf0f1;
 		}
 	}
 }
+
+// T84: the review of the selection opens over the bulk panel too.
+.bulkcat-drawer.bulkcat-review {
+	z-index: 9995;
+}
+
+// The Off/On confirm (T92, SPEC §5.5): in the Status cell, and above the
+// drawer's Save. The sentence says what happens; the buttons say it again.
+.bulkcat-status-confirm {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	max-width: 22rem;
+	padding: 8px;
+	background: $bulkcat-panel;
+	border: 1px solid $bulkcat-rule-strong;
+	border-left: 3px solid $bulkcat-blue;
+	border-radius: 2px;
+	color: $bulkcat-ink;
+	white-space: normal;
+	text-align: left;
+
+	&.is-conflict {
+		border-left-color: $bulkcat-bad;
+	}
+
+	&__text {
+		margin: 0;
+		font-size: 13px;
+		line-height: 1.45;
+	}
+
+	&__error {
+		margin: 0;
+		color: $bulkcat-bad-ink;
+		font-size: 12px;
+	}
+
+	&__actions {
+		display: inline-flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+}
+
+.bulkcat-drawer__form > .bulkcat-status-confirm {
+	max-width: none;
+	margin-top: 16px;
+}

@@ -154,6 +154,22 @@ final class CsvExportTest extends TestCase {
 		$this->assertSame( $columns, $export->columns() );
 	}
 
+	public function test_the_heading_row_of_every_column_and_no_internal_field(): void {
+		// Ticket 04 (T88): the Off record adds no column, so a whole-registry export keeps its headings.
+		$registry = new Registry();
+		$export   = new CsvExport( $this->source( 1 ), $registry, $registry->keys(), [], ',', 'f.csv' );
+		$this->assertSame(
+			[ 'Name', 'Status', 'Catalogue visibility', 'Shown in shop and search', 'Featured', 'Categories', 'Tags', 'Regular price', 'Sale price', 'Stock status', 'Manage stock', 'Stock quantity', 'SKU', 'Weight', 'Length', 'Width', 'Height', 'Shipping class', 'Tax status', 'Tax class', 'Sold individually', 'Reviews', 'ID', 'Type', 'Image', 'Price', 'Date created', 'Last modified', 'Total sales', 'Variations' ],
+			$export->header()
+		);
+		try {
+			new CsvExport( $this->source( 1 ), $registry, [ 'id', 'availability_off' ], [], ',', 'f.csv' );
+			$this->fail( 'The internal Off record was accepted as a column.' );
+		} catch ( \InvalidArgumentException $e ) {
+			$this->assertStringContainsString( 'Unknown column', $e->getMessage() );
+		}
+	}
+
 	public function test_a_missing_value_is_an_empty_cell_and_zero_stays_zero(): void {
 		$export = new CsvExport( $this->source( 10 ), new Registry(), [ 'id', 'stock_quantity', 'weight' ], [], ',', 'f.csv' );
 		$csv    = self::bytes( $export );
@@ -164,6 +180,29 @@ final class CsvExportTest extends TestCase {
 	public function test_the_separator_is_the_one_given(): void {
 		$csv = self::bytes( new CsvExport( $this->source( 1 ), new Registry(), [ 'id', 'sku' ], [], ';', 'f.csv' ) );
 		$this->assertStringEndsWith( "\"1\";\"SKU-1\"\r\n", $csv );
+	}
+
+	public function test_a_source_saying_more_follows_is_read_past_the_counted_pages(): void {
+		// SQR-3: 100 rows counted, then 30 more came to match while the file was written.
+		$source = new class() implements \BulkCatalogueManager\Export\RowSource {
+			/**
+			 * Pages asked for.
+			 *
+			 * @var list<int>
+			 */
+			public array $pages = [];
+
+			public function page( array $params, int $page, int $per_page ): array {
+				$this->pages[] = $page;
+				return [
+					'items' => array_map( static fn( int $n ): array => [ 'id' => ( $page - 1 ) * $per_page + $n ], range( 1, 1 === $page ? $per_page : 30 ) ),
+					'total' => 100,
+					'more'  => 1 === $page,
+				];
+			}
+		};
+		$this->assertCount( 131, self::parse( self::bytes( new CsvExport( $source, new Registry(), [ 'id' ], [], ',', 'f.csv' ) ) ) );
+		$this->assertSame( [ 1, 2 ], $source->pages );
 	}
 
 	public function test_reading_stops_at_an_empty_page(): void {

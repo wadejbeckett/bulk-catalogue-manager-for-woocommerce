@@ -165,6 +165,7 @@ final class AssetsTest extends TestCase {
 		$this->assertSame( 7, $settings['user']['id'] );
 		$this->assertSame( 7, $settings['wpMajor'] );
 		$this->assertSame( Screen::DATAVIEWS_VERSION, $settings['dataviews'] );
+		$this->assertArrayNotHasKey( 'undoLimit', $settings, 'T111: undo is streamed, so the screen promises it for any change a selection can hold.' );
 		$this->assertSame( 25, $settings['settings']['rows_per_page'] );
 
 		$styles = bulkcat_test_admin_calls( 'wp_enqueue_style' );
@@ -172,6 +173,15 @@ final class AssetsTest extends TestCase {
 		$this->assertSame( 'bulkcat-app', $styles[0][0] );
 		$this->assertStringEndsWith( '/assets/build/style-index.css', $styles[0][1] );
 		$this->assertSame( [ [ 'bulkcat-app', 'rtl', 'replace' ] ], bulkcat_test_admin_calls( 'wp_style_add_data' ) );
+	}
+
+	public function test_the_media_library_loads_only_for_users_who_may_upload(): void {
+		$screen = self::registered();
+		$screen->enqueue( self::SCREEN_ID );
+		$this->assertSame( [], bulkcat_test_admin_calls( 'wp_enqueue_media' ), 'Ticket 22: no media library without upload_files.' );
+		$GLOBALS['bulkcat_test']['caps']['upload_files'] = true;
+		$screen->enqueue( self::SCREEN_ID );
+		$this->assertSame( [ [] ], bulkcat_test_admin_calls( 'wp_enqueue_media' ), 'The category image chooser uses WordPress\'s own media library.' );
 	}
 
 	public function test_the_client_is_told_the_current_users_capabilities(): void {

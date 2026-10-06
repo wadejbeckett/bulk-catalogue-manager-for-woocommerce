@@ -28,6 +28,25 @@ final class ChangeRepository {
 	public const MAX_PAGE = 500;
 
 	/**
+	 * Most rows objects_newest_first() returns in one read (T111): three
+	 * numbers a row, so a large page keeps a whole-catalogue batch to a few
+	 * dozen reads.
+	 */
+	public const OBJECTS_PAGE = 5000;
+
+	/**
+	 * Most objects for_objects() reads at once.
+	 */
+	public const MAX_OBJECTS = 500;
+
+	/**
+	 * Most journal rows one object can have in one batch, bounding
+	 * for_objects(): a change has at most twenty steps, each naming one field
+	 * and at most one follow-on row, so a batch journals at most forty.
+	 */
+	public const MAX_ROWS_PER_OBJECT = 100;
+
+	/**
 	 * Length of the message column.
 	 */
 	public const MESSAGE_LENGTH = 255;
@@ -59,8 +78,9 @@ final class ChangeRepository {
 	 * Build a repository.
 	 *
 	 * @param Registry|null $registry Registry holding the table; the plugin's own by default.
+	 * @param bool $strict Require exact affected-row acknowledgements for a new inline invocation.
 	 */
-	public function __construct( ?Registry $registry = null ) {
+	public function __construct( ?Registry $registry = null, private readonly bool $strict = false ) {
 		$this->registry = $registry ?? Registry::plugin();
 	}
 
@@ -111,7 +131,8 @@ final class ChangeRepository {
 			'message'      => mb_substr( $message, 0, self::MESSAGE_LENGTH ),
 		];
 		// insert() prepares the statement from the formats.
-		if ( false === $wpdb->insert( $this->registry->table( Schema::CHANGES ), $data, [ '%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' ] ) ) {
+		$inserted = $wpdb->insert( $this->registry->table( Schema::CHANGES ), $data, [ '%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' ] );
+		if ( false === $inserted || ( $this->strict && ( 1 !== $inserted || $wpdb->insert_id < 1 ) ) ) {
 			throw new \RuntimeException( 'The change could not be journalled.' );
 		}
 		return (int) $wpdb->insert_id;
@@ -149,6 +170,18 @@ final class ChangeRepository {
 	public function has_object( int $batch_id, int $object_id ): bool {
 		global $wpdb;
 		return null !== $wpdb->get_var( $wpdb->prepare( 'SELECT change_id FROM %i WHERE batch_id = %d AND object_id = %d LIMIT 1', $this->registry->table( Schema::CHANGES ), $batch_id, $object_id ) );
+	}
+
+	/**
+	 * Whether the batch journalled an applied change to an object: a run
+	 * that wrote it may have died before counting it (SILENT-FAILURES-3).
+	 *
+	 * @param int $batch_id  Batch.
+	 * @param int $object_id Product, variation or term id.
+	 */
+	public function has_applied( int $batch_id, int $object_id ): bool {
+		global $wpdb;
+		return 0 < (int) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM %i WHERE batch_id = %d AND object_id = %d AND result = %s', $this->registry->table( Schema::CHANGES ), $batch_id, $object_id, 'applied' ) );
 	}
 
 	/**
@@ -211,7 +244,7 @@ final class ChangeRepository {
 			[ '%s', '%s', '%s', '%s' ],
 			[ '%d', '%d', '%s', '%s' ]
 		);
-		if ( false === $updated ) {
+		if ( false === $updated || ( $this->strict && 1 !== $updated ) ) {
 			throw new \RuntimeException( 'The change could not be journalled.' );
 		}
 		return (int) $updated;
@@ -222,18 +255,33 @@ final class ChangeRepository {
 	 *
 	 * @param int         $batch_id Batch.
 	 * @param string|null $result   One of Schema::CHANGE_RESULTS, or null for all.
+	 * @param bool        $strict   Whether a failed read throws instead of counting 0 (SILENT-FAILURES-5).
 	 * @throws \InvalidArgumentException On an unknown result.
+	 * @throws \RuntimeException When $strict and the read fails.
 	 */
-	public function count_for_batch( int $batch_id, ?string $result = null ): int {
+	public function count_for_batch( int $batch_id, ?string $result = null, bool $strict = false ): int {
 		global $wpdb;
 		$table = $this->registry->table( Schema::CHANGES );
 		if ( null === $result ) {
-			return (int) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM %i WHERE batch_id = %d', $table, $batch_id ) );
+			return BatchRepository::counted( $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM %i WHERE batch_id = %d', $table, $batch_id ) ), $strict );
 		}
 		if ( ! in_array( $result, Schema::CHANGE_RESULTS, true ) ) {
 			throw new \InvalidArgumentException( esc_html( sprintf( 'Unknown result "%s".', $result ) ) );
 		}
-		return (int) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM %i WHERE batch_id = %d AND result = %s', $table, $batch_id, $result ) );
+		return BatchRepository::counted( $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM %i WHERE batch_id = %d AND result = %s', $table, $batch_id, $result ) ), $strict );
+	}
+
+	/**
+	 * How many objects a batch wrote only in part: an applied row and a
+	 * skipped or failed row for the same object (ENGINE-1, an undo that put
+	 * back some of an object's values and not others).
+	 *
+	 * @param int $batch_id Batch.
+	 */
+	public function count_written_in_part( int $batch_id ): int {
+		global $wpdb;
+		$table = $this->registry->table( Schema::CHANGES );
+		return (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(DISTINCT object_id) FROM %i WHERE batch_id = %d AND result IN ('skipped', 'failed') AND object_id IN (SELECT object_id FROM %i WHERE batch_id = %d AND result = 'applied')", $table, $batch_id, $table, $batch_id ) );
 	}
 
 	/**
@@ -382,6 +430,11 @@ final class ChangeRepository {
 				}
 				$where[] = $condition;
 				$args[]  = $filters[ $key ];
+				if ( 'object_id' === $key ) {
+					// A product's history: never a category's rows under the same number (contract version 2).
+					$where[] = 'c.object_type IN (%s, %s)';
+					array_push( $args, 'product', 'variation' );
+				}
 			}
 		}
 		if ( isset( $filters['prop'] ) ) {
@@ -502,5 +555,105 @@ final class ChangeRepository {
 		global $wpdb;
 		$rows = $wpdb->get_results( $wpdb->prepare( 'SELECT change_id, batch_id, object_id, object_type, prop, old_value, new_value, modified_gmt, applied_gmt, result, message FROM %i WHERE batch_id = %d AND change_id < %d ORDER BY change_id DESC LIMIT %d', $this->registry->table( Schema::CHANGES ), $batch_id, $before > 0 ? $before : PHP_INT_MAX, max( 1, min( self::MAX_PAGE, $limit ) ) ), ARRAY_A );
 		return array_map( [ self::class, 'row' ], is_array( $rows ) ? $rows : [] );
+	}
+
+	/**
+	 * Which objects a batch journalled, a page of rows at a time from the
+	 * newest down, with no values (T111): the undo planner's order of
+	 * objects, read without holding the journal. Pass the last change_id
+	 * seen as $before to continue, 0 for the start.
+	 *
+	 * @param int $batch_id Batch.
+	 * @param int $before   Return only rows with a smaller change_id; 0 for none.
+	 * @param int $limit    Most rows, 1 to OBJECTS_PAGE.
+	 * @return list<array{change_id: int, object_id: int, object_type: string}>
+	 */
+	public function objects_newest_first( int $batch_id, int $before, int $limit ): array {
+		global $wpdb;
+		$rows = $wpdb->get_results( $wpdb->prepare( 'SELECT change_id, object_id, object_type FROM %i WHERE batch_id = %d AND change_id < %d ORDER BY change_id DESC LIMIT %d', $this->registry->table( Schema::CHANGES ), $batch_id, $before > 0 ? $before : PHP_INT_MAX, max( 1, min( self::OBJECTS_PAGE, $limit ) ) ), ARRAY_A );
+		$out  = [];
+		foreach ( is_array( $rows ) ? $rows : [] as $row ) {
+			$out[] = [
+				'change_id'   => (int) $row['change_id'],
+				'object_id'   => (int) $row['object_id'],
+				'object_type' => (string) $row['object_type'],
+			];
+		}
+		return $out;
+	}
+
+	/**
+	 * The paths deleted categories had, from their `term_deleted` rows
+	 * (ticket 133: History names a deleted category, never its id): the
+	 * newest per category.
+	 *
+	 * @param list<int> $term_ids Category ids, at most MAX_OBJECTS.
+	 * @return array<int, string> Term id => path.
+	 */
+	public function deleted_paths( array $term_ids ): array {
+		global $wpdb;
+		$term_ids = array_values( array_filter( array_map( 'intval', $term_ids ), static fn( int $id ): bool => $id > 0 ) );
+		if ( [] === $term_ids ) {
+			return [];
+		}
+		$term_ids = array_slice( $term_ids, 0, self::MAX_OBJECTS );
+		$in       = implode( ', ', array_fill( 0, count( $term_ids ), '%d' ) );
+		$rows     = $wpdb->get_results( $wpdb->prepare( "SELECT object_id, old_value FROM %i WHERE object_type = %s AND prop = %s AND result = %s AND object_id IN ({$in}) ORDER BY change_id DESC LIMIT %d", array_merge( [ $this->registry->table( Schema::CHANGES ), 'term', 'term_deleted', 'applied' ], $term_ids, [ count( $term_ids ) * 4 ] ) ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in is only %d placeholders.
+		$out      = [];
+		foreach ( is_array( $rows ) ? $rows : [] as $row ) {
+			$id = (int) $row['object_id'];
+			if ( ! isset( $out[ $id ] ) ) {
+				$out[ $id ] = (string) ValueCodec::decode( (string) $row['old_value'] );
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * Every journal row of a batch for some of its objects, newest first
+	 * (T111): what the undo planner plans a page of objects from. The rows
+	 * are found by object (the `object_prop` index), not by walking the
+	 * batch's rows, and ordered here.
+	 *
+	 * @param int       $batch_id   Batch.
+	 * @param list<int> $object_ids Objects, 1 to MAX_OBJECTS positive ids.
+	 * @return list<array{change_id: int, object_id: int, object_type: string, prop: string, old_value: mixed, new_value: mixed, result: string}>
+	 * @throws \InvalidArgumentException On an invalid or excessive list of ids.
+	 * @throws \RuntimeException When the rows exceed what any batch journals, rather than answer part of them.
+	 */
+	public function for_objects( int $batch_id, array $object_ids ): array {
+		global $wpdb;
+		if ( [] === $object_ids ) {
+			return [];
+		}
+		if ( count( $object_ids ) > self::MAX_OBJECTS ) {
+			throw new \InvalidArgumentException( 'Too many objects for one journal read.' );
+		}
+		foreach ( $object_ids as $id ) {
+			if ( ! is_int( $id ) || $id < 1 ) {
+				throw new \InvalidArgumentException( 'Invalid object id.' );
+			}
+		}
+		$limit = count( $object_ids ) * self::MAX_ROWS_PER_OBJECT;
+		$in    = implode( ', ', array_fill( 0, count( $object_ids ), '%d' ) );
+		$rows  = $wpdb->get_results( $wpdb->prepare( "SELECT change_id, object_id, object_type, prop, old_value, new_value, result FROM %i WHERE batch_id = %d AND object_id IN ({$in}) LIMIT %d", array_merge( [ $this->registry->table( Schema::CHANGES ), $batch_id ], array_values( $object_ids ), [ $limit ] ) ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in is only %d placeholders.
+		$rows  = is_array( $rows ) ? $rows : [];
+		if ( count( $rows ) >= $limit ) {
+			throw new \RuntimeException( 'More journal rows than a batch writes for these objects.' );
+		}
+		$out = [];
+		foreach ( $rows as $row ) {
+			$out[] = [
+				'change_id'   => (int) $row['change_id'],
+				'object_id'   => (int) $row['object_id'],
+				'object_type' => (string) $row['object_type'],
+				'prop'        => (string) $row['prop'],
+				'old_value'   => ValueCodec::decode( (string) $row['old_value'] ),
+				'new_value'   => ValueCodec::decode( (string) $row['new_value'] ),
+				'result'      => (string) $row['result'],
+			];
+		}
+		usort( $out, static fn( array $a, array $b ): int => $b['change_id'] <=> $a['change_id'] );
+		return $out;
 	}
 }

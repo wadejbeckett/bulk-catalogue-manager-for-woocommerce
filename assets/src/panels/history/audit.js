@@ -17,7 +17,7 @@ import {
 	DATE_OPERATORS,
 	dateRange,
 	fieldLabel,
-	formatValue,
+	rowValue,
 	formatWhen,
 	singleValue,
 } from './describe';
@@ -136,7 +136,7 @@ export function auditFields( meta, names, users ) {
 			enableSorting: false,
 			filterBy: false,
 			render: ( { item } ) =>
-				formatValue( item.old_value, byKey[ item.field ] ),
+				rowValue( item, 'old', byKey[ item.field ] ),
 		},
 		{
 			id: 'new_value',
@@ -145,7 +145,7 @@ export function auditFields( meta, names, users ) {
 			enableSorting: false,
 			filterBy: false,
 			render: ( { item } ) =>
-				formatValue( item.new_value, byKey[ item.field ] ),
+				rowValue( item, 'new', byKey[ item.field ] ),
 		},
 		{
 			id: 'result',

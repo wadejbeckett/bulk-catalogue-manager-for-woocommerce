@@ -18,6 +18,7 @@ use BulkCatalogueManager\Engine\Progress;
 use BulkCatalogueManager\Engine\Reversibility;
 use BulkCatalogueManager\Fields\Registry as Fields;
 use BulkCatalogueManager\Operations\Registry as Actions;
+use BulkCatalogueManager\Requests\RequestService;
 use BulkCatalogueManager\Selection\Selection;
 use BulkCatalogueManager\Selection\SelectionToken;
 
@@ -26,30 +27,31 @@ defined( 'ABSPATH' ) || exit;
 /**
  * The batches route.
  *
- * `POST /bulkcat/v1/batches` (T31) queues a change. The
- * body carries the client's request id (`uuid`), the operation list
- * (`operations`, `[ { action, args } ]`), the selection — an `ids` list, or
- * the signed `token` from `POST /selection`, exactly one of them — and
- * optionally `source`, which may only be `bulk`: inline edits and category
- * writes open their own one-item batches, so a request cannot label a
- * queued batch as either (the server sets `bulk`). Undo batches are created
- * by the undo route through Engine\BatchFactory, not here.
+ * `POST /bulkcat/v1/batches` (T31, T83) queues a change, only as a
+ * durable request: the body carries the server-issued `uuid` and
+ * `request_proof` from `POST /requests` (operation `batch.apply`), the
+ * canonical `intent` returned with them (`{ version, source: bulk,
+ * operations, scope_hash, snapshot | ids }`), the preview's `preview_hash`
+ * and, for a snapshot, its current `token`, and nothing else.
+ * Requests\RequestService resolves the receipt first — an accepted request
+ * answers 200 with its batch, `replayed: true`, even after its selection,
+ * preview or grant expired — and otherwise accepts it: the exact scope is
+ * built and checked against the preview, and the batch header, every item
+ * and the receipt commit together before any work is queued; a new batch
+ * answers 201. Both answer `{ batch_id, status, total_items, replayed }`.
+ * Undo batches are created by the undo route, never here.
+ *
+ * A body without `request_proof` and `intent` comes from a 1.0 screen (a
+ * bare client `uuid` with `operations`, `ids` or `token`, and the T38
+ * `preview_hash`, `preview_count` and `confirm_changed`). It never creates
+ * a batch: the user's batches under that request id are looked up at any
+ * age (Engine\BatchFactory::earlier()); exactly one that is this same
+ * request (same operations and selection) answers 200 as a replay, anything
+ * else 409 `bulkcat_legacy_request` — naming the user's own batches under
+ * the id as History references, or none, asking the page to reload.
  *
  * It writes products, so it needs the write capability (Access::can_write);
- * each object is checked again as it is written. Engine\BatchFactory does the
- * work: a new batch answers 201, a repeat of a request id within sixty
- * seconds answers 200 with the same batch, both as
- * `{ batch_id, status, total_items, replayed }`.
- *
- * Applying a selection (T38, §9.1): every body carries the preview's
- * `preview_hash` — for an id list or id token as much as for a filter, since
- * every bulk write is previewed first — and a filter token the count the
- * preview showed (`preview_count`; the token's own count when absent). BatchFactory refuses
- * 409 `bulkcat_preview_stale` when the hash is missing or no longer what a
- * preview gives now, and 409 `bulkcat_selection_changed` with `data.previewed`
- * and `data.current` when the filter now matches another number of objects,
- * unless the body carries `confirm_changed: true` — the owner's answer after
- * the screen stated both numbers.
+ * each object is checked again as it is written.
  *
  * `GET /bulkcat/v1/batches` (T35, T54) pages the batches newest first, filtered
  * by status, user, creation time and action type (`action`, one id from the
@@ -58,8 +60,9 @@ defined( 'ABSPATH' ) || exit;
  * `reversibility` — `{ state, conflicts, reason }` from
  * Engine\Reversibility (§4.6) — the list reading every row's state with one
  * grouped pair of reads and no undo plan, so its rows carry `conflicts:
- * null` and no product is read; only the single read counts conflicts
- * (T56). An undo batch's row carries `undo` ("Undo of #418"). List rows
+ * null` and no product is read; the single read does the same unless asked
+ * with `reversibility=count`, which builds the undo plan to count them (T56;
+ * T85: every open screen polls the single read, so it stays light). An undo batch's row carries `undo` ("Undo of #418"). List rows
  * also carry `user_name` (the batch user's display name, every name on a
  * page from one get_users() call), `variations_included` (whether "Also
  * apply to variations" reached variations the selection did not name, from
@@ -124,6 +127,11 @@ final class BatchesController implements ReadController {
 	 * Refusal code for cancelling a batch that has finished.
 	 */
 	public const NOT_CANCELLABLE = 'bulkcat_not_cancellable';
+
+	/**
+	 * The only parameters a durable change may carry (T83).
+	 */
+	private const DURABLE = [ 'uuid', 'request_proof', 'intent', 'token', 'preview_hash' ];
 
 	/**
 	 * A request id: a UUID in its 8-4-4-4-12 hexadecimal form.
@@ -238,7 +246,16 @@ final class BatchesController implements ReadController {
 					'methods'             => 'GET',
 					'callback'            => [ $this, 'get_item' ],
 					'permission_callback' => [ Access::class, 'can_read' ],
-					'args'                => self::id_arg(),
+					'args'                => self::id_arg() + [
+						'reversibility' => self::arg(
+							[
+								'description' => __( 'Pass "count" to count the products changed again since, which works out the whole undo; without it the count is not given.', 'bulk-catalogue-manager-for-woocommerce' ),
+								'type'        => 'string',
+								'enum'        => [ 'count' ],
+							],
+							'sanitize_key'
+						),
+					],
 				],
 				'schema' => [ $this, 'get_item_schema' ],
 			]
@@ -290,6 +307,7 @@ final class BatchesController implements ReadController {
 				'created_gmt'  => $text,
 				'finished_gmt' => $time,
 			] + $counters + [
+				'inline_receipt'       => \BulkCatalogueManager\Requests\InlineReceipt::schema(),
 				'note'                 => $text,
 				'operations'           => [
 					'type'  => 'array',
@@ -305,18 +323,39 @@ final class BatchesController implements ReadController {
 					'type'  => 'array',
 					'items' => [ 'type' => 'string' ],
 				],
+				'headline'             => [
+					'description' => __( 'What a change to categories did, in words with the categories\' names; null where the screen describes the change from its steps.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'type'        => [ 'string', 'null' ],
+				],
 				'reversibility'        => [
 					'type'       => 'object',
 					'properties' => [
-						'state'     => [
+						'state'           => [
 							'type' => 'string',
 							'enum' => Reversibility::STATES,
 						],
-						'conflicts' => [ 'type' => [ 'integer', 'null' ] ],
-						'reason'    => [
+						'conflicts'       => [ 'type' => [ 'integer', 'null' ] ],
+						'reason'          => [
 							'type' => [ 'string', 'null' ],
 							'enum' => [ ...Reversibility::REASONS, null ],
 						],
+						'provider'        => [
+							'description' => __( 'The name of the add-on that must be able to run to undo this change; only with the reason provider_missing or provider_unavailable.', 'bulk-catalogue-manager-for-woocommerce' ),
+							'type'        => 'string',
+						],
+						'provider_reason' => [
+							'description' => __( 'The add-on\'s own sentence saying why it cannot run now; only with the reason provider_unavailable.', 'bulk-catalogue-manager-for-woocommerce' ),
+							'type'        => 'string',
+						],
+					],
+				],
+				'external'             => [
+					'description' => __( 'For a change an add-on made: the add-on and the labels of its actions and fields, as recorded with the change. Absent for other changes.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'type'        => 'object',
+					'properties'  => [
+						'providers' => [ 'type' => 'array' ],
+						'actions'   => [ 'type' => 'object' ],
+						'fields'    => [ 'type' => 'object' ],
 					],
 				],
 				'undo'                 => [
@@ -332,6 +371,14 @@ final class BatchesController implements ReadController {
 						'reasons'    => [
 							'type'  => 'array',
 							'items' => [ 'type' => 'object' ],
+						],
+						'by_type'    => [
+							'description' => __( 'How many products and how many variations the undo puts back; null for an undo recorded before this was kept.', 'bulk-catalogue-manager-for-woocommerce' ),
+							'type'        => [ 'object', 'null' ],
+							'properties'  => [
+								'products'   => $integer,
+								'variations' => $integer,
+							],
 						],
 					],
 				],
@@ -442,7 +489,9 @@ final class BatchesController implements ReadController {
 				[
 					'description' => __( 'Only changes that used this action.', 'bulk-catalogue-manager-for-woocommerce' ),
 					'type'        => 'string',
-					'enum'        => ( $this->actions ?? Actions::instance() )->ids(),
+					// The native action ids. The native registry is built here rather than
+					// the shared one, so booting the REST server never collects providers.
+					'enum'        => ( $this->actions ?? new Actions( Fields::instance() ) )->ids(),
 				],
 				'strval'
 			),
@@ -524,6 +573,48 @@ final class BatchesController implements ReadController {
 				'undone_by'           => null === $undo ? null : $undo + [ 'user_name' => $names[ $undo['user_id'] ] ?? '' ],
 			];
 		}
+		// Contract version 2: an add-on's row names its chosen items from its manifest, read once for the page and only when the page has one.
+		$external = self::external_ids( $items );
+		return [] === $external ? $items : self::with_manifests( $items, $this->batches->manifests( $external ) );
+	}
+
+	/**
+	 * The page's batches made with an add-on that carry no `external` yet.
+	 *
+	 * @param list<array<string, mixed>> $items Reports.
+	 * @return list<int>
+	 */
+	public static function external_ids( array $items ): array {
+		$ids = [];
+		foreach ( $items as $item ) {
+			if ( isset( $item['external'] ) ) {
+				continue;
+			}
+			foreach ( (array) ( $item['operations'] ?? [] ) as $step ) {
+				if ( is_array( $step ) && str_starts_with( (string) ( $step['action'] ?? '' ), 'x_' ) ) {
+					$ids[] = (int) $item['batch_id'];
+					break;
+				}
+			}
+		}
+		return $ids;
+	}
+
+	/**
+	 * Each external row with its manifest's labels (External\Manifest::client()),
+	 * limited to the items its disclosed steps show (docs/EXTENSIONS-v2.md §4.5).
+	 *
+	 * @param list<array<string, mixed>>        $items     Reports.
+	 * @param array<int, array<string, mixed>> $manifests Manifests by batch id.
+	 * @return list<array<string, mixed>>
+	 */
+	public static function with_manifests( array $items, array $manifests ): array {
+		foreach ( $items as $index => $item ) {
+			$manifest = $manifests[ (int) ( $item['batch_id'] ?? 0 ) ] ?? null;
+			if ( is_array( $manifest ) && ! isset( $item['external'] ) ) {
+				$items[ $index ]['external'] = \BulkCatalogueManager\External\Manifest::client( $manifest, is_array( $item['operations'] ?? null ) ? $item['operations'] : [] );
+			}
+		}
 		return $items;
 	}
 
@@ -577,7 +668,21 @@ final class BatchesController implements ReadController {
 	 * @param \WP_REST_Request $request The validated, sanitised request.
 	 */
 	public function get_item( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
-		$report = $this->progress->report( (int) $request->get_param( 'id' ) );
+		$count = 'count' === $request->get_param( 'reversibility' );
+		$lock  = '';
+		if ( $count ) {
+			// Counting conflicts walks the whole undo plan (T111), so one runs at a time per user.
+			$lock = HeavyReadLock::acquire( HeavyReadLock::COUNT );
+			if ( $lock instanceof \WP_Error ) {
+				return $lock;
+			}
+			UndoController::lift_time_limit();
+		}
+		try {
+			$report = $this->progress->report( (int) $request->get_param( 'id' ), $count );
+		} finally {
+			HeavyReadLock::release( $lock );
+		}
 		return null === $report ? self::not_found() : new \WP_REST_Response( $report, 200 );
 	}
 
@@ -590,6 +695,9 @@ final class BatchesController implements ReadController {
 		$result = $this->progress->cancel( (int) $request->get_param( 'id' ) );
 		if ( 'missing' === $result ) {
 			return self::not_found();
+		}
+		if ( 'unclosed' === $result ) {
+			return Refusal::create( self::NOT_CANCELLABLE, Progress::uncertain_message(), 409 );
 		}
 		if ( 'finished' === $result ) {
 			return Refusal::create(
@@ -659,6 +767,15 @@ final class BatchesController implements ReadController {
 	 */
 	public static function args(): array {
 		return [
+			'request_proof'   => [
+				'description' => __( 'The signed proof issued with the request id, for a durable change.', 'bulk-catalogue-manager-for-woocommerce' ),
+				'type'        => 'string',
+				'maxLength'   => 4096,
+			],
+			'intent'          => [
+				'description' => __( 'The change exactly as issued with the request id: its operations, the preview\'s scope and the selection.', 'bulk-catalogue-manager-for-woocommerce' ),
+				'type'        => 'object',
+			],
 			'uuid'            => [
 				'description'       => __( 'A request id the screen makes once per change, so sending it twice creates one change.', 'bulk-catalogue-manager-for-woocommerce' ),
 				'type'              => 'string',
@@ -676,7 +793,6 @@ final class BatchesController implements ReadController {
 				'description'       => __( 'The changes to make, in order: each an action and its arguments. A step on a field variations have their own value for may carry apply_to_variations (true or false) to reach the variations of each chosen variable product; left out, it takes the shop\'s default for that kind of field.', 'bulk-catalogue-manager-for-woocommerce' ),
 				'type'              => 'array',
 				'items'             => [ 'type' => 'object' ],
-				'required'          => true,
 				// Operations\Registry::validate_list() checks the list in full, with its own refusals.
 				'validate_callback' => static fn(): bool => true,
 				'sanitize_callback' => static fn( mixed $value ): mixed => $value,
@@ -705,7 +821,6 @@ final class BatchesController implements ReadController {
 					'description' => __( 'Where the change was made: always the bulk panel on this route.', 'bulk-catalogue-manager-for-woocommerce' ),
 					'type'        => 'string',
 					'enum'        => self::SOURCES,
-					'default'     => 'bulk',
 				],
 				'strval'
 			),
@@ -729,7 +844,6 @@ final class BatchesController implements ReadController {
 				[
 					'description' => __( 'Apply even though the filter now matches a different number of products than the preview showed.', 'bulk-catalogue-manager-for-woocommerce' ),
 					'type'        => 'boolean',
-					'default'     => false,
 				],
 				static fn( mixed $value ): bool => true === $value || 1 === $value || in_array( is_string( $value ) ? strtolower( $value ) : '', [ '1', 'true' ], true )
 			),
@@ -737,38 +851,54 @@ final class BatchesController implements ReadController {
 	}
 
 	/**
-	 * Queue the posted change, or answer the one this request id already queued.
+	 * Accept the posted durable change, or answer the batch its request id
+	 * already has; a body from a 1.0 screen is resolved, never created.
 	 *
 	 * @param \WP_REST_Request $request The request, its arguments validated and sanitised by core.
 	 */
 	public function create_item( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
-		$factory = $this->factory();
-		$uuid    = (string) $request->get_param( 'uuid' );
-		$user_id = get_current_user_id();
+		if ( null === $request->get_param( 'request_proof' ) && null === $request->get_param( 'intent' ) ) {
+			return $this->legacy( $request );
+		}
+		if ( ! RequestsController::known( $request, self::DURABLE ) ) {
+			return RequestsController::unknown();
+		}
+		$result = ( new RequestService() )->apply( array_intersect_key( $request->get_params(), array_flip( self::DURABLE ) ) );
+		return $result instanceof \WP_Error ? $result : self::answer( $result );
+	}
 
-		// A repeat answers before its selection is read again: the token may have expired meanwhile.
-		$existing = $factory->replayed( $uuid, $user_id );
-		if ( null === $existing ) {
-			$selection = self::selection( $request->get_param( 'ids' ), $request->get_param( 'token' ), $user_id );
-			if ( $selection instanceof \WP_Error ) {
-				return $selection;
-			}
-			// Every bulk write is held to its preview: a filter, an id token and an id list alike.
-			$token  = $request->get_param( 'token' );
-			$count  = $request->get_param( 'preview_count' );
-			$apply  = [
-				'token'     => null === $token ? '' : (string) $token,
-				'hash'      => (string) ( $request->get_param( 'preview_hash' ) ?? '' ),
-				'previewed' => null === $count ? null : (int) $count,
-				'confirmed' => true === $request->get_param( 'confirm_changed' ),
-			];
-			$result = $factory->create( $uuid, $user_id, $request->get_param( 'operations' ), $selection, 'bulk', null, $apply );
-		} else {
-			$result = $factory->replay( $existing );
+	/**
+	 * A body from a 1.0 screen: its bare request id answers the one batch it
+	 * exactly made, or is refused (Engine\BatchFactory::earlier()); it never
+	 * creates a batch. The operations and selection are read only when one
+	 * batch has the id.
+	 *
+	 * @param \WP_REST_Request $request The request.
+	 */
+	private function legacy( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
+		$user_id = get_current_user_id();
+		$same    = function ( array $batch ) use ( $request, $user_id ): bool {
+			$operations = ( $this->actions ?? Actions::instance() )->validate_list( $request->get_param( 'operations' ) );
+			$selection  = self::selection( $request->get_param( 'ids' ), $request->get_param( 'token' ), $user_id );
+			return is_array( $operations ) && $selection instanceof Selection && BatchFactory::same_bulk( $batch, $operations, $selection );
+		};
+		try {
+			$earlier = $this->factory()->earlier( (string) $request->get_param( 'uuid' ), $user_id, $same );
+		} catch ( \RuntimeException $e ) {
+			return Refusal::unexpected( 'bulkcat_request_storage', __( 'The request could not be resolved safely. Retry the same request; if this continues, ask an administrator to check catalogue storage.', 'bulk-catalogue-manager-for-woocommerce' ), 503, $e );
 		}
-		if ( $result instanceof \WP_Error ) {
-			return $result;
+		if ( null === $earlier ) {
+			return BatchFactory::legacy( [] );
 		}
+		return $earlier instanceof \WP_Error ? $earlier : self::answer( $earlier );
+	}
+
+	/**
+	 * The answer for an accepted or replayed batch: 201 when this request created it, 200 when it already existed.
+	 *
+	 * @param array<string, mixed> $result `{ batch_id, status, total_items, replayed }` and anything else, which is left out.
+	 */
+	private static function answer( array $result ): \WP_REST_Response {
 		return new \WP_REST_Response(
 			[
 				'batch_id'    => $result['batch_id'],

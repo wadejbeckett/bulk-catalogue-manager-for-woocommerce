@@ -44,6 +44,7 @@ final class SchemaTest extends TestCase {
 				'note'            => [ 'varchar(255)', false ],
 				'actions'         => [ 'varchar(255)', false ],
 				'pruned_gmt'      => [ 'datetime', true ],
+				'extensions'      => [ 'longtext', true ],
 			],
 			'indexes' => [
 				'PRIMARY'     => 'batch_id',
@@ -128,8 +129,8 @@ final class SchemaTest extends TestCase {
 		return $parsed;
 	}
 
-	public function test_the_registry_holds_exactly_the_three_tables(): void {
-		$this->assertSame( [ 'bulkcat_batches', 'bulkcat_batch_items', 'bulkcat_changes' ], array_keys( Registry::plugin()->tables() ) );
+	public function test_the_registry_holds_exactly_the_five_tables(): void {
+		$this->assertSame( [ 'bulkcat_batches', 'bulkcat_batch_items', 'bulkcat_changes', 'bulkcat_selections', 'bulkcat_requests' ], array_keys( Registry::plugin()->tables() ) );
 		$this->assertSame( Schema::TABLES, Registry::plugin()->tables() );
 	}
 
@@ -161,12 +162,12 @@ final class SchemaTest extends TestCase {
 		$this->assertSame( Migrator::SCHEMA_VERSION, get_option( Migrator::VERSION_OPTION ) );
 
 		$statements = $GLOBALS['bulkcat_test']['dbdelta'][0];
-		$this->assertCount( 3, $statements );
+		$this->assertCount( 5, $statements );
 		foreach ( array_keys( Schema::TABLES ) as $i => $name ) {
-			$this->assertSame( "CREATE TABLE wp_7_{$name} (\n" . Schema::TABLES[ $name ] . "\n) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci;", $statements[ $i ] );
+			$this->assertSame( "CREATE TABLE wp_7_{$name} (\n" . Schema::TABLES[ $name ] . "\n) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_520_ci ENGINE=InnoDB;", $statements[ $i ], 'Every table is InnoDB, as storage readiness requires.' );
 		}
-		$this->assertSame( [ 'wp_7_bulkcat_batches', 'wp_7_bulkcat_batch_items', 'wp_7_bulkcat_changes' ], array_keys( $GLOBALS['wpdb']->tables ) );
-		$this->assertSame( '6', Migrator::SCHEMA_VERSION, 'T56\'s item operations bumped the schema version, so a site migrated at 5 gains the column.' );
+		$this->assertSame( [ 'wp_7_bulkcat_batches', 'wp_7_bulkcat_batch_items', 'wp_7_bulkcat_changes', 'wp_7_bulkcat_selections', 'wp_7_bulkcat_requests' ], array_keys( $GLOBALS['wpdb']->tables ) );
+		$this->assertSame( '9', Migrator::SCHEMA_VERSION, 'T81 added snapshot and receipt storage (7); T107 adds the batch\'s provider manifest (8); 9 converts every table to InnoDB.' );
 	}
 
 	public function test_table_names_come_only_from_the_registry_with_the_site_prefix(): void {
@@ -188,7 +189,7 @@ final class SchemaTest extends TestCase {
 	public function test_allowed_values_match_the_spec(): void {
 		$this->assertSame( [ 'queued', 'running', 'complete', 'partial', 'failed', 'cancelled', 'undoing', 'undone' ], Schema::BATCH_STATUSES );
 		$this->assertSame( [ 'bulk', 'inline', 'tree', 'undo' ], Schema::BATCH_SOURCES );
-		$this->assertSame( [ 'product', 'variation', 'term' ], Schema::OBJECT_TYPES );
+		$this->assertSame( [ 'product', 'variation', 'term', 'product_cat' ], Schema::OBJECT_TYPES );
 		$this->assertSame( [ 'pending', 'done', 'skipped', 'failed' ], Schema::ITEM_STATES );
 		$this->assertSame( [ 'applied', 'skipped', 'failed' ], Schema::CHANGE_RESULTS );
 	}

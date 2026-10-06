@@ -1,24 +1,22 @@
 /**
- * T53: the Export control downloads the current view through GET /export
- * with the grid's filters, search, sort and mode and the visible columns in
- * the owner's order, the wp_rest nonce as `_wpnonce` (core's cookie check
- * reads it before the header); it is busy while the file is produced, the
- * rest of the screen untouched, and a refusal shows a §4.8 notice.
+ * T53: the export arguments are the grid's filters, search, sort and mode and
+ * the visible columns in the owner's order; the wp_rest nonce goes as
+ * `_wpnonce` in a posted body, never an address (SECURITY-1); and how a
+ * refusal is read back from the hidden frame. The Export control itself
+ * opens the export dialog since T103: catalogue-export-dialog.test.js.
  */
-import { act, fireEvent, render, screen } from '@testing-library/react';
-import { getQueryArgs } from '@wordpress/url';
-
-import {
-	ExportControl,
-	exportArgs,
-	exportColumns,
-	exportUrl,
-} from '../../assets/src/panels/catalogue/views';
+import * as views from '../../assets/src/panels/catalogue/views';
 import {
 	currentNonce,
-	download,
 	refusalIn,
 } from '../../assets/src/panels/catalogue/views/export';
+import * as exporter from '../../assets/src/panels/catalogue/views/export';
+import {
+	historyExportArgs,
+	historyFormFields,
+} from '../../assets/src/panels/history/export';
+
+const { exportArgs, exportColumns } = views;
 import {
 	defaultView,
 	descriptorsOf,
@@ -95,28 +93,21 @@ describe( 'export arguments', () => {
 		).toEqual( [ 'name', 'sku' ] );
 	} );
 
-	it( 'compose a URL whose query PHP reads back as the arguments, nonce included', () => {
-		const url = exportUrl(
-			exportArgs( QUERY, VIEW, REGISTRY ),
+	it( 'never put the nonce in an address: History posts it in the body (SECURITY-1)', () => {
+		expect( views.exportUrl ).toBeUndefined();
+		expect( exporter.exportUrl ).toBeUndefined();
+		expect( exporter.download ).toBeUndefined();
+		const fields = historyFormFields(
+			historyExportArgs( 'audit', { user: 2, page: 3 } ),
 			'abc123def0'
 		);
-		expect( url.split( '?' )[ 0 ] ).toBe( 'export' );
-		const query = getQueryArgs( url );
-		expect( query._wpnonce ).toBe( 'abc123def0' );
-		expect( query.columns ).toEqual( [
-			'name',
-			'stock_status',
-			'sku',
-			'regular_price',
-		] );
-		expect( query.category_ids ).toEqual( {
-			operator: 'isAny',
-			value: [ '3', '4' ],
-		} );
-		expect( query.orderby ).toEqual( [ 'regular_price' ] );
-		expect( query.search ).toBe( 'golf' );
-		expect( url ).toContain(
-			'columns%5B0%5D=name&columns%5B1%5D=stock_status'
+		expect( fields[ 0 ] ).toEqual( [ '_wpnonce', 'abc123def0' ] );
+		const posted = new URLSearchParams( fields );
+		expect( posted.get( 'source' ) ).toBe( 'audit' );
+		expect( posted.get( 'user' ) ).toBe( '2' );
+		expect( posted.get( 'page' ) ).toBeNull();
+		expect( posted.get( 'columns' ) ).toBe(
+			'applied_gmt,batch_id,user_name,name,object_id,object_type,field_label,old_value,new_value,result,message'
 		);
 	} );
 
@@ -128,127 +119,44 @@ describe( 'export arguments', () => {
 	} );
 } );
 
-describe( 'the Export control', () => {
-	function setup() {
-		const started = [];
-		const start = jest.fn( ( url, handlers ) => {
-			started.push( { url, ...handlers } );
-			return jest.fn();
-		} );
-		render(
-			<>
-				<ExportControl
-					query={ QUERY }
-					view={ VIEW }
-					registry={ REGISTRY }
-					getNonce={ () => 'nonce00001' }
-					start={ start }
-				/>
-				<button type="button">Elsewhere</button>
-			</>
-		);
-		return { start, started };
+describe( 'the hidden frame', () => {
+	/**
+	 * A hidden frame in the page, as postDownload() adds one.
+	 *
+	 * @return {HTMLIFrameElement} Frame.
+	 */
+	function frame() {
+		const element = document.createElement( 'iframe' );
+		document.body.appendChild( element );
+		return element;
 	}
 
-	it( 'downloads the current view and is busy until the file is on its way', () => {
-		const { start, started } = setup();
-		fireEvent.click( screen.getByRole( 'button', { name: 'Export CSV' } ) );
-		expect( start ).toHaveBeenCalledTimes( 1 );
-		expect( started[ 0 ].url ).toBe(
-			exportUrl( exportArgs( QUERY, VIEW, REGISTRY ), 'nonce00001' )
-		);
-		const busy = screen.getByRole( 'button', { name: 'Preparing CSV…' } );
-		expect( busy.getAttribute( 'aria-disabled' ) ).toBe( 'true' );
-		// The rest of the screen stays usable.
-		expect(
-			screen.getByRole( 'button', { name: 'Elsewhere' } ).disabled
-		).toBe( false );
-		act( () => started[ 0 ].onDone() );
-		expect(
-			screen.getByRole( 'button', { name: 'Export CSV' } )
-		).toBeTruthy();
-		expect( screen.queryByText( /could not/ ) ).toBeNull();
-	} );
-
-	it( 'shows a refusal in plain words with its details, and tries again', () => {
-		const { start, started } = setup();
-		fireEvent.click( screen.getByRole( 'button', { name: 'Export CSV' } ) );
-		act( () =>
-			started[ 0 ].onError(
-				Object.assign(
-					new Error(
-						'These columns could not be exported. Choose the columns again and try again.'
-					),
-					{ code: 'bulkcat_invalid_value' }
-				)
-			)
-		);
-		expect(
-			screen.getByText(
-				'These columns could not be exported. Choose the columns again and try again.'
-			)
-		).toBeTruthy();
-		expect( screen.getByText( 'Show details' ) ).toBeTruthy();
-		expect( screen.getByText( /^bulkcat_invalid_value:/ ) ).toBeTruthy();
-		fireEvent.click( screen.getByRole( 'button', { name: 'Try again' } ) );
-		expect( start ).toHaveBeenCalledTimes( 2 );
-		expect( document.querySelector( '.bulkcat-error' ) ).toBeNull();
-	} );
-
-	it( 'words a refusal from core in its own sentence', () => {
-		const { started } = setup();
-		fireEvent.click( screen.getByRole( 'button', { name: 'Export CSV' } ) );
-		act( () =>
-			started[ 0 ].onError(
-				Object.assign( new Error( 'Cookie check failed' ), {
-					code: 'rest_cookie_invalid_nonce',
-				} )
-			)
-		);
-		expect(
-			screen.getByText(
-				'The CSV file could not be made. Reload the page and try again.'
-			)
-		).toBeTruthy();
-	} );
-} );
-
-describe( 'the hidden frame', () => {
-	it( 'loads the URL in a hidden frame and settles when the browser reports nothing', () => {
-		jest.useFakeTimers();
-		const onDone = jest.fn();
-		const onError = jest.fn();
-		const stop = download( 'about:blank#export', {
-			onDone,
-			onError,
-			settle: 1000,
-		} );
-		const frame = document.querySelector( 'iframe.bulkcat-export__frame' );
-		expect( frame.hidden ).toBe( true );
-		expect( frame.getAttribute( 'src' ) ).toBe( 'about:blank#export' );
-		jest.advanceTimersByTime( 1000 );
-		expect( onDone ).toHaveBeenCalledTimes( 1 );
-		expect( onError ).not.toHaveBeenCalled();
-		stop();
-		expect(
-			document.querySelector( 'iframe.bulkcat-export__frame' )
-		).toBeNull();
+	afterEach( () => {
+		document
+			.querySelectorAll( 'iframe' )
+			.forEach( ( element ) => element.remove() );
 	} );
 
 	it( 'reads a JSON refusal from the frame', () => {
-		const onDone = jest.fn();
-		const onError = jest.fn();
-		const stop = download( 'about:blank', { onDone, onError } );
-		const frame = document.querySelector( 'iframe.bulkcat-export__frame' );
-		frame.contentDocument.body.textContent = JSON.stringify( {
+		const shown = frame();
+		shown.contentDocument.body.textContent = JSON.stringify( {
 			code: 'bulkcat_forbidden',
 			message: 'Your account does not have permission.',
 		} );
-		frame.dispatchEvent( new window.Event( 'load' ) );
-		expect( onError ).toHaveBeenCalledTimes( 1 );
-		expect( onError.mock.calls[ 0 ][ 0 ].code ).toBe( 'bulkcat_forbidden' );
-		expect( onDone ).not.toHaveBeenCalled();
-		stop();
+		const refusal = refusalIn( shown );
+		expect( refusal.code ).toBe( 'bulkcat_forbidden' );
+		expect( refusal.message ).toBe(
+			'Your account does not have permission.'
+		);
+	} );
+
+	it( 'reads a server’s HTML error page in the frame as a failure, never as done (ticket 11)', () => {
+		const shown = frame();
+		shown.contentDocument.body.innerHTML =
+			'<div class="wp-die-message"><p>There has been a critical error on this website.</p></div>';
+		const refusal = refusalIn( shown );
+		expect( refusal.code ).not.toMatch( /^bulkcat_/ );
+		expect( refusal.message ).toBe( '' );
 	} );
 
 	it( 'treats a page that is not a refusal as done', () => {

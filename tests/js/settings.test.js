@@ -3,7 +3,7 @@
  * words, the PUT payload with the busy state and success notice, the
  * server's refusals shown against their settings, and read-only mode.
  */
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
 import Settings, {
 	changedValues,
@@ -16,6 +16,14 @@ jest.mock( '@wordpress/api-fetch', () => {
 	apiFetch.createNonceMiddleware = jest.fn();
 	return { __esModule: true, default: apiFetch };
 } );
+
+import {
+	coreJson,
+	expectNoRawText,
+	expectPlain,
+	html500,
+	htmlPage,
+} from './error-fixtures';
 
 const apiFetch = require( '@wordpress/api-fetch' ).default;
 
@@ -396,6 +404,71 @@ describe( 'Settings tab', () => {
 		).toContain( 'Only an administrator can change' );
 	} );
 
+	it.each( [
+		[ 'a server’s HTML error page', html500 ],
+		[ 'a proxy’s HTML page', htmlPage ],
+		[ 'a JSON error that is not the plugin’s own refusal', coreJson ],
+	] )(
+		'says %s in plain words, never its text (ticket 11)',
+		async ( label, failure ) => {
+			await renderTab();
+			fireEvent.change( screen.getByLabelText( 'CSV separator' ), {
+				target: { value: 'semicolon' },
+			} );
+			apiFetch.mockImplementationOnce( () =>
+				Promise.reject( failure() )
+			);
+			await act( async () => {
+				fireEvent.click( saveButton() );
+			} );
+			expect( apiFetch.mock.calls[ 1 ][ 0 ].data ).toEqual( {
+				values: { csv_separator: 'semicolon' },
+			} );
+			expectPlain(
+				document.querySelector(
+					'.bulkcat-settings .components-notice'
+				),
+				'The settings could not be saved. Try again in a moment.'
+			);
+			expectNoRawText();
+		}
+	);
+
+	it( 'keeps the code and status of a failed save behind Show details, as the other panels do (ticket 11)', async () => {
+		await renderTab();
+		fireEvent.change( screen.getByLabelText( 'CSV separator' ), {
+			target: { value: 'semicolon' },
+		} );
+		apiFetch.mockImplementationOnce( () => Promise.reject( html500() ) );
+		await act( async () => {
+			fireEvent.click( saveButton() );
+		} );
+		const notice = document.querySelector(
+			'.bulkcat-settings .components-notice'
+		);
+		expectPlain(
+			notice,
+			'The settings could not be saved. Try again in a moment.'
+		);
+		expect(
+			within( notice ).queryByText( /internal_server_error/ )
+		).toBeNull();
+		const toggle = within( notice ).getByRole( 'button', {
+			name: 'Show details',
+		} );
+		expect( toggle.getAttribute( 'aria-expanded' ) ).toBe( 'false' );
+		fireEvent.click( toggle );
+		expect(
+			within( notice ).getByText( 'internal_server_error · HTTP 500' )
+		).toBeTruthy();
+		expect(
+			within( notice )
+				.getByRole( 'button', { name: 'Hide details' } )
+				.getAttribute( 'aria-expanded' )
+		).toBe( 'true' );
+		expectNoRawText();
+	} );
+
 	it( 'renders read-only with an explanatory line for someone without manage_options', async () => {
 		await renderTab( { ...FIXTURE, canEdit: false } );
 		expect(
@@ -404,13 +477,70 @@ describe( 'Settings tab', () => {
 			)
 		).toBeTruthy();
 		expect( screen.queryByRole( 'button', { name: /Sav/ } ) ).toBeNull();
-		const controls = document.querySelectorAll(
-			'.bulkcat-settings__form input, .bulkcat-settings__form select'
+	} );
+
+	it( 'shows each read-only setting as its value in words, not as a greyed-out control (1.3.4)', async () => {
+		await renderTab( {
+			...FIXTURE,
+			values: { ...VALUES, remove_data_on_delete: true },
+			canEdit: false,
+		} );
+		// Nothing that looks like a switch someone has turned off.
+		expect(
+			document.querySelectorAll(
+				'.bulkcat-settings__form input, .bulkcat-settings__form select, .bulkcat-settings__form button'
+			)
+		).toHaveLength( 0 );
+		const value = ( key ) => {
+			const row = document.querySelector( `[data-setting="${ key }"]` );
+			const setting = FIXTURE.settings.find(
+				( each ) => each.key === key
+			);
+			// The label names the value it reads, so a screen reader hears both.
+			const term = within( row ).getByText( setting.label );
+			const definition = row.querySelector( 'dd' );
+			expect( term.tagName ).toBe( 'DT' );
+			expect( definition ).not.toBeNull();
+			return definition.textContent;
+		};
+		expect( value( 'administrators_only' ) ).toBe(
+			'Shop managers and administrators'
 		);
-		expect( controls.length ).toBeGreaterThan( 13 );
-		controls.forEach( ( control ) =>
-			expect( control.disabled ).toBe( true )
+		expect( value( 'rows_per_page' ) ).toBe( '25' );
+		expect( value( 'category_panel' ) ).toBe( 'On' );
+		expect( value( 'variations_status' ) ).toBe( 'On' );
+		expect( value( 'variations_price' ) ).toBe( 'Off' );
+		expect( value( 'confirm_threshold' ) ).toBe( '200 rows' );
+		expect( value( 'batch_size' ) ).toBe( '50 products' );
+		expect( value( 'history_days' ) ).toBe( '90 days' );
+		expect( value( 'csv_separator' ) ).toBe( 'Comma' );
+		expect( value( 'remove_data_on_delete' ) ).toBe( 'On' );
+		// Help and warnings still read as they do for an administrator.
+		FIXTURE.settings.forEach( ( setting ) =>
+			expect( screen.getByText( setting.help ) ).toBeTruthy()
 		);
+		expect(
+			within(
+				document.querySelector(
+					'[data-setting="remove_data_on_delete"]'
+				)
+			).getByText(
+				'When this is on, deleting the plugin permanently removes its settings, history and undo records.'
+			)
+		).toBeTruthy();
+		expectNoRawText();
+	} );
+
+	it( 'reads a history kept indefinitely as its own words (1.3.4)', async () => {
+		await renderTab( {
+			...FIXTURE,
+			values: { ...VALUES, history_days: 0 },
+			canEdit: false,
+		} );
+		expect(
+			document.querySelector( '[data-setting="history_days"] dd' )
+				.textContent
+		).toBe( 'Indefinitely' );
 	} );
 
 	it( 'offers a retry when the settings cannot be loaded', async () => {

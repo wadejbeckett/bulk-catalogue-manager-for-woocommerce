@@ -152,6 +152,33 @@ final class ValidatorTest extends TestCase {
 				'bulkcat_not_available',
 				'This variation does not manage its own stock, so its stock quantity was not changed. Turn on Manage stock for the variation first.',
 			],
+			'stock status on managed stock'               => [
+				'simple',
+				[
+					'id'             => 20,
+					'manage_stock'   => true,
+					'stock_quantity' => 12,
+					'stock_status'   => 'instock',
+				],
+				Result::changed( 'stock_status', 'instock', 'outofstock' ),
+				[],
+				Result::SKIPPED,
+				'bulkcat_not_available',
+				'Stock status is set by the stock quantity when stock is managed, so it was not changed. Change the stock quantity, or turn off Manage stock first.',
+			],
+			'stock status on stock managed by the parent' => [
+				'variation',
+				[
+					'id'           => 21,
+					'manage_stock' => 'parent',
+					'stock_status' => 'instock',
+				],
+				Result::changed( 'stock_status', 'instock', 'onbackorder' ),
+				[],
+				Result::SKIPPED,
+				'bulkcat_not_available',
+				'Stock status is set by the stock quantity when stock is managed, so it was not changed. Change the stock quantity, or turn off Manage stock first.',
+			],
 			'categories on a variation'                   => [
 				'variation',
 				[
@@ -435,9 +462,10 @@ final class ValidatorTest extends TestCase {
 	}
 
 	public function test_each_object_is_authorised_in_a_request(): void {
-		$GLOBALS['bulkcat_test']['caps']['edit_post:81'] = false;
-		$validator                                       = self::validator();
-		$states = [];
+		$GLOBALS['bulkcat_test']['caps']['publish_products'] = true;
+		$GLOBALS['bulkcat_test']['caps']['edit_post:81']     = false;
+		$validator = self::validator();
+		$states    = [];
 		foreach ( [ 80, 81, 82 ] as $id ) {
 			$product       = new FakeProduct(
 				'simple',
@@ -463,6 +491,41 @@ final class ValidatorTest extends TestCase {
 		$this->assertSame( Result::SKIPPED, $already[0]->state(), 'A row the user may not edit is reported as skipped whatever it computed.' );
 		$this->assertNull( $validator->authorise( new FakeProduct( 'simple', [ 'id' => 80 ] ) ) );
 		$this->assertSame( 'bulkcat_cannot_edit', $validator->authorise( new FakeProduct( 'simple', [ 'id' => 81 ] ) )->get_error_code() );
+	}
+
+	public function test_a_permission_refusal_produces_no_record_result(): void {
+		// T89: a skipped or failed Status step never changes the Off record.
+		$GLOBALS['bulkcat_test']['caps']['edit_post:91'] = false;
+		$validator                                       = self::validator();
+		$set     = ( new Registry( new Fields() ) )->get( 'set_value' );
+		$args    = $set->validate(
+			[
+				'field' => 'status',
+				'value' => 'draft',
+			]
+		)->args();
+		$allowed = new FakeProduct(
+			'simple',
+			[
+				'id'     => 90,
+				'status' => 'publish',
+			]
+		);
+		$denied  = new FakeProduct(
+			'simple',
+			[
+				'id'     => 91,
+				'status' => 'publish',
+			]
+		);
+
+		$checked = $validator->check( $allowed, $set->compute( $allowed, $args ), $args );
+		$this->assertSame( Result::CHANGED, $checked[0]->state() );
+		$this->assertSame( [ 'availability_off' ], array_map( static fn( Result $r ): string => $r->field(), $validator->follow( $set, $allowed, $checked[0], $args ) ) );
+
+		$checked = $validator->check( $denied, $set->compute( $denied, $args ), $args );
+		$this->assertSame( [ Result::SKIPPED, 'bulkcat_cannot_edit' ], [ $checked[0]->state(), $checked[0]->code() ] );
+		$this->assertSame( [], $validator->follow( $set, $denied, $checked[0], $args ) );
 	}
 
 	public function test_background_work_is_authorised_against_the_recorded_user(): void {

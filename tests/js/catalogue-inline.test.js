@@ -1,3 +1,4 @@
+import { withInlineReceipts } from './inline-transport';
 /**
  * T46: inline cell editing. A cell the registry marks inline-editable opens
  * on click or Enter, commits on Enter or blur and reverts on Escape; a value
@@ -44,29 +45,98 @@ const ITEMS = [
 		type: 'variable',
 		regular_price: '',
 	},
+	// T92: products switched Off through Status, one changed elsewhere since.
+	{
+		...ROWS[ 0 ],
+		id: 14,
+		name: 'Wool Beanie',
+		sku: 'BNE-140',
+		type: 'simple',
+		status: 'draft',
+		off_state: {
+			state: 'off',
+			saved: 'private',
+			saved_label: 'Private',
+			switched_off_gmt: '2026-09-28 14:03:11',
+			batch_id: 418,
+		},
+	},
+	{
+		...ROWS[ 0 ],
+		id: 15,
+		name: 'Rain Jacket',
+		sku: 'JKT-150',
+		type: 'simple',
+		status: 'private',
+		off_state: {
+			state: 'changed_outside',
+			saved: 'publish',
+			saved_label: 'Published',
+			switched_off_gmt: '2026-09-28 14:03:11',
+			batch_id: 418,
+		},
+	},
+	// T114: a scheduled product (post status future) reads as Scheduled.
+	{
+		...ROWS[ 0 ],
+		id: 17,
+		name: 'Linen Scarf',
+		sku: 'SCF-170',
+		type: 'simple',
+		status: 'future',
+	},
+	{
+		...ROWS[ 0 ],
+		id: 16,
+		name: 'Sun Hat',
+		sku: 'HAT-160',
+		type: 'simple',
+		status: 'draft',
+		off_state: {
+			state: 'off',
+			saved: 'publish',
+			saved_label: 'Published',
+			switched_off_gmt: '2026-09-28 14:03:11',
+			batch_id: 418,
+		},
+	},
 ];
 
+let storedItems;
 let patch;
 
 beforeEach( () => {
+	storedItems = [ ...ITEMS ];
 	apiFetch.mockReset();
 	patch = jest.fn();
 	apiFetch.mockImplementation( ( { url, method, data } ) => {
 		const path = url.split( '?' )[ 0 ];
 		if ( method === 'PATCH' ) {
-			return patch( path, data, getQueryArgs( url ) );
+			return patch( path, data, getQueryArgs( url ) ).then(
+				( answer ) => {
+					if ( answer?.item ) {
+						storedItems = storedItems.map( ( row ) =>
+							row.id === answer.item.id
+								? { ...row, ...answer.item }
+								: row
+						);
+					}
+					return answer;
+				}
+			);
 		}
 		if ( path === 'fields' ) {
 			return Promise.resolve( REGISTRY );
 		}
 		if ( path === 'products' ) {
-			return Promise.resolve( page( ITEMS ) );
+			return Promise.resolve( page( storedItems ) );
 		}
 		if ( path === 'categories' ) {
 			return Promise.resolve( CATEGORIES );
 		}
 		return new Promise( () => {} );
 	} );
+	withInlineReceipts( apiFetch );
 } );
 
 const patches = () =>
@@ -103,7 +173,7 @@ describe( 'inline cell editing', () => {
 		await waitFor( () => expect( patches() ).toHaveLength( 1 ) );
 		expect( patch ).toHaveBeenCalledWith(
 			'products/11',
-			{ sku: 'TSH-101' },
+			expect.objectContaining( { sku: 'TSH-101' } ),
 			expect.objectContaining( {
 				fields: expect.arrayContaining( [ 'sku', 'id' ] ),
 			} )
@@ -125,7 +195,9 @@ describe( 'inline cell editing', () => {
 		fireEvent.change( input, { target: { value: '14' } } );
 		fireEvent.blur( input );
 		await waitFor( () => expect( patches() ).toHaveLength( 1 ) );
-		expect( patch.mock.calls[ 0 ][ 1 ] ).toEqual( { regular_price: '14' } );
+		expect( patch.mock.calls[ 0 ][ 1 ] ).toMatchObject( {
+			regular_price: '14',
+		} );
 		expect( await screen.findByText( '14.00' ) ).toBeTruthy();
 	} );
 
@@ -169,6 +241,8 @@ describe( 'inline cell editing', () => {
 			message: 'Invalid parameter(s): sku',
 			data: {
 				status: 400,
+				receipt_state: 'refused',
+				replayed: false,
 				params: {
 					sku: 'A product with the SKU GLF-120 already exists, so this SKU was not applied.',
 				},
@@ -186,7 +260,7 @@ describe( 'inline cell editing', () => {
 		expect( editor( 'SKU' ).value ).toBe( 'GLF-120' );
 	} );
 
-	it( 'keeps the row pending until the answer and the edit open on failure', async () => {
+	it( 'keeps a transport-uncertain row locked without suggesting a blind retry', async () => {
 		let fail;
 		patch.mockReturnValue(
 			new Promise( ( resolve, reject ) => {
@@ -212,12 +286,50 @@ describe( 'inline cell editing', () => {
 			} );
 		} );
 		expect(
-			screen.getByText(
-				`We could not save SKU for ${ TEE }. Try again in a moment.`
-			)
+			( await screen.findAllByText( /outcome.*unconfirmed/i ) ).length
+		).toBeGreaterThan( 0 );
+		expect(
+			row.querySelector( '.bulkcat-cell.is-pending' )
+		).not.toBeNull();
+		fireEvent.click( trigger( 'SKU' ) );
+		expect( patches() ).toHaveLength( 1 );
+		expect(
+			screen.getByRole( 'button', { name: 'Check save outcome' } )
 		).toBeTruthy();
-		expect( editor( 'SKU' ).value ).toBe( 'TSH-200' );
-		expect( row.querySelector( '.bulkcat-cell.is-pending' ) ).toBeNull();
+	} );
+
+	it( 'says a failure that is not the plugin’s own refusal in plain words, never its text (T114)', async () => {
+		const { expectPlain } = require( './error-fixtures' );
+		// A 4xx HTML page from something in front of WordPress, in the message (T114, ticket 11 item 3).
+		patch.mockRejectedValue(
+			Object.assign(
+				new Error(
+					'<p>There has been a critical error on this website.</p><p><a href="https://wordpress.org/">Learn more about troubleshooting WordPress.</a></p>'
+				),
+				{
+					code: 'forbidden',
+					message:
+						'<p>There has been a critical error on this website.</p><p><a href="https://wordpress.org/">Learn more about troubleshooting WordPress.</a></p>',
+					data: { status: 403 },
+				}
+			)
+		);
+		await renderLoaded();
+		fireEvent.click( trigger( 'SKU' ) );
+		fireEvent.change( editor( 'SKU' ), { target: { value: 'TSH-300' } } );
+		fireEvent.keyDown( editor( 'SKU' ), { key: 'Enter' } );
+		const sentence = await screen.findByRole( 'button', {
+			name: 'Check save outcome',
+		} );
+		expectPlain( sentence, 'Check save outcome' );
+		expect( document.body.textContent ).not.toContain( 'critical error' );
+		expect(
+			document.querySelector(
+				'[data-bulkcat-row="11"] .bulkcat-cell.is-pending'
+			) || document.querySelector( '.bulkcat-cell.is-pending' )
+		).toBeTruthy();
+		expect( patches() ).toHaveLength( 1 );
+		// A generic 403 is not a committed no-effect fence and cannot free a retry.
 	} );
 
 	it( 'says why a field does not apply instead of opening', async () => {
@@ -240,5 +352,119 @@ describe( 'inline cell editing', () => {
 			screen.queryByRole( 'textbox', { name: 'Regular price, Hoodie' } )
 		).toBeNull();
 		expect( patches() ).toHaveLength( 0 );
+	} );
+} );
+
+describe( 'native Status in the cell', () => {
+	const select = ( name ) =>
+		screen.getByRole( 'combobox', { name: `Status, ${ name }` } );
+	const choose = ( name, value ) => {
+		fireEvent.click( trigger( 'Status', name ) );
+		fireEvent.change( select( name ), { target: { value } } );
+		fireEvent.keyDown( select( name ), { key: 'Enter' } );
+	};
+
+	it( 'saves Published once despite a legacy Private record and displays the returned Scheduled state', async () => {
+		patch.mockResolvedValue( {
+			item: {
+				...ITEMS.find( ( row ) => row.id === 14 ),
+				status: 'future',
+				off_state: null,
+			},
+			batch_id: 31,
+			status: 'complete',
+			results: [
+				{
+					field: 'status',
+					state: 'changed',
+					new: 'future',
+					context: {
+						requested_status: 'publish',
+						effective_status: 'future',
+					},
+				},
+			],
+		} );
+		await renderLoaded();
+		expect( trigger( 'Status', 'Wool Beanie' ).textContent ).toBe(
+			'Draft'
+		);
+		choose( 'Wool Beanie', 'publish' );
+		await waitFor( () =>
+			expect( trigger( 'Status', 'Wool Beanie' ).textContent ).toBe(
+				'Scheduled'
+			)
+		);
+		expect( patches() ).toHaveLength( 1 );
+		expect( patch.mock.calls[ 0 ][ 1 ] ).toMatchObject( {
+			status: 'publish',
+		} );
+		expect(
+			screen.queryByRole( 'button', {
+				name: /Switch On|Keep current status/,
+			} )
+		).toBeNull();
+	} );
+
+	it( 'saves Draft once without an Off confirmation', async () => {
+		patch.mockResolvedValue( {
+			item: { ...ITEMS[ 0 ], status: 'draft' },
+			batch_id: 32,
+			status: 'complete',
+			results: [],
+		} );
+		await renderLoaded();
+		choose( TEE, 'draft' );
+		await waitFor( () =>
+			expect( trigger( 'Status' ).textContent ).toBe( 'Draft' )
+		);
+		expect( patches() ).toHaveLength( 1 );
+		expect( patch.mock.calls[ 0 ][ 1 ] ).toMatchObject( {
+			status: 'draft',
+		} );
+		expect(
+			document.querySelector( '.bulkcat-status-confirm' )
+		).toBeNull();
+	} );
+
+	it( 'keeps a stored schedule readable without offering it as a writable target', async () => {
+		await renderLoaded();
+		fireEvent.click( trigger( 'Status', 'Linen Scarf' ) );
+		const control = select( 'Linen Scarf' );
+		expect( control.selectedOptions[ 0 ].textContent ).toBe( 'Scheduled' );
+		expect(
+			Array.from( control.options )
+				.filter( ( option ) => ! option.disabled )
+				.map( ( option ) => option.value )
+		).toEqual( [ 'publish', 'draft', 'pending', 'private' ] );
+		fireEvent.keyDown( control, { key: 'Enter' } );
+		expect( patches() ).toHaveLength( 0 );
+		fireEvent.click( trigger( 'Status', 'Linen Scarf' ) );
+		fireEvent.blur( select( 'Linen Scarf' ) );
+		expect( patches() ).toHaveLength( 0 );
+	} );
+
+	it( 'shows safe server refusals without a restoration retry', async () => {
+		patch.mockRejectedValue( {
+			code: 'bulkcat_variation_password_unsupported',
+			message:
+				'This change was left alone to protect the stored password.',
+			data: {
+				status: 400,
+				receipt_state: 'refused',
+				replayed: false,
+				field: 'status',
+			},
+		} );
+		await renderLoaded();
+		choose( 'Wool Beanie', 'publish' );
+		expect( ( await screen.findByRole( 'alert' ) ).textContent ).toContain(
+			'left alone to protect the stored password'
+		);
+		expect( patches() ).toHaveLength( 1 );
+		expect( select( 'Wool Beanie' ).value ).toBe( 'publish' );
+		expect(
+			document.querySelector( '.bulkcat-status-confirm' )
+		).toBeNull();
 	} );
 } );

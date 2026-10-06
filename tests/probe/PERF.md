@@ -2,9 +2,110 @@
 
 The numbers `perf.py` measured against SPEC §12.5. How to run it, and what
 each number means, is in `README.md` (Performance). Rerun it before a release
-and replace this record.
+and add a dated record; keep older measurements as history.
 
-## Last run
+## Filtered export by id (SQR-3) — 5 October 2026
+
+A filtered export now walks its matches by id (`Export\FilterRows`, each
+page the next 100 after the last id written) instead of OFFSET pages of
+`GET /products` re-sorted for every page. Same stack as SQR-1 (load 2.4),
+`perf.py --only export,export_post --runs 3`, 1.3.0 then this change:
+20,000 rows by GET 13.3 s and 1,462 queries against 4.5 s and 669 queries;
+first byte 269 against 244 ms; peak 17.3 against 17.1 MB. By POST with the
+identifier switch on: filter 5.5 s, 1,066 queries, first byte 155 ms;
+selection 4.7 s; all within budget (6 passed, 0 failed).
+
+## Regular price filter and sort (SQR-1) — 5 October 2026
+
+The Regular price filter and sort now read the regular price the cell shows
+(`ProductQuery::regular_price()`): the lookup's price for a row WooCommerce
+does not mark on sale, NULL for a variable or grouped product, and the row's
+own `_regular_price` meta otherwise, with a test on the lookup alone first so
+a row can be dropped before its post is read. Reading the meta for every row
+measured 1.2 s (products) to 5.9 s (products and variations) a statement, so
+the meta is read only for rows on sale. Throwaway docker stack, `mysql:8`
+(MySQL 8.4, 128 MB buffer pool), PHP 8.3, WordPress 7.1, WooCommerce 11.1.0,
+`seed.sh 20000` (20,015 products, 70,065 variations, no scale product on
+sale), shared 12-core workstation (load 4.5 to 6). `perf.py --only grid
+--runs 20`, the 1.3.0 code and this change run back to back:
+
+| Grid, 3 filters (category, in stock, price 10–40) | 1.3.0 | This change | Budget |
+| --- | --- | --- | --- |
+| Products, 25 rows: warm p95 / cold | 204 / 182 ms | 270 / 335 ms | < 400 / < 500 ms |
+| Products and variations, 25 rows: warm p95 / cold | 268 / 315 ms | 346 / 462 ms | < 750 / < 1000 ms |
+| Variations, 25 rows: warm p95 / cold | 219 / 372 ms | 220 / 289 ms | < 400 / < 500 ms |
+| Cold at 50 and 100 rows, worst | 449 ms | 449 ms | as above |
+| Queries in the dispatch | 12 / 12 / 11 | 12 / 13 / 11 | ≤ 20 |
+
+62 metrics: 23 passed, 0 failed. Counts differ (products 10,760 to 3,560)
+because variable products, whose own regular price is empty, no longer match
+on their variations' prices. Interleaved statement timings on the same stack
+(old and new statement alternately, median of nine): the three-filter page
+and count 1.0–1.2 times the 1.3.0 time; a Regular price sort with no filter
+1.0–1.5 times; a Regular price filter alone in the modes that read
+variations costs 3–5 times on the COUNT (about 300 ms against 80 ms, cached
+for 60 seconds by CountCache), because the optimiser then reads the posts
+first. A catalogue where most rows are on sale reads the meta for each of
+them and is slower; that was not measured.
+
+## Release verification — 30 September 2026
+
+Final runtime `a7291ac`, integration test corrections `17571bd`; version
+1.1.0, schema 8. Local Docker on a shared 12-core workstation: PHP 8.3.33,
+MySQL 8.4.11, WordPress 7.1.2, WooCommerce 11.1.2, no persistent object cache,
+WP-Cron disabled. Scale fixture: 20,013 products and 70,003 variations.
+Evidence is retained outside the repository; the log names below identify it.
+These are local measurements, not a new CI matrix result.
+
+| Check | Result |
+| --- | --- |
+| Final HTTP probe, every chapter (`82-probe-final.log`) | 237 passed, zero failed; one German translation check skipped because that language was not installed |
+| Full browser suite on the scale fixture (`68-e2e-20k.log`) | 61 passed, zero failed, seven opt-in/fixture skips; 21.8 minutes |
+| Exact selection/batch/lifecycle native probes and races | All passed; provider journey 145 checks |
+| Real-catalogue copy, archive upgrade from 1.0.0/schema 6 | 18/18 journey checks; catalogue and category fingerprints unchanged by upgrade; Off/On and price/variation undo restored exactly |
+| 5,000-product price Apply / Undo (`77-perf.log`) | 1,062 / 884 products per minute; 17.4 / 17.7 MB peak per chunk; both complete, zero failed |
+| 5,000-product Off / Undo / Off again | 1,087 / 1,055 / 1,017 per minute; 17.4–17.7 MB peak per chunk; retained memory +0.4 MB |
+| Final On after renewal (`84-perf-on-recovery.log`) | 998 products per minute; 17.4 MB peak; +0.4 MB retained; 5,000 changed, zero failed and zero Off records left |
+| Off filter, 25 rows | Cold 225 ms; warm p95 140 ms, 12 queries |
+| History, 25 / 100 rows | Warm p95 137 / 94 ms; seven queries at both sizes |
+| Whole-catalogue UI previews (`85-scale-preview.log`) | Two passed; 20,111 products and 70,095 variations selected; enabled Apply after 10.4 / 11.5 seconds; preview peaks 27.96 / 65.86 MB |
+
+The first performance run deliberately remains recorded with its failure:
+`77-perf.log` has 19 passed metrics, one failure and six information rows.
+Its script reused one selection through several long queue runs without
+renewing its authorization lease; the final On correctly refused with
+`bulkcat_selection_renew_required`. The harness now renews the same retained
+snapshot before each fresh preview. The recovery run reuses the original
+snapshot, verifies its members equal the accepted 5,000-object Off batch,
+renews through the REST route and verifies an unchanged membership hash.
+Its final On measurements are recorded separately in `84-perf-on-recovery.log`:
+six passed metrics, one information row; exit 0.
+
+The browser skips were the legacy-1.0 populated-batch fixture, the optional
+real 30-minute suspension (the bounded real suspension and simulated
+long suspension passed), and five explicit whole-catalogue scale jobs.
+A separate opt-in preview run covers the whole product catalogue and the
+products-and-variations catalogue; Apply/Undo at large size is measured by
+the queue runs above and the retained 100,000-object job below.
+
+### Retained 100,000-object undo
+
+The original fixture remains untouched. On an isolated copy with the final
+runtime and a 128 MB web memory limit, the interrupted undo resumed its last
+13,927 objects in 140 chunks, at most 18.56 MB per chunk. It finished with
+100,000 done and changed, zero failed, the original batch marked undone.
+Both stored and CRUD-read weight checksums across all 100,000 objects match
+the recorded before-state. This is recovery and completion of a retained
+job, not a freshly timed full 100,000-item run on the final head.
+
+The old whole-plan and streamed planners produced the same plan hash. The
+streamed planner used about 12 MB rather than 257 MB. The 100,000-item web
+preview needed its route to lift PHP's 30-second execution limit and used
+27.29 MB. The final checksum reporter's quoting error happened after the
+work completed; raw chunk logs and an independent fingerprint check verified
+the result (`53-undo-checksum.json`, `undo-resumed-final.json`).
+
+## Historical baseline — 24 September
 
 - Date: 24 September 2026, branch `t76-perf`.
 - Stack: throwaway docker stack on a 12-core workstation shared with other
@@ -25,6 +126,38 @@ and replace this record.
 Server time is PHP's start to the end of the REST dispatch; WordPress and
 WooCommerce's own bootstrap (about 60 queries and 110 to 140 ms on this host,
 10 ms of it the plugin's) is included. Queries are those inside the dispatch.
+
+## Ticket 04: Off and On at scale (E9)
+
+`perf.py --only offon --runs 20` on 29 September 2026, branch
+`codex/global-off-on`: the ticket's throwaway docker stack
+(`wordpress:php8.3-apache`, PHP 8.3.33, MariaDB 11.8.9, WordPress 7.1.2,
+WooCommerce 11.1.0, no persistent object cache, `DISABLE_WP_CRON` and the
+measurement mu-plugin for the run only) with `seed.sh 20000` (20,078
+products and 70,084 variations, including the probe fixtures), on a
+12-core workstation shared with other builds. 20 metrics: 16 passed,
+0 failed, 4 recorded; 15 min 25 s. Every batch went through the durable
+routes: a captured selection of the 5,000 simple products in the scale
+category with stock 1 to 19, an exact preview, a `/requests` grant, then
+`wp action-scheduler run` at the default chunk (50).
+
+| Metric | Measured | Budget | Result |
+| --- | --- | --- | --- |
+| Off (Status set to Draft), 5,000 products | 1,179 a minute (255 s wall, 100 chunks, 5,000 changed, 0 failed); preview counted `off` 5,000 | ≥ 300 a minute | PASS |
+| Same, peak memory per chunk | 17.8 MB (16.4 MB request + 1.5 MB the chunk adds) | < 96 MB | PASS |
+| Undo of that Off | 1,553 a minute; 17.9 MB a chunk | as the apply | PASS |
+| Off again | 1,587 a minute; 17.8 MB a chunk | as the apply | PASS |
+| On (Status set to Published), 5,000 products | 1,320 a minute; 17.8 MB a chunk; preview counted `on` 5,000 | as the apply | PASS |
+| Memory kept across 100 chunks in one `wp action-scheduler run` | +3.3 MB in each of the four runs | flat (< 8 MB) | PASS |
+| Grid, 25 rows, the default columns (Status among them) with the Off filter, 5,000 Off: p95 of 20 warm requests | 127 ms (median 118); 25 of 25 rows read Off | < 400 ms | PASS |
+| Same, queries in the dispatch | 12 | ≤ 20 | PASS |
+| Off filter cold (count transients cleared; page + count) | 198 ms, 20 queries | < 500 ms | PASS |
+| Off records left in the scale category after On | 0 | 0 | PASS |
+| Queue each batch (`POST /batches`) | 375 ms first, 228 ms after; 58 queries | none | INFO |
+
+A chunk of Off or On runs about 3,600 to 3,700 queries (median) for 50
+products: each product's status save, its record written in the same
+save, the journal rows and the stored status read back (SPEC §5.5, §9.3).
 
 ## §12.5 budgets
 
@@ -125,3 +258,48 @@ busier host.
 The T76 row's proof case (forcing the term-relationships join on to show the
 suite fails) and a `performance.json` CI job are not done: `perf.py --json`
 writes the file, and the suite is too slow for CI as it stands.
+
+## CSV export by POST (ticket 10, T102)
+
+Run on 29 September 2026 on the CSV slice's throwaway stack (PHP 8.3.33,
+MySQL 8.4.11, WordPress 7.1, WooCommerce 11.1.0, no persistent object
+cache, `DISABLE_WP_CRON`, the measurement mu-plugin above), with
+`perf.py --only export,export_post` at `seed.sh 20000`, then
+`--only export_scale` at `seed.sh 22223` (the scale category then holds
+exactly 100,000 products and variations). The identifier switch is on in
+every POST row. Budgets are §12.5's.
+
+| Metric | Result | Budget |
+| --- | --- | --- |
+| GET, 20,000 rows (unchanged group) | first byte 355 ms, complete 18.2 s, peak 17.1 MB (+0.23 MB over 2,000) | < 2 s, < 60 s, flat |
+| POST by filter, 20,000 rows | first byte 108 ms, complete 13.0 s, peak 17.1 MB (+0.23 MB) | < 2 s, < 60 s, flat |
+| POST by selection, 20,000 members | first byte 253 ms (token resolution and presence included; capture 0.3 s before it), complete 3.2 s, peak 22.2 MB (+5.26 MB) | < 2 s, < 60 s, flat |
+| POST by selection, 100,000 members | peak 48.8 MB, first byte 0.7 to 0.9 s, complete 14.5 to 17.7 s, 4,952 queries | < 128 MB |
+| Summary with identifiers, 100,000 members | 1.55 s, 129 queries (presence 100, guarded counts 20), peak 48.8 MB | recorded |
+| Summary with identifiers, 22,223 rows by filter | 0.98 s, 9 queries | recorded |
+
+A selection streams faster than a filter: its pages are hydrated straight
+from the present members, without the grid's sort and count per page. The
+selection's peak over its 2,000-member run is the members decoded while the
+token resolves (dropped before presence is read), not the streamed pages.
+
+### After T103: the catalogue GET retired (29–30 September)
+
+The catalogue GET is refused since T103, so `perf.py`'s `export` group
+posts the same rows and columns as the export dialog's form does, with the
+switch off (the bytes the GET wrote). Run locally on 29–30 September 2026 on a
+fresh throwaway stack of the same make (no CI run exists this month), at
+`seed.sh 20000` and then `seed.sh 22223`:
+
+| Metric | Result | Budget |
+| --- | --- | --- |
+| POST, switch off, 20,000 rows (the `export` group) | first byte 303 ms, complete 18.3 s, 1,063 queries, peak 17.2 MB (+0.23 MB over 2,000) | < 2 s, < 60 s, flat |
+| POST by filter, identifiers, 20,000 rows | first byte 253 ms, complete 21.4 s, peak 17.2 MB (+0.23 MB) | < 2 s, < 60 s, flat |
+| POST by selection, identifiers, 20,000 members | first byte 307 ms (capture 0.4 s before it), complete 5.8 s, peak 22.3 MB (+5.27 MB) | < 2 s, < 60 s, flat |
+| POST by selection, 100,000 members | peak 48.9 MB, first byte 1.3 s, complete 21.7 s, 4,949 queries | < 128 MB |
+| Summary with identifiers, 100,000 members | 2.63 s, 130 queries, peak 48.9 MB | recorded |
+| Summary with identifiers, 22,223 rows by filter | 2.10 s, 10 queries | recorded |
+
+The machine was shared and busy (load average 6 to 7) around this run,
+which accounts for the slower totals than on 29 September; every budget
+held.

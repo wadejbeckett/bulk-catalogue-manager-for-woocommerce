@@ -46,7 +46,8 @@ defined( 'ABSPATH' ) || exit;
  * named. For each field, in the order the steps first reached it:
  * - a change that was saved writes one `applied` row: the value before the
  *   first step (the writer's before state, read through the registry) and
- *   the value after save(), read through the registry again; a later step's
+ *   the value after save(), read through the registry again (a term list
+ *   from the stored terms, Field::read_stored()); a later step's
  *   refusal on the same field goes in its message;
  * - otherwise a failed step writes a `failed` row, and a skipped step a
  *   `skipped` row, each with its plain reason;
@@ -264,8 +265,9 @@ final class Journal {
 		$refused = array_merge( self::in_state( $results, Result::FAILED ), self::in_state( $results, Result::SKIPPED ) );
 
 		if ( [] !== $changes && null !== $saved ) {
-			$field     = $this->fields->get( $key );
-			$new_value = null !== $field ? $field->read( $saved ) : end( $changes )->new();
+			$field = $this->fields->get( $key );
+			// What WordPress stored, not the object's list (ticket 133 bug 2: WooCommerce keeps a removed term's tail on it).
+			$new_value = null !== $field ? $field->read_stored( $saved ) : end( $changes )->new();
 			return [ $old, $new_value, 'applied', [] !== $refused ? $refused[0]->reason() : '' ];
 		}
 		$failed = self::in_state( $results, Result::FAILED );

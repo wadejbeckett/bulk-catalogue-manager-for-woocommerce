@@ -29,9 +29,10 @@ defined( 'ABSPATH' ) || exit;
  * Writes product categories as journalled batches of one.
  *
  * Every write goes through WordPress's own term functions, `wp_insert_term()`
- * and `wp_update_term()` (never SQL), with the tree order in the plugin's own
- * `bulkcat_order` term meta (CategoryTree::TREE_ORDER_META), which only this tree
- * reads. Before anything is written it refuses, with a §4.8 sentence and a
+ * and `wp_update_term()` (never SQL), with the sibling order in WooCommerce's
+ * own `order` term meta (CategoryTree::ORDER_META), as its drag-reorder
+ * writes it (wc_set_term_order()) and its shop sorts by, so a move here
+ * changes the shop's order (ticket 23). Before anything is written it refuses, with a §4.8 sentence and a
  * `bulkcat_` code: an empty name, a name a sibling under the same parent already
  * has, a slug another category already has, a parent that does not exist,
  * and a parent that is the category itself or one of its descendants ("A
@@ -41,14 +42,17 @@ defined( 'ABSPATH' ) || exit;
  * opened running through Engine\BatchFactory::open() and never queued, and
  * journalled through Engine\Journal::record() with object type `term`: one
  * row per changed property, `term_name`, `term_slug`, `term_description`,
- * `term_parent` and `term_order`, each holding the old and new value, so the
+ * `term_parent` and `term_menu_order`, each holding the old and new value, so the
  * History screen lists it and undo can put it back. The prefix keeps these
  * apart from the field registry's product fields of the same name. A move
- * renumbers the siblings it leaves and joins compactly from 0 in display
- * order, and each sibling whose position changed gets its own `term_order`
- * row in the same batch. A create is written first (it has no id before),
- * and removed again if its batch cannot be recorded, so no category is ever
- * created without its journal.
+ * writes WooCommerce's order only where it must (place()), and each sibling
+ * whose order changed gets its own `term_menu_order` row in the same batch;
+ * `term_order` rows of 1.3.2 and earlier recorded the retired tree-only
+ * order. A create is written first (it has no id before), and removed again
+ * if its batch cannot be recorded, so no category is ever created without
+ * its journal. Choosing the shop's default category writes WooCommerce's
+ * `default_product_cat` option and journals `term_default` on the new
+ * default (old and new default ids).
  *
  * After a write the tree cache is renewed (Cache::invalidate(); the term
  * hooks do so too, but a term meta change fires none), and the answer holds
@@ -76,9 +80,51 @@ final class Writer {
 	];
 
 	/**
-	 * Journal property of the tree order.
+	 * Journal property per native category detail kept in term meta, as
+	 * WooCommerce's own category screen stores them (ticket 22): display type
+	 * ('' Default, products, subcategories, both) and the image attachment id
+	 * (0 when removed).
 	 */
-	public const ORDER_PROP = 'term_order';
+	public const META = [
+		'display_type' => 'term_display_type',
+		'thumbnail_id' => 'term_thumbnail_id',
+	];
+
+	/**
+	 * Display types WooCommerce stores; '' is Default.
+	 */
+	public const DISPLAY_TYPES = [ '', 'products', 'subcategories', 'both' ];
+
+	/**
+	 * Refusal code for a display type WooCommerce does not offer.
+	 */
+	public const INVALID_DETAIL = 'bulkcat_category_detail_invalid';
+
+	/**
+	 * Refusal code for an image that is not a usable image attachment.
+	 */
+	public const INVALID_IMAGE = 'bulkcat_category_image_invalid';
+
+	/**
+	 * Journal property of WooCommerce's sibling order (`order` term meta).
+	 */
+	public const ORDER_PROP = 'term_menu_order';
+
+	/**
+	 * Journal property of the retired tree-only order (`bulkcat_order`),
+	 * found in batches of 1.3.2 and earlier; never written now.
+	 */
+	public const LEGACY_ORDER_PROP = 'term_order';
+
+	/**
+	 * Journal property of the shop's default category: old and new default ids.
+	 */
+	public const DEFAULT_PROP = 'term_default';
+
+	/**
+	 * The step a default-category batch records.
+	 */
+	public const MAKE_DEFAULT = 'make_default_category';
 
 	/**
 	 * The step a create batch records.
@@ -99,6 +145,11 @@ final class Writer {
 	 * Refusal code for an id that is not a product category.
 	 */
 	public const NOT_FOUND = ProductWriter::NOT_FOUND;
+
+	/**
+	 * Refusal code for a category the user may not change.
+	 */
+	public const CANNOT_EDIT = 'bulkcat_cannot_edit';
 
 	/**
 	 * Refusal code for an empty name.
@@ -170,6 +221,45 @@ final class Writer {
 	}
 
 	/**
+	 * The plain label History shows for a category property, or null when the
+	 * property is not a category's.
+	 *
+	 * @param string $prop Journal property.
+	 */
+	public static function label( string $prop ): ?string {
+		return match ( $prop ) {
+			'term_name'             => __( 'Name', 'bulk-catalogue-manager-for-woocommerce' ),
+			'term_slug'             => __( 'Slug', 'bulk-catalogue-manager-for-woocommerce' ),
+			'term_description'      => __( 'Description', 'bulk-catalogue-manager-for-woocommerce' ),
+			'term_parent'           => __( 'Parent category', 'bulk-catalogue-manager-for-woocommerce' ),
+			'term_display_type'     => __( 'Display type', 'bulk-catalogue-manager-for-woocommerce' ),
+			'term_thumbnail_id'     => __( 'Image', 'bulk-catalogue-manager-for-woocommerce' ),
+			self::ORDER_PROP        => __( 'Position', 'bulk-catalogue-manager-for-woocommerce' ),
+			self::LEGACY_ORDER_PROP => __( 'Old position in this screen only', 'bulk-catalogue-manager-for-woocommerce' ),
+			self::DEFAULT_PROP      => __( 'Default category', 'bulk-catalogue-manager-for-woocommerce' ),
+			TermUndo::CREATED       => __( 'New category', 'bulk-catalogue-manager-for-woocommerce' ),
+			Deleter::DELETED_PROP   => __( 'Deleted category', 'bulk-catalogue-manager-for-woocommerce' ),
+			NativeForm::OTHER_PROP  => __( 'Other fields', 'bulk-catalogue-manager-for-woocommerce' ),
+			default                 => null,
+		};
+	}
+
+	/**
+	 * One category's details as the write routes answer them (the tree's node
+	 * plus description, display type and image), or not found.
+	 *
+	 * @param int $id Term id.
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	public function details_of( int $id ): array|\WP_Error {
+		$terms = CategoryTree::terms();
+		if ( null === self::find( $terms, $id ) ) {
+			return self::not_found();
+		}
+		return self::item( $id );
+	}
+
+	/**
 	 * Create a category.
 	 *
 	 * @param array<string, mixed> $input   name, and optionally slug, description and parent.
@@ -186,6 +276,10 @@ final class Writer {
 		}
 		$refused = $slug instanceof \WP_Error ? $slug : self::parent_refusal( $tree, 0, $parent_id );
 		$refused = $refused ?? self::name_refusal( $tree, 0, $parent_id, $name ) ?? self::slug_refusal( $tree, 0, $slug );
+		$details = self::details( $input, $user_id );
+		if ( null === $refused && $details instanceof \WP_Error ) {
+			$refused = $details;
+		}
 		if ( null !== $refused ) {
 			return $refused;
 		}
@@ -202,13 +296,22 @@ final class Writer {
 			return self::not_saved( $inserted );
 		}
 		$id       = (int) $inserted['term_id'];
-		$batch_id = $this->factory->open( $user_id, [ self::step( self::CREATE, [ 'name' => $name ] + $args ) ], [ [ $id, self::OBJECT_TYPE ] ], self::SOURCE );
+		$batch_id = $this->factory->open( $user_id, [ self::step( self::CREATE, [ 'name' => $name ] + $args + $details ) ], [ [ $id, self::OBJECT_TYPE ] ], self::SOURCE );
 		if ( $batch_id instanceof \WP_Error ) {
 			// Never leave a category the journal does not know about.
 			wp_delete_term( $id, Counts::TAXONOMY );
 			return $batch_id;
 		}
-		return $this->complete( $batch_id, $id, array_fill_keys( array_values( self::PROPS ), null ), [] );
+		if ( ! is_numeric( get_term_meta( $id, CategoryTree::ORDER_META, true ) ) ) {
+			// As WooCommerce's own screen gives a new category (WC_Admin_Taxonomies::create_term()).
+			update_term_meta( $id, CategoryTree::ORDER_META, 0 );
+		}
+		$before = array_fill_keys( array_values( self::PROPS ), null );
+		foreach ( $details as $key => $value ) {
+			$before[ self::META[ $key ] ] = null;
+			update_term_meta( $id, $key, $value );
+		}
+		return $this->complete( $batch_id, $id, $before, [] );
 	}
 
 	/**
@@ -248,6 +351,10 @@ final class Writer {
 		if ( array_key_exists( 'parent', $input ) && null !== $input['parent'] ) {
 			$wanted['parent'] = (int) $input['parent'];
 		}
+		$details = self::details( $input, $user_id );
+		if ( $details instanceof \WP_Error ) {
+			return $details;
+		}
 
 		$parent_id = $wanted['parent'] ?? $current['parent'];
 		$regroup   = array_key_exists( 'parent', $wanted ) && $parent_id !== $tree->node( $id )['parent'];
@@ -262,7 +369,9 @@ final class Writer {
 			return $refused;
 		}
 
-		$batch_id = $this->factory->open( $user_id, [ self::step( self::EDIT, $wanted ) ], [ [ $id, self::OBJECT_TYPE ] ], self::SOURCE );
+		// The id and the values before, for History's headline ("Renamed category Golf to Golf shirts").
+		$from     = array_intersect_key( $current, $wanted + $details );
+		$batch_id = $this->factory->open( $user_id, [ self::step( self::EDIT, $wanted + $details + [ 'id' => $id ] + ( [] === $from ? [] : [ 'from' => $from ] ) ) ], [ [ $id, self::OBJECT_TYPE ] ], self::SOURCE );
 		if ( $batch_id instanceof \WP_Error ) {
 			return $batch_id;
 		}
@@ -270,16 +379,25 @@ final class Writer {
 		foreach ( array_keys( $wanted ) as $key ) {
 			$before[ self::PROPS[ $key ] ] = $current[ $key ];
 		}
+		foreach ( array_keys( $details ) as $key ) {
+			$before[ self::META[ $key ] ] = $current[ $key ];
+		}
 		$updated = [] === $wanted ? true : wp_update_term( $id, Counts::TAXONOMY, wp_slash( $wanted ) );
 		if ( is_wp_error( $updated ) ) {
 			return $this->complete( $batch_id, $id, $before, [], $updated );
+		}
+		foreach ( $details as $key => $value ) {
+			if ( $value !== $current[ $key ] ) {
+				update_term_meta( $id, $key, $value );
+			}
 		}
 		return $this->complete( $batch_id, $id, $before, $regroup ? self::place( $tree, $id, $parent_id, null ) : [] );
 	}
 
 	/**
 	 * Move a category under a parent (0 for the top level) at a position
-	 * among its new siblings, counted from 0; null or past the end places it last.
+	 * among its new siblings, counted from 0; null or past the end places it
+	 * last. The order written is WooCommerce's own (place()).
 	 *
 	 * @param int      $id       Term id.
 	 * @param int      $parent_id   New parent id.
@@ -308,6 +426,9 @@ final class Writer {
 			[
 				'parent'   => $parent_id,
 				'position' => $position,
+				'id'       => $id,
+				'name'     => $current['name'],
+				'from'     => [ 'parent' => $current['parent'] ],
 			]
 		);
 		$batch_id = $this->factory->open( $user_id, [ $step ], [ [ $id, self::OBJECT_TYPE ] ], self::SOURCE );
@@ -325,37 +446,187 @@ final class Writer {
 	}
 
 	/**
-	 * Put a category at a position under a parent and renumber, from 0 in
-	 * display order, the siblings it joins and, when it changes parent, the
-	 * ones it leaves; only positions that change are written.
+	 * Put a category at a position among its siblings under a parent by
+	 * writing WooCommerce's own sibling order (`order` term meta), as its
+	 * drag-reorder does (wc_set_term_order(), firing
+	 * `woocommerce_after_set_term_order` for each value written). WooCommerce
+	 * and its shop sort siblings by that value alone (Tree::comparator()), so
+	 * only the siblings' relative order matters: when the category fits
+	 * between its new neighbours' values it alone is written (its current
+	 * value is kept when it already fits); otherwise the siblings are
+	 * renumbered from 1 in their new order and only values that change are
+	 * written. The siblings it leaves keep their order.
 	 *
-	 * @param Tree     $tree     The tree before the write.
-	 * @param int      $id       Term id.
-	 * @param int      $parent_id   New parent id.
-	 * @param int|null $position Position, or null for last.
-	 * @return array<int, array{0: int|null, 1: int}> Term id => [ stored order before, order now ].
+	 * @param Tree     $tree      The tree before the write.
+	 * @param int      $id        Term id.
+	 * @param int      $parent_id New parent id.
+	 * @param int|null $position  Position, or null for last.
+	 * @return array<int, array{0: int|null, 1: int}> Term id => [ stored order before, order now ], for each order written and the category's own.
 	 */
 	private static function place( Tree $tree, int $id, int $parent_id, ?int $position ): array {
-		$from   = $tree->node( $id )['parent'] ?? 0;
 		$joined = array_values( array_diff( $tree->children( $parent_id ), [ $id ] ) );
 		$at     = null === $position ? count( $joined ) : max( 0, min( $position, count( $joined ) ) );
 		array_splice( $joined, $at, 0, [ $id ] );
-		$groups = [ $joined ];
-		if ( $from !== $parent_id ) {
-			$groups[] = array_values( array_diff( $tree->children( $from ), [ $id ] ) );
+
+		$stored = [];
+		foreach ( $joined as $term_id ) {
+			$value              = get_term_meta( $term_id, CategoryTree::ORDER_META, true );
+			$stored[ $term_id ] = is_numeric( $value ) ? (int) $value : null;
 		}
+		$wanted = self::fit( $tree, $joined, $stored, $id );
+		if ( null === $wanted ) {
+			$wanted = [];
+			foreach ( $joined as $index => $term_id ) {
+				$wanted[ $term_id ] = $index + 1;
+			}
+		}
+
 		$orders = [];
-		foreach ( $groups as $group ) {
-			foreach ( $group as $index => $term_id ) {
-				$stored = get_term_meta( $term_id, CategoryTree::TREE_ORDER_META, true );
-				$stored = is_numeric( $stored ) ? (int) $stored : null;
-				if ( $stored !== $index ) {
-					update_term_meta( $term_id, CategoryTree::TREE_ORDER_META, $index );
-				}
-				$orders[ $term_id ] = [ $stored, $index ];
+		foreach ( $joined as $term_id ) {
+			$now = $wanted[ $term_id ] ?? $stored[ $term_id ];
+			if ( null !== $now && $now !== $stored[ $term_id ] ) {
+				update_term_meta( $term_id, CategoryTree::ORDER_META, $now );
+				$term = get_term( $term_id, Counts::TAXONOMY );
+				// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- WooCommerce's own hook, fired as its drag-reorder fires it for each order set.
+				do_action( 'woocommerce_after_set_term_order', $term, $now, Counts::TAXONOMY );
+				$orders[ $term_id ] = [ $stored[ $term_id ], $now ];
+			} elseif ( $term_id === $id ) {
+				$orders[ $term_id ] = [ $stored[ $term_id ], (int) $now ];
 			}
 		}
 		return $orders;
+	}
+
+	/**
+	 * The one order value that puts a category in its place among siblings
+	 * keeping theirs (or its own value when it already fits), or null when
+	 * none does: checked by sorting the siblings with WooCommerce's rule.
+	 *
+	 * @param Tree                 $tree   The tree before the write.
+	 * @param list<int>            $joined Siblings in their new order.
+	 * @param array<int, int|null> $stored Each one's stored order, null for none.
+	 * @param int                  $id     The category placed.
+	 * @return array<int, int>|null The category's id => its order, or null.
+	 */
+	private static function fit( Tree $tree, array $joined, array $stored, int $id ): ?array {
+		$at         = (int) array_search( $id, $joined, true );
+		$before     = $at > 0 ? $stored[ $joined[ $at - 1 ] ] : null;
+		$after      = $at < count( $joined ) - 1 ? $stored[ $joined[ $at + 1 ] ] : null;
+		$candidates = [ $stored[ $id ] ];
+		if ( null !== $before ) {
+			$candidates[] = $before + 1;
+		} elseif ( null !== $after ) {
+			$candidates[] = $after - 1;
+		} else {
+			$candidates[] = 0;
+		}
+		foreach ( $candidates as $candidate ) {
+			if ( null === $candidate || $candidate < 0 ) {
+				continue;
+			}
+			$nodes  = [];
+			$ranked = [];
+			foreach ( $joined as $term_id ) {
+				$value             = $term_id === $id ? $candidate : $stored[ $term_id ];
+				$nodes[ $term_id ] = [
+					'name'  => (string) ( $tree->node( $term_id )['name'] ?? '' ),
+					'order' => (int) $value,
+				];
+				if ( null !== $value ) {
+					$ranked[ $term_id ] = true;
+				}
+			}
+			$sorted = $joined;
+			usort( $sorted, Tree::comparator( $nodes, $ranked, $tree->ranks() ) );
+			if ( $sorted === $joined ) {
+				return [ $id => $candidate ];
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Make a category the shop's default product category, as WooCommerce's
+	 * own Make default does: WooCommerce's `default_product_cat` option,
+	 * with permission to edit that category. Journalled as `term_default`
+	 * on the new default, holding the old and new default ids, so History
+	 * names both and undo can put the old one back.
+	 *
+	 * @param int $id      Term id.
+	 * @param int $user_id The user the batch is recorded for.
+	 * @return array{item: array<string, mixed>, batch_id: int, status: string, results: list<array<string, mixed>>}|\WP_Error
+	 */
+	public function make_default( int $id, int $user_id ): array|\WP_Error {
+		if ( null === self::find( CategoryTree::terms(), $id ) ) {
+			return self::not_found();
+		}
+		if ( ! user_can( $user_id, 'edit_term', $id ) ) {
+			return Refusal::create(
+				self::CANNOT_EDIT,
+				__( 'You cannot change this category, so it cannot be made the default. Ask an administrator for access to it.', 'bulk-catalogue-manager-for-woocommerce' ),
+				403
+			);
+		}
+		$old      = CategoryTree::default_id();
+		$batch_id = $this->factory->open( $user_id, [ self::step( self::MAKE_DEFAULT, [ 'id' => $id ] ) ], [ [ $id, self::OBJECT_TYPE ] ], self::SOURCE );
+		if ( $batch_id instanceof \WP_Error ) {
+			return $batch_id;
+		}
+		if ( $old !== $id ) {
+			update_option( CategoryTree::DEFAULT_OPTION, $id );
+		}
+		$now     = CategoryTree::default_id();
+		$result  = $now === $old ? Result::already( self::DEFAULT_PROP, $old ) : Result::changed( self::DEFAULT_PROP, $old, $now );
+		$journal = Journal::from_settings( Fields::instance(), $this->settings(), $this->changes );
+		$applied = $journal->record( $batch_id, $id, self::OBJECT_TYPE, ChangeRepository::UNKNOWN_TIME, self::with_skip( [ $result ] ), [ self::DEFAULT_PROP => $old ], (object) [ 'term_id' => $id ] );
+		$status  = $this->finish( $batch_id, 'done', '', $applied > 0 );
+		Cache::invalidate();
+		return [
+			'item'     => self::item( $id ),
+			'batch_id' => $batch_id,
+			'status'   => $status,
+			'results'  => [ $result->to_array() ],
+		];
+	}
+
+	/**
+	 * Record a save WordPress's own category form made (1.3.4; NativeForm):
+	 * one category change by that user, journalling each property that
+	 * differs between the values before and after, applied. Nothing is
+	 * written to the category; nothing is recorded when nothing differs.
+	 *
+	 * @param int                  $id      Term id.
+	 * @param array<string, mixed> $before  Journal property => value before the save.
+	 * @param array<string, mixed> $after   Journal property => value after it.
+	 * @param int                  $user_id The user who saved the form.
+	 * @return int|null The batch, or null when nothing changed or it could not be recorded.
+	 */
+	public function record_native( int $id, array $before, array $after, int $user_id ): ?int {
+		$entries = [];
+		$old     = [];
+		foreach ( $after as $prop => $value ) {
+			$was = $before[ $prop ] ?? null;
+			if ( NativeForm::OTHER_PROP === $prop ? $was !== $value : ! TermUndo::same( $prop, $was, $value ) ) {
+				$entries[]    = Result::changed( $prop, $was, $value );
+				$old[ $prop ] = $was;
+			}
+		}
+		if ( [] === $entries ) {
+			return null;
+		}
+		$batch_id = $this->factory->open( $user_id, [ self::step( self::EDIT, [ 'form' => NativeForm::FORM ] ) ], [ [ $id, self::OBJECT_TYPE ] ], self::SOURCE );
+		if ( $batch_id instanceof \WP_Error ) {
+			return null;
+		}
+		try {
+			$journal = Journal::from_settings( Fields::instance(), $this->settings(), $this->changes );
+			$applied = $journal->record( $batch_id, $id, self::OBJECT_TYPE, ChangeRepository::UNKNOWN_TIME, self::with_skip( $entries ), $old, (object) [ 'term_id' => $id ] );
+		} catch ( \Throwable $e ) {
+			$this->finish( $batch_id, 'failed', __( 'This save through WordPress\'s category form could not be recorded in full.', 'bulk-catalogue-manager-for-woocommerce' ), false );
+			return $batch_id;
+		}
+		$this->finish( $batch_id, 'done', '', $applied > 0 );
+		return $batch_id;
 	}
 
 	/**
@@ -374,7 +645,7 @@ final class Writer {
 		$after   = is_object( $term ) ? self::values( $term ) : [];
 		$entries = [];
 		foreach ( $before as $prop => $old ) {
-			$key       = (string) array_search( $prop, self::PROPS, true );
+			$key       = (string) array_search( $prop, self::PROPS + self::META, true );
 			$entries[] = match ( true ) {
 				null !== $failure                     => Result::failed( $prop, $old, self::not_saved( $failure )->get_error_message(), self::NOT_SAVED ),
 				( $after[ $key ] ?? null ) === $old => Result::already( $prop, $old ),
@@ -445,11 +716,19 @@ final class Writer {
 	 * @param int $id Term id.
 	 * @return array<string, mixed>
 	 */
-	private static function item( int $id ): array {
+	public static function item( int $id ): array {
 		$terms = CategoryTree::terms();
 		$term  = self::find( $terms, $id );
+		$meta  = null === $term ? [
+			'display_type' => '',
+			'thumbnail_id' => 0,
+		] : self::values( $term );
+		$url   = $meta['thumbnail_id'] > 0 ? wp_get_attachment_image_url( $meta['thumbnail_id'], 'thumbnail' ) : false;
 		return ( CategoryTree::tree_of( $terms )->node( $id ) ?? [ 'id' => $id ] ) + [
-			'description' => null === $term ? '' : (string) ( $term->description ?? '' ),
+			'description'   => null === $term ? '' : (string) ( $term->description ?? '' ),
+			'display_type'  => $meta['display_type'],
+			'thumbnail_id'  => $meta['thumbnail_id'],
+			'thumbnail_url' => is_string( $url ) ? $url : null,
 		];
 	}
 
@@ -636,12 +915,63 @@ final class Writer {
 	 * @return array{name: string, slug: string, description: string, parent: int}
 	 */
 	private static function values( object $term ): array {
+		$id = (int) ( $term->term_id ?? 0 );
 		return [
-			'name'        => (string) ( $term->name ?? '' ),
-			'slug'        => (string) ( $term->slug ?? '' ),
-			'description' => (string) ( $term->description ?? '' ),
-			'parent'      => (int) ( $term->parent ?? 0 ),
+			'name'         => (string) ( $term->name ?? '' ),
+			'slug'         => (string) ( $term->slug ?? '' ),
+			'description'  => (string) ( $term->description ?? '' ),
+			'parent'       => (int) ( $term->parent ?? 0 ),
+			'display_type' => $id > 0 ? (string) get_term_meta( $id, 'display_type', true ) : '',
+			'thumbnail_id' => $id > 0 ? max( 0, (int) get_term_meta( $id, 'thumbnail_id', true ) ) : 0,
 		];
+	}
+
+	/**
+	 * The native details a request asks for, checked: a display type
+	 * WooCommerce offers, and an image the user may choose (an existing image
+	 * attachment they can read, with permission to use the media library) or
+	 * 0 to remove it. Removing needs no media permission.
+	 *
+	 * @param array<string, mixed> $input   Request input.
+	 * @param int                  $user_id The user the change is for.
+	 * @return array<string, string|int>|\WP_Error
+	 */
+	private static function details( array $input, int $user_id ): array|\WP_Error {
+		$details = [];
+		if ( array_key_exists( 'display_type', $input ) && null !== $input['display_type'] ) {
+			if ( ! is_string( $input['display_type'] ) || ! in_array( $input['display_type'], self::DISPLAY_TYPES, true ) ) {
+				return Refusal::invalid( self::INVALID_DETAIL, __( 'Choose a display type from the list: Default, Products, Subcategories, or Both.', 'bulk-catalogue-manager-for-woocommerce' ) );
+			}
+			$details['display_type'] = $input['display_type'];
+		}
+		if ( array_key_exists( 'thumbnail_id', $input ) && null !== $input['thumbnail_id'] ) {
+			$image = $input['thumbnail_id'];
+			if ( ! is_int( $image ) && ! ( is_string( $image ) && ctype_digit( $image ) ) ) {
+				return self::invalid_image();
+			}
+			$image = (int) $image;
+			if ( $image < 0 ) {
+				return self::invalid_image();
+			}
+			if ( $image > 0 ) {
+				if ( ! user_can( $user_id, 'upload_files' ) || ! user_can( $user_id, 'read_post', $image ) ) {
+					return Refusal::create( self::INVALID_IMAGE, __( 'Choosing a category image needs permission to use the media library. Ask an administrator, or leave the image as it is.', 'bulk-catalogue-manager-for-woocommerce' ), 403 );
+				}
+				$post = get_post( $image );
+				if ( null === $post || 'attachment' !== $post->post_type || ! str_starts_with( (string) ( $post->post_mime_type ?? '' ), 'image/' ) ) {
+					return self::invalid_image();
+				}
+			}
+			$details['thumbnail_id'] = $image;
+		}
+		return $details;
+	}
+
+	/**
+	 * The refusal of an image that cannot be used.
+	 */
+	private static function invalid_image(): \WP_Error {
+		return Refusal::invalid( self::INVALID_IMAGE, __( 'That image could not be found in the media library, or it is not an image. Choose another image.', 'bulk-catalogue-manager-for-woocommerce' ) );
 	}
 
 	/**

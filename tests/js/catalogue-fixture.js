@@ -70,21 +70,23 @@ function page( items = ROWS, total = 60, perPage = 25 ) {
 }
 
 /**
- * Route an apiFetch mock by path. Each handler receives the parsed query
- * and returns a value or a promise; a missing route never settles.
+ * Route an apiFetch mock by path. Each handler receives the parsed query and
+ * the request's options (its `method` and `data`), and returns a value or a
+ * promise; a missing route never settles.
  *
  * @param {Function} apiFetch jest.fn from the module mock.
- * @param {Object}   routes   path => handler( query ).
+ * @param {Object}   routes   path => handler( query, options ).
  */
 function route( apiFetch, routes ) {
-	apiFetch.mockImplementation( ( { url } ) => {
+	apiFetch.mockImplementation( ( options ) => {
+		const { url } = options;
 		const path = url.split( '?' )[ 0 ];
 		const handler = routes[ path ];
 		if ( ! handler ) {
 			return new Promise( () => {} );
 		}
 		try {
-			return Promise.resolve( handler( getQueryArgs( url ) ) );
+			return Promise.resolve( handler( getQueryArgs( url ), options ) );
 		} catch ( error ) {
 			return Promise.reject( error );
 		}

@@ -21,13 +21,13 @@ final class Plugin {
 	/**
 	 * Must equal the `Version:` header of the main plugin file.
 	 */
-	public const VERSION = '1.0.0';
+	public const VERSION = '1.4.1';
 
 	/**
 	 * Lowest WooCommerce version the plugin runs on. Must equal the
 	 * `WC requires at least:` header of the main plugin file.
 	 */
-	public const MIN_WC_VERSION = '10.0';
+	public const MIN_WC_VERSION = '11.1';
 
 	/**
 	 * The instance the main plugin file boots.
@@ -100,7 +100,8 @@ final class Plugin {
 	 * routes register on rest_api_init. The admin screen registers on
 	 * admin_menu and loads its assets on admin_enqueue_scripts, for its own
 	 * screen id only; its Heartbeat ticks get a fresh REST nonce on
-	 * heartbeat_received.
+	 * heartbeat_received. WooCommerce's Duplicate is told to leave the Off
+	 * record out of the copy (SPEC §5.5).
 	 *
 	 * @return array<int, array{0: string, 1: callable, 2: int, 3: int}>
 	 */
@@ -112,6 +113,8 @@ final class Plugin {
 		}
 		return [
 			[ 'before_woocommerce_init', [ $this, 'declare_compatibility' ], 10, 0 ],
+			[ 'admin_action_duplicate_product', [ Admin\ProductRowActionGuard::class, 'duplicate' ], 0, 0 ],
+			[ 'load-post.php', [ Admin\ProductRowActionGuard::class, 'trash' ], 0, 0 ],
 			[ 'init', [ $this, 'register_settings' ], 10, 0 ],
 			[ 'init', [ Categories\Cache::class, 'register_hooks' ], 10, 0 ],
 			[ 'init', [ Query\CountCache::class, 'register_hooks' ], 10, 0 ],
@@ -119,10 +122,18 @@ final class Plugin {
 			[ 'rest_api_init', [ $this, 'register_routes' ], 10, 0 ],
 			[ 'admin_menu', [ $this->screen(), 'register' ], 10, 0 ],
 			[ 'admin_enqueue_scripts', [ $this->screen(), 'enqueue' ], 10, 1 ],
+			[ 'admin_enqueue_scripts', [ Admin\TermEmbed::class, 'enqueue' ], 10, 1 ],
+			[ 'admin_body_class', [ Admin\TermEmbed::class, 'body_class' ], 10, 1 ],
+			[ 'product_cat_pre_edit_form', [ Admin\TermEmbed::class, 'warn' ], 10, 2 ],
+			[ 'edit_terms', [ Categories\NativeForm::class, 'before' ], 10, 2 ],
+			[ 'edited_product_cat', [ Categories\NativeForm::class, 'after' ], PHP_INT_MAX, 1 ],
 			[ Admin\Heartbeat::HOOK, [ Admin\Heartbeat::class, 'received' ], 10, 2 ],
 			[ Engine\BatchFactory::CREATED, [ Engine\ChunkRunner::class, 'enqueue' ], 10, 1 ],
 			[ Engine\ChunkRunner::HOOK, [ Engine\ChunkRunner::class, 'handle' ], 10, 2 ],
 			[ Engine\Pruner::HOOK, [ Engine\Pruner::class, 'handle' ], 10, 0 ],
+			[ 'bulkcat_prune_selections', [ Requests\Cleanup::class, 'selections' ], 10, 0 ],
+			[ 'bulkcat_prune_requests', [ Requests\Cleanup::class, 'requests' ], 10, 0 ],
+			[ 'woocommerce_duplicate_product_exclude_meta', [ Availability\OffRecord::class, 'exclude_from_duplicate' ], 10, 1 ],
 		];
 	}
 
@@ -144,10 +155,36 @@ final class Plugin {
 	}
 
 	/**
-	 * Bring the plugin's tables up to the code's schema version; a no-op once current.
+	 * Bring the plugin's tables up to the code's schema version; a no-op once
+	 * current. When it migrated, repair the schedules (repair_schedules()):
+	 * a network activation runs the activation hooks on the main site only,
+	 * so a sub-site's first migration is where it gets them. At the current
+	 * schema nothing is checked, so other admin pages cost no query.
 	 */
 	public function migrate(): void {
-		( new Data\Migrator( Data\Registry::plugin() ) )->run();
+		$migrator = new Data\Migrator( Data\Registry::plugin() );
+		if ( $migrator->is_current() ) {
+			return;
+		}
+		if ( $migrator->run() ) {
+			self::repair_schedules();
+		}
+	}
+
+	/**
+	 * Make sure the recurring clean-ups (the request clean-up and the daily
+	 * history prune) are scheduled and queue again any batch a deactivation
+	 * interrupted; each step is idempotent. Runs after a migration and each
+	 * time the manager screen loads (Admin\Screen::register()), so a lost
+	 * schedule comes back without reactivating the plugin.
+	 */
+	public static function repair_schedules(): void {
+		if ( ! ( new Data\Migrator( Data\Registry::plugin() ) )->is_current() ) {
+			return;
+		}
+		Requests\Cleanup::schedule();
+		Engine\Pruner::schedule();
+		Engine\ChunkRunner::resume_interrupted();
 	}
 
 	/**
@@ -166,7 +203,7 @@ final class Plugin {
 		}
 		printf(
 			'<div class="notice notice-error"><p>%s</p></div>',
-			esc_html__( 'Bulk Catalogue Manager for WooCommerce needs WooCommerce 10.0 or later. Install or update WooCommerce to use it.', 'bulk-catalogue-manager-for-woocommerce' )
+			esc_html__( 'Bulk Catalogue Manager for WooCommerce needs WooCommerce 11.1 or later. Install or update WooCommerce to use it.', 'bulk-catalogue-manager-for-woocommerce' )
 		);
 	}
 

@@ -6,6 +6,78 @@
  */
 import { __, _n, sprintf } from '@wordpress/i18n';
 
+/**
+ * Text with its HTML entities decoded, without parsing it as markup.
+ *
+ * @param {string} text Stored text.
+ * @return {string} Text as a person reads it.
+ */
+export function decodeEntities( text ) {
+	const named = {
+		amp: '&',
+		lt: '<',
+		gt: '>',
+		quot: '"',
+		apos: "'",
+		nbsp: '\u00a0',
+	};
+	return String( text ).replace(
+		/&(#x[0-9a-f]+|#[0-9]+|[a-z]+);/gi,
+		( whole, code ) => {
+			if ( code[ 0 ] === '#' ) {
+				const number =
+					code[ 1 ].toLowerCase() === 'x'
+						? parseInt( code.slice( 2 ), 16 )
+						: parseInt( code.slice( 1 ), 10 );
+				return Number.isFinite( number ) && number > 0
+					? String.fromCodePoint( number )
+					: whole;
+			}
+			return named[ code.toLowerCase() ] ?? whole;
+		}
+	);
+}
+
+/**
+ * A change row's before or after as a person reads it: the route's own
+ * words where it gave them (category names, paths, images, display types;
+ * ticket 133), else the value formatted by its field.
+ *
+ * @param {Object} row   Change row.
+ * @param {string} which `old` or `new`.
+ * @param {Object} field The field's descriptor, if known.
+ * @return {string} Text.
+ */
+export function rowValue( row, which, field ) {
+	const text = row?.[ which + '_text' ];
+	if ( typeof text === 'string' && text !== '' ) {
+		return text;
+	}
+	return formatValue( row?.[ which + '_value' ], field );
+}
+
+/**
+ * The heading of a changes table's first column: Category when every row
+ * is a category, Product when none is, else Product or category.
+ *
+ * @param {Array<Object>} rows Change rows.
+ * @return {string} Heading.
+ */
+export function objectHeading( rows ) {
+	const terms = ( rows || [] ).filter(
+		// A native category write (`term`) or an add-on's change to a category: anything not a product or variation.
+		( row ) =>
+			!! row.object_type &&
+			! [ 'product', 'variation' ].includes( row.object_type )
+	);
+	if ( rows?.length && terms.length === rows.length ) {
+		return __( 'Category', 'bulk-catalogue-manager-for-woocommerce' );
+	}
+	return terms.length
+		? __( 'Product or category', 'bulk-catalogue-manager-for-woocommerce' )
+		: __( 'Product', 'bulk-catalogue-manager-for-woocommerce' );
+}
+
 /** The reversibility states of GET /batches (Engine\Reversibility::STATES). */
 export const STATES = {
 	REVERSIBLE: 'reversible',
@@ -76,6 +148,10 @@ export function fieldLabel( key, byKey, given = '' ) {
  * @return {string} Text.
  */
 export function formatValue( value, field ) {
+	if ( typeof value === 'string' ) {
+		// Ticket 133: stored names keep HTML entities ("&amp;"); a person reads the character.
+		value = decodeEntities( value );
+	}
 	if ( value === null || value === undefined || value === '' ) {
 		return __( 'Empty', 'bulk-catalogue-manager-for-woocommerce' );
 	}
@@ -114,8 +190,19 @@ export function formatValue( value, field ) {
 export function describeOperation( operation, byKey = {}, actions = {} ) {
 	const args = operation?.args || {};
 	const field = byKey[ args.field ];
+	if ( operation?.action === 'set_value' && field?.nativeStatus ) {
+		return sprintf(
+			/* translators: %s: the status requested by an accepted legacy change, which may have restored a remembered status. */
+			__(
+				'Legacy Status change requested %s',
+				'bulk-catalogue-manager-for-woocommerce'
+			),
+			formatValue( args.value, field )
+		);
+	}
 	const label = inSentence( fieldLabel( args.field, byKey ) );
 	switch ( operation?.action ) {
+		case 'set_status':
 		case 'set_value':
 			return sprintf(
 				/* translators: 1: a field, such as "regular price"; 2: the value it was set to. */
@@ -261,6 +348,16 @@ export function describeOperation( operation, byKey = {}, actions = {} ) {
 			);
 		default: {
 			const action = actions[ operation?.action ];
+			if (
+				action?.label &&
+				label &&
+				String( action.label )
+					.toLowerCase()
+					.includes( String( label ).toLowerCase() )
+			) {
+				// 1.3.4: "Add customer groups", never "Add customer groups: customer groups".
+				return action.label;
+			}
 			return action?.label
 				? sprintf(
 						/* translators: 1: an action, such as "Round prices"; 2: a field, such as "regular price". */
@@ -299,7 +396,21 @@ export function describeBatch( batch, byKey = {}, actions = {} ) {
 			)
 		);
 	}
+	if ( batch?.headline ) {
+		// Ticket 133: a category change in the server's words, with the categories' names.
+		return batch.headline;
+	}
 	const operations = batch?.operations || [];
+	// T108: an add-on's change keeps the labels its manifest recorded, used where the registry has none (the add-on has gone).
+	const kept = batch?.external || {};
+	const keys = { ...byKey };
+	Object.entries( kept.fields || {} ).forEach( ( [ key, label ] ) => {
+		keys[ key ] = keys[ key ] || { key, label };
+	} );
+	const known = { ...actions };
+	Object.entries( kept.actions || {} ).forEach( ( [ id, label ] ) => {
+		known[ id ] = known[ id ] || { id, label };
+	} );
 	if ( ! operations.length ) {
 		return batch?.source === 'tree'
 			? __(
@@ -312,7 +423,24 @@ export function describeBatch( batch, byKey = {}, actions = {} ) {
 				);
 	}
 	return operations
-		.map( ( operation ) => describeOperation( operation, byKey, actions ) )
+		.map( ( operation ) => {
+			// Contract version 2: an add-on's chosen items by the labels its manifest kept (EXTENSIONS-v2 §4.5).
+			const chosen = Object.values(
+				kept.choices?.[ operation?.action ] || {}
+			).flatMap( ( labels ) => Object.values( labels || {} ) );
+			const action = known[ operation?.action ];
+			return chosen.length && action?.label
+				? sprintf(
+						/* translators: 1: an action, such as "Round prices"; 2: a field, such as "regular price". */
+						__(
+							'%1$s: %2$s',
+							'bulk-catalogue-manager-for-woocommerce'
+						),
+						action.label,
+						chosen.join( ', ' )
+					)
+				: describeOperation( operation, keys, known );
+		} )
 		.join( ' · ' );
 }
 
@@ -368,8 +496,9 @@ export function statusElements() {
 		},
 		{
 			value: 'partial',
+			// Rows skipped or failed: a card says which (outcomeLabel()).
 			label: __(
-				'Done with errors',
+				'Done with skipped or failed rows',
 				'bulk-catalogue-manager-for-woocommerce'
 			),
 		},
@@ -407,13 +536,82 @@ export function statusLabel( status ) {
 }
 
 /**
+ * Whether a finished batch's only problems were rows skipped by design (a
+ * step the preview said would be skipped: not applicable, already at the
+ * value): it ended partial with nothing failed (1.3.4). Such a change has
+ * no errors (Engine\Reversibility::with_errors()).
+ *
+ * @param {Object} batch Batch report.
+ * @return {boolean} Skipped rows only.
+ */
+export function skippedOnly( batch ) {
+	return (
+		batch?.status === 'partial' && ! ( Number( batch?.failed_items ) > 0 )
+	);
+}
+
+/**
+ * A batch's outcome, in words: its status's label, except that a partial
+ * batch says whether rows failed or were only skipped.
+ *
+ * @param {Object} batch Batch report.
+ * @return {string} Label.
+ */
+export function outcomeLabel( batch ) {
+	if ( batch?.status === 'partial' ) {
+		return skippedOnly( batch )
+			? __(
+					'Done, some rows skipped',
+					'bulk-catalogue-manager-for-woocommerce'
+				)
+			: __(
+					'Done with errors',
+					'bulk-catalogue-manager-for-woocommerce'
+				);
+	}
+	return statusLabel( batch?.status );
+}
+
+/**
  * Why a batch can no longer be undone, as one plain sentence (§4.8).
  *
- * @param {string|null} reason Reversibility reason.
+ * @param {string|null} reason   Reversibility reason.
+ * @param {string}      provider For `provider_missing` and `provider_unavailable` (T108), the add-on's name.
+ * @param {string}      detail   For `provider_unavailable`, the add-on's own reason, plain text.
  * @return {string} Sentence.
  */
-export function reasonSentence( reason ) {
+export function reasonSentence( reason, provider = '', detail = '' ) {
 	switch ( reason ) {
+		case 'provider_unavailable': {
+			// Registered but cannot run: its own reason follows the core's words.
+			const lead = sprintf(
+				/* translators: %s: the name of an add-on, such as "Example add-on". */
+				__(
+					'%s cannot run now, so this change cannot be undone yet.',
+					'bulk-catalogue-manager-for-woocommerce'
+				),
+				provider ||
+					__(
+						'The add-on that made this change',
+						'bulk-catalogue-manager-for-woocommerce'
+					)
+			);
+			return detail ? lead + ' ' + detail : lead;
+		}
+		case 'provider_missing':
+			return provider
+				? sprintf(
+						/* translators: %s: the name of an add-on, such as "Example add-on". */
+						__(
+							'Needs %s to be active to undo.',
+							'bulk-catalogue-manager-for-woocommerce'
+						),
+						provider
+					)
+				: __(
+						'Needs the add-on that made this change to be active to undo.',
+						'bulk-catalogue-manager-for-woocommerce'
+					);
 		case 'pruned':
 			return __(
 				'The saved values for this change were removed when old history was cleared, so it cannot be undone.',
@@ -443,7 +641,9 @@ export function reasonSentence( reason ) {
 }
 
 /**
- * How many rows, as a chip: "1,248 products".
+ * How many rows, as a chip: "1,248 items". The batch's count holds products
+ * and variations together, and the list does not say how many of each, so
+ * it never calls them all products (ticket 11).
  *
  * @param {number} count Items.
  * @return {string} Text.
@@ -451,10 +651,10 @@ export function reasonSentence( reason ) {
 export function rowsLabel( count ) {
 	const n = Number( count ) || 0;
 	return sprintf(
-		/* translators: %s: number of products and variations, such as "1,248". */
+		/* translators: %s: a number of products and variations together, such as "1,284". */
 		_n(
-			'%s product',
-			'%s products',
+			'%s item',
+			'%s items',
 			n,
 			'bulk-catalogue-manager-for-woocommerce'
 		),

@@ -143,6 +143,10 @@ test( 'move a category through the dialog by keyboard', async ( { page } ) => {
 			hasText: SEED.hats,
 		} )
 	).toHaveCount( 0 );
+	// The workspace opens the new parent and puts focus on the moved
+	// category; Left goes up to its new parent.
+	await expect( hats ).toBeFocused();
+	await keys.press( 'ArrowLeft' );
 	const shirts = await reach( page, SEED.shirts );
 	if ( ( await shirts.getAttribute( 'aria-expanded' ) ) !== 'true' ) {
 		await keys.press( 'ArrowRight' );

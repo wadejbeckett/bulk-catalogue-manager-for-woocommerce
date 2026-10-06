@@ -27,20 +27,13 @@ defined( 'ABSPATH' ) || exit;
 /**
  * The single-object route: its read and its write.
  *
- * Every field argument is the field's own Field::rest_arg() — its schema,
- * validator and sanitiser — so a malformed value is refused 400
- * `rest_invalid_param` by core, naming the field with its sentence in
- * `data.params`, before the handler runs. `source` records the batch as
- * `inline` (the default) or `bulk`; `fields[]` chooses the columns of the
- * row returned, as on `/products`.
- *
- * The permission callback is Access::can_write (the screen capability plus
- * `edit_products`); Engine\InlineWrite then refuses 404 `bulkcat_not_found` for
- * an id that is not a listed product or variation, 403 `bulkcat_cannot_edit` for
- * an object the user may not edit, and 400 naming the field for a value the
- * object cannot take, with nothing written. Otherwise the change is written
- * through the same operations, Validator, Writer and Journal as a bulk batch,
- * synchronously, and never queued.
+ * Native fields retain their raw typed values until the signed product.inline
+ * envelope is verified and its receipt is read. Live field validation, cleaning
+ * and native dry-run occur only under a new unique claim. A duplicate returns
+ * only the immutable safe receipt, without reading a current product row.
+ * source retains its inline/bulk display meaning; fields is a read projection.
+ * New writes require current write rights, and all disclosures require current
+ * screen and object/parent rights. Execution remains synchronous and unqueued.
  *
  * `GET /bulkcat/v1/products/{id}` on the same route (Access::can_read, args
  * RouteSchema::row_args(): the id and `fields[]`) reads one product or
@@ -48,11 +41,16 @@ defined( 'ABSPATH' ) || exit;
  * answers `{ item }`; an id that is not a listed product or variation is
  * 404 `bulkcat_not_found`.
  *
+ * `keep_changed_status` (T89, SPEC §5.5) is Keep current status for a
+ * product changed elsewhere while Off, accepted only with `status`.
+ *
  * The PATCH answer is `{ item, batch_id, status, results }`: `item` is the object
  * re-read through Query\Catalogue after its caches are cleared, in the same
  * shape as a `/products` item, so the grid can replace the row; `status` is
  * the batch's final status (complete, partial or failed); `results` holds
- * one outcome per step (field, old, new, state, reason, code).
+ * one outcome per step (field, old, new, state, reason, code, and the Status
+ * switch's note and context). The internal Off record a Status step writes
+ * with it is journalled but never part of the answer.
  */
 final class ProductWriteController implements ReadController {
 	/**
@@ -80,11 +78,12 @@ final class ProductWriteController implements ReadController {
 	private Catalogue $catalogue;
 
 	/**
-	 * The write.
+	 * The write, built on first use so the shared operation registry (and
+	 * the add-ons' providers) is not built when the REST server boots.
 	 *
-	 * @var InlineWrite
+	 * @var InlineWrite|null
 	 */
-	private InlineWrite $writes;
+	private ?InlineWrite $writes = null;
 
 	/**
 	 * Build over a field registry and the operation registry built on it.
@@ -95,7 +94,9 @@ final class ProductWriteController implements ReadController {
 	public function __construct( private readonly Registry $registry, ?Actions $actions = null ) {
 		$this->schema    = new RouteSchema( $registry );
 		$this->catalogue = new Catalogue( new Hydrator( $registry ) );
-		$this->writes    = new InlineWrite( $actions ?? Actions::instance() );
+		if ( null !== $actions ) {
+			$this->writes = new InlineWrite( $actions );
+		}
 	}
 
 	/**
@@ -110,7 +111,7 @@ final class ProductWriteController implements ReadController {
 				[
 					'methods'             => 'PATCH',
 					'callback'            => [ $this, 'update_item' ],
-					'permission_callback' => [ Access::class, 'can_write' ],
+					'permission_callback' => [ Access::class, 'can_read' ],
 					'args'                => $this->args(),
 				],
 				[
@@ -150,11 +151,34 @@ final class ProductWriteController implements ReadController {
 				],
 				'strval'
 			),
-		] + $this->schema->fields_arg();
+		] + $this->schema->fields_arg() + [
+			'keep_changed_status' => self::arg(
+				[
+					'description' => __( 'For a product changed by someone else while Off: keep its current status and clear its Off record. Only with a Status change.', 'bulk-catalogue-manager-for-woocommerce' ),
+					'type'        => 'boolean',
+					'default'     => false,
+				],
+				static fn( mixed $value ): bool => true === \BulkCatalogueManager\Fields\Values::boolean( $value )
+			),
+		];
 		foreach ( $this->registry->editable() as $key => $field ) {
-			$args[ $key ] = $field->rest_arg();
+			// Identity comparison needs the original typed bytes, before live validation/sanitising.
+			$args[ $key ] = [
+				'validate_callback' => static fn(): bool => true,
+				'sanitize_callback' => static fn( mixed $value ): mixed => $value,
+			];
 		}
-		return $args;
+		$args['keep_changed_status']['validate_callback'] = static fn(): bool => true;
+		$args['keep_changed_status']['sanitize_callback'] = static fn( mixed $value ): mixed => $value;
+		$args['fields']                                   = [
+			'validate_callback' => static fn(): bool => true,
+			'sanitize_callback' => static fn( mixed $value ): mixed => $value,
+		];
+		return $args + [
+			'uuid'          => [],
+			'request_proof' => [],
+			'intent'        => [],
+		];
 	}
 
 	/**
@@ -198,7 +222,7 @@ final class ProductWriteController implements ReadController {
 				404
 			);
 		}
-		return new \WP_REST_Response( [ 'item' => $item ], 200 );
+		return new \WP_REST_Response( [ 'item' => \BulkCatalogueManager\Admin\ProductRowActions::decorate( [ $item ] )[0] ], 200 );
 	}
 
 	/**
@@ -209,23 +233,33 @@ final class ProductWriteController implements ReadController {
 	public function update_item( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
 		$id     = (int) $request->get_param( 'id' );
 		$params = $request->get_params();
-		$values = array_intersect_key( $params, $this->registry->editable() );
+		if ( array_key_exists( 'keep_changed_status', $params ) && ! is_bool( $params['keep_changed_status'] ) ) {
+			return \BulkCatalogueManager\Requests\InlineIntent::conflict(); }
+		$values = array_diff_key( $params, array_flip( [ 'id', 'source', 'fields', 'keep_changed_status', 'uuid', 'request_proof', 'intent', '_locale', '_wpnonce', 'rest_route' ] ) );
 		$source = (string) ( $request->get_param( 'source' ) ?? InlineWrite::SOURCES[0] );
 
-		$written = $this->writes->write( $id, $values, $source, get_current_user_id() );
+		$written = ( new \BulkCatalogueManager\Requests\RequestService( inline: $this->writes ??= new InlineWrite( Actions::instance() ) ) )->inline( array_intersect_key( $params, array_flip( [ 'uuid', 'request_proof', 'intent' ] ) ), $id, $values, $source, true === $request->get_param( 'keep_changed_status' ) );
 		if ( $written instanceof \WP_Error ) {
 			return $written;
 		}
 
+		if ( ! isset( $written['outcome'] ) ) {
+			return new \WP_REST_Response( $written, 200 ); }
 		clean_post_cache( $id );
 		$fields = $request->get_param( 'fields' );
+		$item   = $this->catalogue->row( $id, is_array( $fields ) ? array_values( array_filter( $fields, 'is_string' ) ) : [] );
 		return new \WP_REST_Response(
 			[
-				'item'     => $this->catalogue->row( $id, is_array( $fields ) ? array_values( array_filter( $fields, 'is_string' ) ) : [] ),
+				'item'     => null === $item ? null : \BulkCatalogueManager\Admin\ProductRowActions::decorate( [ $item ] )[0],
 				'batch_id' => $written['batch_id'],
 				'status'   => $written['status'],
-				'results'  => array_map( static fn( Result $result ): array => $result->to_array(), $written['outcome']->results() ),
-			],
+				'results'  => array_values(
+					array_map(
+						static fn( Result $result ): array => $result->to_array(),
+						array_filter( $written['outcome']->results(), fn( Result $result ): bool => ! ( $this->registry->get( $result->field() )?->internal() ?? false ) )
+					)
+				),
+			] + array_intersect_key( $written, array_flip( [ 'receipt_state', 'write_status', 'steps', 'replayed' ] ) ),
 			200
 		);
 	}
@@ -245,7 +279,7 @@ final class ProductWriteController implements ReadController {
 			'$schema'    => RouteSchema::DIALECT,
 			'title'      => self::TITLE,
 			'type'       => 'object',
-			'properties' => [
+			'properties' => \BulkCatalogueManager\Requests\InlineReceipt::schema()['properties'] + [
 				'item'     => array_diff_key( $this->schema->item_schema( ProductsController::TITLE, RouteSchema::row_extras() ), [ '$schema' => 0 ] ) + $read_only,
 				'batch_id' => [
 					'description' => __( 'The batch of one this change is recorded as.', 'bulk-catalogue-manager-for-woocommerce' ),
@@ -273,6 +307,8 @@ final class ProductWriteController implements ReadController {
 							'reason'   => [ 'type' => 'string' ],
 							'code'     => [ 'type' => 'string' ],
 							'replaces' => [ 'type' => 'boolean' ],
+							'note'     => [ 'type' => 'string' ],
+							'context'  => [ 'type' => 'object' ],
 						],
 					],
 				] + $read_only,

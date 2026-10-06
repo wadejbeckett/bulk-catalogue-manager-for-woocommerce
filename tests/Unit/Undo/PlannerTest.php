@@ -147,7 +147,7 @@ final class PlannerTest extends TestCase {
 	private function undo_batches( array $undos ): void {
 		global $wpdb;
 		$wpdb->responses = [
-			'/^SELECT batch_id, status FROM `wp_bulkcat_batches` WHERE undo_of = /' => fn( string $sql ): array => ( new SqlEvaluator( [ 'wp_bulkcat_batches' => array_merge( [ $this->store->batch ], $undos ) ] ) )->rows( $sql ),
+			'/^SELECT batch_id, status, changed_items FROM `wp_bulkcat_batches` WHERE undo_of = /' => fn( string $sql ): array => ( new SqlEvaluator( [ 'wp_bulkcat_batches' => array_merge( [ $this->store->batch ], $undos ) ] ) )->rows( $sql ),
 		] + $wpdb->responses;
 	}
 
@@ -159,6 +159,228 @@ final class PlannerTest extends TestCase {
 		$this->assertSame( $reason, $refusal->get_error_data()['reason'] );
 		$this->assertStringNotContainsString( 'bulkcat_', $refusal->get_error_message() );
 		return $refusal;
+	}
+
+	/**
+	 * An Off record as the switch stores it (T90).
+	 */
+	private static function off( int $id, string $status, int $batch = self::BATCH ): string {
+		return \BulkCatalogueManager\Availability\OffRecord::create( $id, $status, '2026-09-23T08:01:00Z', $batch )->to_json();
+	}
+
+	/**
+	 * The internal undo step, normalised as the planner makes it.
+	 *
+	 * @param array<string, mixed> $args value and/or record.
+	 */
+	private static function restore( array $args, int $id ): array {
+		// Should-fix (1): the step expects the status and record the product had when the undo was planned.
+		$product = $GLOBALS['bulkcat_test']['products'][ $id ];
+		$expect  = [
+			'expected_status' => (string) $product->props['status'],
+			'expected_record' => \BulkCatalogueManager\Availability\OffRecord::raw( $product ),
+		];
+		$list    = ( new Registry( new Fields() ) )->validate_list(
+			[
+				[
+					'action' => 'restore_status',
+					'args'   => [ 'field' => 'status' ] + $args + $expect + [ 'apply_to_variations' => false ],
+				],
+			],
+			true
+		);
+		self::assertTrue( is_array( $list ), $list instanceof \WP_Error ? $list->get_error_message() : '' );
+		return $list;
+	}
+
+	public function test_undoing_an_off_gives_back_its_status_and_no_record(): void {
+		// T90 (SPEC §9.4): status and record fold into one internal step, taken from the journal.
+		foreach ( [
+			3001 => 'publish',
+			3002 => 'private',
+			3003 => 'pending',
+			3004 => 'future',
+		] as $id => $status ) {
+			$this->change( $id, 'status', $status, 'draft' );
+			$this->change( $id, 'availability_off', '', self::off( $id, $status ) );
+			$product                                    = self::product( $id, [ 'status' => 'draft' ] );
+			$product->meta['_bulkcat_availability_off'] = self::off( $id, $status );
+		}
+		$plan = $this->plan();
+		foreach ( [
+			3001 => 'publish',
+			3002 => 'private',
+			3003 => 'pending',
+			3004 => 'future',
+		] as $id => $status ) {
+			$item = self::item( $plan, $id );
+			$this->assertSame( Plan::REVERTIBLE, $item['state'], $status );
+			$this->assertSame(
+				self::restore(
+					[
+						'value'  => $status,
+						'record' => '',
+					],
+					$id
+				),
+				$item['operations'],
+				$status
+			);
+		}
+	}
+
+	public function test_undoing_an_on_gives_back_draft_and_the_original_record(): void {
+		$original = self::off( 3010, 'private', 7 );
+		$this->change( 3010, 'status', 'draft', 'private' );
+		$this->change( 3010, 'availability_off', $original, '' );
+		self::product( 3010, [ 'status' => 'private' ] );
+		$item = self::item( $this->plan(), 3010 );
+		$this->assertSame( Plan::REVERTIBLE, $item['state'] );
+		$this->assertSame(
+			self::restore(
+				[
+					'value'  => 'draft',
+					'record' => $original,
+				],
+				3010
+			),
+			$item['operations'],
+			'The original record, byte for byte: its id, status, time and batch.'
+		);
+	}
+
+	public function test_a_record_only_batch_puts_the_record_back_and_leaves_the_status(): void {
+		// Keep current status journalled the record alone.
+		$original = self::off( 3020, 'publish', 7 );
+		$this->change( 3020, 'availability_off', $original, '' );
+		self::product( 3020, [ 'status' => 'pending' ] );
+		$item = self::item( $this->plan(), 3020 );
+		$this->assertSame( Plan::REVERTIBLE, $item['state'] );
+		$this->assertSame( self::restore( [ 'record' => $original ], 3020 ), $item['operations'] );
+	}
+
+	public function test_status_and_record_conflicts_list_each_prop_and_keep_the_step_for_revert_anyway(): void {
+		// Changed to Private elsewhere after the Off.
+		$this->change( 3030, 'status', 'publish', 'draft' );
+		$this->change( 3030, 'availability_off', '', self::off( 3030, 'publish' ) );
+		$changed                                    = self::product( 3030, [ 'status' => 'private' ] );
+		$changed->meta['_bulkcat_availability_off'] = self::off( 3030, 'publish' );
+		// Switched Off again by a later batch, saving another status: the record differs.
+		$this->change( 3031, 'status', 'publish', 'draft' );
+		$this->change( 3031, 'availability_off', '', self::off( 3031, 'publish' ) );
+		$again                                    = self::product( 3031, [ 'status' => 'draft' ] );
+		$again->meta['_bulkcat_availability_off'] = self::off( 3031, 'pending', 20 );
+
+		$plan = $this->plan();
+		$item = self::item( $plan, 3030 );
+		$this->assertSame( [ Plan::CONFLICTED, Planner::CHANGED_SINCE ], [ $item['state'], $item['code'] ] );
+		$this->assertSame(
+			[
+				[
+					'field'    => 'status',
+					'expected' => 'draft',
+					'current'  => 'private',
+				],
+			],
+			$item['conflicts']
+		);
+		$this->assertSame( 'restore_status', $item['operations'][0]['action'], 'Revert anyway still has the step.' );
+		// Should-fix (1): what the step expects to find when it is written is the product as planned,
+		// so Revert anyway writes it, and only a change after the undo was applied leaves it alone.
+		$this->assertSame( [ 'private', self::off( 3030, 'publish' ) ], [ $item['operations'][0]['args']['expected_status'], $item['operations'][0]['args']['expected_record'] ] );
+
+		$item = self::item( $plan, 3031 );
+		$this->assertSame( Plan::CONFLICTED, $item['state'] );
+		$this->assertSame(
+			[
+				[
+					'field'    => 'availability_off',
+					'expected' => self::off( 3031, 'publish' ),
+					'current'  => self::off( 3031, 'pending', 20 ),
+				],
+			],
+			$item['conflicts'],
+			'The record conflict is listed once, though the newer record also trips the guard.'
+		);
+		$this->assertSame( [ 'draft', self::off( 3031, 'pending', 20 ) ], [ $item['operations'][0]['args']['expected_status'], $item['operations'][0]['args']['expected_record'] ] );
+	}
+
+	public function test_a_status_only_batch_never_reads_the_record_for_the_status_it_writes(): void {
+		// A 1.0 batch drafted a product; much later the product was switched Off from Private.
+		$this->change( 3040, 'status', 'publish', 'draft' );
+		$newer                                    = self::product( 3040, [ 'status' => 'draft' ] );
+		$newer->meta['_bulkcat_availability_off'] = self::off( 3040, 'private', 20 );
+		// Another whose record is older than the batch: no guard, and the step names only the status.
+		$this->change( 3041, 'status', 'private', 'draft' );
+		$older                                    = self::product( 3041, [ 'status' => 'draft' ] );
+		$older->meta['_bulkcat_availability_off'] = self::off( 3041, 'pending', 5 );
+		// And one whose record the undone batch wrote itself (the same batch id): never the guard.
+		$this->change( 3042, 'status', 'publish', 'draft' );
+		$own                                    = self::product( 3042, [ 'status' => 'draft' ] );
+		$own->meta['_bulkcat_availability_off'] = self::off( 3042, 'publish' );
+
+		$plan = $this->plan();
+		$item = self::item( $plan, 3040 );
+		$this->assertSame( [ Plan::CONFLICTED, Planner::CHANGED_SINCE ], [ $item['state'], $item['code'] ], 'The newer-record guard.' );
+		$this->assertSame(
+			[
+				[
+					'field'    => 'availability_off',
+					'expected' => '',
+					'current'  => self::off( 3040, 'private', 20 ),
+				],
+			],
+			$item['conflicts']
+		);
+		$this->assertSame( self::restore( [ 'value' => 'publish' ], 3040 ), $item['operations'], 'The status comes from the journal only; the record is not named.' );
+
+		$this->assertSame( Plan::REVERTIBLE, self::item( $plan, 3041 )['state'] );
+		$this->assertSame( self::restore( [ 'value' => 'private' ], 3041 ), self::item( $plan, 3041 )['operations'] );
+		$this->assertSame( Plan::REVERTIBLE, self::item( $plan, 3042 )['state'] );
+	}
+
+	public function test_undoing_an_on_of_a_scheduled_product_journalled_as_future_is_revertible(): void {
+		// Amendment (a): the writer journals the status WordPress stored.
+		$original = self::off( 3050, 'future', 7 );
+		$this->change( 3050, 'status', 'draft', 'future' );
+		$this->change( 3050, 'availability_off', $original, '' );
+		self::product( 3050, [ 'status' => 'future' ] );
+		$item = self::item( $this->plan(), 3050 );
+		$this->assertSame( [ Plan::REVERTIBLE, [] ], [ $item['state'], $item['conflicts'] ] );
+		$this->assertSame(
+			self::restore(
+				[
+					'value'  => 'draft',
+					'record' => $original,
+				],
+				3050
+			),
+			$item['operations']
+		);
+	}
+
+	public function test_a_journalled_record_naming_another_product_is_skipped_with_a_reason(): void {
+		$this->change( 3060, 'availability_off', self::off( 3099, 'publish', 7 ), '' );
+		self::product( 3060, [ 'status' => 'private' ] );
+		$item = self::item( $this->plan(), 3060 );
+		$this->assertSame( [ Plan::SKIPPED, Planner::CANNOT_RESTORE ], [ $item['state'], $item['code'] ] );
+		$this->assertStringNotContainsString( 'bulkcat_', $item['reason'] );
+	}
+
+	public function test_a_variation_status_undoes_through_the_same_step(): void {
+		$this->change( 3071, 'status', 'private', 'publish', 'applied', 'variation' );
+		self::product(
+			3071,
+			[
+				'status'    => 'publish',
+				'parent_id' => 3070,
+			],
+			'variation'
+		);
+		self::product( 3070, [], 'variable' );
+		$item = self::item( $this->plan(), 3071 );
+		$this->assertSame( [ Plan::REVERTIBLE, 'variation' ], [ $item['state'], $item['object_type'] ] );
+		$this->assertSame( self::restore( [ 'value' => 'private' ], 3071 ), $item['operations'] );
 	}
 
 	public function test_a_multi_operation_batch_reverts_in_reverse_order_to_the_old_values(): void {
@@ -258,6 +480,46 @@ final class PlannerTest extends TestCase {
 		$this->assertSame( [ 'batch_id', 'items', 'counts', 'hash' ], array_keys( $plan->to_array() ) );
 	}
 
+	public function test_the_price_pair_goes_back_in_an_order_valid_at_each_step(): void {
+		// ENGINE-1: regular 100 -> 60 cleared the sale price 80 (regular journalled first). Sale first would be
+		// checked against the regular 60 still there and skipped, so regular goes back first.
+		$this->change( 1001, 'regular_price', '100.00', '60.00' );
+		$this->change( 1001, 'sale_price', '80.00', '' );
+		self::product(
+			1001,
+			[
+				'regular_price' => '60.00',
+				'sale_price'    => '',
+			]
+		);
+		// An inline pair edit, 100/80 -> 60/48: regular first again.
+		$this->change( 1002, 'regular_price', '100.00', '60.00' );
+		$this->change( 1002, 'sale_price', '80.00', '48.00' );
+		self::product(
+			1002,
+			[
+				'regular_price' => '60.00',
+				'sale_price'    => '48.00',
+			]
+		);
+		// Both raised, 60/48 -> 100/80: sale first, as journalled newest first, stays valid.
+		$this->change( 1003, 'regular_price', '60.00', '100.00' );
+		$this->change( 1003, 'sale_price', '48.00', '80.00' );
+		self::product(
+			1003,
+			[
+				'regular_price' => '100.00',
+				'sale_price'    => '80.00',
+			]
+		);
+
+		$plan   = $this->plan();
+		$fields = static fn( int $id ): array => array_column( array_column( self::item( $plan, $id )['operations'], 'args' ), 'field' );
+		$this->assertSame( [ 'regular_price', 'sale_price' ], $fields( 1001 ) );
+		$this->assertSame( [ 'regular_price', 'sale_price' ], $fields( 1002 ) );
+		$this->assertSame( [ 'sale_price', 'regular_price' ], $fields( 1003 ) );
+	}
+
 	public function test_several_applied_rows_for_one_field_go_back_to_the_oldest_value(): void {
 		$this->change( 1001, 'regular_price', '10.00', '11.00' );
 		$this->change( 1001, 'regular_price', '11.00', '12.10' );
@@ -320,11 +582,13 @@ final class PlannerTest extends TestCase {
 
 	public function test_the_plan_compares_what_the_product_holds_now_in_canonical_form(): void {
 		$this->change( 1001, 'regular_price', '10.00', '11.00' );
-		$this->change( 1002, 'sale_price', '', '0.00' );
+		$this->change( 1002, 'sale_price', '5.00', '0.00' );
 		$this->change( 1003, 'stock_quantity', 5, 0 );
 		$this->change( 1004, 'sku', 'A', '0' );
+		$this->change( 1005, 'sale_price', '', '0.00' );
 		self::product( 1001, [ 'regular_price' => '11' ] );
 		self::product( 1002, [ 'sale_price' => '' ] );
+		self::product( 1005, [ 'sale_price' => '' ] );
 		self::product(
 			1003,
 			[
@@ -340,6 +604,7 @@ final class PlannerTest extends TestCase {
 		foreach ( [ 1002, 1003, 1004 ] as $id ) {
 			$this->assertSame( Plan::CONFLICTED, self::item( $plan, $id )['state'], "Object $id: empty, null, 0 and '0.00' are different values." );
 		}
+		$this->assertSame( Plan::REVERTIBLE, self::item( $plan, 1005 )['state'], 'ENGINE-11: a value already back to what the undo restores is not a change made since.' );
 		$this->assertSame(
 			[
 				[
@@ -558,11 +823,24 @@ final class PlannerTest extends TestCase {
 
 		$this->store->batch['status'] = 'complete';
 		$undo                         = [
-			'batch_id' => 40,
-			'status'   => 'complete',
-			'source'   => 'undo',
-			'undo_of'  => self::BATCH,
+			'batch_id'      => 40,
+			'status'        => 'complete',
+			'source'        => 'undo',
+			'undo_of'       => self::BATCH,
+			'changed_items' => 1,
 		];
+		// F2: an undo that finished having put nothing back undid nothing: the batch can still be undone.
+		$this->undo_batches( [ [ 'changed_items' => 0 ] + $undo ] );
+		$this->assertInstanceOf( Plan::class, $this->planner()->plan( self::BATCH ) );
+		$this->undo_batches(
+			[
+				[
+					'status'        => 'partial',
+					'changed_items' => 0,
+				] + $undo,
+			]
+		);
+		$this->assertInstanceOf( Plan::class, $this->planner()->plan( self::BATCH ) );
 		$this->undo_batches( [ $undo ] );
 		$refusal = $this->assert_refused( 'already_undone' );
 		$this->assertSame( 40, $refusal->get_error_data()['undo_batch_id'] );
@@ -722,7 +1000,8 @@ final class PlannerTest extends TestCase {
 		$this->assertSame( 1, $this->planner()->conflicts( $batch ) );
 
 		$progress = new Progress( null, null, $clock );
-		$this->assertSame( Reversibility::PARTIALLY_REVERSIBLE, $progress->report_for( $batch, false )['reversibility']['state'], 'Progress, and so the single batch read, counts conflicts with the planner by default.' );
+		$this->assertSame( Reversibility::PARTIALLY_REVERSIBLE, $progress->report_for( $batch, false, null, true )['reversibility']['state'], 'Progress, and so the single batch read when asked, counts conflicts with the planner.' );
+		$this->assertNull( $progress->report_for( $batch, false )['reversibility']['conflicts'], 'Unless asked, the report does not count them (T85).' );
 		$GLOBALS['bulkcat_test']['products_loaded'] = [];
 		$this->assertSame(
 			[
@@ -740,5 +1019,131 @@ final class PlannerTest extends TestCase {
 
 		$this->store->batch['status'] = 'running';
 		$this->assertSame( 0, $this->planner()->conflicts( $this->store->batch ), 'A batch that cannot be planned counts none.' );
+	}
+
+	/**
+	 * The plan hash worked out as a stream, an item at a time, as the walk
+	 * adds each item it plans (T85, T111), with no whole-plan helper.
+	 *
+	 * @param Planner                    $planner  The planner.
+	 * @param int                        $batch_id Batch.
+	 * @param list<array<string, mixed>> $items    Items.
+	 */
+	private static function streamed_hash( Planner $planner, int $batch_id, array $items ): string {
+		$start   = new \ReflectionMethod( Planner::class, 'hash_start' );
+		$add     = new \ReflectionMethod( Planner::class, 'hash_item' );
+		$end     = new \ReflectionMethod( Planner::class, 'hash_end' );
+		$context = $start->invoke( $planner, $batch_id );
+		$first   = true;
+		foreach ( $items as $item ) {
+			$add->invoke( null, $context, $item, $first );
+			$first = false;
+		}
+		return $end->invoke( $planner, $context );
+	}
+
+	/**
+	 * T85: the plan hash of a whole-catalogue batch is worked out without a
+	 * second, sorted copy of every item and one encoding of them all (the
+	 * undo of 20,013 products peaked at 101 MB in a web request), and it is
+	 * the hash the whole-payload form gave. T111: the walk feeds it an item
+	 * at a time.
+	 */
+	public function test_the_plan_hash_is_the_whole_payload_hash_worked_out_as_a_stream(): void {
+		$planner   = $this->planner( [ 'variations_price' => true ] );
+		$settings  = new \ReflectionProperty( Planner::class, 'settings' );
+		$reference = static function ( int $batch_id, array $items ) use ( $planner, $settings ): string {
+			$sorted = static function ( mixed $value ) use ( &$sorted ): mixed {
+				if ( ! is_array( $value ) ) {
+					return $value;
+				}
+				if ( ! array_is_list( $value ) ) {
+					ksort( $value );
+				}
+				return array_map( $sorted, $value );
+			};
+			$bound  = array_intersect_key( $settings->getValue( $planner )->values(), array_flip( \BulkCatalogueManager\Engine\Preview::SETTINGS ) );
+			ksort( $bound );
+			$payload = [
+				'batch'    => $batch_id,
+				'items'    => $sorted( $items ),
+				'settings' => $bound,
+			];
+			return hash_hmac( 'sha256', 'bulk-catalogue-manager-for-woocommerce/undo/1/' . (string) wp_json_encode( $payload ), wp_salt( 'auth' ) );
+		};
+		$item      = [
+			'state'       => Plan::REVERTIBLE,
+			'object_type' => 'product',
+			'object_id'   => 7,
+			'operations'  => [
+				[
+					'args'   => [
+						'value'        => 'Café 12',
+						'field'        => 'regular_price',
+						'skip_already' => false,
+					],
+					'action' => 'set_value',
+				],
+			],
+			'code'        => '',
+			'reason'      => '',
+			'conflicts'   => [
+				[
+					'field'    => 'regular_price',
+					'expected' => '12.00',
+					'current'  => '13.50',
+				],
+			],
+		];
+		foreach ( [
+			'none'    => [],
+			'one'     => [ $item ],
+			'several' => [
+				$item,
+				array_merge(
+					$item,
+					[
+						'object_id' => 9,
+						'conflicts' => [],
+					]
+				),
+			],
+		] as $case => $items ) {
+			$this->assertSame( $reference( self::BATCH, $items ), self::streamed_hash( $planner, self::BATCH, $items ), $case );
+		}
+	}
+
+	public function test_the_plan_hash_of_a_large_plan_adds_almost_no_memory(): void {
+		if ( ! function_exists( 'memory_reset_peak_usage' ) ) {
+			$this->markTestSkipped( 'Measuring what one call adds needs memory_reset_peak_usage(), from PHP 8.2; the PHP 8.2 to 8.4 runs take this measurement.' );
+		}
+		$planner = $this->planner();
+		$items   = [];
+		for ( $id = 1; $id <= 20000; $id++ ) {
+			$items[] = [
+				'object_id'   => $id,
+				'object_type' => 'product',
+				'operations'  => [
+					[
+						'action' => 'set_value',
+						'args'   => [
+							'field'        => 'visible_on_site',
+							'value'        => 'on',
+							'skip_already' => false,
+						],
+					],
+				],
+				'state'       => Plan::REVERTIBLE,
+				'code'        => '',
+				'reason'      => '',
+				'conflicts'   => [],
+			];
+		}
+		gc_collect_cycles();
+		memory_reset_peak_usage();
+		$start = memory_get_usage();
+		self::streamed_hash( $planner, self::BATCH, $items );
+		$added = memory_get_peak_usage() - $start;
+		$this->assertLessThan( 2 * 1048576, $added, 'Hashing a 20,000-item plan added ' . round( $added / 1048576, 1 ) . ' MB.' );
 	}
 }

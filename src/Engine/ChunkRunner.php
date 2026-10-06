@@ -12,13 +12,19 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Engine;
 
+use BulkCatalogueManager\Requests\InlineReceipt;
 use BulkCatalogueManager\Data\BatchRepository;
 use BulkCatalogueManager\Data\ChangeRepository;
 use BulkCatalogueManager\Data\Registry as Data;
+use BulkCatalogueManager\External\Blocked;
+use BulkCatalogueManager\External\Manifest;
 use BulkCatalogueManager\Operations\Registry as Actions;
 use BulkCatalogueManager\Operations\Result;
 use BulkCatalogueManager\Settings\Settings;
 use BulkCatalogueManager\Undo\Original;
+use BulkCatalogueManager\Undo\Plan;
+use BulkCatalogueManager\Undo\Planner;
+use BulkCatalogueManager\Categories\TermUndo;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -74,6 +80,14 @@ defined( 'ABSPATH' ) || exit;
  *    place of the batch's: every item of an undo batch (T56; an undo item
  *    without one fails with a plain reason), and a variation "Also apply to
  *    variations" added to a bulk batch whose other steps do not reach it (T69);
+ *    an undo item is checked again just before it is written (T111):
+ *    the writer, once it has loaded the object (after its retry guard),
+ *    plans it again from the undone batch's journal (Writer::guarded(),
+ *    Undo\Planner::checker(): every field the batch changed, status and its
+ *    Off record included, the rows read once a chunk), and one changed since
+ *    the undo was previewed and confirmed is left alone whole, skipped with
+ *    the plan's own "changed since" sentence (the one RestoreStatus's guard
+ *    gives too), unless the undo was Revert anyway;
  * 7. adapts the chunk size: a chunk that used more than 70 per cent of the
  *    PHP time limit halves it for the rest of the batch, never below 10, and
  *    records why in the batch's note; one that used under 30 per cent grows
@@ -108,6 +122,19 @@ defined( 'ABSPATH' ) || exit;
  *
  * The queue runner's own batch size and concurrency options are never
  * touched; chunk size is the only knob (§12.4).
+ *
+ * External changes (T107, docs/EXTENSIONS.md §11): before claiming, a run of
+ * a batch with a provider manifest checks each provider it names against the
+ * providers registered now (External\Manifest::blocked()). When one is
+ * missing, unavailable, of an unsupported contract or unable to read a
+ * recorded format, the run claims nothing: every still-pending item is
+ * skipped with a plain reason and counted, the batch's note says why
+ * (External\Blocked: "Stopped because <add-on> is not active. …" when it is
+ * not registered, "Stopped because <add-on> cannot run. … <its reason>" when
+ * it is registered but cannot run), and the batch ends through the
+ * final-status rule, never complete. Nothing resumes it. Otherwise each
+ * chunk of an external change primes its objects once before they are
+ * written.
  */
 final class ChunkRunner {
 	/**
@@ -249,10 +276,80 @@ final class ChunkRunner {
 	 * @param mixed $batch_id The new batch.
 	 */
 	public static function enqueue( mixed $batch_id ): void {
-		$batch_id = (int) $batch_id;
-		if ( $batch_id > 0 && function_exists( 'as_enqueue_async_action' ) ) {
-			as_enqueue_async_action( self::HOOK, [ $batch_id ], Data::ACTION_GROUP );
+		self::ensure_queued( (int) $batch_id );
+	}
+
+	/**
+	 * Queue a batch's first chunk unless one is already pending or running
+	 * (T83). The `bulkcat_batch_created` listener and a durable request's
+	 * scheduling reconciliation (Requests\BatchRecovery) both come here, and
+	 * may do so at once from two requests answering the same batch, so the
+	 * check and the enqueue run under BatchRepository::with_schedule_lock()
+	 * (Action Scheduler's unique enqueue alone lets two concurrent inserts
+	 * through); if that lock cannot be taken they still run, unlocked. A
+	 * pending retry of the batch counts as queued. An Action Scheduler whose
+	 * uniqueness ignores arguments refuses the unique enqueue while another
+	 * batch's chunk is queued; then a plain enqueue follows.
+	 *
+	 * @param int $batch_id The batch.
+	 * @return bool Whether a chunk of the batch is now pending or running.
+	 */
+	public static function ensure_queued( int $batch_id ): bool {
+		if ( $batch_id < 1 || ! function_exists( 'as_enqueue_async_action' ) ) {
+			return false;
 		}
+		$batch = ( new BatchRepository() )->find_strict( $batch_id );
+		if ( null !== $batch && InlineReceipt::is_inline( $batch ) ) {
+			return false; }
+		// Checked and enqueued under the batch's scheduling lock: two requests answering one batch queue one chunk.
+		$queued = ( new BatchRepository() )->with_schedule_lock(
+			$batch_id,
+			static function () use ( $batch_id ): bool {
+				if ( self::queued( $batch_id ) ) {
+					return true;
+				}
+				$action = as_enqueue_async_action( self::HOOK, [ $batch_id ], Data::ACTION_GROUP, true );
+				if ( 0 === (int) $action && ! self::queued( $batch_id ) ) {
+					as_enqueue_async_action( self::HOOK, [ $batch_id ], Data::ACTION_GROUP );
+				}
+				return self::queued( $batch_id );
+			}
+		);
+		return true === $queued;
+	}
+
+	/**
+	 * Queue again every batch left queued or running with no pending chunk:
+	 * deactivation removes a batch's pending chunk (Data\Cleanup::deactivate())
+	 * and leaves its status and items as they were, so on reactivation the
+	 * batch carries on from its next pending item. Runs on activation and
+	 * where the admin repairs the recurring clean-ups (Plugin::migrate()).
+	 * A batch whose chunk is already pending or running is left alone.
+	 */
+	public static function resume_interrupted(): void {
+		if ( ! function_exists( 'as_enqueue_async_action' ) ) {
+			return;
+		}
+		foreach ( ( new BatchRepository() )->active_ids() as $batch_id ) {
+			try {
+				self::ensure_queued( $batch_id );
+			} catch ( \RuntimeException $error ) {
+				// A batch that cannot be read now is retried at the next repair.
+				unset( $error );
+			}
+		}
+	}
+
+	/**
+	 * Whether a chunk of the batch is pending or running, or its delayed
+	 * retry is waiting (a chunk that stopped early backs off RETRY_DELAY
+	 * seconds; resolving the request must not cut that short).
+	 *
+	 * @param int $batch_id The batch.
+	 */
+	private static function queued( int $batch_id ): bool {
+		return function_exists( 'as_has_scheduled_action' )
+			&& ( as_has_scheduled_action( self::HOOK, [ $batch_id ], Data::ACTION_GROUP ) || as_has_scheduled_action( self::HOOK, [ $batch_id, self::RETRY ], Data::ACTION_GROUP ) );
 	}
 
 	/**
@@ -277,10 +374,14 @@ final class ChunkRunner {
 	 * @throws \Throwable An exception out of a write, after the chunk's bookkeeping.
 	 */
 	public function run( int $batch_id ): string {
+		// What WordPress counts before this chunk: its per-object hook names are forgotten at the end (ticket 11).
+		$mark  = Memory::mark();
 		$batch = $this->batches->find( $batch_id );
 		if ( null === $batch || ! in_array( $batch['status'], self::ACTIVE, true ) ) {
 			return null === $batch ? 'missing' : 'stopped';
 		}
+		if ( InlineReceipt::is_inline( $batch ) ) {
+			return 'stopped'; }
 		if ( 'queued' === $batch['status'] && ! $this->batches->transition( $batch_id, 'queued', 'running' ) ) {
 			$batch = $this->batches->find( $batch_id );
 			if ( null === $batch || 'running' !== $batch['status'] ) {
@@ -292,11 +393,18 @@ final class ChunkRunner {
 		$now   = (int) $start;
 		$stale = gmdate( 'Y-m-d H:i:s', $now - BatchRepository::LEASE_SECONDS );
 
+		// An item claimed three times is settled from the journal and its state (ENGINE-2): written, the item that stopped the run, or never reached.
+		$exhausted = $this->batches->give_up_exhausted( $batch_id, $stale, self::stopped_reason(), self::unreached_reason() );
+		if ( $exhausted['done'] + $exhausted['failed'] > 0 ) {
+			$this->batches->increment_counters( $batch_id, $exhausted['done'] + $exhausted['failed'], $exhausted['done'], $exhausted['failed'] );
+		}
 		// An item a dead run was writing goes back to pending, so its stale claim can be taken over.
 		$this->batches->reset_stale_working( $batch_id, $stale );
-		$exhausted = $this->batches->fail_exhausted( $batch_id, $stale, self::exhausted_reason() );
-		if ( $exhausted > 0 ) {
-			$this->batches->increment_counters( $batch_id, $exhausted, 0, $exhausted );
+
+		$manifest = $batch['extensions'] ?? null;
+		$blocked  = is_array( $manifest ) ? Manifest::blocked( $manifest, $this->actions->providers() ) : null;
+		if ( null !== $blocked ) {
+			return $this->stop( $batch, $blocked );
 		}
 
 		$configured = $this->configured_size( $batch_id, self::PRODUCT );
@@ -318,21 +426,15 @@ final class ChunkRunner {
 		}
 
 		self::schedule_retry( $now + BatchRepository::LEASE_SECONDS + self::RETRY_DELAY, $batch_id );
-		[ $marks, $changed, $error, $stopped ] = $this->work( $batch, $items, $token );
+		[ $error, $stopped ] = $this->work( $batch, $items, $token );
 
-		$failed = 0;
-		foreach ( self::group( $marks ) as [ $state, $message, $ids ] ) {
-			$this->batches->mark_items( $batch_id, $ids, $state, $message );
-			$failed += 'failed' === $state ? count( $ids ) : 0;
-		}
-		$this->batches->increment_counters( $batch_id, count( $marks ), $changed, $failed );
 		if ( null !== $error || $stopped ) {
 			$this->batches->release_claim( $batch_id, $token );
 		}
 		$this->adapt( $batch_id, $size, $configured, ( $this->clock )() - $start, count( $items ), $kind );
 		self::unschedule_retry( $batch_id );
-		// What the chunk loaded is not needed again; a long runner would keep it all (T76).
-		Memory::release();
+		// What the chunk loaded, and the hook names it made WordPress count, are not needed again; a long runner would keep them all (T76, ticket 11).
+		Memory::release( $mark );
 
 		if ( null !== $error ) {
 			self::schedule_retry( (int) ( $this->clock )() + self::RETRY_DELAY, $batch_id );
@@ -342,36 +444,63 @@ final class ChunkRunner {
 	}
 
 	/**
+	 * Stop a batch whose provider cannot work on it now (T107): skip what is
+	 * pending, say so in the note, and finish it.
+	 *
+	 * @param array<string, mixed> $batch   The batch row.
+	 * @param Blocked              $blocked The provider and why it cannot work.
+	 */
+	private function stop( array $batch, Blocked $blocked ): string {
+		$batch_id = (int) $batch['batch_id'];
+		$skipped  = $this->batches->skip_pending( $batch_id, $blocked->skipped_sentence() );
+		if ( $skipped > 0 ) {
+			$this->batches->increment_counters( $batch_id, $skipped, 0, 0 );
+		}
+		$now = $this->batches->find( $batch_id );
+		$this->batches->record_note( $batch_id, $blocked->stopped_note( (int) ( $now['changed_items'] ?? 0 ) ) );
+		return $this->settle( $batch, false );
+	}
+
+	/**
 	 * Write the claimed items through one writer run, term counting deferred.
 	 * Each item is claimed for this run alone just before it is written
 	 * (BatchRepository::claim_item()): an item whose chunk claim another run
-	 * has taken over is skipped, neither written nor marked. Past LEASE_SHARE
-	 * of the lease no further item is claimed; the rest are left pending for
-	 * the successor.
+	 * has taken over is skipped, neither written nor marked. Each item is
+	 * marked and counted as soon as it is written (BatchRepository::finish_item(),
+	 * ENGINE-2), so a run killed part way loses nothing it finished. Past
+	 * LEASE_SHARE of the lease no further item is claimed; the rest are left
+	 * pending for the successor.
 	 *
 	 * @param array                                                                     $batch The batch row.
 	 * @param array<int, array{item_id: int, object_id: int, object_type: string, attempts: int}> $items Claimed items.
 	 * @param string                                                                    $token The chunk's claim token.
-	 * @return array{0: array<int, array{0: string, 1: string}>, 1: int, 2: ?\Throwable, 3: bool} Item id => [ state, message ], items saved, the exception that stopped the chunk, whether the lease ran short.
+	 * @return array{0: ?\Throwable, 1: bool} The exception that stopped the chunk, whether the lease ran short.
 	 */
 	private function work( array $batch, array $items, string $token ): array {
 		$writer     = Writer::for_batch( $this->actions, Journal::from_settings( $this->actions->fields(), $this->settings(), $this->changes ), $batch['batch_id'], $batch['user_id'] );
 		$operations = $batch['operations'];
 		$undo       = 'undo' === $batch['source'];
 		$own        = $this->batches->item_operations( $batch['batch_id'], array_values( array_map( static fn( array $item ): int => $item['item_id'], $items ) ) );
-		$marks      = [];
-		$changed    = 0;
-		$error      = null;
-		$stopped    = false;
-		$batches    = $this->batches;
-		$batch_id   = $batch['batch_id'];
-		$lease      = $this->lease_clock;
-		$deadline   = $lease() + self::LEASE_SHARE * BatchRepository::LEASE_SECONDS;
+		$writer->guarded( $undo ? $this->undo_guard( $batch, $items ) : null );
+		$terms    = $undo ? $this->term_guard( $batch, $items ) : null;
+		$error    = null;
+		$stopped  = false;
+		$written  = [];
+		$batches  = $this->batches;
+		$changes  = $this->changes;
+		$batch_id = $batch['batch_id'];
+		$lease    = $this->lease_clock;
+		$deadline = $lease() + self::LEASE_SHARE * BatchRepository::LEASE_SECONDS;
 
+		// An external change's objects are primed once per chunk (T107).
+		$writer->prime_external( $operations, array_values( array_map( static fn( array $item ): int => (int) $item['object_id'], $items ) ) );
 		wp_defer_term_counting( true );
 		try {
 			$writer->run(
-				static function ( Writer $writer ) use ( $items, $operations, $undo, $own, $batches, $batch_id, $token, $lease, $deadline, &$marks, &$changed, &$error, &$stopped ): void {
+				static function ( Writer $writer ) use ( $items, $operations, $undo, $own, $batches, $changes, $batch_id, $token, $lease, $deadline, $terms, &$error, &$stopped, &$written ): void {
+					$finish = static function ( int $item_id, array $mark, bool $changed ) use ( $batches, $batch_id, $token ): void {
+						$batches->finish_item( $batch_id, $item_id, $token, $mark[0], $mark[1], $changed );
+					};
 					foreach ( $items as $item ) {
 						if ( $lease() > $deadline ) {
 							$stopped = true;
@@ -381,32 +510,133 @@ final class ChunkRunner {
 							continue; // Another run took the chunk over when this one's lease went stale.
 						}
 						if ( 'term' === $item['object_type'] ) {
-							$marks[ $item['item_id'] ] = [ 'failed', __( 'Category changes cannot run in the background yet, so this change was not made.', 'bulk-catalogue-manager-for-woocommerce' ) ];
+							if ( $undo && isset( $own[ $item['item_id'] ] ) ) {
+								// Ticket 133 bug 1: a category's undo, checked again now unless Revert anyway.
+								[ $state, $message, $changed ] = TermUndo::write( $changes, $batch_id, $item['object_id'], $own[ $item['item_id'] ], null === $terms ? null : $terms( $item['object_id'] ) );
+								$finish( $item['item_id'], [ $state, $message ], $changed );
+								continue;
+							}
+							$finish( $item['item_id'], [ 'failed', __( 'Category changes cannot run in the background yet, so this change was not made.', 'bulk-catalogue-manager-for-woocommerce' ) ], false );
 							continue;
 						}
 						if ( $undo && ! isset( $own[ $item['item_id'] ] ) ) {
-							$marks[ $item['item_id'] ] = [ 'failed', self::no_operations_reason() ];
+							$finish( $item['item_id'], [ 'failed', self::no_operations_reason() ], false );
 							continue;
 						}
 						try {
-							$outcome = $writer->write( $item['object_id'], $own[ $item['item_id'] ] ?? $operations );
+							// The item's kind is checked: an object that became the other kind is never written as it was chosen (T83).
+							$outcome = $writer->write( $item['object_id'], $own[ $item['item_id'] ] ?? $operations, $item['object_type'] );
 						} catch ( \Throwable $e ) {
-							$marks[ $item['item_id'] ] = [ 'failed', self::error_reason() ];
-							$error                     = $e;
+							$error = $e;
+							$finish( $item['item_id'], [ 'failed', self::error_reason() ], false );
 							return;
 						}
-						$marks[ $item['item_id'] ] = self::item_state( $outcome );
-						$changed                  += $outcome->saved() ? 1 : 0;
+						// An object a killed run wrote is skipped as already done, but still counts as changed (SILENT-FAILURES-3).
+						$finish( $item['item_id'], self::item_state( $outcome ), $outcome->saved() || ( self::done_before( $outcome ) && $changes->has_applied( $batch_id, $item['object_id'] ) ) );
+						if ( $outcome->saved() && 'variation' === $item['object_type'] ) {
+							$written[ $item['item_id'] ] = $item['object_id'];
+						}
 					}
 				}
 			);
 		} catch ( \Throwable $e ) {
 			// A parent's resynchronisation at the end of the run; the items are already written.
 			$error ??= $e;
+			$this->resync( $batch_id, $written );
 		} finally {
 			wp_defer_term_counting( false );
 		}
-		return [ $marks, $changed, $error, $stopped ];
+		return [ $error, $stopped ];
+	}
+
+	/**
+	 * Resynchronise the parents of the variations a run saved, each on its
+	 * own, after the run's end-of-run resynchronisation threw
+	 * (SILENT-FAILURES-6): one parent that throws there stops the rest, so
+	 * every parent is tried again here, and the variations of a parent that
+	 * still cannot be refreshed are reported, so the batch never ends
+	 * complete with its price range or stock left stale.
+	 *
+	 * @param int             $batch_id The batch.
+	 * @param array<int, int> $written  Item id => variation id, for the variations the run saved.
+	 */
+	private function resync( int $batch_id, array $written ): void {
+		$parents = [];
+		foreach ( $written as $item_id => $variation_id ) {
+			$variation = wc_get_product( $variation_id );
+			$parent    = is_object( $variation ) ? (int) $variation->get_parent_id( 'edit' ) : 0;
+			if ( $parent > 0 ) {
+				$parents[ $parent ][] = (int) $item_id;
+			}
+		}
+		foreach ( $parents as $parent => $item_ids ) {
+			try {
+				\WC_Product_Variable::sync( $parent );
+			} catch ( \Throwable $e ) {
+				$this->batches->mark_items( $batch_id, $item_ids, 'done', self::stale_parent_reason() );
+			}
+		}
+	}
+
+	/**
+	 * The check an undo chunk's items get as the writer loads each (T111,
+	 * SPEC §9.4; Writer::guarded()): the undone batch's journal rows for the
+	 * chunk's objects are read once, and each object the writer has just
+	 * loaded is planned again as it stands (Undo\Planner::checker()). The
+	 * closure answers the plan's "changed since" sentence for one changed
+	 * since the undo was previewed and confirmed — the sentence RestoreStatus
+	 * gives for a status changed since, so one rule reads the same — or null
+	 * to write it. Revert anyway checks nothing here: it puts values back
+	 * regardless (RestoreStatus still guards the status it planned).
+	 *
+	 * @param array                                                                     $batch The undo batch.
+	 * @param array<int, array{item_id: int, object_id: int, object_type: string, attempts: int}> $items The chunk's items.
+	 * @return \Closure( int, object ): ?string|null Null when nothing is checked.
+	 */
+	private function undo_guard( array $batch, array $items ): ?\Closure {
+		$undo_of = (int) ( $batch['undo_of'] ?? 0 );
+		if ( $undo_of < 1 || true === ( $batch['selection']['force'] ?? false ) ) {
+			return null;
+		}
+		$ids = [];
+		foreach ( $items as $item ) {
+			if ( 'term' !== $item['object_type'] ) {
+				$ids[] = $item['object_id'];
+			}
+		}
+		if ( [] === $ids ) {
+			return null;
+		}
+		$now = ( new Planner( $this->batches, $this->changes, $this->actions, $this->settings() ) )->checker( $undo_of, $ids, (int) $batch['user_id'] );
+		// An object whose rows in the batch undone are gone is written as confirmed: the pruner never clears an undoing batch.
+		return static function ( int $object_id, object $product ) use ( $now ): ?string {
+			$item = $now( $object_id, $product );
+			return null !== $item && Plan::CONFLICTED === $item['state'] ? (string) $item['reason'] : null;
+		};
+	}
+
+	/**
+	 * The check an undo chunk's categories get just before each is written
+	 * (ticket 133 bug 1): the plan item of each as it stands then, or null
+	 * when nothing is checked (Revert anyway, or no category in the chunk).
+	 *
+	 * @param array                                                                     $batch The undo batch.
+	 * @param array<int, array{item_id: int, object_id: int, object_type: string, attempts: int}> $items The chunk's items.
+	 * @return \Closure( int ): ?array<string, mixed>|null
+	 */
+	private function term_guard( array $batch, array $items ): ?\Closure {
+		$undo_of = (int) ( $batch['undo_of'] ?? 0 );
+		$ids     = [];
+		foreach ( $items as $item ) {
+			if ( 'term' === $item['object_type'] ) {
+				$ids[] = $item['object_id'];
+			}
+		}
+		if ( $undo_of < 1 || [] === $ids || true === ( $batch['selection']['force'] ?? false ) ) {
+			return null;
+		}
+		$now = ( new Planner( $this->batches, $this->changes, $this->actions, $this->settings() ) )->checker( $undo_of, $ids, (int) $batch['user_id'] );
+		return static fn( int $object_id ): ?array => $now( $object_id );
 	}
 
 	/**
@@ -421,7 +651,19 @@ final class ChunkRunner {
 		if ( 'running' !== $this->batches->status( $batch_id ) ) {
 			return 'stopped';
 		}
-		if ( $this->batches->count_open( $batch_id ) > 0 ) {
+		// A count the database fails to give is never taken as 0 (SILENT-FAILURES-5): a retry settles the batch once it answers.
+		try {
+			$open = $this->batches->count_open( $batch_id, true );
+			if ( 0 === $open ) {
+				$applied  = $this->changes->count_for_batch( $batch_id, 'applied', true );
+				$reported = $this->batches->count_reported( $batch_id, true );
+				$failed   = $this->batches->count_items( $batch_id, 'failed', true );
+			}
+		} catch ( \RuntimeException $e ) {
+			self::schedule_retry( (int) ( $this->clock )() + self::RETRY_DELAY, $batch_id );
+			throw $e;
+		}
+		if ( $open > 0 ) {
 			if ( $claimed ) {
 				as_enqueue_async_action( self::HOOK, [ $batch_id ], Data::ACTION_GROUP );
 				return 'continued';
@@ -429,13 +671,11 @@ final class ChunkRunner {
 			self::schedule_retry( (int) ( $this->clock )() + BatchRepository::LEASE_SECONDS, $batch_id );
 			return 'waiting';
 		}
-		$status = self::final_status(
-			$this->batches->count_reported( $batch_id ),
-			$this->batches->count_items( $batch_id, 'failed' ),
-			$this->changes->count_for_batch( $batch_id, 'applied' )
-		);
+		$status = self::final_status( $reported, $failed, $applied );
 		if ( $this->batches->transition( $batch_id, 'running', $status ) ) {
-			Original::settle( $this->batches, $batch, $status );
+			// An undo that put an object back only in part has not undone the batch (ENGINE-1).
+			$whole = 'undo' !== ( $batch['source'] ?? '' ) || 0 === $this->changes->count_written_in_part( $batch_id );
+			Original::settle( $this->batches, $batch, $status, $applied, $whole );
 		}
 		return $status;
 	}
@@ -474,6 +714,20 @@ final class ChunkRunner {
 			return [ $outcome->saved() ? 'done' : 'skipped', self::join( $skipped ) ];
 		}
 		return [ 'done', '' ];
+	}
+
+	/**
+	 * Whether a write found its object already done by an earlier run of the batch.
+	 *
+	 * @param WriteOutcome $outcome The write.
+	 */
+	private static function done_before( WriteOutcome $outcome ): bool {
+		foreach ( $outcome->results() as $result ) {
+			if ( Journal::ALREADY_DONE === $result->code() ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -588,22 +842,6 @@ final class ChunkRunner {
 	}
 
 	/**
-	 * Items grouped for one UPDATE per state and message.
-	 *
-	 * @param array<int, array{0: string, 1: string}> $marks Item id => [ state, message ].
-	 * @return list<array{0: string, 1: string, 2: list<int>}>
-	 */
-	private static function group( array $marks ): array {
-		$groups = [];
-		foreach ( $marks as $item_id => [ $state, $message ] ) {
-			$key                 = $state . "\0" . $message;
-			$groups[ $key ]    ??= [ $state, $message, [] ];
-			$groups[ $key ][2][] = (int) $item_id;
-		}
-		return array_values( $groups );
-	}
-
-	/**
 	 * Distinct reasons as one message.
 	 *
 	 * @param list<string> $reasons Reasons.
@@ -632,10 +870,24 @@ final class ChunkRunner {
 	}
 
 	/**
-	 * The reason an item is given up on after MAX_ATTEMPTS claims.
+	 * The reason an item is given up on when its own write stopped the run on each of MAX_ATTEMPTS tries (ENGINE-2).
 	 */
-	private static function exhausted_reason(): string {
-		return __( 'This product could not be finished after three tries, so it was not changed. Open it to check it, then try the change again.', 'bulk-catalogue-manager-for-woocommerce' );
+	private static function stopped_reason(): string {
+		return __( 'The background run stopped while changing this product on each of three tries, so it may not have been finished. Open the product to check it.', 'bulk-catalogue-manager-for-woocommerce' );
+	}
+
+	/**
+	 * The reason an item is given up on when MAX_ATTEMPTS runs stopped before reaching it (ENGINE-2).
+	 */
+	private static function unreached_reason(): string {
+		return __( 'This product was not reached, because the background run stopped before getting to it on each of three tries. Nothing was done to it, so try the change again for it.', 'bulk-catalogue-manager-for-woocommerce' );
+	}
+
+	/**
+	 * The reason given on a saved variation whose variable product could not be refreshed (SILENT-FAILURES-6).
+	 */
+	private static function stale_parent_reason(): string {
+		return __( 'This variation was changed, but its variable product\'s price range and stock could not be refreshed. Open the variable product and update it to refresh them.', 'bulk-catalogue-manager-for-woocommerce' );
 	}
 
 	/**

@@ -19,6 +19,7 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Admin;
 
+use BulkCatalogueManager\Operations\Registry as Actions;
 use BulkCatalogueManager\Rest\Access;
 use BulkCatalogueManager\Rest\Routes;
 use BulkCatalogueManager\Settings\Settings;
@@ -130,6 +131,10 @@ final class Screen {
 			[ $this, 'render' ]
 		);
 		$this->hook_suffix = is_string( $hook ) ? $hook : '';
+		if ( '' !== $this->hook_suffix ) {
+			// Opening the screen repairs the schedules, so no other admin page pays for the check.
+			add_action( 'load-' . $this->hook_suffix, [ \BulkCatalogueManager\Plugin::class, 'repair_schedules' ], 10, 0 );
+		}
 	}
 
 	/**
@@ -161,6 +166,10 @@ final class Screen {
 		wp_set_script_translations( 'bulkcat-app', 'bulk-catalogue-manager-for-woocommerce', $dir . 'languages' );
 		wp_add_inline_script( 'bulkcat-app', 'window.bulkcatSettings = ' . wp_json_encode( $this->client_settings(), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT ) . ';', 'before' );
 		wp_enqueue_script( 'bulkcat-app' );
+		// Ticket 22: the category editor chooses its image in WordPress's own media library.
+		if ( current_user_can( 'upload_files' ) && function_exists( 'wp_enqueue_media' ) ) {
+			wp_enqueue_media();
+		}
 
 		wp_enqueue_style( 'bulkcat-app', plugins_url( 'assets/build/style-index.css', $this->plugin_file ), [], $asset['version'] );
 		wp_style_add_data( 'bulkcat-app', 'rtl', 'replace' );
@@ -212,6 +221,10 @@ final class Screen {
 					array_map( static fn( string $capability ): bool => current_user_can( $capability ), self::CLIENT_CAPABILITIES )
 				),
 			],
+			'categoryEdit'   => [
+				'url'  => TermEmbed::edit_url(),
+				'flag' => TermEmbed::FLAG,
+			],
 			'wpMajor'        => self::host_major(),
 			'dataviews'      => self::DATAVIEWS_VERSION,
 		];
@@ -227,6 +240,10 @@ final class Screen {
 		echo '<div class="wrap">';
 		printf( '<h1>%s</h1>', esc_html__( 'Bulk Catalogue Manager', 'bulk-catalogue-manager-for-woocommerce' ) );
 		echo '<hr class="wp-header-end">';
+		// An add-on refused at registration (docs/EXTENSIONS.md §3.2): one plain notice each; everything else works.
+		foreach ( Actions::instance()->providers()->refusals() as $refusal ) {
+			printf( '<div class="notice notice-warning"><p>%s</p></div>', esc_html( $refusal['reason'] ) );
+		}
 		if ( ! self::host_supported() ) {
 			printf(
 				'<div class="notice notice-error"><p>%s</p></div>',

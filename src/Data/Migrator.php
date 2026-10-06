@@ -25,9 +25,12 @@ final class Migrator {
 	 * changes, so existing installs re-run dbDelta(). 1: no tables (T5);
 	 * 2: the three §9.2 tables (T6); 3: the chunk runner's claim lease, item
 	 * message, chunk size and note (T34); 4: the batch's previewed count (T38); 5: the batch's action list and
-	 * pruned time (T54); 6: the item's own operations (T56).
+	 * pruned time (T54); 6: the item's own operations (T56); 7: immutable selections and durable request receipts (T81);
+	 * 8: the batch's provider manifest, `extensions` (T107); 9: every table
+	 * InnoDB, as storage readiness requires (FoundationStorage::ready()), with
+	 * existing plugin tables on another engine converted.
 	 */
-	public const SCHEMA_VERSION = '6';
+	public const SCHEMA_VERSION = '9';
 
 	/**
 	 * The option holding the schema version the database was last migrated to.
@@ -85,17 +88,43 @@ final class Migrator {
 			$collate    = $wpdb->get_charset_collate();
 			$statements = [];
 			foreach ( $tables as $name => $body ) {
-				$statements[] = "CREATE TABLE {$wpdb->prefix}{$name} (\n" . trim( $body ) . "\n) {$collate};";
+				$statements[] = "CREATE TABLE {$wpdb->prefix}{$name} (\n" . trim( $body ) . "\n) {$collate} ENGINE=InnoDB;";
 			}
 			dbDelta( $statements );
 			foreach ( array_keys( $tables ) as $name ) {
-				if ( ! self::table_exists( $wpdb->prefix . $name ) ) {
+				if ( ! self::table_exists( $wpdb->prefix . $name ) || ! self::ensure_innodb( $name ) ) {
 					return false;
 				}
 			}
 		}
+		if ( array_key_exists( Schema::REQUESTS, $tables ) && ! FoundationStorage::initialize() ) {
+			return false;
+		}
 		update_option( self::VERSION_OPTION, self::SCHEMA_VERSION );
 		return true;
+	}
+
+	/**
+	 * Convert one of the plugin's own tables to InnoDB when it was created on
+	 * another engine (a server whose default engine is MyISAM ignored or
+	 * predates the ENGINE clause). dbDelta() never changes a table's engine.
+	 *
+	 * @param string $name Unprefixed registry table name.
+	 * @return bool False only when a conversion was needed and failed.
+	 */
+	private static function ensure_innodb( string $name ): bool {
+		global $wpdb;
+		if ( ! Registry::valid_name( $name ) ) {
+			return true;
+		}
+		$table = $wpdb->prefix . $name;
+		// The engine must be read live after dbDelta(); no WordPress API reports it.
+		$engine = $wpdb->get_var( $wpdb->prepare( 'SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s', $table ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- A live schema read of the plugin's own table.
+		if ( ! is_string( $engine ) || 'INNODB' === strtoupper( $engine ) ) {
+			return true;
+		}
+		// The plugin's own registry table (validated bulkcat_ name plus the site prefix), as a %i identifier.
+		return false !== $wpdb->query( $wpdb->prepare( 'ALTER TABLE %i ENGINE=InnoDB', $table ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.DirectDatabaseQuery.SchemaChange -- Converts only the plugin's own table to the engine its transactions need.
 	}
 
 	/**
@@ -107,6 +136,7 @@ final class Migrator {
 		global $wpdb;
 		// Schema check after dbDelta(); nothing to cache. The table name is a prepared value.
 		$found = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $table ) ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Whether the plugin's own table exists must be read live from the database, which no WordPress API answers, and the pattern is escaped and prepared.
-		return $table === $found;
+		// A server with lower_case_table_names=1 answers an upper-case prefix in lower case: still the same table.
+		return is_string( $found ) && 0 === strcasecmp( $table, $found );
 	}
 }

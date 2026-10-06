@@ -3,7 +3,7 @@
 The product category tree for the Catalogue panel and the Categories tab
 (SPEC §4.1, §4.7, §7, §14; tickets T61–T66, client half). Everything is
 exported from `index.js`, whose default export is the Categories tab
-(`tab.js`: the panel over the whole catalogue):
+(`tab.js`, the workspace below):
 
 ```js
 import {
@@ -13,6 +13,60 @@ import {
 	SELECTION_DRAG_TYPE,
 } from './categories/index';
 ```
+
+## The Categories tab (`tab.js`)
+
+A full-width workspace (SPEC §4.7). A bar across the top holds the search
+(each match is marked and shown inside its path; rows shown only as a path
+are dimmed), **Expand all**, **Collapse all**, *Counts include
+subcategories*, the number of categories (or of matches) and **Add
+category**. Below it the tree (`<CategoryTree>` with `showAll={ false }`,
+`wrap`, `checkboxes`, `markMatches`, the open branches kept by the tab and
+`highlight` for a category just created) runs down the left and the pane down
+the right, each scrolling on its own; below 960 pixels the pane follows the
+tree.
+
+Choosing here never filters the product grid. A click chooses one category,
+Ctrl or Cmd click or its checkbox (or Space) adds or removes one, and Shift
+click takes the rows between (`workspace-model.js` `nextSelection()`).
+
+- One chosen: `category-details.js` shows its path (each ancestor a link),
+  name, slug, parent, description, display type and image (GET
+  /categories/{id}, for users who may manage categories), counts and
+  subcategories; **Rename** (in place), **Move to…**, **Add subcategory**
+  and **Edit details** (the editor, in the pane); then
+  `category-products.js`, ten products a page from GET /products filtered to
+  the category with or without its subcategories, the product cell and the
+  registry's default columns. Each product, and *Show them in the product
+  grid*, opens the Products tab through the page URL's `category` (ids,
+  comma separated) and `search` arguments, which that tab reads once
+  (`../catalogue/linked-category.js`).
+- **All fields** (`all-fields.js`) shows WordPress's own edit form for the
+  category (term.php) in the pane, so every field other plugins add to it
+  through `product_cat_edit_form_fields` appears and saves through WordPress
+  itself. The address comes from the localised `categoryEdit` (`{ url, flag
+  }`); with the flag, `src/Admin/TermEmbed.php` hides the admin's menu, bar,
+  footer, other notices and the Delete link on that page, and only for a user
+  who may edit that category. After the form is sent, WordPress's notice in
+  the frame says whether it saved; on a save the tree, the details and the
+  products are read again. **Open in WooCommerce** opens the same form on its
+  own, in a new tab.
+- Several chosen: `selection-pane.js` shows how many and which (with paths
+  and counts, each removable), **Move to…** (`move-many-dialog.js`: each
+  chosen category not inside another chosen one goes to the end of the new
+  parent) and *Show their products in the product grid*.
+- Further actions live in their own modules and register through
+  `workspace-actions.js` `registerCategoryAction()`; the panes draw a button
+  for each, the tree row's menu offers the same ones, and the tab opens its
+  dialog (or runs it at once, for an action with `run`). `category-actions.js`
+  registers **Make default** (one category, not the current default),
+  **Delete…** and **Merge into…** (one or several, never the default, which
+  WooCommerce does not delete; `delete-dialog.js` states the consequences).
+  After a delete the pane clears; after a merge the target is chosen; each is
+  announced and the tree read again. The default category carries a
+  **Default** badge in the tree, the details and the selection.
+- A confirmed creation is revealed, highlighted and chosen when the tree
+  read returns it (`tree.creation.phase === 'visible'`).
 
 ## `<CategoryPanel>`
 

@@ -12,6 +12,13 @@
  * BatchesController, behind Access::can_read; a missing batch answers 404
  * `bulkcat_not_found`.
  *
+ * External values (T108, docs/EXTENSIONS.md §8.3): a row whose field starts
+ * `x_` takes its field label from its batch's provider manifest and its old
+ * and new values from the text journalled with them, never the raw value
+ * and never the provider, so it stays readable after the add-on has gone;
+ * without a manifest the field reads "A value from an add-on that is not
+ * active". Manifests are read once per page (prime_manifests()).
+ *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
  */
@@ -20,9 +27,14 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Rest;
 
+use BulkCatalogueManager\Availability\OffRecord;
+use BulkCatalogueManager\Categories\HistoryText;
 use BulkCatalogueManager\Data\BatchRepository;
 use BulkCatalogueManager\Data\ChangeRepository;
 use BulkCatalogueManager\Data\Schema;
+use BulkCatalogueManager\External\Envelope;
+use BulkCatalogueManager\External\Manifest;
+use BulkCatalogueManager\External\Providers;
 use BulkCatalogueManager\Fields\Registry as Fields;
 
 defined( 'ABSPATH' ) || exit;
@@ -35,6 +47,13 @@ final class BatchChangesController implements ReadController {
 	 * The route, under Access::REST_NAMESPACE.
 	 */
 	public const ROUTE = '/batches/(?P<id>[\d]+)/changes';
+
+	/**
+	 * Provider manifests read so far, by batch id; null for a batch without one (T108).
+	 *
+	 * @var array<int, array<string, mixed>|null>
+	 */
+	private array $manifests = [];
 
 	/**
 	 * Build over the repositories.
@@ -140,6 +159,7 @@ final class BatchChangesController implements ReadController {
 	public function rows( int $batch_id, ?array $results, int $page, int $per_page, bool $count = true ): array {
 		$rows = $this->changes->page( $batch_id, $page, $per_page, $results );
 		self::prime_names( $rows );
+		$this->prime_manifests( $rows );
 		return [
 			'items' => array_map( [ $this, 'change' ], $rows ),
 			'total' => $count ? $this->changes->page_count( $batch_id, $results ) : 0,
@@ -154,9 +174,44 @@ final class BatchChangesController implements ReadController {
 	 * @param list<array<string, mixed>> $rows Typed journal rows.
 	 */
 	public static function prime_names( array $rows ): void {
-		$ids = array_values( array_unique( array_map( static fn( array $row ): int => $row['object_id'], array_filter( $rows, static fn( array $row ): bool => 'term' !== $row['object_type'] ) ) ) );
+		$ids   = array_values( array_unique( array_map( static fn( array $row ): int => $row['object_id'], array_filter( $rows, static fn( array $row ): bool => ! in_array( $row['object_type'], [ 'term', 'product_cat' ], true ) ) ) ) );
+		$terms = [];
+		foreach ( $rows as $row ) {
+			if ( isset( $row['prop'] ) ) {
+				$terms = array_merge( $terms, HistoryText::ids_of( $row ) );
+			} elseif ( in_array( $row['object_type'] ?? '', [ 'term', 'product_cat' ], true ) ) {
+				$terms[] = (int) $row['object_id'];
+			}
+		}
 		if ( [] !== $ids ) {
 			_prime_post_caches( $ids, false, false );
+		}
+		if ( [] !== $terms ) {
+			// Ticket 133 bug 3: categories by path, deleted ones by the path they had.
+			HistoryText::prime( $terms );
+		}
+	}
+
+	/**
+	 * Read the provider manifests of a page's batches in one go (T108), for
+	 * the pages with an external row.
+	 *
+	 * @param list<array<string, mixed>> $rows Typed journal rows.
+	 */
+	public function prime_manifests( array $rows ): void {
+		$missing = [];
+		foreach ( $rows as $row ) {
+			$batch = (int) ( $row['batch_id'] ?? 0 );
+			if ( Providers::is_external( (string) $row['prop'] ) && ! array_key_exists( $batch, $this->manifests ) ) {
+				$missing[ $batch ] = true;
+			}
+		}
+		if ( [] === $missing ) {
+			return;
+		}
+		$found = $this->batches->manifests( array_keys( $missing ) );
+		foreach ( array_keys( $missing ) as $batch ) {
+			$this->manifests[ $batch ] = $found[ $batch ] ?? null;
 		}
 	}
 
@@ -168,15 +223,42 @@ final class BatchChangesController implements ReadController {
 	 */
 	public function change( array $row ): array {
 		$field = $this->fields->get( $row['prop'] );
+		$label = null === $field ? ( \BulkCatalogueManager\Categories\Writer::label( (string) $row['prop'] ) ?? $row['prop'] ) : $field->label();
+		if ( Providers::is_external( (string) $row['prop'] ) ) {
+			// An add-on's value reads from the batch's manifest and the text journalled with it (T108).
+			$this->prime_manifests( [ $row ] );
+			$label            = Manifest::field_label( $this->manifests[ (int) ( $row['batch_id'] ?? 0 ) ] ?? null, (string) $row['prop'] ) ?? self::gone_label();
+			$row['old_value'] = Envelope::text( $row['old_value'] );
+			$row['new_value'] = Envelope::text( $row['new_value'] );
+		}
+		if ( \BulkCatalogueManager\Publishing\PublicationPassword::FIELD === $row['prop'] ) {
+			$row['old_value'] = \BulkCatalogueManager\Publishing\PublicationPassword::display( $row['old_value'] );
+			$row['new_value'] = \BulkCatalogueManager\Publishing\PublicationPassword::display( $row['new_value'] );
+		}
+		if ( OffRecord::FIELD === $row['prop'] ) {
+			// The Off record reads as the status it saved and when (SPEC §9.4); the journal keeps the JSON.
+			$row['old_value'] = OffRecord::describe( $row['old_value'] );
+			$row['new_value'] = OffRecord::describe( $row['new_value'] );
+		}
+		// Ticket 133 bug 3: categories, parents, images and category lists in words, never ids.
+		$text = HistoryText::values( $row );
+		if ( \BulkCatalogueManager\Categories\NativeForm::OTHER_PROP === $row['prop'] && null !== $text ) {
+			// Other plugins' fields: the journal keeps their keys and values; History shows only how many changed (1.3.4).
+			[ $row['old_value'], $row['new_value'] ] = $text;
+		}
 		return [
 			'change_id'   => $row['change_id'],
 			'object_id'   => $row['object_id'],
 			'object_type' => $row['object_type'],
 			'name'        => self::name( $row['object_id'], $row['object_type'] ),
 			'field'       => $row['prop'],
-			'field_label' => null === $field ? $row['prop'] : $field->label(),
+			'field_label' => $label,
 			'old_value'   => $row['old_value'],
 			'new_value'   => $row['new_value'],
+		] + ( null === $text ? [] : [
+			'old_text' => $text[0],
+			'new_text' => $text[1],
+		] ) + [
 			'result'      => $row['result'],
 			'message'     => $row['message'],
 			'detail'      => sprintf(
@@ -193,13 +275,28 @@ final class BatchChangesController implements ReadController {
 	}
 
 	/**
+	 * The field label of an add-on's value whose batch keeps no manifest (T108).
+	 */
+	public static function gone_label(): string {
+		return __( 'A value from an add-on that is not active', 'bulk-catalogue-manager-for-woocommerce' );
+	}
+
+	/**
 	 * An object's name for the feed: its title, or a plain stand-in when it is gone.
 	 *
 	 * @param int    $object_id   Object.
-	 * @param string $object_type product, variation or term.
+	 * @param string $object_type product, variation, term or product_cat.
 	 */
 	public static function name( int $object_id, string $object_type ): string {
-		$post  = 'term' === $object_type ? null : get_post( $object_id );
+		if ( 'term' === $object_type ) {
+			// Ticket 133 bug 3: a category by its path ("Clothing › Shirts › Golf"), entities decoded.
+			return HistoryText::path( $object_id );
+		}
+		if ( 'product_cat' === $object_type ) {
+			// Contract version 2: an add-on's change to a category, by its path as it is now (never a product's title).
+			return HistoryText::known_path( $object_id ) ?? __( 'A category that no longer exists', 'bulk-catalogue-manager-for-woocommerce' );
+		}
+		$post  = get_post( $object_id );
 		$title = is_object( $post ) ? (string) ( $post->post_title ?? '' ) : '';
 		if ( '' !== $title ) {
 			return $title;
@@ -236,6 +333,8 @@ final class BatchChangesController implements ReadController {
 				'field_label' => $text,
 				'old_value'   => $any,
 				'new_value'   => $any,
+				'old_text'    => $text + [ 'description' => __( 'The value before, in words, where History shows it as words rather than as stored (category names, paths, images and display types).', 'bulk-catalogue-manager-for-woocommerce' ) ],
+				'new_text'    => $text + [ 'description' => __( 'The value after, in words, as old_text.', 'bulk-catalogue-manager-for-woocommerce' ) ],
 				'result'      => [
 					'type' => 'string',
 					'enum' => Schema::CHANGE_RESULTS,

@@ -35,11 +35,18 @@ final class CategoryTree {
 	public const ORDER_META = 'order';
 
 	/**
-	 * The plugin's own term meta key for a category's position among its
-	 * siblings in this tree only, written by a move (Categories\Writer) and
-	 * never read by the storefront (SPEC §4.7, §7; Data\Registry).
+	 * The plugin's old term meta key for a category's position in this tree
+	 * only (1.3.2 and earlier). Retired by ticket 23: the tree reads and a
+	 * move writes WooCommerce's own ORDER_META, so this is never read or
+	 * written again, and never copied into the shop's order; values already
+	 * stored stay as they were until uninstall removes them (Data\Registry).
 	 */
 	public const TREE_ORDER_META = 'bulkcat_order';
+
+	/**
+	 * WooCommerce's option holding the default product category.
+	 */
+	public const DEFAULT_OPTION = 'default_product_cat';
 
 	/**
 	 * Build over a cache.
@@ -88,10 +95,51 @@ final class CategoryTree {
 
 	/**
 	 * Every product category, from one get_terms() call that also primes the
-	 * term meta cache both stored orders are read from.
+	 * term meta cache WooCommerce's order is read from.
 	 */
 	public static function tree(): Tree {
 		return self::tree_of( self::terms() );
+	}
+
+	/**
+	 * Every product category as the term tables hold it (1.3.4), for the
+	 * writes that must judge whether a category exists, and what it holds,
+	 * whoever is asking: undo, delete and merge. A term query is filtered
+	 * for the viewer (another plugin may hide categories from someone, or
+	 * from a background run with no user), so this reads the tables
+	 * directly and is never filtered. Its order is WooCommerce's stored
+	 * `order` meta, as tree() reads it.
+	 */
+	public static function complete(): Tree {
+		return self::tree_of( self::stored_terms() );
+	}
+
+	/**
+	 * Every product category straight from the term tables, unfiltered,
+	 * with the term meta cache primed for their order.
+	 *
+	 * @return list<object> Objects with term_id, name, slug, taxonomy, description and parent.
+	 */
+	public static function stored_terms(): array {
+		global $wpdb;
+		$rows = $wpdb->get_results( $wpdb->prepare( 'SELECT t.term_id, t.name, t.slug, tt.taxonomy, tt.description, tt.parent FROM %i AS t INNER JOIN %i AS tt ON tt.term_id = t.term_id WHERE tt.taxonomy = %s ORDER BY t.name ASC, t.term_id ASC', $wpdb->terms, $wpdb->term_taxonomy, Counts::TAXONOMY ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- An unfiltered read on purpose: term queries are filtered for the viewer.
+		$rows = is_array( $rows ) ? array_values( array_filter( $rows, 'is_object' ) ) : [];
+		if ( [] !== $rows ) {
+			update_meta_cache( 'term', array_map( static fn( object $row ): int => (int) $row->term_id, $rows ) );
+		}
+		return $rows;
+	}
+
+	/**
+	 * One product category straight from the term tables, unfiltered; null
+	 * when there is none with that id.
+	 *
+	 * @param int $id Term id.
+	 */
+	public static function stored_term( int $id ): ?object {
+		global $wpdb;
+		$rows = $wpdb->get_results( $wpdb->prepare( 'SELECT t.term_id, t.name, t.slug, tt.taxonomy, tt.description, tt.parent FROM %i AS t INNER JOIN %i AS tt ON tt.term_id = t.term_id WHERE tt.taxonomy = %s AND t.term_id = %d', $wpdb->terms, $wpdb->term_taxonomy, Counts::TAXONOMY, $id ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- An unfiltered read on purpose: term queries are filtered for the viewer.
+		return is_array( $rows ) && isset( $rows[0] ) && is_object( $rows[0] ) ? $rows[0] : null;
 	}
 
 	/**
@@ -105,6 +153,9 @@ final class CategoryTree {
 			[
 				'taxonomy'               => Counts::TAXONOMY,
 				'hide_empty'             => false,
+				// The names in the database's order (ORDER BY t.name), which WooCommerce's own order falls back to (1.3.4).
+				'orderby'                => 'name',
+				'order'                  => 'ASC',
 				'update_term_meta_cache' => true,
 			]
 		);
@@ -112,19 +163,26 @@ final class CategoryTree {
 	}
 
 	/**
-	 * The tree of a term list, with WooCommerce's order and the plugin's tree order.
+	 * The tree of a term list, in WooCommerce's order, with its default category marked.
 	 *
-	 * @param list<object> $terms Terms from terms().
+	 * @param list<object> $terms Terms from terms() or stored_terms(), in the database's name order.
 	 */
 	public static function tree_of( array $terms ): Tree {
-		$orders      = [];
-		$tree_orders = [];
+		$orders = [];
+		$ranks  = [];
 		foreach ( $terms as $term ) {
 			if ( isset( $term->term_id ) ) {
-				$orders[ (int) $term->term_id ]      = get_term_meta( (int) $term->term_id, self::ORDER_META, true );
-				$tree_orders[ (int) $term->term_id ] = get_term_meta( (int) $term->term_id, self::TREE_ORDER_META, true );
+				$orders[ (int) $term->term_id ]  = get_term_meta( (int) $term->term_id, self::ORDER_META, true );
+				$ranks[ (int) $term->term_id ] ??= count( $ranks );
 			}
 		}
-		return Tree::from_terms( $terms, $orders, $tree_orders );
+		return Tree::from_terms( $terms, $orders, self::default_id(), $ranks );
+	}
+
+	/**
+	 * The shop's default product category id, as WooCommerce reads it; 0 when none.
+	 */
+	public static function default_id(): int {
+		return max( 0, (int) get_option( self::DEFAULT_OPTION, 0 ) );
 	}
 }

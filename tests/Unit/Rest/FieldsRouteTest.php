@@ -130,7 +130,7 @@ final class FieldsRouteTest extends TestCase {
 		$actions = new Actions( new Registry() );
 		$this->assertTrue( array_is_list( $data['actions'] ) );
 		$this->assertSame( $actions->ids(), array_column( $data['actions'], 'id' ) );
-		$this->assertSame( [ 'set_value', 'clear', 'adjust', 'round', 'copy_price', 'find_replace', 'affix_sku', 'add_terms', 'remove_terms', 'replace_terms' ], array_column( $data['actions'], 'id' ) );
+		$this->assertSame( [ 'set_value', 'set_status', 'clear', 'adjust', 'round', 'copy_price', 'find_replace', 'affix_sku', 'add_terms', 'remove_terms', 'replace_terms' ], array_column( $data['actions'], 'id' ) );
 		$this->assertSame( $actions->to_client(), $data['actions'] );
 
 		$this->assertSame( Group::ALL, array_column( $data['groups'], 'id' ) );

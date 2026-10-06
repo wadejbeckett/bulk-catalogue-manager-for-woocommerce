@@ -5,13 +5,16 @@
  * row is written first, then its pending items, then the created action
  * fires; counts match; an id list keeps its order; a filter is re-resolved
  * at that moment with variations as its mode decides, a thousand ids per
- * statement; every refusal writes nothing; a request id replayed within
- * sixty seconds answers the same batch and writes nothing, and after that
- * creates a new one; a submission that raced past the replay check removes
- * its own row and answers the earlier batch.
+ * statement; every refusal writes nothing; a request id is looked up at
+ * any age before anything is written (T83): the one batch it exactly made
+ * answers as a replay, a changed payload or two batches already sharing the
+ * id are refused 409 `bulkcat_legacy_request` and no batch is ever created
+ * and then found to be a duplicate. The T38 apply check (preview hash,
+ * previewed count, confirmed difference) is held here for trusted callers;
+ * the REST route no longer creates through create() (see BatchesRouteTest).
  *
- * The concurrent-request integration test (two real requests with one
- * `uuid`, exactly one batch row and one set of items) waits on wp-env.
+ * Concurrent durable requests with one grant are proved natively
+ * (tests/probe/exact-batch-race.php): their receipt key serialises them.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -23,10 +26,12 @@ namespace BulkCatalogueManager\Tests\Unit\Engine;
 
 use BulkCatalogueManager\Data\BatchRepository;
 use BulkCatalogueManager\Engine\BatchFactory;
+use BulkCatalogueManager\Engine\Preview;
 use BulkCatalogueManager\Fields\Registry as Fields;
 use BulkCatalogueManager\Operations\Registry as Actions;
 use BulkCatalogueManager\Query\Criteria;
 use BulkCatalogueManager\Selection\Selection;
+use BulkCatalogueManager\Settings\Settings;
 use BulkCatalogueManager\Tests\Support\SqlEvaluator;
 use BulkCatalogueManager\Tests\Unit\Query\SeededCatalogue;
 use PHPUnit\Framework\TestCase;
@@ -53,7 +58,7 @@ final class BatchFactoryTest extends TestCase {
 	}
 
 	private function factory(): BatchFactory {
-		return new BatchFactory( new Actions( new Fields() ), null, fn(): int => $this->now );
+		return new BatchFactory( new Actions( new Fields() ) );
 	}
 
 	/**
@@ -72,6 +77,16 @@ final class BatchFactoryTest extends TestCase {
 
 	private static function filter( string $mode ): Selection {
 		return Selection::of_filter( Criteria::from_array( [ 'mode' => $mode ] ), 0 );
+	}
+
+	/**
+	 * Every statement but the request id's lookup in the batches table (T83).
+	 *
+	 * @return list<string>
+	 */
+	private static function catalogue_reads(): array {
+		global $wpdb;
+		return array_values( array_filter( $wpdb->queries, static fn( string $sql ): bool => ! str_starts_with( $sql, 'SELECT batch_id FROM `wp_bulkcat_batches` WHERE uuid = ' ) ) );
 	}
 
 	/**
@@ -150,8 +165,7 @@ final class BatchFactoryTest extends TestCase {
 			],
 			$batch['selection']
 		);
-		$this->assertSame( 60, array_values( $GLOBALS['bulkcat_test']['transient_ttl'] )[0] );
-		$this->assertStringStartsWith( BatchFactory::PREFIX, array_key_first( $GLOBALS['bulkcat_test']['transients'] ) );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['transients'] ?? [], 'No 60-second replay transient is written any more (T83).' );
 	}
 
 	public function test_ids_that_are_no_longer_a_listed_product_or_variation_are_left_out(): void {
@@ -223,7 +237,7 @@ final class BatchFactoryTest extends TestCase {
 		global $wpdb;
 		$result = $this->factory()->create( self::UUID, self::USER, array_fill( 0, 21, self::operations()[0] ), Selection::of_ids( [ 101 ] ) );
 		$this->assert_refused_with_nothing_written( $result, 'bulkcat_too_many_operations' );
-		$this->assertSame( [], $wpdb->queries, 'Nothing was even read.' );
+		$this->assertSame( [], self::catalogue_reads(), 'Only the request id was looked up; nothing else was read.' );
 
 		$this->assert_refused_with_nothing_written( $this->factory()->create( self::UUID, self::USER, [], Selection::of_ids( [ 101 ] ) ), 'bulkcat_no_operations' );
 		$this->assert_refused_with_nothing_written(
@@ -247,13 +261,13 @@ final class BatchFactoryTest extends TestCase {
 		$ids    = range( 1, Selection::MAX_OBJECTS + 1 );
 		$result = $this->assert_refused_with_nothing_written( $this->factory()->create( self::UUID, self::USER, self::operations(), Selection::of_ids( $ids ) ), 'bulkcat_selection_too_large' );
 		$this->assertSame( Selection::MAX_OBJECTS + 1, $result->get_error_data()['count'] );
-		$this->assertSame( [], $wpdb->queries );
+		$this->assertSame( [], self::catalogue_reads() );
 
 		$this->assert_refused_with_nothing_written(
 			$this->factory()->create( self::UUID, self::USER, self::operations(), Selection::of_filter( Criteria::from_array( [] ), Selection::MAX_OBJECTS + 1 ) ),
 			'bulkcat_selection_too_large'
 		);
-		$this->assertSame( [], $wpdb->queries );
+		$this->assertSame( [], self::catalogue_reads() );
 
 		$this->assertCount( Selection::MAX_OBJECTS, Selection::of_ids( range( 1, Selection::MAX_OBJECTS ) )->ids, 'Exactly the limit is a valid selection.' );
 	}
@@ -266,13 +280,11 @@ final class BatchFactoryTest extends TestCase {
 		);
 	}
 
-	public function test_a_repeated_request_id_answers_the_same_batch_and_writes_nothing(): void {
-		global $wpdb;
+	public function test_a_repeated_request_answers_the_same_batch_and_writes_nothing(): void {
 		$first  = $this->factory()->create( self::UUID, self::USER, self::operations(), Selection::of_ids( [ 101, 102 ] ) );
 		$writes = self::writes();
 
-		$this->now += 59;
-		$again      = $this->factory()->create( strtoupper( self::UUID ), self::USER, self::operations(), Selection::of_ids( [ 103, 104, 105 ] ) );
+		$again = $this->factory()->create( strtoupper( self::UUID ), self::USER, self::operations(), Selection::of_ids( [ 101, 102 ] ) );
 		$this->assertSame(
 			[
 				'batch_id'        => $first['batch_id'],
@@ -293,31 +305,156 @@ final class BatchFactoryTest extends TestCase {
 		$this->assertNotSame( $first['batch_id'], $other['batch_id'] );
 	}
 
-	public function test_a_request_id_older_than_sixty_seconds_creates_a_new_batch(): void {
+	public function test_a_request_id_answers_its_batch_at_any_age(): void {
+		// T83: 1.0 answered from a 60-second window and then made a second batch.
 		$first = $this->factory()->create( self::UUID, self::USER, self::operations(), Selection::of_ids( [ 101 ] ) );
-
-		// A minute passes: the clock moves on, and the first row is as old as that.
-		$this->now += 60;
-		$this->store->batches[ $first['batch_id'] ]['created_gmt'] = gmdate( 'Y-m-d H:i:s', $this->now - 61 );
-		$later = $this->factory()->create( self::UUID, self::USER, self::operations(), Selection::of_ids( [ 102 ] ) );
-		$this->assertFalse( $later['replayed'] );
-		$this->assertNotSame( $first['batch_id'], $later['batch_id'] );
-		$this->assertCount( 2, $this->store->batches );
-		$this->assertSame( [ 102 ], $this->store->object_ids( $later['batch_id'] ) );
+		// The response was lost, any cache evicted, and the retry comes a month later.
+		$GLOBALS['bulkcat_test']['transients']                     = [];
+		$this->store->batches[ $first['batch_id'] ]['created_gmt'] = gmdate( 'Y-m-d H:i:s', time() - 30 * 86400 );
+		$later = $this->factory()->create( self::UUID, self::USER, self::operations(), Selection::of_ids( [ 101 ] ) );
+		$this->assertTrue( $later['replayed'] );
+		$this->assertSame( $first['batch_id'], $later['batch_id'] );
+		$this->assertCount( 1, $this->store->batches );
 	}
 
-	public function test_a_submission_that_raced_past_the_replay_check_answers_the_earlier_batch(): void {
-		// The earlier request's row is written but its replay record is not yet.
-		$earlier = ( new BatchRepository() )->create( self::UUID, self::USER, 'bulk', self::operations(), [ 'kind' => 'ids' ], 1 );
+	public function test_a_request_id_reused_for_another_change_is_refused_with_its_batch(): void {
+		$first                     = $this->factory()->create( self::UUID, self::USER, self::operations(), Selection::of_ids( [ 101, 102 ] ) );
+		$writes                    = self::writes();
+		$other                     = self::operations();
+		$other[0]['args']['field'] = 'regular_price';
+		foreach ( [
+			'another selection'      => [ self::operations(), Selection::of_ids( [ 103, 104, 105 ] ) ],
+			'the same ids reordered' => [ self::operations(), Selection::of_ids( [ 102, 101 ] ) ],
+			'another change'         => [ $other, Selection::of_ids( [ 101, 102 ] ) ],
+			'an invalid change'      => [ [], Selection::of_ids( [ 101, 102 ] ) ],
+		] as $case => [ $operations, $selection ] ) {
+			$refused = $this->factory()->create( self::UUID, self::USER, $operations, $selection );
+			$this->assertInstanceOf( \WP_Error::class, $refused, $case );
+			$this->assertSame( BatchFactory::LEGACY, $refused->get_error_code(), $case );
+			$this->assertSame( 409, $refused->get_error_data()['status'], $case );
+			$this->assertSame( [ $first['batch_id'] ], $refused->get_error_data()['batch_ids'], $case );
+			$this->assertStringContainsString( 'Check History', $refused->get_error_message(), $case );
+		}
+		$this->assertSame( $writes, self::writes(), 'A refused reuse writes nothing.' );
+		$this->assertCount( 1, $this->store->batches );
+	}
+
+	public function test_a_request_id_two_batches_already_share_is_ambiguous_and_no_third_is_made(): void {
+		// Two 1.0 submissions raced past the old window and both kept their row.
+		$repository = new BatchRepository();
+		$earlier    = $repository->create( self::UUID, self::USER, 'bulk', self::operations(), [ 'kind' => 'ids' ], 1 );
+		$later      = $repository->create( self::UUID, self::USER, 'bulk', self::operations(), [ 'kind' => 'ids' ], 1 );
 		$this->store->sync();
+		$writes = self::writes();
 
 		$result = $this->factory()->create( self::UUID, self::USER, self::operations(), Selection::of_ids( [ 101, 102 ] ) );
-		$this->assertSame( $earlier, $result['batch_id'] );
-		$this->assertTrue( $result['replayed'] );
-		$this->assertSame( [ $earlier ], array_keys( $this->store->batches ), 'Exactly one batch row is left.' );
-		$this->assertSame( [], $this->store->items, 'The later submission wrote no items.' );
-		$this->assertSame( [ 'batch:1', 'batch:2', 'discard:wp_bulkcat_batch_items:2', 'discard:wp_bulkcat_batches:2' ], $this->store->log );
+		$this->assertInstanceOf( \WP_Error::class, $result );
+		$this->assertSame( BatchFactory::LEGACY, $result->get_error_code() );
+		$this->assertSame( [ $earlier, $later ], $result->get_error_data()['batch_ids'] );
+		$this->assertSame( $writes, self::writes(), 'Nothing is written.' );
+		$this->assertSame( [ $earlier, $later ], array_keys( $this->store->batches ), 'No third batch.' );
 		$this->assertSame( 0, did_action( BatchFactory::CREATED ) );
+	}
+
+	/**
+	 * The T38 apply check for a filter token with its preview's hash.
+	 *
+	 * @param Selection $selection  The selection.
+	 * @param string    $token      Its token as sent.
+	 * @param array     $operations The operations as posted.
+	 * @param array     $extra      The previewed count and the confirmation.
+	 * @return array<string, mixed>
+	 */
+	private static function apply( Selection $selection, string $token, array $operations, array $extra = [] ): array {
+		$list = ( new Actions( new Fields() ) )->validate_list( $operations );
+		return [
+			'token' => $token,
+			'hash'  => Preview::hash( '' !== $token ? $token : $selection->ids, is_array( $list ) ? $list : [], Settings::load() ),
+		] + $extra;
+	}
+
+	public function test_a_filter_whose_count_moved_since_the_preview_is_refused_with_both_numbers_unless_confirmed(): void {
+		$selection                      = Selection::of_filter( Criteria::from_array( [ 'search' => 'Shirt' ] ), 2 );
+		$this->db->tables['wp_posts'][] = [
+			'ID'                => 109,
+			'post_type'         => 'product',
+			'post_title'        => 'Linen Shirt',
+			'post_status'       => 'publish',
+			'post_parent'       => 0,
+			'menu_order'        => 0,
+			'post_date_gmt'     => '2026-09-23 08:00:00',
+			'post_modified_gmt' => '2026-09-23 08:00:00',
+		];
+		$refused                        = $this->factory()->create( self::UUID, self::USER, self::operations(), $selection, 'bulk', null, self::apply( $selection, 'token-a', self::operations(), [ 'previewed' => 2 ] ) );
+		$this->assert_refused_with_nothing_written( $refused, BatchFactory::CHANGED, 409 );
+		$this->assertSame( [ 2, 3 ], [ $refused->get_error_data()['previewed'], $refused->get_error_data()['current'] ] );
+		$this->assertStringContainsString( 'it showed 2, and 3 match now', $refused->get_error_message() );
+
+		$this->assert_refused_with_nothing_written( $this->factory()->create( self::UUID, self::USER, self::operations(), $selection, 'bulk', null, self::apply( $selection, 'token-a', self::operations() ) ), BatchFactory::CHANGED, 409 );
+
+		$confirmed = $this->factory()->create(
+			self::UUID,
+			self::USER,
+			self::operations(),
+			$selection,
+			'bulk',
+			null,
+			self::apply(
+				$selection,
+				'token-a',
+				self::operations(),
+				[
+					'previewed' => 2,
+					'confirmed' => true,
+				]
+			)
+		);
+		$this->assertSame( 3, $confirmed['total_items'] );
+		$this->assertSame( 2, $confirmed['previewed_items'] );
+		$this->assertSame( 2, $this->store->batches[ $confirmed['batch_id'] ]['previewed_items'] );
+	}
+
+	public function test_a_bulk_apply_needs_the_hash_of_its_preview(): void {
+		$selection = Selection::of_ids( [ 104, 201 ] );
+		$missing   = [
+			'token' => '',
+			'hash'  => '',
+		];
+		$stale     = $this->factory()->create( self::UUID, self::USER, self::operations(), $selection, 'bulk', null, $missing );
+		$this->assert_refused_with_nothing_written( $stale, BatchFactory::STALE_PREVIEW, 409 );
+		$this->assertStringContainsString( 'Preview the change again', $stale->get_error_message() );
+		$other                     = self::operations();
+		$other[0]['args']['field'] = 'regular_price';
+		$this->assert_refused_with_nothing_written( $this->factory()->create( self::UUID, self::USER, self::operations(), $selection, 'bulk', null, self::apply( $selection, '', $other ) ), BatchFactory::STALE_PREVIEW, 409 );
+		$this->assert_refused_with_nothing_written( $this->factory()->create( self::UUID, self::USER, self::operations(), $selection, 'bulk', null, self::apply( Selection::of_ids( [ 201, 104 ] ), '', self::operations() ) ), BatchFactory::STALE_PREVIEW, 409 );
+
+		$created = $this->factory()->create( self::UUID, self::USER, self::operations(), $selection, 'bulk', null, self::apply( $selection, '', self::operations() ) );
+		$this->assertSame( 2, $created['total_items'] );
+		$this->assertNull( $created['previewed_items'], 'Only a filter records the count it showed.' );
+	}
+
+	public function test_a_durable_scope_records_its_unavailable_members_already_failed(): void {
+		global $wpdb;
+		// Review finding: an unavailable member (here 108, in the bin) must never be written, even if it comes back.
+		$claims = [
+			'uuid'  => self::UUID,
+			'owner' => self::USER,
+		];
+		$result = $this->factory()->record_scope( $claims, self::operations(), [ [ 101, 'product' ], [ 108, 'product' ], [ 203, 'variation' ] ], [ 'kind' => 'ids' ], [ [ 108, 'product' ], [ 203, 'variation' ] ] );
+		$this->assertSame( 3, $result['total_items'] );
+		$this->assertSame( [ 'batch:1', 'items:1:3', 'failed:1:1', 'failed:1:1' ], $this->store->log, 'The header, every item, then the unavailable ones marked failed, per kind.' );
+		$states = array_column( $this->store->items, 'state', 'object_id' );
+		$this->assertSame(
+			[
+				101 => 'pending',
+				108 => 'failed',
+				203 => 'failed',
+			],
+			$states
+		);
+		$this->assertSame( BatchFactory::unavailable_reason(), $this->store->items[1]['message'] );
+		$this->assertStringNotContainsString( 'bulkcat_', BatchFactory::unavailable_reason() );
+		$this->assertContains( 'UPDATE `wp_bulkcat_batches` SET done_items = done_items + 2, changed_items = changed_items + 0, failed_items = failed_items + 2 WHERE batch_id = 1', $wpdb->queries, 'They count as done and failed at once.' );
 	}
 
 	public function test_items_that_cannot_be_written_leave_no_batch_behind(): void {
@@ -493,6 +630,99 @@ final class BatchFactoryTest extends TestCase {
 		$this->assertSame( [ 'batch:1', 'items:1:2', 'items:1:1' ], $this->store->log, 'Rows taking the batch list, then rows with their own, in two statements before any work.' );
 	}
 
+	/**
+	 * Give a seeded product its own Off record, as the switch writes it (T91).
+	 */
+	private function switch_off( int $id, string $saved = 'publish', int $batch = 7 ): void {
+		$this->db->tables['wp_postmeta'][] = [
+			'meta_id'    => 9000 + $id,
+			'post_id'    => $id,
+			'meta_key'   => '_bulkcat_availability_off', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- a test fixture row.
+			'meta_value' => \BulkCatalogueManager\Availability\OffRecord::create( $id, $saved, '2026-09-01T08:00:00Z', $batch )->to_json(), // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- a test fixture row.
+		];
+	}
+
+	/**
+	 * A Status step, with Also apply to variations on.
+	 *
+	 * @param string $value The status chosen.
+	 */
+	private static function status_step( string $value ): array {
+		return [
+			'action' => 'set_value',
+			'args'   => ( new Actions( new Fields() ) )->get( 'set_value' )->validate(
+				[
+					'field'               => 'status',
+					'value'               => $value,
+					'apply_to_variations' => true,
+				]
+			)->args(),
+		];
+	}
+
+	public function test_published_is_not_pushed_down_to_the_variations_of_an_off_product(): void {
+		// Accepted legacy T91 (SPEC §8): On restores only what Off saved, and Off saved nothing for variations.
+		$this->switch_off( 103 );
+		$actions = new Actions( new Fields() );
+		$list    = [ self::status_step( 'publish' ) ];
+		$off     = $this->factory()->expand( [ [ 103, 'product' ], [ 107, 'product' ] ], $list );
+		$this->assertSame( [ [ 103, 'product' ], [ 107, 'product' ] ], $off['objects'], 'No variation of the Off product 103 is added: none has a step left.' );
+		$this->assertSame( [ 0, 0, 2 ], [ $off['added'], $off['left_out'], $off['kept'] ] );
+
+		// With another step reaching variations, they are added with that step only.
+		$two   = array_map(
+			static fn( array $step ): array => [
+				'action' => $step['action'],
+				'args'   => $actions->get( $step['action'] )->validate( $step['args'] )->args(),
+			],
+			[
+				self::status_step( 'publish' ),
+				[
+					'action' => 'set_value',
+					'args'   => [
+						'field'               => 'stock_status',
+						'value'               => 'instock',
+						'apply_to_variations' => true,
+					],
+				],
+			]
+		);
+		$mixed = $this->factory()->expand( [ [ 103, 'product' ] ], $two );
+		$this->assertSame( [ 103, 202, 201 ], array_column( $mixed['objects'], 0 ) );
+		$this->assertSame( [ 'stock_status' ], array_map( static fn( array $step ): string => $step['args']['field'], $mixed['objects'][1][2] ) );
+		$this->assertSame( 2, $mixed['kept'] );
+
+		// A product that is not Off pushes Published down as before; Draft is still pushed down (and skipped per variation).
+		$this->db->tables['wp_postmeta'] = [];
+		$this->assertSame( [ [ 103, 'product' ], [ 202, 'variation' ], [ 201, 'variation' ] ], $this->factory()->expand( [ [ 103, 'product' ] ], $list )['objects'] );
+		$this->switch_off( 103 );
+		$draft = $this->factory()->expand( [ [ 103, 'product' ] ], [ self::status_step( 'draft' ) ] );
+		$this->assertSame( [ [ 103, 'product' ], [ 202, 'variation' ], [ 201, 'variation' ] ], $draft['objects'] );
+		$this->assertSame( 0, $draft['kept'] );
+	}
+
+	public function test_a_copied_record_does_not_keep_variations_back(): void {
+		// A record naming another product is no record (D8): the product is not Off.
+		$this->db->tables['wp_postmeta'][] = [
+			'meta_id'    => 9999,
+			'post_id'    => 103,
+			'meta_key'   => '_bulkcat_availability_off', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- a test fixture row.
+			'meta_value' => \BulkCatalogueManager\Availability\OffRecord::create( 999, 'publish', '2026-09-01T08:00:00Z', 7 )->to_json(), // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- a test fixture row.
+		];
+		$list                              = [ self::status_step( 'publish' ) ];
+		$this->assertSame( 0, $this->factory()->expand( [ [ 103, 'product' ] ], $list )['kept'] );
+	}
+
+	public function test_a_parents_off_state_changing_after_the_preview_changes_the_scope(): void {
+		// The per-variation step lists are signed, so Apply is stale when the parent is switched Off or On since.
+		$list   = [ self::status_step( 'publish' ) ];
+		$before = \BulkCatalogueManager\Engine\ExactScope::build( Selection::of_ids( [ 103 ] ), $list, $this->factory() );
+		$this->switch_off( 103 );
+		$after = \BulkCatalogueManager\Engine\ExactScope::build( Selection::of_ids( [ 103 ] ), $list, $this->factory() );
+		$this->assertNotSame( $before['scope_hash'], $after['scope_hash'] );
+		$this->assertSame( [ 3, 1 ], [ count( $before['objects'] ), count( $after['objects'] ) ] );
+	}
+
 	public function test_variations_only_mode_is_unaffected(): void {
 		$result = $this->factory()->create( self::UUID, self::USER, self::increase( true ), self::filter( Criteria::MODE_VARIATIONS ) );
 		$this->assertSame( 2, $result['total_items'] );
@@ -507,7 +737,7 @@ final class BatchFactoryTest extends TestCase {
 	}
 
 	public function test_the_variations_added_count_against_the_object_limit(): void {
-		$factory = new BatchFactory( new Actions( new Fields() ), null, fn(): int => $this->now, 3 );
+		$factory = new BatchFactory( new Actions( new Fields() ), null, 3 );
 		$result  = $this->assert_refused_with_nothing_written( $factory->create( self::UUID, self::USER, self::increase( true ), Selection::of_ids( [ 101, 103, 104 ] ) ), 'bulkcat_selection_too_large' );
 		$this->assertSame( [ 4, 3 ], [ $result->get_error_data()['count'], $result->get_error_data()['limit'] ], 'Two products and two variations pass a limit of three.' );
 		$this->assertStringContainsString( 'more than the 3 one change can include', $result->get_error_message() );

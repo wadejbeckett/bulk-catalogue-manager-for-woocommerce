@@ -4,20 +4,27 @@
  * History. A stalled queue is handed to `renderStalled` (T44's notice) when
  * given, else the server's own sentence is shown.
  */
+import { useEffect, useRef } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 
 import { FINISHED, useBatchProgress } from './hooks';
-import { formatNumber, productsPhrase } from './words';
+import { formatNumber, itemsPhrase, productsPhrase } from './words';
+import { countPhrase } from '../catalogue/selection/model';
+import { skippedOnly } from '../history/describe';
 import { useProgressAnnouncer } from './announce';
 
 /**
- * The finished batch's headline.
+ * The finished batch's headline. Its counts are of products and variations
+ * together, so they are items unless the change is known to hold products
+ * only (ticket 11).
  *
- * @param {Object} report Batch report.
+ * @param {Object}      report Batch report.
+ * @param {Object|null} byType `{ products, variations }` the change reached, from the preview, or null.
  * @return {string} Sentence.
  */
-export function doneSentence( report ) {
+export function doneSentence( report, byType = null ) {
 	const total = Number( report?.total_items ) || 0;
+	const products = !! byType && ! ( Number( byType.variations ) > 0 );
 	switch ( report?.status ) {
 		case 'failed':
 			return __(
@@ -30,27 +37,99 @@ export function doneSentence( report ) {
 				'bulk-catalogue-manager-for-woocommerce'
 			);
 		case 'partial':
+			if ( skippedOnly( report ) ) {
+				// 1.3.4: rows skipped as the preview said are not a failure.
+				return sprintf(
+					/* translators: 1: products done, such as "1,280"; 2: products in all, such as "1,284 products" or "1,284 items". */
+					__(
+						'%1$s of %2$s updated. Nothing failed; what was skipped, and why, is listed below.',
+						'bulk-catalogue-manager-for-woocommerce'
+					),
+					formatNumber( report.changed_items ?? report.done_items ),
+					products ? productsPhrase( total ) : itemsPhrase( total )
+				);
+			}
 			return sprintf(
-				/* translators: 1: products done, such as "1,280"; 2: products in all, such as "1,284 products". */
+				/* translators: 1: products done, such as "1,280"; 2: products in all, such as "1,284 products" or "1,284 items". */
 				__(
 					'%1$s of %2$s updated. The rest are listed below.',
 					'bulk-catalogue-manager-for-woocommerce'
 				),
 				formatNumber( report.changed_items ?? report.done_items ),
-				productsPhrase( total )
+				products ? productsPhrase( total ) : itemsPhrase( total )
 			);
 		default:
-			return sprintf(
-				/* translators: %s: a number, such as "1,284". */
-				_n(
-					'%s product updated.',
-					'%s products updated.',
-					total,
-					'bulk-catalogue-manager-for-woocommerce'
-				),
-				formatNumber( total )
-			);
+			return products
+				? sprintf(
+						/* translators: %s: a number, such as "1,284". */
+						_n(
+							'%s product updated.',
+							'%s products updated.',
+							total,
+							'bulk-catalogue-manager-for-woocommerce'
+						),
+						formatNumber( total )
+					)
+				: sprintf(
+						/* translators: %s: a number of products and variations together, such as "1,284". */
+						_n(
+							'%s item updated.',
+							'%s items updated.',
+							total,
+							'bulk-catalogue-manager-for-woocommerce'
+						),
+						formatNumber( total )
+					);
 	}
+}
+
+/**
+ * What a running change works through (FRONTEND-6): products and variations
+ * apart when the preview counted them, products when it reached products
+ * only, and items when that is not known, as doneSentence() words it.
+ *
+ * @param {number}      total  Objects in the change.
+ * @param {Object|null} byType `{ products, variations }` from the preview, or null.
+ * @return {string} Phrase.
+ */
+export function workPhrase( total, byType = null ) {
+	if ( ! byType ) {
+		return itemsPhrase( total );
+	}
+	return Number( byType.variations ) > 0
+		? countPhrase( total, byType )
+		: productsPhrase( total );
+}
+
+/**
+ * Reading the progress has stopped on an answer that will not change by
+ * asking again (FRONTEND-8): a plain sentence and Check again.
+ *
+ * @param {Object}   props              Props.
+ * @param {Function} props.onCheckAgain Read the progress again.
+ * @return {Element} Notice.
+ */
+export function ProgressStopped( { onCheckAgain } ) {
+	return (
+		<div className="bulkcat-bulk__notice is-warn" role="alert">
+			<p>
+				{ __(
+					'The progress can no longer be read. If you have been signed out, sign in again, then check again.',
+					'bulk-catalogue-manager-for-woocommerce'
+				) }
+			</p>
+			<button
+				type="button"
+				className="button button-small"
+				onClick={ onCheckAgain }
+			>
+				{ __(
+					'Check again',
+					'bulk-catalogue-manager-for-woocommerce'
+				) }
+			</button>
+		</div>
+	);
 }
 
 /**
@@ -59,27 +138,59 @@ export function doneSentence( report ) {
  * @param {Object}   props               Props.
  * @param {number}   props.batchId       The batch.
  * @param {number}   props.count         Products the preview said would change.
+ * @param {Object}   props.byType        `{ products, variations }` the change reached, from the preview, or null (ticket 11).
  * @param {number}   props.interval      Milliseconds between progress reads.
  * @param {Function} props.onUndo        Receives the batch id, or null.
  * @param {Function} props.onViewHistory Receives the batch id, or null.
  * @param {Function} props.renderStalled Receives the report, or null.
+ * @param {Function} props.onFinished    Receives the finished report, once (T84).
+ * @param {boolean}  props.replayed      The server answered a change it had already accepted.
+ * @param {boolean}  props.earlier       That change was an earlier attempt, resolved before a new one.
  * @return {Element} Done step.
  */
 export function DoneStep( {
 	batchId,
 	count,
+	byType = null,
 	interval,
 	onUndo,
 	onViewHistory,
 	renderStalled,
+	onFinished = null,
+	replayed = false,
+	earlier = false,
 } ) {
-	const { report, error } = useBatchProgress( batchId, interval );
+	const { report, error, stopped, checkAgain } = useBatchProgress(
+		batchId,
+		interval
+	);
 	const total = Number( report?.total_items ?? count ) || 0;
 	const done = Number( report?.done_items ) || 0;
 	const finished = FINISHED.includes( report?.status );
 	const percent = total > 0 ? Math.min( 100, ( done / total ) * 100 ) : 0;
 	// T75: milestones, not every read; the result below is a status, said once.
 	useProgressAnnouncer( done, total, finished );
+	const tell = useRef( onFinished );
+	tell.current = onFinished;
+	const told = useRef( false );
+	useEffect( () => {
+		if ( finished && ! told.current && tell.current ) {
+			told.current = true;
+			tell.current( report );
+		}
+	}, [ finished, report ] );
+	let receipt = '';
+	if ( earlier ) {
+		receipt = __(
+			'An earlier attempt to apply a change had gone through, so nothing new was sent. This is that change.',
+			'bulk-catalogue-manager-for-woocommerce'
+		);
+	} else if ( replayed ) {
+		receipt = __(
+			'This change had already been accepted, so it was not made again. This is its result.',
+			'bulk-catalogue-manager-for-woocommerce'
+		);
+	}
 
 	if ( ! finished ) {
 		return (
@@ -90,14 +201,15 @@ export function DoneStep( {
 						'bulk-catalogue-manager-for-woocommerce'
 					) }
 				</h3>
+				{ receipt && <p className="bulkcat-bulk__hint">{ receipt }</p> }
 				<p className="bulkcat-bulk__sub">
 					{ sprintf(
-						/* translators: %s: a number of products, such as "1,284 products". */
+						/* translators: %s: what the change works through, such as "1,284 products", "1,200 products and 50 variations" or "1,284 items". */
 						__(
 							'Working through %s in the background.',
 							'bulk-catalogue-manager-for-woocommerce'
 						),
-						productsPhrase( total )
+						workPhrase( total, byType )
 					) }
 				</p>
 				{ report?.stalled ? (
@@ -141,7 +253,7 @@ export function DoneStep( {
 						'bulk-catalogue-manager-for-woocommerce'
 					) }
 				</p>
-				{ error && (
+				{ error && ! stopped && (
 					<p className="bulkcat-bulk__hint">
 						{ __(
 							'The progress could not be read just now. Trying again.',
@@ -149,6 +261,7 @@ export function DoneStep( {
 						) }
 					</p>
 				) }
+				{ stopped && <ProgressStopped onCheckAgain={ checkAgain } /> }
 			</section>
 		);
 	}
@@ -165,7 +278,8 @@ export function DoneStep( {
 				}
 				role="status"
 			>
-				<strong>{ doneSentence( report ) }</strong>
+				<strong>{ doneSentence( report, byType ) }</strong>
+				{ receipt && <p>{ receipt }</p> }
 				{ report.selection_difference && (
 					<p>{ report.selection_difference }</p>
 				) }

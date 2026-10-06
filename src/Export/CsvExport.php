@@ -14,7 +14,10 @@
  *
  * The number of pages is fixed by the total the first page reports, so a
  * source is asked ceil( total / 100 ) times (once when nothing matches);
- * reading stops early if a page comes back empty.
+ * reading stops early if a page comes back empty. A source that walks its
+ * rows by key (Export\FilterRows) may say a page has `more` after it; the
+ * last counted page then does not end the file, so rows that came to match
+ * meanwhile cannot push one off the end.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -49,6 +52,7 @@ final class CsvExport {
 	 * @param string                     $separator "," or ";".
 	 * @param string                     $filename  Download name.
 	 * @param array<string, string>|null $labels    Headers by column key for columns that are not fields (HistoryColumns::labels()); null for field columns.
+	 * @param bool                       $bare_first Whether the first heading is written unquoted when it is plain letters (CsvWriter::row_bare_first()): a file meant for WooCommerce's importer, whose first heading is `ID`.
 	 * @throws \InvalidArgumentException When there is no column, a column repeats or is not a field.
 	 */
 	public function __construct(
@@ -58,7 +62,8 @@ final class CsvExport {
 		private readonly array $params,
 		private readonly string $separator,
 		private readonly string $filename,
-		private readonly ?array $labels = null
+		private readonly ?array $labels = null,
+		private readonly bool $bare_first = false
 	) {
 		if ( [] === $columns || count( array_unique( $columns ) ) !== count( $columns ) ) {
 			throw new \InvalidArgumentException( 'An export needs one or more distinct columns.' );
@@ -127,7 +132,11 @@ final class CsvExport {
 	 */
 	public function stream( $stream ): int {
 		$writer = new CsvWriter( $stream, $this->separator );
-		$writer->row( $this->header() );
+		if ( $this->bare_first ) {
+			$writer->row_bare_first( $this->header() );
+		} else {
+			$writer->row( $this->header() );
+		}
 		$writer->flush();
 
 		$written = 0;
@@ -136,6 +145,9 @@ final class CsvExport {
 			$result = $this->source->page( $this->params, $page, self::PER_PAGE );
 			if ( 1 === $page ) {
 				$pages = max( 1, (int) ceil( $result['total'] / self::PER_PAGE ) );
+			}
+			if ( $page === $pages && ! empty( $result['more'] ) ) {
+				++$pages;
 			}
 			if ( [] === $result['items'] ) {
 				break;

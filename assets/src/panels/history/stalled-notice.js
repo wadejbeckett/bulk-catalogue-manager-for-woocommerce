@@ -16,13 +16,43 @@ export const SCHEDULED_ACTIONS_URL =
 	'admin.php?page=wc-status&tab=action-scheduler';
 
 /**
+ * Inline work has no queue executor or timeout takeover, even in legacy rows.
+ *
+ * @param {Object} report Batch report.
+ * @return {boolean} Whether its original invocation is still unconfirmed.
+ */
+export function isUnclosedInline( report ) {
+	if ( report?.inline_receipt ) {
+		return report.inline_receipt.receipt_state !== 'closed';
+	}
+	return (
+		report?.source === 'inline' &&
+		( ! report.finished_gmt ||
+			[ 'queued', 'running' ].includes( report.status ) )
+	);
+}
+
+function InlineNotice() {
+	return (
+		<div className="notice notice-warning inline">
+			<p>
+				{ __(
+					'The save outcome is unconfirmed. This was an individual save, so background tasks cannot resume it. Check the save outcome in the catalogue or review the recorded changes here. Do not resend, cancel or undo it while its outcome is unconfirmed.',
+					'bulk-catalogue-manager-for-woocommerce'
+				) }
+			</p>
+		</div>
+	);
+}
+
+/**
  * Whether a batch report says the queue has stalled.
  *
  * @param {Object} report A GET /batches/{id} answer.
  * @return {boolean} Stalled.
  */
 export function isStalled( report ) {
-	return report?.stalled === true;
+	return ! isUnclosedInline( report ) && report?.stalled === true;
 }
 
 /**
@@ -33,6 +63,9 @@ export function isStalled( report ) {
  * @return {Element} Notice.
  */
 export function StalledNotice( { report } ) {
+	if ( isUnclosedInline( report ) ) {
+		return <InlineNotice />;
+	}
 	const done = Number( report?.done_items ) || 0;
 	const total = Number( report?.total_items ) || 0;
 	return (
@@ -89,6 +122,9 @@ export function StalledNotice( { report } ) {
  * @return {Element} Progress.
  */
 export function BatchProgress( { report } ) {
+	if ( isUnclosedInline( report ) ) {
+		return <InlineNotice />;
+	}
 	if ( isStalled( report ) ) {
 		return <StalledNotice report={ report } />;
 	}

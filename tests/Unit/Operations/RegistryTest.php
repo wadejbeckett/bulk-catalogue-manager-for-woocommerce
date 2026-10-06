@@ -41,6 +41,7 @@ final class RegistryTest extends TestCase {
 	 */
 	private const ACTIONS = [
 		'set_value'     => [ SetValue::class, 'publishing', 'T25' ],
+		'set_status'    => [ \BulkCatalogueManager\Operations\SetStatus::class, 'publishing', 'Native Status Task 2' ],
 		'clear'         => [ Clear::class, 'pricing', 'T25' ],
 		'adjust'        => [ Adjust::class, 'pricing', 'T26' ],
 		'round'         => [ \BulkCatalogueManager\Operations\Round::class, 'pricing', 'T26' ],
@@ -76,6 +77,10 @@ final class RegistryTest extends TestCase {
 				'field' => 'regular_price',
 				'value' => '12.5',
 			],
+			'set_status'    => [
+				'field' => 'status',
+				'value' => 'draft',
+			],
 			'clear'         => [ 'field' => 'sale_price' ],
 			'adjust'        => [
 				'field'     => 'regular_price',
@@ -99,7 +104,7 @@ final class RegistryTest extends TestCase {
 			'affix_sku'     => [
 				'field'    => 'sku',
 				'position' => 'prefix',
-				'text'     => 'ACME-',
+				'text'     => 'SHOP-',
 			],
 			'add_terms'     => [
 				'field' => 'category_ids',
@@ -283,7 +288,7 @@ final class RegistryTest extends TestCase {
 				'skip_already'        => true,
 				'apply_to_variations' => false,
 			],
-			$valid[3]['args'],
+			$valid[4]['args'],
 			'Round keeps only the setting its way uses.'
 		);
 		$this->assertSame(
@@ -295,7 +300,7 @@ final class RegistryTest extends TestCase {
 				'case_sensitive' => false,
 				'skip_already'   => true,
 			],
-			$valid[5]['args']
+			$valid[6]['args']
 		);
 
 		$off = self::registry()->validate_list(
@@ -368,6 +373,100 @@ final class RegistryTest extends TestCase {
 		$this->assertSame( 'Step 2 of 2: This step asks for an action that is not available. Choose an action from the list and try again.', $refusal->get_error_message() );
 		$this->assertSame( 2, $refusal->get_error_data()['step'] );
 		$this->assertSame( 'regex_replace', $refusal->get_error_data()['action'] );
+	}
+
+	public function test_restore_stock_is_internal(): void {
+		// TESTS-1: undo's one step for Manage stock and the stock values WooCommerce changed with it.
+		$registry = self::registry();
+		$this->assertNotContains( 'restore_stock', $registry->ids() );
+		$this->assertArrayNotHasKey( 'restore_stock', $registry->descriptors() );
+		$step = [
+			'action' => 'restore_stock',
+			'args'   => [
+				'field'          => 'manage_stock',
+				'value'          => true,
+				'stock_quantity' => 7,
+				'backorders'     => 'notify',
+			],
+		];
+		$this->refused( $registry->validate_list( [ $step ] ), 'bulkcat_unknown_action', 'the internal step from a client' );
+		$internal = $registry->validate_list( [ $step ], true );
+		$this->assertTrue( is_array( $internal ), $internal instanceof \WP_Error ? $internal->get_error_message() : '' );
+		$this->assertSame( [ 'manage_stock', true, 7, 'notify' ], [ $internal[0]['args']['field'], $internal[0]['args']['value'], $internal[0]['args']['stock_quantity'], $internal[0]['args']['backorders'] ] );
+		$this->refused(
+			$registry->validate_list(
+				[
+					[
+						'action' => 'restore_stock',
+						'args'   => [ 'field' => 'manage_stock' ],
+					],
+				],
+				true
+			),
+			'bulkcat_invalid_operation',
+			'without Manage stock to put back'
+		);
+	}
+
+	public function test_restore_status_is_internal(): void {
+		// T90 (SPEC §9.4): undo's one step for a status and its Off record; no client may send it.
+		$registry = self::registry();
+		$this->assertTrue( $registry->has( 'restore_status' ), 'get() resolves it, so the writer runs stored undo items.' );
+		$this->assertInstanceOf( \BulkCatalogueManager\Operations\RestoreStatus::class, $registry->get( 'restore_status' ) );
+		$this->assertSame( [ 'restore_status', 'restore_stock', 'restore_external' ], $registry->internal_ids(), 'T108 adds the external restore step beside it; TESTS-1 the Manage stock one.' );
+		$this->assertNotContains( 'restore_status', $registry->ids() );
+		$this->assertArrayNotHasKey( 'restore_status', $registry->descriptors() );
+		$this->assertNotContains( 'restore_status', array_column( $registry->to_client(), 'id' ) );
+		$this->assertSame( [ 'set_status' ], $registry->actions_for( 'status', Field::SET ), 'New Status uses set_status, never the internal step.' );
+
+		$step    = [
+			'action' => 'restore_status',
+			'args'   => [
+				'field'  => 'status',
+				'value'  => 'publish',
+				'record' => '',
+			],
+		];
+		$refusal = $this->refused( $registry->validate_list( [ $step ] ), 'bulkcat_unknown_action', 'the internal step from a client' );
+		$this->assertSame( 'restore_status', $refusal->get_error_data()['action'] );
+
+		$internal = $registry->validate_list( [ $step ], true );
+		$this->assertTrue( is_array( $internal ), $internal instanceof \WP_Error ? $internal->get_error_message() : '' );
+		$this->assertSame( 'restore_status', $internal[0]['action'] );
+		$this->assertSame( [ 'status', 'publish', '' ], [ $internal[0]['args']['field'], $internal[0]['args']['value'], $internal[0]['args']['record'] ] );
+
+		// Its own argument rules: a status it can put back, and a record that is '' or a record.
+		foreach ( [ [ 'value' => 'trash' ], [ 'record' => '{"id":1}' ], [] ] as $bad ) {
+			$this->refused(
+				$registry->validate_list(
+					[
+						[
+							'action' => 'restore_status',
+							'args'   => [ 'field' => 'status' ] + $bad,
+						],
+					],
+					true
+				),
+				'bulkcat_invalid_operation',
+				wp_json_encode( $bad )
+			);
+		}
+		$this->refused(
+			$registry->validate_list(
+				[
+					[
+						'action' => 'restore_status',
+						'args'   => [
+							'field' => 'regular_price',
+							'value' => 'publish',
+						],
+					],
+				],
+				true
+			),
+			'bulkcat_field_not_accepted',
+			'another field'
+		);
 	}
 
 	public function test_an_action_on_a_field_it_does_not_accept_is_refused(): void {
@@ -736,7 +835,7 @@ final class RegistryTest extends TestCase {
 			],
 		];
 		foreach ( $bad as $case => [ $action, $args ] ) {
-			$refusal = $this->refused(
+			$refusal         = $this->refused(
 				self::registry()->validate_list(
 					[
 						[
@@ -748,7 +847,8 @@ final class RegistryTest extends TestCase {
 				'bulkcat_invalid_operation',
 				$case
 			);
-			$this->assertSame( $action, $refusal->get_error_data()['action'], $case );
+			$expected_action = 'set_value' === $action && 'status' === ( $args['field'] ?? '' ) ? 'set_status' : $action;
+			$this->assertSame( $expected_action, $refusal->get_error_data()['action'], $case );
 			$this->assertSame( 1, $refusal->get_error_data()['step'], $case );
 		}
 

@@ -13,6 +13,8 @@
  * field and writes nothing, otherwise writes only the changed fields in one
  * PATCH — a batch of one, journalled and undoable — and the row updates from
  * the answer.
+ *
+ * Status follows the same one-Save path and displays the returned native state.
  */
 import { Button, Notice, Spinner } from '@wordpress/components';
 import { DataForm } from '@wordpress/dataviews';
@@ -25,6 +27,7 @@ import {
 } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 
+import { isUncertain } from '../../../requests';
 import { panelHref } from '../../../router';
 import { renderCell, formatDate, textOf } from '../cells';
 import { ROW, TERM_ROUTES, VISIBILITY } from '../defaults';
@@ -33,7 +36,6 @@ import { flattenTree } from '../use-catalogue';
 import { request } from '../../../api';
 import { loadProduct, loadRecentChange, loadVariations } from './requests';
 import {
-	allowedChoices,
 	comparable,
 	failureText,
 	fieldErrors,
@@ -41,7 +43,9 @@ import {
 	unavailableReason,
 	validate,
 } from './rules';
+import { editChoices, savedOutcome } from './status';
 import { productName } from './switch';
+import { formatNumber } from '../../bulk/words';
 
 const FOCUSABLE =
 	'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -82,7 +86,7 @@ export function formField( descriptor, item, termNames ) {
 		return { ...field, readOnly: true, description: reason, render: show };
 	}
 	if ( descriptor.type === 'enum' ) {
-		field.elements = allowedChoices( descriptor, item );
+		field.elements = editChoices( descriptor, item );
 	}
 	if ( descriptor.type === 'terms' || descriptor.type === 'term' ) {
 		const names = termNames[ descriptor.source ];
@@ -184,6 +188,8 @@ function usePanelTerms( descriptors ) {
  * @param {Function}      props.commit             Write values (scope.js).
  * @param {Function}      props.onClose            Close the drawer.
  * @param {Function}      props.onExpandVariations Show the variations in the grid, if wired (T67).
+ * @param {boolean}       props.blocked            An earlier save is unconfirmed.
+ * @param {Element}       props.notice             Save and recovery notice.
  * @return {Element} Drawer.
  */
 export default function DetailDrawer( {
@@ -192,6 +198,8 @@ export default function DetailDrawer( {
 	commit,
 	onClose,
 	onExpandVariations,
+	blocked = false,
+	notice,
 } ) {
 	const fields = useMemo(
 		() => panelDescriptors( descriptors ),
@@ -207,31 +215,80 @@ export default function DetailDrawer( {
 	const [ savedNote, setSavedNote ] = useState( '' );
 	const [ asking, setAsking ] = useState( false );
 	const [ variations, setVariations ] = useState( [] );
+	const [ variationTotal, setVariationTotal ] = useState( 0 );
+	// undefined while read, null when there is none, false when it could not be read.
 	const [ recent, setRecent ] = useState( undefined );
+	// FRONTEND-9: the reads that failed, which Try again makes again.
+	const [ failedReads, setFailedReads ] = useState( [] );
 	const panel = useRef( null );
 	const form = useRef( null );
 	const closeButton = useRef( null );
 	const keepButton = useRef( null );
+	const saveButton = useRef( null );
 	const report = useRef( false );
+	const inFlight = useRef( false );
+	const live = useRef( true );
 	const id = item.id;
 
-	useEffect( () => {
-		let live = true;
-		loadProduct(
-			item,
-			descriptors.map( ( field ) => field.key )
-		).then( ( row ) => {
-			if ( live ) {
-				setSaved( row );
-				setData( row );
-			}
-		} );
-		loadVariations( item ).then(
-			( rows ) => live && setVariations( rows )
+	const active = useRef( true );
+	const failed = ( part ) =>
+		active.current &&
+		setFailedReads( ( was ) =>
+			was.includes( part ) ? was : [ ...was, part ]
 		);
-		loadRecentChange( id ).then( ( row ) => live && setRecent( row ) );
+	const load = ( parts ) => {
+		setFailedReads( ( was ) =>
+			was.filter( ( part ) => ! parts.includes( part ) )
+		);
+		if ( parts.includes( 'product' ) ) {
+			loadProduct(
+				item,
+				descriptors.map( ( field ) => field.key )
+			)
+				.catch( () => {
+					failed( 'product' );
+					// The grid's row meanwhile: only its fields are shown.
+					return item;
+				} )
+				.then( ( row ) => {
+					if ( active.current ) {
+						setSaved( row );
+						setData( row );
+					}
+				} );
+		}
+		if ( parts.includes( 'variations' ) ) {
+			loadVariations( item ).then(
+				( answer ) => {
+					if ( active.current ) {
+						setVariations( answer.items );
+						setVariationTotal( answer.total );
+					}
+				},
+				() => failed( 'variations' )
+			);
+		}
+		if ( parts.includes( 'recent' ) ) {
+			setRecent( undefined );
+			loadRecentChange( id ).then(
+				( row ) => active.current && setRecent( row ),
+				() => {
+					if ( active.current ) {
+						setRecent( false );
+					}
+					failed( 'recent' );
+				}
+			);
+		}
+	};
+
+	useEffect( () => {
+		active.current = true;
+		live.current = true;
+		load( [ 'product', 'variations', 'recent' ] );
 		return () => {
-			live = false;
+			active.current = false;
+			live.current = false;
 		};
 		// Loaded once per product opened.
 		// eslint-disable-next-line react-hooks/exhaustive-deps
@@ -287,6 +344,7 @@ export default function DetailDrawer( {
 	const onChange = ( edits ) => {
 		setData( ( current ) => ( { ...current, ...edits } ) );
 		setSavedNote( '' );
+
 		setValidity( ( current ) => {
 			const next = { ...current };
 			Object.keys( edits ).forEach( ( key ) => delete next[ key ] );
@@ -307,7 +365,7 @@ export default function DetailDrawer( {
 
 	const save = ( event ) => {
 		event?.preventDefault();
-		if ( saving || ! dirty ) {
+		if ( inFlight.current || saving || blocked || ! dirty ) {
 			return;
 		}
 		const errors = {};
@@ -327,32 +385,91 @@ export default function DetailDrawer( {
 			const field = shown.find( ( each ) => each.key === key );
 			values[ key ] = toRequestValue( field, data[ key ] );
 		} );
+		const status = shown.find(
+			( field ) => changed.includes( field.key ) && field.nativeStatus
+		);
+		write( values, status );
+	};
+
+	/**
+	 * The one PATCH for the changed fields.
+	 *
+	 * @param {Object} values Field key => value.
+	 * @param {Object} status The Status descriptor when Status changed.
+	 */
+	const write = ( values, status ) => {
+		inFlight.current = true;
+		const submitted = { ...data };
 		setSaving( true );
 		setFailure( null );
-		commit( item, values, Object.keys( saved ) )
+		commit( item, values, Object.keys( saved ), {} )
 			.then( ( answer ) => {
+				if ( ! live.current ) {
+					return;
+				}
+				// A recovered receipt proves the save, not a current row. Keep the
+				// draft intact until a strict read succeeds (including newer input).
 				const row = { ...saved, ...( answer?.item || {} ) };
 				setSaved( row );
-				setData( row );
+				setData( ( current ) => {
+					if ( ! answer?.item ) {
+						return current;
+					}
+					const next = { ...row };
+					// Rebase unchanged submitted values and untouched fields only.
+					fields.forEach( ( field ) => {
+						if (
+							comparable( field, current[ field.key ] ) !==
+							comparable( field, submitted[ field.key ] )
+						) {
+							next[ field.key ] = current[ field.key ];
+						}
+					} );
+					return next;
+				} );
 				setValidity( {} );
-				setSavedNote(
-					sprintf(
-						/* translators: %s: the fields saved, separated by commas. */
-						__(
-							'Saved: %s.',
-							'bulk-catalogue-manager-for-woocommerce'
-						),
-						changed
-							.map(
-								( key ) =>
-									shown.find( ( each ) => each.key === key )
-										.label
-							)
-							.join( ', ' )
+
+				const labels = changed
+					.map(
+						( key ) =>
+							shown.find( ( each ) => each.key === key ).label
 					)
+					.join( ', ' );
+				const outcome = status ? savedOutcome( status, answer ) : '';
+				setSavedNote(
+					outcome
+						? sprintf(
+								/* translators: 1: the fields saved, separated by commas, 2: what the Status change did, such as "Scheduled". */
+								__(
+									'Saved: %1$s. %2$s.',
+									'bulk-catalogue-manager-for-woocommerce'
+								),
+								labels,
+								outcome
+							)
+						: sprintf(
+								/* translators: %s: the fields saved, separated by commas. */
+								__(
+									'Saved: %s.',
+									'bulk-catalogue-manager-for-woocommerce'
+								),
+								labels
+							)
 				);
 			} )
 			.catch( ( error ) => {
+				if ( ! live.current ) {
+					return;
+				}
+				if ( error?.data?.answer || isUncertain( error ) ) {
+					if ( error?.data?.answer?.item ) {
+						setSaved( ( current ) => ( {
+							...current,
+							...error.data.answer.item,
+						} ) );
+					}
+					return;
+				}
 				const refusals = fieldErrors( error, changed );
 				if ( Object.keys( refusals ).length ) {
 					refuse( refusals );
@@ -378,7 +495,12 @@ export default function DetailDrawer( {
 					data: error?.data,
 				} );
 			} )
-			.finally( () => setSaving( false ) );
+			.finally( () => {
+				inFlight.current = false;
+				if ( live.current ) {
+					setSaving( false );
+				}
+			} );
 	};
 
 	const onKeyDown = ( event ) => {
@@ -428,7 +550,12 @@ export default function DetailDrawer( {
 	} )();
 
 	let recentLine = '';
-	if ( recent === null ) {
+	if ( recent === false ) {
+		recentLine = __(
+			'The latest change could not be read.',
+			'bulk-catalogue-manager-for-woocommerce'
+		);
+	} else if ( recent === null ) {
 		recentLine = __(
 			'No changes recorded yet.',
 			'bulk-catalogue-manager-for-woocommerce'
@@ -535,6 +662,7 @@ export default function DetailDrawer( {
 							<p>{ failure.message }</p>
 						</Notice>
 					) }
+					{ notice }
 					{ ! data && (
 						<p className="bulkcat-drawer__loading">
 							<Spinner />
@@ -560,10 +688,13 @@ export default function DetailDrawer( {
 							/>
 							<div className="bulkcat-drawer__actions">
 								<Button
+									ref={ saveButton }
 									variant="primary"
 									type="submit"
 									isBusy={ saving }
-									aria-disabled={ ! dirty || saving }
+									aria-disabled={
+										! dirty || saving || blocked
+									}
 								>
 									{ __(
 										'Save',
@@ -581,6 +712,37 @@ export default function DetailDrawer( {
 							</div>
 						</form>
 					) }
+					{ failedReads.some( ( part ) => part !== 'recent' ) && (
+						<div
+							className="bulkcat-drawer__notice is-warn"
+							role="alert"
+						>
+							<p>
+								{ __(
+									'Some details of this product could not be loaded, so not everything is shown.',
+									'bulk-catalogue-manager-for-woocommerce'
+								) }
+							</p>
+							<Button
+								variant="secondary"
+								size="compact"
+								onClick={ () =>
+									load(
+										failedReads.filter(
+											// A product read again would overwrite edits in progress.
+											( part ) =>
+												part !== 'product' || ! dirty
+										)
+									)
+								}
+							>
+								{ __(
+									'Try again',
+									'bulk-catalogue-manager-for-woocommerce'
+								) }
+							</Button>
+						</div>
+					) }
 					{ variations.length > 0 && (
 						<section className="bulkcat-drawer__section">
 							<h4>
@@ -589,6 +751,19 @@ export default function DetailDrawer( {
 									'bulk-catalogue-manager-for-woocommerce'
 								) }
 							</h4>
+							{ variationTotal > variations.length && (
+								<p className="bulkcat-drawer__hint">
+									{ sprintf(
+										/* translators: 1: variations listed, such as "100"; 2: variations in all, such as "150". */
+										__(
+											'Showing the first %1$s of %2$s variations.',
+											'bulk-catalogue-manager-for-woocommerce'
+										),
+										formatNumber( variations.length ),
+										formatNumber( variationTotal )
+									) }
+								</p>
+							) }
 							<ul className="bulkcat-drawer__variations">
 								{ variations.map( ( row ) => (
 									<li key={ row.id }>
@@ -633,6 +808,20 @@ export default function DetailDrawer( {
 						</h4>
 						<p className="bulkcat-drawer__hint">
 							{ recentLine }{ ' ' }
+							{ recent === false &&
+								! failedReads.some(
+									( part ) => part !== 'recent'
+								) && (
+									<Button
+										variant="link"
+										onClick={ () => load( [ 'recent' ] ) }
+									>
+										{ __(
+											'Try again',
+											'bulk-catalogue-manager-for-woocommerce'
+										) }
+									</Button>
+								) }{ ' ' }
 							{ history && (
 								<a href={ history }>
 									{ __(

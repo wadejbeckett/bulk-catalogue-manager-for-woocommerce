@@ -3,9 +3,10 @@
  * milestones only and politely; the grid's arrow keys move between cell
  * controls and leave text fields alone; the table gains its caption, row
  * headers and aria-sort; the component repairs name the unnamed controls;
- * and History reads the batch the bulk panel links to.
+ * History reads the batch the bulk panel links to; and the export dialog
+ * (T103) is a named dialog whose every control has a visible label.
  */
-import { render } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 
 import {
 	MILESTONES,
@@ -21,6 +22,15 @@ import { describeTable } from '../../assets/src/panels/catalogue/table';
 import { repair } from '../../assets/src/a11y-patches';
 import { batchFrom } from '../../assets/src/panels/history/index';
 import { panelHref } from '../../assets/src/router';
+import { ExportControl } from '../../assets/src/panels/catalogue/views';
+import { defaultView } from '../../assets/src/panels/catalogue/fields';
+
+jest.mock( '@wordpress/api-fetch', () => {
+	const apiFetch = jest.fn();
+	apiFetch.use = jest.fn();
+	apiFetch.createNonceMiddleware = jest.fn();
+	return { __esModule: true, default: apiFetch };
+} );
 
 function Announcer( { done, total, finished = false } ) {
 	useProgressAnnouncer( done, total, finished );
@@ -186,5 +196,69 @@ describe( 'History links', () => {
 		expect( href ).toBe(
 			'https://example.test/wp-admin/edit.php?page=bulkcat&panel=settings'
 		);
+	} );
+} );
+
+describe( 'the export dialog', () => {
+	it( 'is a named dialog whose every control has a visible label, with the rows as a group', async () => {
+		const apiFetch = require( '@wordpress/api-fetch' ).default;
+		apiFetch.mockResolvedValue( {
+			rows: 3,
+			left_out: 0,
+			guarded_identifiers: 0,
+			guarded_names: 0,
+			whole_catalogue: true,
+			filename: 'catalogue-all-2026-09-29-1200.csv',
+		} );
+		const { REGISTRY } = require( './catalogue-fixture' );
+		render(
+			<ExportControl
+				query={ {} }
+				view={ defaultView( REGISTRY, { settings: {} } ) }
+				registry={ REGISTRY }
+				selection={ {
+					kind: 'snapshot',
+					token: '',
+					key: '',
+					count: 0,
+					byType: { products: 0, variations: 0 },
+					waiting: '',
+				} }
+			/>
+		);
+		fireEvent.click( screen.getByRole( 'button', { name: 'Export CSV' } ) );
+		const dialog = screen.getByRole( 'dialog', { name: 'Export CSV' } );
+		await within( dialog ).findByRole( 'checkbox', {
+			name: 'Yes, export the whole catalogue',
+		} );
+		expect(
+			within( dialog ).getByRole( 'group', { name: 'Rows' } ).tagName
+		).toBe( 'FIELDSET' );
+		const controls = dialog.querySelectorAll( 'input, button, select' );
+		expect( controls.length ).toBeGreaterThan( 4 );
+		controls.forEach( ( control ) => {
+			const labelled =
+				control.getAttribute( 'aria-label' ) ||
+				( control.id &&
+					dialog.querySelector( `label[for="${ control.id }"]` )
+						?.textContent ) ||
+				control.textContent;
+			expect( String( labelled || '' ).trim() ).not.toBe( '' );
+		} );
+		// Nothing selected: the unavailable choice says why, next to it.
+		const selected = within( dialog ).getByRole( 'radio', {
+			name: 'Selected',
+		} );
+		expect(
+			document.getElementById(
+				selected.getAttribute( 'aria-describedby' )
+			).textContent
+		).toBe( 'Nothing selected' );
+		// The summary is announced politely.
+		expect(
+			dialog
+				.querySelector( '.bulkcat-export-dialog__summary' )
+				.getAttribute( 'aria-live' )
+		).toBe( 'polite' );
 	} );
 } );

@@ -36,7 +36,7 @@ final class RegistryTest extends TestCase {
 	 */
 	private const TABLE = [
 		'name'               => [ 'text', 'post', 'post_title', [ 'set', 'find_replace' ], 'derived', false ],
-		'status'             => [ 'enum', 'post', 'post_status', [ 'set' ], 'conditional', false ],
+		'status'             => [ 'enum', 'post', 'post_status', [ 'set' ], 'conditional', true ], // T92: set inline, with the Off/On confirm.
 		'catalog_visibility' => [ 'enum', 'taxonomy', 'product_visibility', [ 'set' ], 'parent_only', false ],
 		'visible_on_site'    => [ 'enum', 'taxonomy', 'product_visibility', [ 'set' ], 'parent_only', true ],
 		'featured'           => [ 'boolean', 'taxonomy', 'product_visibility', [ 'set' ], 'parent_only', true ],
@@ -183,8 +183,8 @@ final class RegistryTest extends TestCase {
 		$client  = array_map( static fn( Field $field ): array => $field->to_client(), ( new Registry() )->all() );
 		$default = array_filter( $client, static fn( array $field ): bool => $field['defaultColumn'] );
 		uasort( $default, static fn( array $a, array $b ): int => $a['defaultOrder'] <=> $b['defaultOrder'] );
-		$this->assertSame( [ 'sku', 'category_ids', 'regular_price', 'stock_status', 'status', 'visible_on_site' ], array_keys( $default ), 'T40, T45, T75: the columns after the product cell, in the prototype\'s order; the sale price shows under the regular price.' );
-		$this->assertSame( [ 1, 2, 3, 4, 5, 6 ], array_column( $default, 'defaultOrder' ) );
+		$this->assertSame( [ 'sku', 'category_ids', 'regular_price', 'stock_status', 'status', 'catalog_visibility', 'visible_on_site' ], array_keys( $default ), 'T40, T45, T75: the columns after the product cell, in the prototype\'s order; the sale price shows under the regular price. Ticket 19: both presentations of the native listing visibility follow Status for a new layout.' );
+		$this->assertSame( [ 1, 2, 3, 4, 5, 6, 7 ], array_column( $default, 'defaultOrder' ) );
 		foreach ( array_diff_key( $client, $default ) as $key => $field ) {
 			$this->assertNull( $field['defaultOrder'], $key );
 		}
@@ -201,6 +201,7 @@ final class RegistryTest extends TestCase {
 		$this->assertSame(
 			[
 				'status'             => [
+					'future'  => Field::HIDES_OFF_SITE,
 					'draft'   => Field::HIDES_OFF_SITE,
 					'pending' => Field::HIDES_OFF_SITE,
 				],
@@ -210,6 +211,16 @@ final class RegistryTest extends TestCase {
 			$hiding
 		);
 		$this->assertArrayNotHasKey( 'hidesProduct', $client['status']['dataviews']['elements'][0], 'The DataViews elements stay value and label.' );
+
+		// T114: a scheduled product reads as Scheduled (its post status future), which the field
+		// cannot be set to: shown, filtered and validated when read, never offered or accepted to write.
+		$status = self::field( 'status' );
+		$this->assertSame( 'Scheduled', $status->choices()['future'] ?? null );
+		$this->assertSame( [ 'publish', 'draft', 'pending', 'private' ], $status->writable_choices() );
+		$this->assertTrue( true === rest_validate_value_from_schema( 'future', $status->rest_schema(), 'status' ), 'A scheduled row validates against the read schema.' );
+		$this->assertNotContains( 'future', $status->rest_arg()['enum'] ?? [], 'Never accepted as a value to write.' );
+		$this->assertInstanceOf( \WP_Error::class, $status->validate( 'future' ), 'Nor written by a bulk step.' );
+		$this->assertContains( 'future', array_column( $client['status']['dataviews']['elements'], 'value' ), 'The Status filter offers Scheduled.' );
 
 		$bad = static fn( array $args ): Field => new Field(
 			...( $args + [
@@ -420,7 +431,7 @@ final class RegistryTest extends TestCase {
 		$this->assertSame( 'Stock quantity has to be a whole number. Enter a number like 12.', self::field( 'stock_quantity' )->validate( '1.5' )->get_error_message() );
 		$this->assertSame( 'Regular price has to be a price of 0 or more, like 12.50, or left empty.', self::field( 'regular_price' )->validate( '-1' )->get_error_message() );
 		$this->assertSame( 'Stock status has to be one of: In stock, Out of stock, On backorder.', self::field( 'stock_status' )->validate( 'x' )->get_error_message() );
-		$this->assertSame( 'Visible on site has to be one of: Visible, Hidden.', self::field( 'visible_on_site' )->validate( 'partly' )->get_error_message() );
+		$this->assertSame( 'Shown in shop and search has to be one of: Shown, Hidden.', self::field( 'visible_on_site' )->validate( 'partly' )->get_error_message() );
 	}
 
 	public function test_money_uses_the_shop_precision_and_decimal_separator(): void {
@@ -663,6 +674,163 @@ final class RegistryTest extends TestCase {
 			],
 		];
 		foreach ( $bad as $change ) {
+			try {
+				new Field( ...array_merge( $base, $change ) );
+				$this->fail( 'Accepted ' . wp_json_encode( $change ) );
+			} catch ( \InvalidArgumentException $e ) {
+				$this->assertStringContainsString( 'is invalid', $e->getMessage() );
+			}
+		}
+	}
+
+	public function test_the_off_record_is_an_internal_field_no_public_list_holds(): void {
+		// T88: the journal, preview, writer and undo resolve it by key; nothing a client sees lists it.
+		$registry = new Registry();
+		$field    = $registry->get( 'availability_off' );
+		$this->assertTrue( null !== $field, 'get() resolves the internal field.' );
+		$this->assertSame( [ 'publication_password', 'availability_off', 'backorders', 'low_stock_amount' ], array_keys( $registry->internal() ), 'TESTS-1 adds the stock values WooCommerce clears with Manage stock.' );
+		$this->assertTrue( $field->internal() );
+		$this->assertSame( 'Status before Off', $field->label() );
+		$this->assertSame( [ Field::SET, Field::CLEAR ], $field->edit_kinds() );
+		$this->assertSame( Field::PARENT_ONLY, $field->variation_rule() );
+		$this->assertSame( '', $field->group() );
+		$this->assertFalse( $field->inline() );
+		$this->assertFalse( $field->filterable() );
+		$this->assertFalse( $field->sortable() );
+		foreach ( [
+			'all'        => $registry->all(),
+			'editable'   => $registry->editable(),
+			'columns'    => $registry->columns(),
+			'filterable' => $registry->filterable(),
+			'sortable'   => $registry->sortable(),
+		] as $list => $fields ) {
+			$this->assertArrayNotHasKey( 'availability_off', $fields, "$list() lists the internal field." );
+		}
+		$this->assertNotContains( 'availability_off', $registry->keys() );
+		$this->assertFalse( $registry->has( 'availability_off' ), 'has() answers for the public fields only.' );
+		$this->assertStringNotContainsString( 'availability_off', (string) wp_json_encode( $registry->to_client() ) );
+		$payload = (string) wp_json_encode( ( new FieldsController( $registry ) )->payload() );
+		$this->assertStringNotContainsString( 'availability_off', $payload );
+		$this->assertStringNotContainsString( 'Status before Off', $payload );
+		$this->assertSame( [], ( new Actions( $registry ) )->actions_for( 'availability_off', Field::SET ), 'No public action accepts it.' );
+		$this->assertSame( [], ( new Actions( $registry ) )->actions_for( 'availability_off', Field::CLEAR ) );
+		// A registry built from a test's own list still resolves it.
+		$this->assertTrue( null !== ( new Registry( [ $registry->get( 'sku' ) ] ) )->get( 'availability_off' ) );
+	}
+
+	public function test_the_off_record_field_reads_and_writes_the_product_bound_record(): void {
+		$field   = ( new Registry() )->get( 'availability_off' );
+		$json    = '{"id":41,"status":"private","at":"2026-09-28T14:03:11Z","batch":3}';
+		$product = new FakeProduct( 'simple', [ 'id' => 41 ] );
+		$this->assertSame( '', $field->read( $product ) );
+		$this->assertSame( $json, $field->write( $product, $json ) );
+		$this->assertSame( $json, $field->read( $product ) );
+		$this->assertSame( [ [ 'update', '_bulkcat_availability_off', $json ] ], $product->meta_calls );
+		$this->assertSame( '', $field->write( $product, '' ) );
+		$this->assertSame( '', $field->read( $product ) );
+		$this->assertSame( 'delete', $product->meta_calls[1][0] );
+		$this->assertSame( [], $product->sets, 'No CRUD setter runs, and nothing saves.' );
+
+		// Another product's record, an unreadable value, a variation: refused, nothing written.
+		$other = $field->write( $product, '{"id":42,"status":"private","at":"2026-09-28T14:03:11Z","batch":3}' );
+		$this->assertInstanceOf( \WP_Error::class, $other );
+		$this->assertInstanceOf( \WP_Error::class, $field->write( $product, '{"id":41,"status":"draft","at":"2026-09-28T14:03:11Z","batch":3}' ) );
+		$this->assertInstanceOf( \WP_Error::class, $field->write( new FakeProduct( 'variation', [ 'id' => 41 ] ), $json ) );
+		$this->assertCount( 2, $product->meta_calls );
+		$this->assertStringNotContainsString( 'bulkcat_', $other->get_error_message() );
+		$this->assertStringNotContainsString( '_bulkcat', $other->get_error_message() );
+	}
+
+	public function test_an_internal_field_has_no_group_default_place_filter_or_inline_edit(): void {
+		$base = [
+			'key'            => 'thing',
+			'label'          => 'Thing',
+			'type'           => Field::TEXT,
+			'storage'        => Storage::meta( '_thing' ),
+			'edit_kinds'     => [ Field::SET, Field::CLEAR ],
+			'variation_rule' => Field::PER_VARIATION,
+			'getter'         => 'get_thing',
+			'setter'         => 'set_thing',
+			'nullable'       => true,
+			'internal'       => true,
+		];
+		$this->assertTrue( ( new Field( ...$base ) )->internal() );
+		foreach ( [ [ 'group' => Group::STOCK ], [ 'default_order' => 3 ], [ 'filter_operators' => [ 'isAny' ] ], [ 'inline' => true ], [ 'sortable' => true ] ] as $change ) {
+			try {
+				new Field( ...array_merge( $base, $change ) );
+				$this->fail( 'Accepted ' . wp_json_encode( $change ) );
+			} catch ( \InvalidArgumentException $e ) {
+				$this->assertStringContainsString( 'is invalid', $e->getMessage() );
+			}
+		}
+	}
+
+	public function test_the_listing_switch_is_named_for_what_it_does_and_is_a_default_column(): void {
+		// T93 (SPEC §5.3): a listing control, not availability; the key stays for saved views, journals and CSV ids.
+		$field = self::field( 'visible_on_site' );
+		$this->assertSame( 'Shown in shop and search', $field->label() );
+		$this->assertSame(
+			[
+				'on'     => 'Shown',
+				'off'    => 'Hidden',
+				'partly' => 'Partly',
+			],
+			$field->choices()
+		);
+		$client = $field->to_client();
+		$this->assertTrue( $client['defaultColumn'], 'Ticket 19: shown by default for a new layout; a saved layout keeps its own columns.' );
+		$this->assertSame( 7, $client['defaultOrder'] );
+		$this->assertTrue( $field->inline(), 'Still set in place for an owner who adds the column.' );
+		$this->assertSame( [ 'on', 'off' ], $field->writable_choices() );
+	}
+
+	public function test_status_keeps_legacy_filter_predicates_without_offering_them(): void {
+		// T92 (SPEC §4.1, §5.5): filter-only choices are filter elements and filter values, never choices.
+		$status = self::field( 'status' );
+		$this->assertTrue( $status->inline(), 'Status uses one ordinary native edit.' );
+		$this->assertSame(
+			[
+				'off'             => 'Off (legacy status filter)',
+				'changed_outside' => 'Changed outside this screen (legacy status filter)',
+			],
+			$status->filter_choices()
+		);
+		$this->assertTrue( $status->to_client()['nativeStatus'] );
+		$this->assertArrayNotHasKey( 'switchesOffOn', $status->to_client() );
+		$this->assertSame( [ 'off', 'changed_outside' ], array_column( $status->to_client()['legacyFilterChoices'], 'value' ) );
+		$this->assertArrayNotHasKey( 'off', $status->choices() );
+		$this->assertNotContains( 'off', $status->writable_choices() );
+		$this->assertNotContains( 'changed_outside', $status->writable_choices() );
+		$elements = array_column( $status->dataviews()['elements'], 'label', 'value' );
+		// T114: Scheduled is read and filtered, never written.
+		$this->assertSame( [ 'publish', 'future', 'draft', 'pending', 'private' ], array_keys( $elements ) );
+		foreach ( ( new Registry() )->all() as $key => $field ) {
+			if ( 'status' !== $key ) {
+				$this->assertSame( [], $field->filter_choices(), "$key has no filter-only choices." );
+			}
+		}
+		// Only a filterable field of choices takes them.
+		$base = [
+			'key'              => 'thing',
+			'label'            => 'Thing',
+			'type'             => Field::ENUM,
+			'storage'          => Storage::meta( '_thing' ),
+			'edit_kinds'       => [ Field::SET ],
+			'variation_rule'   => Field::PER_VARIATION,
+			'getter'           => 'get_thing',
+			'setter'           => 'set_thing',
+			'choices'          => [ 'a' => 'A' ],
+			'filter_operators' => [ 'isAny' ],
+			'filter_choices'   => [ 'z' => 'Z' ],
+		];
+		$this->assertSame( [ 'z' => 'Z' ], ( new Field( ...$base ) )->filter_choices() );
+		foreach ( [
+			[ 'filter_operators' => [] ],
+			[
+				'type'    => Field::TEXT,
+				'choices' => [],
+			],
+		] as $change ) {
 			try {
 				new Field( ...array_merge( $base, $change ) );
 				$this->fail( 'Accepted ' . wp_json_encode( $change ) );

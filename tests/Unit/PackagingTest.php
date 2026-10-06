@@ -35,7 +35,8 @@ final class PackagingTest extends TestCase {
 		'src/Data/BatchRepository.php'  => 2,
 		'src/Data/ChangeRepository.php' => 4,
 		'src/Engine/BatchFactory.php'   => 1,
-		'src/Query/ProductQuery.php'    => 4,
+		'src/Export/GuardedValues.php'  => 1,
+		'src/Query/ProductQuery.php'    => 7,
 	];
 
 	/**
@@ -58,34 +59,78 @@ final class PackagingTest extends TestCase {
 	}
 
 	/**
-	 * Run git in the repository; null when git or the repository is missing.
+	 * Run bounded Git directly, spooling all three streams to avoid pipe deadlock.
 	 *
-	 * @param string $args  Arguments, already escaped.
-	 * @param string $input Standard input.
-	 * @return string|null
+	 * @param list<string> $args Git arguments.
+	 * @param string $input Complete standard input, never truncated.
 	 */
-	private static function git( string $args, string $input = '' ): ?string {
+	private static function git( array $args, string $input = '' ): ?string {
 		if ( ! file_exists( self::root() . '/.git' ) ) {
 			return null;
 		}
-		$process = proc_open( // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.system_calls_proc_open -- CLI test running git.
-			'git -C ' . escapeshellarg( self::root() ) . ' ' . $args,
-			[
-				0 => [ 'pipe', 'r' ],
-				1 => [ 'pipe', 'w' ],
-				2 => [ 'pipe', 'w' ],
-			],
-			$pipes
-		);
-		if ( ! is_resource( $process ) ) {
-			return null;
+		$limit = 16 * 1024 * 1024;
+		if ( strlen( $input ) > $limit ) {
+			throw new \RuntimeException( 'Archive Git input exceeds the 16 MiB test bound.' );
 		}
-		fwrite( $pipes[0], $input ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- CLI test.
-		fclose( $pipes[0] ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- CLI test.
-		$output = (string) stream_get_contents( $pipes[1] );
-		fclose( $pipes[1] ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- CLI test.
-		fclose( $pipes[2] ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- CLI test.
-		return 0 === proc_close( $process ) ? $output : null;
+		$streams = [];
+		$process = null;
+		try {
+			for ( $i = 0; $i < 3; ++$i ) {
+				$streams[ $i ] = tmpfile();
+				if ( ! is_resource( $streams[ $i ] ) ) {
+					throw new \RuntimeException( 'Cannot allocate archive Git stream.' );
+				}
+			}
+			if ( strlen( $input ) !== fwrite( $streams[0], $input ) || ! fflush( $streams[0] ) || ! rewind( $streams[0] ) ) {
+				throw new \RuntimeException( 'Cannot prepare complete archive Git input.' );
+			}
+			$process = proc_open( [ 'git', '-C', self::root(), ...$args ], $streams, $pipes ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.system_calls_proc_open -- Direct owned Git child; file-backed streams avoid bidirectional pipe deadlock.
+			if ( ! is_resource( $process ) ) {
+				throw new \RuntimeException( 'Cannot start archive Git child.' );
+			}
+			$deadline = microtime( true ) + 30;
+			do {
+				$status = proc_get_status( $process );
+				if ( false === $status ) {
+					throw new \RuntimeException( 'Cannot inspect archive Git child.' );
+				}
+				foreach ( [ 1, 2 ] as $index ) {
+					$stat = fstat( $streams[ $index ] );
+					if ( false === $stat || $stat['size'] > $limit ) {
+						throw new \RuntimeException( 'Archive Git output exceeds the 16 MiB test bound.' );
+					}
+				}
+				if ( ! $status['running'] ) {
+					break;
+				}
+				if ( microtime( true ) >= $deadline ) {
+					throw new \RuntimeException( 'Archive Git child exceeded 30 seconds.' );
+				}
+				usleep( 10000 );
+			} while ( true );
+			$closed  = proc_close( $process );
+			$process = null;
+			$exit    = $status['exitcode'] >= 0 ? $status['exitcode'] : $closed;
+			if ( ! rewind( $streams[1] ) || ! rewind( $streams[2] ) ) {
+				throw new \RuntimeException( 'Cannot rewind archive Git output.' );
+			}
+			$output = stream_get_contents( $streams[1] );
+			$error  = stream_get_contents( $streams[2] );
+			if ( false === $output || false === $error || 0 !== $exit || '' !== $error ) {
+				throw new \RuntimeException( 'Archive Git exit ' . $exit . ': ' . $error );
+			}
+			return $output;
+		} finally {
+			if ( is_resource( $process ) ) {
+				proc_terminate( $process, 9 ); // Only this directly spawned child, including timeout/error paths.
+				proc_close( $process );
+			}
+			foreach ( $streams as $stream ) {
+				if ( is_resource( $stream ) ) {
+					fclose( $stream );
+				}
+			}
+		}
 	}
 
 	/**
@@ -94,16 +139,19 @@ final class PackagingTest extends TestCase {
 	 * @return list<string>
 	 */
 	private function archive_files(): array {
-		$listed = self::git( 'ls-files -z --cached --others --exclude-standard' );
+		$listed = self::git( [ 'ls-files', '-z', '--cached', '--others', '--exclude-standard' ] );
 		if ( null === $listed ) {
 			$this->markTestSkipped( 'Not a git checkout (or no git): the archive list comes from git archive.' );
 		}
 		$files = array_values( array_filter( explode( "\0", $listed ), static fn( string $file ): bool => '' !== $file && is_file( self::root() . '/' . $file ) ) );
-		$attrs = (string) self::git( 'check-attr -z --stdin export-ignore', implode( "\0", $files ) . "\0" );
+		$attrs = (string) self::git( [ 'check-attr', '-z', '--stdin', 'export-ignore' ], implode( "\0", $files ) . "\0" );
 		$parts = explode( "\0", $attrs );
 		$count = count( $parts );
-		$ship  = [];
+		$this->assertSame( 3 * count( $files ) + 1, $count, 'Every complete path has an attribute result.' );
+		$ship = [];
 		for ( $i = 0; $i + 2 < $count; $i += 3 ) {
+			$this->assertSame( $files[ intdiv( $i, 3 ) ], $parts[ $i ] );
+			$this->assertSame( 'export-ignore', $parts[ $i + 1 ] );
 			if ( 'set' !== $parts[ $i + 2 ] ) {
 				$ship[] = $parts[ $i ];
 			}
@@ -171,6 +219,20 @@ final class PackagingTest extends TestCase {
 		}
 		foreach ( [ 'assets/src/index.js', 'webpack.config.js', 'package.json', 'package-lock.json', 'assets/build/index.js' ] as $file ) {
 			$this->assertContains( $file, $files, 'The readable source and its build configuration ship beside the bundle (SPEC §15).' );
+		}
+	}
+
+	public function test_the_external_action_test_provider_never_ships(): void {
+		// E1 (docs/EXTENSIONS.md §15.1): the neutral test provider lives in the test tree only.
+		$files = $this->archive_files();
+		foreach ( [ 'tests/Support/Extension/SampleProvider.php', 'tests/Support/Extension/load.php', 'tests/fixtures/mu-plugins/bulkcat-sample-provider.php' ] as $fixture ) {
+			$this->assertFileExists( self::root() . '/' . $fixture );
+			$this->assertNotContains( $fixture, $files, $fixture . ' must not ship.' );
+		}
+		foreach ( $this->code_files() as $file ) {
+			$code = (string) file_get_contents( self::root() . '/' . $file );
+			$this->assertStringNotContainsString( 'Tests\\Support\\Extension', $code, $file . ' refers to the test provider.' );
+			$this->assertStringNotContainsString( 'x_sample_', $code, $file . ' names a test provider id.' );
 		}
 	}
 
@@ -321,14 +383,26 @@ final class PackagingTest extends TestCase {
 		$this->assertSame( [], $late, 'Put defined( \'ABSPATH\' ) || exit; within the first 40 lines: move the long description into the class docblock.' );
 	}
 
+	private static function untraceable_database_calls( string $code ): int {
+		return preg_match_all( '/\$wpdb->(?:get_results|get_var|get_col|get_row|query)\(\s*\$this->/', $code )
+			+ preg_match_all( '/\$wpdb->prepare\(\s*\$/', $code )
+			+ preg_match_all( '/\$wpdb->prepare\(\s*"[^"]*\{\$where\}/', $code );
+	}
+
+	public function test_database_scan_distinguishes_native_prepare_from_sql_prepare(): void {
+		$this->assertSame( 0, self::untraceable_database_calls( '$inline->prepare( $input );' ) );
+		$this->assertSame( 1, self::untraceable_database_calls( '$wpdb->prepare( $sql, ...$args );' ) );
+		$this->assertSame( 1, self::untraceable_database_calls( '$wpdb->get_results( $this->query() );' ) );
+		$this->assertSame( 1, self::untraceable_database_calls( '$wpdb->prepare( "SELECT id FROM t WHERE {$where}", $id );' ) );
+		$this->assertSame( 0, self::untraceable_database_calls( '$wpdb->prepare( "SELECT id FROM t WHERE id = %d", $id );' ) );
+	}
+
 	public function test_database_calls_plugin_check_cannot_trace_are_only_the_listed_reads(): void {
 		$found = [];
 		foreach ( (array) glob( self::root() . '/src/{*,*/*,*/*/*}.php', GLOB_BRACE ) as $path ) {
 			$file = substr( $path, strlen( self::root() ) + 1 );
 			$code = (string) file_get_contents( $path );
-			$hits = preg_match_all( '/\$wpdb->(?:get_results|get_var|get_col|get_row|query)\(\s*\$this->/', $code )
-				+ preg_match_all( '/->prepare\(\s*\$/', $code )
-				+ preg_match_all( '/->prepare\(\s*"[^"]*\{\$where\}/', $code );
+			$hits = self::untraceable_database_calls( $code );
 			if ( $hits > 0 ) {
 				$found[ $file ] = $hits;
 			}
@@ -372,5 +446,29 @@ final class PackagingTest extends TestCase {
 		if ( isset( $composer['version'] ) ) {
 			$this->assertSame( Plugin::VERSION, $composer['version'], 'composer.json version.' );
 		}
+	}
+
+	public function test_readme_ci_and_wp_env_agree_with_the_woocommerce_minimum(): void {
+		// Ticket 04 (WooCommerce 11.1): every place that names the minimum moves together.
+		$readme = (string) file_get_contents( self::root() . '/readme.txt' );
+		$this->assertSame( 1, preg_match( '/^WC requires at least:\s*(\S+)/mi', $readme, $header ) );
+		$this->assertSame( Plugin::MIN_WC_VERSION, $header[1], 'readme.txt WC requires at least.' );
+		$this->assertStringContainsString( 'WooCommerce ' . Plugin::MIN_WC_VERSION . ' or later', $readme, 'readme.txt install step and FAQ.' );
+
+		$env = json_decode( (string) file_get_contents( self::root() . '/.wp-env.json' ), true );
+		$zip = null;
+		foreach ( (array) ( $env['plugins'] ?? [] ) as $plugin ) {
+			if ( is_string( $plugin ) && 1 === preg_match( '/woocommerce\.(\d+\.\d+(?:\.\d+)?)\.zip$/', $plugin, $match ) ) {
+				$zip = $match[1];
+			}
+		}
+		$this->assertNotNull( $zip, '.wp-env.json pins a WooCommerce zip.' );
+		$this->assertTrue( version_compare( (string) $zip, Plugin::MIN_WC_VERSION, '>=' ), ".wp-env.json's WooCommerce $zip is below the minimum." );
+
+		$ci = (string) file_get_contents( self::root() . '/.github/workflows/ci.yml' );
+		$this->assertSame( 1, preg_match( '/^\s*wc:\s*\[([^\]]*)\]/m', $ci, $legs ), 'CI has a WooCommerce matrix.' );
+		$versions = array_map( static fn( string $leg ): string => trim( $leg, " '\"" ), explode( ',', $legs[1] ) );
+		usort( $versions, 'version_compare' );
+		$this->assertTrue( version_compare( $versions[0], Plugin::MIN_WC_VERSION, '>=' ), "CI's lowest WooCommerce leg {$versions[0]} is below the minimum." );
 	}
 }

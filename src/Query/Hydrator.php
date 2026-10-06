@@ -12,6 +12,9 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Query;
 
+use BulkCatalogueManager\Availability\OffRecord;
+use BulkCatalogueManager\Availability\Outcome;
+use BulkCatalogueManager\Availability\StatusSwitch;
 use BulkCatalogueManager\Fields\Field;
 use BulkCatalogueManager\Fields\Registry;
 use BulkCatalogueManager\Fields\Storage;
@@ -87,6 +90,15 @@ final class Hydrator {
 	public const ATTRIBUTES = 'attributes';
 
 	/**
+	 * Legacy compatibility property on a product row whenever Status shows (SPEC
+	 * §5.5): null, or `{ state: 'off'|'changed_outside', saved, saved_label,
+	 * switched_off_gmt, batch_id }` from its own Off record, plus
+	 * `scheduled_gmt` (its date) when the status saved is scheduled. Native
+	 * controls display the actual Status field, never a target from this record.
+	 */
+	public const OFF_STATE = 'off_state';
+
+	/**
 	 * Separator between attribute values in a summary.
 	 */
 	public const SUMMARY_SEPARATOR = ' / ';
@@ -136,7 +148,9 @@ final class Hydrator {
 		_prime_post_caches( $ids, false, false );
 
 		$getters = array_map( static fn( Field $field ): string => $field->getter(), $fields );
-		if ( [] !== $parents || [] !== array_filter( $fields, static fn( Field $field ): bool => Storage::META === $field->storage()->kind() ) ) {
+		// Status carries Off/On (T92): its record is post meta, so the page's meta is primed for it too.
+		$off_on = [] !== array_filter( $fields, static fn( Field $field ): bool => StatusSwitch::governs( $field ) );
+		if ( $off_on || [] !== $parents || [] !== array_filter( $fields, static fn( Field $field ): bool => Storage::META === $field->storage()->kind() ) ) {
 			update_meta_cache( 'post', $ids );
 		}
 		$terms = $this->terms( $ids, $fields );
@@ -169,9 +183,36 @@ final class Hydrator {
 			if ( isset( $variants[ $id ] ) ) {
 				$item += $variants[ $id ];
 			}
+			if ( $off_on && 0 === (int) $row['parent_id'] ) {
+				$item[ self::OFF_STATE ] = self::off_state( $post );
+			}
 			$items[] = $item;
 		}
 		return $items;
+	}
+
+	/**
+	 * A product's Off state from its own record (T92), or null.
+	 *
+	 * @param object $post The product's post.
+	 * @return array<string, mixed>|null
+	 */
+	private static function off_state( object $post ): ?array {
+		$record = OffRecord::of_post( (int) $post->ID );
+		if ( null === $record ) {
+			return null;
+		}
+		$state = [
+			'state'            => 'draft' === (string) ( $post->post_status ?? '' ) ? 'off' : 'changed_outside',
+			'saved'            => $record->status,
+			'saved_label'      => Outcome::status_label( $record->status ),
+			'switched_off_gmt' => gmdate( 'Y-m-d H:i:s', $record->timestamp() ),
+			'batch_id'         => $record->batch,
+		];
+		if ( 'future' === $record->status ) {
+			$state['scheduled_gmt'] = (string) ( $post->post_date_gmt ?? '' );
+		}
+		return $state;
 	}
 
 	/**

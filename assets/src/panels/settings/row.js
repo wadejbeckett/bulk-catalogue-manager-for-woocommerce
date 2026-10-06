@@ -1,7 +1,9 @@
 /**
  * One setting on the Settings tab, rendered from its description in
  * GET /settings: its plain label and help, the control its type calls for
- * and, under it, the reason a save refused it.
+ * and, under it, the reason a save refused it. For someone who may see but
+ * not change the settings, the control gives way to the value in words
+ * (1.3.4): a disabled switch reads as "off" at a glance, whatever it holds.
  */
 import {
 	Notice,
@@ -10,7 +12,7 @@ import {
 	TextControl,
 	ToggleControl,
 } from '@wordpress/components';
-import { __ } from '@wordpress/i18n';
+import { __, sprintf } from '@wordpress/i18n';
 
 /**
  * A typed number as it is sent: a whole number when it is one, otherwise
@@ -195,6 +197,58 @@ function Control( { setting, value, onChange, disabled } ) {
 }
 
 /**
+ * A number with its unit, such as "90 days".
+ *
+ * @param {Object} setting Description.
+ * @param {*}      value   Value.
+ * @return {string} Words.
+ */
+function numberWords( setting, value ) {
+	const number = String( value ?? '' );
+	return setting.unit
+		? sprintf(
+				/* translators: 1: a number, such as "90"; 2: its unit, such as "days". */
+				__( '%1$s %2$s', 'bulk-catalogue-manager-for-woocommerce' ),
+				number,
+				setting.unit
+			)
+		: number;
+}
+
+/**
+ * A setting's value in words, as the read-only view shows it: the chosen
+ * option's label, On or Off for a switch, or the number with its unit.
+ *
+ * @param {Object} setting Description.
+ * @param {*}      value   Value.
+ * @return {string} Words.
+ */
+export function valueWords( setting, value ) {
+	if ( setting.special ) {
+		const special = setting.special.find(
+			( each ) => each.value === value
+		);
+		return special ? special.label : numberWords( setting, value );
+	}
+	if ( setting.choices ) {
+		const wanted =
+			setting.type === 'boolean'
+				? String( Boolean( value ) )
+				: String( value );
+		const choice = setting.choices.find(
+			( each ) => String( each.value ) === wanted
+		);
+		return choice ? choice.label : String( value ?? '' );
+	}
+	if ( setting.type === 'boolean' ) {
+		return value
+			? __( 'On', 'bulk-catalogue-manager-for-woocommerce' )
+			: __( 'Off', 'bulk-catalogue-manager-for-woocommerce' );
+	}
+	return numberWords( setting, value );
+}
+
+/**
  * One setting row.
  *
  * @param {Object}   props          Props.
@@ -202,7 +256,8 @@ function Control( { setting, value, onChange, disabled } ) {
  * @param {*}        props.value    Current (unsaved) value.
  * @param {string}   props.error    Why the last save refused it, or ''.
  * @param {Function} props.onChange Change handler.
- * @param {boolean}  props.disabled Read-only.
+ * @param {boolean}  props.disabled Not changeable now (a save is in progress).
+ * @param {boolean}  props.readOnly The user may see but not change it: its value in words.
  * @return {Element} Row.
  */
 export default function SettingRow( {
@@ -211,6 +266,7 @@ export default function SettingRow( {
 	error,
 	onChange,
 	disabled,
+	readOnly = false,
 } ) {
 	return (
 		<div
@@ -220,12 +276,19 @@ export default function SettingRow( {
 			}
 			data-setting={ setting.key }
 		>
-			<Control
-				setting={ setting }
-				value={ value }
-				onChange={ onChange }
-				disabled={ disabled }
-			/>
+			{ readOnly ? (
+				<dl className="bulkcat-settings__readonly">
+					<dt>{ setting.label }</dt>
+					<dd>{ valueWords( setting, value ) }</dd>
+				</dl>
+			) : (
+				<Control
+					setting={ setting }
+					value={ value }
+					onChange={ onChange }
+					disabled={ disabled }
+				/>
+			) }
 			{ setting.help && (
 				<p className="bulkcat-settings__help">{ setting.help }</p>
 			) }

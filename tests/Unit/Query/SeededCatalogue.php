@@ -130,6 +130,7 @@ final class SeededCatalogue {
 		$state  = &$GLOBALS['bulkcat_test'];
 		$tables = [
 			'wp_posts'                  => [],
+			'wp_postmeta'               => [],
 			'wp_wc_product_meta_lookup' => [],
 			'wp_term_relationships'     => [],
 			'wp_term_taxonomy'          => [],
@@ -174,6 +175,8 @@ final class SeededCatalogue {
 					'stock_quantity' => $quantity,
 					'tax_class'      => $tax_class,
 					'total_sales'    => 0,
+					// WooCommerce's rule: a sale price is set and is the active price.
+					'onsale'         => isset( $meta['_sale_price'], $meta['_price'] ) && (bool) $meta['_sale_price'] && $meta['_price'] === $meta['_sale_price'] ? 1 : 0,
 				];
 				$state['meta'][ $id ]                                      = [
 					'_sku'           => $sku,
@@ -184,7 +187,19 @@ final class SeededCatalogue {
 					'_tax_class'     => $tax_class,
 				];
 			}
-			$state['meta'][ $id ] += $meta;
+			// A row's own meta wins over what its lookup row implies (a regular price above a sale price).
+			$state['meta'][ $id ] = $meta + $state['meta'][ $id ];
+			// T91/T92: the meta rows SQL reads (the Off record, the grid's Off filter), as scalar values.
+			foreach ( $state['meta'][ $id ] as $key => $value ) {
+				if ( is_scalar( $value ) ) {
+					$tables['wp_postmeta'][] = [
+						'meta_id'    => count( $tables['wp_postmeta'] ) + 1,
+						'post_id'    => $id,
+						'meta_key'   => $key, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- a test fixture row.
+						'meta_value' => (string) $value, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- a test fixture row.
+					];
+				}
+			}
 			foreach ( $terms as $term ) {
 				$tables['wp_term_relationships'][] = [
 					'object_id'        => $id,
@@ -213,6 +228,41 @@ final class SeededCatalogue {
 			'/^SELECT /' => static fn( string $sql ): array => $db->rows( $sql ),
 		];
 		return $db;
+	}
+
+	/**
+	 * Products on sale, where the lookup holds the active (sale) price and
+	 * the regular price is higher: 301 Sale Lamp, simple, regular 150 on sale
+	 * at 80; 302 Sale Chair, variable (no regular price of its own), with
+	 * variations 303 (regular 120 on sale at 60) and 304 (regular 40); 305
+	 * Free Gift, simple, regular 30 on sale at 0 (which WooCommerce never
+	 * marks on sale).
+	 *
+	 * @return array<int, array<string, mixed>>
+	 */
+	public static function on_sale(): array {
+		$post = static fn( string $type, string $title, int $parent, string $date ): array => [
+			'post_type'         => $type,
+			'post_title'        => $title,
+			'post_status'       => 'publish',
+			'post_parent'       => $parent,
+			'menu_order'        => 0,
+			'comment_status'    => 'product' === $type ? 'open' : 'closed',
+			'post_date_gmt'     => $date,
+			'post_modified_gmt' => $date,
+		];
+		$sale = static fn( string $regular, string $sale ): array => [
+			'_regular_price' => $regular,
+			'_sale_price'    => $sale,
+			'_price'         => $sale,
+		];
+		return [
+			301 => [ $post( 'product', 'Sale Lamp', 0, '2026-09-15 08:00:00' ), [ 'LAMP', 80.0, 80.0, 'instock', null, '' ], [ 60 ], $sale( '150', '80' ) ],
+			302 => [ $post( 'product', 'Sale Chair', 0, '2026-09-16 08:00:00' ), [ 'CHAIR', 40.0, 60.0, 'instock', null, '' ], [ 61 ], [] ],
+			303 => [ $post( 'product_variation', 'Sale Chair - Oak', 302, '2026-09-16 08:00:00' ), [ 'CHAIR-OAK', 60.0, 60.0, 'instock', null, '' ], [], $sale( '120', '60' ) ],
+			304 => [ $post( 'product_variation', 'Sale Chair - Pine', 302, '2026-09-16 08:00:00' ), [ 'CHAIR-PINE', 40.0, 40.0, 'instock', null, '' ], [], [ '_price' => '40' ] ],
+			305 => [ $post( 'product', 'Free Gift', 0, '2026-09-17 08:00:00' ), [ 'GIFT', 0.0, 0.0, 'instock', null, '' ], [ 60 ], $sale( '30', '0' ) ],
+		];
 	}
 
 	/**

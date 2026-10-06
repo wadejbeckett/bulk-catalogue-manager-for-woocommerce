@@ -1,0 +1,150 @@
+{
+    "version": "1.1.0",
+    "batches": [
+        {
+            "batch": {
+                "batch_id": "1",
+                "uuid": "177658d2-852e-4d15-b982-85969c6594c7",
+                "user_id": "2",
+                "created_gmt": "2026-09-30 20:03:04",
+                "finished_gmt": "2026-09-30 20:03:05",
+                "status": "complete",
+                "source": "bulk",
+                "undo_of": null,
+                "operations": "[{\"action\":\"set_value\",\"args\":{\"field\":\"status\",\"value\":\"draft\",\"keep_changed_status\":false,\"skip_already\":true,\"apply_to_variations\":false}}]",
+                "selection": "{\"kind\":\"ids\",\"count\":1,\"selected\":1,\"materialised\":1,\"scope_hash\":\"317c6759a09f5b83622fbd0a589333f9de4eacffc6eeb340bc4182f814d38265\",\"variations_added\":0,\"parents_left_out\":0,\"unavailable\":0,\"ids\":[26]}",
+                "total_items": "1",
+                "previewed_items": null,
+                "done_items": "1",
+                "changed_items": "1",
+                "failed_items": "0",
+                "chunk_size": "0",
+                "note": "",
+                "actions": ",set_value,",
+                "pruned_gmt": null,
+                "extensions": null
+            },
+            "receipt": {
+                "user_id": "2",
+                "uuid": "177658d2-852e-4d15-b982-85969c6594c7",
+                "operation": "batch.apply",
+                "fingerprint": "4f17cd50698eb7d489ffdcdb8bb127d57d6e97206e808e8851f9bce202d98602",
+                "issued_at": "2026-09-30 20:03:04",
+                "accept_until": "2026-10-01 20:03:04",
+                "state": "accepted",
+                "result_kind": "batch",
+                "result_id": "1",
+                "retain_until": null
+            },
+            "items": [
+                {
+                    "item_id": "1",
+                    "batch_id": "1",
+                    "object_id": "26",
+                    "object_type": "product",
+                    "state": "done",
+                    "attempts": "1",
+                    "claimed_gmt": "2026-09-30 20:03:05",
+                    "message": "",
+                    "operations": null
+                }
+            ],
+            "intent": {
+                "version": 1,
+                "source": "bulk",
+                "operations": [
+                    {
+                        "action": "set_value",
+                        "args": {
+                            "field": "status",
+                            "value": "draft",
+                            "keep_changed_status": false,
+                            "skip_already": true,
+                            "apply_to_variations": false
+                        }
+                    }
+                ],
+                "scope_hash": "317c6759a09f5b83622fbd0a589333f9de4eacffc6eeb340bc4182f814d38265",
+                "ids": [
+                    26
+                ]
+            }
+        },
+        {
+            "batch": {
+                "batch_id": "2",
+                "uuid": "23c520c0-330d-435a-aeea-452214b1eb92",
+                "user_id": "2",
+                "created_gmt": "2026-09-30 20:03:07",
+                "finished_gmt": "2026-09-30 20:03:08",
+                "status": "complete",
+                "source": "bulk",
+                "undo_of": null,
+                "operations": "[{\"action\":\"set_value\",\"args\":{\"field\":\"status\",\"value\":\"publish\",\"keep_changed_status\":false,\"skip_already\":true,\"apply_to_variations\":false}}]",
+                "selection": "{\"kind\":\"ids\",\"count\":1,\"selected\":1,\"materialised\":1,\"scope_hash\":\"e0d493a516c260a22269db7474fcdfc6bb5605de7c58cde83dae6f739dfec309\",\"variations_added\":0,\"parents_left_out\":0,\"unavailable\":0,\"ids\":[26]}",
+                "total_items": "1",
+                "previewed_items": null,
+                "done_items": "1",
+                "changed_items": "1",
+                "failed_items": "0",
+                "chunk_size": "0",
+                "note": "",
+                "actions": ",set_value,",
+                "pruned_gmt": null,
+                "extensions": null
+            },
+            "receipt": {
+                "user_id": "2",
+                "uuid": "23c520c0-330d-435a-aeea-452214b1eb92",
+                "operation": "batch.apply",
+                "fingerprint": "92ddfdceef8162deea512f58c883e682679a272dd97f92c3d51f9fc7ca633675",
+                "issued_at": "2026-09-30 20:03:07",
+                "accept_until": "2026-10-01 20:03:07",
+                "state": "accepted",
+                "result_kind": "batch",
+                "result_id": "2",
+                "retain_until": null
+            },
+            "items": [
+                {
+                    "item_id": "2",
+                    "batch_id": "2",
+                    "object_id": "26",
+                    "object_type": "product",
+                    "state": "done",
+                    "attempts": "1",
+                    "claimed_gmt": "2026-09-30 20:03:08",
+                    "message": "",
+                    "operations": null
+                }
+            ],
+            "intent": {
+                "version": 1,
+                "source": "bulk",
+                "operations": [
+                    {
+                        "action": "set_value",
+                        "args": {
+                            "field": "status",
+                            "value": "publish",
+                            "keep_changed_status": false,
+                            "skip_already": true,
+                            "apply_to_variations": false
+                        }
+                    }
+                ],
+                "scope_hash": "e0d493a516c260a22269db7474fcdfc6bb5605de7c58cde83dae6f739dfec309",
+                "ids": [
+                    26
+                ]
+            }
+        }
+    ],
+    "provenance": {
+        "archive_sha256": "594b3a768731c007112272380c117cbb895915f2d6c9efa8cc3f1ed14fed2acb",
+        "native_run": "488f79db-a854-4883-a78a-cc442c272c08",
+        "case": "private-draft-publish-none",
+        "captured": "2026-09-30",
+        "note": "Actual completed release batches and receipts, read only. Item claim tokens omitted. Intent reconstructed from stored operations/selection and verified against original receipt fingerprint. Unit replay re-signs under test salt; not queued native upgrade evidence."
+    }
+}

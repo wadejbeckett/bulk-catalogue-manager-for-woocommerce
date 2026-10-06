@@ -37,21 +37,24 @@ final class ProductWriteRouteTest extends TestCase {
 		bulkcat_test_reset();
 		$GLOBALS['bulkcat_test']['logged_in']                  = true;
 		$GLOBALS['bulkcat_test']['user_id']                    = 12;
+		$GLOBALS['bulkcat_test']['caps']['publish_products']   = true;
 		$GLOBALS['bulkcat_test']['caps']['manage_woocommerce'] = true;
 		$GLOBALS['bulkcat_test']['caps']['edit_products']      = true;
 		$GLOBALS['bulkcat_test']['caps']['edit_post']          = true;
 		$GLOBALS['bulkcat_test']['scheduled']                  = [];
 		( new Plugin() )->boot();
 		do_action( 'rest_api_init' );
-		$this->store                              = new InlineStore();
-		$GLOBALS['bulkcat_test']['products'][101] = new StoredProduct(
+		$this->store = new InlineStore();
+		$this->store->enable_receipts();
+		$GLOBALS['bulkcat_test']['caps']['publish_products'] = true;
+		$GLOBALS['bulkcat_test']['products'][101]            = new StoredProduct(
 			'simple',
 			[
 				'id'            => 101,
 				'regular_price' => '20',
 			]
 		);
-		$GLOBALS['bulkcat_test']['products'][201] = new StoredProduct(
+		$GLOBALS['bulkcat_test']['products'][201]            = new StoredProduct(
 			'variation',
 			[
 				'id'            => 201,
@@ -67,6 +70,20 @@ final class ProductWriteRouteTest extends TestCase {
 	 * @param array<string, mixed> $params Body parameters.
 	 */
 	private static function patch( int $id, array $params ): \WP_REST_Response|\WP_Error {
+		if ( ! isset( $params['uuid'] ) && in_array( $params['source'] ?? 'inline', [ 'inline', 'bulk' ], true ) ) {
+			$grant = ( new \BulkCatalogueManager\Requests\RequestService() )->issue(
+				'product.inline',
+				[
+					'object_id'           => $id,
+					'source'              => $params['source'] ?? 'inline',
+					'values'              => array_diff_key( $params, array_flip( [ 'source', 'fields', 'keep_changed_status' ] ) ),
+					'keep_changed_status' => $params['keep_changed_status'] ?? false,
+				]
+			);
+			if ( is_wp_error( $grant ) ) {
+				return $grant; }
+			$params += array_intersect_key( $grant, array_flip( [ 'uuid', 'request_proof', 'intent' ] ) );
+		}
 		$request = new \WP_REST_Request( 'PATCH', '/bulkcat/v1/products/' . $id );
 		foreach ( $params as $key => $value ) {
 			$request->set_param( $key, $value );
@@ -91,16 +108,17 @@ final class ProductWriteRouteTest extends TestCase {
 	public function test_the_route_needs_the_write_capability_and_takes_the_registry_fields(): void {
 		$route = $GLOBALS['bulkcat_test']['routes'][ '/bulkcat/v1' . ProductWriteController::ROUTE ] ?? null;
 		$this->assertTrue( is_array( $route ), 'The route is registered.' );
-		$this->assertSame( [ Access::class, 'can_write' ], $route[0]['permission_callback'] );
+		$this->assertSame( [ Access::class, 'can_read' ], $route[0]['permission_callback'] );
 		$this->assertSame( 'PATCH', $route[0]['methods'] );
 
 		$registry = Registry::instance();
-		$this->assertSame( array_merge( [ 'id', 'source', 'fields' ], array_keys( $registry->editable() ) ), array_keys( $route[0]['args'] ) );
+		$this->assertSame( array_merge( [ 'id', 'source', 'fields', 'keep_changed_status' ], array_keys( $registry->editable() ), [ 'uuid', 'request_proof', 'intent' ] ), array_keys( $route[0]['args'] ) );
+		$this->assertSame( 'boolean', $route[0]['args']['keep_changed_status']['type'] );
+		$this->assertFalse( $route[0]['args']['keep_changed_status']['default'] );
+		$this->assertArrayNotHasKey( 'availability_off', $route[0]['args'], 'The internal Off record is never an argument.' );
 		foreach ( $registry->editable() as $key => $field ) {
-			$expected = $field->rest_arg();
-			$this->assertSame( $expected['type'], $route[0]['args'][ $key ]['type'], $key );
-			$this->assertSame( [ $registry->get( $key ), 'validate' ], $route[0]['args'][ $key ]['validate_callback'], $key );
-			$this->assertSame( [ $registry->get( $key ), 'sanitise' ], $route[0]['args'][ $key ]['sanitize_callback'], $key );
+			$this->assertTrue( $route[0]['args'][ $key ]['validate_callback']( 'unvalidated' ), $key );
+			$this->assertSame( ' raw ', $route[0]['args'][ $key ]['sanitize_callback']( ' raw ' ), $key );
 		}
 		$this->assertSame( [ 'inline', 'bulk' ], $route[0]['args']['source']['enum'] );
 		$this->assertArrayNotHasKey( 'date_modified', $route[0]['args'], 'A read-only column is not an argument.' );
@@ -112,7 +130,7 @@ final class ProductWriteRouteTest extends TestCase {
 		$this->assertSame( 200, $response->get_status() );
 		$data = $response->get_data();
 
-		$this->assertSame( [ 'item', 'batch_id', 'status', 'results' ], array_keys( $data ) );
+		$this->assertSame( [ 'item', 'batch_id', 'status', 'results', 'receipt_state', 'write_status', 'steps', 'replayed' ], array_keys( $data ) );
 		$this->assertSame( 1, $data['batch_id'] );
 		$this->assertSame( 'complete', $data['status'] );
 		$this->assertSame( [ 'regular_price' ], array_column( $data['results'], 'field' ) );
@@ -135,6 +153,48 @@ final class ProductWriteRouteTest extends TestCase {
 		$this->assertSame( [], $GLOBALS['bulkcat_test']['scheduled'], 'No as_enqueue_async_action call, nor any other scheduling.' );
 	}
 
+	public function test_native_status_and_refused_old_keep_intent_through_the_route(): void {
+		// New Draft changes only Status and never creates a remembered record.
+		$product                                  = new StoredProduct(
+			'simple',
+			[
+				'id'     => 106,
+				'status' => 'publish',
+			]
+		);
+		$GLOBALS['bulkcat_test']['products'][106] = $product;
+		$response                                 = self::patch( 106, [ 'status' => 'draft' ] );
+		$this->assertInstanceOf( \WP_REST_Response::class, $response );
+		$this->assertSame( [ 'status' ], array_column( $response->get_data()['results'], 'field' ) );
+		$this->assertSame( '', $response->get_data()['results'][0]['note'] );
+		$this->assertSame( [ [ 106, 'status', 'publish', 'draft', 'applied' ] ], $this->store->journal() );
+		$this->assertSame( [], $product->meta );
+
+		// A legacy record does not turn a new Publish into a restore or conflict.
+		$product->props['status']                   = 'private';
+		$product->meta['_bulkcat_availability_off'] = \BulkCatalogueManager\Availability\OffRecord::create( 106, 'publish', '2026-09-01T08:00:00Z', 7 )->to_json();
+		$response                                   = self::patch( 106, [ 'status' => 'publish' ] );
+		$this->assertInstanceOf( \WP_REST_Response::class, $response );
+		$this->assertSame( [ 'status' ], array_column( $response->get_data()['results'], 'field' ), 'Internal cleanup is never a public result.' );
+		$this->assertSame( 'publish', $product->props['status'] );
+		$this->assertArrayNotHasKey( '_bulkcat_availability_off', $product->meta );
+		$this->assertSame( [ 'status', 'status', 'availability_off' ], array_column( $this->store->journal(), 1 ) );
+		$writes = $GLOBALS['wpdb']->writes;
+		$saves  = $product->saves;
+		$kept   = self::patch(
+			106,
+			[
+				'status'              => 'publish',
+				'keep_changed_status' => true,
+			]
+		);
+		$this->assertInstanceOf( \WP_Error::class, $kept );
+		$this->assertSame( 400, $kept->get_error_data()['status'] );
+		$this->assertStringContainsString( 'Reload and review', $kept->get_error_message() );
+		$this->assertSame( $saves, $product->saves );
+		$this->assertSame( $writes, $GLOBALS['wpdb']->writes );
+	}
+
 	public function test_fields_chooses_the_columns_and_source_can_say_bulk(): void {
 		$response = self::patch(
 			101,
@@ -145,13 +205,15 @@ final class ProductWriteRouteTest extends TestCase {
 			]
 		);
 		$this->assertSame( 200, $response->get_status() );
-		$this->assertSame( [ 'id', Hydrator::PARENT_ID, 'sku' ], array_keys( $response->get_data()['item'] ) );
+		$this->assertSame( [ 'id', Hydrator::PARENT_ID, 'sku', 'native_actions' ], array_keys( $response->get_data()['item'] ) );
 		$this->assertSame( 'bulk', $this->store->batch( 1 )['source'] );
 	}
 
 	public function test_a_malformed_value_is_refused_by_its_argument_naming_the_field(): void {
 		$error = $this->assert_refused( self::patch( 101, [ 'stock_quantity' => '1.5' ] ), 'rest_invalid_param', 400 );
 		$this->assertSame( [ 'stock_quantity' => Registry::instance()->get( 'stock_quantity' )->rule_text() ], $error->get_error_data()['params'] );
+		$this->assertSame( Registry::instance()->get( 'stock_quantity' )->rule_text(), $error->get_error_message() );
+		$this->assertSame( 'refused', $error->get_error_data()['receipt_state'] );
 
 		$this->assert_refused( self::patch( 101, [ 'source' => 'undo' ] + [ 'regular_price' => '25' ] ), 'rest_invalid_param', 400 );
 	}
@@ -189,5 +251,47 @@ final class ProductWriteRouteTest extends TestCase {
 		$GLOBALS['bulkcat_test']['logged_in'] = false;
 		$GLOBALS['bulkcat_test']['caps']      = [];
 		$this->assert_refused( self::patch( 101, [ 'regular_price' => '25' ] ), 'bulkcat_forbidden', 401 );
+	}
+	public function test_a_patch_without_a_grant_is_refused_before_effects(): void {
+		$request = new \WP_REST_Request( 'PATCH', '/bulkcat/v1/products/101' );
+		$request->set_param( 'regular_price', '25' );
+		$this->assert_refused( rest_get_server()->dispatch( $request ), 'bulkcat_invalid_request', 409 );
+	}
+
+	public function test_duplicate_patch_adopts_only_safe_receipt_after_state_change(): void {
+		$grant  = ( new \BulkCatalogueManager\Requests\RequestService() )->issue(
+			'product.inline',
+			[
+				'object_id' => 101,
+				'source'    => 'inline',
+				'values'    => [ 'sale_price' => '15' ],
+			]
+		);
+		$params = array_intersect_key( $grant, array_flip( [ 'uuid', 'request_proof', 'intent' ] ) ) + [ 'sale_price' => '15' ];
+		$first  = self::patch( 101, $params )->get_data();
+		$GLOBALS['bulkcat_test']['products'][101]->props['regular_price'] = '10';
+		$again = self::patch( 101, $params )->get_data();
+		$this->assertSame( $first['batch_id'], $again['batch_id'] );
+		$this->assertSame( 'closed', $again['receipt_state'] );
+		$this->assertArrayNotHasKey( 'item', $again );
+		$this->assertArrayNotHasKey( 'results', $again );
+		$this->assertSame( 1, $GLOBALS['bulkcat_test']['products'][101]->saves );
+	}
+
+	public function test_raw_keep_type_cannot_be_coerced_into_the_bound_payload(): void {
+		$grant  = ( new \BulkCatalogueManager\Requests\RequestService() )->issue(
+			'product.inline',
+			[
+				'object_id' => 101,
+				'source'    => 'inline',
+				'values'    => [ 'regular_price' => '25' ],
+			]
+		);
+		$params = array_intersect_key( $grant, array_flip( [ 'uuid', 'request_proof', 'intent' ] ) ) + [
+			'regular_price'       => '25',
+			'keep_changed_status' => '0',
+		];
+		$this->assert_refused( self::patch( 101, $params ), 'bulkcat_request_conflict', 409 );
+		$this->assertSame( [], $this->store->receipts );
 	}
 }

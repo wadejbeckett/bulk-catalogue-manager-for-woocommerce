@@ -19,13 +19,27 @@ const {
 	HASH,
 	HASH_2,
 	IDS,
+	OPERATIONS,
 	REGISTRY,
+	SCOPE,
+	SCOPE_2,
 	SETTINGS,
 	callsTo,
+	grantFor,
 	previewResponse,
 	restError,
 	routeApi,
 } = require( './bulk-fixtures' );
+
+/** A snapshot selection as the catalogue hands it over (T84). */
+const SNAPSHOT = {
+	kind: 'snapshot',
+	token: 'v2.snap.1.sig',
+	key: 'h1',
+	count: 1250,
+	byType: { products: 1200, variations: 50 },
+	waiting: '',
+};
 
 jest.mock( '@wordpress/api-fetch', () => {
 	const mock = jest.fn( () => new Promise( () => {} ) );
@@ -113,20 +127,38 @@ describe( 'bulk panel: chooser and controls', () => {
 		expect( screen.getByText( 'Choose a change first.' ) ).toBeVisible();
 	} );
 
-	it( 'states a filter scope with its active filters', () => {
+	it( 'states the whole exact selection by type, with its review, never as all matches of a filter', () => {
+		const onReview = jest.fn();
+		renderPanel( { selection: SNAPSHOT, onReview } );
+		expect(
+			screen.getByText( '1,200 products and 50 variations selected' )
+		).toBeVisible();
+		expect( panel().textContent ).not.toContain(
+			'matching the current filter'
+		);
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Review selected products' } )
+		);
+		expect( onReview ).toHaveBeenCalled();
+	} );
+
+	it( 'waits, with the reason, while the selection is not settled', () => {
 		renderPanel( {
 			selection: {
-				kind: 'filter',
-				token: 'tok',
-				count: 4312,
-				filters: [ { label: 'Category', value: 'Shirts' } ],
+				...SNAPSHOT,
+				waiting:
+					'Your selection is still being saved. Wait a moment, then check the change.',
 			},
 		} );
+		chooseIncrease();
 		expect(
-			screen.getByText( 'All 4,312 products matching the current filter' )
+			screen.getByRole( 'button', { name: 'Check the change' } )
+		).toBeDisabled();
+		expect(
+			screen.getByText(
+				'Your selection is still being saved. Wait a moment, then check the change.'
+			)
 		).toBeVisible();
-		expect( screen.getByText( 'Category' ) ).toBeVisible();
-		expect( screen.getByText( 'Shirts' ) ).toBeVisible();
 	} );
 
 	it( 'builds the chooser from the descriptors: the five groups and every action with its description', () => {
@@ -313,13 +345,13 @@ describe( 'bulk panel: chooser and controls', () => {
 
 	it( 'types the set value control by the field', () => {
 		renderPanel();
-		choose( 'Publishing', 'Set a value' );
-		change( 'Field', 'status' );
+		choose( 'Publishing', 'Set Status' );
 		expect(
 			within( screen.getByLabelText( 'New value' ) )
 				.getAllByRole( 'option' )
 				.map( ( option ) => option.value )
 		).toEqual( [ 'publish', 'draft', 'pending', 'private' ] );
+		choose( 'Publishing', 'Set a value' );
 		change( 'Field', 'featured' );
 		expect(
 			within( screen.getByLabelText( 'New value' ) )
@@ -342,6 +374,20 @@ describe( 'bulk panel: chooser and controls', () => {
 		).toBeVisible();
 	} );
 
+	it( 'discovers Set Status without a remembered-status control', () => {
+		renderPanel();
+		choose( 'Publishing', 'Set Status' );
+		expect( screen.getByLabelText( 'New value' ) ).toHaveValue( 'publish' );
+		expect( document.body.textContent ).not.toMatch(
+			/Keep current status|while Off/
+		);
+		expect(
+			Array.from( screen.getByLabelText( 'New value' ).options ).map(
+				( option ) => option.value
+			)
+		).toEqual( [ 'publish', 'draft', 'pending', 'private' ] );
+	} );
+
 	it( 'starts both switches per field: skip on, variations from the settings, absent on parent-only fields', () => {
 		renderPanel();
 		REGISTRY.actions.forEach( ( action ) => {
@@ -358,11 +404,11 @@ describe( 'bulk panel: chooser and controls', () => {
 			).toBeChecked();
 		} );
 
-		choose( 'Publishing', 'Set a value' );
-		change( 'Field', 'status' );
+		choose( 'Publishing', 'Set Status' );
 		expect(
 			screen.getByLabelText( 'Also apply to variations' )
 		).toBeChecked();
+		choose( 'Publishing', 'Set a value' );
 		change( 'Field', 'catalog_visibility' );
 		expect(
 			screen.queryByLabelText( 'Also apply to variations' )
@@ -401,8 +447,7 @@ describe( 'bulk panel: chooser and controls', () => {
 		expect(
 			screen.getByLabelText( 'Also apply to variations' )
 		).toBeChecked();
-		choose( 'Publishing', 'Set a value' );
-		change( 'Field', 'status' );
+		choose( 'Publishing', 'Set Status' );
 		expect(
 			screen.getByLabelText( 'Also apply to variations' )
 		).not.toBeChecked();
@@ -451,6 +496,9 @@ describe( 'bulk panel: chooser and controls', () => {
 		] );
 	} );
 } );
+
+/** What the default preview reached, passed on for the banner's words (FRONTEND-6). */
+const REACHED = { products: 24, variations: 0 };
 
 describe( 'bulk panel: preview, apply and done', () => {
 	beforeEach( () => {
@@ -521,6 +569,61 @@ describe( 'bulk panel: preview, apply and done', () => {
 		).toBeEnabled();
 	} );
 
+	it( 'says a server failure of the preview in plain words, never the server’s own page (T85)', async () => {
+		routeApi( apiFetch, {
+			'POST preview': restError(
+				'internal_server_error',
+				'<p>There has been a critical error on this website.</p><p><a href="https://wordpress.org/documentation/article/faq-troubleshooting/">Learn more about troubleshooting WordPress.</a></p>',
+				{ status: 500 }
+			),
+		} );
+		renderPanel();
+		chooseIncrease();
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Check the change' } )
+		);
+		const alert = await screen.findByRole( 'alert' );
+		expect( alert.textContent ).toContain(
+			'Something went wrong. Try again in a moment.'
+		);
+		expect( alert.textContent ).not.toContain( '<p>' );
+		expect( alert.textContent ).not.toContain( 'critical error' );
+		// The code stays behind Show details, and Check the change is offered again.
+		fireEvent.click(
+			within( alert ).getByRole( 'button', { name: 'Show details' } )
+		);
+		expect(
+			within( alert ).getByText( 'internal_server_error' )
+		).toBeVisible();
+		expect(
+			screen.getByRole( 'button', { name: 'Check the change' } )
+		).toBeEnabled();
+	} );
+
+	it( 'counts products and variations apart on Apply (ticket 11)', async () => {
+		routeApi( apiFetch, {
+			'POST preview': previewResponse( {
+				totals: {
+					...previewResponse().totals,
+					by_type: {
+						product: { matched: 18, would_change: 16 },
+						variation: { matched: 6, would_change: 4 },
+					},
+				},
+			} ),
+		} );
+		renderPanel();
+		chooseIncrease();
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Check the change' } )
+		);
+		expect(
+			await screen.findByRole( 'button', {
+				name: 'Apply to 16 products and 4 variations',
+			} )
+		).toBeEnabled();
+	} );
+
 	it( 'disables Apply when the preview is empty', async () => {
 		routeApi( apiFetch, {
 			'POST preview': previewResponse( {
@@ -584,10 +687,59 @@ describe( 'bulk panel: preview, apply and done', () => {
 		).toBeVisible();
 	} );
 
-	it( 'applies with the uuid, operations, ids, source and preview hash, then shows progress and the result', async () => {
-		let reads = 0;
+	it( 'promises and offers undo for a change of 100,000 products and variations (T111: the undo is streamed)', async () => {
 		routeApi( apiFetch, {
 			'POST preview': previewResponse(),
+			'POST requests': grantFor,
+			'POST batches': {
+				batch_id: 8,
+				status: 'queued',
+				total_items: 100000,
+				replayed: false,
+			},
+			'GET batches/8': {
+				batch_id: 8,
+				status: 'complete',
+				total_items: 100000,
+				done_items: 100000,
+				changed_items: 100000,
+				failed_items: 0,
+				pending_items: 0,
+				summary: [],
+			},
+		} );
+		const onUndo = jest.fn();
+		// A page served before this update may still carry the old limit: it no longer limits anything.
+		renderPanel( { settings: { ...SETTINGS, undoLimit: 10 }, onUndo } );
+		chooseIncrease();
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Check the change' } )
+		);
+		const apply = await screen.findByRole( 'button', {
+			name: 'Apply to 20 products',
+		} );
+		expect( panel().textContent ).toContain(
+			'Step 2 of 3 · You can undo this afterwards'
+		);
+		expect( panel().textContent ).toContain(
+			'Every change is saved with the old values. One click in History puts them back.'
+		);
+		expect( panel().textContent ).not.toContain( 'not yet supported' );
+		fireEvent.click( apply );
+		await screen.findByText(
+			'The old values are saved, so you can put this back at any time.'
+		);
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Undo this change' } )
+		);
+		expect( onUndo ).toHaveBeenCalledWith( 8 );
+	} );
+
+	it( 'applies through a grant: POST /requests, then the durable body, then progress and the result', async () => {
+		let finish = false;
+		routeApi( apiFetch, {
+			'POST preview': previewResponse(),
+			'POST requests': grantFor,
 			'POST batches': {
 				batch_id: 7,
 				status: 'queued',
@@ -595,8 +747,7 @@ describe( 'bulk panel: preview, apply and done', () => {
 				replayed: false,
 			},
 			'GET batches/7': () => {
-				reads++;
-				return reads < 2
+				return ! finish
 					? {
 							batch_id: 7,
 							status: 'running',
@@ -608,13 +759,20 @@ describe( 'bulk panel: preview, apply and done', () => {
 							status: 'complete',
 							total_items: 24,
 							done_items: 24,
+							failed_items: 0,
+							pending_items: 0,
 							summary: [],
 						};
 			},
 		} );
 		const onUndo = jest.fn();
 		const onViewHistory = jest.fn();
-		const { onApplied } = renderPanel( { onUndo, onViewHistory } );
+		const onFinished = jest.fn();
+		const { onApplied } = renderPanel( {
+			onUndo,
+			onViewHistory,
+			onFinished,
+		} );
 		chooseIncrease();
 		fireEvent.click(
 			screen.getByRole( 'button', { name: 'Check the change' } )
@@ -625,25 +783,59 @@ describe( 'bulk panel: preview, apply and done', () => {
 			} )
 		);
 
+		await waitFor( () =>
+			expect( callsTo( apiFetch, 'POST batches' ) ).toHaveLength( 1 )
+		);
+		const [ issued ] = callsTo( apiFetch, 'POST requests' );
+		expect( issued.data ).toEqual( {
+			operation: 'batch.apply',
+			intent: {
+				source: 'bulk',
+				operations: OPERATIONS,
+				scope_hash: SCOPE,
+				ids: IDS,
+			},
+		} );
 		const [ sent ] = callsTo( apiFetch, 'POST batches' );
 		expect( sent.data ).toEqual( {
 			uuid: expect.stringMatching( UUID ),
-			operations: callsTo( apiFetch, 'POST preview' )[ 0 ].data
-				.operations,
-			ids: IDS,
-			source: 'bulk',
+			request_proof: expect.any( String ),
+			intent: {
+				version: 1,
+				source: 'bulk',
+				operations: OPERATIONS,
+				scope_hash: SCOPE,
+				ids: IDS,
+			},
 			preview_hash: HASH,
 		} );
-		await waitFor( () => expect( onApplied ).toHaveBeenCalledWith( 7 ) );
+		// No 1.0 keys.
+		[ 'operations', 'ids', 'source', 'token', 'preview_count' ].forEach(
+			( key ) => expect( sent.data[ key ] ).toBeUndefined()
+		);
+		await waitFor( () =>
+			expect( onApplied ).toHaveBeenCalledWith( 7, {
+				selection: { kind: 'ids', ids: IDS },
+				replayed: false,
+				byType: REACHED,
+			} )
+		);
 		expect( panel() ).toHaveAttribute( 'data-state', 'done' );
 		expect(
 			await screen.findByText(
 				'You can leave this page. The update carries on in the background and appears in History when it finishes.'
 			)
 		).toBeVisible();
+		expect( onFinished ).not.toHaveBeenCalled();
+		finish = true;
 		expect(
 			await screen.findByText( '24 products updated.' )
 		).toBeVisible();
+		expect( onFinished ).toHaveBeenCalledTimes( 1 );
+		expect( onFinished.mock.calls[ 0 ][ 0 ] ).toMatchObject( {
+			batch_id: 7,
+			status: 'complete',
+		} );
 		fireEvent.click(
 			screen.getByRole( 'button', { name: 'Undo this change' } )
 		);
@@ -657,6 +849,7 @@ describe( 'bulk panel: preview, apply and done', () => {
 	it( 'is applying while the batch request is in flight', async () => {
 		routeApi( apiFetch, {
 			'POST preview': previewResponse(),
+			'POST requests': grantFor,
 			'POST batches': () => new Promise( () => {} ),
 		} );
 		renderPanel();
@@ -670,14 +863,18 @@ describe( 'bulk panel: preview, apply and done', () => {
 			} )
 		);
 		expect( panel() ).toHaveAttribute( 'data-state', 'applying' );
+		// FRONTEND-7: aria-disabled while busy, so focus can stay on it.
 		expect(
-			screen.getByRole( 'button', { name: 'Apply to 20 products' } )
-		).toBeDisabled();
+			screen
+				.getByRole( 'button', { name: 'Apply to 20 products' } )
+				.getAttribute( 'aria-disabled' )
+		).toBe( 'true' );
 	} );
 
 	it( 'hands a stalled batch to renderStalled', async () => {
 		routeApi( apiFetch, {
 			'POST preview': previewResponse(),
+			'POST requests': grantFor,
 			'POST batches': { batch_id: 8, status: 'queued', total_items: 24 },
 			'GET batches/8': {
 				batch_id: 8,
@@ -707,54 +904,81 @@ describe( 'bulk panel: preview, apply and done', () => {
 		);
 	} );
 
-	it( 'sends a filter token with the count the preview showed', async () => {
+	it( 'previews and applies a snapshot by its current token, with no count', async () => {
 		routeApi( apiFetch, {
-			'POST preview': previewResponse( {
-				selection: { kind: 'filter', count: 30, current_count: 24 },
-			} ),
+			'POST preview': previewResponse(),
+			'POST requests': grantFor,
 			'POST batches': { batch_id: 9, status: 'queued', total_items: 24 },
 		} );
-		renderPanel( {
-			selection: { kind: 'filter', token: 'signed-token', count: 30 },
+		const { onApplied, rerenderWith } = renderPanel( {
+			selection: SNAPSHOT,
 		} );
 		chooseIncrease();
 		fireEvent.click(
 			screen.getByRole( 'button', { name: 'Check the change' } )
 		);
-		expect( callsTo( apiFetch, 'POST preview' )[ 0 ].data.token ).toBe(
-			'signed-token'
-		);
+		expect( callsTo( apiFetch, 'POST preview' )[ 0 ].data ).toMatchObject( {
+			token: SNAPSHOT.token,
+		} );
+		expect(
+			callsTo( apiFetch, 'POST preview' )[ 0 ].data.ids
+		).toBeUndefined();
 		fireEvent.click(
 			await screen.findByRole( 'button', {
 				name: 'Apply to 20 products',
 			} )
 		);
+		await waitFor( () =>
+			expect( callsTo( apiFetch, 'POST batches' ) ).toHaveLength( 1 )
+		);
+		expect( callsTo( apiFetch, 'POST requests' )[ 0 ].data.intent ).toEqual(
+			{
+				source: 'bulk',
+				operations: OPERATIONS,
+				scope_hash: SCOPE,
+				token: SNAPSHOT.token,
+			}
+		);
 		const [ sent ] = callsTo( apiFetch, 'POST batches' );
 		expect( sent.data ).toMatchObject( {
-			token: 'signed-token',
+			token: SNAPSHOT.token,
 			preview_hash: HASH,
-			preview_count: 24,
-			source: 'bulk',
 		} );
-		expect( sent.data.ids ).toBeUndefined();
+		expect( sent.data.preview_count ).toBeUndefined();
+		expect( sent.data.confirm_changed ).toBeUndefined();
+		await waitFor( () =>
+			expect( onApplied ).toHaveBeenCalledWith( 9, {
+				selection: SNAPSHOT,
+				replayed: false,
+				byType: REACHED,
+			} )
+		);
 		await screen.findByText( 'Applying the change' );
+		// Clearing the live selection afterwards leaves the scope applied.
+		rerenderWith( {
+			selection: {
+				...SNAPSHOT,
+				token: '',
+				count: 0,
+				byType: { products: 0, variations: 0 },
+			},
+		} );
+		expect(
+			screen.getByText( '1,200 products and 50 variations selected' )
+		).toBeVisible();
 	} );
 
-	it( 'states both numbers on 409 bulkcat_selection_changed, then applies anyway with the same uuid', async () => {
+	it( 'shows the server’s sentence on 409 bulkcat_selection_changed and offers only Preview again', async () => {
 		routeApi( apiFetch, {
 			'POST preview': previewResponse(),
-			'POST batches': ( options ) =>
-				options.data.confirm_changed
-					? { batch_id: 10, status: 'queued', total_items: 26 }
-					: restError(
-							'bulkcat_selection_changed',
-							'The filter now matches 26 products.',
-							{ status: 409, previewed: 24, current: 26 }
-						),
+			'POST requests': grantFor,
+			'POST batches': restError(
+				'bulkcat_selection_changed',
+				'The selection changed after you checked it. Preview the change again.',
+				{ status: 409 }
+			),
 		} );
-		const { onApplied } = renderPanel( {
-			selection: { kind: 'filter', token: 'tok', count: 24 },
-		} );
+		renderPanel( { selection: SNAPSHOT } );
 		chooseIncrease();
 		fireEvent.click(
 			screen.getByRole( 'button', { name: 'Check the change' } )
@@ -766,54 +990,24 @@ describe( 'bulk panel: preview, apply and done', () => {
 		);
 		expect(
 			await screen.findByText(
-				'When you checked the change it matched 24 products. It matches 26 products now.'
+				'The selection changed after you checked it. Preview the change again.'
 			)
 		).toBeVisible();
+		expect(
+			screen.queryByRole( 'button', { name: 'Apply anyway' } )
+		).toBeNull();
+		expect(
+			screen.getByRole( 'button', { name: 'Apply to 20 products' } )
+		).toBeDisabled();
 		fireEvent.click(
-			screen.getByRole( 'button', { name: 'Apply anyway' } )
-		);
-		await waitFor( () => expect( onApplied ).toHaveBeenCalledWith( 10 ) );
-		const [ first, second ] = callsTo( apiFetch, 'POST batches' );
-		expect( second.data.confirm_changed ).toBe( true );
-		expect( first.data.confirm_changed ).toBeUndefined();
-		expect( second.data.uuid ).toBe( first.data.uuid );
-	} );
-
-	it( 'offers Preview again on 409 bulkcat_selection_changed', async () => {
-		routeApi( apiFetch, {
-			'POST preview': previewResponse(),
-			'POST batches': restError(
-				'bulkcat_selection_changed',
-				'Changed.',
-				{
-					status: 409,
-					previewed: 24,
-					current: 30,
-				}
-			),
-		} );
-		renderPanel( {
-			selection: { kind: 'filter', token: 'tok', count: 24 },
-		} );
-		chooseIncrease();
-		fireEvent.click(
-			screen.getByRole( 'button', { name: 'Check the change' } )
-		);
-		fireEvent.click(
-			await screen.findByRole( 'button', {
-				name: 'Apply to 20 products',
-			} )
-		);
-		fireEvent.click(
-			await screen.findByRole( 'button', { name: 'Preview again' } )
+			screen.getByRole( 'button', { name: 'Preview again' } )
 		);
 		await waitFor( () =>
 			expect( callsTo( apiFetch, 'POST preview' ) ).toHaveLength( 2 )
 		);
-		expect( screen.queryByText( /It matches 30 products now/ ) ).toBeNull();
 	} );
 
-	it( 're-runs the preview on 409 bulkcat_preview_stale, and a new preview gets a new uuid', async () => {
+	it( 're-runs the preview on 409 bulkcat_preview_stale and applies with the same grant when the scope is the same', async () => {
 		let previews = 0;
 		let batches = 0;
 		routeApi( apiFetch, {
@@ -823,12 +1017,15 @@ describe( 'bulk panel: preview, apply and done', () => {
 					hash: previews === 1 ? HASH : HASH_2,
 				} );
 			},
+			'POST requests': grantFor,
 			'POST batches': () => {
 				batches++;
 				return batches === 1
-					? restError( 'bulkcat_preview_stale', 'Stale.', {
-							status: 409,
-						} )
+					? restError(
+							'bulkcat_preview_stale',
+							'This change no longer matches its preview. Preview the exact selected products again, then apply it.',
+							{ status: 409 }
+						)
 					: { batch_id: 11, status: 'queued', total_items: 24 };
 			},
 		} );
@@ -853,16 +1050,66 @@ describe( 'bulk panel: preview, apply and done', () => {
 				name: 'Apply to 20 products',
 			} )
 		);
-		await waitFor( () => expect( onApplied ).toHaveBeenCalledWith( 11 ) );
+		await waitFor( () => expect( onApplied ).toHaveBeenCalled() );
 		const [ first, second ] = callsTo( apiFetch, 'POST batches' );
 		expect( second.data.preview_hash ).toBe( HASH_2 );
-		expect( second.data.uuid ).not.toBe( first.data.uuid );
+		expect( second.data.uuid ).toBe( first.data.uuid );
+		expect( callsTo( apiFetch, 'POST requests' ) ).toHaveLength( 1 );
 	} );
 
-	it( 'reuses the uuid when an apply is retried after a failure', async () => {
+	it( 'asks for a new grant when a new preview covers a different scope', async () => {
+		let previews = 0;
+		let batches = 0;
+		routeApi( apiFetch, {
+			'POST preview': () => {
+				previews++;
+				return previewResponse(
+					previews === 1 ? {} : { hash: HASH_2, scope_hash: SCOPE_2 }
+				);
+			},
+			'POST requests': grantFor,
+			'POST batches': () => {
+				batches++;
+				return batches === 1
+					? restError( 'bulkcat_preview_stale', 'Stale.', {
+							status: 409,
+						} )
+					: { batch_id: 12, status: 'queued', total_items: 24 };
+			},
+		} );
+		renderPanel();
+		chooseIncrease();
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Check the change' } )
+		);
+		fireEvent.click(
+			await screen.findByRole( 'button', {
+				name: 'Apply to 20 products',
+			} )
+		);
+		await waitFor( () => expect( previews ).toBe( 2 ) );
+		fireEvent.click(
+			await screen.findByRole( 'button', {
+				name: 'Apply to 20 products',
+			} )
+		);
+		await waitFor( () =>
+			expect( callsTo( apiFetch, 'POST batches' ) ).toHaveLength( 2 )
+		);
+		const [ first, second ] = callsTo( apiFetch, 'POST batches' );
+		expect( second.data.uuid ).not.toBe( first.data.uuid );
+		expect( second.data.intent.scope_hash ).toBe( SCOPE_2 );
+		// The first was refused outright, so nothing had to be resolved.
+		expect( callsTo( apiFetch, 'POST requests/resolve' ) ).toHaveLength(
+			0
+		);
+	} );
+
+	it( 'resends the same grant after a lost answer, and shows the change the server already accepted', async () => {
 		let batches = 0;
 		routeApi( apiFetch, {
 			'POST preview': previewResponse(),
+			'POST requests': grantFor,
 			'POST batches': () => {
 				batches++;
 				return batches === 1
@@ -871,7 +1118,19 @@ describe( 'bulk panel: preview, apply and done', () => {
 							'You are probably offline.',
 							{}
 						)
-					: { batch_id: 12, status: 'queued', total_items: 24 };
+					: {
+							batch_id: 12,
+							status: 'complete',
+							total_items: 24,
+							replayed: true,
+						};
+			},
+			'GET batches/12': {
+				batch_id: 12,
+				status: 'complete',
+				total_items: 24,
+				done_items: 24,
+				failed_items: 0,
 			},
 		} );
 		const { onApplied } = renderPanel();
@@ -885,18 +1144,290 @@ describe( 'bulk panel: preview, apply and done', () => {
 			} )
 		);
 		expect(
-			await screen.findByText( 'You are probably offline.' )
+			await screen.findByText(
+				'We could not confirm whether the change was applied'
+			)
 		).toBeVisible();
 		fireEvent.click(
 			screen.getByRole( 'button', { name: 'Show details' } )
 		);
 		expect( screen.getByText( 'fetch_error' ) ).toBeVisible();
-		fireEvent.click(
-			screen.getByRole( 'button', { name: 'Apply to 20 products' } )
+		fireEvent.click( screen.getByRole( 'button', { name: 'Try again' } ) );
+		await waitFor( () =>
+			expect( onApplied ).toHaveBeenCalledWith( 12, {
+				selection: { kind: 'ids', ids: IDS },
+				replayed: true,
+				byType: REACHED,
+			} )
 		);
-		await waitFor( () => expect( onApplied ).toHaveBeenCalledWith( 12 ) );
 		const [ first, second ] = callsTo( apiFetch, 'POST batches' );
 		expect( second.data.uuid ).toBe( first.data.uuid );
+		expect( second.data.request_proof ).toBe( first.data.request_proof );
+		expect( callsTo( apiFetch, 'POST requests' ) ).toHaveLength( 1 );
+		// The receipt's outcome, once the batch has been read.
+		await screen.findByText( '24 products updated.' );
+		expect(
+			screen.getByText(
+				'This change had already been accepted, so it was not made again. This is its result.'
+			)
+		).toBeVisible();
+	} );
+
+	it( 'keeps an uncertain Apply’s grant when the panel is closed and opened again', async () => {
+		let batches = 0;
+		routeApi( apiFetch, {
+			'POST preview': previewResponse(),
+			'POST requests': grantFor,
+			'POST batches': () => {
+				batches++;
+				return batches === 1
+					? restError( 'fetch_error', 'Offline.', {} )
+					: { batch_id: 15, status: 'queued', total_items: 24 };
+			},
+		} );
+		const first = renderPanel();
+		chooseIncrease();
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Check the change' } )
+		);
+		fireEvent.click(
+			await screen.findByRole( 'button', {
+				name: 'Apply to 20 products',
+			} )
+		);
+		await screen.findByText(
+			'We could not confirm whether the change was applied'
+		);
+		first.unmount();
+		const { onApplied } = renderPanel();
+		chooseIncrease();
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Check the change' } )
+		);
+		fireEvent.click(
+			await screen.findByRole( 'button', {
+				name: 'Apply to 20 products',
+			} )
+		);
+		await waitFor( () => expect( onApplied ).toHaveBeenCalled() );
+		const [ lost, again ] = callsTo( apiFetch, 'POST batches' );
+		expect( again.data.uuid ).toBe( lost.data.uuid );
+		expect( callsTo( apiFetch, 'POST requests' ) ).toHaveLength( 1 );
+	} );
+
+	it( 'keeps an uncertain Apply’s grant across a reload of the page (T85)', async () => {
+		let batches = 0;
+		routeApi( apiFetch, {
+			'POST preview': previewResponse(),
+			'POST requests': grantFor,
+			'POST batches': () => {
+				batches++;
+				return batches === 1
+					? restError( 'fetch_error', 'Offline.', {} )
+					: {
+							batch_id: 16,
+							status: 'queued',
+							total_items: 24,
+							replayed: true,
+						};
+			},
+		} );
+		const first = renderPanel( { selection: SNAPSHOT } );
+		chooseIncrease();
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Check the change' } )
+		);
+		fireEvent.click(
+			await screen.findByRole( 'button', {
+				name: 'Apply to 20 products',
+			} )
+		);
+		await screen.findByText(
+			'We could not confirm whether the change was applied'
+		);
+		first.unmount();
+		// A reload: the module's memory is gone, the tab's copy is not.
+		require( '../../assets/src/panels/bulk/hooks' ).resetApplyGrant();
+		const { onApplied } = renderPanel( { selection: SNAPSHOT } );
+		chooseIncrease();
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Check the change' } )
+		);
+		fireEvent.click(
+			await screen.findByRole( 'button', {
+				name: 'Apply to 20 products',
+			} )
+		);
+		await waitFor( () =>
+			expect( onApplied ).toHaveBeenCalledWith( 16, {
+				selection: SNAPSHOT,
+				replayed: true,
+				byType: REACHED,
+			} )
+		);
+		const [ lost, again ] = callsTo( apiFetch, 'POST batches' );
+		expect( again.data.uuid ).toBe( lost.data.uuid );
+		expect( again.data.request_proof ).toBe( lost.data.request_proof );
+		expect( callsTo( apiFetch, 'POST requests' ) ).toHaveLength( 1 );
+	} );
+
+	it( 'resolves an uncertain earlier Apply before a different change, and shows it when it had gone through', async () => {
+		let batches = 0;
+		routeApi( apiFetch, {
+			'POST preview': ( options ) =>
+				previewResponse( {
+					operations: options.data.operations,
+				} ),
+			'POST requests': grantFor,
+			'POST batches': () => {
+				batches++;
+				return restError( 'fetch_error', 'Offline.', {} );
+			},
+			'POST requests/resolve': {
+				batch_id: 14,
+				status: 'running',
+				total_items: 24,
+				replayed: true,
+			},
+			'GET batches/14': new Promise( () => {} ),
+		} );
+		const { onApplied } = renderPanel();
+		chooseIncrease();
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Check the change' } )
+		);
+		fireEvent.click(
+			await screen.findByRole( 'button', {
+				name: 'Apply to 20 products',
+			} )
+		);
+		await screen.findByText(
+			'We could not confirm whether the change was applied'
+		);
+		// A different change: the earlier one is resolved first.
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Edit step 1' } )
+		);
+		change( 'How much', '12' );
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Preview again' } )
+		);
+		fireEvent.click(
+			await screen.findByRole( 'button', {
+				name: 'Apply to 20 products',
+			} )
+		);
+		// Applied elsewhere: not tied to this panel's selection.
+		await waitFor( () =>
+			expect( onApplied ).toHaveBeenCalledWith( 14, {
+				selection: null,
+				replayed: true,
+				byType: null,
+			} )
+		);
+		expect( batches ).toBe( 1 );
+		expect( callsTo( apiFetch, 'POST requests' ) ).toHaveLength( 1 );
+		const [ resolved ] = callsTo( apiFetch, 'POST requests/resolve' );
+		expect( resolved.data.operation ).toBe( 'batch.apply' );
+		await waitFor( () =>
+			expect( panel().textContent ).toContain(
+				'An earlier attempt to apply a change had gone through, so nothing new was sent. This is that change.'
+			)
+		);
+	} );
+
+	it.each( [
+		[
+			'bulkcat_legacy_request',
+			409,
+			'This change was sent by an older version of this page. Check History for the change it may already have made, then reload the page before starting new work.',
+			{ batch_ids: [ 41 ] },
+		],
+		[
+			'bulkcat_request_gone',
+			410,
+			'The original change is no longer in History. This request cannot be applied again.',
+			{},
+		],
+		[
+			'bulkcat_request_expired',
+			410,
+			'This request is past its acceptance deadline. Resolve the original result before starting a new change.',
+			{},
+		],
+	] )(
+		'states %s in the server’s words',
+		async ( code, status, sentence, data ) => {
+			routeApi( apiFetch, {
+				'POST preview': previewResponse(),
+				'POST requests': grantFor,
+				'POST batches': restError( code, sentence, {
+					status,
+					...data,
+				} ),
+			} );
+			const onViewHistory = jest.fn();
+			renderPanel( { onViewHistory } );
+			chooseIncrease();
+			fireEvent.click(
+				screen.getByRole( 'button', { name: 'Check the change' } )
+			);
+			fireEvent.click(
+				await screen.findByRole( 'button', {
+					name: 'Apply to 20 products',
+				} )
+			);
+			expect( await screen.findByText( sentence ) ).toBeVisible();
+		}
+	);
+
+	it( 'links an older page’s request to the change History names', async () => {
+		routeApi( apiFetch, {
+			'POST preview': previewResponse(),
+			'POST requests': grantFor,
+			'POST batches': restError(
+				'bulkcat_legacy_request',
+				'This change was sent by an older version of this page.',
+				{ status: 409, batch_ids: [ 41 ] }
+			),
+		} );
+		const onViewHistory = jest.fn();
+		renderPanel( { onViewHistory } );
+		chooseIncrease();
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Check the change' } )
+		);
+		fireEvent.click(
+			await screen.findByRole( 'button', {
+				name: 'Apply to 20 products',
+			} )
+		);
+		fireEvent.click(
+			await screen.findByRole( 'button', { name: 'View in History' } )
+		);
+		expect( onViewHistory ).toHaveBeenCalledWith( 41 );
+	} );
+
+	it( 'offers to restore a selection whose lease lapsed, from the preview or the Apply', async () => {
+		routeApi( apiFetch, {
+			'POST preview': restError(
+				'bulkcat_selection_renew_required',
+				'Your selected products are still saved. Restore your selection, then preview the change again.',
+				{ status: 409 }
+			),
+		} );
+		const onRenewSelection = jest.fn();
+		renderPanel( { selection: SNAPSHOT, onRenewSelection } );
+		chooseIncrease();
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Check the change' } )
+		);
+		fireEvent.click(
+			await screen.findByRole( 'button', {
+				name: 'Restore the selection',
+			} )
+		);
+		expect( onRenewSelection ).toHaveBeenCalled();
 	} );
 
 	it( 'closes on Escape and returns focus to the control that opened it', () => {
@@ -921,4 +1452,104 @@ describe( 'bulk panel: preview, apply and done', () => {
 		expect( document.activeElement ).toBe( opener );
 		opener.remove();
 	} );
+
+	it( 'returns focus to the screen’s panel when its opener has gone (FRONTEND-7)', () => {
+		const region = document.createElement( 'div' );
+		region.className = 'bulkcat-app__panel';
+		region.tabIndex = -1;
+		const opener = document.createElement( 'button' );
+		region.appendChild( opener );
+		document.body.appendChild( region );
+		opener.focus();
+		const { unmount } = render(
+			<BulkChangePanel
+				selection={ { kind: 'ids', ids: IDS } }
+				registry={ REGISTRY }
+				settings={ SETTINGS }
+			/>
+		);
+		// A change that finished in full clears the selection, and its bar.
+		opener.remove();
+		unmount();
+		expect( document.activeElement ).toBe( region );
+		region.remove();
+	} );
+} );
+
+describe( 'native Status bulk review', () => {
+	it.each( [
+		[ 1, false ],
+		[ 2, true ],
+	] )(
+		'applies %i changed rows with warnings at threshold two',
+		async ( count, confirms ) => {
+			apiFetch.mockReset();
+			const operations = [
+				{
+					action: 'set_status',
+					args: {
+						field: 'status',
+						value: 'private',
+						skip_already: true,
+						apply_to_variations: false,
+					},
+				},
+			];
+			const response = previewResponse( {
+				operations,
+				warnings: { publication_password_cleared: count },
+				totals: {
+					...previewResponse().totals,
+					matched: count,
+					would_change: count,
+					would_fail: {},
+					by_type: {
+						product: { matched: count, would_change: count },
+						variation: { matched: 0, would_change: 0 },
+					},
+				},
+			} );
+			routeApi( apiFetch, {
+				'POST preview': response,
+				'POST requests': grantFor,
+				'POST batches': { batch_id: 99, status: 'queued' },
+			} );
+			renderPanel( {
+				settings: {
+					...SETTINGS,
+					confirm_threshold: 2,
+					variations_status: false,
+				},
+			} );
+			choose( 'Publishing', 'Set Status' );
+			change( 'New value', 'private' );
+			fireEvent.click(
+				screen.getByRole( 'button', { name: 'Check the change' } )
+			);
+			const apply = await screen.findByRole( 'button', {
+				name: `Apply to ${ count } ${ count === 1 ? 'product' : 'products' }`,
+			} );
+			expect(
+				document.querySelector( '[data-block="warnings"]' ).textContent
+			).toMatch( /publication password/i );
+			fireEvent.click( apply );
+			expect(
+				screen.queryAllByRole( 'button', { name: /^Yes, change/ } )
+			).toHaveLength( confirms ? 1 : 0 );
+			expect( callsTo( apiFetch, 'POST batches' ) ).toHaveLength( 0 );
+			if ( confirms ) {
+				fireEvent.click(
+					screen.getByRole( 'button', {
+						name: 'Yes, change 2 products',
+					} )
+				);
+			}
+			await waitFor( () =>
+				expect( callsTo( apiFetch, 'POST batches' ) ).toHaveLength( 1 )
+			);
+			expect(
+				callsTo( apiFetch, 'POST batches' )[ 0 ].data.intent.operations
+			).toEqual( operations );
+		}
+	);
 } );

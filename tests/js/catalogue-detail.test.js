@@ -1,3 +1,4 @@
+import { withInlineReceipts } from './inline-transport';
 /**
  * T47: the detail panel. Edit details opens a DataForm drawer holding every
  * editable registry field for the product (the four-way catalogue visibility
@@ -64,25 +65,38 @@ const VARIATIONS = [
 	},
 ];
 
+let storedItems;
 let patch;
+let fullRow;
 
 beforeEach( () => {
+	storedItems = [ ...ROWS ];
 	apiFetch.mockReset();
 	patch = jest.fn();
+	fullRow = FULL;
 	apiFetch.mockImplementation( ( { url, method, data } ) => {
 		const path = url.split( '?' )[ 0 ];
 		const query = getQueryArgs( url );
 		if ( method === 'PATCH' ) {
-			return patch( path, data, query );
+			return patch( path, data, query ).then( ( answer ) => {
+				if ( answer?.item ) {
+					storedItems = storedItems.map( ( row ) =>
+						row.id === answer.item.id
+							? { ...row, ...answer.item }
+							: row
+					);
+				}
+				return answer;
+			} );
 		}
 		switch ( path ) {
 			case 'fields':
 				return Promise.resolve( REGISTRY );
 			case 'products':
-				return Promise.resolve( page( ROWS ) );
+				return Promise.resolve( page( storedItems ) );
 			// T47 reads the full row through GET /products/{id}.
 			case 'products/11':
-				return Promise.resolve( { item: FULL } );
+				return Promise.resolve( { item: fullRow } );
 			case 'products/11/variations':
 				return Promise.resolve( page( VARIATIONS, 1 ) );
 			case 'audit':
@@ -102,6 +116,7 @@ beforeEach( () => {
 				return new Promise( () => {} );
 		}
 	} );
+	withInlineReceipts( apiFetch );
 } );
 
 const patches = () =>
@@ -138,7 +153,9 @@ describe( 'detail panel', () => {
 			).toBeGreaterThan( 0 );
 		}
 		// The switch is the row's; the panel states the exact four-way value.
-		expect( within( dialog ).queryByText( 'Visible on site' ) ).toBeNull();
+		expect(
+			within( dialog ).queryByText( 'Shown in shop and search' )
+		).toBeNull();
 		const visibility = within( dialog ).getByRole( 'combobox', {
 			name: 'Catalogue visibility',
 		} );
@@ -193,7 +210,7 @@ describe( 'detail panel', () => {
 		);
 		await waitFor( () => expect( patches() ).toHaveLength( 1 ) );
 		expect( patch.mock.calls[ 0 ][ 0 ] ).toBe( 'products/11' );
-		expect( patch.mock.calls[ 0 ][ 1 ] ).toEqual( {
+		expect( patch.mock.calls[ 0 ][ 1 ] ).toMatchObject( {
 			regular_price: '15',
 			sku: 'TSH-900',
 		} );
@@ -230,7 +247,12 @@ describe( 'detail panel', () => {
 			code: 'bulkcat_invalid_value',
 			message:
 				'A product with the SKU GLF-120 already exists, so this SKU was not applied.',
-			data: { status: 400, field: 'sku' },
+			data: {
+				status: 400,
+				receipt_state: 'refused',
+				replayed: false,
+				field: 'sku',
+			},
 		} );
 		const { dialog } = await openDrawer();
 		fireEvent.change(
@@ -292,5 +314,212 @@ describe( 'detail panel', () => {
 			).toBeNull()
 		);
 		expect( document.activeElement ).toBe( menu );
+	} );
+} );
+
+describe( 'reads the panel could not make (FRONTEND-9)', () => {
+	/**
+	 * Answer some paths differently, the rest as the suite does.
+	 *
+	 * @param {Object} overrides path => () => Promise.
+	 */
+	function answerWith( overrides ) {
+		const usual = apiFetch.getMockImplementation();
+		apiFetch.mockImplementation( ( options ) => {
+			const path = options.url.split( '?' )[ 0 ];
+			return overrides[ path ] ? overrides[ path ]() : usual( options );
+		} );
+	}
+
+	async function openOnly() {
+		render( <Catalogue settings={ SETTINGS } /> );
+		await screen.findByText( 'Classic Cotton T-Shirt' );
+		const row = screen
+			.getByRole( 'link', { name: 'Classic Cotton T-Shirt' } )
+			.closest( 'tr' );
+		fireEvent.click(
+			within( row ).getByRole( 'button', { name: 'Actions' } )
+		);
+		fireEvent.click(
+			await screen.findByRole( 'menuitem', { name: 'Edit details' } )
+		);
+		return screen.findByRole( 'dialog', { name: 'Details' } );
+	}
+
+	it( 'says a failed read of the latest change, never "No changes recorded yet", and tries again', async () => {
+		let failing = true;
+		answerWith( {
+			audit: () =>
+				failing
+					? Promise.reject( {
+							code: 'fetch_error',
+							message: 'Offline.',
+						} )
+					: Promise.resolve( {
+							items: [
+								{
+									field: 'regular_price',
+									field_label: 'Regular price',
+									applied_gmt: '2026-09-20 10:00:00',
+								},
+							],
+						} ),
+		} );
+		const dialog = await openOnly();
+		expect(
+			await within( dialog ).findByText(
+				/The latest change could not be read\./
+			)
+		).toBeTruthy();
+		expect(
+			within( dialog ).queryByText( /No changes recorded yet/ )
+		).toBeNull();
+		failing = false;
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Try again' } )
+		);
+		expect(
+			await within( dialog ).findByText( /Regular price was changed on/ )
+		).toBeTruthy();
+	} );
+
+	it( 'says a failed read of the product and of its variations', async () => {
+		answerWith( {
+			'products/11': () =>
+				Promise.reject( { code: 'fetch_error', message: 'Offline.' } ),
+			'products/11/variations': () =>
+				Promise.reject( { code: 'fetch_error', message: 'Offline.' } ),
+		} );
+		const dialog = await openOnly();
+		expect(
+			await within( dialog ).findByText(
+				'Some details of this product could not be loaded, so not everything is shown.'
+			)
+		).toBeTruthy();
+		expect(
+			within( dialog ).getByRole( 'button', { name: 'Try again' } )
+		).toBeTruthy();
+	} );
+
+	it( 'says when only the first 100 variations are listed', async () => {
+		answerWith( {
+			'products/11/variations': () =>
+				Promise.resolve( page( VARIATIONS, 150, 100 ) ),
+		} );
+		const dialog = await openOnly();
+		expect(
+			await within( dialog ).findByText(
+				'Showing the first 1 of 150 variations.'
+			)
+		).toBeTruthy();
+	} );
+} );
+
+describe( 'native Status in the drawer', () => {
+	it( 'opens an already-Scheduled row and saves no literal future when no target changes', async () => {
+		fullRow = { ...FULL, status: 'future' };
+		const { dialog } = await openDrawer();
+		const status = within( dialog ).getByRole( 'combobox', {
+			name: 'Status',
+		} );
+		expect( status.value ).toBe( 'future' );
+		expect( status.selectedOptions[ 0 ].textContent ).toBe( 'Scheduled' );
+		expect( status.selectedOptions[ 0 ].disabled ).toBe( true );
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Save' } )
+		);
+		expect( patches() ).toHaveLength( 0 );
+		expect( status.selectedOptions[ 0 ].textContent ).toBe( 'Scheduled' );
+		expect( dialog.querySelector( '.bulkcat-status-confirm' ) ).toBeNull();
+	} );
+
+	it( 'uses one Save for Published despite a legacy Private record and keeps the returned Scheduled result', async () => {
+		fullRow = {
+			...FULL,
+			status: 'draft',
+			off_state: {
+				state: 'off',
+				saved: 'private',
+				saved_label: 'Private',
+			},
+		};
+		patch.mockResolvedValue( {
+			item: { ...FULL, status: 'future', off_state: null },
+			batch_id: 41,
+			status: 'complete',
+			results: [
+				{
+					field: 'status',
+					new: 'future',
+					state: 'changed',
+					context: {
+						requested_status: 'publish',
+						effective_status: 'future',
+					},
+				},
+			],
+		} );
+		const { dialog } = await openDrawer();
+		const status = within( dialog ).getByRole( 'combobox', {
+			name: 'Status',
+		} );
+		expect( status.value ).toBe( 'draft' );
+		fireEvent.change( status, { target: { value: 'publish' } } );
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Save' } )
+		);
+		expect(
+			await within( dialog ).findByText( 'Saved: Status. Scheduled.' )
+		).toBeTruthy();
+		expect( patches() ).toHaveLength( 1 );
+		expect( patch.mock.calls[ 0 ][ 1 ] ).toMatchObject( {
+			status: 'publish',
+		} );
+		expect( status.selectedOptions[ 0 ].textContent ).toBe( 'Scheduled' );
+		expect( status.selectedOptions[ 0 ].disabled ).toBe( true );
+		expect( dialog.textContent ).not.toMatch(
+			/Switch On|before Off|Keep current status/
+		);
+		// Saving another field must not send the stored future value as a target.
+		fireEvent.change(
+			within( dialog ).getByRole( 'textbox', { name: 'SKU' } ),
+			{ target: { value: 'NEW-SKU' } }
+		);
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Save' } )
+		);
+		await waitFor( () => expect( patches() ).toHaveLength( 2 ) );
+		expect( patch.mock.calls[ 1 ][ 1 ] ).toMatchObject( {
+			sku: 'NEW-SKU',
+		} );
+	} );
+
+	it( 'shows a safe refusal beside Status with no new confirmation or second request', async () => {
+		patch.mockRejectedValue( {
+			code: 'bulkcat_variation_password_unsupported',
+			message:
+				'This change was left alone to protect the stored password.',
+			data: {
+				status: 400,
+				receipt_state: 'refused',
+				replayed: false,
+				field: 'status',
+			},
+		} );
+		const { dialog } = await openDrawer();
+		fireEvent.change(
+			within( dialog ).getByRole( 'combobox', { name: 'Status' } ),
+			{ target: { value: 'private' } }
+		);
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Save' } )
+		);
+		expect(
+			await within( dialog ).findByText(
+				/left alone to protect the stored password/
+			)
+		).toBeTruthy();
+		expect( patches() ).toHaveLength( 1 );
+		expect( dialog.querySelector( '.bulkcat-status-confirm' ) ).toBeNull();
 	} );
 } );

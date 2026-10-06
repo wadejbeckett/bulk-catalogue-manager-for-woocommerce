@@ -14,9 +14,12 @@
  * that panel is closed (T44).
  *
  * Search and filters (T41) live in toolbar/: the registry's filter
- * definitions, viewToQuery() and the chips. The selection (T42) lives in
- * selection/: ids kept across pages, select all matching through POST
- * /selection, and the sticky selection bar that opens the bulk panel.
+ * definitions, viewToQuery() and the chips. The selection (T42, T84) lives
+ * in selection/: the screen's exact selection session, kept across searches,
+ * filters, pages and panels, Select all matching adding the view's matches,
+ * Review selected products, and the sticky selection bar that opens the bulk
+ * panel on it. Only Clear selection, Clear search, a removal or a change
+ * that finished in full changes what is selected.
  */
 import { Button } from '@wordpress/components';
 import {
@@ -33,17 +36,20 @@ import { __ } from '@wordpress/i18n';
 import { request } from '../../api';
 import { ShellContext } from '../../shell';
 import BulkChangePanel from '../bulk';
-import { FINISHED, useBatchProgress } from '../bulk/hooks';
+import { FINISHED, resumeApply, useBatchProgress } from '../bulk/hooks';
 import { useProgressAnnouncer } from '../bulk/announce';
-import { doneSentence } from '../bulk/progress';
+import { ProgressStopped, doneSentence } from '../bulk/progress';
 import { announce } from '../categories/announce';
 import { CategoryPanel, useCategoryTree } from '../categories/index';
 import { categorySentence } from '../categories/tree-model';
 import { BatchProgress, StalledNotice } from '../history';
 import { useSettings } from '../settings/store';
-import { rowActions } from './actions';
+import { providerRowActions, providerRowChange, rowActions } from './actions';
+import { useNativeReturn } from './use-native-return';
 import { descriptorsOf, defaultView, fieldsFromRegistry } from './fields';
+import { onCatalogueFocus } from './focus-visibility';
 import { categoryArgs, clearFilters, isFiltered } from './query';
+import { forgetLinked, linkedFrom } from './linked-category';
 import { ErrorNotice, LoadingRows, NoMatches, NoProducts } from './states';
 import { useCatalogue, useRegistry, useTermNames } from './use-catalogue';
 // T41, T42: search, filters, chips and the selection.
@@ -57,10 +63,11 @@ import {
 	withFilters,
 	withoutFilter,
 } from './toolbar';
+import NothingSelected from './selection/nothing-selected';
 import {
+	SelectedProducts,
 	SelectionBar,
 	addCategoryOperation,
-	panelSelection,
 	useSelection,
 	visibilityOperation,
 } from './selection';
@@ -73,6 +80,13 @@ import {
 	SavedViewsBar,
 } from './views';
 import { switchFieldId } from './views/cards';
+// Ticket 19: personal display choices and rows per page.
+import { applyDisplay, displayOf, sameDisplay } from './views/display-state';
+import PageSizeControl from './views/page-size';
+import {
+	useDisplayPreferences,
+	useRememberDisplay,
+} from './views/use-display-preferences';
 import { MODES, modeOf } from './variations';
 import './style.scss';
 
@@ -109,16 +123,36 @@ function useCurrentSettings( settings ) {
  * @param {number}   props.batchId       The batch.
  * @param {Function} props.onFinished    Called once with the finished report.
  * @param {Function} props.onViewHistory Open History at this batch, or null.
+ * @param {boolean}  props.replayed      The apply answered a change already accepted (T84).
+ * @param {boolean}  props.hidden        Follow the change without showing it, while the bulk panel covers the banner (FRONTEND-3).
+ * @param {Object}   props.byType        `{ products, variations }` the preview reached, or null (FRONTEND-6).
  * @return {Element|null} Progress.
  */
 export function AppliedProgress( {
 	batchId,
 	onFinished,
 	onViewHistory = null,
+	replayed = false,
+	hidden = false,
+	byType = null,
 } ) {
 	const [ cancelling, setCancelling ] = useState( false );
+	// FRONTEND-13: stopping a running change is asked about first.
+	const [ asking, setAsking ] = useState( false );
+	const stopRef = useRef( null );
+	const keepRef = useRef( null );
+	const wasAsking = useRef( false );
+	useEffect( () => {
+		// Focus follows the question, and comes back when it is answered.
+		if ( asking ) {
+			keepRef.current?.focus();
+		} else if ( wasAsking.current ) {
+			stopRef.current?.focus();
+		}
+		wasAsking.current = asking;
+	}, [ asking ] );
 	const [ refused, setRefused ] = useState( '' );
-	const { report } = useBatchProgress( batchId );
+	const { report, stopped, checkAgain } = useBatchProgress( batchId );
 	const finished = FINISHED.includes( report?.status );
 	const tell = useRef( onFinished );
 	tell.current = onFinished;
@@ -132,14 +166,15 @@ export function AppliedProgress( {
 	useEffect( () => {
 		if ( finished && ! told.current ) {
 			told.current = true;
-			announce( doneSentence( report ), 'polite' );
+			announce( doneSentence( report, byType ), 'polite' );
 			tell.current( report );
 		}
-	}, [ finished, report ] );
-	if ( ! report || finished ) {
+	}, [ finished, report, byType ] );
+	if ( ( ! report && ! stopped ) || finished || hidden ) {
 		return null;
 	}
 	const cancel = () => {
+		setAsking( false );
 		setCancelling( true );
 		setRefused( '' );
 		request( `batches/${ Number( batchId ) }/cancel`, {
@@ -166,25 +201,37 @@ export function AppliedProgress( {
 				'bulk-catalogue-manager-for-woocommerce'
 			) }
 		>
-			<BatchProgress report={ report } />
+			{ replayed && (
+				<p className="bulkcat-catalogue__progress-note">
+					{ __(
+						'This change had already been accepted, so it was not sent again. Its progress is shown here.',
+						'bulk-catalogue-manager-for-woocommerce'
+					) }
+				</p>
+			) }
+			{ report && <BatchProgress report={ report } /> }
+			{ stopped && <ProgressStopped onCheckAgain={ checkAgain } /> }
 			<span className="bulkcat-catalogue__progress-acts">
-				<Button
-					variant="secondary"
-					size="compact"
-					onClick={ cancel }
-					disabled={ cancelling }
-					accessibleWhenDisabled
-				>
-					{ cancelling
-						? __(
-								'Cancelling…',
-								'bulk-catalogue-manager-for-woocommerce'
-							)
-						: __(
-								'Cancel',
-								'bulk-catalogue-manager-for-woocommerce'
-							) }
-				</Button>
+				{ ! asking && (
+					<Button
+						ref={ stopRef }
+						variant="secondary"
+						size="compact"
+						onClick={ () => setAsking( true ) }
+						disabled={ cancelling }
+						accessibleWhenDisabled
+					>
+						{ cancelling
+							? __(
+									'Stopping…',
+									'bulk-catalogue-manager-for-woocommerce'
+								)
+							: __(
+									'Stop this change',
+									'bulk-catalogue-manager-for-woocommerce'
+								) }
+					</Button>
+				) }
 				{ onViewHistory && (
 					<Button
 						variant="link"
@@ -197,6 +244,37 @@ export function AppliedProgress( {
 					</Button>
 				) }
 			</span>
+			{ asking && (
+				<span
+					className="bulkcat-catalogue__progress-ask"
+					role="group"
+					aria-labelledby="bulkcat-progress-ask"
+				>
+					<span id="bulkcat-progress-ask">
+						{ __(
+							'Stop this change? What it has already changed stays changed, and can be undone from History.',
+							'bulk-catalogue-manager-for-woocommerce'
+						) }
+					</span>{ ' ' }
+					<Button variant="primary" size="compact" onClick={ cancel }>
+						{ __(
+							'Yes, stop it',
+							'bulk-catalogue-manager-for-woocommerce'
+						) }
+					</Button>
+					<Button
+						ref={ keepRef }
+						variant="secondary"
+						size="compact"
+						onClick={ () => setAsking( false ) }
+					>
+						{ __(
+							'Keep it running',
+							'bulk-catalogue-manager-for-woocommerce'
+						) }
+					</Button>
+				</span>
+			) }
 			{ refused && (
 				<p className="bulkcat-catalogue__progress-error" role="alert">
 					{ refused }
@@ -209,17 +287,25 @@ export function AppliedProgress( {
 /**
  * The grid once the registry has arrived.
  *
- * @param {Object}   props               Props.
- * @param {Object}   props.registry      GET /fields answer.
- * @param {Object}   props.settings      Localised settings.
- * @param {Object}   props.initialView   View overrides to open with (a saved view, tests).
- * @param {Function} props.onEditDetails Open the detail panel (T47).
+ * @param {Object}   props                 Props.
+ * @param {Object}   props.registry        GET /fields answer.
+ * @param {Object}   props.settings        Localised settings.
+ * @param {Object}   props.initialView     View overrides to open with (a saved view, tests).
+ * @param {Object}   props.personal        The user's stored display choices, or null (ticket 19).
+ * @param {boolean}  props.personalRead    Whether the stored choices have been read.
+ * @param {Function} props.onEditDetails   Open the detail panel (T47).
+ * @param {Object}   props.initialCategory The category filter a link from the Categories tab opened with, or null.
+ * @param {boolean}  props.linked          Opened from such a link: the default saved view is not applied over it.
  * @return {Element} Grid.
  */
 export function CatalogueGrid( {
 	registry,
 	settings: localised,
 	initialView,
+	initialCategory = null,
+	linked = false,
+	personal = null,
+	personalRead = false,
 	onEditDetails,
 } ) {
 	const settings = useCurrentSettings( localised );
@@ -238,22 +324,78 @@ export function CatalogueGrid( {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 		[ registry ]
 	);
+	// Ticket 19: the user's own display choices over the starting view.
+	const known = useMemo(
+		() => descriptors.map( ( field ) => field.key ),
+		[ descriptors ]
+	);
 	const [ view, setView ] = useState( () => ( {
-		...baseView,
+		...applyDisplay( baseView, personal, known ),
 		...initialView,
 	} ) );
-	const [ category, setCategory ] = useState( null );
+	// The display the screen set itself (opening, default view), which the
+	// stored choices may replace when they arrive; a user's own change is kept.
+	const ownDisplay = useRef( displayOf( view ) );
+	useEffect( () => {
+		if ( ! personal ) {
+			return;
+		}
+		setView( ( current ) =>
+			sameDisplay( displayOf( current ), ownDisplay.current )
+				? applyDisplay( current, personal, known )
+				: current
+		);
+	}, [ personal, known ] );
+	const displayMemory = useRememberDisplay(
+		view,
+		personalRead,
+		personal,
+		known
+	);
+	// A display change the user makes; the screen's own changes use setView.
+	const { touch: touchDisplay } = displayMemory;
+	const changeView = useCallback(
+		( next ) => {
+			touchDisplay();
+			setView( next );
+		},
+		[ touchDisplay ]
+	);
+	const [ category, setCategory ] = useState( initialCategory );
 	const [ sentence, setSentence ] = useState( '' );
 	// T41, T42: the bulk panel opens on the selection, with any quick action's step.
 	const [ bulk, setBulk ] = useState( null );
 	const [ applied, setApplied ] = useState( null );
+	// T84: the rows drawn, for inspecting which are selected; the review.
+	const [ drawn, setDrawn ] = useState( [] );
+	const onDrawn = useCallback(
+		( ids ) =>
+			setDrawn( ( was ) =>
+				was.length === ids.length &&
+				was.every( ( id, at ) => id === ids[ at ] )
+					? was
+					: ids
+			),
+		[]
+	);
+	const [ reviewing, setReviewing ] = useState( false );
 	const extra = useMemo( () => categoryArgs( category ), [ category ] );
-	const catalogue = useCatalogue( view, descriptors, extra );
+	const catalogue = useCatalogue( view, descriptors, extra, setView );
 	const treeQuery = useMemo(
 		() => ( view.search ? { search: view.search } : {} ),
 		[ view.search ]
 	);
 	const tree = useCategoryTree( treeQuery );
+	// A category a link opened with is named in the chip once the tree is read.
+	const naming = useRef( !! initialCategory );
+	useEffect( () => {
+		if ( naming.current && tree.loaded ) {
+			naming.current = false;
+			setSentence(
+				( was ) => was || categorySentence( initialCategory, tree.byId )
+			);
+		}
+	}, [ tree.loaded, tree.byId, initialCategory ] );
 	const sources = useMemo(
 		() =>
 			descriptors
@@ -273,9 +415,24 @@ export function CatalogueGrid( {
 			rowActions( {
 				onEditDetails,
 				onMakeChange: ( ids ) =>
-					setBulk( { selection: { kind: 'ids', ids } } ),
+					setBulk( {
+						selection: {
+							kind: 'ids',
+							ids: [ ...ids ]
+								.map( Number )
+								.sort( ( a, b ) => a - b ),
+						},
+					} ),
+				// Contract version 2: an add-on's action on this row only (EXTENSIONS-v2 §6).
+				providerActions: providerRowActions(
+					registry,
+					( action, row ) =>
+						setBulk(
+							providerRowChange( registry, settings, action, row )
+						)
+				),
 			} ),
-		[ onEditDetails ]
+		[ onEditDetails, registry, settings ]
 	);
 	// T41, T42: filter fields, chips, the selection and its quick actions.
 	const filterFields = useMemo(
@@ -290,7 +447,11 @@ export function CatalogueGrid( {
 		() => selectionQuery( view, descriptors, extra ),
 		[ view, descriptors, extra ]
 	);
-	const selection = useSelection( { conditions, items: catalogue.items } );
+	const selection = useSelection( {
+		conditions,
+		items: catalogue.items,
+		drawn,
+	} );
 	const showStep = useMemo(
 		() => visibilityOperation( registry, settings, true ),
 		[ registry, settings ]
@@ -299,53 +460,38 @@ export function CatalogueGrid( {
 		() => visibilityOperation( registry, settings, false ),
 		[ registry, settings ]
 	);
+	// T84: the panel reads the live selection, so a renewed token, a tick
+	// made while it is open or an unsettled change reaches it at once.
 	const openBulk = ( steps = null ) =>
-		setBulk( {
-			selection: panelSelection( selection, chips ),
-			initialOperations: steps,
-		} );
+		setBulk( { live: true, initialOperations: steps } );
 	// T65: the selection dropped on a category opens the panel with Add
 	// categories for it; nothing is written before preview and apply.
-	const hasSelection = selection.count > 0 || !! selection.matching;
+	const hasSelection = selection.hasSelection;
 	const dropSelection = ( categoryId ) => {
 		const step = addCategoryOperation( registry, settings, categoryId );
 		if ( step && hasSelection ) {
 			openBulk( [ step ] );
 		}
 	};
-	// T75: the header's Bulk change opens the panel on the selection, or,
-	// with nothing selected, on every product matching the view once the
-	// server has resolved them.
+	// T75: the header's Bulk change opens the panel on the selection. With
+	// nothing selected it opens on nothing and asks (FRONTEND-1, ticket 20):
+	// Select all matching is offered there, never done on the operator's
+	// behalf.
 	const shell = useContext( ShellContext );
-	const [ bulkWanted, setBulkWanted ] = useState( false );
 	const { bulkRequested, consumeBulk } = shell;
 	useEffect( () => {
 		if ( ! bulkRequested ) {
 			return;
 		}
 		consumeBulk();
-		if ( hasSelection ) {
-			openBulk();
-		} else {
-			setBulkWanted( true );
-			selection.selectAllMatching();
-		}
-		// openBulk reads the selection at the time of the request.
+		openBulk();
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [ bulkRequested ] );
-	const matchingStatus = selection.matching?.status;
-	useEffect( () => {
-		if ( ! bulkWanted ) {
-			return;
-		}
-		if ( matchingStatus === 'ready' ) {
-			setBulkWanted( false );
-			openBulk();
-		} else if ( matchingStatus !== 'loading' ) {
-			setBulkWanted( false );
-		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [ bulkWanted, matchingStatus ] );
+	// The view on screen has settled once the saved views have arrived and
+	// any default view is applied: until then the start view is not the one
+	// the operator works on (FRONTEND-1).
+	const [ viewSettled, setViewSettled ] = useState( false );
+	const onViewsReady = useCallback( () => setViewSettled( true ), [] );
 	const viewCategory = !! filterArgs( view.filters, descriptors )[
 		CATEGORY_FILTER
 	];
@@ -362,6 +508,16 @@ export function CatalogueGrid( {
 		setCategory( null );
 		setSentence( '' );
 	}, [] );
+	// T84: Clear search is deliberate: the search and the selection go.
+	// T85: its notice offers Restore selection, which brings the selection
+	// back while the server still keeps it. The search is not put back: the
+	// search box's own 250 ms debounce would write the cleared text over it
+	// when Restore follows Clear quickly.
+	const { clearWithSearch, restore } = selection;
+	const clearSearch = useCallback( () => {
+		setView( ( current ) => ( { ...current, search: '', page: 1 } ) );
+		clearWithSearch();
+	}, [ clearWithSearch ] );
 	const chooseCategory = useCallback( ( value, words ) => {
 		setCategory( value );
 		setSentence( value ? words : '' );
@@ -373,14 +529,25 @@ export function CatalogueGrid( {
 	// T52: a saved or built-in view sets the view and the category panel.
 	const { byId } = tree;
 	const applyView = useCallback(
-		( next, value ) => {
-			setView( next );
+		( next, value, how = {} ) => {
+			// Ticket 19: the default view opening the screen keeps the user's own
+			// display choices; a view picked deliberately brings its own.
+			const shown = how.opening
+				? applyDisplay( next, personal, known )
+				: next;
+			if ( how.opening ) {
+				ownDisplay.current = displayOf( shown );
+			} else {
+				// An explicitly chosen view: its display becomes the user's own.
+				touchDisplay();
+			}
+			setView( shown );
 			setCategory( value || null );
 			setSentence( value ? categorySentence( value, byId ) : '' );
 		},
-		[ byId ]
+		[ byId, personal, known, touchDisplay ]
 	);
-	// T51: the cards' Visible on site slot draws the switch field's own cell.
+	// T51: the cards' Shown in shop and search slot draws the switch field's own cell.
 	const renderSwitch = useMemo( () => {
 		const slot = switchFieldId( filterFields );
 		const field = filterFields.find( ( each ) => each.id === slot );
@@ -389,40 +556,120 @@ export function CatalogueGrid( {
 	const variationsMode = modeOf( view ) === MODES.variations;
 	const { refetch } = catalogue;
 	// T75: the rows a running change covers are pending and read-only until
-	// it finishes (SPEC §4.1): the ticked ids, or the page for a filter.
-	const { setPending, items: pageItems } = catalogue;
+	// it finishes (SPEC §4.1): the ids, or the selected rows on screen.
+	const { setPending } = catalogue;
+	const { session, tableSelection } = selection;
+	const nativeReturn = useNativeReturn( {
+		reconcile: catalogue.reconcile,
+		session,
+		drawn,
+	} );
 	const covered = useRef( [] );
+	const done = useRef( new Set() );
 	const onApplied = useCallback(
-		( id ) => {
-			const scope = bulk?.selection;
+		( id, answer = {} ) => {
+			const scope =
+				'selection' in answer ? answer.selection : bulk?.selection;
 			covered.current =
 				scope?.kind === 'ids'
 					? scope.ids.map( Number )
-					: pageItems.map( ( item ) => item.id );
+					: ( scope ? tableSelection : [] ).map( Number );
 			setPending( covered.current, true );
-			setApplied( id );
+			setApplied( {
+				id,
+				replayed: !! answer.replayed,
+				byType: answer.byType || null,
+			} );
+			// FRONTEND-3: the panel open now follows this change itself.
+			setBulk( ( open ) => ( open ? { ...open, appliedId: id } : open ) );
+			// T84: the snapshot applied is kept until the change finishes.
+			if ( scope?.kind === 'snapshot' && scope.key ) {
+				session.submit( id, scope.key );
+			}
 		},
-		[ bulk, pageItems, setPending ]
+		[ bulk, tableSelection, setPending, session ]
 	);
-	const finished = useCallback( () => {
-		setPending( covered.current, false );
-		covered.current = [];
-		setApplied( null );
-		refetch();
-	}, [ refetch, setPending ] );
+	// T85: after a reload, an Apply whose answer was never known is resolved
+	// with its own grant (never a new one). When it had gone through, its
+	// progress is shown as for any Apply and the snapshot it was applied to
+	// is the submitted one, so a change that finishes in full still clears
+	// what it applied; otherwise the grant stays for the same change.
+	useEffect( () => {
+		let live = true;
+		resumeApply().then( ( earlier ) => {
+			if ( live && earlier?.batch_id ) {
+				onApplied( earlier.batch_id, {
+					selection: earlier.selectionKey
+						? { kind: 'snapshot', key: earlier.selectionKey }
+						: null,
+					replayed: true,
+				} );
+			}
+		} );
+		return () => {
+			live = false;
+		};
+		// Once, when the grid first mounts after a load.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [] );
+	// Once per change, whichever of the panel and the banner sees it end:
+	// full success clears what was applied from the selection (T84).
+	const finished = useCallback(
+		( report ) => {
+			const id = Number( report?.batch_id ) || applied?.id;
+			if ( done.current.has( id ) ) {
+				return;
+			}
+			done.current.add( id );
+			setPending( covered.current, false );
+			covered.current = [];
+			setApplied( ( was ) => ( was?.id === id ? null : was ) );
+			refetch();
+			session.finish( id, report );
+		},
+		[ applied, refetch, setPending, session ]
+	);
+	const toHistory = shell.navigate
+		? ( id, undo = false ) =>
+				shell.navigate(
+					'history',
+					undo ? { batch: id, undo: 1 } : { batch: id }
+				)
+		: null;
 
 	const exportControl = (
 		<ExportControl
 			query={ catalogue.query }
 			view={ view }
 			registry={ registry }
+			selection={ selection.panel }
+			onRenewSelection={ () => session.renewAll() }
 		/>
 	);
 	const filtered = isFiltered( view ) || !! category;
+	// FRONTEND-1: what the panel says while nothing is selected; the count
+	// is the settled view's, read for exactly the query on screen.
+	const counted =
+		viewSettled &&
+		catalogue.hasLoaded &&
+		! catalogue.isLoading &&
+		! catalogue.error &&
+		catalogue.loadedKey === JSON.stringify( catalogue.query );
+	const emptyPrompt = (
+		<NothingSelected
+			ready={ counted }
+			total={ catalogue.pagination.totalItems }
+			filtered={ filtered }
+			mode={ modeOf( view ) }
+			onSelect={ selection.selectAllMatching }
+			disabled={ selection.status === 'uncertain' }
+		/>
+	);
 	if (
 		catalogue.hasLoaded &&
 		! catalogue.isLoading &&
 		! catalogue.error &&
+		! nativeReturn.error &&
 		! filtered &&
 		! variationsMode &&
 		catalogue.pagination.totalItems === 0
@@ -431,8 +678,13 @@ export function CatalogueGrid( {
 	}
 
 	return (
-		<div className="bulkcat-catalogue__body">
+		<div
+			className={
+				'bulkcat-catalogue__body' + ( bulk ? ' has-slide-over' : '' )
+			}
+		>
 			<CategoryPanel
+				compact={ !! bulk }
 				value={ category }
 				onChange={ chooseCategory }
 				query={ treeQuery }
@@ -440,7 +692,10 @@ export function CatalogueGrid( {
 				settings={ settings }
 				onDropSelection={ hasSelection ? dropSelection : undefined }
 			/>
-			<div className="bulkcat-catalogue__main">
+			<div
+				className="bulkcat-catalogue__main"
+				onFocusCapture={ onCatalogueFocus }
+			>
 				{ /* T51–T53; T75: one row, as in the prototype. */ }
 				<div className="bulkcat-catalogue__top">
 					<SavedViewsBar
@@ -448,15 +703,44 @@ export function CatalogueGrid( {
 						view={ view }
 						category={ category }
 						baseView={ baseView }
+						applyDefault={ ! linked }
 						onApply={ applyView }
+						onReady={ onViewsReady }
 					/>
 					<div className="bulkcat-catalogue__toolbar">
-						<LayoutSwitch view={ view } onChangeView={ setView } />
+						<LayoutSwitch
+							view={ view }
+							onChangeView={ changeView }
+						/>
+						<PageSizeControl
+							view={ view }
+							onChangeView={ changeView }
+						/>
 						{ shell.exportSlot
 							? createPortal( exportControl, shell.exportSlot )
 							: exportControl }
 					</div>
 				</div>
+				{ displayMemory.error && (
+					<ErrorNotice
+						message={ __(
+							'Your display choices could not be saved, so they may not be kept next time.',
+							'bulk-catalogue-manager-for-woocommerce'
+						) }
+						error={ displayMemory.error }
+						onRetry={ displayMemory.retry }
+					/>
+				) }
+				{ nativeReturn.error && (
+					<ErrorNotice
+						message={ __(
+							'Selected products could not be refreshed. Your selection has been kept.',
+							'bulk-catalogue-manager-for-woocommerce'
+						) }
+						error={ nativeReturn.error }
+						onRetry={ nativeReturn.retry }
+					/>
+				) }
 				{ catalogue.error && (
 					<ErrorNotice
 						message={ __(
@@ -481,41 +765,50 @@ export function CatalogueGrid( {
 						</Button>
 					</p>
 				) }
-				{ /* T41, T42 */ }
+				{ /* T41, T42, T84 */ }
 				<FilterChips
 					chips={ chips }
 					onChange={ setView }
 					onClearAll={ clear }
+					onClearSearch={ clearSearch }
+					selectionCount={ selection.count }
 				/>
 				<SelectionBar
 					selection={ selection }
 					pageCount={ catalogue.items.length }
 					total={ catalogue.pagination.totalItems }
 					filtered={ filtered }
+					mode={ modeOf( view ) }
 					onMakeChange={ () => openBulk() }
+					onReview={ () => setReviewing( true ) }
 					onShow={ showStep ? () => openBulk( [ showStep ] ) : null }
 					onHide={ hideStep ? () => openBulk( [ hideStep ] ) : null }
+					onUndo={
+						toHistory ? ( id ) => toHistory( id, true ) : null
+					}
+					onViewHistory={ toHistory }
+					onRestore={ restore }
 					draggable
 				/>
-				{ applied && ! bulk && (
+				{ /* FRONTEND-3: a change applied earlier is still followed while
+				   a later bulk panel covers its banner. */ }
+				{ applied && bulk?.appliedId !== applied.id && (
 					<AppliedProgress
-						batchId={ applied }
+						batchId={ applied.id }
+						replayed={ applied.replayed }
+						byType={ applied.byType }
 						onFinished={ finished }
-						onViewHistory={
-							shell.navigate
-								? ( id ) =>
-										shell.navigate( 'history', {
-											batch: id,
-										} )
-								: null
-						}
+						onViewHistory={ toHistory }
+						hidden={ !! bulk }
 					/>
 				) }
 				<CatalogueLayout
+					settings={ settings }
+					onCommitted={ catalogue.reconcile }
 					renderSwitch={ renderSwitch }
 					fields={ filterFields }
 					view={ view }
-					onChangeView={ setView }
+					onChangeView={ changeView }
 					items={ catalogue.items }
 					pagination={ catalogue.pagination }
 					isLoading={ catalogue.isLoading }
@@ -525,6 +818,7 @@ export function CatalogueGrid( {
 					pending={ catalogue.pending }
 					selection={ selection.tableSelection }
 					onChangeSelection={ selection.onChangeSelection }
+					onDrawn={ onDrawn }
 					empty={
 						catalogue.error ? null : (
 							<NoMatches
@@ -541,31 +835,45 @@ export function CatalogueGrid( {
 			</div>
 			{ bulk && (
 				<BulkChangePanel
-					selection={ bulk.selection }
+					selection={ bulk.live ? selection.panel : bulk.selection }
 					initialOperations={ bulk.initialOperations }
+					object={ bulk.object || '' }
 					registry={ registry }
 					settings={ settings }
 					categories={ tree.nodes }
 					onClose={ () => setBulk( null ) }
 					onApplied={ onApplied }
+					onFinished={ finished }
+					onReview={
+						bulk.live && hasSelection
+							? () => setReviewing( true )
+							: null
+					}
+					onRenewSelection={
+						bulk.live ? () => session.renewAll() : null
+					}
+					emptyPrompt={ bulk.live ? emptyPrompt : null }
+					applyHeld={
+						applied && bulk.appliedId !== applied.id
+							? __(
+									'Another change is still running. You can apply this one once it has finished.',
+									'bulk-catalogue-manager-for-woocommerce'
+								)
+							: ''
+					}
 					onUndo={
-						shell.navigate
-							? ( id ) =>
-									shell.navigate( 'history', {
-										batch: id,
-										undo: 1,
-									} )
-							: null
+						toHistory ? ( id ) => toHistory( id, true ) : null
 					}
-					onViewHistory={
-						shell.navigate
-							? ( id ) =>
-									shell.navigate( 'history', { batch: id } )
-							: null
-					}
+					onViewHistory={ toHistory }
 					renderStalled={ ( report ) => (
 						<StalledNotice report={ report } />
 					) }
+				/>
+			) }
+			{ reviewing && (
+				<SelectedProducts
+					selection={ selection }
+					onClose={ () => setReviewing( false ) }
 				/>
 			) }
 		</div>
@@ -583,6 +891,15 @@ export function CatalogueGrid( {
  */
 export default function Catalogue( { settings, initialView, onEditDetails } ) {
 	const { registry, error, retry } = useRegistry();
+	const preferences = useDisplayPreferences();
+	// A link from the Categories tab: its categories and search, read once.
+	const [ link ] = useState( () => linkedFrom( window.location.search ) );
+	useEffect( () => forgetLinked(), [] );
+	const opening = useMemo(
+		() =>
+			link.search ? { ...initialView, search: link.search } : initialView,
+		[ link, initialView ]
+	);
 	return (
 		<div className="bulkcat-catalogue">
 			{ error && (
@@ -599,7 +916,11 @@ export default function Catalogue( { settings, initialView, onEditDetails } ) {
 				<CatalogueGrid
 					registry={ registry }
 					settings={ settings }
-					initialView={ initialView }
+					initialView={ opening }
+					initialCategory={ link.category }
+					linked={ !! ( link.category || link.search ) }
+					personal={ preferences.display }
+					personalRead={ preferences.hasLoaded }
 					onEditDetails={ onEditDetails }
 				/>
 			) }

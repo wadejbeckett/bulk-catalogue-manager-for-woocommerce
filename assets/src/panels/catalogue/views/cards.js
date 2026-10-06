@@ -6,7 +6,7 @@
  * view's media field), the name (its title field) and the visible columns,
  * which by default include the price and the stock status.
  *
- * The Visible on site switch has a slot: pass `renderSwitch( item )` and the
+ * The Shown in shop and search switch has a slot: pass `renderSwitch( item )` and the
  * card shows it in place of that field's plain value, in the table's column
  * order or at the end when the column is hidden. Without it the field shows
  * its registry badge. (T45's switch fills the slot.)
@@ -14,17 +14,18 @@
  * CatalogueLayout picks the table or the cards by the view's `type`.
  */
 import { DataViews } from '@wordpress/dataviews';
-import { useMemo } from '@wordpress/element';
+import { useCallback, useMemo, useRef } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 
 import { CellContext } from '../cells';
-import { PER_PAGE_SIZES, hidingChoices } from '../defaults';
+import { hidingChoices } from '../defaults';
 import { useEditScope } from '../edit';
 import { LoadingRows } from '../states';
 import CatalogueTable from '../table';
 
 const LAYOUTS = { grid: {} };
-const CONFIG = { perPageSizes: PER_PAGE_SIZES };
+// Ticket 19: rows per page is the toolbar control, which needs no sort.
+const CONFIG = { perPageSizes: [] };
 const itemId = ( item ) => String( item.id );
 
 /**
@@ -84,37 +85,33 @@ export function gridOf( fields, view, renderSwitch ) {
  * @param {Array<Object>} props.fields            DataViews fields (fieldsFromRegistry()).
  * @param {Object}        props.view              DataViews view.
  * @param {Function}      props.onChangeView      View change.
- * @param {Array<Object>} props.items             Rows.
  * @param {Object}        props.pagination        { totalItems, totalPages }.
  * @param {boolean}       props.isLoading         A read is in flight.
  * @param {boolean}       props.hasLoaded         A page (or a failure) has arrived at least once.
- * @param {Array<Object>} props.actions           Row actions.
  * @param {Element}       props.empty             What to show when a loaded page has no rows.
  * @param {Object}        props.termNames         source => Map( id => name ).
- * @param {Set}           props.pending           Row ids with a change in flight.
  * @param {Array<string>} props.selection         Selected row ids, as strings.
  * @param {Function}      props.onChangeSelection Selection change.
- * @param {Function}      props.renderSwitch      The Visible on site switch for a row (T45), or undefined.
+ * @param {Function}      props.renderSwitch      The Shown in shop and search switch for a row (T45), or undefined.
+ * @param {Object}        props.edit              Shared editing scope.
  * @return {Element} Grid.
  */
-export function CatalogueCards( {
+function Cards( {
 	fields,
 	view,
 	onChangeView,
-	items,
 	pagination,
 	isLoading,
 	hasLoaded,
-	actions,
 	empty,
 	termNames,
-	pending,
 	selection,
 	onChangeSelection,
 	renderSwitch,
+	edit,
 } ) {
 	// T45–T47: the cards edit as the table does (the switch, the details).
-	const edit = useEditScope( { items, fields, actions, pending } );
+
 	const context = useMemo(
 		() => ( {
 			termNames: termNames || {},
@@ -178,13 +175,33 @@ export function CatalogueCards( {
  * The table or the cards, by the view's layout.
  *
  * @param {Object}   props              CatalogueTable's props plus `renderSwitch`.
- * @param {Function} props.renderSwitch The Visible on site switch for a row, or undefined.
+ * @param {Function} props.renderSwitch The Shown in shop and search switch for a row, or undefined.
  * @return {Element} Layout.
  */
+
 export default function CatalogueLayout( { renderSwitch, ...props } ) {
-	return props.view?.type === 'grid' ? (
-		<CatalogueCards { ...props } renderSwitch={ renderSwitch } />
-	) : (
-		<CatalogueTable { ...props } />
+	const expand = useRef( null );
+	const onExpandVariations = useCallback(
+		( item ) => expand.current?.( item ),
+		[]
 	);
+	const edit = useEditScope( {
+		...props,
+		onExpandVariations:
+			props.view?.type === 'grid' ? undefined : onExpandVariations,
+	} );
+	return props.view?.type === 'grid' ? (
+		<Cards { ...props } edit={ edit } renderSwitch={ renderSwitch } />
+	) : (
+		<CatalogueTable { ...props } edit={ edit } expand={ expand } />
+	);
+}
+
+/**
+ * @param {Object} props Standalone cards properties.
+ * @return {Element} Cards with their own editing scope.
+ */
+export function CatalogueCards( props ) {
+	const edit = useEditScope( props );
+	return <Cards { ...props } edit={ edit } />;
 }

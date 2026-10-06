@@ -132,7 +132,7 @@ final class CategoriesRouteTest extends TestCase {
 			$this->assertSame( [ $own, $total ], [ $flat[ $id ]['count'], $flat[ $id ]['countWithDescendants'] ], "Draft counts of $id." );
 		}
 		$this->assertCount( 1, $GLOBALS['wpdb']->queries );
-		$this->assertStringContainsString( "p.post_status IN ('draft')", $GLOBALS['wpdb']->queries[0] );
+		$this->assertStringContainsString( "(p.post_status = 'draft' AND NOT EXISTS", $GLOBALS['wpdb']->queries[0] );
 		$this->assertStringNotContainsString( 'tt.term_id IN', $GLOBALS['wpdb']->queries[0], 'The category filter does not narrow the counts.' );
 	}
 

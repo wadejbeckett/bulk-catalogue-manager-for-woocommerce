@@ -13,6 +13,7 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Fields;
 
+use BulkCatalogueManager\Availability\Outcome;
 use BulkCatalogueManager\Operations\Group;
 use BulkCatalogueManager\Rest\Refusal;
 
@@ -42,19 +43,39 @@ final class Registry {
 	private array $fields = [];
 
 	/**
+	 * Internal fields by key (T88): resolved by get(), listed only by internal().
+	 *
+	 * @var array<string, Field>
+	 */
+	private array $internal = [];
+
+	/**
 	 * Build every field with its translated labels. Code outside tests passes
 	 * nothing; a test double passes its own list, such as every field plus a
-	 * synthetic one, to show what derives from the registry.
+	 * synthetic one, to show what derives from the registry. The internal
+	 * fields (the Off record) are always present, since the write path and
+	 * undo resolve them by key whatever the list.
 	 *
 	 * @param list<Field>|null $fields The fields, or null for the §5.2 fields and the read-only columns.
 	 * @throws \LogicException When two fields share a key.
 	 */
 	public function __construct( ?array $fields = null ) {
-		foreach ( $fields ?? [ ...self::editable_fields(), ...self::column_fields() ] as $field ) {
-			if ( isset( $this->fields[ $field->key() ] ) ) {
+		$given = $fields ?? [ ...self::editable_fields(), ...self::column_fields() ];
+		$keys  = array_map( static fn( Field $field ): string => $field->key(), $given );
+		foreach ( self::internal_fields() as $field ) {
+			if ( ! in_array( $field->key(), $keys, true ) ) {
+				$given[] = $field;
+			}
+		}
+		foreach ( $given as $field ) {
+			if ( isset( $this->fields[ $field->key() ] ) || isset( $this->internal[ $field->key() ] ) ) {
 				throw new \LogicException( esc_html( sprintf( 'Field "%s" is declared twice.', $field->key() ) ) );
 			}
-			$this->fields[ $field->key() ] = $field;
+			if ( $field->internal() ) {
+				$this->internal[ $field->key() ] = $field;
+			} else {
+				$this->fields[ $field->key() ] = $field;
+			}
 		}
 	}
 
@@ -69,7 +90,8 @@ final class Registry {
 	}
 
 	/**
-	 * Every field, keyed by field key, in registry order.
+	 * Every public field, keyed by field key, in registry order. Internal
+	 * fields are never listed here (internal()).
 	 *
 	 * @return array<string, Field>
 	 */
@@ -87,7 +109,8 @@ final class Registry {
 	}
 
 	/**
-	 * Whether a key is a field.
+	 * Whether a key is a public field: a column, filter or view may name it.
+	 * An internal field is not one.
 	 *
 	 * @param string $key Field key.
 	 */
@@ -96,12 +119,23 @@ final class Registry {
 	}
 
 	/**
-	 * One field, or null for an unknown key.
+	 * One field, public or internal, or null for an unknown key. The journal,
+	 * preview, writer and undo resolve fields through this.
 	 *
 	 * @param string $key Field key.
 	 */
 	public function get( string $key ): ?Field {
-		return $this->fields[ $key ] ?? null;
+		return $this->fields[ $key ] ?? $this->internal[ $key ] ?? null;
+	}
+
+	/**
+	 * The internal fields, keyed by field key (T88): today the Off record,
+	 * `availability_off`, journalled with the status (SPEC §5.5, §9.3).
+	 *
+	 * @return array<string, Field>
+	 */
+	public function internal(): array {
+		return $this->internal;
 	}
 
 	/**
@@ -182,7 +216,7 @@ final class Registry {
 		$variable_price = __( 'A variable product takes its price from its variations. Change the variations instead.', 'bulk-catalogue-manager-for-woocommerce' );
 
 		$catalogue_visibility = __( 'Catalogue visibility', 'bulk-catalogue-manager-for-woocommerce' );
-		$visible_on_site      = __( 'Visible on site', 'bulk-catalogue-manager-for-woocommerce' );
+		$visible_on_site      = __( 'Shown in shop and search', 'bulk-catalogue-manager-for-woocommerce' );
 		$featured             = __( 'Featured', 'bulk-catalogue-manager-for-woocommerce' );
 		$sold_individually    = __( 'Sold individually', 'bulk-catalogue-manager-for-woocommerce' );
 		$reviews              = __( 'Reviews', 'bulk-catalogue-manager-for-woocommerce' );
@@ -230,17 +264,27 @@ final class Registry {
 				setter: 'set_status',
 				choices: [
 					'publish' => __( 'Published', 'bulk-catalogue-manager-for-woocommerce' ),
+					// T114: a scheduled product reads, filters and validates as Scheduled; it is never set (SPEC §5.5).
+					'future'  => Outcome::status_label( 'future' ),
 					'draft'   => __( 'Draft', 'bulk-catalogue-manager-for-woocommerce' ),
-					'pending' => __( 'Pending review', 'bulk-catalogue-manager-for-woocommerce' ),
+					'pending' => __( 'Pending Review', 'bulk-catalogue-manager-for-woocommerce' ),
 					'private' => __( 'Private', 'bulk-catalogue-manager-for-woocommerce' ),
 				],
+				write_choices: [ 'publish', 'draft', 'pending', 'private' ],
 				variation_choices: [ 'publish', 'private' ],
 				variation_note: __( 'A variation can only be published or private.', 'bulk-catalogue-manager-for-woocommerce' ),
+				inline: true,
 				filter_operators: [ 'isAny', 'isNone' ],
 				default_order: 5,
+				// Not published yet, so off the site for buyers until its date, as WooCommerce's is_visible() and is_purchasable() read it.
 				hiding_choices: [
+					'future'  => Field::HIDES_OFF_SITE,
 					'draft'   => Field::HIDES_OFF_SITE,
 					'pending' => Field::HIDES_OFF_SITE,
+				],
+				filter_choices: [
+					'off'             => __( 'Off (legacy status filter)', 'bulk-catalogue-manager-for-woocommerce' ),
+					'changed_outside' => __( 'Changed outside this screen (legacy status filter)', 'bulk-catalogue-manager-for-woocommerce' ),
 				]
 			),
 			new Field(
@@ -261,7 +305,9 @@ final class Registry {
 				],
 				variation_note: $per_product( $catalogue_visibility ),
 				filter_operators: [ 'isAny', 'isNone' ],
-				hiding_choices: [ 'hidden' => Field::HIDES_FROM_SHOP ]
+				hiding_choices: [ 'hidden' => Field::HIDES_FROM_SHOP ],
+				// Ticket 19: both listing presentations follow Status in a new layout.
+				default_order: 6
 			),
 			new Field(
 				key: 'visible_on_site',
@@ -274,8 +320,10 @@ final class Registry {
 				getter: 'get_catalog_visibility',
 				setter: 'set_catalog_visibility',
 				inline: true,
+				// T93 (SPEC §5.3): a listing control, named for what it does; the key stays
+				// for saved views, journals and CSV ids. Status is the Off/On control.
 				choices: [
-					'on'     => __( 'Visible', 'bulk-catalogue-manager-for-woocommerce' ),
+					'on'     => __( 'Shown', 'bulk-catalogue-manager-for-woocommerce' ),
 					'off'    => __( 'Hidden', 'bulk-catalogue-manager-for-woocommerce' ),
 					'partly' => __( 'Partly', 'bulk-catalogue-manager-for-woocommerce' ),
 				],
@@ -283,7 +331,7 @@ final class Registry {
 				variation_note: $per_product( $visible_on_site ),
 				adapter: Field::ADAPTER_SWITCH,
 				hiding_choices: [ 'off' => Field::HIDES_FROM_SHOP ],
-				default_order: 6
+				default_order: 7
 			),
 			new Field(
 				key: 'featured',
@@ -507,6 +555,61 @@ final class Registry {
 				getter: 'get_reviews_allowed',
 				setter: 'set_reviews_allowed',
 				variation_note: $per_product( $reviews )
+			),
+		];
+	}
+
+	/**
+	 * The internal fields (T88): the Off record the Status switch writes
+	 * with the status (SPEC §5.5), journalled as **Status before Off**.
+	 *
+	 * @return Field[]
+	 */
+	private static function internal_fields(): array {
+		return [
+			\BulkCatalogueManager\Publishing\PublicationPassword::field(),
+			new Field(
+				key: \BulkCatalogueManager\Availability\OffRecord::FIELD,
+				label: __( 'Status before Off', 'bulk-catalogue-manager-for-woocommerce' ),
+				type: Field::TEXT,
+				storage: Storage::meta( \BulkCatalogueManager\Availability\OffRecord::META_KEY ),
+				edit_kinds: [ Field::SET, Field::CLEAR ],
+				variation_rule: Field::PARENT_ONLY,
+				getter: 'get_meta',
+				setter: 'update_meta_data',
+				nullable: true,
+				variation_note: __( 'A variation is never switched Off on its own, so it has no saved status.', 'bulk-catalogue-manager-for-woocommerce' ),
+				adapter: Field::ADAPTER_OFF_RECORD,
+				internal: true
+			),
+			// WooCommerce clears these when Manage stock is turned off; journalled then, so undo puts them back.
+			new Field(
+				key: 'backorders',
+				label: __( 'Backorders', 'bulk-catalogue-manager-for-woocommerce' ),
+				type: Field::ENUM,
+				storage: Storage::meta( '_backorders' ),
+				edit_kinds: [ Field::SET ],
+				variation_rule: Field::PER_VARIATION,
+				getter: 'get_backorders',
+				setter: 'set_backorders',
+				choices: [
+					'no'     => __( 'Do not allow', 'bulk-catalogue-manager-for-woocommerce' ),
+					'notify' => __( 'Allow, but notify the customer', 'bulk-catalogue-manager-for-woocommerce' ),
+					'yes'    => __( 'Allow', 'bulk-catalogue-manager-for-woocommerce' ),
+				],
+				internal: true
+			),
+			new Field(
+				key: 'low_stock_amount',
+				label: __( 'Low stock threshold', 'bulk-catalogue-manager-for-woocommerce' ),
+				type: Field::INTEGER,
+				storage: Storage::meta( '_low_stock_amount' ),
+				edit_kinds: [ Field::SET ],
+				variation_rule: Field::PER_VARIATION,
+				getter: 'get_low_stock_amount',
+				setter: 'set_low_stock_amount',
+				nullable: true,
+				internal: true
 			),
 		];
 	}

@@ -6,6 +6,8 @@
  * sentence in place and leaves the cell open with the typed value intact.
  * A commit is one PATCH; the row is pending until it returns and the answer
  * replaces the row. A field that does not apply to the row says why.
+ *
+ * Status uses the same single commit and authoritative returned row.
  */
 import {
 	useContext,
@@ -16,10 +18,10 @@ import {
 } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 
+import { isUncertain } from '../../../requests';
 import { announce } from '../../categories/announce';
 import { CellContext } from '../cells';
 import {
-	allowedChoices,
 	comparable,
 	failureText,
 	fieldError,
@@ -28,6 +30,7 @@ import {
 	validate,
 } from './rules';
 import { EditContext } from './scope';
+import { editChoices, savedOutcome } from './status';
 import { productName } from './switch';
 
 /** How long the Saved tick stays, in milliseconds. */
@@ -151,6 +154,7 @@ export default function InlineCell( { item, descriptor, display } ) {
 		closing.current = false;
 		setText( initialText( descriptor, item[ descriptor.key ] ) );
 		setError( '' );
+
 		setEditing( true );
 	};
 
@@ -158,11 +162,12 @@ export default function InlineCell( { item, descriptor, display } ) {
 		closing.current = true;
 		refocus.current = focusTrigger;
 		setError( '' );
+
 		setEditing( false );
 	};
 
 	const commit = ( focusTrigger ) => {
-		if ( saving || closing.current ) {
+		if ( saving || closing.current || isPending ) {
 			return;
 		}
 		const value = typedValue( descriptor, text );
@@ -178,16 +183,32 @@ export default function InlineCell( { item, descriptor, display } ) {
 			setError( refused );
 			return;
 		}
+		write( value, focusTrigger );
+	};
+
+	/**
+	 * One PATCH for the native value.
+	 *
+	 * @param {*}       value        The value.
+	 * @param {boolean} focusTrigger Focus the cell afterwards.
+	 */
+	const write = ( value, focusTrigger ) => {
+		closing.current = true;
 		setSaving( true );
 		setError( '' );
 		if ( focusTrigger ) {
 			focusAfterSave = cellKey;
 		}
 		scope
-			.commit( item, {
-				[ descriptor.key ]: toRequestValue( descriptor, value ),
-			} )
-			.then( () => {
+			.commit(
+				item,
+				{
+					[ descriptor.key ]: toRequestValue( descriptor, value ),
+				},
+				[],
+				{}
+			)
+			.then( ( answer ) => {
 				// The row may be read again and redrawn after this answer;
 				// the redrawn cell keeps the focus for a moment (T75).
 				setTimeout( () => {
@@ -201,16 +222,28 @@ export default function InlineCell( { item, descriptor, display } ) {
 				setSaving( false );
 				setSaved( true );
 				close( focusTrigger );
+				const outcome = savedOutcome( descriptor, answer );
 				announce(
-					sprintf(
-						/* translators: 1: a field's name, 2: a product name. */
-						__(
-							'%1$s saved for %2$s.',
-							'bulk-catalogue-manager-for-woocommerce'
-						),
-						descriptor.label,
-						name
-					)
+					outcome
+						? sprintf(
+								/* translators: 1: a field's name, 2: a product name, 3: what the change did, such as "Scheduled". */
+								__(
+									'%1$s saved for %2$s: %3$s.',
+									'bulk-catalogue-manager-for-woocommerce'
+								),
+								descriptor.label,
+								name,
+								outcome
+							)
+						: sprintf(
+								/* translators: 1: a field's name, 2: a product name. */
+								__(
+									'%1$s saved for %2$s.',
+									'bulk-catalogue-manager-for-woocommerce'
+								),
+								descriptor.label,
+								name
+							)
 				);
 			} )
 			.catch( ( failure ) => {
@@ -221,6 +254,11 @@ export default function InlineCell( { item, descriptor, display } ) {
 					return;
 				}
 				setSaving( false );
+				closing.current = false;
+				if ( failure?.data?.answer || isUncertain( failure ) ) {
+					close( false );
+					return;
+				}
 				const sentence =
 					fieldError( failure, descriptor.key ) ||
 					sprintf(
@@ -289,11 +327,15 @@ export default function InlineCell( { item, descriptor, display } ) {
 								),
 							},
 						]
-					: allowedChoices( descriptor, item );
+					: editChoices( descriptor, item );
 			control = (
 				<select { ...shared } disabled={ saving || undefined }>
 					{ choices.map( ( choice ) => (
-						<option key={ choice.value } value={ choice.value }>
+						<option
+							key={ choice.value }
+							value={ choice.value }
+							disabled={ choice.disabled }
+						>
 							{ choice.label }
 						</option>
 					) ) }

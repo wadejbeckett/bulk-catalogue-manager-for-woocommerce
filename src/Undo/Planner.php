@@ -11,15 +11,22 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Undo;
 
+use BulkCatalogueManager\Requests\InlineReceipt;
+use BulkCatalogueManager\Availability\OffRecord;
+use BulkCatalogueManager\Availability\StatusSwitch;
 use BulkCatalogueManager\Data\BatchRepository;
 use BulkCatalogueManager\Data\ChangeRepository;
 use BulkCatalogueManager\Data\Schema;
 use BulkCatalogueManager\Engine\Memory;
 use BulkCatalogueManager\Engine\Preview;
 use BulkCatalogueManager\Engine\Writer;
+use BulkCatalogueManager\External;
 use BulkCatalogueManager\Fields\Field;
 use BulkCatalogueManager\Fields\Values;
 use BulkCatalogueManager\Operations\Registry as Actions;
+use BulkCatalogueManager\Operations\RestoreStatus;
+use BulkCatalogueManager\Operations\RestoreStock;
+use BulkCatalogueManager\Operations\StockCoupling;
 use BulkCatalogueManager\Operations\Terms;
 use BulkCatalogueManager\Rest\Access;
 use BulkCatalogueManager\Rest\Refusal;
@@ -49,6 +56,8 @@ defined( 'ABSPATH' ) || exit;
  * of what the batch left when the list was empty before, `clear` for an
  * empty value where the field takes it, `set_value` otherwise. Each item is:
  *
+ * A category (`term`) is planned by Categories\TermUndo, by the same rules.
+ *
  * - skipped where the batch applied nothing to the object (its rows were
  *   themselves skipped or failed), where the object no longer exists or is
  *   no longer the same kind, where the person undoing (not the batch's author) may not
@@ -60,13 +69,49 @@ defined( 'ABSPATH' ) || exit;
  *   cover every field, for **Revert anyway**;
  * - revertible otherwise.
  *
- * Objects are read a page at a time (Engine\Memory), so a plan over
- * thousands of objects — the single batch read counts conflicts with one —
- * runs in bounded memory.
+ * The plan is walked, never held (T111, ticket 11): walk() reads which
+ * objects the batch journalled, newest first, keeping only their order (a
+ * few dozen bytes an object), then plans them a page at a time — the page's
+ * journal rows read by object, its products primed, planned and released
+ * (Engine\Memory) — handing each item to the caller and folding it into the
+ * counts and the hash, so previewing, counting and accepting the undo of a
+ * whole-catalogue change fit a web request's memory. plan() collects the
+ * same items into an Undo\Plan for callers that want them all (tests, small
+ * batches); items() and checker() plan named objects as they stand now, for
+ * the preview's page and for the check each undo item gets again as its
+ * chunk writes it (Engine\ChunkRunner).
+ * Status and its Off record (T90, SPEC §9.4) fold into one internal step,
+ * `restore_status`, carrying the journal's old status (`value`) and old
+ * record (`record`), each only when the batch applied that prop; it is
+ * validated through validate_list()'s internal mode. Conflicts stay per prop
+ * (a record conflict lists as the field "Status before Off"), and a product
+ * carrying its own record written by a later batch than the one undone is
+ * conflicted too, "changed since", with that record as its current value:
+ * batch ids only grow, and a record the undone batch wrote carries its own
+ * id, so it never trips. A journalled record that does not name its object
+ * is skipped, never written. The step's status comes from the journal
+ * alone, never from the record.
+ *
  * Values compare in the field type's canonical form, never loosely: a price
  * through wc_format_decimal() at the shop's precision (10 and 10.00 are the
  * same price, '' and 0.00 are not), a whole number with null distinct from
  * 0, a switch as a boolean, a term list as a sorted id list, text exactly.
+ *
+ * External values (T108, docs/EXTENSIONS.md §8.4): a batch whose manifest
+ * names a provider that is not registered is refused 409 with `data.reason:
+ * provider_missing` ("… is not active now. Turn it on again …"), and one
+ * that is registered but not available or of an unsupported contract with
+ * `provider_unavailable` and the add-on's own reason after the core's
+ * words (External\Blocked). Otherwise, for each external field of an object,
+ * after the core's own edit check: the capability of every action of the
+ * provider that changes the field and the provider's authorise() (a refusal
+ * skips the object, `cannot_edit`); the value read now (an Unknown skips,
+ * `cannot_restore`); the journalled values converted to the field's format
+ * (older through upgrade(); newer, or an upgrade error, skips
+ * `cannot_restore`); a conflict, listed with the expected and current values
+ * as the provider describes them, when the value now is not the value the
+ * batch left; and the internal step `restore_external` putting the oldest
+ * old value back.
  */
 final class Planner {
 	/**
@@ -82,6 +127,16 @@ final class Planner {
 	public const UNDO_IN_PROGRESS = 'undo_in_progress';
 	public const RETENTION        = 'retention';
 	public const PRUNED           = 'pruned';
+
+	/**
+	 * Refusal reason: the add-on that made the change is registered but cannot run now (T108).
+	 */
+	public const PROVIDER_UNAVAILABLE = External\Blocked::UNAVAILABLE;
+
+	/**
+	 * Refusal reason: the add-on that made the change is not registered (not active).
+	 */
+	public const PROVIDER_MISSING = External\Blocked::MISSING;
 
 	/*
 	 * Item codes: why an item is conflicted or skipped.
@@ -108,9 +163,9 @@ final class Planner {
 	private const UNDO_RUNNING = [ 'queued', 'running' ];
 
 	/**
-	 * Journal rows read at a time.
+	 * Objects planned a page at a time: primed, planned and released together.
 	 */
-	private const PAGE = ChangeRepository::MAX_PAGE;
+	private const PAGE = Preview::PAGE;
 
 	/**
 	 * Context mixed into the hash, so it cannot be mistaken for another signature.
@@ -175,16 +230,41 @@ final class Planner {
 	}
 
 	/**
-	 * Plan the undo of a batch, writing nothing. Each object is checked
-	 * against the person undoing — the user who will run the undo batch —
-	 * not the batch's original author, who may since have been demoted or
-	 * removed.
+	 * Plan the undo of a batch, writing nothing, and keep every item: the
+	 * whole plan in memory. Each object is checked against the person
+	 * undoing — the user who will run the undo batch — not the batch's
+	 * original author, who may since have been demoted or removed. The
+	 * routes walk() instead, holding a page at a time.
 	 *
 	 * @param int      $batch_id The batch to undo.
 	 * @param int|null $user_id  The person undoing; the current user by default.
 	 * @return Plan|\WP_Error The plan, or 404 `bulkcat_not_found`, or 409 `bulkcat_not_reversible` with its reason.
 	 */
 	public function plan( int $batch_id, ?int $user_id = null ): Plan|\WP_Error {
+		$items   = [];
+		$summary = $this->walk(
+			$batch_id,
+			$user_id,
+			static function ( array $item ) use ( &$items ): void {
+				$items[] = $item;
+			}
+		);
+		return $summary instanceof \WP_Error ? $summary : new Plan( $batch_id, $items, $summary->hash() );
+	}
+
+	/**
+	 * Walk the undo plan of a batch, writing nothing (T111): each item, in
+	 * the order the undo writes them (the object journalled last first), is
+	 * handed to $each as soon as it is planned and then let go, so memory
+	 * holds the batch's object order and one page, never the plan. The
+	 * summary carries the counts and the same hash plan() gives.
+	 *
+	 * @param int                               $batch_id The batch to undo.
+	 * @param int|null                          $user_id  The person undoing; the current user by default.
+	 * @param callable( array<string, mixed> ): void|null $each Given each item in plan order.
+	 * @return PlanSummary|\WP_Error The summary, or 404 `bulkcat_not_found`, or 409 `bulkcat_not_reversible` with its reason.
+	 */
+	public function walk( int $batch_id, ?int $user_id = null, ?callable $each = null ): PlanSummary|\WP_Error {
 		$user_id ??= get_current_user_id();
 		$batch     = $batch_id > 0 ? $this->batches->find( $batch_id ) : null;
 		if ( null === $batch ) {
@@ -195,36 +275,93 @@ final class Planner {
 			return $refusal;
 		}
 
-		$objects = $this->journal( $batch_id );
-		if ( [] === $objects && $batch['total_items'] > 0 && $batch['done_items'] > 0 ) {
+		$order = $this->order( $batch_id );
+		if ( [] === $order && $batch['total_items'] > 0 && $batch['done_items'] > 0 ) {
 			return self::not_reversible( self::PRUNED, self::pruned_sentence() );
 		}
 
-		$items = [];
-		$index = 0;
-		$ids   = array_keys( $objects );
-		foreach ( $objects as $object_id => $journal ) {
-			if ( 0 === $index % Preview::PAGE ) {
-				// T76: a 5,000-product batch's plan outgrew 128 MB with every object kept loaded.
-				Memory::next_page( array_slice( $ids, $index, Preview::PAGE ), 0 < $index );
+		$context = $this->hash_start( $batch_id );
+		$counts  = array_fill_keys( Plan::STATES, 0 );
+		$first   = true;
+		// What WordPress counts from here: each page's per-product hook names are forgotten with its objects (ticket 11).
+		$mark = Memory::mark();
+		$page = [];
+		$done = 0;
+		foreach ( $order as $object_id => $type ) {
+			$page[ $object_id ] = $type;
+			if ( self::PAGE > count( $page ) ) {
+				continue;
 			}
-			++$index;
-			$items[] = $this->item( $object_id, $journal, $user_id );
+			$this->walk_page( $batch_id, $page, $user_id, 0 < $done ? $mark : null, $context, $counts, $first, $each );
+			$done += count( $page );
+			$page  = [];
 		}
-		return new Plan( $batch_id, $items, $this->hash( $batch_id, $items ) );
+		if ( [] !== $page ) {
+			$this->walk_page( $batch_id, $page, $user_id, 0 < $done ? $mark : null, $context, $counts, $first, $each );
+		}
+		return new PlanSummary( $batch_id, $counts, $this->hash_end( $context ) );
+	}
+
+	/**
+	 * Plan named objects of a batch as they stand now, keyed by object id
+	 * in the order asked (T111): the preview's page, planned again after the
+	 * walk that counted it. No batch-level refusal applies; an object the
+	 * batch did not journal is left out.
+	 *
+	 * @param int       $batch_id   The batch undone.
+	 * @param list<int> $object_ids Objects.
+	 * @param int|null  $user_id    The person undoing; the current user by default.
+	 * @return array<int, array<string, mixed>> Plan items by object id.
+	 */
+	public function items( int $batch_id, array $object_ids, ?int $user_id = null ): array {
+		$out = [];
+		foreach ( array_chunk( self::ids( $object_ids ), self::PAGE ) as $ids ) {
+			$check = $this->checker( $batch_id, $ids, $user_id );
+			foreach ( $ids as $id ) {
+				$item = $check( $id );
+				if ( null !== $item ) {
+					$out[ $id ] = $item;
+				}
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * A check of each of these objects as it stands at the moment it is
+	 * asked (T111): their journal rows in the batch are read once, and each
+	 * call plans the object then — every field the batch changed, status and
+	 * its Off record included — from the object given (the one the writer
+	 * has just loaded, so an undo item is checked just before it is written)
+	 * or loaded afresh. The closure answers the plan item, or null for an
+	 * object the batch did not journal.
+	 *
+	 * @param int       $batch_id   The batch undone.
+	 * @param list<int> $object_ids Objects, at most ChangeRepository::MAX_OBJECTS.
+	 * @param int|null  $user_id    The person undoing; the current user by default.
+	 * @return \Closure( int, ?object ): ?array<string, mixed>
+	 */
+	public function checker( int $batch_id, array $object_ids, ?int $user_id = null ): \Closure {
+		$user_id ??= get_current_user_id();
+		$ids       = self::ids( $object_ids );
+		$journals  = $this->journals( $batch_id, $ids );
+		Memory::next_page( $ids, false );
+		return function ( int $object_id, ?object $subject = null ) use ( $journals, $user_id, $batch_id ): ?array {
+			return isset( $journals[ $object_id ] ) ? $this->item( $object_id, $journals[ $object_id ], $user_id, $batch_id, $subject ) : null;
+		};
 	}
 
 	/**
 	 * How many of a batch's objects were changed again since it ran (the
 	 * plan's conflicted items), or 0 where it cannot be planned. This is the
 	 * count Engine\Reversibility shows as `conflicts` and turns into
-	 * `partially_reversible`.
+	 * `partially_reversible`. The plan is walked, not kept.
 	 *
 	 * @param array<string, mixed> $batch Typed batch row; only its id is read.
 	 */
 	public function conflicts( array $batch ): int {
-		$plan = $this->plan( (int) $batch['batch_id'] );
-		return $plan instanceof Plan ? $plan->counts()[ Plan::CONFLICTED ] : 0;
+		$summary = $this->walk( (int) $batch['batch_id'] );
+		return $summary instanceof PlanSummary ? $summary->counts()[ Plan::CONFLICTED ] : 0;
 	}
 
 	/**
@@ -298,6 +435,9 @@ final class Planner {
 	 * @param array<string, mixed> $batch The batch row.
 	 */
 	private function refusal( array $batch ): ?\WP_Error {
+		if ( InlineReceipt::unclosed( $batch ) ) {
+			return self::not_reversible( self::IN_PROGRESS, \BulkCatalogueManager\Engine\Progress::uncertain_message() );
+		}
 		if ( 'undoing' === $batch['status'] ) {
 			return self::not_reversible( self::UNDO_IN_PROGRESS, self::undoing_sentence() );
 		}
@@ -308,7 +448,8 @@ final class Planner {
 			return self::not_reversible( self::ALREADY_UNDONE, self::undone_sentence() );
 		}
 		foreach ( $this->batches->undos_of( $batch['batch_id'] ) as $undo ) {
-			if ( in_array( $undo['status'], self::UNDO_DONE, true ) ) {
+			// An undo that put nothing back (every item changed again first) undid nothing (F2).
+			if ( in_array( $undo['status'], self::UNDO_DONE, true ) && 0 < ( $undo['changed_items'] ?? 1 ) ) {
 				return self::not_reversible( self::ALREADY_UNDONE, self::undone_sentence(), [ 'undo_batch_id' => $undo['batch_id'] ] );
 			}
 			if ( in_array( $undo['status'], self::UNDO_RUNNING, true ) ) {
@@ -317,6 +458,14 @@ final class Planner {
 		}
 		if ( null !== ( $batch['pruned_gmt'] ?? null ) ) {
 			return self::not_reversible( self::PRUNED, self::pruned_sentence() );
+		}
+		if ( \BulkCatalogueManager\Engine\Reversibility::permanent( $batch ) ) {
+			return self::not_reversible( \BulkCatalogueManager\Engine\Reversibility::PERMANENT, __( 'A deleted category cannot be brought back, so this change cannot be undone.', 'bulk-catalogue-manager-for-woocommerce' ) );
+		}
+		$manifest = $batch['extensions'] ?? null;
+		$blocked  = is_array( $manifest ) ? External\Manifest::blocked( $manifest, $this->actions->providers(), false ) : null;
+		if ( null !== $blocked ) {
+			return self::not_reversible( $blocked->kind, $blocked->undo_sentence() );
 		}
 		$days    = $this->settings->history_days();
 		$created = strtotime( $batch['created_gmt'] . ' UTC' );
@@ -335,44 +484,120 @@ final class Planner {
 	}
 
 	/**
-	 * The batch's journal grouped by object, the object journalled last
-	 * first. Per object: its type, whether it has any row, and per applied
-	 * field (newest first) the value the batch left and the value before it.
+	 * The objects a batch journalled, the object journalled last first, each
+	 * with its type (that of its newest row): read a page of rows at a time
+	 * with no values, keeping only this order.
 	 *
 	 * @param int $batch_id Batch.
-	 * @return array<int, array{type: string, fields: array<string, array{expected: mixed, target: mixed}>}>
+	 * @return array<int, string> Object id => type, in plan order.
 	 */
-	private function journal( int $batch_id ): array {
-		$objects = [];
-		$before  = 0;
+	private function order( int $batch_id ): array {
+		$order  = [];
+		$types  = [];
+		$before = 0;
 		do {
-			$rows = $this->changes->newest_first( $batch_id, $before, self::PAGE );
-			$full = self::PAGE === count( $rows );
+			$rows = $this->changes->objects_newest_first( $batch_id, $before, ChangeRepository::OBJECTS_PAGE );
+			$full = ChangeRepository::OBJECTS_PAGE === count( $rows );
 			foreach ( $rows as $row ) {
-				$before           = $row['change_id'];
-				$id               = $row['object_id'];
-				$objects[ $id ] ??= [
-					'type'   => $row['object_type'],
-					'fields' => [],
-				];
-				// An intent row (§12.3) a killed run left unsettled counts as applied: whether its save
-				// landed shows as the object holding the value, or as a conflict when it does not.
-				if ( 'applied' !== $row['result'] && Schema::CHANGE_INTENT !== $row['result'] ) {
-					continue;
+				$before = $row['change_id'];
+				if ( ! isset( $order[ $row['object_id'] ] ) ) {
+					// One string per type, shared by every object of it.
+					$types[ $row['object_type'] ] ??= $row['object_type'];
+					$order[ $row['object_id'] ]     = $types[ $row['object_type'] ];
 				}
-				$prop = $row['prop'];
-				if ( isset( $objects[ $id ]['fields'][ $prop ] ) ) {
-					// An older applied row for the same field: the value to put back is the oldest one.
-					$objects[ $id ]['fields'][ $prop ]['target'] = $row['old_value'];
-					continue;
-				}
-				$objects[ $id ]['fields'][ $prop ] = [
-					'expected' => $row['new_value'],
-					'target'   => $row['old_value'],
-				];
 			}
 		} while ( $full );
+		return $order;
+	}
+
+	/**
+	 * Some objects' journal in the batch, grouped: per object its type (that
+	 * of its newest row) and, per applied field (newest first), the value
+	 * the batch left and the value before it.
+	 *
+	 * @param int       $batch_id Batch.
+	 * @param list<int> $ids      Objects.
+	 * @return array<int, array{type: string, fields: array<string, array{expected: mixed, target: mixed}>}>
+	 */
+	private function journals( int $batch_id, array $ids ): array {
+		$objects = [];
+		foreach ( $this->changes->for_objects( $batch_id, $ids ) as $row ) {
+			$id               = $row['object_id'];
+			$objects[ $id ] ??= [
+				'type'   => $row['object_type'],
+				'fields' => [],
+			];
+			// An intent row (§12.3) a killed run left unsettled counts as applied: whether its save
+			// landed shows as the object holding the value, or as a conflict when it does not.
+			if ( 'applied' !== $row['result'] && Schema::CHANGE_INTENT !== $row['result'] ) {
+				continue;
+			}
+			$prop = $row['prop'];
+			if ( isset( $objects[ $id ]['fields'][ $prop ] ) ) {
+				// An older applied row for the same field: the value to put back is the oldest one.
+				$objects[ $id ]['fields'][ $prop ]['target'] = $row['old_value'];
+				continue;
+			}
+			$objects[ $id ]['fields'][ $prop ] = [
+				'expected' => $row['new_value'],
+				'target'   => $row['old_value'],
+			];
+		}
 		return $objects;
+	}
+
+	/**
+	 * Plan one page of the walk: release what the previous page loaded,
+	 * prime this one's objects, read their journal rows, and plan each in
+	 * order, folding it into the hash and the counts and handing it on.
+	 *
+	 * @param int                                   $batch_id The batch undone.
+	 * @param array<int, string>                    $page     Object id => type, in plan order.
+	 * @param int                                   $user_id  The person undoing.
+	 * @param array{0: int, 1: int}|null            $mark     Memory::mark() at the walk's start, to release the previous page; null on the first.
+	 * @param \HashContext                          $context  The plan hash so far.
+	 * @param array<string, int>                    $counts   Items by state so far.
+	 * @param bool                                  $first    Whether no item has been hashed yet.
+	 * @param callable( array<string, mixed> ): void|null $each Given each item.
+	 */
+	private function walk_page( int $batch_id, array $page, int $user_id, ?array $mark, \HashContext $context, array &$counts, bool &$first, ?callable $each ): void {
+		if ( null !== $mark ) {
+			// T76: a 5,000-product batch's plan outgrew 128 MB with every object kept loaded.
+			Memory::release( $mark );
+		}
+		$ids = array_keys( $page );
+		Memory::next_page( $ids, false );
+		$journals = $this->journals( $batch_id, $ids );
+		foreach ( $page as $object_id => $type ) {
+			$item = $this->item(
+				$object_id,
+				$journals[ $object_id ] ?? [
+					'type'   => $type,
+					'fields' => [],
+				],
+				$user_id,
+				$batch_id
+			);
+			self::hash_item( $context, $item, $first );
+			$first = false;
+			if ( ! isset( $counts[ $item['state'] ] ) ) {
+				throw new \InvalidArgumentException( 'An undo plan item has an unknown state.' );
+			}
+			++$counts[ $item['state'] ];
+			if ( null !== $each ) {
+				$each( $item );
+			}
+		}
+	}
+
+	/**
+	 * Positive object ids, each once, in the order given.
+	 *
+	 * @param array<mixed> $ids Candidate ids.
+	 * @return list<int>
+	 */
+	private static function ids( array $ids ): array {
+		return array_values( array_unique( array_filter( array_map( 'intval', $ids ), static fn( int $id ): bool => $id > 0 ) ) );
 	}
 
 	/**
@@ -381,11 +606,21 @@ final class Planner {
 	 * @param int                                                                                   $object_id Object.
 	 * @param array{type: string, fields: array<string, array{expected: mixed, target: mixed}>} $journal   Its journal.
 	 * @param int                                                                                   $user_id   The person undoing.
+	 * @param int                                                                                   $batch_id  The batch undone.
+	 * @param object|null                                                                           $loaded    The object, already loaded; loaded here when null.
 	 * @return array{object_id: int, object_type: string, operations: list<array{action: string, args: array<string, mixed>}>, state: string, code: string, reason: string, conflicts: list<array{field: string, expected: mixed, current: mixed}>}
 	 */
-	private function item( int $object_id, array $journal, int $user_id ): array {
+	private function item( int $object_id, array $journal, int $user_id, int $batch_id = 0, ?object $loaded = null ): array {
 		$type      = $journal['type'];
 		$variation = 'variation' === $type;
+		if ( \BulkCatalogueManager\Categories\Writer::OBJECT_TYPE === $type ) {
+			// Ticket 133 bug 1: a category goes back through its own term functions.
+			return \BulkCatalogueManager\Categories\TermUndo::plan( $object_id, $journal['fields'], $user_id );
+		}
+		if ( External\TermSubject::TAXONOMY === $type ) {
+			// Contract version 2: an add-on's value on a category goes back through its provider.
+			return $this->category_item( $object_id, $journal, $user_id, $batch_id, $loaded instanceof \WP_Term ? $loaded : null );
+		}
 		if ( [] === $journal['fields'] ) {
 			return self::skipped(
 				$object_id,
@@ -400,7 +635,7 @@ final class Planner {
 			return self::skipped( $object_id, $type, self::CANNOT_RESTORE, __( 'This change cannot be undone here, so it was left alone.', 'bulk-catalogue-manager-for-woocommerce' ) );
 		}
 
-		$subject = self::load( $object_id );
+		$subject = $loaded ?? self::load( $object_id );
 		if ( null === $subject || self::is_variation( $subject ) !== $variation ) {
 			return self::skipped(
 				$object_id,
@@ -418,26 +653,80 @@ final class Planner {
 		$fields     = $this->actions->fields();
 		$operations = [];
 		$conflicts  = [];
+		$restore    = null;
+		$stock      = null;
+		$external   = false;
+		$checked    = [];
 		foreach ( $journal['fields'] as $key => $values ) {
+			if ( External\Providers::is_external( (string) $key ) ) {
+				// T108: an add-on's value goes back through its provider.
+				$part = $this->external( $subject, (string) $key, $values, $user_id, $batch_id, $checked, false );
+				if ( isset( $part['skip'] ) ) {
+					return self::skipped( $object_id, $type, $part['skip'][0], $part['skip'][1] );
+				}
+				if ( null !== $part['conflict'] ) {
+					$conflicts[] = $part['conflict'];
+				}
+				$operations[] = $part['operation'];
+				$external     = true;
+				continue;
+			}
 			$field = $fields->get( $key );
 			if ( null === $field || $field->read_only() ) {
 				return self::skipped( $object_id, $type, self::CANNOT_RESTORE, __( 'One of the values this batch changed can no longer be changed here, so this product was left alone.', 'bulk-catalogue-manager-for-woocommerce' ) );
 			}
 			$current = $field->read( $subject );
-			if ( ! self::same( $field, $current, $values['expected'] ) ) {
+			// A value already back to what the undo restores (a cancelled undo put it back, ENGINE-11) is not a change made since.
+			if ( ! self::same( $field, $current, $values['expected'] ) && ! self::same( $field, $current, $values['target'] ) ) {
 				$conflicts[] = [
 					'field'    => $key,
 					'expected' => $values['expected'],
 					'current'  => $current,
 				];
 			}
+			$status = StatusSwitch::governs( $field );
+			if ( $status || OffRecord::FIELD === $key || \BulkCatalogueManager\Publishing\PublicationPassword::FIELD === $key ) {
+				// Status and its Off record go back together, as one internal step, where the first of them was.
+				if ( OffRecord::FIELD === $key && '' !== (string) $values['target'] && null === OffRecord::parse( $values['target'], $object_id ) ) {
+					return self::skipped( $object_id, $type, self::CANNOT_RESTORE, __( 'The saved status before Off this batch changed could not be read for this product, so it was left alone.', 'bulk-catalogue-manager-for-woocommerce' ) );
+				}
+				if ( null === $restore ) {
+					$restore      = count( $operations );
+					$operations[] = [];
+				}
+				$operations[ $restore ][ $status ? 'value' : ( OffRecord::FIELD === $key ? 'record' : 'password' ) ] = $values['target'] ?? '';
+				continue;
+			}
+			if ( isset( $journal['fields'][ StockCoupling::FIELD ] ) && ( StockCoupling::FIELD === $key || in_array( $key, StockCoupling::COUPLED, true ) ) ) {
+				// Manage stock and what WooCommerce changed with it go back together, as one internal step, where the first of them was.
+				if ( null === $stock ) {
+					$stock        = count( $operations );
+					$operations[] = [];
+				}
+				$operations[ $stock ][ StockCoupling::FIELD === $key ? 'value' : $key ] = $values['target'] ?? '';
+				continue;
+			}
 			$operation = self::operation( $field, $values['target'], $values['expected'] );
 			if ( null !== $operation ) {
 				$operations[] = $operation;
 			}
 		}
+		$operations = self::price_order( $fields, $operations, $subject );
+		if ( null !== $stock ) {
+			$operations[ $stock ] = [
+				'action' => RestoreStock::ID,
+				'args'   => [ 'field' => StockCoupling::FIELD ] + $operations[ $stock ] + [ 'apply_to_variations' => false ],
+			];
+		}
+		if ( null !== $restore ) {
+			$operations[ $restore ] = self::restore_step( $fields, $operations[ $restore ], $subject );
+			$newer                  = $this->newer_record( $subject, $batch_id, $conflicts );
+			if ( null !== $newer ) {
+				$conflicts[] = $newer;
+			}
+		}
 
-		$normalised = [] === $operations ? [] : $this->actions->validate_list( $operations );
+		$normalised = [] === $operations ? [] : $this->actions->validate_list( $operations, null !== $restore || null !== $stock || $external );
 		if ( $normalised instanceof \WP_Error ) {
 			return self::skipped( $object_id, $type, self::CANNOT_RESTORE, $normalised->get_error_message() );
 		}
@@ -463,6 +752,257 @@ final class Planner {
 			'reason'      => '',
 			'conflicts'   => [],
 		];
+	}
+
+	/**
+	 * Plan one category of an add-on's category change (contract version 2,
+	 * docs/EXTENSIONS-v2.md §5.4), for the person undoing: it still exists,
+	 * read unfiltered (a background undo with no user sees categories a term
+	 * query would hide); their edit_term on it; then, per value, the
+	 * capability, the provider's authorise() and the conflict check, as for
+	 * a product. A deleted category is skipped as missing.
+	 *
+	 * @param int                                                                               $object_id Term id.
+	 * @param array{type: string, fields: array<string, array{expected: mixed, target: mixed}>} $journal   Its journal.
+	 * @param int                                                                               $user_id   The person undoing.
+	 * @param int                                                                               $batch_id  The batch undone.
+	 * @param \WP_Term|null                                                                      $loaded    The category, already loaded; read here when null.
+	 * @return array{object_id: int, object_type: string, operations: list<array{action: string, args: array<string, mixed>}>, state: string, code: string, reason: string, conflicts: list<array{field: string, expected: mixed, current: mixed}>}
+	 */
+	private function category_item( int $object_id, array $journal, int $user_id, int $batch_id, ?\WP_Term $loaded ): array {
+		$type = External\TermSubject::TAXONOMY;
+		if ( [] === $journal['fields'] ) {
+			return self::skipped( $object_id, $type, self::NOT_APPLIED, __( 'This batch did not change this category, so there is nothing to undo.', 'bulk-catalogue-manager-for-woocommerce' ) );
+		}
+		$term = $loaded ?? External\TermSubject::load( $object_id );
+		if ( null === $term ) {
+			return self::skipped( $object_id, $type, self::MISSING, External\ExternalWriter::term_gone_sentence() );
+		}
+		if ( ! user_can( $user_id, 'edit_term', $object_id ) ) {
+			return self::skipped( $object_id, $type, self::CANNOT_EDIT, __( 'You can no longer change this category, so it was left alone. Ask an administrator for access to it.', 'bulk-catalogue-manager-for-woocommerce' ) );
+		}
+		$operations = [];
+		$conflicts  = [];
+		$checked    = [];
+		foreach ( $journal['fields'] as $key => $values ) {
+			$part = External\Providers::is_external( (string) $key )
+				? $this->external( $term, (string) $key, $values, $user_id, $batch_id, $checked, true )
+				: [ 'skip' => [ self::CANNOT_RESTORE, __( 'One of the values this batch changed can no longer be changed here, so this category was left alone.', 'bulk-catalogue-manager-for-woocommerce' ) ] ];
+			if ( isset( $part['skip'] ) ) {
+				return self::skipped( $object_id, $type, $part['skip'][0], $part['skip'][1] );
+			}
+			if ( null !== $part['conflict'] ) {
+				$conflicts[] = $part['conflict'];
+			}
+			$operations[] = $part['operation'];
+		}
+		$normalised = $this->actions->validate_list( $operations, true );
+		if ( $normalised instanceof \WP_Error ) {
+			return self::skipped( $object_id, $type, self::CANNOT_RESTORE, $normalised->get_error_message() );
+		}
+		return [
+			'object_id'   => $object_id,
+			'object_type' => $type,
+			'operations'  => $normalised,
+			'state'       => [] === $conflicts ? Plan::REVERTIBLE : Plan::CONFLICTED,
+			'code'        => [] === $conflicts ? '' : self::CHANGED_SINCE,
+			'reason'      => [] === $conflicts ? '' : __( 'This category was changed since this batch ran, so it is left alone unless you choose Revert anyway.', 'bulk-catalogue-manager-for-woocommerce' ),
+			'conflicts'   => $conflicts,
+		];
+	}
+
+	/**
+	 * One external field of an object (T108): the step putting it back and
+	 * its conflict, or why the object is skipped.
+	 *
+	 * @param object                                  $subject  The loaded object: a product, or a category's WP_Term.
+	 * @param string                                  $key      Field key.
+	 * @param array{expected: mixed, target: mixed}   $values   The journalled envelopes.
+	 * @param int                                     $user_id  The person undoing.
+	 * @param int                                     $batch_id The batch undone.
+	 * @param array<string, bool>                     $checked  Providers whose permission is already checked for this object.
+	 * @param bool                                    $category Whether the object is a category.
+	 * @return array{operation?: array<string, mixed>, conflict?: array<string, mixed>|null, skip?: array{0: string, 1: string}}
+	 */
+	private function external( object $subject, string $key, array $values, int $user_id, int $batch_id, array &$checked, bool $category ): array {
+		$provider = $this->actions->providers()->owning( $key );
+		if ( null === $provider || null === $provider->field( $key ) || $category !== $provider->category_change( [ [ 'args' => [ 'field' => $key ] ] ] ) ) {
+			return [
+				'skip' => [
+					self::CANNOT_RESTORE,
+					$category
+						? __( 'One of the values this batch changed can no longer be changed here, so this category was left alone.', 'bulk-catalogue-manager-for-woocommerce' )
+						: __( 'One of the values this batch changed can no longer be changed here, so this product was left alone.', 'bulk-catalogue-manager-for-woocommerce' ),
+				],
+			];
+		}
+		$context = new External\RunContext( External\RunContext::UNDO, $user_id, $batch_id );
+		$object  = $subject instanceof \WP_Term ? new External\TermSubject( $subject, $provider ) : External\ProductSubject::of( $subject, $provider );
+		$step    = [
+			'action' => External\RestoreExternal::ID,
+			'args'   => [ 'field' => $key ],
+		];
+		if ( ! ( new External\Computer( $provider, $context ) )->may( $user_id, $step ) ) {
+			return [ 'skip' => [ self::CANNOT_EDIT, External\Refusals::no_permission() ] ];
+		}
+		if ( ! isset( $checked[ $provider->id ] ) ) {
+			$refusal = self::authorise( $provider, $user_id, $object, $category );
+			if ( null !== $refusal ) {
+				return [ 'skip' => [ self::CANNOT_EDIT, $refusal ] ];
+			}
+			$checked[ $provider->id ] = true;
+		}
+		$current = $object->fresh( $key );
+		if ( $current instanceof \BulkCatalogueManager\Extension\Unknown ) {
+			return [ 'skip' => [ self::CANNOT_RESTORE, External\Text::plain( $current->reason(), External\Text::REASON ) ] ];
+		}
+		$expected = External\Envelope::current( $provider, $key, $values['expected'] );
+		$target   = External\Envelope::current( $provider, $key, $values['target'] );
+		if ( $expected instanceof \WP_Error || $target instanceof \WP_Error ) {
+			return [
+				'skip' => [
+					self::CANNOT_RESTORE,
+					$category
+						? __( 'A value this batch changed was saved in a shape the add-on can no longer read, so this category was left alone.', 'bulk-catalogue-manager-for-woocommerce' )
+						: __( 'A value this batch changed was saved in a shape the add-on can no longer read, so this product was left alone.', 'bulk-catalogue-manager-for-woocommerce' ),
+				],
+			];
+		}
+		$field = $provider->field( $key );
+		try {
+			$same = true === External\Guard::run( $provider->id, 'same', static fn(): mixed => $field?->same( $current, $expected ) );
+		} catch ( External\ProviderFailure $e ) {
+			return [ 'skip' => [ self::CANNOT_RESTORE, External\Refusals::error_sentence() ] ];
+		}
+		return [
+			'operation' => [
+				'action' => External\RestoreExternal::ID,
+				'args'   => [
+					'field' => $key,
+					'value' => $target,
+				],
+			],
+			'conflict'  => $same ? null : [
+				'field'    => $key,
+				'expected' => $provider->describe( $object, $key, $expected ),
+				'current'  => $provider->describe( $object, $key, $current ),
+			],
+		];
+	}
+
+	/**
+	 * The provider's refusal of the person undoing on an object, or null when it allows it.
+	 *
+	 * @param External\Registered                             $provider The provider.
+	 * @param int                                             $user_id  The person undoing.
+	 * @param External\ProductSubject|External\TermSubject $item     The object.
+	 * @param bool                                            $category Whether it is a category.
+	 */
+	private static function authorise( External\Registered $provider, int $user_id, External\ProductSubject|External\TermSubject $item, bool $category = false ): ?string {
+		try {
+			$answer = External\Guard::run( $provider->id, 'authorise', static fn(): mixed => $provider->provider->authorise( $user_id, $item ) );
+		} catch ( External\ProviderFailure $e ) {
+			return External\Refusals::error_sentence();
+		}
+		if ( true === $answer ) {
+			return null;
+		}
+		$reason = $answer instanceof \WP_Error ? External\Text::plain( $answer->get_error_message(), External\Text::REASON ) : '';
+		if ( '' !== $reason ) {
+			return $reason;
+		}
+		return $category
+			? __( 'The add-on does not allow a change to this category, so it was left alone.', 'bulk-catalogue-manager-for-woocommerce' )
+			: __( 'The add-on does not allow a change to this product, so it was left alone.', 'bulk-catalogue-manager-for-woocommerce' );
+	}
+
+	/**
+	 * The internal step putting a status and its Off record back (T90).
+	 *
+	 * @param \BulkCatalogueManager\Fields\Registry $fields  The field registry.
+	 * @param array<string, mixed>                   $parts   `value` and/or `record` from the journal.
+	 * @param object                                 $subject The object as planned: the step expects to find it so when written.
+	 * @return array{action: string, args: array<string, mixed>}
+	 */
+	private static function restore_step( \BulkCatalogueManager\Fields\Registry $fields, array $parts, object $subject ): array {
+		$status = null;
+		if ( array_key_exists( 'password', $parts ) ) {
+			$parts['expected_password'] = \BulkCatalogueManager\Publishing\PublicationPassword::field()->read( $subject );}
+		foreach ( $fields->editable() as $field ) {
+			if ( StatusSwitch::governs( $field ) ) {
+				$status = $field;
+				break;
+			}
+		}
+		return [
+			'action' => RestoreStatus::ID,
+			'args'   => [ 'field' => null === $status ? '' : $status->key() ] + $parts + ( null === $status ? [] : RestoreStatus::expecting( $subject, $status ) ) + [ 'apply_to_variations' => false ],
+		];
+	}
+
+	/**
+	 * The newer-record guard (T90): the conflict for a product carrying its
+	 * own Off record written by a batch later than the one undone, unless the
+	 * record is already listed as a conflict; null otherwise.
+	 *
+	 * @param object                                                      $subject   The object.
+	 * @param int                                                         $batch_id  The batch undone.
+	 * @param list<array{field: string, expected: mixed, current: mixed}> $conflicts Conflicts found so far.
+	 * @return array{field: string, expected: mixed, current: mixed}|null
+	 */
+	private function newer_record( object $subject, int $batch_id, array $conflicts ): ?array {
+		$record = OffRecord::for_product( $subject );
+		if ( null === $record || $record->batch <= $batch_id || in_array( OffRecord::FIELD, array_column( $conflicts, 'field' ), true ) ) {
+			return null;
+		}
+		return [
+			'field'    => OffRecord::FIELD,
+			'expected' => '',
+			'current'  => $record->to_json(),
+		];
+	}
+
+	/**
+	 * The regular and sale price steps in an order where the price pair is
+	 * valid at each step (ENGINE-1): the writer checks each step against the
+	 * price the object holds then, so a sale price put back before a regular
+	 * price still below it would be skipped. Kept as journalled (newest
+	 * first) unless that order fails and the other passes.
+	 *
+	 * @param \BulkCatalogueManager\Fields\Registry           $fields     The field registry.
+	 * @param list<array{action: string, args: array<string, mixed>}> $operations The steps.
+	 * @param object                                           $subject    The object as it is now.
+	 * @return list<array{action: string, args: array<string, mixed>}>
+	 */
+	private static function price_order( \BulkCatalogueManager\Fields\Registry $fields, array $operations, object $subject ): array {
+		$index = [];
+		$value = [];
+		foreach ( $operations as $at => $operation ) {
+			$field = $fields->get( (string) ( $operation['args']['field'] ?? '' ) );
+			if ( null === $field || Field::MONEY !== $field->type() || ! in_array( $operation['action'] ?? '', [ 'set_value', 'clear' ], true ) ) {
+				continue;
+			}
+			$kind = $field->accepts( Field::COPY_FROM_SALE ) ? 'regular' : ( $field->accepts( Field::COPY_FROM_REGULAR ) ? 'sale' : '' );
+			if ( '' !== $kind ) {
+				$index[ $kind ] = $at;
+				$value[ $kind ] = [ $field, (string) ( $operation['args']['value'] ?? '' ) ];
+			}
+		}
+		if ( ! isset( $index['regular'], $index['sale'] ) ) {
+			return $operations;
+		}
+		[ $regular, $regular_target ] = $value['regular'];
+		[ $sale, $sale_target ]       = $value['sale'];
+		$regular_first                = true === \BulkCatalogueManager\Fields\Registry::check_prices( $regular_target, (string) $sale->read( $subject ) );
+		$sale_first                   = true === \BulkCatalogueManager\Fields\Registry::check_prices( (string) $regular->read( $subject ), $sale_target );
+		$journalled_regular_first     = $index['regular'] < $index['sale'];
+		if ( ( $journalled_regular_first ? $regular_first : $sale_first ) || ! ( $journalled_regular_first ? $sale_first : $regular_first ) ) {
+			return $operations;
+		}
+		$swap                            = $operations[ $index['regular'] ];
+		$operations[ $index['regular'] ] = $operations[ $index['sale'] ];
+		$operations[ $index['sale'] ]    = $swap;
+		return $operations;
 	}
 
 	/**
@@ -514,21 +1054,43 @@ final class Planner {
 	}
 
 	/**
-	 * The hash binding a plan: the batch, the items and the settings a
-	 * preview binds (Preview::SETTINGS), in canonical order.
+	 * Start the hash binding a plan: the batch, the items and the settings a
+	 * preview binds (Preview::SETTINGS), in canonical order — the HMAC of
+	 * { batch, items, settings } in canonical JSON, fed a part at a time
+	 * (T85): a sorted copy of every item and one encoding of them all cost
+	 * about 1.7 KB an item. JSON encoding is compositional, so the hash is
+	 * the one the whole-payload form gave; each item is added as it is
+	 * planned (walk_page()), and hash_end() closes it.
 	 *
-	 * @param int                        $batch_id Batch.
-	 * @param list<array<string, mixed>> $items    Items.
+	 * @param int $batch_id Batch.
 	 */
-	private function hash( int $batch_id, array $items ): string {
+	private function hash_start( int $batch_id ): \HashContext {
+		$context = hash_init( 'sha256', HASH_HMAC, wp_salt( 'auth' ) );
+		hash_update( $context, self::CONTEXT . '{"batch":' . wp_json_encode( $batch_id ) . ',"items":[' );
+		return $context;
+	}
+
+	/**
+	 * Add one item to the hash of a plan, in canonical order.
+	 *
+	 * @param \HashContext         $context The hash so far.
+	 * @param array<string, mixed> $item    The item.
+	 * @param bool                 $first   Whether it is the plan's first item.
+	 */
+	private static function hash_item( \HashContext $context, array $item, bool $first ): void {
+		hash_update( $context, ( $first ? '' : ',' ) . wp_json_encode( self::sorted( $item ) ) );
+	}
+
+	/**
+	 * Close the hash of a plan with the settings it binds.
+	 *
+	 * @param \HashContext $context The hash with every item added.
+	 */
+	private function hash_end( \HashContext $context ): string {
 		$bound = array_intersect_key( $this->settings->values(), array_flip( Preview::SETTINGS ) );
 		ksort( $bound );
-		$payload = [
-			'batch'    => $batch_id,
-			'items'    => self::sorted( $items ),
-			'settings' => $bound,
-		];
-		return hash_hmac( 'sha256', self::CONTEXT . (string) wp_json_encode( $payload ), wp_salt( 'auth' ) );
+		hash_update( $context, '],"settings":' . wp_json_encode( $bound ) . '}' );
+		return hash_final( $context );
 	}
 
 	/**

@@ -7,6 +7,7 @@ import { createContext, useContext } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 
 import { ROW, TONES } from './defaults';
+import { statusLabel } from './edit/status';
 
 /**
  * What cells read from the table around them: term names per source and the
@@ -170,6 +171,13 @@ function Value( { item, descriptor, companion, role } ) {
 		case 'enum': {
 			if ( isEmpty( value ) ) {
 				return null;
+			}
+			if ( descriptor.nativeStatus === true ) {
+				return (
+					<Badge value={ value }>
+						{ statusLabel( descriptor, value ) }
+					</Badge>
+				);
 			}
 			const extra = companion ? item[ companion.key ] : undefined;
 			return (

@@ -130,9 +130,13 @@ final class RunnerStore {
 			"/^UPDATE $items SET claim_token = NULL/"   => fn( string $sql ): int => $this->release( $sql ),
 			"/^UPDATE $items SET state = 'working' WHERE /" => fn( string $sql ): int => $this->claim_item( $sql ),
 			"/^UPDATE $items SET state = 'pending' WHERE batch_id = \\d+ AND state = 'working'/" => fn( string $sql ): int => $this->reset_working( $sql ),
+			"/^UPDATE $items AS i SET i.state = 'done', i.message = '' WHERE /" => fn( string $sql ): int => $this->exhausted_applied( $sql ),
+			"/^UPDATE $items SET state = 'failed', message = .* AND state = 'working' AND attempts >= /s" => fn( string $sql ): int => $this->exhaust( $sql, 'working' ),
+			"/^UPDATE $items AS i INNER JOIN $batches AS b /" => fn( string $sql ): int => $this->finish( $sql ),
 			"/^UPDATE $items SET state = 'failed', message = .* AND attempts >= /s" => fn( string $sql ): int => $this->exhaust( $sql ),
 			"/^UPDATE $items SET state = '\\w+', message = .* AND item_id IN /s" => fn( string $sql ): int => $this->mark( $sql ),
 			"/^UPDATE $items SET state = 'failed', message = .* AND state = 'pending'$/s" => fn( string $sql ): int => $this->fail_pending( $sql ),
+			"/^UPDATE $items SET state = 'skipped', message = .* AND state = 'pending'$/s" => fn( string $sql ): int => $this->fail_pending( $sql, 'skipped' ),
 			"/^UPDATE $batches SET done_items = /"      => fn( string $sql ): int => $this->count_up( $sql ),
 			"/^SELECT COUNT\\(\\*\\) FROM $items WHERE batch_id = \\d+ AND state = '/" => fn( string $sql ): string => $this->count_state( $sql ),
 			"/^SELECT COUNT\\(\\*\\) FROM $items WHERE batch_id = \\d+ AND state <> 'pending'/" => fn( string $sql ): string => $this->count_reported( $sql ),
@@ -141,6 +145,7 @@ final class RunnerStore {
 			"/^SELECT item_id, operations FROM $items/" => fn( string $sql ): array => $this->item_operations( $sql ),
 			"/^SELECT change_id FROM $changes WHERE batch_id = (\\d+) AND object_id = (\\d+) LIMIT 1$/" => fn( string $sql ): ?string => $this->has_object( $sql ),
 			"/^SELECT COUNT\\(\\*\\) FROM $changes WHERE batch_id = (\\d+) AND result = '(\\w+)'$/" => fn( string $sql ): string => $this->count_changes( $sql ),
+			"/^SELECT COUNT\\(DISTINCT object_id\\) FROM $changes WHERE batch_id = (\\d+) AND result IN \\('skipped', 'failed'\\)/" => fn( string $sql ): string => $this->count_in_part( $sql ),
 		] + $wpdb->responses + [
 			// T35, T36: any other read of the three tables runs through the evaluator over the rows as they stand.
 			"/^SELECT .* FROM ($batches|$items|$changes)/s" => fn( string $sql ): mixed => $this->evaluate( $sql ),
@@ -169,9 +174,13 @@ final class RunnerStore {
 			]
 		);
 		$rows = $db->rows( $sql );
-		// A single value: a count, the last claim, or an earlier batch of the same request (T56).
-		if ( 1 === preg_match( '/^SELECT (COUNT\(\*\)|claimed_gmt) FROM/', $sql ) || 1 === preg_match( '/^SELECT batch_id FROM \S+ WHERE uuid = /', $sql ) ) {
+		// A single value: a count or the last claim.
+		if ( 1 === preg_match( '/^SELECT (COUNT\(\*\)|claimed_gmt) FROM/', $sql ) ) {
 			return [] === $rows ? null : reset( $rows[0] );
+		}
+		// A column: the batches under a request id (T83's earlier-request lookup).
+		if ( 1 === preg_match( '/^SELECT batch_id FROM \S+ WHERE uuid = /', $sql ) ) {
+			return array_map( static fn( array $row ): string => (string) reset( $row ), $rows );
 		}
 		return $rows;
 	}
@@ -184,13 +193,13 @@ final class RunnerStore {
 		foreach ( array_slice( $wpdb->writes, $this->seen ) as [ $method, $table, $data, , $where ] ) {
 			++$this->seen;
 			$inserted = 'insert' === $method && ! in_array( 'insert', $wpdb->failing, true );
-			if ( 'update' === $method && 'wp_bulkcat_batches' === $table && ! in_array( 'update', $wpdb->failing, true ) ) {
+			if ( 'update' === $method && 'wp_bulkcat_batches' === $table && ! $wpdb->update_fails( $table, $data ) ) {
 				if ( $where['batch_id'] === $this->batch['batch_id'] && ( ! isset( $where['status'] ) || $where['status'] === $this->batch['status'] ) ) {
 					$this->batch = $data + $this->batch;
 				} elseif ( isset( $this->others[ $where['batch_id'] ] ) && ( ! isset( $where['status'] ) || $where['status'] === $this->others[ $where['batch_id'] ]['status'] ) ) {
 					$this->others[ $where['batch_id'] ] = $data + $this->others[ $where['batch_id'] ];
 				}
-			} elseif ( 'update' === $method && 'wp_bulkcat_changes' === $table && ! in_array( 'update', $wpdb->failing, true ) ) {
+			} elseif ( 'update' === $method && 'wp_bulkcat_changes' === $table && ! $wpdb->update_fails( $table, $data ) ) {
 				// An intent row settled (§12.3).
 				foreach ( $this->changes as $index => $row ) {
 					if ( [] === array_diff_assoc( $where, array_intersect_key( $row, $where ) ) ) {
@@ -421,17 +430,82 @@ final class RunnerStore {
 		return $released;
 	}
 
-	private function exhaust( string $sql ): int {
-		preg_match( "/message = '(.*)' WHERE batch_id = (\\d+) AND state = 'pending' AND attempts >= (\\d+) AND \\(claimed_gmt IS NULL OR claimed_gmt < '([^']+)'\\)$/s", $sql, $m );
+	/**
+	 * Fail the stale exhausted items in one state: pending (never reached,
+	 * or claimed by no run) or working (being written when the run died).
+	 */
+	private function exhaust( string $sql, string $state = 'pending' ): int {
+		$ok = 'working' === $state
+			? preg_match( "/message = '(.*)' WHERE batch_id = (\\d+) AND state = 'working' AND attempts >= (\\d+) AND claimed_gmt < '([^']+)'$/s", $sql, $m )
+			: preg_match( "/message = '(.*)' WHERE batch_id = (\\d+) AND state = 'pending' AND attempts >= (\\d+) AND \\(claimed_gmt IS NULL OR claimed_gmt < '([^']+)'\\)$/s", $sql, $m );
+		if ( 1 !== $ok ) {
+			throw new \LogicException( "Unexpected exhaustion: $sql" );
+		}
 		$failed = 0;
 		foreach ( $this->items as $id => $item ) {
-			if ( (int) $m[2] === $item['batch_id'] && 'pending' === $item['state'] && $item['attempts'] >= (int) $m[3] && ( null === $item['claimed_gmt'] || $item['claimed_gmt'] < $m[4] ) ) {
+			if ( (int) $m[2] === $item['batch_id'] && $state === $item['state'] && $item['attempts'] >= (int) $m[3] && ( ( 'pending' === $state && null === $item['claimed_gmt'] ) || ( null !== $item['claimed_gmt'] && $item['claimed_gmt'] < $m[4] ) ) ) {
 				$this->items[ $id ]['state']   = 'failed';
 				$this->items[ $id ]['message'] = stripslashes( $m[1] );
 				++$failed;
 			}
 		}
 		return $failed;
+	}
+
+	/**
+	 * ENGINE-2: stale exhausted items, pending or working, whose object has an applied journal row, to done.
+	 */
+	private function exhausted_applied( string $sql ): int {
+		$this->sync();
+		$ok = preg_match( "/WHERE i.batch_id = (\\d+) AND i.state IN \\('pending', 'working'\\) AND i.attempts >= (\\d+) AND \\(i.claimed_gmt IS NULL OR i.claimed_gmt < '([^']+)'\\) AND EXISTS \\(SELECT c.change_id FROM `wp_bulkcat_changes` AS c WHERE c.batch_id = i.batch_id AND c.object_id = i.object_id AND c.result = 'applied'\\)$/", $sql, $m );
+		if ( 1 !== $ok ) {
+			throw new \LogicException( "Unexpected exhaustion: $sql" );
+		}
+		$done = 0;
+		foreach ( $this->items as $id => $item ) {
+			if ( (int) $m[1] !== $item['batch_id'] || ! in_array( $item['state'], [ 'pending', 'working' ], true ) || $item['attempts'] < (int) $m[2] || ( null !== $item['claimed_gmt'] && $item['claimed_gmt'] >= $m[3] ) ) {
+				continue;
+			}
+			foreach ( $this->changes as $row ) {
+				if ( $item['batch_id'] === $row['batch_id'] && $item['object_id'] === $row['object_id'] && 'applied' === $row['result'] ) {
+					$this->items[ $id ]['state']   = 'done';
+					$this->items[ $id ]['message'] = '';
+					++$done;
+					break;
+				}
+			}
+		}
+		return $done;
+	}
+
+	/**
+	 * ENGINE-2: one item a run holds marked and counted in one statement.
+	 */
+	private function finish( string $sql ): int {
+		$this->sync();
+		$ok = preg_match( "/SET i.state = '(\\w+)', i.message = '(.*)', b.done_items = b.done_items \\+ 1, b.changed_items = b.changed_items \\+ (\\d), b.failed_items = b.failed_items \\+ (\\d) WHERE i.batch_id = (\\d+) AND i.item_id = (\\d+)(?: AND i.claim_token = '([0-9a-f]+)')? AND i.state = 'working'$/s", $sql, $m );
+		if ( 1 !== $ok ) {
+			throw new \LogicException( "Unexpected finish: $sql" );
+		}
+		$item = $this->items[ (int) $m[6] ] ?? null;
+		if ( null === $item || (int) $m[5] !== $item['batch_id'] || 'working' !== $item['state'] || ( '' !== ( $m[7] ?? '' ) && $m[7] !== $item['claim_token'] ) ) {
+			return 0;
+		}
+		$this->items[ (int) $m[6] ]['state']   = $m[1];
+		$this->items[ (int) $m[6] ]['message'] = stripslashes( $m[2] );
+		$row                                   = (int) $m[5] === $this->batch['batch_id'] ? 'batch' : 'other';
+		foreach ( [
+			'done_items'    => 1,
+			'changed_items' => (int) $m[3],
+			'failed_items'  => (int) $m[4],
+		] as $column => $by ) {
+			if ( 'batch' === $row ) {
+				$this->batch[ $column ] += $by;
+			} else {
+				$this->others[ (int) $m[5] ][ $column ] += $by;
+			}
+		}
+		return 2;
 	}
 
 	private function mark( string $sql ): int {
@@ -447,12 +521,12 @@ final class RunnerStore {
 		return $marked;
 	}
 
-	private function fail_pending( string $sql ): int {
+	private function fail_pending( string $sql, string $state = 'failed' ): int {
 		preg_match( "/message = '(.*)' WHERE batch_id = (\\d+) AND state = 'pending'$/s", $sql, $m );
 		$failed = 0;
 		foreach ( $this->items as $id => $item ) {
 			if ( (int) $m[2] === $item['batch_id'] && 'pending' === $item['state'] ) {
-				$this->items[ $id ]['state']   = 'failed';
+				$this->items[ $id ]['state']   = $state;
 				$this->items[ $id ]['message'] = stripslashes( $m[1] );
 				++$failed;
 			}
@@ -497,6 +571,23 @@ final class RunnerStore {
 			}
 		}
 		return null;
+	}
+
+	private function count_in_part( string $sql ): string {
+		$this->sync();
+		preg_match( '/batch_id = (\d+)/', $sql, $m );
+		$applied = [];
+		$refused = [];
+		foreach ( $this->changes as $row ) {
+			if ( (int) $m[1] === $row['batch_id'] ) {
+				if ( 'applied' === $row['result'] ) {
+					$applied[ $row['object_id'] ] = true;
+				} elseif ( in_array( $row['result'], [ 'skipped', 'failed' ], true ) ) {
+					$refused[ $row['object_id'] ] = true;
+				}
+			}
+		}
+		return (string) count( array_intersect_key( $applied, $refused ) );
 	}
 
 	private function count_changes( string $sql ): string {

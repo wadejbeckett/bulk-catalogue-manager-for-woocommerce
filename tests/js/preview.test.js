@@ -223,6 +223,59 @@ describe( 'preview', () => {
 		expect( items[ 0 ].textContent ).toBe( sentence );
 	} );
 
+	it( 'warns that turning off Manage stock clears stock values undo puts back', () => {
+		const { container } = renderPreview( {
+			response: previewResponse( {
+				warnings: {
+					sale_above_regular: 0,
+					price_not_positive: 0,
+					stock_negative: 0,
+					sku_duplicate: 0,
+					stock_cleared: 3,
+				},
+			} ),
+		} );
+		const items = container.querySelectorAll( '[data-warning]' );
+		expect( items ).toHaveLength( 1 );
+		expect( items[ 0 ].getAttribute( 'data-warning' ) ).toBe(
+			'stock_cleared'
+		);
+		expect( items[ 0 ].textContent ).toBe(
+			'Turning off Manage stock clears the stock quantity, backorders and low stock threshold on 3 products. Undo puts them back.'
+		);
+	} );
+
+	it.each( [
+		[ 'products and variations', 20, 4, 'items' ],
+		[ 'variations only', 0, 4, 'variations' ],
+		[ 'products only', 20, 0, 'products' ],
+	] )(
+		'counts negative stock in the words of what the change reaches: %s (T114)',
+		( label, products, variations, noun ) => {
+			const { container } = renderPreview( {
+				response: previewResponse( {
+					totals: {
+						...previewResponse().totals,
+						by_type: {
+							product: { matched: products, would_change: 0 },
+							variation: { matched: variations, would_change: 0 },
+						},
+					},
+					warnings: {
+						sale_above_regular: 0,
+						price_not_positive: 0,
+						stock_negative: 3,
+						sku_duplicate: 0,
+					},
+				} ),
+			} );
+			expect(
+				container.querySelector( '[data-warning="stock_negative"]' )
+					.textContent
+			).toBe( `Stock would go below zero on 3 ${ noun }.` );
+		}
+	);
+
 	it( 'has no warning block when nothing warns', () => {
 		const { container } = renderPreview( {
 			response: previewResponse( {
@@ -239,13 +292,22 @@ describe( 'preview', () => {
 		).toBeNull();
 	} );
 
-	it( 'lists the products that could not be read when partially computable', () => {
+	it( 'lists the chosen products that cannot be changed, kept in the change (T83)', () => {
 		const { container } = renderPreview();
 		const block = container.querySelector( '[data-block="unreadable"]' );
 		expect( block.textContent ).toContain(
-			'1 product could not be read and is left out of this change.'
+			'1 chosen product cannot be changed now. It stays in this change and will be recorded as not changed.'
 		);
 		expect( block.textContent ).toContain( '#999' );
+	} );
+
+	it( 'counts every unavailable product, beyond those listed', () => {
+		const { container } = renderPreview( {
+			response: previewResponse( { unavailable_count: 1200 } ),
+		} );
+		expect(
+			container.querySelector( '[data-block="unreadable"]' ).textContent
+		).toContain( '1,200 chosen products cannot be changed now.' );
 	} );
 
 	it( 'says when the counts are estimated', () => {
@@ -425,6 +487,63 @@ describe( 'preview inside the panel', () => {
 		).toBeDisabled();
 	} );
 
+	it( 'never lets a preview of an older version of the change enable Apply (T85)', async () => {
+		const answers = [];
+		routeApi( apiFetch, {
+			'POST preview': ( options ) =>
+				new Promise( ( resolve ) => {
+					answers.push( { resolve, options } );
+				} ),
+		} );
+		render(
+			<BulkChangePanel
+				selection={ { kind: 'ids', ids: IDS } }
+				registry={ REGISTRY }
+				settings={ SETTINGS }
+			/>
+		);
+		checkIncrease();
+		expect( answers ).toHaveLength( 1 );
+		// Check the change waits while it is worked out.
+		expect(
+			screen.getByRole( 'button', { name: 'Check the change' } )
+		).toBeDisabled();
+		// The change is edited while the first answer is still out.
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Edit step 1' } )
+		);
+		fireEvent.change( screen.getByLabelText( 'How much' ), {
+			target: { value: '12' },
+		} );
+		// The answer for 10 arrives: it is not the change on screen.
+		answers[ 0 ].resolve(
+			previewResponse( {
+				operations: answers[ 0 ].options.data.operations,
+			} )
+		);
+		const again = await screen.findByRole( 'button', {
+			name: /^(Check the change|Preview again)$/,
+		} );
+		expect(
+			screen.queryByRole( 'button', { name: /^Apply to / } )
+		).toBeNull();
+		fireEvent.click( again );
+		await waitFor( () => expect( answers ).toHaveLength( 2 ) );
+		expect( answers[ 1 ].options.data.operations[ 0 ].args.amount ).toBe(
+			'12'
+		);
+		answers[ 1 ].resolve(
+			previewResponse( {
+				operations: answers[ 1 ].options.data.operations,
+			} )
+		);
+		expect(
+			await screen.findByRole( 'button', {
+				name: 'Apply to 20 products',
+			} )
+		).toBeEnabled();
+	} );
+
 	it( 'shows a failed preview in plain words with the code behind Show details', async () => {
 		routeApi( apiFetch, {
 			'POST preview': {
@@ -454,5 +573,155 @@ describe( 'preview inside the panel', () => {
 		expect(
 			screen.getByText( 'bulkcat_selection_too_large' )
 		).toBeVisible();
+	} );
+} );
+
+describe( 'retained legacy Status outcomes (SPEC §9.1)', () => {
+	const statusRow = (
+		id,
+		name,
+		note,
+		context,
+		state = 'changed',
+		extra = {}
+	) => ( {
+		object_id: id,
+		object_type: 'product',
+		name,
+		field: 'status',
+		current: context.current || 'draft',
+		new: 'publish',
+		state,
+		reason: '',
+		code: '',
+		replaces: false,
+		note,
+		context,
+		...extra,
+	} );
+	const answer = () =>
+		previewResponse( {
+			sample: [
+				statusRow( 11, 'Blue Tee', 'on', {
+					saved: 'publish',
+					restores: 'publish',
+				} ),
+				statusRow(
+					12,
+					'Red Cap',
+					'on_restores',
+					{ saved: 'private', restores: 'private' },
+					'changed',
+					{ new: 'private' }
+				),
+				statusRow( 13, 'Old Hat', 'on_scheduled', {
+					saved: 'future',
+					restores: 'future',
+					scheduled_gmt: '2026-10-04 09:30:00',
+				} ),
+				statusRow( 14, 'Wool Sock', 'publishes_not_off', {
+					current: 'future',
+					scheduled_gmt: '2026-10-05 08:00:00',
+				} ),
+				statusRow(
+					15,
+					'Grey Scarf',
+					'conflict',
+					{ saved: 'publish', current: 'private' },
+					'skipped',
+					{
+						reason: 'This product was changed by someone else while it was Off, so it was left alone.',
+					}
+				),
+			],
+			availability: {
+				counts: {
+					off: 0,
+					off_recapture: 0,
+					already_off: 0,
+					already_draft: 0,
+					on: 1,
+					on_restores: 1,
+					on_scheduled: 1,
+					on_schedule_passed: 2,
+					publishes_not_off: 1,
+					conflict: 1,
+					conflict_kept: 0,
+					record_dropped: 0,
+				},
+				restores: { private: 1, pending: 0 },
+				variations_kept: 6,
+				conflicts: [
+					{
+						object_id: 15,
+						name: 'Grey Scarf',
+						current: 'private',
+						saved: 'publish',
+					},
+				],
+			},
+		} );
+	const STATUS_OPS = [
+		{ action: 'set_value', args: { field: 'status', value: 'publish' } },
+	];
+
+	it( 'counts every outcome, conflicts first, then restores, passed schedules and publications', () => {
+		const { container } = renderPreview( {
+			response: answer(),
+			operations: STATUS_OPS,
+		} );
+		const lines = Array.from(
+			container.querySelectorAll(
+				'[data-block="availability"] .bulkcat-bulk__lines li'
+			)
+		).map( ( item ) => item.textContent );
+		expect( lines ).toEqual( [
+			'1 product was changed by someone else while Off and will be left alone.',
+			'1 product comes back with the status it had before Off, not Published: 1 Private.',
+			'2 products were scheduled and their time has passed: this publishes them now.',
+			'1 product was not switched Off: this publishes it.',
+			'1 product will be switched back On.',
+			'1 product comes back scheduled.',
+			'6 variations are left as they are: switching On restores only what switching Off saved.',
+		] );
+		expect(
+			within(
+				container.querySelector( '[data-block="availability"]' )
+			).getByText( /Grey Scarf/ )
+		).toBeVisible();
+		// The block sits above the sample.
+		expect(
+			// eslint-disable-next-line no-bitwise
+			container
+				.querySelector( '[data-block="availability"]' )
+				.compareDocumentPosition( screen.getByRole( 'table' ) ) &
+				window.Node.DOCUMENT_POSITION_FOLLOWING
+		).toBeTruthy();
+	} );
+
+	it( 'words each Status row by its outcome', () => {
+		renderPreview( { response: answer(), operations: STATUS_OPS } );
+		expect( screen.getByText( 'Switched back On' ) ).toBeVisible();
+		expect(
+			screen.getByText( 'Was Private before Off: comes back Private' )
+		).toBeVisible();
+		expect(
+			screen.getByText(
+				/^Was scheduled before Off: comes back scheduled for /
+			)
+		).toBeVisible();
+		expect(
+			screen.getByText( /^Not switched Off: stays scheduled for / )
+		).toBeVisible();
+		expect(
+			screen.getByText( 'Changed by someone else while Off: left alone' )
+		).toBeVisible();
+	} );
+
+	it( 'shows no block for a change that does not set Status', () => {
+		const { container } = renderPreview();
+		expect(
+			container.querySelector( '[data-block="availability"]' )
+		).toBeNull();
 	} );
 } );

@@ -193,18 +193,29 @@ export function NoMatches( { filters, onClear, variations = false } ) {
 
 /**
  * A read failed: what failed, Try again, and the technical line behind Show
- * details (SPEC §4.8). Rows already on screen stay where they are.
+ * details (SPEC §4.8): the code and the HTTP status, never the server's own
+ * text (ticket 11; ../../errors.js). Rows already on screen stay where they
+ * are.
  *
- * @param {Object}   props         Props.
- * @param {string}   props.message What failed, as a sentence.
- * @param {Error}    props.error   The failure.
- * @param {Function} props.onRetry Try again.
+ * @param {Object}   props            Props.
+ * @param {string}   props.message    What failed, as a sentence.
+ * @param {Error}    props.error      The failure.
+ * @param {Function} props.onRetry    Try again.
+ * @param {string}   props.retryLabel The action's label when it does not try again (Dismiss), or ''.
  * @return {Element} Notice.
  */
-export function ErrorNotice( { message, error, onRetry } ) {
-	const detail = [ error?.code, error?.message ]
+export function ErrorNotice( { message, error, onRetry, retryLabel = '' } ) {
+	const detail = [
+		error?.code,
+		error?.data?.status &&
+			sprintf(
+				/* translators: %d: an HTTP status code such as 400. */
+				__( 'HTTP %d', 'bulk-catalogue-manager-for-woocommerce' ),
+				error.data.status
+			),
+	]
 		.filter( Boolean )
-		.join( ': ' );
+		.join( ' · ' );
 	return (
 		<Notice
 			className="bulkcat-error"
@@ -212,10 +223,12 @@ export function ErrorNotice( { message, error, onRetry } ) {
 			isDismissible={ false }
 			actions={ [
 				{
-					label: __(
-						'Try again',
-						'bulk-catalogue-manager-for-woocommerce'
-					),
+					label:
+						retryLabel ||
+						__(
+							'Try again',
+							'bulk-catalogue-manager-for-woocommerce'
+						),
 					onClick: onRetry,
 					variant: 'primary',
 				},

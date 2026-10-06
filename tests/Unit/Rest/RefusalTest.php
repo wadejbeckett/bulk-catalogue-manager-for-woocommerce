@@ -50,9 +50,46 @@ final class RefusalTest extends TestCase {
 		$this->assertSame( 409, Refusal::create( 'bulkcat_example', 'Stop.', 409, [ 'status' => 200 ] )->get_error_data()['status'], 'Extra data cannot override the status.' );
 	}
 
+	public function test_native_validation_and_committed_inline_refusal_preserve_the_wire_contract(): void {
+		$params = [ 'stock_quantity' => 'Enter a whole number.' ];
+		$error  = Refusal::native_validation( 'Enter a whole number.', $params, 'stock_quantity' );
+		$this->assertSame( 'rest_invalid_param', $error->get_error_code() );
+		$this->assertSame( 'Enter a whole number.', $error->get_error_message() );
+		$data = [
+			'status' => 400,
+			'params' => $params,
+			'field'  => 'stock_quantity',
+		];
+		$this->assertSame( $data, $error->get_error_data() );
+		$committed = Refusal::committed_inline( $error );
+		$this->assertNotSame( $error, $committed );
+		$this->assertSame( $error->get_error_code(), $committed->get_error_code() );
+		$this->assertSame( $error->get_error_message(), $committed->get_error_message() );
+		$this->assertSame(
+			$data + [
+				'receipt_state' => 'refused',
+				'replayed'      => false,
+			],
+			$committed->get_error_data()
+		);
+		$this->assertSame( $data, $error->get_error_data(), 'Augmentation must not mutate the original error.' );
+		$permission = Refusal::create( 'bulkcat_forbidden', 'Ask an administrator.', 403, [ 'detail' => 'unchanged' ] );
+		$copy       = Refusal::committed_inline( $permission );
+		$this->assertSame( $permission->get_error_code(), $copy->get_error_code() );
+		$this->assertSame( $permission->get_error_message(), $copy->get_error_message() );
+		$this->assertSame(
+			$permission->get_error_data() + [
+				'receipt_state' => 'refused',
+				'replayed'      => false,
+			],
+			$copy->get_error_data()
+		);
+	}
+
 	public function test_create_refuses_a_code_message_or_status_outside_the_contract(): void {
 		$bad = [
 			[ 'rest_forbidden', 'Stop.', 403 ],
+			[ 'rest_invalid_param', 'Stop.', 400 ],
 			[ 'bulkcat_', 'Stop.', 403 ],
 			[ 'BULKCAT_forbidden', 'Stop.', 403 ],
 			[ 'bulkcat_example', '  ', 403 ],

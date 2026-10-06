@@ -3,18 +3,22 @@
  * decides and one component renders it, for the bulk panel, an undo and a
  * category batch alike.
  *
- * - Below the *Confirm above this many rows* setting, Apply is one click.
+ * - Below the *Confirm at or above this many rows* setting, Apply is one
+ *   click.
  * - At or above it, Apply restates the count in words and needs a second
  *   click.
- * - A change that sets status to draft or pending, switches Visible on site
- *   off (or hides a product from the catalogue), or clears a field always
- *   confirms, whatever the count, naming what it will do.
+ * - A change that takes products off the site (Status set to Draft or
+ *   Pending Review), switches Shown in shop and search off, hides a product
+ *   from the catalogue, or clears a field always asks, whatever the count,
+ *   naming what it will do (FRONTEND-4: as the setting's help says). Other
+ *   Status warnings stay in Preview.
  * - Nothing ever asks the owner to type a word, and a preview never confirms.
  */
 import { useEffect, useRef, useState } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 
 import { actionById, fieldByKey } from './descriptors';
+import { countPhrase } from '../catalogue/selection/model';
 import { formatNumber, productsPhrase } from './words';
 
 /** The threshold when the settings carry none (Settings\Schema default). */
@@ -67,6 +71,24 @@ export function alwaysConfirmReasons( registry, operations, count ) {
 		if ( ! action || ! field ) {
 			return;
 		}
+		if ( action.provider ) {
+			// An add-on's action (T105) confirms when it says so, in its own words.
+			if ( action.alwaysConfirm ) {
+				reasons.push(
+					action.confirmReason ||
+						sprintf(
+							/* translators: 1: an action's name, such as "Replace labels"; 2: a number of products, such as "24 products". */
+							__(
+								'%1$s always asks before it changes %2$s.',
+								'bulk-catalogue-manager-for-woocommerce'
+							),
+							action.label,
+							products
+						)
+				);
+			}
+			return;
+		}
 		const sets = Object.prototype.hasOwnProperty.call(
 			operation.args,
 			'value'
@@ -111,9 +133,9 @@ export function alwaysConfirmReasons( registry, operations, count ) {
 		if ( hides === 'hidden' ) {
 			reasons.push(
 				sprintf(
-					/* translators: 1: a field, such as "Visible on site"; 2: its new value, such as "Hidden"; 3: a number of products, such as "24 products". */
+					/* translators: 1: a field, such as "Shown in shop and search"; 2: its new value, such as "Hidden"; 3: a number of products, such as "24 products". */
 					__(
-						'This sets %1$s to %2$s on %3$s, hiding them from the shop and from search.',
+						'This sets %1$s to %2$s on %3$s: they leave the shop and search results, but can still be opened by link and bought. To take them off sale, set Status to Draft.',
 						'bulk-catalogue-manager-for-woocommerce'
 					),
 					field.label,
@@ -190,6 +212,7 @@ export function useConfirmApply( { count, threshold, reasons = [], onApply } ) {
  *
  * @param {Object}        props                Props.
  * @param {number}        props.count          Rows it applies to.
+ * @param {Object|null}   props.byType         `{ products, variations }` of that count, from the preview, or null (ticket 11).
  * @param {number}        props.threshold      The *confirm above this many rows* setting.
  * @param {Array<string>} props.reasons        Always-confirm sentences.
  * @param {Function}      props.onApply        Runs the apply.
@@ -202,6 +225,7 @@ export function useConfirmApply( { count, threshold, reasons = [], onApply } ) {
  */
 export function ConfirmApply( {
 	count,
+	byType = null,
 	threshold,
 	reasons = [],
 	onApply,
@@ -226,6 +250,11 @@ export function ConfirmApply( {
 	}, [ gate.armed ] );
 
 	const words = formatNumber( count );
+	// Products and variations apart when the change reaches variations (ticket 11).
+	const mixed = Number( byType?.variations ) > 0;
+	const phrase = mixed
+		? countPhrase( count, byType )
+		: productsPhrase( count );
 	// Escape on the second click dismisses it (and not the panel around it).
 	const onEscape = ( event ) => {
 		if ( event.key === 'Escape' ) {
@@ -237,31 +266,34 @@ export function ConfirmApply( {
 	const applyText =
 		label ||
 		sprintf(
-			/* translators: %s: a number of products, such as "24 products". */
+			/* translators: %s: a number of products, such as "24 products", or of products and variations, such as "1,200 products and 50 variations". */
 			__( 'Apply to %s', 'bulk-catalogue-manager-for-woocommerce' ),
-			productsPhrase( count )
+			phrase
 		);
 	const yesText =
 		confirmLabel ||
 		sprintf(
-			/* translators: %s: a number of products, such as "1,284 products". */
+			/* translators: %s: a number of products, such as "1,284 products", or of products and variations, such as "1,200 products and 50 variations". */
 			__( 'Yes, change %s', 'bulk-catalogue-manager-for-woocommerce' ),
-			productsPhrase( count )
+			phrase
 		);
 
 	return (
 		<div className="bulkcat-confirm">
+			{ /* FRONTEND-7: busy is aria-disabled, so focus returned here after
+			   a confirm stays on the button while the change is sent. */ }
 			<button
 				ref={ applyRef }
 				type="button"
 				className="button button-primary"
-				disabled={ disabled || busy || gate.armed }
+				disabled={ disabled || gate.armed }
+				aria-disabled={ busy || undefined }
 				aria-describedby={
 					disabled && disabledReason
 						? 'bulkcat-confirm-disabled'
 						: undefined
 				}
-				onClick={ gate.request }
+				onClick={ busy ? undefined : gate.request }
 			>
 				{ applyText }
 			</button>
@@ -280,16 +312,25 @@ export function ConfirmApply( {
 						id="bulkcat-confirm-title"
 						className="bulkcat-confirm__title"
 					>
-						{ sprintf(
-							/* translators: %s: a number of products, such as "1,284". */
-							_n(
-								'This will change %s product. Apply it?',
-								'This will change %s products. Apply it?',
-								count,
-								'bulk-catalogue-manager-for-woocommerce'
-							),
-							words
-						) }
+						{ mixed
+							? sprintf(
+									/* translators: %s: a number of products and variations, such as "1,200 products and 50 variations". */
+									__(
+										'This will change %s. Apply it?',
+										'bulk-catalogue-manager-for-woocommerce'
+									),
+									phrase
+								)
+							: sprintf(
+									/* translators: %s: a number of products, such as "1,284". */
+									_n(
+										'This will change %s product. Apply it?',
+										'This will change %s products. Apply it?',
+										count,
+										'bulk-catalogue-manager-for-woocommerce'
+									),
+									words
+								) }
 					</p>
 					{ gate.reasons.length > 0 && (
 						<ul className="bulkcat-confirm__reasons">

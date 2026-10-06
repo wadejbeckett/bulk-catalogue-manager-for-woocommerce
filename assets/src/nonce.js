@@ -162,6 +162,11 @@ export function createRetryMiddleware( { send, refresh, install } ) {
 			if ( retried || ( await codeOf( error ) ) !== INVALID_NONCE ) {
 				throw error;
 			}
+			// Inline receipts use bounded read-only recovery. Rename this error
+			// before api-fetch's outer nonce handler can resend the PATCH too.
+			if ( requestOptions.bulkcatNoRetry ) {
+				throw expiredError( error );
+			}
 			retried = true;
 			try {
 				await renew();

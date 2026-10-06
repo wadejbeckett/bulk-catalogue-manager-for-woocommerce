@@ -345,6 +345,20 @@ $bulkcat-bad: #d63638;
 			outline: 2px solid $bulkcat-accent;
 			outline-offset: -2px;
 		}
+
+		// 1.4.1: an add-on's group opens its own list; Back leads out of it.
+		&[aria-haspopup]::after {
+			content: "›";
+			float: right;
+			margin-left: 8px;
+		}
+
+		&.is-back {
+			margin-bottom: 4px;
+			border-bottom: 1px solid $bulkcat-rule;
+			border-radius: 0;
+			color: $bulkcat-ink-3;
+		}
 	}
 }
 
@@ -397,6 +411,11 @@ $bulkcat-bad: #d63638;
 	gap: 16px;
 }
 
+// Keep the native disclosure accent readable against the error tint.
+.bulkcat-cat-error.components-notice.is-error {
+	background-color: #fcf0f1;
+}
+
 .bulkcat-cat-error__details {
 	margin: 4px 0 0;
 }
@@ -430,4 +449,36 @@ $bulkcat-bad: #d63638;
 [role="treeitem"] .bulkcat-cat-row > .bulkcat-cat-count[aria-hidden] {
 	display: inline-block;
 	font-size: 11px;
+}
+
+// Ticket 22: the category image chooser.
+.bulkcat-cat-manager__image {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+	margin: 0;
+	padding: 0;
+	border: 0;
+
+	legend {
+		width: 100%;
+		margin-bottom: 4px;
+		font-size: 11px;
+		font-weight: 500;
+		text-transform: uppercase;
+	}
+
+	img {
+		width: 60px;
+		height: 60px;
+		object-fit: cover;
+		border: 1px solid #dcdcde;
+		border-radius: 2px;
+	}
+}
+
+.bulkcat-cat-manager__note {
+	margin: 0;
+	color: #50575e;
 }

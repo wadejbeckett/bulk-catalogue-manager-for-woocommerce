@@ -89,7 +89,68 @@ final class CategoriesWriteRouteTest extends TestCase {
 					'position' => 0,
 				],
 			],
+			[ 'POST', '/categories/5/default', [] ],
+			[
+				'POST',
+				'/categories/delete',
+				[
+					'ids'     => [ 5 ],
+					'preview' => true,
+				],
+			],
+			[
+				'POST',
+				'/categories/merge',
+				[
+					'ids'     => [ 5 ],
+					'into'    => 6,
+					'preview' => true,
+				],
+			],
 		];
+	}
+
+	public function test_a_delete_is_previewed_then_applied_with_its_token(): void {
+		$GLOBALS['bulkcat_test']['user_caps'][12]['delete_term'] = true;
+		$GLOBALS['bulkcat_test']['object_terms']                 = [];
+		$preview = self::send(
+			'POST',
+			'/categories/delete',
+			[
+				'ids'     => [ 5 ],
+				'preview' => true,
+			]
+		);
+		$this->assertInstanceOf( \WP_REST_Response::class, $preview, $preview instanceof \WP_Error ? $preview->get_error_message() : '' );
+		$this->assertSame( [ 'categories', 'subcategories', 'products', 'fallback', 'into', 'default', 'token' ], array_keys( $preview->get_data() ) );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['deleted_terms'] ?? [] );
+
+		$unconfirmed = self::send( 'POST', '/categories/delete', [ 'ids' => [ 5 ] ] );
+		$this->assertSame( 'bulkcat_preview_required', $unconfirmed->get_error_code() );
+
+		$done = self::send(
+			'POST',
+			'/categories/delete',
+			[
+				'ids'   => [ 5 ],
+				'token' => $preview->get_data()['token'],
+			]
+		);
+		$this->assertInstanceOf( \WP_REST_Response::class, $done, $done instanceof \WP_Error ? $done->get_error_message() : '' );
+		$this->assertSame( [ 'complete', [ 5 ] ], [ $done->get_data()['status'], $done->get_data()['deleted'] ] );
+		$this->assertSame( [ [ 5, 'product_cat' ] ], $GLOBALS['bulkcat_test']['deleted_terms'] );
+	}
+
+	public function test_make_default_answers_the_node_and_sets_woocommerce_default(): void {
+		$GLOBALS['bulkcat_test']['options']['default_product_cat'] = 9;
+		$GLOBALS['bulkcat_test']['caps']['edit_term:5']            = true;
+		$GLOBALS['bulkcat_test']['user_caps'][12]['edit_term:5']   = true;
+		$response = self::send( 'POST', '/categories/5/default' );
+		$this->assertInstanceOf( \WP_REST_Response::class, $response, $response instanceof \WP_Error ? $response->get_error_message() : '' );
+		$this->assertSame( 200, $response->get_status() );
+		$this->assertTrue( $response->get_data()['item']['default'] );
+		$this->assertSame( 5, $GLOBALS['bulkcat_test']['options']['default_product_cat'] );
+		$this->assertSame( [ [ 5, 'term_default', 9, 5, 'applied' ] ], $this->store->journal() );
 	}
 
 	public function test_the_routes_need_manage_product_terms_and_none_deletes(): void {
@@ -100,14 +161,18 @@ final class CategoriesWriteRouteTest extends TestCase {
 		$this->assertSame( 'bulkcat-category', call_user_func( $create['schema'] )['title'], 'The read keeps its schema.' );
 		$this->assertSame( [ Access::class, 'can_manage_terms' ], $create[1]['permission_callback'] );
 		$this->assertTrue( $create[1]['args']['name']['required'] );
-		$this->assertSame( [ 'name', 'slug', 'description', 'parent' ], array_keys( $create[1]['args'] ) );
+		$this->assertSame( [ 'name', 'slug', 'description', 'parent', 'display_type', 'thumbnail_id' ], array_keys( $create[1]['args'] ) );
 
 		$item = $routes[ '/bulkcat/v1' . CategoriesWriteController::ITEM_ROUTE ];
-		$this->assertSame( [ 'PATCH', [ Access::class, 'can_manage_terms' ] ], [ $item[0]['methods'], $item[0]['permission_callback'] ] );
-		$this->assertSame( [ 'id', 'name', 'slug', 'description', 'parent' ], array_keys( $item[0]['args'] ) );
+		$this->assertSame( [ 'GET', [ Access::class, 'can_manage_terms' ] ], [ $item[0]['methods'], $item[0]['permission_callback'] ], 'Ticket 22: one category\'s details for its editor.' );
+		$this->assertSame( [ 'id' ], array_keys( $item[0]['args'] ) );
+		$this->assertSame( [ 'PATCH', [ Access::class, 'can_manage_terms' ] ], [ $item[1]['methods'], $item[1]['permission_callback'] ] );
+		$this->assertSame( [ 'id', 'name', 'slug', 'description', 'parent', 'display_type', 'thumbnail_id' ], array_keys( $item[1]['args'] ) );
 		$move = $routes[ '/bulkcat/v1' . CategoriesWriteController::MOVE_ROUTE ];
 		$this->assertSame( [ 'POST', [ Access::class, 'can_manage_terms' ] ], [ $move[0]['methods'], $move[0]['permission_callback'] ] );
 		$this->assertSame( [ 'id', 'parent', 'position' ], array_keys( $move[0]['args'] ) );
+		$default = $routes[ '/bulkcat/v1' . CategoriesWriteController::DEFAULT_ROUTE ];
+		$this->assertSame( [ 'POST', [ Access::class, 'can_manage_terms' ] ], [ $default[0]['methods'], $default[0]['permission_callback'] ] );
 
 		$methods = [];
 		foreach ( rest_get_server()->get_routes() as $route => $endpoints ) {
@@ -116,8 +181,13 @@ final class CategoriesWriteRouteTest extends TestCase {
 			}
 		}
 		sort( $methods );
-		$this->assertSame( [ 'GET', 'PATCH', 'POST', 'POST' ], $methods );
-		$this->assertNotContains( 'DELETE', $methods, 'Deleting a category stays on the native screen (SPEC §2).' );
+		// The last POST is the add-on category action preview (contract version 2, CategoryActionsController).
+		$this->assertSame( [ 'GET', 'GET', 'PATCH', 'POST', 'POST', 'POST', 'POST', 'POST', 'POST' ], $methods );
+		$this->assertNotContains( 'DELETE', $methods, 'Deleting is previewed first, so it is a POST with a preview token (ticket 24).' );
+		foreach ( [ CategoriesWriteController::DELETE_ROUTE, CategoriesWriteController::MERGE_ROUTE ] as $route ) {
+			$endpoint = $routes[ '/bulkcat/v1' . $route ][0];
+			$this->assertSame( [ 'POST', [ Access::class, 'can_manage_terms' ] ], [ $endpoint['methods'], $endpoint['permission_callback'] ] );
+		}
 		$this->assertSame( [], $GLOBALS['bulkcat_test']['wrong'] );
 	}
 
@@ -142,7 +212,7 @@ final class CategoriesWriteRouteTest extends TestCase {
 		$this->assertSame( 201, $response->get_status() );
 		$data = $response->get_data();
 		$this->assertSame( [ 'item', 'batch_id', 'status', 'results' ], array_keys( $data ) );
-		$this->assertSame( [ 'id', 'name', 'slug', 'description', 'parent', 'depth', 'order' ], array_keys( $data['item'] ) );
+		$this->assertSame( [ 'id', 'name', 'slug', 'description', 'parent', 'depth', 'order', 'default', 'display_type', 'thumbnail_id', 'thumbnail_url' ], array_keys( $data['item'] ) );
 		$this->assertSame( [ 12, 'Hats', 'hats', 6, 1 ], [ $data['item']['id'], $data['item']['name'], $data['item']['slug'], $data['item']['parent'], $data['item']['depth'] ] );
 		$this->assertSame( 'complete', $data['status'] );
 		$batch = $this->store->batch( $data['batch_id'] );
@@ -170,8 +240,7 @@ final class CategoriesWriteRouteTest extends TestCase {
 		$this->assertSame(
 			[
 				[ 3, 'term_name', 'Shirts', 'Tops', 'applied' ],
-				[ 2, 'term_order', null, 0, 'applied' ],
-				[ 5, 'term_order', null, 1, 'applied' ],
+				[ 2, 'term_menu_order', 2, 0, 'applied' ],
 			],
 			$this->store->journal()
 		);
@@ -252,5 +321,21 @@ final class CategoriesWriteRouteTest extends TestCase {
 		$this->assert_refused( self::send( 'POST', '/categories/2/move', [ 'position' => 0 ] ), 'rest_missing_callback_param', 400 );
 		$this->assert_refused( self::send( 'POST', '/categories/2/move', [ 'parent' => -1 ] ), 'rest_invalid_param', 400 );
 		$this->assert_refused( self::send( 'PATCH', '/categories/2', [ 'name' => str_repeat( 'x', 201 ) ] ), 'rest_invalid_param', 400 );
+	}
+
+	public function test_one_categorys_details_are_read_for_its_editor(): void {
+		$GLOBALS['bulkcat_test']['term_meta'][3]['display_type'] = 'both';
+		$GLOBALS['bulkcat_test']['term_meta'][3]['thumbnail_id'] = '0';
+		$response = self::send( 'GET', '/categories/3' );
+		$this->assertInstanceOf( \WP_REST_Response::class, $response );
+		$item = $response->get_data()['item'];
+		$this->assertSame( [ 3, 'both', 0, null ], [ $item['id'], $item['display_type'], $item['thumbnail_id'], $item['thumbnail_url'] ] );
+		$missing = self::send( 'GET', '/categories/999' );
+		$this->assertInstanceOf( \WP_Error::class, $missing );
+		$this->assertSame( 404, $missing->get_error_data()['status'] );
+		unset( $GLOBALS['bulkcat_test']['caps']['manage_product_terms'] );
+		$denied = self::send( 'GET', '/categories/3' );
+		$this->assertInstanceOf( \WP_Error::class, $denied );
+		$this->assertSame( 403, $denied->get_error_data()['status'] );
 	}
 }

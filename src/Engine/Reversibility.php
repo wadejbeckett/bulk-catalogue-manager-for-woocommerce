@@ -14,6 +14,10 @@ namespace BulkCatalogueManager\Engine;
 
 use BulkCatalogueManager\Data\BatchRepository;
 use BulkCatalogueManager\Data\ChangeRepository;
+use BulkCatalogueManager\External\Blocked;
+use BulkCatalogueManager\External\Manifest;
+use BulkCatalogueManager\External\Providers;
+use BulkCatalogueManager\Operations\Registry as Actions;
 use BulkCatalogueManager\Settings\Settings;
 
 defined( 'ABSPATH' ) || exit;
@@ -28,15 +32,27 @@ defined( 'ABSPATH' ) || exit;
  *   - `pruned`: retention pruning removed its journal (`pruned_gmt` set;
  *     the pruner sets it, T60). The batch stays listed;
  *   - `already_undone`: its status is `undone`, or an undo batch naming it
- *     in `undo_of` has completed (BatchRepository::undone_by()). A redo is
+ *     in `undo_of` has completed or finished partial (BatchRepository::
+ *     undone_by()). A redo is
  *     an undo of that undo batch, so the undo batch itself stays reversible;
  *   - `outside_retention`: it was created more than *Keep history for* days
  *     ago (Settings::history_days(); never when kept indefinitely);
+ *   - `permanent` (ticket 24): it deleted or merged categories
+ *     (Categories\Deleter::PERMANENT), which cannot be brought back exactly;
  *   - `nothing_applied`: it finished with no `applied` journal row — every
  *     row was already at its target, skipped or failed, or it was
- *     cancelled before its first chunk — so there is nothing to put back.
- * - `completed_with_errors`: it ended partial or failed with applied rows;
- *   the applied part can be undone on its own (§12.6).
+ *     cancelled before its first chunk — so there is nothing to put back;
+ *   - `provider_missing` (T108): its provider manifest names an add-on
+ *     that is not registered now (not active); `provider_unavailable`: one
+ *     that is registered but not available or of an unsupported contract,
+ *     whose own reason the answer carries as `provider_reason`. Recomputed
+ *     on every read, so it clears when the add-on can run again; both carry
+ *     the add-on's label as `provider` (External\Blocked).
+ * - `completed_with_errors`: it ended failed, or partial with a failed
+ *   item, with applied rows; the applied part can be undone on its own
+ *   (§12.6). A partial batch whose only problems are rows skipped by design
+ *   (the preview said so: not applicable, already at the value) has no
+ *   errors, so it reads `reversible` or `partially_reversible` (1.3.4).
  * - `partially_reversible`: some applied rows were changed again since
  *   (`conflicts` > 0), so undo would leave those alone unless forced.
  * - `reversible` otherwise (a cancelled batch with applied rows included).
@@ -73,11 +89,22 @@ final class Reversibility {
 	public const ALREADY_UNDONE    = 'already_undone';
 	public const PRUNED            = 'pruned';
 	public const NOTHING_APPLIED   = 'nothing_applied';
+	public const PERMANENT         = 'permanent';
+
+	/**
+	 * The add-on that made the change is registered but cannot run now (T108).
+	 */
+	public const PROVIDER_UNAVAILABLE = Blocked::UNAVAILABLE;
+
+	/**
+	 * The add-on that made the change is not registered now (not active).
+	 */
+	public const PROVIDER_MISSING = Blocked::MISSING;
 
 	/**
 	 * Every reason a batch is not reversible, for the route schema.
 	 */
-	public const REASONS = [ self::OUTSIDE_RETENTION, self::ALREADY_UNDONE, self::PRUNED, self::NOTHING_APPLIED ];
+	public const REASONS = [ self::OUTSIDE_RETENTION, self::ALREADY_UNDONE, self::PRUNED, self::NOTHING_APPLIED, self::PROVIDER_MISSING, self::PROVIDER_UNAVAILABLE, self::PERMANENT ];
 
 	/**
 	 * Statuses in which a batch is still working.
@@ -85,7 +112,8 @@ final class Reversibility {
 	public const ACTIVE = [ 'queued', 'running', 'undoing' ];
 
 	/**
-	 * Statuses that end with errors.
+	 * Statuses that can end with errors: `failed` always, `partial` only
+	 * when an item failed (with_errors()).
 	 */
 	public const WITH_ERRORS = [ 'partial', 'failed' ];
 
@@ -130,6 +158,13 @@ final class Reversibility {
 	private \Closure $conflicts;
 
 	/**
+	 * The providers registered now, or null to read the shared registry's when asked (T108).
+	 *
+	 * @var Providers|null
+	 */
+	private ?Providers $providers;
+
+	/**
 	 * Build over the repositories.
 	 *
 	 * @param BatchRepository|null  $batches   Batches; the plugin's by default.
@@ -137,8 +172,10 @@ final class Reversibility {
 	 * @param Settings|null         $settings  Settings; read when needed by default.
 	 * @param \Closure|null         $clock     Returns the Unix time; time() by default.
 	 * @param \Closure|null         $conflicts Counts a batch's conflicts (T55); none by default.
+	 * @param Providers|null        $providers The providers registered now; the shared registry's by default.
 	 */
-	public function __construct( ?BatchRepository $batches = null, ?ChangeRepository $changes = null, ?Settings $settings = null, ?\Closure $clock = null, ?\Closure $conflicts = null ) {
+	public function __construct( ?BatchRepository $batches = null, ?ChangeRepository $changes = null, ?Settings $settings = null, ?\Closure $clock = null, ?\Closure $conflicts = null, ?Providers $providers = null ) {
+		$this->providers = $providers;
 		$this->batches   = $batches ?? new BatchRepository();
 		$this->changes   = $changes ?? new ChangeRepository();
 		$this->settings  = $settings;
@@ -209,6 +246,7 @@ final class Reversibility {
 			return self::answer( self::IN_PROGRESS, $none );
 		}
 		$reason = match ( true ) {
+			self::permanent( $batch )                                 => self::PERMANENT,
 			null !== ( $batch['pruned_gmt'] ?? null )                 => self::PRUNED,
 			$undone || 'undone' === $batch['status']                  => self::ALREADY_UNDONE,
 			null !== $cutoff && (string) $batch['created_gmt'] < $cutoff => self::OUTSIDE_RETENTION,
@@ -218,11 +256,46 @@ final class Reversibility {
 		if ( null !== $reason ) {
 			return self::answer( self::NOT_REVERSIBLE, $none, $reason );
 		}
+		$manifest = $batch['extensions'] ?? null;
+		$blocked  = is_array( $manifest ) ? Manifest::blocked( $manifest, $this->providers ??= Actions::instance()->providers(), false ) : null;
+		if ( null !== $blocked ) {
+			return self::answer( self::NOT_REVERSIBLE, $none, $blocked->kind ) + [ 'provider' => $blocked->label ] + ( $blocked->is_missing() ? [] : [ 'provider_reason' => $blocked->reason ] );
+		}
 		$conflicts = $count ? max( 0, (int) ( $this->conflicts )( $batch ) ) : null;
-		if ( in_array( $batch['status'], self::WITH_ERRORS, true ) ) {
+		if ( self::with_errors( $batch ) ) {
 			return self::answer( self::COMPLETED_WITH_ERRORS, $conflicts );
 		}
 		return self::answer( null !== $conflicts && $conflicts > 0 ? self::PARTIALLY_REVERSIBLE : self::REVERSIBLE, $conflicts );
+	}
+
+	/**
+	 * Whether a finished batch ended with errors: it failed, or it ended
+	 * partial with at least one failed item. Rows skipped by design are not
+	 * errors (1.3.4); the history export words the outcome by this too.
+	 *
+	 * @param array<string, mixed> $batch Typed batch row or report.
+	 */
+	public static function with_errors( array $batch ): bool {
+		$status = $batch['status'] ?? '';
+		return 'failed' === $status || ( 'partial' === $status && (int) ( $batch['failed_items'] ?? 0 ) > 0 );
+	}
+
+	/**
+	 * Whether a batch deleted or merged categories (ticket 24): a deleted
+	 * category cannot be brought back exactly, so it is never undone.
+	 *
+	 * @param array<string, mixed> $batch Typed batch row.
+	 */
+	public static function permanent( array $batch ): bool {
+		if ( 'tree' !== ( $batch['source'] ?? '' ) ) {
+			return false;
+		}
+		foreach ( is_array( $batch['operations'] ?? null ) ? $batch['operations'] : [] as $step ) {
+			if ( is_array( $step ) && in_array( $step['action'] ?? null, \BulkCatalogueManager\Categories\Deleter::PERMANENT, true ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**

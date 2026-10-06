@@ -105,8 +105,10 @@ describe( 'fields from the registry', () => {
 			'regular_price',
 			'stock_status',
 			'status',
+			'catalog_visibility',
 			'visible_on_site',
 		] );
+		// Ticket 19: both listing visibility presentations follow Status in a new layout.
 		expect( view.perPage ).toBe( 50 );
 		expect( view.sort ).toBeUndefined();
 		expect( defaultView( REGISTRY, {} ).perPage ).toBe( 25 );
@@ -154,6 +156,31 @@ describe( 'cells', () => {
 		);
 		expect( badge.textContent ).toBe( 'Published' );
 		expect( badge.className ).toContain( 'is-good' );
+	} );
+
+	it( 'shows native status despite legacy records, through the grid field', () => {
+		const off = cell( 'status', {
+			...ROWS[ 1 ],
+			off_state: {
+				state: 'off',
+				saved: 'publish',
+				saved_label: 'Published',
+			},
+		} ).querySelector( '.bulkcat-badge' );
+		expect( off.textContent ).toBe( 'Draft' );
+		const outside = cell( 'status', {
+			...ROWS[ 0 ],
+			off_state: {
+				state: 'changed_outside',
+				saved: 'private',
+				saved_label: 'Private',
+			},
+		} ).querySelector( '.bulkcat-badge' );
+		expect( outside.textContent ).toBe( 'Published' );
+		expect( outside.className ).toContain( 'is-good' );
+		expect(
+			cell( 'status', { ...ROWS[ 1 ], off_state: null } ).textContent
+		).toBe( 'Draft' );
 	} );
 
 	it( 'shows stock status with its quantity, and without one when unmanaged', () => {

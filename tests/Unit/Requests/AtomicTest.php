@@ -1,0 +1,40 @@
+<?php
+/**
+ * A broken connection must not replay transactional statements in autocommit mode.
+ *
+ * @package BulkCatalogueManager
+ * @license GPL-3.0-or-later
+ */
+declare( strict_types = 1 );
+namespace BulkCatalogueManager\Tests\Unit\Requests;
+
+use BulkCatalogueManager\Data\FoundationStorage;
+use PHPUnit\Framework\TestCase;
+final class AtomicTest extends TestCase {
+	public function test_transaction_disables_reconnection_and_restores_it_after_failure(): void {
+		bulkcat_test_reset();
+		$GLOBALS['wpdb']->reconnect_retries = 5;
+		try {
+			FoundationStorage::atomic(
+				function (): void {
+					$this->assertSame( 0, $GLOBALS['wpdb']->reconnect_retries, 'wpdb must not reconnect/replay a statement outside its lost transaction.' );
+					throw new \RuntimeException( 'body failed' );
+				}
+			);
+			$this->fail( 'Body failure was swallowed.' );
+		} catch ( \RuntimeException $error ) {
+			$this->assertSame( 'body failed', $error->getMessage() );
+		}
+		$this->assertSame( 5, $GLOBALS['wpdb']->reconnect_retries );
+		$this->assertSame( [ 'START TRANSACTION', 'ROLLBACK' ], $GLOBALS['wpdb']->queries );
+	}
+	public function test_inline_recording_cannot_run_without_its_foundation_transaction(): void {
+		bulkcat_test_reset();
+		try {
+			( new \BulkCatalogueManager\Engine\BatchFactory() )->record_inline( [], [] );
+			$this->fail( 'Inline recording without a transaction was accepted.' );
+		} catch ( \RuntimeException $error ) {
+			$this->assertSame( 'A foundation transaction is required.', $error->getMessage() );
+		}
+	}
+}

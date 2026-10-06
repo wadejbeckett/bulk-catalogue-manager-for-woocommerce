@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useState } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 
 import { request } from '../../api';
+import { plainMessage, technicalLine } from '../../errors';
 import SettingRow from './row';
 import { setSettings } from './store';
 import './style.scss';
@@ -46,6 +47,7 @@ export default function Settings() {
 	const [ draft, setDraft ] = useState( {} );
 	const [ errors, setErrors ] = useState( {} );
 	const [ notice, setNotice ] = useState( null );
+	const [ details, setDetails ] = useState( false );
 	const [ busy, setBusy ] = useState( false );
 	const [ failed, setFailed ] = useState( false );
 	const [ attempt, setAttempt ] = useState( 0 );
@@ -85,6 +87,7 @@ export default function Settings() {
 	const save = () => {
 		setBusy( true );
 		setNotice( null );
+		setDetails( false );
 		request( 'settings', { method: 'PUT', data: { values: changed } } )
 			.then( ( answer ) => {
 				setLoaded( ( before ) => ( { ...before, ...answer } ) );
@@ -105,15 +108,19 @@ export default function Settings() {
 				const named = Object.keys( refused ).length > 0;
 				setNotice( {
 					status: 'error',
+					// The code and status behind Show details, as every panel does (ticket 11).
+					details: technicalLine( error ),
 					text: named
 						? __(
 								'Nothing was saved. Correct the settings marked below and save again.',
 								'bulk-catalogue-manager-for-woocommerce'
 							)
-						: error?.message ||
-							__(
-								'The settings could not be saved. Try again in a moment.',
-								'bulk-catalogue-manager-for-woocommerce'
+						: plainMessage(
+								error,
+								__(
+									'The settings could not be saved. Try again in a moment.',
+									'bulk-catalogue-manager-for-woocommerce'
+								)
 							),
 				} );
 			} )
@@ -194,6 +201,31 @@ export default function Settings() {
 							{ errors[ key ] }
 						</span>
 					) ) }
+					{ notice.details && (
+						<>
+							{ ' ' }
+							<Button
+								variant="link"
+								aria-expanded={ details }
+								onClick={ () => setDetails( ( was ) => ! was ) }
+							>
+								{ details
+									? __(
+											'Hide details',
+											'bulk-catalogue-manager-for-woocommerce'
+										)
+									: __(
+											'Show details',
+											'bulk-catalogue-manager-for-woocommerce'
+										) }
+							</Button>
+							{ details && (
+								<code className="bulkcat-settings__details">
+									{ notice.details }
+								</code>
+							) }
+						</>
+					) }
 				</Notice>
 			) }
 			{ /* noValidate: the server's refusal names the setting in plain words. */ }
@@ -228,6 +260,7 @@ export default function Settings() {
 										value={ draft[ setting.key ] }
 										error={ errors[ setting.key ] || '' }
 										disabled={ readOnly || busy }
+										readOnly={ readOnly }
 										onChange={ ( value ) =>
 											update( setting.key, value )
 										}

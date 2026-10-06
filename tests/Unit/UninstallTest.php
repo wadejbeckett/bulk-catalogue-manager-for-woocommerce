@@ -32,9 +32,10 @@ final class UninstallTest extends TestCase {
 	 */
 	private static function seed( mixed $settings ): void {
 		$GLOBALS['bulkcat_test']['options'] = [
-			'bulkcat_settings'   => $settings,
-			'bulkcat_db_version' => '1',
-			'unrelated_option'   => 'keep',
+			'bulkcat_settings'      => $settings,
+			'bulkcat_db_version'    => '1',
+			'bulkcat_request_epoch' => str_repeat( 'a', 64 ),
+			'unrelated_option'      => 'keep',
 		];
 	}
 
@@ -96,6 +97,8 @@ final class UninstallTest extends TestCase {
 			'wp_bulkcat_batches'     => true,
 			'wp_bulkcat_batch_items' => true,
 			'wp_bulkcat_changes'     => true,
+			'wp_bulkcat_selections'  => true,
+			'wp_bulkcat_requests'    => true,
 		];
 
 		self::run_uninstall();
@@ -108,10 +111,15 @@ final class UninstallTest extends TestCase {
 		$this->assertSame(
 			[
 				'deleted'     => [
+					[ 'metadata', 'user', 0, 'wp_bulkcat_views', '', true ],
 					[ 'metadata', 'user', 0, 'bulkcat_views', '', true ],
+					[ 'metadata', 'user', 0, 'wp_bulkcat_display_preferences', '', true ],
+					[ 'metadata', 'user', 0, 'bulkcat_display_preferences', '', true ],
 					[ 'metadata', 'term', 0, 'bulkcat_order', '', true ],
+					[ 'metadata', 'post', 0, '_bulkcat_availability_off', '', true ],
 					[ 'option', 'bulkcat_settings' ],
 					[ 'option', 'bulkcat_db_version' ],
+					[ 'option', 'bulkcat_request_epoch' ],
 				],
 				'unscheduled' => [
 					[ '', [], 'bulk-catalogue-manager-for-woocommerce' ],
@@ -120,6 +128,8 @@ final class UninstallTest extends TestCase {
 					'DROP TABLE IF EXISTS `wp_bulkcat_batches`',
 					'DROP TABLE IF EXISTS `wp_bulkcat_batch_items`',
 					'DROP TABLE IF EXISTS `wp_bulkcat_changes`',
+					'DROP TABLE IF EXISTS `wp_bulkcat_selections`',
+					'DROP TABLE IF EXISTS `wp_bulkcat_requests`',
 					"SELECT option_name FROM wp_options WHERE option_name LIKE '\\\\_transient\\\\_bulkcat\\\\_category\\\\_tree\\\\_%'",
 					"SELECT option_name FROM wp_options WHERE option_name LIKE '\\\\_site\\\\_transient\\\\_bulkcat\\\\_category\\\\_tree\\\\_%'",
 					"SELECT option_name FROM wp_options WHERE option_name LIKE '\\\\_transient\\\\_bulkcat\\\\_count\\\\_%'",
@@ -146,7 +156,8 @@ final class UninstallTest extends TestCase {
 			[ 'bulkcat_views' ],
 			[ 'bulkcat_order' ],
 			[ 'bulkcat_count_' ],
-			[ 'bulkcat_prune_history' ]
+			[ 'bulkcat_prune_history' ],
+			[ '_bulkcat_record' ]
 		);
 		$GLOBALS['wpdb']->tables      = [
 			'wp_bulkcat_alpha' => true,
@@ -180,17 +191,22 @@ final class UninstallTest extends TestCase {
 			[
 				[ 'transient', 'bulkcat_count_abc' ],
 				[ 'site_transient', 'bulkcat_count_net' ],
+				[ 'metadata', 'user', 0, 'wp_bulkcat_views', '', true ],
 				[ 'metadata', 'user', 0, 'bulkcat_views', '', true ],
 				[ 'metadata', 'term', 0, 'bulkcat_order', '', true ],
+				[ 'metadata', 'post', 0, '_bulkcat_record', '', true ],
 				[ 'option', 'bulkcat_settings' ],
 				[ 'option', 'bulkcat_db_version' ],
 			],
 			$GLOBALS['bulkcat_test']['deleted']
 		);
+		// Off products stay drafts (SPEC §5.5): no status, post or product write, only the key goes.
+		$this->assertSame( [], array_filter( $GLOBALS['wpdb']->queries, static fn( string $sql ): bool => str_contains( $sql, 'post_status' ) || str_contains( $sql, 'wp_posts' ) ) );
+		$this->assertSame( [], $GLOBALS['bulkcat_test']['updated_posts'] ?? [] );
 	}
 
 	public function test_every_kind_in_the_registry_is_kept_with_the_setting_off(): void {
-		$registry                     = new Registry( [ 'bulkcat_alpha' => 'id INT' ], [ 'bulkcat_settings' ], [ 'bulkcat_views' ], [ 'bulkcat_order' ], [ 'bulkcat_count_' ], [ 'bulkcat_prune_history' ] );
+		$registry                     = new Registry( [ 'bulkcat_alpha' => 'id INT' ], [ 'bulkcat_settings' ], [ 'bulkcat_views' ], [ 'bulkcat_order' ], [ 'bulkcat_count_' ], [ 'bulkcat_prune_history' ], [ '_bulkcat_record' ] );
 		$GLOBALS['wpdb']->option_rows = [ '_transient_bulkcat_count_abc' => 1 ];
 
 		$this->assertFalse( ( new Cleanup( $registry ) )->uninstall( new Settings( [] ) ) );
@@ -204,9 +220,9 @@ final class UninstallTest extends TestCase {
 		);
 	}
 
-	public function test_deactivation_unschedules_only_the_recurring_actions(): void {
+	public function test_deactivation_unschedules_only_the_plugins_scheduled_actions(): void {
 		Cleanup::deactivate();
-		$this->assertSame( [ [ 'bulkcat_prune_history', [], 'bulk-catalogue-manager-for-woocommerce' ] ], $GLOBALS['bulkcat_test']['unscheduled'] );
+		$this->assertSame( [ [ 'bulkcat_prune_history', [], 'bulk-catalogue-manager-for-woocommerce' ], [ 'bulkcat_prune_selections', [], 'bulk-catalogue-manager-for-woocommerce' ], [ 'bulkcat_prune_requests', [], 'bulk-catalogue-manager-for-woocommerce' ], [ 'bulkcat_run_chunk', [], 'bulk-catalogue-manager-for-woocommerce' ] ], $GLOBALS['bulkcat_test']['unscheduled'] );
 		$this->assertSame( [], $GLOBALS['bulkcat_test']['deleted'], 'Deactivation deletes no data.' );
 		$this->assertSame( [], $GLOBALS['wpdb']->queries );
 
@@ -225,7 +241,7 @@ final class UninstallTest extends TestCase {
 		$this->assertTrue( is_array( $result ), $text );
 		$this->assertFalse( $result['scheduler'] );
 		$this->assertSame( [], $result['unscheduled'] );
-		$this->assertSame( [ [ 'metadata', 'user', 0, 'bulkcat_views', '', true ], [ 'metadata', 'term', 0, 'bulkcat_order', '', true ], [ 'option', 'bulkcat_settings' ], [ 'option', 'bulkcat_db_version' ] ], $result['deleted'] );
+		$this->assertSame( [ [ 'metadata', 'user', 0, 'wp_bulkcat_views', '', true ], [ 'metadata', 'user', 0, 'bulkcat_views', '', true ], [ 'metadata', 'user', 0, 'wp_bulkcat_display_preferences', '', true ], [ 'metadata', 'user', 0, 'bulkcat_display_preferences', '', true ], [ 'metadata', 'term', 0, 'bulkcat_order', '', true ], [ 'metadata', 'post', 0, '_bulkcat_availability_off', '', true ], [ 'option', 'bulkcat_settings' ], [ 'option', 'bulkcat_db_version' ], [ 'option', 'bulkcat_request_epoch' ] ], $result['deleted'] );
 	}
 
 	public function test_tables_are_dropped_through_prepare_with_an_identifier_placeholder(): void {
@@ -279,5 +295,18 @@ final class UninstallTest extends TestCase {
 		$this->assertStringContainsString( "require_once __DIR__ . '/src/Autoloader.php';", $source );
 		$this->assertStringContainsString( 'Settings::load()', $source, 'Uninstall must read the settings through the typed reader.' );
 		$this->assertLessThan( strpos( $source, 'Autoloader.php' ), strpos( $source, 'WP_UNINSTALL_PLUGIN' ) );
+	}
+	public function test_on_a_network_one_sites_uninstall_removes_only_that_sites_saved_views(): void {
+		self::seed( [ 'remove_data_on_delete' => false ] );
+		$GLOBALS['bulkcat_test']['multisite']    = true;
+		$GLOBALS['bulkcat_test']['sites']        = [ 1, 5 ];
+		$GLOBALS['bulkcat_test']['site_options'] = [
+			5 => [ 'bulkcat_settings' => [ 'remove_data_on_delete' => true ] ],
+		];
+
+		self::run_uninstall();
+
+		$users = array_values( array_filter( $GLOBALS['bulkcat_test']['deleted'], static fn( array $call ): bool => 'metadata' === $call[0] && 'user' === $call[1] ) );
+		$this->assertSame( [ [ 'metadata', 'user', 0, 'wp_5_bulkcat_views', '', true ], [ 'metadata', 'user', 0, 'wp_5_bulkcat_display_preferences', '', true ] ], $users, 'Only site 5\'s views and display preferences go; the main site keeps its own and the old network-wide list.' );
 	}
 }

@@ -52,13 +52,15 @@ final class Routes {
 	public static function plugin(): self {
 		return new self(
 			[
-				new FieldsController( Registry::instance(), Actions::instance() ),
+				new FieldsController( Registry::instance(), static fn(): Actions => Actions::instance() ),
 				new ProductsController( Registry::instance() ),
 				new VariationsController( Registry::instance() ),
 				new CategoriesController( Registry::instance() ),
 				new TermsController(),
 				new ExportController( Registry::instance() ),
 				new SelectionController( Registry::instance() ),
+				new RequestsController( Registry::instance() ),
+				new SelectionActionsController( Registry::instance() ),
 				new BatchesController(),
 				new AuditController(),
 				new PreviewController(),
@@ -66,6 +68,9 @@ final class Routes {
 				new CategoriesWriteController(),
 				new SettingsController(),
 				new ViewsController( Registry::instance() ),
+				new DisplayPreferencesController(),
+				new LookupController(),
+				new CategoryActionsController(),
 			]
 		);
 	}

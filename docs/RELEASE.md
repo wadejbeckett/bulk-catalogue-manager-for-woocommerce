@@ -25,14 +25,14 @@ Use the release archive from step 2, not the working copy, on a throwaway site (
 ### 3.1 Fresh install
 
 - [ ] On a site that has never had the plugin, install the archive through Plugins → Add New → Upload Plugin and activate it.
-- [ ] The three tables exist, `bulkcat_db_version` is set, and one `bulkcat_prune_history` action is scheduled in the `bulk-catalogue-manager-for-woocommerce` group (Tools → Scheduled Actions).
+- [ ] The five plugin tables exist, `bulkcat_db_version` is set, and one `bulkcat_prune_history` action is scheduled in the `bulk-catalogue-manager-for-woocommerce` group (Tools → Scheduled Actions).
 - [ ] Products → Bulk Catalogue Manager opens for an administrator and a shop manager, and is refused to a subscriber.
 - [ ] Seed with `tests/probe/seed.sh`, run a bulk change through preview and apply, check the products changed, undo it from History and check the products are back as they were.
 
 ### 3.2 Upgrade from the previous tag (T79)
 
 - [ ] Install the previous released tag's archive on a clean site and activate it.
-- [ ] Run a bulk change and an inline edit, so the three tables hold rows. Note the number of rows in each table and the batch numbers.
+- [ ] Run a bulk change and an inline edit, so the batch, item and change tables hold rows. Note the number of rows in each table and the batch numbers.
 - [ ] Upgrade in place to the candidate archive (upload it and choose **Replace current with uploaded**), without deactivating first.
 - [ ] Load any admin page (the schema update runs on the first admin request after an update).
 - [ ] The schema update ran: `bulkcat_db_version` equals the candidate's `Data\Migrator::SCHEMA_VERSION`, and the tables have the columns SPEC §9.2 lists.
@@ -52,7 +52,7 @@ For the first release (1.0.0) there is no previous tag. Record this step as not 
 ### 3.4 Uninstall with history kept
 
 - [ ] With **Remove all data when the plugin is deleted** off (the default), deactivate and delete the plugin.
-- [ ] The three tables, `bulkcat_settings`, `bulkcat_db_version` and users' `bulkcat_views` are all still present.
+- [ ] The five plugin tables, `bulkcat_settings`, `bulkcat_db_version` and users' `bulkcat_views` are all still present.
 - [ ] Reinstall and activate: History shows the earlier batches and an earlier batch can still be undone.
 
 ### 3.5 Uninstall with history removed
@@ -68,6 +68,53 @@ For the first release (1.0.0) there is no previous tag. Record this step as not 
 - [ ] History, Categories (with no categories other than WooCommerce's default) and Settings open without errors.
 - [ ] With no products selected, no bulk change can be applied.
 
+## Native Status upgrade and downgrade
+
+New Status edits use native publication semantics. Draft creates no remembered
+status, and Published may become Scheduled from the stored date. Individual
+edits use one Save; bulk changes require Preview then Apply. Warnings remain in
+Preview, with extra count confirmation only at or above the configured threshold.
+An eligible cascade is explicit; a direct variation retains its own identity and
+requires permission on both itself and its parent. Password-bearing variation
+transitions without a safe native single-save path refuse before writing.
+
+Before upgrading, preserve the installed ZIP, a data backup and the current
+queue/history. Install the reviewed ZIP through the native installer, without
+uninstalling or cleaning metadata. Check installed hashes and mount topology:
+a version label alone does not distinguish two development archives.
+
+| Existing state | After native Status upgrade |
+| --- | --- |
+| Accepted `set_value` Status work, including pending/interrupted saves | Continue its recorded legacy meaning, with current mapped permissions and journal readback. |
+| Accepted receipt retry | Return the original batch; do not create work or rewrite its fingerprint. Current access checks still apply. |
+| Issued but unaccepted old canonical grant | Obtain a new preview and grant. |
+| Raw new `set_value` Status request | Normalize to `set_status` at the request boundary. |
+| Explicit obsolete Keep current status intent | Refuse with reload/review guidance. |
+| Old Undo/history and provider-v1 envelopes | Preserve recorded values, labels, identities and conflict checks. |
+| Saved Off/Changed outside filter | Keep its exact legacy predicate; never substitute all Draft products. |
+| Own valid remembered record on an ordinary edit | Ignore the remembered target; clear it only alongside a real, journalled Status change. |
+| No-op, malformed or foreign record | Preserve metadata; no opportunistic sweep/save. |
+
+Use `tests/probe/native-status-upgrade.sh` on an explicitly owned synthetic site.
+It accepts separate released/candidate archives and hashes, creates unfinished
+work through the installed release, upgrades natively and verifies recovery and
+Undo. Its private state contains signed grants. Keep failed logs and archive
+manifests. The permission case must establish denied **mapped object** permission
+before the worker; removing an unrelated primitive capability proves nothing.
+The retained fixtures never run uninstall/lifecycle checks; use a separately
+inventoried disposable site for those and for supported-version floors.
+
+Before a binary downgrade to 1.1.0, stop new submissions and drain or explicitly
+handle all new-format queued/running Status work and recovery/Undo jobs. That
+binary cannot interpret `set_status`. Preserve matching history and a backup;
+file rollback alone does not preserve new pending work. Do not claim a safe
+binary downgrade from the fact that old completed history still reads.
+
+Local qualification does not publish a release, authorize deployment or replace
+installation-specific category-repair and site-acceptance gates. The controller
+reviews the final source, integrates generated assets, builds the final archive
+and records its exact hashes before any separate release decision.
+
 ## 4. Publish
 
 - [ ] Merge to `main`, tag `v<version>` on the release commit and push the tag.
@@ -80,9 +127,10 @@ Plugin Check on the archive reports these WARNING rows, and `bin/plugin-check-al
 
 | File | Code | Rows | Why |
 | --- | --- | --- | --- |
-| `src/Query/ProductQuery.php` | `PluginCheck.Security.DirectDB.UnescapedDBParameter` | 2 | The catalogue list and its count (SPEC §12.2). |
+| `src/Query/ProductQuery.php` | `PluginCheck.Security.DirectDB.UnescapedDBParameter` | 5 | The catalogue list, its count, bounded frozen ID/type capture, an export's present members and a filtered export's pages by id (SPEC §10, §12.2). Values are prepared; only allow-listed clauses and placeholders are composed. |
 | `src/Categories/Counts.php` | `PluginCheck.Security.DirectDB.UnescapedDBParameter` | 1 | Category product counts in one grouped read (SPEC §7). |
 | `src/Engine/BatchFactory.php` | `PluginCheck.Security.DirectDB.UnescapedDBParameter` | 1 | The ids a filter selects, read through ProductQuery's own FROM and WHERE. |
+| `src/Export/GuardedValues.php` | `PluginCheck.Security.DirectDB.UnescapedDBParameter` | 1 | The CSV export's guarded SKU and name counts over a filter's rows, read through ProductQuery's own FROM and WHERE (SPEC §10). |
 | `src/Data/ChangeRepository.php` | `PluginCheck.Security.DirectDB.UnescapedDBParameter` | 4 | History and audit feeds (SPEC §9.3). |
 | `src/Data/BatchRepository.php` | `PluginCheck.Security.DirectDB.UnescapedDBParameter` | 2 | The batch list and its count (SPEC §9.3). |
 
@@ -108,4 +156,72 @@ Site: WordPress <x.y.z>, WooCommerce <x.y.z>, PHP <x.y>, <MySQL or MariaDB x.y>
 
 ## Releases
 
-None recorded yet.
+### 1.2.0 — 4 October 2026 — prepared private candidate, not deployed
+
+Functional base: `6540093f0122b84f60b8b98bbdc3019a76d6fe03`, containing
+accepted native Status and ordinary single-save reconciliation/receipt work.
+The unfinished provider SDK is excluded. Schema 8 and provider contract 1 remain.
+Release-only edits align version metadata, lock content hash and operator notes;
+the four committed compiled assets and functional source are preserved.
+
+Fresh metadata/asset/translation checks: 29 tests / 524 assertions pass.
+Composer validates with the existing explicit-version advisory; no dependency
+versions changed. Retained functional qualification and its limitations are
+recorded in the native Status and receipt ticket notes. No repeated full suite,
+new hosted CI run, target-host latency measurement or new native archive upgrade
+is claimed by this preparation.
+
+Open before installation: exact candidate archive/manifest verification,
+Plugin Check as applicable to the changed package, upgrade from the installed
+1.1.1 archive, current target inspection, fresh private backup, pending-work-aware
+rollback and target-host functional acceptance. Source acceptance alone does not
+close these gates. Preserve the installed binary and current data; after new-format
+Status or receipt work is accepted, a blind return to 1.1.x is unsafe.
+
+Known limits: category access restrictions are not repaired; uncertain interrupted
+ordinary saves require verified reconciliation and are not automatically replayed.
+Existing translation, jsdom and webpack diagnostics remain documented maintenance
+items, not newly passing checks. This is not a public release, tag or main merge.
+
+
+### 1.1.0 — 30 September 2026 — private installation candidate
+
+Performed by: Codex. Functional runtime: `a7291ac`; integration fixture fixes:
+`17571bd`. Version 1.1.0, schema 8. Archive:
+`bulk-catalogue-manager-for-woocommerce-1.1.0.zip`, 280 files, 1,364,901 bytes.
+SHA-256: `594b3a768731c007112272380c117cbb895915f2d6c9efa8cc3f1ed14fed2acb`.
+
+Site for local checks: WordPress 7.1.2, WooCommerce 11.1.2, PHP 8.3.33,
+MySQL 8.4.11. Measurements and limits: `tests/probe/PERF.md`. Sanitised result
+logs are retained outside the repository.
+
+1. Version alignment: done; five version locations agree, schema 8, current
+   POT and committed assets. The normal archive build rebuilt the exported
+   source and produced byte-identical compiled assets.
+2. Local automated gates: done. PHP both runners: 1,068 tests / 23,854
+   assertions. Without vendor: 1,061 passed and seven dependency/archive
+   skips. PHPCS: 328 files clean. JavaScript lint clean; Jest: 576 tests in
+   40 suites. Bundle: 319,000 compressed bytes, below 400 KB. Plugin Check
+   2.1.0: zero errors, 13 allow-listed prepared-query warnings. Full HTTP
+   probe: 237 passed, zero failed, one translation skip. Full scale-fixture
+   browser suite: 61 passed, zero failed, seven documented skips. All native
+   exact-selection/batch/lifecycle probes, races and provider checks passed.
+   GitHub Actions quota was exhausted until 1 October: no new green CI or
+   PHP 8.1–8.4 matrix is claimed. The owner authorised local release gates.
+3. Fresh archive activation and upgrade: done on disposable sites and an
+   isolated copy of a real catalogue. The archive upgraded 1.0.0/schema 6
+   to schema 8 without changing catalogue/category fingerprints. The copy's
+   18/18 journey checks cover reversible Off/On and price/variation changes.
+   Populated schema migration: the HTTP lifecycle probe downgraded its schema
+   marker to 5 then migrated to 8; all five table row counts were preserved.
+   The optional browser fixture containing a legacy-1.0 batch was not present;
+   that browser check was skipped, not reported as passed.
+4. Deactivation/reactivation and both uninstall policies: the final native
+   lifecycle probe passed, preserving or removing plugin-owned rows as
+   requested while leaving product data intact. Network-wide two-site
+   uninstall was not repeated in this local run; unit coverage remains.
+5. Empty/no-match catalogue and access refusal: covered by the browser/native
+   suites. Administrator/shop-manager access works; anonymous writes refused.
+6. Publish: not performed. No main merge, public tag, GitHub release or
+   WordPress.org submission is authorised. This record covers the private
+   installation candidate; deployment evidence belongs with the operator.

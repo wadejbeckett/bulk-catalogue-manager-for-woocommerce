@@ -30,14 +30,20 @@ final class ProductQueryTest extends TestCase {
 	 * Shorthands the pinned SQL expands.
 	 */
 	private const FRAGMENTS = [
-		'{FROM}'   => 'FROM `wp_posts` AS p LEFT JOIN `wp_wc_product_meta_lookup` AS l ON l.product_id = p.ID',
-		'{POSTS}'  => 'FROM `wp_posts` AS p',
-		'{HINT}'   => '/*+ JOIN_PREFIX(p) */',
-		'{SCAN}'   => '/*+ NO_INDEX(l stock_status, min_max_price, stock_quantity) */',
-		'{STATUS}' => "p.post_status IN ('publish', 'future', 'draft', 'pending', 'private')",
-		'{SLUG}'   => 'FROM `wp_term_relationships` AS tr INNER JOIN `wp_term_taxonomy` AS tt ON tt.term_taxonomy_id = tr.term_taxonomy_id INNER JOIN `wp_terms` AS t ON t.term_id = tt.term_id',
-		'{TERM}'   => 'FROM `wp_term_relationships` AS tr INNER JOIN `wp_term_taxonomy` AS tt ON tt.term_taxonomy_id = tr.term_taxonomy_id',
-		'{OWNER}'  => "(CASE WHEN p.post_type = 'product_variation' THEN p.post_parent ELSE p.ID END)",
+		'{FROM}'    => 'FROM `wp_posts` AS p LEFT JOIN `wp_wc_product_meta_lookup` AS l ON l.product_id = p.ID',
+		'{POSTS}'   => 'FROM `wp_posts` AS p',
+		'{HINT}'    => '/*+ JOIN_PREFIX(p) */',
+		'{SCAN}'    => '/*+ NO_INDEX(l stock_status, min_max_price, stock_quantity) */',
+		'{STATUS}'  => "p.post_status IN ('publish', 'future', 'draft', 'pending', 'private')",
+		'{SLUG}'    => 'FROM `wp_term_relationships` AS tr INNER JOIN `wp_term_taxonomy` AS tt ON tt.term_taxonomy_id = tr.term_taxonomy_id INNER JOIN `wp_terms` AS t ON t.term_id = tt.term_id',
+		'{TERM}'    => 'FROM `wp_term_relationships` AS tr INNER JOIN `wp_term_taxonomy` AS tt ON tt.term_taxonomy_id = tr.term_taxonomy_id',
+		'{OWNER}'   => "(CASE WHEN p.post_type = 'product_variation' THEN p.post_parent ELSE p.ID END)",
+		// SQR-1: the regular price the cell shows (ProductQuery::regular_price()).
+		'{PRICE}'   => "(CASE WHEN p.post_type = 'product' AND EXISTS (SELECT 1 FROM `wp_term_relationships` AS ptr WHERE ptr.object_id = p.ID AND ptr.term_taxonomy_id IN ((SELECT ptt.term_taxonomy_id FROM `wp_term_taxonomy` AS ptt INNER JOIN `wp_terms` AS pt ON pt.term_id = ptt.term_id WHERE ptt.taxonomy = 'product_type' AND pt.slug = 'variable' LIMIT 1), (SELECT ptt.term_taxonomy_id FROM `wp_term_taxonomy` AS ptt INNER JOIN `wp_terms` AS pt ON pt.term_id = ptt.term_id WHERE ptt.taxonomy = 'product_type' AND pt.slug = 'grouped' LIMIT 1))) THEN NULL WHEN l.onsale = 0 AND l.min_price > 0 THEN l.min_price ELSE (SELECT CAST(NULLIF(rp.meta_value, '') AS DECIMAL(19, 4)) FROM `wp_postmeta` AS rp WHERE rp.post_id = p.ID AND rp.meta_key = '_regular_price' ORDER BY rp.meta_id ASC LIMIT 1) END)",
+		'{VPRICE}'  => "(CASE WHEN l.onsale = 0 AND l.min_price > 0 THEN l.min_price ELSE (SELECT CAST(NULLIF(rp.meta_value, '') AS DECIMAL(19, 4)) FROM `wp_postmeta` AS rp WHERE rp.post_id = p.ID AND rp.meta_key = '_regular_price' ORDER BY rp.meta_id ASC LIMIT 1) END)",
+		// SQR-5: date created, a floating draft's post_date taken back to GMT (the tests' site is on UTC).
+		'{CREATED}' => "(CASE WHEN p.post_date_gmt = '0000-00-00 00:00:00' THEN DATE_SUB(p.post_date, INTERVAL 0 SECOND) ELSE p.post_date_gmt END)",
+		'{SHOWN}'   => '(l.product_id IS NULL OR l.onsale <> 0 OR l.min_price IS NULL OR l.min_price <= 0 OR l.min_price',
 	];
 
 	/**
@@ -71,9 +77,9 @@ final class ProductQueryTest extends TestCase {
 			'defaults'                                 => [
 				[],
 				<<<'SQL'
-				SELECT p.ID AS id, p.post_parent AS parent_id, p.post_date_gmt AS date_created {POSTS}
+				SELECT p.ID AS id, p.post_parent AS parent_id, {CREATED} AS date_created {POSTS}
 				WHERE p.post_type IN ('product') AND {STATUS}
-				ORDER BY p.post_date_gmt DESC, p.ID DESC LIMIT 25 OFFSET 0
+				ORDER BY date_created DESC, p.ID DESC LIMIT 25 OFFSET 0
 				SQL,
 			],
 			'every variation that is out of stock'     => [
@@ -186,14 +192,14 @@ final class ProductQueryTest extends TestCase {
 					],
 				],
 				<<<'SQL'
-				SELECT p.ID AS id, p.post_parent AS parent_id, p.post_date_gmt AS date_created {POSTS}
+				SELECT p.ID AS id, p.post_parent AS parent_id, {CREATED} AS date_created {POSTS}
 				WHERE p.post_type IN ('product') AND {STATUS}
 				AND ((NOT EXISTS (SELECT 1 {SLUG} WHERE tr.object_id = p.ID AND tt.taxonomy = 'product_visibility' AND t.slug IN ('exclude-from-catalog'))
 				AND EXISTS (SELECT 1 {SLUG} WHERE tr.object_id = p.ID AND tt.taxonomy = 'product_visibility' AND t.slug IN ('exclude-from-search')))
 				OR (EXISTS (SELECT 1 {SLUG} WHERE tr.object_id = p.ID AND tt.taxonomy = 'product_visibility' AND t.slug IN ('exclude-from-catalog'))
 				AND EXISTS (SELECT 1 {SLUG} WHERE tr.object_id = p.ID AND tt.taxonomy = 'product_visibility' AND t.slug IN ('exclude-from-search'))))
 				AND NOT (EXISTS (SELECT 1 {SLUG} WHERE tr.object_id = p.ID AND tt.taxonomy = 'product_type' AND t.slug IN ('grouped', 'external')))
-				ORDER BY p.post_date_gmt DESC, p.ID DESC LIMIT 25 OFFSET 0
+				ORDER BY date_created DESC, p.ID DESC LIMIT 25 OFFSET 0
 				SQL,
 			],
 			'variation filters on parent and row'      => [
@@ -225,13 +231,13 @@ final class ProductQueryTest extends TestCase {
 					'order'   => 'desc',
 				],
 				<<<'SQL'
-				SELECT {SCAN} p.ID AS id, p.post_parent AS parent_id, l.max_price AS regular_price {FROM}
+				SELECT {SCAN} p.ID AS id, p.post_parent AS parent_id, {VPRICE} AS regular_price {FROM}
 				WHERE p.post_type IN ('product_variation') AND {STATUS}
 				AND EXISTS (SELECT 1 {TERM} WHERE tr.object_id = p.post_parent AND tt.taxonomy = 'product_cat' AND tt.term_id IN (3))
 				AND EXISTS (SELECT 1 {TERM} WHERE tr.object_id = p.post_parent AND tt.taxonomy = 'product_cat' AND tt.term_id IN (7))
 				AND EXISTS (SELECT 1 {TERM} WHERE tr.object_id = p.ID AND tt.taxonomy = 'product_shipping_class' AND tt.term_id IN (9))
-				AND p.post_status NOT IN ('private') AND l.max_price >= 5
-				ORDER BY l.max_price DESC, p.ID DESC LIMIT 25 OFFSET 0
+				AND p.post_status NOT IN ('private') AND {SHOWN} >= 5) AND {VPRICE} >= 5
+				ORDER BY regular_price DESC, p.ID DESC LIMIT 25 OFFSET 0
 				SQL,
 			],
 			'search, dates and a clamped page size'    => [
@@ -270,8 +276,8 @@ final class ProductQueryTest extends TestCase {
 				SELECT {HINT} p.ID AS id, p.post_parent AS parent_id, l.total_sales AS units_sold, p.post_modified_gmt AS date_modified {FROM}
 				WHERE p.post_type IN ('product') AND {STATUS}
 				AND (p.post_title LIKE '%50\\% off\\_\'\\%s%' OR l.sku LIKE '%50\\% off\\_\'\\%s%')
-				AND p.post_modified_gmt < '2026-09-01 00:00:00' AND p.post_date_gmt > '2026-09-01 10:00:00'
-				AND p.post_modified_gmt >= '2026-09-09 12:00:00' AND l.min_price <= 99.95
+				AND p.post_modified_gmt < '2026-09-01 00:00:00' AND ((p.post_date_gmt <> '0000-00-00 00:00:00' AND p.post_date_gmt > '2026-09-01 10:00:00') OR (p.post_date_gmt = '0000-00-00 00:00:00' AND p.post_date > '2026-09-01 10:00:00'))
+				AND p.post_modified_gmt >= '2026-09-09 12:00:00' AND {SHOWN} <= 99.95) AND {PRICE} <= 99.95
 				ORDER BY l.total_sales DESC, p.post_modified_gmt DESC, p.ID DESC LIMIT 100 OFFSET 0
 				SQL,
 			],
@@ -304,10 +310,10 @@ final class ProductQueryTest extends TestCase {
 					'order'   => 'asc',
 				],
 				<<<'SQL'
-				SELECT p.ID AS id, p.post_parent AS parent_id, p.post_date_gmt AS date_created {POSTS}
+				SELECT p.ID AS id, p.post_parent AS parent_id, {CREATED} AS date_created {POSTS}
 				WHERE p.post_type IN ('product', 'product_variation') AND {STATUS}
-				AND (p.post_type = 'product_variation') AND p.post_date_gmt >= '2027-01-01 00:00:00'
-				ORDER BY p.post_date_gmt ASC, p.ID ASC LIMIT 25 OFFSET 0
+				AND (p.post_type = 'product_variation') AND ((p.post_date_gmt <> '0000-00-00 00:00:00' AND p.post_date_gmt >= '2027-01-01 00:00:00') OR (p.post_date_gmt = '0000-00-00 00:00:00' AND p.post_date >= '2027-01-01 00:00:00'))
+				ORDER BY date_created ASC, p.ID ASC LIMIT 25 OFFSET 0
 				SQL,
 			],
 		];
@@ -355,7 +361,7 @@ final class ProductQueryTest extends TestCase {
 			$this->assertTrue( $joins || str_starts_with( $conditions['sql'], 'FROM %i AS p WHERE ' ), $name );
 			$this->assertSame( 1 === preg_match( '/\bl\./', $conditions['sql'] ), $joins, $name . ': the lookup is joined exactly when a condition reads it.' );
 			$hint = $joins ? strtr( Criteria::MODE_PRODUCTS === ( $args['mode'] ?? Criteria::MODE_PRODUCTS ) ? '{HINT} ' : '{SCAN} ', self::FRAGMENTS ) : '';
-			$this->assertStringNotContainsString( 'LIMIT', $conditions['sql'], $name );
+			$this->assertSame( 0, preg_match( '/LIMIT %d\)?$/', $conditions['sql'] ), $name . ': no LIMIT of its own (a sub-query may have one).' );
 			$this->assertSame( 0, preg_match( '/[\'"`]/', $conditions['sql'] ), $name );
 			$this->assertSame( preg_match_all( '/%[sdfi]/', $conditions['sql'] ), count( $conditions['args'] ), $name );
 			$this->assertSame( [], self::db()->prepared, $name . ': the accessor prepares nothing.' );
@@ -452,11 +458,6 @@ final class ProductQueryTest extends TestCase {
 				'value'    => true,
 			],
 			[
-				'field'    => 'regular_price',
-				'operator' => 'between',
-				'value'    => [ 1, 2 ],
-			],
-			[
 				'field'    => 'stock_quantity',
 				'operator' => 'lessThanOrEqual',
 				'value'    => 0,
@@ -486,6 +487,21 @@ final class ProductQueryTest extends TestCase {
 			],
 		];
 		foreach ( Criteria::MODES as $mode ) {
+			// SQR-1: a variable or grouped product has no regular price of its own, which its type term says; a variations read has none.
+			$price = self::query(
+				[
+					'mode'    => $mode,
+					'filters' => [
+						[
+							'field'    => 'regular_price',
+							'operator' => 'between',
+							'value'    => [ 1, 2 ],
+						],
+					],
+				]
+			)->statement();
+			$this->assertSame( Criteria::MODE_VARIATIONS !== $mode, str_contains( $price, '`wp_term_relationships` AS ptr' ), $mode );
+			$this->assertStringNotContainsString( 'AS tr ', $price, $mode );
 			foreach ( [
 				true  => $taxonomy,
 				false => $plain,
@@ -522,7 +538,10 @@ final class ProductQueryTest extends TestCase {
 				foreach ( $tables[1] as $table ) {
 					$this->assertContains( $table, $allowed, $name );
 				}
-				$this->assertStringNotContainsString( 'postmeta', $sql, $name );
+				// SQR-1: only the regular price, of a row on sale, reads its meta.
+				$price = str_contains( (string) wp_json_encode( $args ), 'regular_price' );
+				$this->assertSame( $price, str_contains( $sql, '`wp_postmeta` AS rp' ), $name );
+				$this->assertSame( substr_count( $sql, '`wp_postmeta` AS rp' ), substr_count( $sql, 'postmeta' ), $name . ': postmeta is read for nothing else.' );
 			}
 		}
 	}

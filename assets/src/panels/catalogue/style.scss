@@ -158,7 +158,7 @@
 }
 
 .bulkcat-cell.is-pending {
-	opacity: 0.55;
+	// Keep text readable while saving or holding an unconfirmed outcome.
 	pointer-events: none;
 }
 
@@ -274,6 +274,7 @@
 }
 
 @keyframes bulkcat-shimmer {
+
 	0% {
 		background-position: 100% 50%;
 	}
@@ -311,6 +312,49 @@
 	display: flex;
 	gap: 16px;
 	align-items: flex-start;
+}
+
+// T113 (ticket 11 item 10): the bulk slide-over's width, shared with the
+// panel (bulk/style.scss). Beside WordPress's menu (160 px, 36 px folded or
+// auto-folded) it leaves the catalogue at least 380 px, down to 480 px wide;
+// on a phone-width screen it covers the page.
+.bulkcat-catalogue {
+	--bulkcat-slide-over: min(860px, 100vw);
+
+	@media (min-width: 783px) {
+		--bulkcat-slide-over: clamp(480px, calc(100vw - 36px - 380px), 860px);
+	}
+
+	@media (min-width: 961px) {
+		--bulkcat-slide-over: clamp(480px, calc(100vw - 160px - 380px), 860px);
+	}
+}
+
+@media (min-width: 961px) {
+
+	.folded .bulkcat-catalogue {
+		--bulkcat-slide-over: clamp(480px, calc(100vw - 36px - 380px), 860px);
+	}
+}
+
+// While it is open the catalogue reflows into the room left of it, so no
+// control sits under it, partly hidden (axe target-size on a small catalogue:
+// the selection line's Select all link under the panel's edge), and the rows
+// the change is for stay in view (SPEC §4.3).
+@media (min-width: 783px) {
+
+	.bulkcat-catalogue__body.has-slide-over {
+		flex-direction: column;
+		align-items: stretch;
+		padding-right: calc(var(--bulkcat-slide-over) + 8px);
+	}
+}
+
+// WCAG 2.4.11: a control that takes the focus is scrolled clear of the sticky
+// selection bar (and the admin bar above it), never left beneath it. The bar
+// is one or two lines, with a notice at most one more.
+html:has(.bulkcat-catalogue .bulkcat-selection) {
+	scroll-padding-top: calc(var(--wp-admin--admin-bar--height, 32px) + 136px);
 }
 
 .bulkcat-catalogue__main {
@@ -396,4 +440,10 @@
 	.bulkcat-catalogue__toolbar {
 		margin: 0;
 	}
+}
+
+.bulkcat-catalogue__progress-note {
+	flex-basis: 100%;
+	margin: 0;
+	color: #50575e;
 }

@@ -13,6 +13,8 @@ declare( strict_types = 1 );
 
 namespace BulkCatalogueManager\Query;
 
+use BulkCatalogueManager\Availability\OffRecord;
+
 defined( 'ABSPATH' ) || exit;
 
 // phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- SPEC §12.2: the catalogue read is deliberately one direct, prepared statement; the caller (T16, T19) caches results in an object-cache group keyed on the products' last-changed value.
@@ -22,7 +24,11 @@ defined( 'ABSPATH' ) || exit;
  *
  * The statement reads `{prefix}posts` joined to
  * `{prefix}wc_product_meta_lookup`, which carries SKU, prices, stock and sales,
- * so no filter or sort touches `wp_postmeta`. The lookup is a LEFT JOIN so a
+ * so most filters and sorts never touch `wp_postmeta`. The lookup's prices
+ * are WooCommerce's active price, the sale price while a sale runs, so the
+ * Regular price filter and sort read the regular price the row's cell shows
+ * (regular_price()): the lookup's price when the row is not on sale, and
+ * otherwise its own `_regular_price` meta. The lookup is a LEFT JOIN so a
  * product whose lookup row is missing still lists; any lookup condition simply
  * does not match it. It is joined only when a condition or a sort key reads it
  * (T76): joined on its primary key it can never add or remove a row, and at
@@ -85,6 +91,7 @@ final class ProductQuery {
 		'relationships' => 'term_relationships',
 		'taxonomy'      => 'term_taxonomy',
 		'terms'         => 'terms',
+		'postmeta'      => 'postmeta',
 	];
 
 	/**
@@ -109,20 +116,33 @@ final class ProductQuery {
 	];
 
 	/**
-	 * Sort key => [ column ascending, column descending ]. A price sorts on
-	 * the lowest price going up and the highest going down, as WooCommerce does.
+	 * Sort key => [ column ascending, column descending ]. The regular price
+	 * is not a column: see regular_price().
 	 */
 	private const SORT_COLUMNS = [
 		'id'             => [ 'p.ID', 'p.ID' ],
 		'name'           => [ 'p.post_title', 'p.post_title' ],
 		'sku'            => [ 'l.sku', 'l.sku' ],
-		'regular_price'  => [ 'l.min_price', 'l.max_price' ],
 		'stock_status'   => [ 'l.stock_status', 'l.stock_status' ],
 		'stock_quantity' => [ 'l.stock_quantity', 'l.stock_quantity' ],
-		'date_created'   => [ 'p.post_date_gmt', 'p.post_date_gmt' ],
 		'date_modified'  => [ 'p.post_modified_gmt', 'p.post_modified_gmt' ],
 		'units_sold'     => [ 'l.total_sales', 'l.total_sales' ],
 	];
+
+	/**
+	 * The sort key and filter read from the row's own regular price meta.
+	 */
+	private const REGULAR_PRICE = 'regular_price';
+
+	/**
+	 * The sort key and filter whose date falls back to `post_date` (SQR-5).
+	 */
+	private const DATE_CREATED = 'date_created';
+
+	/**
+	 * The date WordPress leaves in `post_date_gmt` while a draft's date floats.
+	 */
+	private const NO_DATE = '0000-00-00 00:00:00';
 
 	/**
 	 * Taxonomy per term-id filter.
@@ -225,18 +245,35 @@ final class ProductQuery {
 	 */
 	public function statement(): string {
 		global $wpdb;
-		$select  = [ 'p.ID AS id', 'p.post_parent AS parent_id' ];
-		$order   = [];
-		$ids     = false;
-		$keyword = 'ASC';
-		$lookup  = $this->lookup;
+		$select      = [ 'p.ID AS id', 'p.post_parent AS parent_id' ];
+		$select_args = [];
+		$order       = [];
+		$ids         = false;
+		$keyword     = 'ASC';
+		$lookup      = $this->lookup;
 		if ( [] === $this->criteria->sorts ) {
 			// Only a one-product variations read has no sort keys: WooCommerce's own order.
 			$order[] = 'p.menu_order ASC';
 		}
 		foreach ( $this->criteria->sorts as $sort ) {
-			$column  = self::SORT_COLUMNS[ $sort->field ][ Sort::DESC === $sort->direction ? 1 : 0 ];
 			$keyword = Sort::DESC === $sort->direction ? 'DESC' : 'ASC';
+			if ( self::REGULAR_PRICE === $sort->field ) {
+				// Ordered by its alias, so the expression runs once a row.
+				[ $price, $price_args ] = $this->regular_price();
+				$select[]               = $price . ' AS ' . $sort->field;
+				$select_args            = [ ...$select_args, ...$price_args ];
+				$order[]                = $sort->field . ' ' . $keyword;
+				$lookup                 = true;
+				continue;
+			}
+			if ( self::DATE_CREATED === $sort->field ) {
+				[ $created, $created_args ] = $this->date_created();
+				$select[]                   = $created . ' AS ' . $sort->field;
+				$select_args                = [ ...$select_args, ...$created_args ];
+				$order[]                    = $sort->field . ' ' . $keyword;
+				continue;
+			}
+			$column  = self::SORT_COLUMNS[ $sort->field ][ Sort::DESC === $sort->direction ? 1 : 0 ];
 			$order[] = $column . ' ' . $keyword;
 			$lookup  = $lookup || str_starts_with( $column, 'l.' );
 			if ( 'id' === $sort->field ) {
@@ -250,7 +287,7 @@ final class ProductQuery {
 			$order[] = 'p.ID ' . $keyword;
 		}
 		$sql  = 'SELECT ' . $this->hint( $lookup ) . implode( ', ', $select ) . ' ' . $this->from( $lookup ) . ' WHERE ' . $this->where . ' ORDER BY ' . implode( ', ', $order ) . ' LIMIT %d OFFSET %d';
-		$args = [ ...$this->table_args( $lookup ), ...$this->where_args, $this->criteria->per_page, $this->criteria->offset() ];
+		$args = [ ...$select_args, ...$this->table_args( $lookup ), ...$this->where_args, $this->criteria->per_page, $this->criteria->offset() ];
 		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- The template holds only allow-listed literals and placeholders; every value is an argument.
 		return (string) $wpdb->prepare( $sql, ...$args );
 	}
@@ -301,6 +338,125 @@ final class ProductQuery {
 			],
 			is_array( $rows ) ? $rows : []
 		);
+	}
+
+	/**
+	 * The next rows after an id, in id order (SQR-3): `id` and `parent_id`
+	 * of at most $limit rows matching the conditions whose id is above
+	 * $after. Keyset paging for a walk over every match, such as a filtered
+	 * export: a row's place never depends on the view's sort keys or on rows
+	 * added or removed meanwhile, so no row is read twice or passed over, and
+	 * each statement starts where the last one stopped.
+	 *
+	 * @param int $after Last id read; 0 to start.
+	 * @param int $limit Most rows.
+	 * @return array<int, array{id: int, parent_id: int}>
+	 * @throws \RuntimeException On a database error.
+	 */
+	public function after( int $after, int $limit ): array {
+		global $wpdb;
+		$conditions = $this->conditions_sql();
+		$sql        = 'SELECT ' . $this->hint( $this->lookup ) . 'p.ID AS id, p.post_parent AS parent_id ' . $conditions['sql'] . ' AND p.ID > %d ORDER BY p.ID ASC LIMIT %d';
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Allow-listed conditions and placeholders; every value is an argument.
+		$rows = $wpdb->get_results( $wpdb->prepare( $sql, ...[ ...$conditions['args'], max( 0, $after ), max( 1, $limit ) ] ), ARRAY_A );
+		if ( ! is_array( $rows ) || '' !== $wpdb->last_error ) {
+			throw new \RuntimeException( 'The catalogue could not be read.' );
+		}
+		return array_map(
+			static fn( array $row ): array => [
+				'id'        => (int) $row['id'],
+				'parent_id' => (int) $row['parent_id'],
+			],
+			$rows
+		);
+	}
+
+	/**
+	 * Capture typed identities in one statement, independent of view paging.
+	 *
+	 * @param int[]|null $ids Optional validated explicit identities.
+	 * @return array{products: int[], variations: int[]}
+	 * @throws \RuntimeException On an unreadable catalogue.
+	 * @throws \LengthException Above the selection ceiling.
+	 */
+	public function snapshot_members( ?array $ids = null ): array {
+		global $wpdb;
+		$conditions = $this->conditions_sql();
+		$sql        = 'SELECT ' . $this->hint( $this->lookup ) . 'p.ID AS id, p.post_type AS object_type ' . $conditions['sql'];
+		$args       = $conditions['args'];
+		if ( null !== $ids ) {
+			if ( [] === $ids ) {
+				return [
+					'products'   => [],
+					'variations' => [],
+				];
+			}
+			$sql .= ' AND p.ID IN (' . implode( ', ', array_fill( 0, count( $ids ), '%d' ) ) . ')';
+			$args = [ ...$args, ...$ids ];
+		}
+		$sql   .= ' ORDER BY p.ID ASC LIMIT %d';
+		$args[] = \BulkCatalogueManager\Selection\Selection::MAX_OBJECTS + 1;
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Allow-listed conditions and identifier placeholders, bounded integer limit.
+		$rows = $wpdb->get_results( $wpdb->prepare( $sql, ...$args ), ARRAY_A );
+		if ( ! is_array( $rows ) || '' !== $wpdb->last_error ) {
+			throw new \RuntimeException( 'Catalogue capture failed.' );
+		}
+		if ( count( $rows ) > \BulkCatalogueManager\Selection\Selection::MAX_OBJECTS ) {
+			throw new \LengthException( 'Selection exceeds its object limit.' );
+		}
+		$members = [
+			'products'   => [],
+			'variations' => [],
+		];
+		foreach ( $rows as $row ) {
+			$members[ 'product' === $row['object_type'] ? 'products' : 'variations' ][] = (int) $row['id'];
+		}
+		return $members;
+	}
+
+	/**
+	 * Most ids one presence statement names (present_members()).
+	 */
+	public const PRESENCE_CHUNK = 1000;
+
+	/**
+	 * Which of these ids a catalogue export can write (ticket 10, R12), as
+	 * `id => parent_id` (the row's post parent) in ascending id order: the
+	 * products and variations in a status the catalogue lists, where a
+	 * variation's product is itself a listed product. Anything else — gone,
+	 * in the bin or another unlisted status, not a product or variation, or
+	 * a variation whose product is gone or no longer listed — is left out,
+	 * and nothing more of it is read. The conditions are the grid's own for
+	 * products and variations, plus the ids, in statements of at most
+	 * PRESENCE_CHUNK ids; duplicates and non-positive ids are ignored.
+	 *
+	 * @param array<int, int> $ids Object ids, in any order.
+	 * @return array<int, int> Present id => its parent id (0 for none), ascending.
+	 * @throws \RuntimeException On a database error.
+	 */
+	public static function present_members( array $ids ): array {
+		global $wpdb;
+		$ids = array_values( array_unique( array_filter( array_map( 'intval', $ids ), static fn( int $id ): bool => $id > 0 ) ) );
+		sort( $ids );
+		$query      = new self( Criteria::from_array( [ 'mode' => Criteria::MODE_PRODUCTS_AND_VARIATIONS ] ) );
+		$conditions = $query->conditions_sql();
+		$present    = [];
+		foreach ( array_chunk( $ids, self::PRESENCE_CHUNK ) as $chunk ) {
+			$sql  = 'SELECT p.ID AS id, p.post_parent AS parent_id ' . $conditions['sql']
+				. ' AND p.ID IN (' . self::placeholders( $chunk, '%d' ) . ')'
+				. ' AND (p.post_type = %s OR EXISTS (SELECT 1 FROM %i AS pp WHERE pp.ID = p.post_parent AND pp.post_type = %s AND pp.post_status IN (' . self::placeholders( self::STATUSES, '%s' ) . ')))'
+				. ' ORDER BY p.ID ASC LIMIT %d';
+			$args = [ ...$conditions['args'], ...$chunk, 'product', self::table( 'posts' ), 'product', ...self::STATUSES, count( $chunk ) ];
+			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- Allow-listed literals and placeholders; every value is an argument.
+			$rows = $wpdb->get_results( $wpdb->prepare( $sql, ...$args ), ARRAY_A );
+			if ( ! is_array( $rows ) || '' !== $wpdb->last_error ) {
+				throw new \RuntimeException( 'The selected products could not be read.' );
+			}
+			foreach ( $rows as $row ) {
+				$present[ (int) $row['id'] ] = (int) $row['parent_id'];
+			}
+		}
+		return $present;
 	}
 
 	/**
@@ -425,7 +581,7 @@ final class ProductQuery {
 
 		switch ( $filter->field ) {
 			case 'status':
-				$this->add( 'p.post_status ' . ( $negate ? 'NOT IN' : 'IN' ) . ' (' . self::placeholders( $value, '%s' ) . ')', $value );
+				$this->status( $value, $negate );
 				return;
 
 			case 'stock_status':
@@ -439,8 +595,8 @@ final class ProductQuery {
 				$this->add( 'l.stock_quantity IS ' . ( $value ? 'NOT NULL' : 'NULL' ), [], true );
 				return;
 
-			case 'regular_price':
-				$this->range( 'l.min_price', 'l.max_price', '%f', $filter );
+			case self::REGULAR_PRICE:
+				$this->regular_price_range( $filter );
 				return;
 
 			case 'stock_quantity':
@@ -449,7 +605,7 @@ final class ProductQuery {
 
 			case 'date_created':
 			case 'date_modified':
-				$this->date( 'date_created' === $filter->field ? 'p.post_date_gmt' : 'p.post_modified_gmt', $filter );
+				$this->date( $filter );
 				return;
 
 			case 'category_ids':
@@ -474,6 +630,49 @@ final class ProductQuery {
 	}
 
 	/**
+	 * The Status filter (T92, SPEC §4.1, §5.5). Real statuses match by
+	 * status; `draft` means a genuine draft, one without its own Off record;
+	 * `off` is a product that is a draft with its own record; and
+	 * `changed_outside` a product with its own record and any other status.
+	 * "Its own record" is the record meta whose value starts with its own id
+	 * (`{"id":<ID>,`), as the record binds it (Availability\OffRecord); a
+	 * variation never matches Off or Changed outside. The parts are joined
+	 * with OR, and isNone negates the whole. A list of real statuses alone
+	 * keeps the plain `IN` it always had.
+	 *
+	 * @param list<string> $value    The statuses and special values chosen.
+	 * @param bool         $negate   Whether the filter is isNone.
+	 */
+	private function status( array $value, bool $negate ): void {
+		$real = array_values( array_diff( $value, [ 'draft', 'off', 'changed_outside' ] ) );
+		if ( $value === $real ) {
+			$this->add( 'p.post_status ' . ( $negate ? 'NOT IN' : 'IN' ) . ' (' . self::placeholders( $value, '%s' ) . ')', $value );
+			return;
+		}
+		$parts = [];
+		$args  = [];
+		if ( [] !== $real ) {
+			$parts[] = 'p.post_status IN (' . self::placeholders( $real, '%s' ) . ')';
+			$args    = [ ...$args, ...$real ];
+		}
+		$own      = 'EXISTS (SELECT 1 FROM %i AS m WHERE m.post_id = p.ID AND m.meta_key = %s AND m.meta_value LIKE CONCAT(%s, p.ID, %s))';
+		$own_args = [ self::table( 'postmeta' ), OffRecord::META_KEY, '{"id":', ',%' ];
+		if ( in_array( 'draft', $value, true ) ) {
+			$parts[] = '(p.post_status = %s AND NOT ' . $own . ')';
+			$args    = [ ...$args, 'draft', ...$own_args ];
+		}
+		if ( in_array( 'off', $value, true ) ) {
+			$parts[] = '(p.post_type = %s AND p.post_status = %s AND ' . $own . ')';
+			$args    = [ ...$args, 'product', 'draft', ...$own_args ];
+		}
+		if ( in_array( 'changed_outside', $value, true ) ) {
+			$parts[] = '(p.post_type = %s AND p.post_status <> %s AND ' . $own . ')';
+			$args    = [ ...$args, 'product', 'draft', ...$own_args ];
+		}
+		$this->add( ( $negate ? 'NOT ' : '' ) . '(' . implode( ' OR ', $parts ) . ')', $args );
+	}
+
+	/**
 	 * The id a filter's terms are read from: the row itself, or for a
 	 * parent-only filter the row's product (a variation's parent).
 	 *
@@ -491,8 +690,7 @@ final class ProductQuery {
 	}
 
 	/**
-	 * A price or stock range. A product matches a price range when any of
-	 * its prices falls in it, as WooCommerce's price filter does.
+	 * A stock range.
 	 *
 	 * @param string $low_column  Column holding the lowest value.
 	 * @param string $high_column Column holding the highest value.
@@ -511,31 +709,125 @@ final class ProductQuery {
 	}
 
 	/**
-	 * A date filter on a GMT column. Before a date means before its first
-	 * second; after a date means from the next day on; a full time compares
-	 * exactly. In the past counts back from now.
+	 * The regular price a row's cell shows, as a number, or NULL when the
+	 * cell is empty (SQR-1). The cell shows the row's own `_regular_price`
+	 * meta; reading that meta for every row costs a second or more at 20,000
+	 * products, so the expression reads it only where the lookup cannot stand
+	 * in for it:
 	 *
-	 * @param string $column Column.
+	 * - A variable or grouped product has no regular price of its own
+	 *   (WooCommerce deletes a variable product's when it syncs its
+	 *   variations, and the screen shows the variations' prices instead), so
+	 *   it is NULL: it never matches a Regular price filter and sorts with
+	 *   the other empty cells, while its variations match on their own
+	 *   prices. The lookup's prices for it are its children's.
+	 * - A row WooCommerce does not mark on sale (`onsale` 0) has its regular
+	 *   price as its active price, which the lookup holds: `_price` is set to
+	 *   the regular price whenever the sale price does not apply. A price of
+	 *   zero is not trusted, because a sale price of "0" is never marked on
+	 *   sale.
+	 * - Anything else (on sale, a zero or missing price, no lookup row) reads
+	 *   its `_regular_price` meta, the first row as `get_post_meta()` does,
+	 *   empty as NULL, through a sub-query on the `post_id` index; a sub-query
+	 *   rather than a join, so a duplicated meta row can never repeat a row.
+	 *
+	 * @return array{0: string, 1: list<int|string>} Expression template and its arguments.
+	 */
+	private function regular_price(): array {
+		$meta      = ' ELSE (SELECT CAST(NULLIF(rp.meta_value, %s) AS DECIMAL(%d, %d)) FROM %i AS rp WHERE rp.post_id = p.ID AND rp.meta_key = %s ORDER BY rp.meta_id ASC LIMIT %d) END)';
+		$meta_args = [ '', 19, 4, self::table( 'postmeta' ), '_regular_price', 1 ];
+		if ( Criteria::MODE_VARIATIONS === $this->criteria->mode ) {
+			// Only variations: no row is a variable or grouped product.
+			return [ '(CASE WHEN l.onsale = %d AND l.min_price > %d THEN l.min_price' . $meta, [ 0, 0, ...$meta_args ] ];
+		}
+		// Each type's term is an uncorrelated scalar sub-query, which MySQL reads once a statement; each row then costs one primary-key probe.
+		$type        = '(SELECT ptt.term_taxonomy_id FROM %i AS ptt INNER JOIN %i AS pt ON pt.term_id = ptt.term_id WHERE ptt.taxonomy = %s AND pt.slug = %s LIMIT %d)';
+		$type_args   = static fn( string $slug ): array => [ self::table( 'taxonomy' ), self::table( 'terms' ), 'product_type', $slug, 1 ];
+		$parent      = 'EXISTS (SELECT 1 FROM %i AS ptr WHERE ptr.object_id = p.ID AND ptr.term_taxonomy_id IN (' . $type . ', ' . $type . '))';
+		$parent_args = [ self::table( 'relationships' ), ...$type_args( 'variable' ), ...$type_args( 'grouped' ) ];
+		return [
+			'(CASE WHEN p.post_type = %s AND ' . $parent . ' THEN NULL'
+				. ' WHEN l.onsale = %d AND l.min_price > %d THEN l.min_price' . $meta,
+			[ 'product', ...$parent_args, 0, 0, ...$meta_args ],
+		];
+	}
+
+	/**
+	 * A Regular price range, on the price regular_price() reads.
+	 *
+	 * @param Filter $filter Range filter.
+	 */
+	private function regular_price_range( Filter $filter ): void {
+		[ $price, $args ]   = $this->regular_price();
+		$value              = $filter->value;
+		[ $range, $bounds ] = match ( $filter->operator ) {
+			'between'            => [ ' BETWEEN %f AND %f', [ $value[0], $value[1] ] ],
+			'greaterThanOrEqual' => [ ' >= %f', [ $value ] ],
+			default              => [ ' <= %f', [ $value ] ],
+		};
+		// First a test on the lookup alone, so the database can drop a row
+		// before it reads the post: a row whose regular price is the lookup's
+		// (see regular_price()) and out of range cannot match. It only ever
+		// narrows; the price itself decides.
+		$this->add( '(l.product_id IS NULL OR l.onsale <> %d OR l.min_price IS NULL OR l.min_price <= %d OR l.min_price' . $range . ')', [ 0, 0, ...$bounds ], true );
+		$this->add( $price . $range, [ ...$args, ...$bounds ], true );
+	}
+
+	/**
+	 * A date filter. A day (`Y-m-d`) is a day in the site's time zone, as the
+	 * grid shows dates (SQR-2): before a day means before its first second
+	 * there; after a day means from the next day's first second there. A full
+	 * time is GMT and compares exactly. In the past counts back from now.
+	 * Date modified compares `post_modified_gmt`; date created compares
+	 * `post_date_gmt`, or for a draft whose date floats (a zero
+	 * `post_date_gmt`) its `post_date` against the same moment in site time,
+	 * as its cell shows it (SQR-5).
+	 *
 	 * @param Filter $filter Date filter.
 	 */
-	private function date( string $column, Filter $filter ): void {
+	private function date( Filter $filter ): void {
 		$value = $filter->value;
+		$utc   = new \DateTimeZone( 'UTC' );
 		if ( 'inThePast' === $filter->operator ) {
-			$since = $this->now->modify( sprintf( '-%d %s', $value[0], $value[1] ) )->format( 'Y-m-d H:i:s' );
-			$this->add( $column . ' >= %s', [ $since ] );
+			[ $op, $at ] = [ '>=', $this->now->modify( sprintf( '-%d %s', $value[0], $value[1] ) ) ];
+		} elseif ( 10 !== strlen( $value ) ) {
+			[ $op, $at ] = [ 'before' === $filter->operator ? '<' : '>', new \DateTimeImmutable( $value, $utc ) ];
+		} else {
+			$day         = new \DateTimeImmutable( $value . ' 00:00:00', self::site_zone() );
+			[ $op, $at ] = 'before' === $filter->operator ? [ '<', $day ] : [ '>=', $day->modify( '+1 day' ) ];
+		}
+		$gmt = $at->setTimezone( $utc )->format( 'Y-m-d H:i:s' );
+		if ( self::DATE_CREATED !== $filter->field ) {
+			$this->add( 'p.post_modified_gmt ' . $op . ' %s', [ $gmt ] );
 			return;
 		}
-		$is_day = 10 === strlen( $value );
-		if ( 'before' === $filter->operator ) {
-			$this->add( $column . ' < %s', [ $is_day ? $value . ' 00:00:00' : $value ] );
-			return;
-		}
-		if ( $is_day ) {
-			$next = ( new \DateTimeImmutable( $value, new \DateTimeZone( 'UTC' ) ) )->modify( '+1 day' )->format( 'Y-m-d' );
-			$this->add( $column . ' >= %s', [ $next . ' 00:00:00' ] );
-			return;
-		}
-		$this->add( $column . ' > %s', [ $value ] );
+		$local = $at->setTimezone( self::site_zone() )->format( 'Y-m-d H:i:s' );
+		$this->add(
+			'((p.post_date_gmt <> %s AND p.post_date_gmt ' . $op . ' %s) OR (p.post_date_gmt = %s AND p.post_date ' . $op . ' %s))',
+			[ self::NO_DATE, $gmt, self::NO_DATE, $local ]
+		);
+	}
+
+	/**
+	 * Date created as a GMT time to sort on (SQR-5): `post_date_gmt`, or for
+	 * a draft whose date floats its `post_date` taken back to GMT by the
+	 * site's offset now, so it sorts among the dated products where its cell
+	 * places it rather than after all of them.
+	 *
+	 * @return array{0: string, 1: list<int|string>} Expression template and its arguments.
+	 */
+	private function date_created(): array {
+		return [
+			'(CASE WHEN p.post_date_gmt = %s THEN DATE_SUB(p.post_date, INTERVAL %d SECOND) ELSE p.post_date_gmt END)',
+			[ self::NO_DATE, self::site_zone()->getOffset( $this->now ) ],
+		];
+	}
+
+	/**
+	 * The site's time zone (UTC outside WordPress).
+	 */
+	private static function site_zone(): \DateTimeZone {
+		return function_exists( 'wp_timezone' ) ? wp_timezone() : new \DateTimeZone( 'UTC' );
 	}
 
 	/**

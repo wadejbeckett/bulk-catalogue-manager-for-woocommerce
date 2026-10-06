@@ -61,8 +61,22 @@ final class CriteriaTest extends TestCase {
 
 	public function test_the_fixed_choices_are_the_registry_choices(): void {
 		foreach ( [ 'status', 'stock_status', 'catalog_visibility' ] as $key ) {
-			$this->assertSame( array_keys( Registry::instance()->get( $key )->choices() ), Criteria::FILTERS[ $key ][2], $key );
+			$field = Registry::instance()->get( $key );
+			$this->assertSame( [ ...array_keys( $field->choices() ), ...array_keys( $field->filter_choices() ) ], Criteria::FILTERS[ $key ][2], $key );
 		}
+		// T92 (SPEC §4.1): the Status filter also finds Off products and those changed elsewhere while Off.
+		$this->assertSame( [ 'publish', 'future', 'draft', 'pending', 'private', 'off', 'changed_outside' ], Criteria::FILTERS['status'][2], 'T114: a scheduled product is filtered as Scheduled.' );
+		$this->assertSame( [ 'off', 'changed_outside' ], self::filter_value( Criteria::from_array( self::filter( 'status', 'isAny', [ 'off', 'changed_outside' ] ) ) ) );
+	}
+
+	/**
+	 * The value of the only filter of some criteria.
+	 *
+	 * @param Criteria $criteria Criteria.
+	 * @return mixed
+	 */
+	private static function filter_value( Criteria $criteria ): mixed {
+		return $criteria->filters[0]->value;
 	}
 
 	public function test_the_sort_keys_are_the_registry_sortable_fields(): void {

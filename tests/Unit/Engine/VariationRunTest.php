@@ -218,7 +218,7 @@ final class VariationRunTest extends TestCase {
 				],
 			]
 		);
-		$created  = ( new BatchFactory( new Registry( new Fields() ), null, fn(): int => (int) $this->now ) )->create( self::UUID, self::USER, $increase, Selection::of_ids( [ 600, 500 ] ) );
+		$created  = ( new BatchFactory( new Registry( new Fields() ) ) )->create( self::UUID, self::USER, $increase, Selection::of_ids( [ 600, 500 ] ) );
 		$this->assertTrue( is_array( $created ), $created instanceof \WP_Error ? $created->get_error_message() : '' );
 		$batch_id = $created['batch_id'];
 		$this->assertSame( 4, $created['total_items'] );
@@ -237,7 +237,7 @@ final class VariationRunTest extends TestCase {
 
 		$plan = ( new Planner( null, null, new Registry( new Fields() ), new Settings( [] ), fn(): int => (int) $this->now ) )->plan( $batch_id, self::USER );
 		$this->assertFalse( $plan instanceof \WP_Error, $plan instanceof \WP_Error ? $plan->get_error_message() : '' );
-		$undo = ( new BatchFactory( new Registry( new Fields() ), null, fn(): int => (int) $this->now ) )->create_undo( '9b2d8a4e-1c3f-4e5a-8b7c-6d5e4f3a2b11', self::USER, $plan, false );
+		$undo = ( new BatchFactory( new Registry( new Fields() ) ) )->create_undo( '9b2d8a4e-1c3f-4e5a-8b7c-6d5e4f3a2b11', self::USER, $plan, false );
 		$this->assertTrue( is_array( $undo ), $undo instanceof \WP_Error ? $undo->get_error_message() : '' );
 		$this->assertSame( 4, $undo['total_items'], 'The undo names exactly the objects the batch touched.' );
 		$this->assertSame( 'complete', $this->run_all( $undo['batch_id'] ) );
@@ -385,7 +385,12 @@ final class VariationRunTest extends TestCase {
 		$this->assertSame( [ 'failed', $sentence ], [ $store->item( 501 )['state'], $store->item( 501 )['message'] ] );
 
 		bulkcat_test_reset();
-		$GLOBALS['bulkcat_test']['user_caps'] = [ self::USER => [ 'edit_post' => true ] ];
+		$GLOBALS['bulkcat_test']['user_caps'] = [
+			self::USER => [
+				'edit_post'        => true,
+				'publish_products' => true,
+			],
+		];
 		self::catalogue();
 		$store = new RunnerStore(
 			self::BATCH,
@@ -607,5 +612,38 @@ final class VariationRunTest extends TestCase {
 		$skipped = array_values( array_filter( $store->changes, static fn( array $row ): bool => 'skipped' === $row['result'] ) );
 		$this->assertSame( [ 2002, 701, 702 ], array_column( $skipped, 'object_id' ), 'Each refusal is recorded against the variation.' );
 		$this->assertSame( [ 9000 ], $GLOBALS['bulkcat_test']['variable_syncs'], 'Only a parent with a saved variation is resynchronised.' );
+	}
+
+	public function test_a_parent_whose_resync_throws_does_not_stop_the_others_and_is_reported(): void {
+		// SILENT-FAILURES-6: two parents in one chunk; the first one's resynchronisation throws.
+		foreach ( [ 700, 800 ] as $parent ) {
+			self::object( $parent, 'variable', [] );
+			self::object(
+				$parent + 1,
+				'variation',
+				[
+					'parent_id'     => $parent,
+					'regular_price' => '10',
+				]
+			);
+		}
+		$store                                       = new RunnerStore( self::BATCH, [ [ 701, 'variation' ], [ 801, 'variation' ] ], $this->increase(), self::USER );
+		$GLOBALS['bulkcat_test']['sync_throws'][700] = true;
+
+		$error = null;
+		try {
+			$this->runner()->run( self::BATCH );
+		} catch ( \RuntimeException $e ) {
+			$error = $e;
+		}
+		$this->assertNotNull( $error, 'The failure still reaches the scheduled actions log.' );
+		$this->assertContains( 800, $GLOBALS['bulkcat_test']['variable_syncs'], 'The other parent is resynchronised.' );
+		$this->assertSame( [ '11.00', '11.00' ], [ self::prop( 701, 'regular_price' ), self::prop( 801, 'regular_price' ) ] );
+		$this->assertSame( [ 'done', '' ], [ $store->item( 801 )['state'], $store->item( 801 )['message'] ] );
+		$this->assertSame( 'done', $store->item( 701 )['state'], 'Its variation was written.' );
+		$this->assertStringContainsString( 'could not be refreshed', $store->item( 701 )['message'] );
+
+		$this->now += 120;
+		$this->assertSame( 'partial', $this->runner()->run( self::BATCH ), 'Never complete with a parent left stale.' );
 	}
 }

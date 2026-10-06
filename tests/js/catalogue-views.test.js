@@ -33,6 +33,12 @@ import {
 	defaultView,
 	fieldsFromRegistry,
 } from '../../assets/src/panels/catalogue/fields';
+import {
+	coreJson,
+	expectNoRawText,
+	expectPlain,
+	html500,
+} from './error-fixtures';
 
 jest.mock( '@wordpress/api-fetch', () => {
 	const apiFetch = jest.fn();
@@ -428,6 +434,50 @@ describe( 'saved views row', () => {
 		] );
 	} );
 
+	it( 'says a server’s HTML error page in plain words, never its text (ticket 11)', async () => {
+		apiFetch.mockImplementation( () => Promise.reject( html500() ) );
+		render(
+			<SavedViewsBar
+				registry={ REGISTRY }
+				view={ BASE }
+				onApply={ jest.fn() }
+			/>
+		);
+		const sentence =
+			'Your saved views could not be loaded or changed. Check your connection and try again.';
+		const box = (
+			await screen.findByText( sentence, { selector: 'p' } )
+		).closest( '.components-notice' );
+		expectPlain( box, sentence );
+		fireEvent.click( within( box ).getByText( 'Show details' ) );
+		expect(
+			within( box ).getByText( /internal_server_error/ )
+		).toBeTruthy();
+		expectNoRawText();
+	} );
+
+	it( 'says a JSON error that is not the plugin’s own refusal in plain words inside the dialog (ticket 11)', async () => {
+		await renderBar( { applyDefault: false } );
+		apiFetch.mockImplementation( ( { method = 'GET' } ) =>
+			method === 'GET'
+				? Promise.resolve( answer )
+				: Promise.reject( coreJson() )
+		);
+		fireEvent.click(
+			screen.getByRole( 'button', { name: '+ Save this view' } )
+		);
+		fireEvent.change( screen.getByLabelText( 'Name' ), {
+			target: { value: 'Shirts' },
+		} );
+		fireEvent.click( screen.getByRole( 'button', { name: 'Save view' } ) );
+		expectPlain(
+			await screen.findByRole( 'alert' ),
+			'The view could not be saved. Try again in a moment.'
+		);
+		expect( screen.getByRole( 'dialog' ) ).toBeTruthy();
+		expectNoRawText();
+	} );
+
 	it( 'reports a failed load in plain words', async () => {
 		apiFetch.mockImplementation( () =>
 			Promise.reject( new Error( 'offline' ) )
@@ -450,6 +500,70 @@ describe( 'saved views row', () => {
 		expect(
 			screen.getByRole( 'button', { name: 'All products' } )
 		).toBeTruthy();
+	} );
+
+	it( 'reads the saved views again on Try again after a failed load (FRONTEND-5)', async () => {
+		apiFetch.mockImplementationOnce( () =>
+			Promise.reject( new Error( 'offline' ) )
+		);
+		render(
+			<SavedViewsBar
+				registry={ REGISTRY }
+				view={ BASE }
+				onApply={ jest.fn() }
+				applyDefault={ false }
+			/>
+		);
+		const box = (
+			await screen.findByText( /Your saved views could not be loaded/, {
+				selector: 'p',
+			} )
+		).closest( '.components-notice' );
+		fireEvent.click(
+			within( box ).getByRole( 'button', { name: 'Try again' } )
+		);
+		expect(
+			await screen.findByRole( 'button', { name: 'Options for Drafts' } )
+		).toBeTruthy();
+		expect( requests() ).toEqual( [
+			[ 'GET', 'views', undefined ],
+			[ 'GET', 'views', undefined ],
+		] );
+		expect(
+			screen.queryByText( /Your saved views could not be loaded/, {
+				selector: 'p',
+			} )
+		).toBeNull();
+	} );
+
+	it( 'offers Dismiss, not a Try again that repeats nothing, after a failed change (FRONTEND-5)', async () => {
+		await renderBar( { applyDefault: false } );
+		apiFetch.mockImplementation( ( { method = 'GET' } ) =>
+			method === 'GET'
+				? Promise.resolve( answer )
+				: Promise.reject( new Error( 'offline' ) )
+		);
+		await menu( 'Shirts', 'Open the screen with this view' );
+		const box = (
+			await screen.findByText( /Your saved views could not be loaded/, {
+				selector: 'p',
+			} )
+		).closest( '.components-notice' );
+		expect(
+			within( box ).queryByRole( 'button', { name: 'Try again' } )
+		).toBeNull();
+		fireEvent.click(
+			within( box ).getByRole( 'button', { name: 'Dismiss' } )
+		);
+		await waitFor( () =>
+			expect(
+				screen.queryByText( /Your saved views could not be loaded/, {
+					selector: 'p',
+				} )
+			).toBeNull()
+		);
+		// Dismissing reads and writes nothing more.
+		expect( requests() ).toHaveLength( 2 );
 	} );
 } );
 
@@ -589,7 +703,7 @@ describe( 'layouts', () => {
 		).toBeGreaterThanOrEqual( 2 );
 	} );
 
-	it( 'fills the Visible on site slot and keeps it out of the saved columns', async () => {
+	it( 'fills the Shown in shop and search slot and keeps it out of the saved columns', async () => {
 		const renderSwitch = ( item ) => (
 			<span data-testid="switch">{ `switch ${ item.id }` }</span>
 		);
@@ -599,12 +713,17 @@ describe( 'layouts', () => {
 		).toEqual( [ 'switch 11', 'switch 12' ] );
 
 		const fields = fieldsFromRegistry( REGISTRY );
-		// T46 made the switch a default column; a view without it still
-		// gets the slot, and one with it keeps its own place.
+		// A view without the switch still gets the slot, and one with it
+		// keeps its own place (ticket 19: the default view now has it).
 		const without = {
 			...BASE,
 			fields: BASE.fields.filter( ( key ) => key !== 'visible_on_site' ),
 		};
+		const withSwitch = {
+			...BASE,
+			fields: [ ...without.fields, 'visible_on_site' ],
+		};
+		expect( BASE.fields ).toContain( 'visible_on_site' );
 		const { view, added } = gridOf( fields, without, renderSwitch );
 		expect( added ).toBe( 'visible_on_site' );
 		expect( view.fields ).toEqual( [
@@ -614,6 +733,8 @@ describe( 'layouts', () => {
 		expect( gridOf( fields, without ).view.fields ).toEqual(
 			without.fields
 		);
-		expect( gridOf( fields, BASE, renderSwitch ).added ).toBeUndefined();
+		expect(
+			gridOf( fields, withSwitch, renderSwitch ).added
+		).toBeUndefined();
 	} );
 } );

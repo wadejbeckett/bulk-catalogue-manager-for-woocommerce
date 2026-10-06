@@ -95,6 +95,10 @@ final class SelectionController implements Controller {
 	 * @param \WP_REST_Request $request The request, its arguments validated and sanitised by core.
 	 */
 	public function create_item( \WP_REST_Request $request ): \WP_REST_Response|\WP_Error {
+		$params = $request->get_params();
+		if ( isset( $params['uuid'] ) || isset( $params['request_proof'] ) || isset( $params['intent'] ) ) {
+			return RequestsController::capture( $request );
+		}
 		$params = array_intersect_key( $request->get_params(), $this->schema->selection_args() );
 		try {
 			if ( isset( $params['ids'] ) ) {

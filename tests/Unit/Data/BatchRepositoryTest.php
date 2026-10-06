@@ -158,6 +158,62 @@ final class BatchRepositoryTest extends TestCase {
 		$this->assert_all_prepared();
 	}
 
+	public function test_a_failed_read_is_never_mistaken_for_a_missing_batch(): void {
+		// T83: a durable receipt names its batch; a lost read must not look like a removed batch.
+		$repo                  = new BatchRepository();
+		self::db()->last_error = 'Lost connection to MySQL server during query';
+		$this->assertNull( $repo->find( 7 ), 'find() stays lenient for its many readers.' );
+		try {
+			$repo->find_strict( 7 );
+			$this->fail( 'A failed read answered as if the batch were missing.' );
+		} catch ( \RuntimeException $error ) {
+			$this->assertStringContainsString( 'could not be read', $error->getMessage() );
+		}
+		self::db()->last_error = '';
+		$this->assertNull( $repo->find_strict( 7 ), 'A batch that is really missing answers null.' );
+	}
+
+	public function test_the_earlier_request_lookup_has_no_time_window_and_is_bounded(): void {
+		self::db()->responses['/^SELECT batch_id FROM `wp_bulkcat_batches` WHERE uuid = /'] = [ '4', '9' ];
+		$this->assertSame( [ 4, 9 ], ( new BatchRepository() )->request_candidates( strtoupper( self::UUID ), 3 ) );
+		$this->assertSame( [ 'SELECT batch_id FROM %i WHERE uuid = %s AND user_id = %d ORDER BY batch_id ASC LIMIT 2', [ 'wp_bulkcat_batches', self::UUID, 3 ] ], self::db()->prepared[0], 'Owner-scoped, any age, at most two, the id lower-cased as stored.' );
+		self::db()->last_error = 'Deadlock found';
+		try {
+			( new BatchRepository() )->request_candidates( self::UUID, 3 );
+			$this->fail( 'A failed lookup answered as if the id were unknown.' );
+		} catch ( \RuntimeException $error ) {
+			$this->assertStringContainsString( 'could not be looked up', $error->getMessage() );
+		}
+	}
+
+	public function test_scheduling_work_runs_with_or_without_its_lock(): void {
+		$name = 'bulkcat_schedule_' . md5( 'wp_bulkcat_batches|7' );
+		foreach ( [
+			'taken'   => '1',
+			'refused' => null,
+			'timeout' => '0',
+		] as $case => $answer ) {
+			bulkcat_test_reset();
+			self::db()->responses[ "SELECT GET_LOCK('$name', 10)" ] = $answer;
+			$ran = ( new BatchRepository() )->with_schedule_lock( 7, static fn(): string => 'ran' );
+			$this->assertSame( 'ran', $ran, $case );
+			$this->assertSame( 'taken' === $case ? [ "SELECT GET_LOCK('$name', 10)", "SELECT RELEASE_LOCK('$name')" ] : [ "SELECT GET_LOCK('$name', 10)" ], self::db()->queries, $case );
+		}
+	}
+
+	public function test_unavailable_objects_are_failed_by_kind_and_only_while_pending(): void {
+		self::db()->responses['/^UPDATE `wp_bulkcat_batch_items` SET state/'] = 1;
+		$this->assertSame( 2, ( new BatchRepository() )->fail_objects( 5, [ [ 9, 'product' ], [ 12, 'variation' ] ], 'Left unchanged.' ) );
+		$this->assertSame(
+			[
+				"UPDATE `wp_bulkcat_batch_items` SET state = 'failed', message = 'Left unchanged.' WHERE batch_id = 5 AND state = 'pending' AND object_type = 'product' AND object_id IN (9)",
+				"UPDATE `wp_bulkcat_batch_items` SET state = 'failed', message = 'Left unchanged.' WHERE batch_id = 5 AND state = 'pending' AND object_type = 'variation' AND object_id IN (12)",
+			],
+			self::db()->queries
+		);
+		$this->assert_all_prepared();
+	}
+
 	public function test_set_status_stamps_the_finish_only_for_a_final_status(): void {
 		$repo = new BatchRepository();
 		$this->assertTrue( $repo->set_status( 4, 'running' ) );
@@ -510,7 +566,7 @@ final class BatchRepositoryTest extends TestCase {
 		$this->assertNull( $repo->last_claimed_gmt( 8 ) );
 
 		$this->assertSame( [], $repo->unjournalled_reasons( 7, 500 ) );
-		$this->assertSame( "SELECT i.message AS message, COUNT(*) AS objects FROM `wp_bulkcat_batch_items` AS i WHERE i.batch_id = 7 AND i.state IN ('failed', 'skipped') AND i.message <> '' AND NOT EXISTS (SELECT c.change_id FROM `wp_bulkcat_changes` AS c WHERE c.batch_id = i.batch_id AND c.object_id = i.object_id) GROUP BY i.message ORDER BY objects DESC LIMIT 100", end( self::db()->queries ) );
+		$this->assertSame( "SELECT i.message AS message, COUNT(*) AS objects FROM `wp_bulkcat_batch_items` AS i WHERE i.batch_id = 7 AND i.state IN ('failed', 'skipped') AND i.message <> '' AND NOT EXISTS (SELECT c.change_id FROM `wp_bulkcat_changes` AS c WHERE c.batch_id = i.batch_id AND c.object_id = i.object_id AND c.result <> 'pending') GROUP BY i.message ORDER BY objects DESC LIMIT 100", end( self::db()->queries ) );
 
 		$filters = [
 			'status'  => 'partial',
@@ -569,7 +625,7 @@ final class BatchRepositoryTest extends TestCase {
 
 	public function test_undone_by_reads_a_page_of_completed_undo_batches_at_once(): void {
 		self::db()->responses = [
-			"SELECT batch_id, undo_of FROM `wp_bulkcat_batches` WHERE undo_of IN (4, 7) AND source = 'undo' AND status = 'complete' ORDER BY batch_id ASC" => [
+			"SELECT batch_id, undo_of FROM `wp_bulkcat_batches` WHERE undo_of IN (4, 7) AND source = 'undo' AND status IN ('complete', 'partial') AND changed_items > 0 ORDER BY batch_id ASC" => [
 				[
 					'batch_id' => '8',
 					'undo_of'  => '7',

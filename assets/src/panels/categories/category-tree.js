@@ -11,6 +11,7 @@ import { useEffect, useMemo, useRef, useState } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 
 import { announce } from './announce';
+import { markParts, nameMatches } from './workspace-model';
 import {
 	dropZone,
 	joinPath,
@@ -78,19 +79,27 @@ function dragTypes( event ) {
 /**
  * The tree.
  *
- * @param {Object}   props                 Props.
- * @param {Object}   props.tree            useCategoryTree() result.
- * @param {Object}   props.value           The filter value { id, ids, includeChildren } or null.
- * @param {boolean}  props.includeChildren Whether counts include sub-categories.
- * @param {string}   props.search          Search text.
- * @param {boolean}  props.canManage       Show the menu, rename and drag.
- * @param {number}   props.total           Optional count for the All products row.
- * @param {Function} props.onSelect        Called with ( id, multiple ); 0 is All products.
- * @param {Function} props.onRename        Called with ( id, name ); returns a promise.
- * @param {Function} props.onMove          Called with ( id, parent, position|undefined ); returns a promise.
- * @param {Function} props.onEdit          Called with ( id ) to open the details pane.
- * @param {Function} props.onMoveDialog    Called with ( id ) to open Move to….
- * @param {Function} props.onDropSelection Called with ( id ) when the product selection is dropped on a category.
+ * @param {Object}   props                  Props.
+ * @param {Object}   props.tree             useCategoryTree() result.
+ * @param {Object}   props.value            The filter value { id, ids, includeChildren } or null.
+ * @param {boolean}  props.includeChildren  Whether counts include sub-categories.
+ * @param {string}   props.search           Search text.
+ * @param {boolean}  props.canManage        Show the menu, rename and drag.
+ * @param {number}   props.total            Optional count for the All products row.
+ * @param {Function} props.onSelect         Called with ( id, multiple ); 0 is All products.
+ * @param {Function} props.onRename         Called with ( id, name ); returns a promise.
+ * @param {Function} props.onMove           Called with ( id, parent, position|undefined ); returns a promise.
+ * @param {Function} props.onEdit           Called with ( id ) to open the details pane.
+ * @param {Function} props.onMoveDialog     Called with ( id ) to open Move to….
+ * @param {Function} props.onDropSelection  Called with ( id ) when the product selection is dropped on a category.
+ * @param {boolean}  props.showAll          Show the All products row (default true).
+ * @param {Set}      props.expanded         Open ids, when the owner keeps them (Expand all); otherwise the tree does.
+ * @param {Function} props.onExpandedChange Called with the next open ids when the owner keeps them.
+ * @param {boolean}  props.wrap             Wrap long names instead of cutting them off.
+ * @param {boolean}  props.checkboxes       Show a checkbox per row; it and Space add or remove the row.
+ * @param {boolean}  props.markMatches      Mark the search text in names and dim rows shown only as a match's path.
+ * @param {number}   props.highlight        A category to highlight as new, or null.
+ * @param {Function} props.moreActions      Called with ( id ); returns more menu items `{ key, label, run }` (Make default, Delete…).
  * @return {Element} The tree.
  */
 export default function CategoryTree( {
@@ -106,10 +115,18 @@ export default function CategoryTree( {
 	onEdit,
 	onMoveDialog,
 	onDropSelection,
+	showAll = true,
+	expanded: keptOpen,
+	onExpandedChange,
+	wrap = false,
+	checkboxes = false,
+	markMatches = false,
+	highlight = null,
+	moreActions,
 } ) {
 	const { nodes, byId } = tree;
 	const selected = valueIds( value );
-	const [ expanded, setExpanded ] = useState( () => {
+	const [ ownExpanded, setOwnExpanded ] = useState( () => {
 		const open = new Set();
 		selected.forEach( ( id ) =>
 			lineage( byId, id )
@@ -118,7 +135,14 @@ export default function CategoryTree( {
 		);
 		return open;
 	} );
-	const [ focused, setFocused ] = useState( selected[ 0 ] || ALL );
+	const expanded = keptOpen || ownExpanded;
+	const setExpanded = ( change ) =>
+		keptOpen && onExpandedChange
+			? onExpandedChange( change( keptOpen ) )
+			: setOwnExpanded( change );
+	const [ focused, setFocused ] = useState(
+		selected[ 0 ] || ( showAll ? ALL : nodes[ 0 ]?.id )
+	);
 	const [ menu, setMenu ] = useState( null );
 	const [ renaming, setRenaming ] = useState( null );
 	const [ draft, setDraft ] = useState( '' );
@@ -150,8 +174,8 @@ export default function CategoryTree( {
 			posInSet: 1,
 		};
 		const list = visibleRows( nodes, expanded, kept );
-		return kept ? list : [ all, ...list ];
-	}, [ nodes, expanded, kept ] );
+		return kept || ! showAll ? list : [ all, ...list ];
+	}, [ nodes, expanded, kept, showAll ] );
 
 	const tabStop = rows.some( ( row ) => row.id === focused )
 		? focused
@@ -163,6 +187,19 @@ export default function CategoryTree( {
 			items.current.get( tabStop )?.focus();
 		}
 	} );
+
+	// A category just created becomes the tab stop and is scrolled into view
+	// once its row is shown.
+	const highlightShown = rows.some( ( row ) => row.id === highlight );
+	useEffect( () => {
+		if ( ! highlight || ! highlightShown ) {
+			return;
+		}
+		setFocused( highlight );
+		items.current
+			.get( highlight )
+			?.scrollIntoView?.( { block: 'nearest' } );
+	}, [ highlight, highlightShown ] );
 
 	const moveFocus = ( id ) => {
 		focusNext.current = true;
@@ -301,7 +338,13 @@ export default function CategoryTree( {
 			case 'Enter':
 			case ' ':
 				handled();
-				onSelect?.( row.id, event.ctrlKey || event.metaKey );
+				onSelect?.(
+					row.id,
+					event.ctrlKey ||
+						event.metaKey ||
+						( checkboxes && event.key === ' ' ),
+					{ range: event.shiftKey }
+				);
 				return;
 			case 'F2':
 				if ( canManage && row.id !== ALL ) {
@@ -481,6 +524,7 @@ export default function CategoryTree( {
 			label: __( 'Move to…', 'bulk-catalogue-manager-for-woocommerce' ),
 			run: () => onMoveDialog?.( id ),
 		},
+		...( moreActions?.( id ) || [] ),
 	];
 
 	const closeMenu = ( id ) => {
@@ -523,7 +567,9 @@ export default function CategoryTree( {
 	return (
 		<>
 			<ul
-				className="bulkcat-cat-tree"
+				className={
+					'bulkcat-cat-tree' + ( wrap ? ' is-wrapping' : '' )
+				}
 				role="tree"
 				aria-label={ __(
 					'Product categories',
@@ -545,6 +591,8 @@ export default function CategoryTree( {
 					const blocked =
 						drag?.target === row.id && drag.payload?.blocked;
 					const name = row.node.name;
+					const context =
+						markMatches && !! kept && ! nameMatches( name, search );
 					const label =
 						count === null
 							? name
@@ -567,6 +615,8 @@ export default function CategoryTree( {
 						zone && ! blocked && `is-drop-${ zone }`,
 						blocked && 'is-drop-blocked',
 						menu === row.id && 'is-menu-open',
+						highlight === row.id && 'is-new',
+						context && 'is-context',
 					]
 						.filter( Boolean )
 						.join( ' ' );
@@ -621,10 +671,24 @@ export default function CategoryTree( {
 									setFocused( row.id );
 									onSelect?.(
 										row.id,
-										event.ctrlKey || event.metaKey
+										event.ctrlKey ||
+											event.metaKey ||
+											!! event.target.closest(
+												'.bulkcat-cat-check'
+											),
+										{ range: event.shiftKey }
 									);
 								} }
 							>
+								{ checkboxes && row.id !== ALL && (
+									<span
+										className={
+											'bulkcat-cat-check' +
+											( isSelected ? ' is-checked' : '' )
+										}
+										aria-hidden="true"
+									/>
+								) }
 								{ manageable ? (
 									<span
 										className="bulkcat-cat-grip"
@@ -693,7 +757,26 @@ export default function CategoryTree( {
 										className="bulkcat-cat-name"
 										title={ name }
 									>
-										{ name }
+										{ markMatches && kept
+											? markParts( name, search ).map(
+													( part, at ) =>
+														part.match ? (
+															<mark key={ at }>
+																{ part.text }
+															</mark>
+														) : (
+															part.text
+														)
+												)
+											: name }
+									</span>
+								) }
+								{ row.node.default && (
+									<span className="bulkcat-cat-default">
+										{ __(
+											'Default',
+											'bulk-catalogue-manager-for-woocommerce'
+										) }
 									</span>
 								) }
 								{ count !== null && (
@@ -784,10 +867,13 @@ export default function CategoryTree( {
 }
 
 /**
- * A node's menu: a role="menu" list whose first item takes focus.
+ * A node's menu: a role="menu" list whose first item takes focus. An item
+ * with `items` (an add-on's group, 1.4.1) opens its own list in place —
+ * Enter, Space or Arrow Right — with "Back to all actions" first; Escape or
+ * Arrow Left goes back to the group's item.
  *
  * @param {Object}   props           Props.
- * @param {Array}    props.items     { key, label, run }.
+ * @param {Array}    props.items     { key, label, run } or { key, label, name, items }.
  * @param {string}   props.label     Accessible name.
  * @param {Function} props.onKeyDown Key handler.
  * @param {Function} props.onChoose  Called with the chosen item.
@@ -796,20 +882,85 @@ export default function CategoryTree( {
  */
 function MenuList( { items, label, onKeyDown, onChoose, onLeave } ) {
 	const ref = useRef();
+	const [ open, setOpen ] = useState( null );
+	// The group item to focus again after leaving its list.
+	const returnTo = useRef( null );
+	// Switching lists removes the focused item; that is not leaving the menu.
+	const switching = useRef( false );
+	const group = items.find( ( item ) => item.items && item.key === open );
 	useEffect( () => {
-		ref.current?.querySelector( '[role="menuitem"]' )?.focus();
-	}, [] );
+		const buttons = Array.from(
+			ref.current?.querySelectorAll( '[role="menuitem"]' ) || []
+		);
+		const back = returnTo.current;
+		returnTo.current = null;
+		( group
+			? buttons[ 1 ] || buttons[ 0 ]
+			: buttons.find( ( button ) => button.dataset.key === back ) ||
+				buttons[ 0 ]
+		)?.focus();
+		switching.current = false;
+	}, [ group ] );
+	const show = ( key ) => {
+		switching.current = true;
+		returnTo.current = open;
+		setOpen( key );
+	};
+	const shown = group
+		? [
+				{
+					key: 'back',
+					back: true,
+					label: __(
+						'Back to all actions',
+						'bulk-catalogue-manager-for-woocommerce'
+					),
+				},
+				...group.items,
+			]
+		: items;
+	const choose = ( item ) => {
+		if ( item.back ) {
+			show( null );
+		} else if ( item.items ) {
+			show( item.key );
+		} else {
+			onChoose( item );
+		}
+	};
 	return (
 		<div
 			ref={ ref }
 			className="bulkcat-cat-menu"
 			role="menu"
-			aria-label={ label }
+			aria-label={ group ? group.name : label }
 			tabIndex={ -1 }
-			onKeyDown={ onKeyDown }
+			onKeyDown={ ( event ) => {
+				if (
+					group &&
+					( event.key === 'Escape' || event.key === 'ArrowLeft' )
+				) {
+					event.preventDefault();
+					event.stopPropagation();
+					show( null );
+					return;
+				}
+				if (
+					! group &&
+					event.key === 'ArrowRight' &&
+					event.target?.getAttribute?.( 'aria-haspopup' )
+				) {
+					event.preventDefault();
+					event.stopPropagation();
+					show( event.target.dataset.key );
+					return;
+				}
+				onKeyDown( event );
+			} }
 			onBlur={ ( event ) => {
 				const to = event.relatedTarget;
 				if (
+					! switching.current &&
 					! event.currentTarget.contains( to ) &&
 					! to?.classList?.contains( 'bulkcat-cat-kebab' )
 				) {
@@ -817,13 +968,16 @@ function MenuList( { items, label, onKeyDown, onChoose, onLeave } ) {
 				}
 			} }
 		>
-			{ items.map( ( item ) => (
+			{ shown.map( ( item ) => (
 				<button
 					key={ item.key }
 					type="button"
 					role="menuitem"
 					tabIndex={ -1 }
-					onClick={ () => onChoose( item ) }
+					data-key={ item.key }
+					aria-haspopup={ item.items ? 'menu' : undefined }
+					className={ item.back ? 'is-back' : undefined }
+					onClick={ () => choose( item ) }
 				>
 					{ item.label }
 				</button>

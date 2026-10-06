@@ -15,6 +15,7 @@ import {
 
 import Catalogue, { AppliedProgress } from '../../assets/src/panels/catalogue';
 import { setSettings } from '../../assets/src/panels/settings/store';
+import { getSelectionSession } from '../../assets/src/panels/catalogue/selection/session';
 
 jest.mock( '@wordpress/api-fetch', () => {
 	const apiFetch = jest.fn();
@@ -31,6 +32,7 @@ const {
 	route,
 	calls,
 } = require( './catalogue-fixture' );
+const { createSelectionServer } = require( './selection-server' );
 
 const SETTINGS = {
 	settings: { rows_per_page: 25, category_panel: true },
@@ -41,6 +43,7 @@ beforeEach( () => {
 	apiFetch.mockReset();
 	window.localStorage.clear();
 	route( apiFetch, {
+		...createSelectionServer().routes(),
 		fields: () => REGISTRY,
 		products: () => page(),
 		categories: () => CATEGORIES,
@@ -54,6 +57,38 @@ async function renderLoaded() {
 }
 
 describe( 'catalogue wiring', () => {
+	it( 'shows a failed native-return selection read and offers only a read retry', async () => {
+		await renderLoaded();
+		const session = getSelectionSession();
+		const probe = jest
+			.spyOn( session, 'probe' )
+			.mockRejectedValue( new Error( 'Read failed' ) );
+		const retry = jest.spyOn( session, 'retry' );
+		await act( async () => window.dispatchEvent( new Event( 'focus' ) ) );
+		expect( probe ).toHaveBeenCalled();
+		const message = await screen.findByText(
+			'Selected products could not be refreshed. Your selection has been kept.',
+			{ selector: 'p' }
+		);
+		probe.mockRestore();
+		fireEvent.click(
+			within( message.closest( '.components-notice' ) ).getByRole(
+				'button',
+				{ name: 'Try again' }
+			)
+		);
+		await waitFor( () =>
+			expect(
+				screen.queryByText(
+					'Selected products could not be refreshed. Your selection has been kept.',
+					{ selector: 'p' }
+				)
+			).toBeNull()
+		);
+		expect( retry ).not.toHaveBeenCalled();
+		retry.mockRestore();
+	} );
+
 	it( 'filters the rows by the category chosen in the panel left of the table', async () => {
 		await renderLoaded();
 		const tree = await screen.findByRole( 'tree' );
@@ -88,6 +123,10 @@ describe( 'catalogue wiring', () => {
 			.closest( 'tr' );
 		fireEvent.click( within( row ).getByRole( 'checkbox' ) );
 		const bar = await screen.findByRole( 'region', { name: 'Selection' } );
+		// T84: the server holds the selection before a change is made on it.
+		await waitFor( () =>
+			expect( bar.textContent ).toContain( '1 product selected' )
+		);
 		fireEvent.click(
 			within( bar ).getByRole( 'button', {
 				name: 'Make a change to these',
@@ -117,5 +156,44 @@ describe( 'catalogue wiring', () => {
 			timeout: 4000,
 		} );
 		expect( screen.queryByText( /done$/ ) ).toBeNull();
+	} );
+
+	it( 'asks before the banner stops a running change (FRONTEND-13)', async () => {
+		const stops = [];
+		route( apiFetch, {
+			'batches/9': () => ( {
+				status: 'running',
+				done_items: 3,
+				total_items: 10,
+			} ),
+			'batches/9/cancel': ( query, options ) => {
+				stops.push( options.method );
+				return {};
+			},
+		} );
+		render( <AppliedProgress batchId={ 9 } onFinished={ jest.fn() } /> );
+		const banner = await screen.findByRole( 'group', {
+			name: 'Change in progress',
+		} );
+		expect(
+			within( banner ).queryByRole( 'button', { name: 'Cancel' } )
+		).toBeNull();
+		fireEvent.click(
+			within( banner ).getByRole( 'button', { name: 'Stop this change' } )
+		);
+		expect( banner.textContent ).toContain(
+			'Stop this change? What it has already changed stays changed, and can be undone from History.'
+		);
+		fireEvent.click(
+			within( banner ).getByRole( 'button', { name: 'Keep it running' } )
+		);
+		expect( stops ).toEqual( [] );
+		fireEvent.click(
+			within( banner ).getByRole( 'button', { name: 'Stop this change' } )
+		);
+		fireEvent.click(
+			within( banner ).getByRole( 'button', { name: 'Yes, stop it' } )
+		);
+		await waitFor( () => expect( stops ).toEqual( [ 'POST' ] ) );
 	} );
 } );

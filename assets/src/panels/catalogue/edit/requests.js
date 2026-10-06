@@ -5,52 +5,55 @@
  * variations and its most recent recorded change.
  */
 import { request } from '../../../api';
+import { envelope } from '../../../requests';
 import { ROW } from '../defaults';
 import { isVariation } from './rules';
 
-/** The batch status of a write that changed everything it was asked to. */
-const COMPLETE = 'complete';
-
-/** Step states that mean a field was not written (Operations\\Result). */
-const REFUSED = [ 'skipped', 'failed' ];
-
 /**
- * Write field values to one product or variation.
+ * The synchronous transport. Receipt adoption belongs to receipts.js; a
+ * duplicate answer intentionally has no item/results.
  *
- * Resolves with `{ item, batch_id, status, results }` when the batch is
- * complete. A partial or failed batch rejects with the first refused step
- * as the error (its reason as the message, its field in `data.field`) and
- * the answer in `data.answer`, so a caller treats it like a refusal.
- *
- * @param {number}        id     Product or variation id.
- * @param {Object}        values Field key => value.
- * @param {Array<string>} fields Fields the returned row should carry; all when empty.
- * @return {Promise<Object>} The answer.
+ * @param {number} id      Product identity.
+ * @param {Object} values  Original typed values.
+ * @param {Array}  fields  Current row projection.
+ * @param {Object} options Grant and optional legacy keep flag.
+ * @return {Promise<Object>} Immediate response or safe receipt.
  */
-export function patchProduct( id, values, fields = [] ) {
+export function patchProduct( id, values, fields = [], options = {} ) {
 	return request( `products/${ Number( id ) }`, {
 		method: 'PATCH',
-		data: values,
+		bulkcatNoRetry: true,
+		data: {
+			...values,
+			source: options.grant.intent.source,
+			...( options.keep ? { keep_changed_status: true } : {} ),
+			...envelope( options.grant ),
+		},
 		query: fields.length ? { fields } : {},
-	} ).then( ( answer ) => {
-		if ( answer?.status && answer.status !== COMPLETE ) {
-			const refused =
-				( answer.results || [] ).find( ( result ) =>
-					REFUSED.includes( result.state )
-				) || {};
-			const error = new Error( refused.reason || '' );
-			error.code = refused.code || answer.status;
-			error.data = { status: 200, field: refused.field, answer };
-			throw error;
-		}
-		return answer;
 	} );
 }
 
 /**
+ * Strict current-row read. Never substitute a stale drawer row for a failure.
+ *
+ * @param {number} id     Product identity.
+ * @param {Array}  fields Current projection.
+ * @return {Promise<Object>} Current item; rejects on failure or malformed data.
+ */
+export async function readProduct( id, fields = [] ) {
+	const answer = await request( `products/${ Number( id ) }`, {
+		query: fields.length ? { fields } : {},
+	} );
+	if ( Number( answer?.item?.id ) !== Number( id ) ) {
+		throw new Error( 'Invalid product response' );
+	}
+	return answer.item;
+}
+
+/**
  * Every field of one row, for the detail panel: GET /products/{id} (a
- * product or a variation) with the panel's fields; when it cannot be read
- * the grid's row is used as it is.
+ * product or a variation) with the panel's fields. A failed read rejects,
+ * so the panel can say so (FRONTEND-9) and show the grid's row meanwhile.
  *
  * @param {Object}        item   The grid's row.
  * @param {Array<string>} fields Field keys the panel shows.
@@ -63,36 +66,41 @@ export function loadProduct( item, fields = [] ) {
 	}
 	return request( `products/${ id }`, {
 		query: fields.length ? { fields } : {},
-	} )
-		.then( ( answer ) =>
-			answer?.item && Number( answer.item.id ) === id
-				? { ...item, ...answer.item }
-				: item
-		)
-		.catch( () => item );
+	} ).then( ( answer ) =>
+		answer?.item && Number( answer.item.id ) === id
+			? { ...item, ...answer.item }
+			: item
+	);
 }
 
 /**
- * A product's variations, read-only for the detail panel.
+ * A product's first 100 variations, read-only for the detail panel, and how
+ * many it has in all. A failed read rejects (FRONTEND-9).
  *
  * @param {Object} item Row.
- * @return {Promise<Array<Object>>} Variation rows; none for a variation.
+ * @return {Promise<{items: Array<Object>, total: number}>} Variation rows (none for a variation) and the total.
  */
 export function loadVariations( item ) {
 	if ( isVariation( item ) || Number( item?.[ ROW.parentId ] ) < 0 ) {
-		return Promise.resolve( [] );
+		return Promise.resolve( { items: [], total: 0 } );
 	}
 	return request( `products/${ Number( item.id ) }/variations`, {
 		query: { per_page: 100 },
-	} )
-		.then( ( answer ) =>
-			Array.isArray( answer?.items ) ? answer.items : []
-		)
-		.catch( () => [] );
+	} ).then( ( answer ) => {
+		const items = Array.isArray( answer?.items ) ? answer.items : [];
+		return {
+			items,
+			total: Math.max(
+				items.length,
+				Number( answer?.pagination?.total ) || 0
+			),
+		};
+	} );
 }
 
 /**
- * The newest recorded change to one product or variation.
+ * The newest recorded change to one product or variation. A failed read
+ * rejects, so it is never mistaken for none (FRONTEND-9).
  *
  * @param {number} id Product or variation id.
  * @return {Promise<Object|null>} Audit row, or null when there is none.
@@ -100,7 +108,5 @@ export function loadVariations( item ) {
 export function loadRecentChange( id ) {
 	return request( 'audit', {
 		query: { product: Number( id ), per_page: 1 },
-	} )
-		.then( ( answer ) => ( answer?.items || [] )[ 0 ] || null )
-		.catch( () => null );
+	} ).then( ( answer ) => ( answer?.items || [] )[ 0 ] || null );
 }

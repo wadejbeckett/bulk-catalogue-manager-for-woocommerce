@@ -25,6 +25,7 @@ describe( 'view to route arguments', () => {
 			fields: [
 				'name',
 				'status',
+				// Ticket 19: both listing visibility presentations are default columns.
 				'catalog_visibility',
 				'visible_on_site',
 				'category_ids',

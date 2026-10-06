@@ -8,10 +8,15 @@
  *
  * A term whose parent is not in the list (removed, or in a loop of parents)
  * becomes a top-level node and reports parent 0, so the tree is always a
- * forest the panel can draw. Siblings sort by the plugin's own tree order
- * (`bulkcat_order`, written by a move) first, then those without one by
- * WooCommerce's stored category order, then by name, then by id; a node's
- * `order` is whichever of the two decided its place.
+ * forest the panel can draw. Siblings sort exactly as WooCommerce sorts
+ * them for its own screen and the shop (`menu_order`: its `order` term meta,
+ * numerically, a category without one first, then by name as the database
+ * sorts names, `ORDER BY t.name`), then by id; a node's `order` is that
+ * stored value (0 when there is none). The name order is the database's own
+ * (1.3.4: "26WC" before "2RM", not naturally), given as ranks by
+ * CategoryTree, which reads the names in that order. The plugin's
+ * old tree-only order (`bulkcat_order`) is no longer read (ticket 23). The
+ * shop's default product category carries `default: true`.
  *
  * Counts come from Counts::totals() over the tree's own (category,
  * ancestor) pairs (to_array_counted()), or from groups: each group a set of
@@ -36,9 +41,9 @@ defined( 'ABSPATH' ) || exit;
  */
 final class Tree {
 	/**
-	 * Nodes by id: id, name, slug, description, parent, depth, order.
+	 * Nodes by id: id, name, slug, description, parent, depth, order, default.
 	 *
-	 * @var array<int, array{id: int, name: string, slug: string, description: string, parent: int, depth: int, order: int}>
+	 * @var array<int, array{id: int, name: string, slug: string, description: string, parent: int, depth: int, order: int, default: bool}>
 	 */
 	private array $nodes = [];
 
@@ -50,16 +55,25 @@ final class Tree {
 	private array $children = [ 0 => [] ];
 
 	/**
+	 * Each id's place in the database's name order, when known.
+	 *
+	 * @var array<int, int>
+	 */
+	private array $ranks = [];
+
+	/**
 	 * Build from a flat term list.
 	 *
-	 * @param iterable<object>  $terms       Terms with term_id, name, slug, description and parent, as get_terms() returns them.
-	 * @param array<int, mixed> $orders      WooCommerce's stored category order by term id; missing or non-numeric reads as 0.
-	 * @param array<int, mixed> $tree_orders The plugin's tree order (`bulkcat_order`) by term id; a numeric value places the term ahead of siblings without one.
+	 * @param iterable<object>  $terms      Terms with term_id, name, slug, description and parent, as get_terms() returns them.
+	 * @param array<int, mixed> $orders     WooCommerce's stored category order (`order` term meta) by term id; missing or non-numeric is none.
+	 * @param int               $default_id The shop's default product category (`default_product_cat`), 0 for none.
+	 * @param array<int, int>   $ranks      Each id's place when the database sorts the names (`ORDER BY t.name`); compared in PHP when not given.
 	 */
-	public static function from_terms( iterable $terms, array $orders = [], array $tree_orders = [] ): self {
-		$tree   = new self();
-		$flat   = [];
-		$ranked = [];
+	public static function from_terms( iterable $terms, array $orders = [], int $default_id = 0, array $ranks = [] ): self {
+		$tree        = new self();
+		$tree->ranks = $ranks;
+		$flat        = [];
+		$ranked      = [];
 		foreach ( $terms as $term ) {
 			$id = (int) ( $term->term_id ?? 0 );
 			if ( $id <= 0 || isset( $flat[ $id ] ) ) {
@@ -73,10 +87,10 @@ final class Tree {
 				'parent'      => (int) ( $term->parent ?? 0 ),
 				'depth'       => 0,
 				'order'       => is_numeric( $orders[ $id ] ?? null ) ? (int) $orders[ $id ] : 0,
+				'default'     => $id === $default_id,
 			];
-			if ( is_numeric( $tree_orders[ $id ] ?? null ) ) {
-				$flat[ $id ]['order'] = (int) $tree_orders[ $id ];
-				$ranked[ $id ]        = true;
+			if ( is_numeric( $orders[ $id ] ?? null ) ) {
+				$ranked[ $id ] = true;
 			}
 		}
 
@@ -90,8 +104,7 @@ final class Tree {
 			$flat[ $id ]['parent']  = $parent;
 			$by_parent[ $parent ][] = $id;
 		}
-		// Tree order before none, stored order, then name in natural order ignoring case, then id.
-		$compare = static fn( int $a, int $b ): int => [ isset( $ranked[ $a ] ) ? 0 : 1, $flat[ $a ]['order'], strnatcasecmp( $flat[ $a ]['name'], $flat[ $b ]['name'] ), $a ] <=> [ isset( $ranked[ $b ] ) ? 0 : 1, $flat[ $b ]['order'], 0, $b ];
+		$compare = self::comparator( $flat, $ranked, $ranks );
 		foreach ( $by_parent as $parent => $ids ) {
 			usort( $ids, $compare );
 			$by_parent[ $parent ] = $ids;
@@ -112,6 +125,35 @@ final class Tree {
 		}
 		usort( $tree->children[0], $compare );
 		return $tree;
+	}
+
+	/**
+	 * WooCommerce's sibling order (wc_terms_clauses(): `order` meta + 0
+	 * ascending, where a missing value is NULL and sorts first, then
+	 * t.name), then the id: the one rule the tree and Writer::place() share.
+	 * Names compare by their database ranks; without ranks, by character
+	 * and without case, as a case-insensitive collation does (never
+	 * naturally: WooCommerce puts "26WC" before "2RM").
+	 *
+	 * @param array<int, array<string, mixed>> $nodes  Nodes by id, each with name and order.
+	 * @param array<int, bool>                 $ranked Ids with a stored order.
+	 * @param array<int, int>                  $ranks  Ids' places in the database's name order, when known.
+	 * @return \Closure( int, int ): int
+	 */
+	public static function comparator( array $nodes, array $ranked, array $ranks = [] ): \Closure {
+		$names = static fn( int $a, int $b ): int => isset( $ranks[ $a ], $ranks[ $b ] )
+			? $ranks[ $a ] <=> $ranks[ $b ]
+			: strcmp( mb_strtolower( (string) $nodes[ $a ]['name'] ), mb_strtolower( (string) $nodes[ $b ]['name'] ) );
+		return static fn( int $a, int $b ): int => [ isset( $ranked[ $a ] ) ? 1 : 0, $nodes[ $a ]['order'], $names( $a, $b ), $a ] <=> [ isset( $ranked[ $b ] ) ? 1 : 0, $nodes[ $b ]['order'], 0, $b ];
+	}
+
+	/**
+	 * Each id's place in the database's name order, as the tree was built with.
+	 *
+	 * @return array<int, int>
+	 */
+	public function ranks(): array {
+		return $this->ranks;
 	}
 
 	/**
@@ -157,7 +199,7 @@ final class Tree {
 	 * One node without children or counts, or null.
 	 *
 	 * @param int $id Term id.
-	 * @return array{id: int, name: string, slug: string, description: string, parent: int, depth: int, order: int}|null
+	 * @return array{id: int, name: string, slug: string, description: string, parent: int, depth: int, order: int, default: bool}|null
 	 */
 	public function node( int $id ): ?array {
 		return $this->nodes[ $id ] ?? null;

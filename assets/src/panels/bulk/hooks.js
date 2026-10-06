@@ -1,14 +1,28 @@
 /**
- * The panel's requests: the preview (POST /preview, SPEC §9.1), the apply
- * (POST /batches, T31, T38) and the batch's progress (GET /batches/{id}).
+ * The panel's requests: the preview (POST /preview, SPEC §9.1) and the
+ * durable apply (T84: a `batch.apply` grant from POST /requests, then POST
+ * /batches with that grant, the preview's hash and the snapshot's current
+ * token), and the batch's progress (GET /batches/{id}).
  */
 import { useCallback, useEffect, useRef, useState } from '@wordpress/element';
 
 import { request } from '../../api';
+import {
+	envelope,
+	isUncertain,
+	keptHolder,
+	resolveHeld,
+	sendWithGrant,
+} from '../../requests';
+import { readSettings } from '../../settings';
+import { tabScope, tabStore } from '../../tab-store';
 
-/** The 409 codes the apply answers (Engine\BatchFactory). */
+/** The 409 codes the apply answers (Engine\BatchFactory, Requests\*). */
 export const SELECTION_CHANGED = 'bulkcat_selection_changed';
 export const PREVIEW_STALE = 'bulkcat_preview_stale';
+export const LEGACY_REQUEST = 'bulkcat_legacy_request';
+export const REQUEST_GONE = 'bulkcat_request_gone';
+export const RENEW_REQUIRED = 'bulkcat_selection_renew_required';
 
 /** Batch statuses after which nothing more happens (Data\Schema). */
 export const FINISHED = [
@@ -21,65 +35,42 @@ export const FINISHED = [
 ];
 
 /**
- * The selection as the preview and batch routes take it: a token when the
- * selection has one (a filter, or ids exchanged for a token), else the ids.
+ * The selection as the preview and batch routes take it: the snapshot's
+ * current token, or explicit ids, sorted (T83: every preview is exact).
  *
  * @param {Object} selection Panel selection.
  * @return {Object} `{ token }` or `{ ids }`.
  */
 export function selectionArgs( selection ) {
-	if ( selection?.token ) {
-		return { token: selection.token };
+	if ( selection?.kind === 'snapshot' ) {
+		return { token: String( selection.token || '' ) };
 	}
-	return { ids: ( selection?.ids || [] ).map( Number ) };
+	return {
+		ids: [ ...new Set( ( selection?.ids || [] ).map( Number ) ) ].sort(
+			( a, b ) => a - b
+		),
+	};
 }
 
 /**
- * Whether a selection is all rows matching a filter.
+ * The identity of one Apply's intent on this screen: the change as the
+ * preview normalised it, its exact scope and the selection (the snapshot's
+ * handle, which a renewed token keeps, or the ids). The same identity always
+ * sends the grant it already holds.
  *
  * @param {Object} selection Panel selection.
- * @return {boolean} True for a filter.
+ * @param {Object} preview   The preview answer.
+ * @return {string} Key.
  */
-export function isFilterSelection( selection ) {
-	return selection?.kind === 'filter';
-}
-
-/**
- * A request id for POST /batches: crypto.randomUUID() where there is one,
- * else a version 4 UUID from crypto.getRandomValues().
- *
- * @return {string} UUID.
- */
-export function newUuid() {
-	const cryptoApi = globalThis.crypto;
-	if ( cryptoApi?.randomUUID ) {
-		return cryptoApi.randomUUID();
-	}
-	const bytes = new Uint8Array( 16 );
-	if ( cryptoApi?.getRandomValues ) {
-		cryptoApi.getRandomValues( bytes );
-	} else {
-		for ( let i = 0; i < 16; i++ ) {
-			bytes[ i ] = Math.floor( Math.random() * 256 );
-		}
-	}
-	const digits = Array.from( bytes, ( byte ) =>
-		byte.toString( 16 ).padStart( 2, '0' )
-	).join( '' );
-	// Version 4 in the 13th digit, the variant (8, 9, a or b) in the 17th.
-	const hex =
-		digits.slice( 0, 12 ) +
-		'4' +
-		digits.slice( 13, 16 ) +
-		( ( bytes[ 8 ] % 4 ) + 8 ).toString( 16 ) +
-		digits.slice( 17 );
-	return [
-		hex.slice( 0, 8 ),
-		hex.slice( 8, 12 ),
-		hex.slice( 12, 16 ),
-		hex.slice( 16, 20 ),
-		hex.slice( 20 ),
-	].join( '-' );
+export function applyKey( selection, preview ) {
+	return JSON.stringify( {
+		operations: preview?.operations || null,
+		scope: preview?.scope_hash || null,
+		selection:
+			selection?.kind === 'snapshot'
+				? { snapshot: selection.key || selection.token }
+				: selectionArgs( selection ),
+	} );
 }
 
 /**
@@ -171,53 +162,106 @@ export function usePreview() {
 }
 
 /**
- * The apply. One request id per previewed change: a retry of the same
- * preview (after a failed request, or "Apply anyway") sends the same uuid,
- * so the server never queues the change twice; a new preview gets a new one.
+ * The Apply grant held between attempts. It belongs to the screen, not to
+ * one opening of the panel: closing the panel after an uncertain Apply and
+ * opening it again still resends, or first resolves, that grant. Since T85
+ * it is also kept in the tab's copy (tab-store.js, beside the selection's
+ * handles), so a reload while the answer is unknown still resends or
+ * resolves the same grant instead of asking for a new one: a relative change
+ * such as "increase by 10 per cent" can then never be made twice.
+ */
+let applyHolder = null;
+
+/**
+ * The screen's Apply holder, read from the tab's copy on first use.
  *
- * @return {Object} `{ status, batch, error, previewed, current, apply, reset }`;
- *                  status is idle, applying, applied, changed, stale or error.
+ * @return {Object} `{ current, store }`.
+ */
+function applyGrant() {
+	if ( ! applyHolder ) {
+		applyHolder = keptHolder(
+			tabStore( tabScope( readSettings(), 'apply' ) )
+		);
+	}
+	return applyHolder;
+}
+
+/**
+ * Forget the held Apply grant (tests). The tab's copy is left alone.
+ */
+export function resetApplyGrant() {
+	applyHolder = null;
+}
+
+/**
+ * After a reload: whether the tab still held an Apply grant whose answer was
+ * unknown, and if so what became of it (POST /requests/resolve, which never
+ * creates work). When it had been accepted, the answer is its batch
+ * (`{ batch_id, status, … }`) with the snapshot handle it was applied to
+ * (`selectionKey`); otherwise null, and the grant is kept for the same change
+ * or resolved again before a different one.
+ *
+ * @return {Promise<Object|null>} The earlier change, or null.
+ */
+export async function resumeApply() {
+	const holder = applyGrant();
+	const held = holder.current;
+	if ( ! held?.restored ) {
+		return null;
+	}
+	const outcome = await resolveHeld( holder );
+	if ( ! outcome?.batch_id ) {
+		return null;
+	}
+	return { ...outcome, selectionKey: held.meta?.selectionKey || '' };
+}
+
+/**
+ * The durable apply (T84). One grant per intent: a retry of the same
+ * previewed change — after a dropped connection, a server error, or a new
+ * preview of the same exact scope — sends the same `uuid`, `request_proof`
+ * and canonical intent again, and the server answers the batch it already
+ * made (`replayed: true`) instead of making another. A different change
+ * gets a new grant, only after an uncertain earlier one has been resolved.
+ *
+ * @return {Object} `{ status, batch, error, apply, reset }`; status is idle,
+ *                  applying, applied, uncertain, changed, stale, renew,
+ *                  legacy or error.
  */
 export function useApply() {
 	const mounted = useMounted();
-	const requestId = useRef( { uuid: '', hash: '' } );
 	const [ state, setState ] = useState( { status: 'idle' } );
 
 	const apply = useCallback(
-		async ( {
-			operations,
-			selection,
-			preview,
-			confirmChanged = false,
-		} ) => {
-			const hash = preview?.hash || '';
-			if ( ! requestId.current.uuid || requestId.current.hash !== hash ) {
-				requestId.current = { uuid: newUuid(), hash };
-			}
-			const data = {
-				uuid: requestId.current.uuid,
-				operations,
-				...selectionArgs( selection ),
-				source: 'bulk',
-				preview_hash: hash,
-			};
-			if ( isFilterSelection( selection ) ) {
-				data.preview_count =
-					preview?.selection?.current_count ??
-					preview?.totals?.matched ??
-					selection.count;
-			}
-			if ( confirmChanged ) {
-				data.confirm_changed = true;
-			}
+		async ( { selection, preview } ) => {
+			const args = selectionArgs( selection );
 			setState( { status: 'applying' } );
 			try {
-				const batch = await request( 'batches', {
-					method: 'POST',
-					data,
+				const batch = await sendWithGrant( applyGrant(), {
+					key: applyKey( selection, preview ),
+					meta: {
+						selectionKey:
+							selection?.kind === 'snapshot'
+								? selection.key || ''
+								: '',
+					},
+					operation: 'batch.apply',
+					intent: {
+						source: 'bulk',
+						operations: preview?.operations,
+						scope_hash: preview?.scope_hash,
+						...args,
+					},
+					send: ( grant ) =>
+						request( 'batches', {
+							method: 'POST',
+							data: {
+								...envelope( grant ),
+								preview_hash: preview?.hash || '',
+								...( args.token ? { token: args.token } : {} ),
+							},
+						} ),
 				} );
-				// Done: a later change starts with a fresh request id.
-				requestId.current = { uuid: '', hash: '' };
 				if ( mounted.current ) {
 					setState( { status: 'applied', batch } );
 				}
@@ -226,18 +270,19 @@ export function useApply() {
 				if ( ! mounted.current ) {
 					return null;
 				}
-				if ( error?.code === SELECTION_CHANGED ) {
-					setState( {
-						status: 'changed',
-						previewed: error.data?.previewed,
-						current: error.data?.current,
-						error,
-					} );
+				let status = 'error';
+				if ( isUncertain( error ) ) {
+					status = 'uncertain';
+				} else if ( error?.code === SELECTION_CHANGED ) {
+					status = 'changed';
 				} else if ( error?.code === PREVIEW_STALE ) {
-					setState( { status: 'stale', error } );
-				} else {
-					setState( { status: 'error', error } );
+					status = 'stale';
+				} else if ( error?.code === RENEW_REQUIRED ) {
+					status = 'renew';
+				} else if ( error?.code === LEGACY_REQUEST ) {
+					status = 'legacy';
 				}
+				setState( { status, error } );
 				return null;
 			}
 		},
@@ -250,20 +295,47 @@ export function useApply() {
 }
 
 /**
+ * Whether a failed read will fail the same way however often it is asked
+ * again (FRONTEND-8): signed out, not allowed, or the batch is gone.
+ *
+ * @param {Object} error The rejection.
+ * @return {boolean} Whether to stop asking.
+ */
+export function permanentReadError( error ) {
+	return (
+		[ 401, 403, 404 ].includes( Number( error?.data?.status ) ) ||
+		[ 'rest_not_logged_in', 'rest_cookie_invalid_nonce' ].includes(
+			error?.code
+		)
+	);
+}
+
+/**
  * A batch's progress report, read every `interval` milliseconds until it
- * has finished.
+ * has finished. A passing failure is read again after twice the interval;
+ * a permanent one (permanentReadError()) stops the reads, `stopped` says
+ * so, and `checkAgain()` starts them again (FRONTEND-8).
  *
  * @param {number} batchId  Batch id, or 0 for none.
  * @param {number} interval Milliseconds between reads.
- * @return {{report: Object|null, error: Object|null}} The latest report.
+ * @return {{report: Object|null, error: Object|null, stopped: boolean, checkAgain: Function}} The latest report.
  */
 export function useBatchProgress( batchId, interval = 2000 ) {
-	const [ state, setState ] = useState( { report: null, error: null } );
+	const [ state, setState ] = useState( {
+		report: null,
+		error: null,
+		stopped: false,
+	} );
+	const [ attempt, setAttempt ] = useState( 0 );
+	const checkAgain = useCallback( () => setAttempt( ( n ) => n + 1 ), [] );
 
 	useEffect( () => {
 		if ( ! batchId ) {
 			return undefined;
 		}
+		setState( ( previous ) =>
+			previous.stopped ? { ...previous, stopped: false } : previous
+		);
 		let stopped = false;
 		let timer = null;
 		const read = async () => {
@@ -272,7 +344,7 @@ export function useBatchProgress( batchId, interval = 2000 ) {
 				if ( stopped ) {
 					return;
 				}
-				setState( { report, error: null } );
+				setState( { report, error: null, stopped: false } );
 				if ( ! FINISHED.includes( report?.status ) ) {
 					timer = setTimeout( read, interval );
 				}
@@ -280,8 +352,15 @@ export function useBatchProgress( batchId, interval = 2000 ) {
 				if ( stopped ) {
 					return;
 				}
-				setState( ( previous ) => ( { ...previous, error } ) );
-				timer = setTimeout( read, interval * 2 );
+				const permanent = permanentReadError( error );
+				setState( ( previous ) => ( {
+					...previous,
+					error,
+					stopped: permanent,
+				} ) );
+				if ( ! permanent ) {
+					timer = setTimeout( read, interval * 2 );
+				}
 			}
 		};
 		read();
@@ -289,7 +368,7 @@ export function useBatchProgress( batchId, interval = 2000 ) {
 			stopped = true;
 			clearTimeout( timer );
 		};
-	}, [ batchId, interval ] );
+	}, [ batchId, interval, attempt ] );
 
-	return state;
+	return { ...state, checkAgain };
 }

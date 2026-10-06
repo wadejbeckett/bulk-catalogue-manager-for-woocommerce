@@ -1,10 +1,11 @@
 <?php
 /**
  * The one place a refusal is built (SPEC §4.8, §12.1, §13). Every refusal the
- * plugin returns is a `WP_Error` whose code starts `bulkcat_`, whose message is a
+ * plugin creates is a `WP_Error` whose code starts `bulkcat_`, whose message is a
  * plain-English sentence naming the thing, what happened and what to do, and
  * whose data carries an HTTP `status`: 401 for a visitor who is not logged in,
  * 403 for a logged-in user without the right, 400 for an invalid value.
+ * The native-validation adapter preserves WordPress's `rest_invalid_param` code.
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later
@@ -55,7 +56,53 @@ final class Refusal {
 		if ( $status < 400 || $status > 599 ) {
 			throw new \InvalidArgumentException( 'A refusal status must be between 400 and 599.' );
 		}
-		return new \WP_Error( $code, $message, [ 'status' => $status ] + $data );
+		return self::error( $code, $message, [ 'status' => $status ] + $data );
+	}
+
+	/**
+	 * Preserve the native inline field-validation response without relaxing create().
+	 *
+	 * @param string $message Native validation message, already translated.
+	 * @param array<string, string> $params Native field messages.
+	 * @param string $field Invalid field key.
+	 */
+	public static function native_validation( string $message, array $params, string $field ): \WP_Error {
+		return self::error(
+			'rest_invalid_param',
+			$message,
+			[
+				'status' => 400,
+				'params' => $params,
+				'field'  => $field,
+			]
+		);
+	}
+
+	/**
+	 * Copy an inline refusal only after its receipt has committed.
+	 *
+	 * @param \WP_Error $error Original validation or permission refusal, with array data.
+	 */
+	public static function committed_inline( \WP_Error $error ): \WP_Error {
+		return self::error(
+			$error->get_error_code(),
+			$error->get_error_message(),
+			$error->get_error_data() + [
+				'receipt_state' => 'refused',
+				'replayed'      => false,
+			]
+		);
+	}
+
+	/**
+	 * Construct only validated plugin refusals or the explicit native adapters above.
+	 *
+	 * @param string|int $code Existing response code.
+	 * @param string $message Existing response message.
+	 * @param array<string, mixed> $data Existing response data.
+	 */
+	private static function error( string|int $code, string $message, array $data ): \WP_Error {
+		return new \WP_Error( $code, $message, $data );
 	}
 
 	/**
@@ -72,13 +119,28 @@ final class Refusal {
 	 * @param array<string, mixed> $data    Extra data that is safe to send.
 	 */
 	public static function unexpected( string $code, string $message, int $status, \Throwable $error, array $data = [] ): \WP_Error {
+		self::log( $error );
+		return self::create( $code, $message, $status, $data );
+	}
+
+	/**
+	 * Write a throwable to the WooCommerce log under the plugin's source:
+	 * its class, its text unless left out, and where it was thrown, after an
+	 * optional plain prefix (which object it happened to). Never sent to a
+	 * client. Leave the text out where it may carry submitted values (a
+	 * third-party save hook echoing the product it was given).
+	 *
+	 * @param \Throwable $error   What went wrong.
+	 * @param string     $prefix  Plain context, such as "Product 12", or ''.
+	 * @param bool       $message Whether to log the throwable's own text.
+	 */
+	public static function log( \Throwable $error, string $prefix = '', bool $message = true ): void {
 		if ( function_exists( 'wc_get_logger' ) ) {
 			wc_get_logger()->error(
-				sprintf( '%s: %s (%s:%d)', get_class( $error ), $error->getMessage(), $error->getFile(), $error->getLine() ),
+				( '' === $prefix ? '' : $prefix . ': ' ) . sprintf( '%s%s (%s:%d)', get_class( $error ), $message ? ': ' . $error->getMessage() : '', $error->getFile(), $error->getLine() ),
 				[ 'source' => self::LOG_SOURCE ]
 			);
 		}
-		return self::create( $code, $message, $status, $data );
 	}
 
 	/**

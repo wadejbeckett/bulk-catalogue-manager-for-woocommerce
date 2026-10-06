@@ -1,5 +1,5 @@
 /**
- * The "Visible on site" switch (SPEC §5.3, §14; T45). Three positions from
+ * The "Shown in shop and search" switch (SPEC §5.3, §14; T45). Three positions from
  * the registry's switch field: on (shop and search), off (hidden from both)
  * and a neutral Partly for either middle state, whose tooltip names the exact
  * state and whose click offers the two real choices rather than writing.
@@ -12,6 +12,7 @@ import { Button, Dropdown, Tooltip } from '@wordpress/components';
 import { useContext, useId, useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 
+import { isUncertain } from '../../../requests';
 import { announce } from '../../categories/announce';
 import { CellContext, choiceLabel } from '../cells';
 import { VISIBILITY } from '../defaults';
@@ -81,7 +82,7 @@ export default function VisibleSwitch( { item, descriptor } ) {
 	const isPending = pending.has( item.id );
 	const name = productName( item, descriptors );
 	const accessibleName = sprintf(
-		/* translators: 1: the switch's name, "Visible on site", 2: a product name. */
+		/* translators: 1: the switch's name, "Shown in shop and search", 2: a product name. */
 		__( '%1$s, %2$s', 'bulk-catalogue-manager-for-woocommerce' ),
 		descriptor.label,
 		name
@@ -106,11 +107,15 @@ export default function VisibleSwitch( { item, descriptor } ) {
 			)
 			.then( () => setShown( null ) )
 			.catch( ( error ) => {
+				if ( error?.data?.answer || isUncertain( error ) ) {
+					setShown( null );
+					return;
+				}
 				setShown( before === positionOf( item ) ? null : before );
 				const message = sprintf(
 					/* translators: 1: a product name, 2: what happened or what to do, as a sentence. */
 					__(
-						'We could not change whether %1$s is visible on site, so it is as it was. %2$s',
+						'We could not change whether %1$s is shown in the shop and search, so it is as it was. %2$s',
 						'bulk-catalogue-manager-for-woocommerce'
 					),
 					name,
@@ -147,7 +152,7 @@ export default function VisibleSwitch( { item, descriptor } ) {
 		const tip = sprintf(
 			/* translators: %s: the exact catalogue visibility, such as "Shop only". */
 			__(
-				'Partly visible: %s. Choose on or off to change it.',
+				'Partly shown: %s. Choose on or off to change it.',
 				'bulk-catalogue-manager-for-woocommerce'
 			),
 			terms && exact
@@ -229,7 +234,7 @@ export default function VisibleSwitch( { item, descriptor } ) {
 	if ( on ) {
 		label = offSite
 			? __( 'When published', 'bulk-catalogue-manager-for-woocommerce' )
-			: __( 'On site', 'bulk-catalogue-manager-for-woocommerce' );
+			: __( 'Shown', 'bulk-catalogue-manager-for-woocommerce' );
 	}
 	return (
 		<span

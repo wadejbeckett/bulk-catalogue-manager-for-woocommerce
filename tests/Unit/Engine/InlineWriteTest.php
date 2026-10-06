@@ -42,10 +42,11 @@ final class InlineWriteTest extends TestCase {
 
 	protected function setUp(): void {
 		bulkcat_test_reset();
-		$GLOBALS['bulkcat_test']['logged_in']         = true;
-		$GLOBALS['bulkcat_test']['user_id']           = self::USER;
-		$GLOBALS['bulkcat_test']['caps']['edit_post'] = true;
-		$GLOBALS['bulkcat_test']['scheduled']         = [];
+		$GLOBALS['bulkcat_test']['logged_in']                = true;
+		$GLOBALS['bulkcat_test']['user_id']                  = self::USER;
+		$GLOBALS['bulkcat_test']['caps']['publish_products'] = true;
+		$GLOBALS['bulkcat_test']['caps']['edit_post']        = true;
+		$GLOBALS['bulkcat_test']['scheduled']                = [];
 		// The chunk runner listens on bulkcat_batch_created, as it does on a live site.
 		( new Plugin() )->boot();
 		$this->store   = new InlineStore();
@@ -152,7 +153,12 @@ final class InlineWriteTest extends TestCase {
 		// The same operations as a queued bulk batch, worked by the chunk runner.
 		$operations = json_decode( (string) wp_json_encode( $this->writes()->operations( $values ) ), true );
 		bulkcat_test_reset();
-		$GLOBALS['bulkcat_test']['user_caps'] = [ self::USER => [ 'edit_post' => true ] ];
+		$GLOBALS['bulkcat_test']['user_caps'] = [
+			self::USER => [
+				'edit_post'        => true,
+				'publish_products' => true,
+			],
+		];
 		self::product(
 			101,
 			'simple',
@@ -167,6 +173,106 @@ final class InlineWriteTest extends TestCase {
 
 		$this->assertSame( 'complete', $status );
 		$this->assertSame( $runner->journal(), $inline, 'Identical journal rows.' );
+	}
+
+	/**
+	 * A product carrying its own Off record (T89).
+	 *
+	 * @param int    $id     Id.
+	 * @param string $status Its status now.
+	 * @param string $saved  The status its record saved.
+	 */
+	private static function off_product( int $id, string $status, string $saved ): StoredProduct {
+		$product                                    = self::product( $id, 'simple', [ 'status' => $status ] );
+		$product->meta['_bulkcat_availability_off'] = \BulkCatalogueManager\Availability\OffRecord::create( $id, $saved, '2026-09-01T08:00:00Z', 7 )->to_json();
+		return $product;
+	}
+
+	public function test_an_inline_write_never_reaches_the_variations_so_its_steps_say_so(): void {
+		// T94: the write takes the one object (BatchFactory::open()), so its steps, and the dry run
+		// that checks them, carry Also apply to variations off, whatever the settings default: an
+		// inline Off of a variable product is not refused for its variations, which it never touches.
+		$settings = new Settings(
+			[
+				\BulkCatalogueManager\Settings\Schema::VARIATIONS_STATUS => true,
+				\BulkCatalogueManager\Settings\Schema::VARIATIONS_PRICE  => true,
+				\BulkCatalogueManager\Settings\Schema::VARIATIONS_STOCK  => true,
+			]
+		);
+		$writes   = new InlineWrite( $this->actions, null, null, $settings );
+		foreach ( [ [ 'status' => 'draft' ], [ 'status' => 'publish' ], [ 'regular_price' => '12' ], [ 'stock_status' => 'outofstock' ] ] as $values ) {
+			$steps = $writes->operations( $values );
+			$this->assertTrue( is_array( $steps ), wp_json_encode( $values ) );
+			$this->assertFalse( $steps[0]['args']['apply_to_variations'] ?? false, wp_json_encode( $values ) );
+		}
+		$this->assertArrayNotHasKey( 'apply_to_variations', $writes->operations( [ 'catalog_visibility' => 'hidden' ] )[0]['args'], 'A product-only field has no such argument.' );
+	}
+
+	public function test_new_publish_ignores_a_legacy_conflict_and_journals_owned_record_removal(): void {
+		$product = self::off_product( 102, 'private', 'publish' );
+		$result  = $this->writes()->write( 102, [ 'status' => 'publish' ], 'inline', self::USER );
+		$this->assertTrue( is_array( $result ) );
+		$this->assertSame( 'publish', $product->props['status'] );
+		$this->assertSame( 1, $product->saves );
+		$this->assertArrayNotHasKey( '_bulkcat_availability_off', $product->meta );
+		$this->assertSame(
+			[
+				[ 102, 'status', 'private', 'publish', 'applied' ],
+				[ 102, 'availability_off', '{"id":102,"status":"publish","at":"2026-09-01T08:00:00Z","batch":7}', '', 'applied' ],
+			],
+			$this->store->journal()
+		);
+	}
+
+	public function test_explicit_keep_current_status_requires_reload_without_writes(): void {
+		$product = self::off_product( 104, 'private', 'publish' );
+		$refused = $this->assert_refused( $this->writes()->write( 104, [ 'status' => 'publish' ], 'inline', self::USER, true ), InlineWrite::INVALID, 400 );
+		$this->assertStringContainsString( 'Reload and review', $refused->get_error_message() );
+		$this->assertSame( 'private', $product->props['status'] );
+		$this->assertArrayHasKey( '_bulkcat_availability_off', $product->meta );
+		$refused = $this->assert_refused( $this->writes()->write( 101, [ 'regular_price' => '21' ], 'inline', self::USER, true ), InlineWrite::INVALID, 400 );
+		$this->assertSame( 'keep_changed_status', $refused->get_error_data()['field'] );
+	}
+
+	public function test_already_draft_preserves_legacy_record_without_save_or_journal(): void {
+		$product = self::off_product( 105, 'draft', 'publish' );
+		$before  = $product->meta;
+		$off     = $this->writes()->write( 105, [ 'status' => 'draft' ], 'inline', self::USER );
+		$this->assertTrue( is_array( $off ) );
+		$this->assertFalse( $off['outcome']->saved() );
+		$this->assertSame( Result::ALREADY, $off['outcome']->results()[0]->state() );
+		$this->assertSame( '', $off['outcome']->results()[0]->note() );
+		$this->assertSame( 0, $product->saves );
+		$this->assertSame( $before, $product->meta );
+		$plain = self::product( 102, 'simple', [ 'status' => 'draft' ] );
+		$draft = $this->writes()->write( 102, [ 'status' => 'draft' ], 'inline', self::USER );
+		$this->assertSame( Result::ALREADY, $draft['outcome']->results()[0]->state() );
+		$this->assertSame( '', $draft['outcome']->results()[0]->note() );
+		$this->assertSame( 0, $plain->saves );
+		$this->assertSame( [], $this->store->journal() );
+	}
+
+	public function test_inline_native_status_journals_the_same_rows_as_a_bulk_batch(): void {
+		$product = self::product( 106, 'simple', [ 'status' => 'publish' ] );
+		$off     = $this->writes()->write( 106, [ 'status' => 'draft' ], 'inline', self::USER );
+		$this->assertSame( 'complete', $off['status'] );
+		$inline = $this->store->journal();
+		$this->assertSame( [ [ 106, 'status', 'publish', 'draft', 'applied' ] ], $inline );
+		$this->assertSame( [], $product->meta );
+		$operations = json_decode( (string) wp_json_encode( $this->writes()->operations( [ 'status' => 'draft' ] ) ), true );
+		$this->assertSame( 'set_status', $operations[0]['action'] );
+		bulkcat_test_reset();
+		$GLOBALS['bulkcat_test']['user_caps'] = [
+			self::USER => [
+				'edit_post'        => true,
+				'publish_products' => true,
+			],
+		];
+		$product                              = self::product( 106, 'simple', [ 'status' => 'publish' ] );
+		$runner                               = new RunnerStore( 7, [ 106 ], $operations, self::USER );
+		$this->assertSame( 'complete', ( new ChunkRunner( null, $this->actions, null, new Settings( [] ), static fn(): float => 1790000000.0, 30 ) )->run( 7 ) );
+		$this->assertSame( $runner->journal(), $inline );
+		$this->assertSame( [], $product->meta );
 	}
 
 	public function test_fields_become_one_step_each_in_registry_order(): void {
@@ -202,6 +308,7 @@ final class InlineWriteTest extends TestCase {
 			]
 		);
 		$this->assertTrue( $pair[0]['args']['clear_invalid_sale'], 'With both prices, the sale price step decides the pair.' );
+		$this->assertFalse( $pair[1]['args']['clear_invalid_sale'], 'ENGINE-6: a typed sale price is never turned into a clear.' );
 
 		$refused = $this->writes()->operations( [ 'status' => '' ] );
 		$this->assertInstanceOf( \WP_Error::class, $refused );
@@ -231,6 +338,47 @@ final class InlineWriteTest extends TestCase {
 		$error = $this->assert_refused( $this->writes()->write( 101, [ 'stock_quantity' => '1.5' ], 'inline', self::USER ), 'bulkcat_invalid_operation', 400 );
 		$this->assertSame( 'stock_quantity', $error->get_error_data()['field'] );
 		$this->assertSame( ( new Fields() )->get( 'stock_quantity' )->rule_text(), $error->get_error_message() );
+	}
+
+	public function test_both_prices_with_a_sale_price_not_below_the_regular_are_refused_keeping_the_sale_price(): void {
+		// ENGINE-6: a typed sale price at or above the regular price is refused, never written as a clear.
+		$product = self::product(
+			101,
+			'simple',
+			[
+				'regular_price' => '100.00',
+				'sale_price'    => '80.00',
+			]
+		);
+		$error   = $this->assert_refused(
+			$this->writes()->write(
+				101,
+				[
+					'regular_price' => '100.00',
+					'sale_price'    => '120.00',
+				],
+				'inline',
+				self::USER
+			),
+			'bulkcat_invalid_value',
+			400
+		);
+		$this->assertSame( 'sale_price', $error->get_error_data()['field'] );
+		$this->assertSame( '80.00', $product->props['sale_price'] );
+		$this->assertSame( 0, $product->saves, 'Nothing was saved.' );
+
+		// Lowering both together still works: the regular step clears the old sale, the typed one is written.
+		$result = $this->writes()->write(
+			101,
+			[
+				'regular_price' => '60.00',
+				'sale_price'    => '48.00',
+			],
+			'inline',
+			self::USER
+		);
+		$this->assertTrue( is_array( $result ) );
+		$this->assertSame( [ '60.00', '48.00' ], [ $product->props['regular_price'], $product->props['sale_price'] ] );
 	}
 
 	public function test_a_variation_takes_its_own_fields_and_refuses_parent_only_ones_with_their_reason(): void {
@@ -314,6 +462,39 @@ final class InlineWriteTest extends TestCase {
 		$this->assertSame( 'bulk-catalogue-manager-for-woocommerce', $context['source'] );
 	}
 
+	public function test_a_save_hook_throwing_after_the_price_was_stored_reports_and_journals_it_made(): void {
+		$stored                                   = self::product( 101, 'simple', [ 'regular_price' => '20' ] );
+		$GLOBALS['bulkcat_test']['products'][101] = new class( $stored ) {
+			public function __construct( private StoredProduct $stored ) {}
+
+			public function __clone() {
+				$this->stored = clone $this->stored;
+			}
+
+			public function save(): int {
+				// WooCommerce stored the price; a listener on woocommerce_after_product_object_save then threw.
+				$this->stored->save();
+				$GLOBALS['bulkcat_test']['products'][101] = new StoredProduct( 'simple', $this->stored->props );
+				throw new \RuntimeException( 'Remote index unreachable.' );
+			}
+
+			public function __call( string $method, array $args ): mixed {
+				return $this->stored->$method( ...$args );
+			}
+		};
+
+		$result = $this->writes()->write( 101, [ 'regular_price' => '25' ], 'inline', self::USER );
+
+		$this->assertTrue( is_array( $result ) );
+		$this->assertSame( 'complete', $result['status'] );
+		$this->assertSame( [ Result::CHANGED ], array_map( static fn( Result $r ): string => $r->state(), $result['outcome']->results() ) );
+		$this->assertSame( [ [ 101, 'regular_price', '20', '25.00', 'applied' ] ], $this->store->journal(), 'Undo can put the stored change back.' );
+		$this->assertCount( 1, $GLOBALS['bulkcat_test']['logged'] ?? [] );
+		$this->assertStringContainsString( 'RuntimeException', $GLOBALS['bulkcat_test']['logged'][0][1], 'The log names what threw and where.' );
+		$this->assertStringContainsString( 'InlineWriteTest.php', $GLOBALS['bulkcat_test']['logged'][0][1] );
+		$this->assertStringNotContainsString( 'Remote index unreachable.', $GLOBALS['bulkcat_test']['logged'][0][1], 'Not the text, which may echo the values saved.' );
+	}
+
 	public function test_a_value_already_in_place_finishes_complete_with_nothing_saved(): void {
 		$result = $this->writes()->write( 101, [ 'regular_price' => '20.00' ], 'inline', self::USER );
 		$this->assertTrue( is_array( $result ) );
@@ -322,5 +503,12 @@ final class InlineWriteTest extends TestCase {
 		$this->assertSame( 0, $GLOBALS['bulkcat_test']['products'][101]->saves );
 		$this->assertSame( [], $this->store->journal(), 'An unchanged value is not journalled.' );
 		$this->assertSame( [ 1, 0, 0 ], [ $this->store->batch( $result['batch_id'] )['done_items'], $this->store->batch( $result['batch_id'] )['changed_items'], $this->store->batch( $result['batch_id'] )['failed_items'] ] );
+	}
+	public function test_live_prepare_has_no_effects_or_batch_and_retains_exact_scope(): void {
+		$prepared = $this->writes()->prepare( 101, [ 'regular_price' => '21' ], 'bulk', self::USER );
+		$this->assertSame( [ [ 101, 'product' ] ], $prepared['objects'] );
+		$this->assertSame( 'bulk', $prepared['source'] );
+		$this->assertSame( [], $GLOBALS['wpdb']->writes );
+		$this->assertSame( 0, $GLOBALS['bulkcat_test']['products'][101]->saves );
 	}
 }

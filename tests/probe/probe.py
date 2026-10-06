@@ -768,10 +768,12 @@ def check_read_queries(p: Probe) -> None:
         hiding = {f["key"]: sorted(c["value"] for c in f.get("choices", []) if c.get("hidesProduct")) for f in fields}
         hiding = {k: v for k, v in hiding.items() if v}
         want_hiding = {"status": ["draft", "future", "pending"], "catalog_visibility": ["hidden"], "visible_on_site": ["off"]}
-        # T93: Shown in shop and search (visible_on_site) is a listing control an owner may add, not a default column.
+        # Ticket 19 (1.3.0, CHANGELOG "Catalog visibility and Shown in shop and search are default
+        # columns"; supersedes T93's): both listing presentations follow Status in a new layout.
         status = next(f for f in fields if f["key"] == "status")
         # T114: Scheduled can be read and filtered, but never selected as a new status.
-        ok = default == ["sku", "category_ids", "regular_price", "stock_status", "status"] and hiding == want_hiding
+        want_default = ["sku", "category_ids", "regular_price", "stock_status", "status", "catalog_visibility", "visible_on_site"]
+        ok = default == want_default and hiding == want_hiding
         ok = ok and "future" not in status["writableChoices"]
         p.row("read", "read:fields:flags", ok, f"default columns {default}; hiding choices {hiding}")
 

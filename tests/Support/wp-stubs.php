@@ -971,6 +971,10 @@ if ( ! function_exists( 'wp_insert_term' ) ) {
 	}
 
 	function update_term_meta( int $term_id, string $meta_key, mixed $meta_value, mixed $prev_value = '' ): int|bool {
+		if ( in_array( $meta_key, $GLOBALS['bulkcat_test']['term_meta_fail'] ?? [], true ) ) {
+			// 'term_meta_fail' (keys): the database refuses these writes, as update_term_meta() reports with false.
+			return false;
+		}
 		$GLOBALS['bulkcat_test']['term_meta'][ $term_id ][ $meta_key ] = $meta_value;
 		$GLOBALS['bulkcat_test']['term_meta_updates'][]                = [ $term_id, $meta_key, $meta_value ];
 		return true;

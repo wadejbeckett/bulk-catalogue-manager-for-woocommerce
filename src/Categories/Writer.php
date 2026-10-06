@@ -311,7 +311,7 @@ final class Writer {
 			$before[ self::META[ $key ] ] = null;
 			update_term_meta( $id, $key, $value );
 		}
-		return $this->complete( $batch_id, $id, $before, [] );
+		return $this->complete( $batch_id, $id, $before, [], null, true );
 	}
 
 	/**
@@ -485,7 +485,12 @@ final class Writer {
 		foreach ( $joined as $term_id ) {
 			$now = $wanted[ $term_id ] ?? $stored[ $term_id ];
 			if ( null !== $now && $now !== $stored[ $term_id ] ) {
-				update_term_meta( $term_id, CategoryTree::ORDER_META, $now );
+				if ( false === update_term_meta( $term_id, CategoryTree::ORDER_META, $now ) ) {
+					// Not stored (SILENT-FAILURES-9): journal what the term holds, never the order wanted.
+					$held               = get_term_meta( $term_id, CategoryTree::ORDER_META, true );
+					$orders[ $term_id ] = [ $stored[ $term_id ], is_numeric( $held ) ? (int) $held : $stored[ $term_id ] ];
+					continue;
+				}
 				$term = get_term( $term_id, Counts::TAXONOMY );
 				// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- WooCommerce's own hook, fired as its drag-reorder fires it for each order set.
 				do_action( 'woocommerce_after_set_term_order', $term, $now, Counts::TAXONOMY );
@@ -637,9 +642,10 @@ final class Writer {
 	 * @param array<string, mixed>                   $before   Journal property => value before, for each property the write named.
 	 * @param array<int, array{0: int|null, 1: int}> $orders   Tree orders from place().
 	 * @param \WP_Error|null                         $failure  WordPress's refusal of the write, when it refused.
+	 * @param bool                                   $created  Whether the write created the category (create()).
 	 * @return array{item: array<string, mixed>, batch_id: int, status: string, results: list<array<string, mixed>>}|\WP_Error
 	 */
-	private function complete( int $batch_id, int $id, array $before, array $orders, ?\WP_Error $failure = null ): array|\WP_Error {
+	private function complete( int $batch_id, int $id, array $before, array $orders, ?\WP_Error $failure = null, bool $created = false ): array|\WP_Error {
 		$journal = Journal::from_settings( Fields::instance(), $this->settings(), $this->changes );
 		// Read back from the term tables, never a read filtered for the viewer (1.4.2).
 		$term    = CategoryTree::stored_term( $id );
@@ -664,10 +670,7 @@ final class Writer {
 				$applied += $journal->record( $batch_id, $sibling, self::OBJECT_TYPE, ChangeRepository::UNKNOWN_TIME, self::with_skip( [ self::order_result( $order ) ] ), [ self::ORDER_PROP => $order[0] ], (object) [ 'term_id' => $sibling ] );
 			}
 		} catch ( \Throwable $e ) {
-			$reason = __( 'Something went wrong while changing this category, so it may not have been finished. Reload the categories to check it.', 'bulk-catalogue-manager-for-woocommerce' );
-			$this->finish( $batch_id, 'failed', $reason, false );
-			Cache::invalidate();
-			return Refusal::unexpected( ProductWriter::SAVE_FAILED, $reason, 500, $e, [ 'batch_id' => $batch_id ] );
+			return $this->unrecorded( $batch_id, $id, $e, $created, null === $failure );
 		}
 
 		if ( null !== $failure ) {
@@ -684,6 +687,49 @@ final class Writer {
 			'status'   => $status,
 			'results'  => array_map( static fn( Result $result ): array => $result->to_array(), $entries ),
 		];
+	}
+
+	/**
+	 * The answer when WordPress wrote the category but its History rows
+	 * could not be (SILENT-FAILURES-9), said as it is: a category just
+	 * created is deleted again, so none is left that the journal does not
+	 * know about, and the batch fails with nothing changed; a change that
+	 * landed is kept and the batch is partial (made, not recorded), not
+	 * failed. The answer carries `applied`, so the screen reloads the tree
+	 * when the change stands.
+	 *
+	 * @param int        $batch_id The running batch.
+	 * @param int        $id       The category written.
+	 * @param \Throwable $error    The journal's failure.
+	 * @param bool       $created  Whether the write created the category.
+	 * @param bool       $landed   Whether WordPress accepted the write.
+	 */
+	private function unrecorded( int $batch_id, int $id, \Throwable $error, bool $created, bool $landed ): \WP_Error {
+		if ( $created && $landed ) {
+			$undone = wp_delete_term( $id, Counts::TAXONOMY );
+			$landed = true !== $undone;
+		}
+		if ( $created && ! $landed ) {
+			$reason = __( 'The category could not be created, because its History record could not be written. Nothing was changed; try again.', 'bulk-catalogue-manager-for-woocommerce' );
+			$this->finish( $batch_id, 'failed', $reason, false );
+		} elseif ( $landed ) {
+			$reason = __( 'The category was changed, but the change could not be recorded in History, so it cannot be undone there. Reload the categories to see it.', 'bulk-catalogue-manager-for-woocommerce' );
+			$this->finish( $batch_id, 'done', $reason, true );
+		} else {
+			$reason = __( 'Something went wrong while changing this category, so it may not have been finished. Reload the categories to check it.', 'bulk-catalogue-manager-for-woocommerce' );
+			$this->finish( $batch_id, 'failed', $reason, false );
+		}
+		Cache::invalidate();
+		return Refusal::unexpected(
+			ProductWriter::SAVE_FAILED,
+			$reason,
+			500,
+			$error,
+			[
+				'batch_id' => $batch_id,
+				'applied'  => $landed,
+			]
+		);
 	}
 
 	/**

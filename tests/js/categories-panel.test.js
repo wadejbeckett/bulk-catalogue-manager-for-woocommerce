@@ -763,6 +763,36 @@ describe( 'category panel', () => {
 		expectNoRawText();
 	} );
 
+	it( 'reloads the tree when a rename was made but not recorded (SILENT-FAILURES-9)', async () => {
+		const sentence =
+			'The category was changed, but the change could not be recorded in History, so it cannot be undone there. Reload the categories to see it.';
+		routes[ 'PATCH categories/6' ] = () =>
+			Promise.reject( {
+				code: 'bulkcat_save_failed',
+				message: sentence,
+				data: { status: 500, batch_id: 9, applied: true },
+			} );
+		await renderPanel();
+		let reads = 0;
+		routes[ 'GET categories' ] = () => {
+			reads += 1;
+			return Promise.resolve( TREE );
+		};
+		act( () => item( 'Bags' ).focus() );
+		fireEvent.keyDown( item( 'Bags' ), { key: 'F2' } );
+		const input = screen.getByRole( 'textbox', {
+			name: 'New name for Bags',
+		} );
+		fireEvent.change( input, { target: { value: 'Totes' } } );
+		await act( async () => {
+			fireEvent.keyDown( input, { key: 'Enter' } );
+		} );
+		expect(
+			await screen.findByText( sentence, { selector: 'p' } )
+		).toBeTruthy();
+		await waitFor( () => expect( reads ).toBe( 1 ) );
+	} );
+
 	it( 'is a button opening the tree as a sheet below 960 pixels', async () => {
 		const matchMedia = jest.fn( () => ( {
 			matches: true,

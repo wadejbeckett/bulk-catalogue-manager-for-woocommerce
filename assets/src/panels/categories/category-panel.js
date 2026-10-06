@@ -214,6 +214,10 @@ export default function CategoryPanel( {
 	const fail = ( error, fallback ) => {
 		setFailure( { error, fallback } );
 		announce( errorMessage( error, fallback ), 'assertive' );
+		if ( error?.data?.applied ) {
+			// Made but not recorded (SILENT-FAILURES-9): show the tree as it now is.
+			tree.reload();
+		}
 	};
 
 	const actions = useCategoryActions( { tree, value, onFail: fail } );

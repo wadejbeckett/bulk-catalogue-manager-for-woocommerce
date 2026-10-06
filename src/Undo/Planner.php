@@ -26,6 +26,7 @@ use BulkCatalogueManager\Fields\Values;
 use BulkCatalogueManager\Operations\Registry as Actions;
 use BulkCatalogueManager\Operations\RestoreStatus;
 use BulkCatalogueManager\Operations\RestoreStock;
+use BulkCatalogueManager\Operations\RestoreValue;
 use BulkCatalogueManager\Operations\StockCoupling;
 use BulkCatalogueManager\Operations\Terms;
 use BulkCatalogueManager\Rest\Access;
@@ -726,7 +727,8 @@ final class Planner {
 			}
 		}
 
-		$normalised = [] === $operations ? [] : $this->actions->validate_list( $operations, null !== $restore || null !== $stock || $external );
+		$exact      = in_array( RestoreValue::ID, array_column( $operations, 'action' ), true );
+		$normalised = [] === $operations ? [] : $this->actions->validate_list( $operations, null !== $restore || null !== $stock || $external || $exact );
 		if ( $normalised instanceof \WP_Error ) {
 			return self::skipped( $object_id, $type, self::CANNOT_RESTORE, $normalised->get_error_message() );
 		}
@@ -979,7 +981,7 @@ final class Planner {
 		$value = [];
 		foreach ( $operations as $at => $operation ) {
 			$field = $fields->get( (string) ( $operation['args']['field'] ?? '' ) );
-			if ( null === $field || Field::MONEY !== $field->type() || ! in_array( $operation['action'] ?? '', [ 'set_value', 'clear' ], true ) ) {
+			if ( null === $field || Field::MONEY !== $field->type() || ! in_array( $operation['action'] ?? '', [ 'set_value', RestoreValue::ID, 'clear' ], true ) ) {
 				continue;
 			}
 			$kind = $field->accepts( Field::COPY_FROM_SALE ) ? 'regular' : ( $field->accepts( Field::COPY_FROM_REGULAR ) ? 'sale' : '' );
@@ -1041,6 +1043,16 @@ final class Planner {
 			return [
 				'action' => 'clear',
 				'args'   => [ 'field' => $key ],
+			];
+		}
+		if ( null !== $field->stored_form( $target ) ) {
+			// A price or measurement goes back exactly as it was stored ("100" stays "100", 1.4.2).
+			return [
+				'action' => RestoreValue::ID,
+				'args'   => [
+					'field' => $key,
+					'value' => $target,
+				],
 			];
 		}
 		return [

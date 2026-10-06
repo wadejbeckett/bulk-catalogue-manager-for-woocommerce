@@ -81,7 +81,7 @@ final class Registry {
 	/**
 	 * Actions only the engine itself may list (T90).
 	 */
-	public const INTERNAL = [ RestoreStatus::ID, RestoreStock::ID, RestoreExternal::ID ];
+	public const INTERNAL = [ RestoreStatus::ID, RestoreStock::ID, RestoreValue::ID, RestoreExternal::ID ];
 
 	/**
 	 * The instance runtime code shares.
@@ -459,6 +459,7 @@ final class Registry {
 			new Terms( $fields, Terms::REPLACE ),
 			new RestoreStatus( $fields ),
 			new RestoreStock( $fields ),
+			new RestoreValue( $fields ),
 		];
 	}
 

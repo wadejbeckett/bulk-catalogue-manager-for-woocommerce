@@ -1,5 +1,5 @@
 {
-    "hash": "3668a48895acd76cf2e5d0a696df27a53eb2a7c9c43cd3bdfec7587b8c47f302",
+    "hash": "98acc5019895737c1ff775b5275b1a518c04bf45361ecec5e036e3f836aaad03",
     "counts": {
         "revertible": 211,
         "conflicted": 33,
@@ -38,11 +38,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -76,11 +75,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -104,11 +102,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -142,11 +139,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -180,11 +176,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -208,11 +203,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -246,11 +240,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -284,11 +277,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -312,11 +304,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -378,11 +369,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -398,11 +388,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -428,11 +417,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -448,11 +436,10 @@
             "object_type": "product",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -468,11 +455,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -498,11 +484,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -534,11 +519,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -554,11 +538,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -622,11 +605,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -652,11 +634,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -682,11 +663,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -702,11 +682,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -741,11 +720,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -770,11 +748,10 @@
             "object_type": "product",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -800,11 +777,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -820,11 +796,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -850,11 +825,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -895,11 +869,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -925,11 +898,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -945,11 +917,10 @@
             "object_type": "product",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -965,11 +936,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -995,11 +965,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -1025,11 +994,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -1051,11 +1019,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -1081,11 +1048,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -1111,11 +1077,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -1150,11 +1115,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -1180,11 +1144,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -1200,11 +1163,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -1258,11 +1220,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -1278,11 +1239,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -1298,11 +1258,10 @@
             "object_type": "product",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -1327,11 +1286,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -1347,11 +1305,10 @@
             "object_type": "product",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -1377,11 +1334,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -1397,11 +1353,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -1427,11 +1382,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -1447,11 +1401,10 @@
             "object_type": "product",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -1467,11 +1420,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -1497,11 +1449,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -1526,11 +1477,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -1562,11 +1512,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -1592,11 +1541,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -1647,11 +1595,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -1677,11 +1624,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -1697,11 +1643,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -1727,11 +1672,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -1757,11 +1701,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -1777,11 +1720,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -1797,11 +1739,10 @@
             "object_type": "product",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -1817,11 +1758,10 @@
             "object_type": "product",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -1837,11 +1777,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -1876,11 +1815,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -1896,11 +1834,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -1945,11 +1882,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -1975,11 +1911,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -2005,11 +1940,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -2025,11 +1959,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -2055,11 +1988,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -2091,11 +2023,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -2111,11 +2042,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -2163,11 +2093,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -2183,11 +2112,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -2213,11 +2141,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -2243,11 +2170,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -2263,11 +2189,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -2283,11 +2208,10 @@
             "object_type": "product",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -2313,11 +2237,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -2377,11 +2300,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -2416,11 +2338,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -2464,11 +2385,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -2494,11 +2414,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -2524,11 +2443,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -2544,11 +2462,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -2574,11 +2491,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -2604,11 +2520,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -2630,11 +2545,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -2680,11 +2594,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -2700,11 +2613,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -2720,11 +2632,10 @@
             "object_type": "product",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -2749,11 +2660,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -2769,11 +2679,10 @@
             "object_type": "product",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -2799,11 +2708,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -2819,11 +2727,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -2849,11 +2756,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -2885,11 +2791,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -2905,11 +2810,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -2935,11 +2839,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -2964,11 +2867,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -2994,11 +2896,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -3024,11 +2925,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -3044,11 +2944,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -3117,11 +3016,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -3146,11 +3044,10 @@
             "object_type": "product",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -3166,11 +3063,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -3196,11 +3092,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -3226,11 +3121,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -3246,11 +3140,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -3266,11 +3159,10 @@
             "object_type": "product",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -3296,11 +3188,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -3316,11 +3207,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -3346,11 +3236,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -3388,11 +3277,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -3418,11 +3306,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -3438,11 +3325,10 @@
             "object_type": "product",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -3458,11 +3344,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -3497,11 +3382,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -3536,11 +3420,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -3566,11 +3449,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -3586,11 +3468,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -3616,11 +3497,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -3652,11 +3532,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -3672,11 +3551,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -3702,11 +3580,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -3732,11 +3609,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -3752,11 +3628,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -3772,11 +3647,10 @@
             "object_type": "product",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -3802,11 +3676,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -3857,11 +3730,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -3887,11 +3759,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -3907,11 +3778,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -3943,11 +3813,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -3972,11 +3841,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -4043,11 +3911,10 @@
             "object_type": "product",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -4073,11 +3940,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -4093,11 +3959,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -4123,11 +3988,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -4153,11 +4017,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -4179,11 +4042,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -4209,11 +4071,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -4239,11 +4100,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -4259,11 +4119,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -4279,11 +4138,10 @@
             "object_type": "product",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -4327,11 +4185,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -4366,11 +4223,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -4386,11 +4242,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -4416,11 +4271,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -4442,11 +4296,10 @@
             "object_type": "product",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -4462,11 +4315,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -4492,11 +4344,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -4512,11 +4363,10 @@
             "object_type": "product",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -4532,11 +4382,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -4586,11 +4435,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -4616,11 +4464,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -4646,11 +4493,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -4666,11 +4512,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -4722,11 +4567,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -4751,11 +4595,10 @@
             "object_type": "product",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -4781,11 +4624,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -4801,11 +4643,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -4831,11 +4672,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -4861,11 +4701,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -4881,11 +4720,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -4929,11 +4767,10 @@
             "object_type": "product",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -4949,11 +4786,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -4979,11 +4815,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -5009,11 +4844,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -5029,11 +4863,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -5059,11 +4892,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -5089,11 +4921,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -5109,11 +4940,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -5147,11 +4977,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -5177,11 +5006,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -5225,11 +5053,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -5245,11 +5072,10 @@
             "object_type": "product",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -5290,11 +5116,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -5320,11 +5145,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -5350,11 +5174,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -5370,11 +5193,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -5390,11 +5212,10 @@
             "object_type": "product",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -5410,11 +5231,10 @@
             "object_type": "product",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -5430,11 +5250,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -5466,11 +5285,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -5496,11 +5314,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -5516,11 +5333,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -5555,11 +5371,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -5575,11 +5390,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -5605,11 +5419,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -5635,11 +5448,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -5674,11 +5486,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -5704,11 +5515,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -5730,11 +5540,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -5750,11 +5559,10 @@
             "object_type": "product",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -5780,11 +5588,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -5800,11 +5607,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -5842,11 +5648,10 @@
             "object_type": "product",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -5862,11 +5667,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -5892,11 +5696,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -5912,11 +5715,10 @@
             "object_type": "product",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -5951,11 +5753,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -5987,11 +5788,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -6042,11 +5842,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -6082,11 +5881,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -6112,11 +5910,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -6160,11 +5957,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -6190,11 +5986,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -6219,11 +6014,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -6245,11 +6039,10 @@
             "object_type": "product",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -6275,11 +6068,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -6295,11 +6087,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -6325,11 +6116,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -6354,11 +6144,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -6384,11 +6173,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -6404,11 +6192,10 @@
             "object_type": "product",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -6424,11 +6211,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -6454,11 +6240,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -6484,11 +6269,10 @@
                     }
                 },
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }
@@ -6510,11 +6294,10 @@
             "object_type": "variation",
             "operations": [
                 {
-                    "action": "set_value",
+                    "action": "restore_value",
                     "args": {
                         "field": "regular_price",
                         "value": "10.00",
-                        "clear_invalid_sale": false,
                         "skip_already": true,
                         "apply_to_variations": false
                     }

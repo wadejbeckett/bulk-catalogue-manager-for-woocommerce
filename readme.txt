@@ -137,11 +137,12 @@ Yes. Each site keeps its own history and settings, and deleting the plugin with 
 
 == Screenshots ==
 
-1. The catalogue: every product in one table, with the category panel, saved views and search.
+1. The catalogue: every product in one table with its status, stock and whether it shows in the shop, beside the category panel, saved views and search.
 2. A variable product opened to show its variations as rows of their own.
-3. The bulk change panel checking a change before it is applied.
-4. History: each change with who made it, when, and its progress.
-5. Settings.
+3. Bulk change checking a price change on three selected products before it is applied: what will change, and each product's value now and after.
+4. History: each change with who made it and when, opened to show every product's value before and after, with Undo.
+5. The Categories tab: the category tree beside the chosen category's details, actions and products.
+6. Settings.
 
 == Changelog ==
 

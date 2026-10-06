@@ -140,6 +140,10 @@ archives() {
 }
 
 up() {
+	if docker network inspect "$NET" > /dev/null 2>&1 || docker volume inspect "$VOL" > /dev/null 2>&1; then
+		say "FAIL up: $NET or $VOL already exists; run down first (or choose another SUFFIX)"
+		return 1
+	fi
 	archives
 	wrapper
 	docker network create "$NET" > /dev/null
@@ -273,6 +277,10 @@ native() {
 }
 
 down() {
+	# Any WP-CLI container still attached (an interrupted step) first, so the network can go.
+	for container in $(docker ps -aq --filter "network=$NET" 2> /dev/null); do
+		docker rm -f -v "$container" > /dev/null 2>&1 || true
+	done
 	docker rm -f -v "$WEB" "$DB" > /dev/null 2>&1 || true
 	docker volume rm "$VOL" > /dev/null 2>&1 || true
 	docker network rm "$NET" > /dev/null 2>&1 || true

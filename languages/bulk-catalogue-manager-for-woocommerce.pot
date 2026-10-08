@@ -2,14 +2,14 @@
 # This file is distributed under the GPL-3.0-or-later.
 msgid ""
 msgstr ""
-"Project-Id-Version: Bulk Catalogue Manager for WooCommerce 1.4.2\n"
+"Project-Id-Version: Bulk Catalogue Manager for WooCommerce 1.4.3\n"
 "Report-Msgid-Bugs-To: https://wordpress.org/support/plugin/bulk-catalogue-manager-for-woocommerce\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-10-06T14:13:06+00:00\n"
+"POT-Creation-Date: 2026-10-08T08:21:45+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -618,6 +618,9 @@ msgid "The preview showed %1$s products, but %2$s matched the filters when the c
 msgid_plural "The preview showed %1$s products, but %2$s matched the filters when the change started, so %3$s fewer products were included."
 msgstr[0] ""
 msgstr[1] ""
+
+msgid "Queued, starts within a minute. Nothing has changed yet: the site's background tasks pick new changes up on their next run."
+msgstr ""
 
 msgid "This change has not moved for five minutes because the site's background tasks are not running, so nothing more has been changed. Open WooCommerce > Status > Scheduled Actions to check them."
 msgstr ""
@@ -3328,6 +3331,43 @@ msgstr ""
 msgid "This change can no longer be undone."
 msgstr ""
 
+msgid "The save outcome is unconfirmed. This was an individual save, so background tasks cannot resume it. Check the save outcome in the catalogue or review the recorded changes here. Do not resend, cancel or undo it while its outcome is unconfirmed."
+msgstr ""
+
+msgid "Queued, starts within a minute. Nothing has changed yet: the site’s background tasks pick new changes up on their next run."
+msgstr ""
+
+msgid "The background queue has not run."
+msgstr ""
+
+msgid "This change has not moved for five minutes because the site’s background tasks are not running."
+msgstr ""
+
+msgid "Nothing has been applied yet."
+msgstr ""
+
+#. translators: 1: products done so far, such as "40"; 2: products in the change, such as "1,248".
+#, js-format
+msgid "%1$s of %2$s product has been applied; nothing more will change until the queue runs."
+msgid_plural "%1$s of %2$s products have been applied; nothing more will change until the queue runs."
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "Open WooCommerce → Status → Scheduled Actions"
+msgstr ""
+
+msgid "Queued, starts within a minute"
+msgstr ""
+
+msgid "Progress of the change"
+msgstr ""
+
+#. translators: 1: products done so far, such as "40"; 2: products in the change, such as "1,248".
+#. translators: 1: done, such as "312"; 2: in all, such as "1,284".
+#, js-format
+msgid "%1$s of %2$s done"
+msgstr ""
+
 #. translators: 1: rows done, such as "312"; 2: rows in all, such as "1,284".
 #, js-format
 msgid "Applying the change: %1$s of %2$s done."
@@ -3384,12 +3424,6 @@ msgid "Working through %s in the background."
 msgstr ""
 
 msgid "Progress"
-msgstr ""
-
-#. translators: 1: done, such as "312"; 2: in all, such as "1,284".
-#. translators: 1: products done so far, such as "40"; 2: products in the change, such as "1,248".
-#, js-format
-msgid "%1$s of %2$s done"
 msgstr ""
 
 msgid "You can leave this page. The update carries on in the background and appears in History when it finishes."
@@ -5262,31 +5296,6 @@ msgid "The audit log could not be loaded. Try again in a moment."
 msgstr ""
 
 msgid "No field changes match these filters."
-msgstr ""
-
-msgid "The save outcome is unconfirmed. This was an individual save, so background tasks cannot resume it. Check the save outcome in the catalogue or review the recorded changes here. Do not resend, cancel or undo it while its outcome is unconfirmed."
-msgstr ""
-
-msgid "The background queue has not run."
-msgstr ""
-
-msgid "This change has not moved for five minutes because the site’s background tasks are not running."
-msgstr ""
-
-msgid "Nothing has been applied yet."
-msgstr ""
-
-#. translators: 1: products done so far, such as "40"; 2: products in the change, such as "1,248".
-#, js-format
-msgid "%1$s of %2$s product has been applied; nothing more will change until the queue runs."
-msgid_plural "%1$s of %2$s products have been applied; nothing more will change until the queue runs."
-msgstr[0] ""
-msgstr[1] ""
-
-msgid "Open WooCommerce → Status → Scheduled Actions"
-msgstr ""
-
-msgid "Progress of the change"
 msgstr ""
 
 #. translators: %s: a number of categories, such as "4".

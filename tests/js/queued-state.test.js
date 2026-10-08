@@ -152,6 +152,29 @@ describe( 'the Done step', () => {
 		expect( container.querySelector( '.is-queued' ) ).toBeNull();
 	} );
 
+	it( 'reads Queued before the first progress read has answered (1.4.4)', async () => {
+		// The first GET /batches/{id} is slow: nothing is known yet, nothing is done.
+		let answer;
+		apiFetch.mockImplementation(
+			() => new Promise( ( resolve ) => ( answer = resolve ) )
+		);
+		render( <DoneStep batchId={ 181 } count={ 16 } interval={ 20 } /> );
+		// The screen's own words (the server's sentence is not known yet).
+		expect(
+			screen.getByText(
+				/^Queued, starts within a minute\. Nothing has changed yet/
+			)
+		).toBeTruthy();
+		expect( screen.queryByText( /0 of 16 done/ ) ).toBeNull();
+		expect(
+			screen.getByRole( 'progressbar' ).hasAttribute( 'aria-valuenow' )
+		).toBe( false );
+		answer( RUNNING );
+		await waitFor( () =>
+			expect( screen.getByText( '1 of 16 done' ) ).toBeTruthy()
+		);
+	} );
+
 	it( 'still hands a stalled report to renderStalled', async () => {
 		report = {
 			...QUEUED,

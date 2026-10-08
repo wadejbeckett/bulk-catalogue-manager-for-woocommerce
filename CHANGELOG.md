@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.4] - 2026-10-08
+
+- The bulk panel's Done step reads "Queued, starts within a minute" from the moment Apply is accepted, instead of "0 of N done" for the second before the first progress read answers.
+
 ## [1.4.3] - 2026-10-08
 
 - While a change waits for the site's background tasks to pick it up, the bulk panel, the Products screen and History read "Queued, starts within a minute" instead of "0 of N done", which looked stuck. The count shows from the first item done; the five-minute "queue has not run" notice is unchanged.

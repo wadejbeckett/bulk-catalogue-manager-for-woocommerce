@@ -3,7 +3,9 @@
  * GET /batches/{id} until the batch finishes, then the result with Undo and
  * History. Until the first item is done the report says `queued` and the
  * step reads "Queued, starts within a minute" over an indeterminate bar
- * (1.4.3, delivery ticket 30); the count takes over from the first item.
+ * (1.4.3, delivery ticket 30), from the moment Apply is accepted, before
+ * the first read has answered (1.4.4); the count takes over from the first
+ * item.
  * A stalled queue is handed to `renderStalled` (T44's notice) when given,
  * else the server's own sentence is shown.
  */
@@ -171,7 +173,9 @@ export function DoneStep( {
 	const total = Number( report?.total_items ?? count ) || 0;
 	const done = Number( report?.done_items ) || 0;
 	const finished = FINISHED.includes( report?.status );
-	const queued = isQueued( report );
+	// Before the first progress read answers there is nothing done either:
+	// the step reads Queued from the moment Apply is accepted (1.4.4).
+	const queued = ! report || isQueued( report );
 	const percent = total > 0 ? Math.min( 100, ( done / total ) * 100 ) : 0;
 	// T75: milestones, not every read; the result below is a status, said once.
 	useProgressAnnouncer( done, total, finished );

@@ -6,7 +6,7 @@ Tested up to: 7.1
 Requires PHP: 8.1
 WC requires at least: 11.1
 WC tested up to: 11.1
-Stable tag: 1.4.3
+Stable tag: 1.4.4
 License: GPL-3.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -146,6 +146,9 @@ Yes. Each site keeps its own history and settings, and deleting the plugin with 
 
 == Changelog ==
 
+= 1.4.4 =
+* The bulk panel's Done step reads "Queued, starts within a minute" from the moment Apply is accepted, instead of "0 of N done" for the second before the first progress read answers.
+
 = 1.4.3 =
 * While a change waits for the site's background tasks to pick it up, the bulk panel, the Products screen and History read "Queued, starts within a minute" instead of "0 of N done", which looked stuck. The count shows from the first item done; the five-minute "queue has not run" notice is unchanged.
 * After saving a variation's price in the table, keyboard focus stays on the edited cell instead of jumping to the search box.
@@ -249,6 +252,9 @@ Yes. Each site keeps its own history and settings, and deleting the plugin with 
 * Settings for access, page size, confirmation, variation defaults, background batch sizes, history and data removal.
 
 == Upgrade Notice ==
+
+= 1.4.4 =
+The Done step reads Queued from the moment Apply is accepted. No database change.
 
 = 1.4.3 =
 A queued change reads "Queued, starts within a minute" instead of "0 of N done"; focus stays on an edited variation price. No database change.

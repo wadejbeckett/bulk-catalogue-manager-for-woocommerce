@@ -6,7 +6,7 @@ Tested up to: 7.1
 Requires PHP: 8.1
 WC requires at least: 11.1
 WC tested up to: 11.1
-Stable tag: 1.4.2
+Stable tag: 1.4.3
 License: GPL-3.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -146,6 +146,10 @@ Yes. Each site keeps its own history and settings, and deleting the plugin with 
 
 == Changelog ==
 
+= 1.4.3 =
+* While a change waits for the site's background tasks to pick it up, the bulk panel, the Products screen and History read "Queued, starts within a minute" instead of "0 of N done", which looked stuck. The count shows from the first item done; the five-minute "queue has not run" notice is unchanged.
+* After saving a variation's price in the table, keyboard focus stays on the edited cell instead of jumping to the search box.
+
 = 1.4.2 =
 * After Undo then Redo, History reads "Redone" with who put it back and who did it again, in the list, the change and the CSV.
 * Undo puts prices back exactly as they were stored.
@@ -245,6 +249,9 @@ Yes. Each site keeps its own history and settings, and deleting the plugin with 
 * Settings for access, page size, confirmation, variation defaults, background batch sizes, history and data removal.
 
 == Upgrade Notice ==
+
+= 1.4.3 =
+A queued change reads "Queued, starts within a minute" instead of "0 of N done"; focus stays on an edited variation price. No database change.
 
 = 1.4.2 =
 History reads Redone after Undo then Redo; undo restores exact prices; the Categories tab works where other plugins hide categories; translation fixes. No database change.

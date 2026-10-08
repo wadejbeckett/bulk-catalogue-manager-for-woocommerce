@@ -619,6 +619,18 @@ $bulkcat-bad-line: #f3c3c4;
 				transition: none;
 			}
 		}
+
+		// Queued (1.4.3): nothing is done yet, so the bar moves without a value.
+		&.is-queued > i {
+			width: 30% !important;
+			animation: bulkcat-queued 1.6s ease-in-out infinite alternate;
+
+			@media (prefers-reduced-motion: reduce) {
+				width: 100% !important;
+				animation: none;
+				background: rgba($bulkcat-blue, 0.35);
+			}
+		}
 	}
 
 	&__foot {
@@ -699,4 +711,15 @@ $bulkcat-bad-line: #f3c3c4;
 	max-width: 100%;
 	white-space: normal;
 	text-align: left;
+}
+
+@keyframes bulkcat-queued {
+
+	0% {
+		transform: translateX(0);
+	}
+
+	100% {
+		transform: translateX(233%);
+	}
 }

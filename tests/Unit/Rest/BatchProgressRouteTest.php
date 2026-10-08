@@ -191,6 +191,9 @@ final class BatchProgressRouteTest extends TestCase {
 		$report = $this->ok( self::dispatch( 'GET', '/batches/12' ) );
 		$this->assertSame( [ 'queued', 120, 0, 0, 0, 120 ], [ $report['status'], $report['total_items'], $report['done_items'], $report['changed_items'], $report['failed_items'], $report['pending_items'] ] );
 		$this->assertFalse( $report['stalled'] );
+		// Delivery ticket 30 (1.4.3): nothing done yet and not stalled is queued, with its plain sentence.
+		$this->assertTrue( $report['queued'] );
+		$this->assertStringStartsWith( 'Queued, starts within a minute.', $report['queued_message'] );
 		$this->assertTrue( $report['cancellable'] );
 		$this->assertSame( '2026-09-23 08:00:00', $report['created_gmt'] );
 		$this->assertNull( $report['finished_gmt'] );
@@ -201,6 +204,8 @@ final class BatchProgressRouteTest extends TestCase {
 			$this->assertSame( $outcome, $this->runner()->run( self::BATCH ) );
 			$report = $this->ok( self::dispatch( 'GET', '/batches/12' ) );
 			$this->assertSame( [ $status, $done, $done, 0, $pending ], [ $report['status'], $report['done_items'], $report['changed_items'], $report['failed_items'], $report['pending_items'] ], "After a chunk: $done done." );
+			$this->assertFalse( $report['queued'], "From the first item done the change is running, not queued: $done done." );
+			$this->assertSame( '', $report['queued_message'] );
 		}
 		$this->assertSame( 1, preg_match( '/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', (string) $report['finished_gmt'] ) );
 		$this->assertFalse( $report['cancellable'] );
@@ -260,11 +265,15 @@ final class BatchProgressRouteTest extends TestCase {
 		$store = new RunnerStore( self::BATCH, self::products( 60 ), $this->increase(), self::OWNER );
 
 		$this->now = self::CREATED + Progress::STALL_SECONDS;
-		$this->assertFalse( $this->ok( self::dispatch( 'GET', '/batches/12' ) )['stalled'], 'Five minutes exactly is not yet stalled.' );
+		$report    = $this->ok( self::dispatch( 'GET', '/batches/12' ) );
+		$this->assertFalse( $report['stalled'], 'Five minutes exactly is not yet stalled.' );
+		$this->assertTrue( $report['queued'], 'Until then it is queued.' );
 
 		$this->now = self::CREATED + Progress::STALL_SECONDS + 1;
 		$report    = $this->ok( self::dispatch( 'GET', '/batches/12' ) );
 		$this->assertTrue( $report['stalled'] );
+		$this->assertFalse( $report['queued'], 'Stalled takes over from queued; a report is never both.' );
+		$this->assertSame( '', $report['queued_message'] );
 		$this->assertSame( 0, $report['done_items'], 'Nothing was applied.' );
 		$this->assertSame( '2026-09-23 08:00:00', $report['last_activity_gmt'] );
 		$this->assertStringContainsString( 'Scheduled Actions', $report['stalled_message'] );
@@ -287,6 +296,7 @@ final class BatchProgressRouteTest extends TestCase {
 		$this->assertSame( 'complete', $report['status'] );
 		$this->assertFalse( $report['stalled'] );
 		$this->assertSame( '', $report['stalled_message'] );
+		$this->assertFalse( $report['queued'], 'A finished batch is never queued.' );
 	}
 
 	public function test_failures_and_skips_finish_partial_with_grouped_reasons_and_a_changes_feed(): void {

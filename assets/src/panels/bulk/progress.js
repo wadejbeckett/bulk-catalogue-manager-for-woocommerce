@@ -1,8 +1,11 @@
 /**
  * The Done step (SPEC §4.3 "After apply", §12.6): progress from
  * GET /batches/{id} until the batch finishes, then the result with Undo and
- * History. A stalled queue is handed to `renderStalled` (T44's notice) when
- * given, else the server's own sentence is shown.
+ * History. Until the first item is done the report says `queued` and the
+ * step reads "Queued, starts within a minute" over an indeterminate bar
+ * (1.4.3, delivery ticket 30); the count takes over from the first item.
+ * A stalled queue is handed to `renderStalled` (T44's notice) when given,
+ * else the server's own sentence is shown.
  */
 import { useEffect, useRef } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
@@ -11,6 +14,7 @@ import { FINISHED, useBatchProgress } from './hooks';
 import { formatNumber, itemsPhrase, productsPhrase } from './words';
 import { countPhrase } from '../catalogue/selection/model';
 import { skippedOnly } from '../history/describe';
+import { isQueued, queuedSentence } from '../history/stalled-notice';
 import { useProgressAnnouncer } from './announce';
 
 /**
@@ -167,6 +171,7 @@ export function DoneStep( {
 	const total = Number( report?.total_items ?? count ) || 0;
 	const done = Number( report?.done_items ) || 0;
 	const finished = FINISHED.includes( report?.status );
+	const queued = isQueued( report );
 	const percent = total > 0 ? Math.min( 100, ( done / total ) * 100 ) : 0;
 	// T75: milestones, not every read; the result below is a status, said once.
 	useProgressAnnouncer( done, total, finished );
@@ -223,11 +228,18 @@ export function DoneStep( {
 					)
 				) : (
 					<div
-						className="bulkcat-bulk__progress"
+						className={
+							'bulkcat-bulk__progress' +
+							( queued ? ' is-queued' : '' )
+						}
 						role="progressbar"
 						aria-valuemin={ 0 }
 						aria-valuemax={ total }
-						aria-valuenow={ done }
+						// An indeterminate bar while queued: no value until the first item is done.
+						aria-valuenow={ queued ? undefined : done }
+						aria-valuetext={
+							queued ? queuedSentence( report ) : undefined
+						}
 						aria-label={ __(
 							'Progress',
 							'bulk-catalogue-manager-for-woocommerce'
@@ -237,15 +249,17 @@ export function DoneStep( {
 					</div>
 				) }
 				<p className="bulkcat-bulk__hint">
-					{ sprintf(
-						/* translators: 1: done, such as "312"; 2: in all, such as "1,284". */
-						__(
-							'%1$s of %2$s done',
-							'bulk-catalogue-manager-for-woocommerce'
-						),
-						formatNumber( done ),
-						formatNumber( total )
-					) }
+					{ queued
+						? queuedSentence( report )
+						: sprintf(
+								/* translators: 1: done, such as "312"; 2: in all, such as "1,284". */
+								__(
+									'%1$s of %2$s done',
+									'bulk-catalogue-manager-for-woocommerce'
+								),
+								formatNumber( done ),
+								formatNumber( total )
+							) }
 				</p>
 				<p className="bulkcat-bulk__hint">
 					{ __(

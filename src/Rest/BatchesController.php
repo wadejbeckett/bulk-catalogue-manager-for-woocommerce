@@ -314,6 +314,8 @@ final class BatchesController implements ReadController {
 					'items' => [ 'type' => 'object' ],
 				],
 				'cancellable'          => [ 'type' => 'boolean' ],
+				'queued'               => [ 'type' => 'boolean' ],
+				'queued_message'       => $text,
 				'stalled'              => [ 'type' => 'boolean' ],
 				'stalled_message'      => $text,
 				'last_activity_gmt'    => $time,

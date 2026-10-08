@@ -163,7 +163,9 @@ test( 'a change in progress: pending rows, Cancel and View in History, then read
 	await panel
 		.getByRole( 'button', { name: 'Apply to 1 product' } )
 		.press( 'Enter' );
-	await expect( panel.getByText( /0 of 1 done/ ) ).toBeVisible();
+	await expect(
+		panel.getByText( /Queued, starts within a minute|[01] of 1 done/ )
+	).toBeVisible();
 	await panel
 		.getByRole( 'button', { name: 'Back to products' } )
 		.press( 'Enter' );
@@ -249,7 +251,9 @@ test( 'Cancel stops a queued change', async ( { page } ) => {
 	await panel
 		.getByRole( 'button', { name: 'Apply to 1 product' } )
 		.press( 'Enter' );
-	await expect( panel.getByText( /0 of 1 done/ ) ).toBeVisible();
+	await expect(
+		panel.getByText( /Queued, starts within a minute|[01] of 1 done/ )
+	).toBeVisible();
 	await panel
 		.getByRole( 'button', { name: 'Back to products' } )
 		.press( 'Enter' );

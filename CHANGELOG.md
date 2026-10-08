@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.3] - 2026-10-08
+
+- While a change waits for the site's background tasks to pick it up, the bulk panel, the Products screen and History read "Queued, starts within a minute" instead of "0 of N done", which looked stuck. The count shows from the first item done; the five-minute "queue has not run" notice is unchanged.
+- After saving a variation's price in the table, keyboard focus stays on the edited cell instead of jumping to the search box.
+
 ## [1.4.2] - 2026-10-06
 
 - After Undo then Redo, History reads "Redone" with who put it back and who did it again, in the list, the change and the CSV.

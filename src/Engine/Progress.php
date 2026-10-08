@@ -28,6 +28,12 @@ defined( 'ABSPATH' ) || exit;
  *
  * report() answers a batch's status, counters (updated by the chunk runner as
  * each item finishes, so a polling client counts up), its times, and:
+ * - `queued` (1.4.3, delivery ticket 30): the batch is queued or running,
+ *   not stalled, and no item is done yet. The background queue picks a new
+ *   batch up on its next run, up to a minute after Apply, so the screen says
+ *   "Queued, starts within a minute" instead of a 0-of-N count that reads as
+ *   stuck. It turns off with the first item done, and the stalled rule below
+ *   still takes over after five minutes without a claim;
  * - `stalled`: the batch is queued or running with items still pending, and
  *   no chunk has claimed anything for STALL_SECONDS (five minutes) — the
  *   latest claimed_gmt of its items, or its creation time when none was
@@ -204,6 +210,7 @@ final class Progress {
 		$pending  = $active ? $this->batches->count_items( $batch['batch_id'], 'pending' ) : 0;
 		$last     = $active ? $this->last_activity( $batch ) : null;
 		$stalled  = ! $unclosed && $active && $pending > 0 && null !== $last && self::seconds( $last ) < (int) ( $this->clock )() - self::STALL_SECONDS;
+		$queued   = ! $unclosed && $active && ! $stalled && 0 === (int) $batch['done_items'];
 		$report   = [
 			'batch_id'             => $batch['batch_id'],
 			'status'               => $batch['status'],
@@ -222,6 +229,8 @@ final class Progress {
 			// An add-on's own argument values only for a reader holding the step's capability (EXTENSIONS §18.20).
 			'operations'           => Disclosure::operations( $batch['operations'], get_current_user_id(), $this->providers ??= Actions::instance()->providers() ),
 			'cancellable'          => $active && ! InlineReceipt::is_inline( $batch ),
+			'queued'               => $queued,
+			'queued_message'       => $queued ? self::queued_message() : '',
 			'stalled'              => $stalled,
 			'stalled_message'      => $stalled ? self::stalled_message() : '',
 			'last_activity_gmt'    => $last,
@@ -467,6 +476,13 @@ final class Progress {
 	private static function seconds( string $gmt ): int {
 		$time = \DateTimeImmutable::createFromFormat( '!Y-m-d H:i:s', $gmt, new \DateTimeZone( 'UTC' ) );
 		return false === $time ? 0 : $time->getTimestamp();
+	}
+
+	/**
+	 * What the screen says about a batch the background queue has not picked up yet.
+	 */
+	public static function queued_message(): string {
+		return __( 'Queued, starts within a minute. Nothing has changed yet: the site\'s background tasks pick new changes up on their next run.', 'bulk-catalogue-manager-for-woocommerce' );
 	}
 
 	/**

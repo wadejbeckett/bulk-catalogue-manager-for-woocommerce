@@ -6,8 +6,16 @@
  * at WooCommerce → Status → Scheduled Actions instead of showing progress
  * that is not happening. The count is static text, never animated.
  *
+ * The queued state (1.4.3, delivery ticket 30): until the first item is
+ * done the report says `queued`, and the progress reads "Queued, starts
+ * within a minute" with an indeterminate bar instead of "0 of N done",
+ * which read as stuck during the up-to-a-minute wait for the background
+ * queue's next run. The count takes over with the first item done, and
+ * the stalled notice still takes over after five minutes without a claim.
+ *
  * Exported for the bulk panel's progress banner as well as the History
- * row: `BatchProgress` shows either the progress bar or this notice.
+ * row: `BatchProgress` shows the queued line, the progress bar or the
+ * stalled notice.
  */
 import { __, _n, sprintf } from '@wordpress/i18n';
 import { formatNumber } from '../bulk/words';
@@ -54,6 +62,50 @@ function InlineNotice() {
  */
 export function isStalled( report ) {
 	return ! isUnclosedInline( report ) && report?.stalled === true;
+}
+
+/**
+ * Whether a batch report says the background queue has not picked the
+ * change up yet (no item done, not stalled).
+ *
+ * @param {Object} report A GET /batches/{id} answer.
+ * @return {boolean} Queued.
+ */
+export function isQueued( report ) {
+	return (
+		! isUnclosedInline( report ) &&
+		report?.queued === true &&
+		report?.stalled !== true
+	);
+}
+
+/**
+ * The queued line: the server's sentence, or the same words when a report
+ * carries the flag without it.
+ *
+ * @param {Object} report A GET /batches/{id} answer.
+ * @return {string} Sentence.
+ */
+export function queuedSentence( report ) {
+	return (
+		report?.queued_message ||
+		__(
+			'Queued, starts within a minute. Nothing has changed yet: the site’s background tasks pick new changes up on their next run.',
+			'bulk-catalogue-manager-for-woocommerce'
+		)
+	);
+}
+
+/**
+ * The short queued label, for the bar's text.
+ *
+ * @return {string} Label.
+ */
+export function queuedLabel() {
+	return __(
+		'Queued, starts within a minute',
+		'bulk-catalogue-manager-for-woocommerce'
+	);
 }
 
 /**
@@ -115,8 +167,9 @@ export function StalledNotice( { report } ) {
 }
 
 /**
- * A running batch's progress: a bar with "40 of 1,248 done", or the
- * stalled notice in its place.
+ * A running batch's progress: "Queued, starts within a minute" with an
+ * indeterminate bar until the first item is done, then a bar with
+ * "40 of 1,248 done", or the stalled notice in its place.
  *
  * @param {Object} props        Props.
  * @param {Object} props.report The batch report.
@@ -131,6 +184,28 @@ export function BatchProgress( { report } ) {
 	}
 	const done = Number( report?.done_items ) || 0;
 	const total = Number( report?.total_items ) || 0;
+	if ( isQueued( report ) ) {
+		const label = queuedLabel();
+		return (
+			<div className="bulkcat-progress is-queued">
+				<progress
+					className="bulkcat-progress__bar"
+					max={ Math.max( 1, total ) }
+					aria-valuetext={ label }
+					aria-label={ __(
+						'Progress of the change',
+						'bulk-catalogue-manager-for-woocommerce'
+					) }
+				/>
+				<span
+					className="bulkcat-progress__text"
+					title={ queuedSentence( report ) }
+				>
+					{ label }
+				</span>
+			</div>
+		);
+	}
 	const text = sprintf(
 		/* translators: 1: products done so far, such as "40"; 2: products in the change, such as "1,248". */
 		__( '%1$s of %2$s done', 'bulk-catalogue-manager-for-woocommerce' ),

@@ -140,12 +140,17 @@ final class Computer {
 			// An action the provider no longer offers may not be made (EXT-5): fail closed.
 			return null !== $described && user_can( $user, $described['capability'] );
 		}
+		// No action left on the field means no capability to ask for: fail closed, as External\Disclosure does.
+		$any = false;
 		foreach ( $this->provider->all_described() as $described ) {
-			if ( ( $step['args']['field'] ?? '' ) === $described['field'] && ! user_can( $user, $described['capability'] ) ) {
-				return false;
+			if ( ( $step['args']['field'] ?? '' ) === $described['field'] ) {
+				if ( ! user_can( $user, $described['capability'] ) ) {
+					return false;
+				}
+				$any = true;
 			}
 		}
-		return true;
+		return $any;
 	}
 
 	/**

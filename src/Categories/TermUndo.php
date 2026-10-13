@@ -82,8 +82,9 @@ final class TermUndo {
 		if ( null === $tree->node( $id ) ) {
 			return self::skipped( $id, Planner::MISSING, __( 'This category no longer exists, so it was left alone.', 'bulk-catalogue-manager-for-woocommerce' ) );
 		}
-		if ( ! user_can( $user_id, \BulkCatalogueManager\Rest\Access::TERMS_CAPABILITY ) || ! user_can( $user_id, 'edit_term', $id ) ) {
-			return self::skipped( $id, Planner::CANNOT_EDIT, __( 'You can no longer change this category, so it was left alone. Ask an administrator for access to it.', 'bulk-catalogue-manager-for-woocommerce' ) );
+		$created = array_key_exists( 'term_name', $fields ) && null === $fields['term_name']['target'];
+		if ( ! self::may( $user_id, $id, $created, $fields[ Writer::DEFAULT_PROP ]['target'] ?? null ) ) {
+			return self::skipped( $id, Planner::CANNOT_EDIT, self::cannot_edit() );
 		}
 		$now       = self::current( $id );
 		$conflicts = [];
@@ -98,7 +99,6 @@ final class TermUndo {
 			}
 		}
 
-		$created = array_key_exists( 'term_name', $fields ) && null === $fields['term_name']['target'];
 		if ( $created ) {
 			$products = get_objects_in_term( [ $id ], Counts::TAXONOMY );
 			if ( [] !== $tree->children( $id ) || ( is_array( $products ) && [] !== $products ) ) {
@@ -155,9 +155,10 @@ final class TermUndo {
 	 * @param int                  $id         Term id.
 	 * @param list<array<string, mixed>> $operations The item's steps.
 	 * @param array<string, mixed>|null  $now_plan   The item planned again now, or null under Revert anyway.
+	 * @param int                        $user_id    The undo batch's user, whose rights are checked again even under Revert anyway.
 	 * @return array{0: string, 1: string, 2: bool} [ item state, plain message, whether anything changed ].
 	 */
-	public static function write( ChangeRepository $changes, int $batch_id, int $id, array $operations, ?array $now_plan ): array {
+	public static function write( ChangeRepository $changes, int $batch_id, int $id, array $operations, ?array $now_plan, int $user_id ): array {
 		if ( $changes->has_object( $batch_id, $id ) ) {
 			return [ 'done', '', $changes->has_applied( $batch_id, $id ) ];
 		}
@@ -171,6 +172,10 @@ final class TermUndo {
 				return [ 'failed', __( 'This category\'s undo could not be read, so it was left alone.', 'bulk-catalogue-manager-for-woocommerce' ), false ];
 			}
 			$values[ $field ] = $operation['args']['value'] ?? null;
+		}
+		// Rights are checked at write time too: Revert anyway skips the conflict check, never this one.
+		if ( ! self::may( $user_id, $id, array_key_exists( self::CREATED, $values ), $values[ Writer::DEFAULT_PROP ] ?? null ) ) {
+			return [ 'skipped', self::cannot_edit(), false ];
 		}
 		$before = self::current( $id );
 		if ( [] === $before ) {
@@ -227,6 +232,33 @@ final class TermUndo {
 			$changed = true;
 		}
 		return [ 'done', '', $changed ];
+	}
+
+	/**
+	 * Whether a user may put a category back: manage product categories and
+	 * edit this one, delete it when the undo removes a created category, and
+	 * edit the old default when the default category is restored.
+	 *
+	 * @param int   $user_id     The person undoing.
+	 * @param int   $id          Term id.
+	 * @param bool  $created     Whether the undo deletes a category the batch created.
+	 * @param mixed $old_default The default category put back, if any.
+	 */
+	private static function may( int $user_id, int $id, bool $created, mixed $old_default ): bool {
+		if ( ! user_can( $user_id, \BulkCatalogueManager\Rest\Access::TERMS_CAPABILITY ) || ! user_can( $user_id, 'edit_term', $id ) ) {
+			return false;
+		}
+		if ( $created && ! user_can( $user_id, 'delete_term', $id ) ) {
+			return false;
+		}
+		return ! ( null !== $old_default && (int) $old_default > 0 && (int) $old_default !== $id && ! user_can( $user_id, 'edit_term', (int) $old_default ) );
+	}
+
+	/**
+	 * The sentence for a category the person undoing may not change.
+	 */
+	private static function cannot_edit(): string {
+		return __( 'You can no longer change this category, so it was left alone. Ask an administrator for access to it.', 'bulk-catalogue-manager-for-woocommerce' );
 	}
 
 	/**

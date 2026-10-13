@@ -573,7 +573,7 @@ final class ExportController implements ReadController {
 	 * `rest_pre_serve_request`: stream an export's CSV in place of JSON.
 	 * Anything else passes through untouched. A failure after streaming has
 	 * begun stops the file where it is and is written to the WooCommerce log
-	 * (Main Build L1): it never reaches the body.
+	 * (lead review L1): it never reaches the body.
 	 *
 	 * @param mixed $served  Whether the request has been served.
 	 * @param mixed $result  The response.

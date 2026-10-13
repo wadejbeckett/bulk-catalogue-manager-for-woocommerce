@@ -37,7 +37,7 @@ defined( 'ABSPATH' ) || exit;
  * exactly. One deviation (ticket 10, R2): the parent's SKU is replaced by
  * `id:` and its ID whenever it would not read back unchanged (reads_back()),
  * or the parent is in the bin, which WooCommerce's SKU lookup skips
- * (`get_product_id_by_sku()`, Main Build L3), because the importer's
+ * (`get_product_id_by_sku()`, lead review L3), because the importer's
  * `parse_relative_field()` creates an "Import placeholder" product for any
  * SKU it cannot find, even when updating.
  *

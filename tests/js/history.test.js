@@ -575,7 +575,7 @@ describe( 'history words', () => {
 		expect( undoneNotice( 'Set the stock', report( undefined ) ) ).toBe(
 			'Undone: Set the stock. 120 items were put back.'
 		);
-		// Main Build's F2: an undo that put nothing back is not called done.
+		// The lead reviewer's F2: an undo that put nothing back is not called done.
 		const sentence =
 			'Nothing was put back, because everything had been changed again by the time the undo reached it. The change can still be undone: choose Revert anyway to put the old values back regardless.';
 		expect(

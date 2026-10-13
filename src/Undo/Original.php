@@ -9,7 +9,7 @@
  *   already undone; a partial undo left some objects alone, and says so in
  *   its own report);
  * - failed, cancelled, finished having put nothing back (every item
- *   changed again before the undo reached it, Main Build's F2), or having
+ *   changed again before the undo reached it, the lead reviewer's F2), or having
  *   put an object back only in part (some of its values written, another
  *   skipped or failed; ENGINE-1): it moves
  *   back from `undoing` to the status it had before, kept in the undo

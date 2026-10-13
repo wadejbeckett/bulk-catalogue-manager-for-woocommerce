@@ -22,6 +22,8 @@ tests/Unit/Export/golden/** -text
 .remember/**        export-ignore
 .claude/**          export-ignore
 AGENTS.md           export-ignore
+CLAUDE.md           export-ignore
+memory-bank/**      export-ignore
 CHANGELOG.md        export-ignore
 README.md           export-ignore
 assets-wporg/**     export-ignore

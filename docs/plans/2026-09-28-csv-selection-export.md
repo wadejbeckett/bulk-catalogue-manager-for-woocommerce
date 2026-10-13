@@ -1,19 +1,19 @@
 # CSV export of the selection and the chosen columns (delivery ticket 10, Parts A and B together)
 
-> **Core copy.** This is the repository's copy of the CSV export plan (tickets T95–T103), made on 29 September 2026 from the delivery plan with every client path and client name removed; the rulings (R1–R13, B1–B27) and Main Build's amendments and review are kept. The delivery tracker's ticket 10 and ticket 04 files are referred to by name, not linked. Where the two copies differ, the delivery copy is the record of what was decided and this one follows it.
+> **Core copy.** This is the repository's copy of the CSV export plan (tickets T95–T103), made on 29 September 2026 from the delivery plan with every client path and client name removed; the rulings (R1–R13, B1–B27) and the lead reviewer's amendments and review are kept. The delivery tracker's ticket 10 and ticket 04 files are referred to by name, not linked. Where the two copies differ, the delivery copy is the record of what was decided and this one follows it.
 
-**Stage:** approved by Main Build 28 Sept 19:05, amendments applied. Main Build accepted R1–R13 and asked for twelve amendments, which are applied in place and listed in [Main Build's amendments](#main-builds-amendments-28-september-1905). The plan was written on 28 September 2026. This is a documentation change only: no code, test, build or worktree change is part of it, and nothing here was run.
+**Stage:** approved by the lead reviewer 28 Sept 19:05, amendments applied. The lead reviewer accepted R1–R13 and asked for twelve amendments, which are applied in place and listed in [Lead review amendments](#lead-review-amendments-28-september-1905). The plan was written on 28 September 2026. This is a documentation change only: no code, test, build or worktree change is part of it, and nothing here was run.
 
-It is **one delivery slice**: ticket 10's Part A and Part B, built together by one owner (the slice's owner) and shipped in one release. Wade's rule B asks for "the ticked exact selection by default", and Part A alone cannot meet it. The coordinator restructured the work on 28 September on that basis.
+It is **one delivery slice**: ticket 10's Part A and Part B, built together by one owner (the slice's owner) and shipped in one release. The owner's rule B asks for "the ticked exact selection by default", and Part A alone cannot meet it. The coordinator restructured the work on 28 September on that basis.
 
-It is built after T85 acceptance and ticket 04, following the accepted order T84 → T85 → ticket 04 → CSV (Wade, 28 September, Off/On ruling 4).
+It is built after T85 acceptance and ticket 04, following the accepted order T84 → T85 → ticket 04 → CSV (the owner, 28 September, Off/On ruling 4).
 
 **Ticket numbers:**
 - **T86–T94 belong to global Off/On** (ticket 04's plan, `2026-09-28-global-off-on.md` in the delivery tracker).
 - This plan uses **T95–T103**.
 - The external action contract (ticket 05) now uses **T104–T109**.
 
-If Wade chooses to build this in parallel with ticket 04 rather than after it, see [Parallel start](#parallel-start).
+If the owner chooses to build this in parallel with ticket 04 rather than after it, see [Parallel start](#parallel-start).
 
 **Goal:** the catalogue's **Export CSV** opens a small dialog.
 - **Rows.**
@@ -29,9 +29,9 @@ If Wade chooses to build this in parallel with ticket 04 rather than after it, s
 - `docs/EXACT-SELECTION.md`: tokens are opaque and never placed in URLs; whole ID sets never go to the browser; explicit ID lists are capped at 1,000; members are in stable ascending order.
 - Ticket 04's plan §6: the listing-control relabel and CSV headings.
 
-Main Build accepted the rulings below at 19:05 on 28 September, with the amendments applied in place. The core repository's copy of this plan (`docs/plans/2026-09-28-csv-selection-export.md`) removes every client path and name.
+The lead reviewer accepted the rulings below at 19:05 on 28 September, with the amendments applied in place. The core repository's copy of this plan (`docs/plans/2026-09-28-csv-selection-export.md`) removes every client path and name.
 
-## Main Build's amendments (28 September, 19:05)
+## Lead review amendments (28 September, 19:05)
 
 Each amendment is applied where it belongs; this list says where.
 
@@ -50,7 +50,7 @@ Each amendment is applied where it belongs; this list says where.
 | 11 | The Off fixture is a variable product; fixtures include names with `&` and quotes; the import runs as the manager (`--user`) | T102 |
 | 12 | The ticket 05 numbering note is updated (T104–T109), and a parallel-start section is added | Header; [Parallel start](#parallel-start) |
 
-## Rulings (accepted by Main Build, 28 September, 19:05)
+## Rulings (accepted by the lead reviewer, 28 September, 19:05)
 
 These replace the rulings in the earlier Part A–only draft (renamed to this plan in the delivery tracker):
 - the draft's R1, "Part A has no Selected choice", is dropped, because the slice now delivers the selection;
@@ -102,7 +102,7 @@ Each ruling takes the conservative option.
   - is not a product or variation;
   - is a variation whose product is gone or no longer listed. This matches Review selected products' "No longer available".
 
-  Per-object read permission follows `GET /products`, meaning the capability behind `Access::can_read`, not inspection's per-object `read_post` check. The same user can export those rows by filter, so a stricter rule would protect nothing and would need every member's post primed. Where per-object capabilities differ, `left_out` can therefore differ from Review's count. If Main Build prefers inspection's rule, the extra cost is one chunked prime per 1,000 members, measured in T102.
+  Per-object read permission follows `GET /products`, meaning the capability behind `Access::can_read`, not inspection's per-object `read_post` check. The same user can export those rows by filter, so a stricter rule would protect nothing and would need every member's post primed. Where per-object capabilities differ, `left_out` can therefore differ from Review's count. If the lead reviewer prefers inspection's rule, the extra cost is one chunked prime per 1,000 members, measured in T102.
 - **R13. How the dialog chooses its rows.** Selected is chosen when the dialog opens whenever the selection count is above 0, and the dialog never changes the operator's choice after that.
   - If the selection changes while the dialog is open, the summary is asked again for the new token.
   - While the selection is saving or uncertain (`waitingReason()`), Selected stays chosen and Download waits, showing the reason, as the bulk panel's Check the change does.
@@ -114,9 +114,9 @@ Each ruling takes the conservative option.
 
 ### Builder rulings during the parallel start (29 September)
 
-Taken by the builder of T95 and T97–T102 on `codex/csv-selection-export` (Wade's parallel-start ruling, 28 September 20:45), each the conservative option where the plan left a choice open. B1 corrects the plan's evidence and changes the switch-on file's bytes, so it is for Main Build's review; the rest settle details. The pre-ruling plan is kept in the delivery tracker.
+Taken by the builder of T95 and T97–T102 on `codex/csv-selection-export` (the owner's parallel-start ruling, 28 September 20:45), each the conservative option where the plan left a choice open. B1 corrects the plan's evidence and changes the switch-on file's bytes, so it is for the lead review; the rest settle details. The pre-ruling plan is kept in the delivery tracker.
 
-- **B1. The switch-on file's first heading is written unquoted (a T102 finding; for Main Build's review).** The plan's evidence said the file "reads cleanly" with a byte-order mark and every field quoted. It does not: WooCommerce's importer reads the first heading with PHP's `fgetcsv`, which treats a field as quoted only when a quote is its first byte, and the byte-order mark comes first; WooCommerce strips the mark afterwards, so `"ID"` arrives with its quotes, the mapping screen shows **Do not import** for it, and every row is matched by SKU alone. On the fixture 3 of 16 rows (the ones without a SKU) were skipped. With the switch on, the first heading, always the literal `ID`, now follows the byte-order mark unquoted (`CsvWriter::row_bare_first()`, an opt-in on `CsvExport`; RFC 4180 allows it, it cannot start a formula, and WooCommerce's own exporter starts its files that way). Switch-off bytes, `CsvExport`'s default and the existing export tests are unchanged; SPEC §10 Format says so. A switch-off file keeps the old quoting, so its first heading is read with quotes too; the T103 FAQ should say to re-import only switch-on files, which it already does for other reasons.
+- **B1. The switch-on file's first heading is written unquoted (a T102 finding; for the lead review).** The plan's evidence said the file "reads cleanly" with a byte-order mark and every field quoted. It does not: WooCommerce's importer reads the first heading with PHP's `fgetcsv`, which treats a field as quoted only when a quote is its first byte, and the byte-order mark comes first; WooCommerce strips the mark afterwards, so `"ID"` arrives with its quotes, the mapping screen shows **Do not import** for it, and every row is matched by SKU alone. On the fixture 3 of 16 rows (the ones without a SKU) were skipped. With the switch on, the first heading, always the literal `ID`, now follows the byte-order mark unquoted (`CsvWriter::row_bare_first()`, an opt-in on `CsvExport`; RFC 4180 allows it, it cannot start a formula, and WooCommerce's own exporter starts its files that way). Switch-off bytes, `CsvExport`'s default and the existing export tests are unchanged; SPEC §10 Format says so. A switch-off file keeps the old quoting, so its first heading is read with quotes too; the T103 FAQ should say to re-import only switch-on files, which it already does for other reasons.
 - **B2. `reads_back( $sku, $as_parent )` is the one predicate** (R2, amendment 1): the guard or `wc_clean()` changing the SKU fails it for both uses; as a Parent, `''`, `0` and `id:<digits>` fail it too.
 - **B3. The 1,000-id limit counts the ids as sent**, duplicates included; duplicates collapse after the check.
 - **B4. `selection` and `source` are registered POST arguments** (shape only: the token a string of at most 120 characters, `source` a string with no enum), so a history source gets `RequestsController::unknown()` (R10) rather than a schema refusal, and the token is still read only from the form or JSON body (amendment 4).
@@ -138,9 +138,9 @@ Taken by the builder of T95 and T97–T102 on `codex/csv-selection-export` (Wade
 - **B20. The probe's lifecycle chapter fails 4 rows at the base too** (`2324d0a`): it still expects schema 6's three tables and one prune action. Outside this slice; reported as a follow-up.
 - **B21. The core copy of this plan** (`docs/plans/2026-09-28-csv-selection-export.md`) was not in the repository when T95 started; the TICKETS section links that path, and the generic copy stays the coordinator's, as the Stopping point says.
 
-### Main Build's review of the server work (29 September)
+### Lead review of the server work (29 September)
 
-Main Build accepted the server work at `d72bed9` with no blocker: B1 as built; B2–B5, B7–B10 and B13–B19; B6 with L2 below; B12 with the merge gated on ticket 04's WooCommerce 11.1.2 CI leg; B11 for now, with a follow-up for a language-pack CI leg (TICKETS backlog); B20; B21 provided this plan is added to the core repository, which it now is (`docs/plans/2026-09-28-csv-selection-export.md`, client paths and names removed). It asked for these, each landed test-first as its own commit on `codex/csv-selection-export`:
+The lead reviewer accepted the server work at `d72bed9` with no blocker: B1 as built; B2–B5, B7–B10 and B13–B19; B6 with L2 below; B12 with the merge gated on ticket 04's WooCommerce 11.1.2 CI leg; B11 for now, with a follow-up for a language-pack CI leg (TICKETS backlog); B20; B21 provided this plan is added to the core repository, which it now is (`docs/plans/2026-09-28-csv-selection-export.md`, client paths and names removed). It asked for these, each landed test-first as its own commit on `codex/csv-selection-export`:
 
 - **L1.** `ExportController::serve()` streamed without catching errors, so a failure mid-stream let WordPress append its critical-error HTML to a cut-off CSV. The stream is wrapped in `try`/`catch ( \Throwable )`: writing stops, and the error goes to the WooCommerce log (source the plugin slug).
 - **L2.** `ExportRows::token()`'s `try` also covered presence (`IdRows::resolve()`), so a presence failure answered 503 `bulkcat_request_storage` and a `TypeError` became that 503. Only the selection's own read stays inside it; a presence failure reaches the controller as 503 `bulkcat_export_unavailable`.
@@ -342,7 +342,7 @@ The server checks a request in this order. Every refusal is JSON, sent before an
 
 ## Parallel start
 
-The accepted order builds this slice after ticket 04. If Wade chooses instead to run it in parallel with ticket 04 (amendment 12), only the **server work, T95–T102**, starts early, under these conditions:
+The accepted order builds this slice after ticket 04. If the owner chooses instead to run it in parallel with ticket 04 (amendment 12), only the **server work, T95–T102**, starts early, under these conditions:
 
 - **T95 (docs).** It may be written at any time, but lands after ticket 04's T86 SPEC change, or is rebased onto it. Both edit SPEC §12.5, and ticket 04 also edits §5.3.
 - **T96 (goldens and the heading check) waits until ticket 04's T93** (the listing-control relabel) is merged. The byte-identical baseline and the heading check must include "Shown in shop and search" and ticket 04's `default_order` change. A golden taken earlier would be wrong the moment T93 lands.
@@ -364,7 +364,7 @@ The accepted order builds this slice after ticket 04. If Wade chooses instead to
 - [ ] In `docs/TICKETS.md`, add a "CSV export" section with rows T95–T103, linking the core copy of this plan. It follows ticket 04's rows T86–T94 and precedes the external action contract's T104–T109.
 - [ ] No runtime change.
 
-**Gate:** the SPEC and TICKETS changes carry R1–R13 as accepted by Main Build (28 September, 19:05) with its amendments; the coordinator runs a focused check of the SPEC diff.
+**Gate:** the SPEC and TICKETS changes carry R1–R13 as accepted by the lead reviewer (28 September, 19:05) with its amendments; the coordinator runs a focused check of the SPEC diff.
 
 ## 2. Characterise today's export (T96)
 
@@ -582,7 +582,7 @@ These tests pass when they arrive: they are the safety net, not red tests.
   - `shows the plain sentence of a JSON refusal in the frame`
   - `tests/js/a11y.test.js` checks the open dialog; `tests/js/history.test.js` stays unchanged.
 - [ ] **PHP:**
-  - `GET /export` without a history source is refused (R9). Until then the GET still exports the whole catalogue without a confirmation, which bypasses the POST's server-side confirmation (Main Build, 29 September); the retirement closes it, with the CHANGELOG's REST-change line (amendment 3);
+  - `GET /export` without a history source is refused (R9). Until then the GET still exports the whole catalogue without a confirmation, which bypasses the POST's server-side confirmation (the lead reviewer, 29 September); the retirement closes it, with the CHANGELOG's REST-change line (amendment 3);
   - `ExportRouteTest`'s catalogue cases move to POST (R4);
   - add `test_a_catalogue_get_is_refused_with_a_reload_sentence`;
   - in `probe.py`, the `export`, `export-diff` and `export:query-nonce` rows move to POST, `read:export:switch-off-identical` becomes `read:export:get-retired`, and `perf.py`'s export group moves to POST.
@@ -665,4 +665,4 @@ Built on the integrated code (`f498629`: ticket 04 final, the CSV server work an
 
 ## Stopping point
 
-This plan is documentation only. Nothing was built or run, and the worktree was only read. Main Build approved it at 19:05 on 28 September with R1–R13 and twelve amendments, all applied here; the version before the amendments is kept in the delivery tracker. Before T95, the owner confirms the start commit (accepted T85 plus ticket 04, or the [parallel start](#parallel-start) if Wade chooses it), and the coordinator copies the plan into the core `docs/plans/` without client references. Ticket 10's header and the delivery tracker's ticket row link to the delivery copy.
+This plan is documentation only. Nothing was built or run, and the worktree was only read. The lead reviewer approved it at 19:05 on 28 September with R1–R13 and twelve amendments, all applied here; the version before the amendments is kept in the delivery tracker. Before T95, the owner confirms the start commit (accepted T85 plus ticket 04, or the [parallel start](#parallel-start) if the owner chooses it), and the coordinator copies the plan into the core `docs/plans/` without client references. Ticket 10's header and the delivery tracker's ticket row link to the delivery copy.

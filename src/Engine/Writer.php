@@ -417,7 +417,7 @@ final class Writer {
 			$skip_already = (bool) ( $args['skip_already'] ?? true );
 			$checked      = $validator->check( $product, $operation->compute( $product, $args ), $args );
 			if ( Result::SKIPPED === $checked[0]->state() && RestoreStatus::CHANGED_SINCE === $checked[0]->code() ) {
-				// One product, one outcome (Main Build's F1): a step changed since leaves the whole object alone,
+				// One product, one outcome (the lead reviewer's F1): a step changed since leaves the whole object alone,
 				// what earlier steps set on it unsaved.
 				return $this->left_alone( $id, $product, $steps, $checked[0]->reason(), $modified, $before );
 			}

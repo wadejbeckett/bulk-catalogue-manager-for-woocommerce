@@ -272,7 +272,7 @@ final class ExportRowsTokenTest extends TestCase {
 	}
 
 	public function test_a_presence_failure_is_not_a_selection_storage_refusal(): void {
-		// Main Build L2: only the selection's own read is storage (503 bulkcat_request_storage, as preview answers);
+		// Lead review L2: only the selection's own read is storage (503 bulkcat_request_storage, as preview answers);
 		// a failure reading the catalogue afterwards is the export's own, answered by the controller.
 		global $wpdb;
 		$token                         = $this->snapshot(

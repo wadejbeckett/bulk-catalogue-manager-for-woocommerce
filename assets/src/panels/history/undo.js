@@ -318,7 +318,7 @@ export function undoneNotice( what, report, redo = false ) {
 		report?.changed_items !== undefined &&
 		0 === Number( report.changed_items )
 	) {
-		// Main Build's F2: an undo that put nothing back is not called done; the route says why.
+		// The lead reviewer's F2: an undo that put nothing back is not called done; the route says why.
 		return (
 			report?.undo?.sentence ||
 			__(

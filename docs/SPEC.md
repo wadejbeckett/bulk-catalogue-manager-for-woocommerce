@@ -1,6 +1,6 @@
 # Specification — Bulk Catalogue Manager for WooCommerce
 
-Agreed with Wade Beckett in a scoping session on 21 September 2026. This is the shared understanding; change it here before changing code.
+Agreed with the owner in a scoping session on 21 September 2026. This is the shared understanding; change it here before changing code.
 
 Sections are numbered so tickets can cite them, for example §4.2.
 

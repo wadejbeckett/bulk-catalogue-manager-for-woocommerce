@@ -76,7 +76,7 @@ final class ExportRows {
 				$error
 			);
 		}
-		// Presence is the catalogue's read: its failure is the export's own (Main Build L2), and a
+		// Presence is the catalogue's read: its failure is the export's own (lead review L2), and a
 		// programming error is not dressed up as a storage refusal.
 		return $ids instanceof \WP_Error ? $ids : IdRows::resolve( $ids, new Hydrator( $registry ) );
 	}

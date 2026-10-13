@@ -636,7 +636,7 @@ final class UndoRouteTest extends TestCase {
 	}
 
 	public function test_a_status_changed_since_under_revert_anyway_leaves_the_whole_product_alone(): void {
-		// Main Build's F1: a product whose status step is changed since is left alone whole: its
+		// The lead reviewer's F1: a product whose status step is changed since is left alone whole: its
 		// price is not put back either (one product, one outcome), even under Revert anyway.
 		$record               = \BulkCatalogueManager\Availability\OffRecord::create( 1001, 'publish', '2026-09-23T08:01:00Z', self::BATCH )->to_json();
 		$this->store->changes = [];
@@ -668,7 +668,7 @@ final class UndoRouteTest extends TestCase {
 	}
 
 	public function test_an_undo_that_put_nothing_back_leaves_the_batch_undoable_and_says_so(): void {
-		// Main Build's F2: every item changed after the undo was confirmed: nothing is put back, so
+		// The lead reviewer's F2: every item changed after the undo was confirmed: nothing is put back, so
 		// the batch is not marked undone and Revert anyway stays available.
 		$created = $this->undo();
 		foreach ( [
@@ -1170,7 +1170,7 @@ final class UndoRouteTest extends TestCase {
 	}
 
 	/**
-	 * T85 (Main Build's blocker): a batch's progress read is what every open
+	 * T85 (the lead reviewer's blocker): a batch's progress read is what every open
 	 * screen polls until the change finishes, so by default it plans
 	 * nothing — no journal page, no product — and reports conflicts as not
 	 * counted; `reversibility=count` asks for the count, which builds the

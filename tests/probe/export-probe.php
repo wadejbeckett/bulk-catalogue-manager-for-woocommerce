@@ -345,7 +345,7 @@ if ( ! function_exists( 'bulkcat_export_probe' ) ) {
 				'category_ids'  => [ $recorded ],
 			]
 		);
-		// A simple product whose post parent is a grouped product (Main Build L3). The probe bins the group
+		// A simple product whose post parent is a grouped product (lead review L3). The probe bins the group
 		// only for its recorded export and import, then runs this action again, which takes it back out of
 		// the bin: kept out of the bin otherwise, it never changes the make-up of another row's pages.
 		$ids['rec-binned-group'] = bulkcat_export_probe_upsert(

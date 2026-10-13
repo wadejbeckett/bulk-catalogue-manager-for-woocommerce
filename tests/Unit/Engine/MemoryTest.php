@@ -7,7 +7,7 @@
  * …), so a single `wp action-scheduler run` kept about 250 new names per
  * chunk of 50 products, for ever. Memory::release( $mark ) forgets the
  * per-product transient hook names first counted since the mark, and
- * nothing else: only the families measured (Main Build's review), never
+ * nothing else: only the families measured (the lead review), never
  * another plugin's name that happens to end in a number, never a callback,
  * never the hook stack.
  *

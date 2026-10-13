@@ -427,7 +427,7 @@ final class ExportPostRouteTest extends TestCase {
 	}
 
 	public function test_a_catalogue_read_failure_before_streaming_is_503_export_unavailable(): void {
-		// Main Build L2: a presence failure after the selection resolved is the export's, not selection storage's.
+		// Lead review L2: a presence failure after the selection resolved is the export's, not selection storage's.
 		global $wpdb;
 		$page                          = $wpdb->responses['/^SELECT /'];
 		$wpdb->responses['/^SELECT /'] = static function ( string $sql ) use ( $page ): mixed {
@@ -646,7 +646,7 @@ final class ExportPostRouteTest extends TestCase {
 	}
 
 	public function test_a_failure_while_streaming_stops_the_file_and_is_logged(): void {
-		// Main Build L1: an error escaping serve() would let WordPress append its critical-error page to a cut-off CSV.
+		// Lead review L1: an error escaping serve() would let WordPress append its critical-error page to a cut-off CSV.
 		foreach ( [ new \RuntimeException( 'The database went away.' ), new \TypeError( 'A page was not a list.' ) ] as $failure ) {
 			bulkcat_test_reset();
 			$GLOBALS['bulkcat_test']['logged_in']                  = true;

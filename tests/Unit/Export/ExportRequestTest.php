@@ -109,7 +109,7 @@ final class ExportRequestTest extends TestCase {
 	}
 
 	public function test_more_than_1000_ids_are_refused_and_1000_are_accepted(): void {
-		// The schema caps the list (Main Build minor): core refuses it before the handler, carrying the plain refusal.
+		// The schema caps the list (lead review minor): core refuses it before the handler, carrying the plain refusal.
 		$this->assertSame( 1000, ( new RouteSchema( new Registry() ) )->export_args()['ids']['maxItems'] );
 		foreach ( [ implode( ',', range( 1, 1001 ) ), range( 1, 1001 ) ] as $ids ) {
 			$refusal = $this->refused(

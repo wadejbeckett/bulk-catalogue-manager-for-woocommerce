@@ -159,7 +159,7 @@ final class ReimportIdentifiersTest extends TestCase {
 	}
 
 	public function test_parent_is_id_and_the_parent_id_when_the_parent_is_in_the_bin(): void {
-		// Main Build L3: WooCommerce's SKU lookup skips binned products (WC_Product_Data_Store_CPT::
+		// Lead review L3: WooCommerce's SKU lookup skips binned products (WC_Product_Data_Store_CPT::
 		// get_product_id_by_sku(), post_status != 'trash'), so a binned parent's SKU would make the
 		// importer create an "Import placeholder"; id:N is looked up by id, whatever the status.
 		self::post( 10, 'product', 0, [ '_sku' => 'GROUP-10' ] );

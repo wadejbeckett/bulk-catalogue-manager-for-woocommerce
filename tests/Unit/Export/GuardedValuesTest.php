@@ -132,7 +132,7 @@ final class GuardedValuesTest extends TestCase {
 	}
 
 	public function test_names_are_not_counted_when_the_name_is_not_exported(): void {
-		// Main Build minor: a file without the Name column has no guarded name to warn about.
+		// Lead review minor: a file without the Name column has no guarded name to warn about.
 		$this->catalogue();
 		$ids = [ 1, 2, 3, 4, 5, 6, 7, 8, 10, 11 ];
 		$this->assertSame(

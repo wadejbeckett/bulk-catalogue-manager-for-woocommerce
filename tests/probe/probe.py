@@ -1886,7 +1886,7 @@ def check_read_export_roundtrip(p: Probe) -> None:
               f"importing user locales {sorted(found)} (de_DE without language packs: WooCommerce's English fallback path); differing {wrong}")
 
     def mapping_guard() -> None:
-        # Main Build minor: the import helper refuses a mapping that is not the screen's (amendment 8).
+        # Lead review minor: the import helper refuses a mapping that is not the screen's (amendment 8).
         r, table = export(state["fx"]["categories"]["roundtrip"], "filter")
         ids = [int(row[0]) for row in table[1:]]
         raw = export_native(p, "mapping", {"csv": base64.b64encode(r.body).decode(), "delimiter": ",", "raw": True}, user="manager")["mapping"]

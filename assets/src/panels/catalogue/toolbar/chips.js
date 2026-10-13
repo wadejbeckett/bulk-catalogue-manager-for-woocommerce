@@ -415,7 +415,7 @@ export function clearSearchLabel( count ) {
  * the selection, unlike editing the search box, even through empty text.
  * Since it sits beside Clear filters and the search box's own ×, which keep
  * the selection, its name and tooltip say so when something is selected:
- * "Clear search and selection (12)" (T85, Main Build's review).
+ * "Clear search and selection (12)" (T85, the lead review).
  *
  * @param {Object}        props                Props.
  * @param {Array<Object>} props.chips          filterChips().

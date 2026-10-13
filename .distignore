@@ -13,6 +13,8 @@
 .superpowers/
 .claude/
 AGENTS.md
+CLAUDE.md
+memory-bank/
 CHANGELOG.md
 README.md
 assets-wporg/

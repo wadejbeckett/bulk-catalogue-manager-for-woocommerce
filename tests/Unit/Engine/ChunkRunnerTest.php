@@ -277,7 +277,7 @@ final class ChunkRunnerTest extends TestCase {
 						$GLOBALS['wp_actions'][ 'delete_transient_wc_var_prices_' . $id ] = 1;
 						$GLOBALS['wp_filters'][ 'pre_transient_wc_related_' . $id ]       = 1;
 						$GLOBALS['wp_actions']['woocommerce_update_product']              = ( $GLOBALS['wp_actions']['woocommerce_update_product'] ?? 0 ) + 1;
-						// Another plugin hooked to the save counts a name of its own: it keeps its count (Main Build's review).
+						// Another plugin hooked to the save counts a name of its own: it keeps its count (the lead review).
 						$GLOBALS['wp_actions'][ 'my_sync_' . $id ] = 1;
 					}
 				);

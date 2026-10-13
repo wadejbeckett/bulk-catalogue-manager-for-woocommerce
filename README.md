@@ -5,7 +5,7 @@ One screen inside wp-admin for changing many WooCommerce products and variations
 It edits WooCommerce's own product data only, through WooCommerce's own product classes, and works on a plain WordPress and WooCommerce site with nothing else installed. It makes no request outside your site, collects no data and has no paid version. Free under GPL-3.0-or-later.
 
 - Requires WordPress 7.0 or later (tested up to 7.1), PHP 8.1 or later and WooCommerce 11.1 or later (tested up to 11.1).
-- Scope and design: [`docs/SPEC.md`](docs/SPEC.md). Work log: [`docs/TICKETS.md`](docs/TICKETS.md). Release checklist: [`docs/RELEASE.md`](docs/RELEASE.md).
+- Scope and design: [`docs/SPEC.md`](docs/SPEC.md). Release checklist: [`docs/RELEASE.md`](docs/RELEASE.md).
 
 ## What the screen does
 

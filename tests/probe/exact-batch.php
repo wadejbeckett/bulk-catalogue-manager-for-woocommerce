@@ -9,7 +9,7 @@
  * request after more than 60 seconds, and after the selection and the grant
  * have expired, must answer the same batch with one relative change.
  *
- *     ../evidence-20260925/wp-local.sh eval 'require "wp-content/plugins/bulk-catalogue-manager-for-woocommerce/tests/probe/exact-batch.php";'
+ *     wp eval 'require "wp-content/plugins/bulk-catalogue-manager-for-woocommerce/tests/probe/exact-batch.php";'
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later

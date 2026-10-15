@@ -8,7 +8,7 @@
  * written (checked), unless BULKCAT_SCALE_KEEP=1 leaves it queued for a
  * timed queue run.
  *
- *     ../evidence-20260925/wp-local.sh eval 'require "wp-content/plugins/bulk-catalogue-manager-for-woocommerce/tests/probe/exact-scale.php";'
+ *     wp eval 'require "wp-content/plugins/bulk-catalogue-manager-for-woocommerce/tests/probe/exact-scale.php";'
  *
  * Environment: BULKCAT_SCALE_QUERY — a JSON capture query (default
  * {"mode":"products_and_variations"}); BULKCAT_SCALE_KEEP=1.

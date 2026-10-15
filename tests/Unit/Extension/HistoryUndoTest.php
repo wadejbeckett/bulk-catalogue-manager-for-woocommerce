@@ -342,6 +342,18 @@ final class HistoryUndoTest extends TestCase {
 		$this->assertArrayNotHasKey( 'labels', $report( $this->actions()->providers() )['operations'][0]['args'], 'Withheld without a user.' );
 	}
 
+	public function test_restoring_a_field_no_action_changes_any_more_fails_closed(): void {
+		// EXTENSIONS §18.13: undo asks for the capability of every action on the field; with none left, nobody may.
+		$provider = Providers::of( [ new SampleProvider( $this->store ) ] )->get( 'sample' );
+		$computer = new \BulkCatalogueManager\External\Computer( $provider, new RunContext( RunContext::UNDO, self::USER, self::BATCH ) );
+		$step     = static fn( string $field ): array => [
+			'action' => \BulkCatalogueManager\External\RestoreExternal::ID,
+			'args'   => [ 'field' => $field ],
+		];
+		$this->assertTrue( $computer->may( self::USER, $step( 'x_sample_labels' ) ), 'A field an action still changes, with its capability.' );
+		$this->assertFalse( $computer->may( self::USER, $step( 'x_sample_retired' ) ), 'No action describes this field any more.' );
+	}
+
 	public function test_restore_external_is_internal(): void {
 		$step    = [
 			'action' => 'restore_external',

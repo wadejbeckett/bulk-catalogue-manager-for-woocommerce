@@ -10,7 +10,7 @@
  * substitution, one materialisation, the authorization epoch, history
  * pruning, and 1.0 jobs and request ids.
  *
- *     ../evidence-20260925/wp-local.sh eval 'require "wp-content/plugins/bulk-catalogue-manager-for-woocommerce/tests/probe/exact-batch-faults.php";'
+ *     wp eval 'require "wp-content/plugins/bulk-catalogue-manager-for-woocommerce/tests/probe/exact-batch-faults.php";'
  *
  * Every case prints the refusal or answer it did not expect before failing.
  *

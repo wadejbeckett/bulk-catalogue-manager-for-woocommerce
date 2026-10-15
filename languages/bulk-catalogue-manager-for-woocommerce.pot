@@ -9,7 +9,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-10-08T08:48:28+00:00\n"
+"POT-Creation-Date: 2026-10-13T21:22:27+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: bulk-catalogue-manager-for-woocommerce\n"
@@ -298,9 +298,6 @@ msgstr ""
 msgid "This category no longer exists, so it was left alone."
 msgstr ""
 
-msgid "You can no longer change this category, so it was left alone. Ask an administrator for access to it."
-msgstr ""
-
 msgid "This new category now has products or subcategories, so undo leaves it in place. Delete it from the Categories tab if you no longer want it."
 msgstr ""
 
@@ -317,6 +314,9 @@ msgid "This category was changed since this batch ran, so it is left alone unles
 msgstr ""
 
 msgid "This category's undo could not be read, so it was left alone."
+msgstr ""
+
+msgid "You can no longer change this category, so it was left alone. Ask an administrator for access to it."
 msgstr ""
 
 msgid "WordPress did not accept the old values for this category, so it was left as it is."

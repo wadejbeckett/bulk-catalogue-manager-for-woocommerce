@@ -5,7 +5,7 @@
  * preview, Apply, replay, resolve, the plugin queue, undo preview, undo —
  * plus the refusals a 1.0 screen and an unauthorised user get.
  *
- *     ../evidence-20260925/wp-local.sh eval 'require "wp-content/plugins/bulk-catalogue-manager-for-woocommerce/tests/probe/exact-batch-routes.php";'
+ *     wp eval 'require "wp-content/plugins/bulk-catalogue-manager-for-woocommerce/tests/probe/exact-batch-routes.php";'
  *
  * @package BulkCatalogueManager
  * @license GPL-3.0-or-later

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Undo of a category change checks the undoer's rights again when it runs, also after Revert anyway; undoing a created category needs the right to delete it, and putting back the default category needs the right to edit the old default.
+- Undo of an add-on change is refused when no add-on action changes that field any more, instead of skipping the capability check.
+
 ## [1.4.4] - 2026-10-08
 
 - The bulk panel's Done step reads "Queued, starts within a minute" from the moment Apply is accepted, instead of "0 of N done" for the second before the first progress read answers.

@@ -497,10 +497,11 @@ final class ChunkRunner {
 
 		// An external change's objects are primed once per chunk (T107).
 		$writer->prime_external( $operations, array_values( array_map( static fn( array $item ): int => (int) $item['object_id'], $items ) ) );
+		$batch_user = (int) $batch['user_id'];
 		wp_defer_term_counting( true );
 		try {
 			$writer->run(
-				static function ( Writer $writer ) use ( $items, $operations, $undo, $own, $batches, $changes, $batch_id, $token, $lease, $began, $started, $deadline, $terms, &$error, &$stopped, &$written ): void {
+				static function ( Writer $writer ) use ( $items, $operations, $undo, $own, $batches, $changes, $batch_id, $token, $lease, $began, $started, $deadline, $terms, $batch_user, &$error, &$stopped, &$written ): void {
 					$finish = static function ( int $item_id, array $mark, bool $changed ) use ( $batches, $batch_id, $token ): void {
 						$batches->finish_item( $batch_id, $item_id, $token, $mark[0], $mark[1], $changed );
 					};
@@ -516,7 +517,7 @@ final class ChunkRunner {
 						if ( 'term' === $item['object_type'] ) {
 							if ( $undo && isset( $own[ $item['item_id'] ] ) ) {
 								// Ticket 133 bug 1: a category's undo, checked again now unless Revert anyway.
-								[ $state, $message, $changed ] = TermUndo::write( $changes, $batch_id, $item['object_id'], $own[ $item['item_id'] ], null === $terms ? null : $terms( $item['object_id'] ) );
+								[ $state, $message, $changed ] = TermUndo::write( $changes, $batch_id, $item['object_id'], $own[ $item['item_id'] ], null === $terms ? null : $terms( $item['object_id'] ), $batch_user );
 								$finish( $item['item_id'], [ $state, $message ], $changed );
 								continue;
 							}

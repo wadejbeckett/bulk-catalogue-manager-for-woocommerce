@@ -49,6 +49,7 @@ final class TermUndoTest extends TestCase {
 			self::USER => [
 				'manage_product_terms' => true,
 				'edit_term'            => true,
+				'delete_term'          => true,
 			],
 		];
 		CatalogueFixture::seed();
@@ -115,7 +116,7 @@ final class TermUndoTest extends TestCase {
 	private function write( int $id, bool $force = false ): array {
 		$item = $this->item( $id );
 		$now  = $force ? null : $this->planner()->items( self::BATCH, [ $id ] )[ $id ];
-		return TermUndo::write( new ChangeRepository(), self::UNDO, $id, $item['operations'], $now );
+		return TermUndo::write( new ChangeRepository(), self::UNDO, $id, $item['operations'], $now, self::USER );
 	}
 
 	/**
@@ -236,6 +237,39 @@ final class TermUndoTest extends TestCase {
 		$this->assertSame( [ [ 9, 'term_deleted', 'Orphans', '', 'applied' ] ], $this->undo_rows() );
 	}
 
+	public function test_revert_anyway_still_checks_the_undoers_rights_when_it_runs(): void {
+		get_term( 3, 'product_cat' )->name = 'Blouses';
+		$this->change( 3, 'term_name', 'Shirts', 'Tops' );
+		$item = $this->item( 3 );
+		// The undoer loses the right to edit categories between Apply and the background run.
+		$GLOBALS['bulkcat_test']['user_caps'][ self::USER ]['edit_term'] = false;
+		$result = TermUndo::write( new ChangeRepository(), self::UNDO, 3, $item['operations'], null, self::USER );
+		$this->assertSame( 'skipped', $result[0] );
+		$this->assertSame( 'Blouses', get_term( 3, 'product_cat' )->name );
+		$this->assertSame( [], $this->undo_rows() );
+	}
+
+	public function test_removing_a_created_category_needs_the_right_to_delete_it(): void {
+		$this->change( 9, 'term_name', null, 'Orphans' );
+		$this->change( 9, 'term_slug', null, 'orphans' );
+		$GLOBALS['bulkcat_test']['object_terms'] = [];
+		$operations                              = $this->item( 9 )['operations'];
+		$GLOBALS['bulkcat_test']['user_caps'][ self::USER ]['delete_term'] = false;
+		$this->assertSame( [ Plan::SKIPPED, Planner::CANNOT_EDIT ], [ $this->item( 9 )['state'], $this->item( 9 )['code'] ] );
+		$this->assertSame( 'skipped', TermUndo::write( new ChangeRepository(), self::UNDO, 9, $operations, null, self::USER )[0], 'Revert anyway too.' );
+		$this->assertNotNull( CategoryTree::tree()->node( 9 ) );
+	}
+
+	public function test_restoring_the_default_category_needs_the_right_to_edit_the_old_default(): void {
+		$GLOBALS['bulkcat_test']['options']['default_product_cat'] = 5;
+		$this->change( 5, Writer::DEFAULT_PROP, 9, 5 );
+		$operations = $this->item( 5 )['operations'];
+		$GLOBALS['bulkcat_test']['user_caps'][ self::USER ]['edit_term:9'] = false;
+		$this->assertSame( Planner::CANNOT_EDIT, $this->item( 5 )['code'] );
+		$this->assertSame( 'skipped', TermUndo::write( new ChangeRepository(), self::UNDO, 5, $operations, null, self::USER )[0] );
+		$this->assertSame( 5, $GLOBALS['bulkcat_test']['options']['default_product_cat'] );
+	}
+
 	public function test_only_the_retired_tree_order_cannot_be_put_back(): void {
 		$this->change( 3, Writer::LEGACY_ORDER_PROP, null, 0 );
 		$item = $this->item( 3 );
@@ -268,7 +302,7 @@ final class TermUndoTest extends TestCase {
 		$steps = array_column( $plan->items(), 'operations', 'object_id' );
 		foreach ( $ids as $id ) {
 			$now = $this->planner()->items( self::BATCH, [ $id ], self::USER )[ $id ];
-			$this->assertSame( [ 'done', '', true ], TermUndo::write( new ChangeRepository(), self::UNDO, $id, $steps[ $id ], $now ), "Category $id is put back." );
+			$this->assertSame( [ 'done', '', true ], TermUndo::write( new ChangeRepository(), self::UNDO, $id, $steps[ $id ], $now, self::USER ), "Category $id is put back." );
 			$this->assertArrayNotHasKey( 'order', $GLOBALS['bulkcat_test']['term_meta'][ $id ] ?? [], "Category $id has no order again, as before." );
 		}
 		$this->assertSame( array_fill( 0, 25, 'applied' ), array_column( $this->undo_rows(), 4 ) );
